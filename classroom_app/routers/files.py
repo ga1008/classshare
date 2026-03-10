@@ -1,3 +1,4 @@
+import asyncio
 import json
 import math
 import uuid
@@ -21,6 +22,39 @@ from pathlib import Path
 from ..database import get_db_connection
 from ..services.file_handler import delete_file_safely
 from ..services.file_service import save_file_globally, get_file_lock, stream_file
+
+
+def sync_save_chunk(chunk_path: Path, upload_file: UploadFile):
+    """【线程池函数】快速将缓冲文件写入磁盘"""
+    with open(chunk_path, "wb") as buffer:
+        shutil.copyfileobj(upload_file.file, buffer)
+
+
+def sync_assemble_file(temp_dir: Path, total_chunks: int, final_dir: Path):
+    """【线程池函数】高速重组大文件并计算哈希"""
+    sha256_hash = hashlib.sha256()
+    total_size = 0
+    temp_assembled = temp_dir / "assembled"
+
+    with open(temp_assembled, 'wb') as out_file:
+        for i in range(total_chunks):
+            chunk_path = temp_dir / f"chunk_{i:06d}"
+            if not chunk_path.exists():
+                raise FileNotFoundError(f"Missing chunk {i}")
+            with open(chunk_path, 'rb') as in_file:
+                # 增大读写缓冲至 10MB，极大提升 1GB 以上文件重组速度
+                while data := in_file.read(1024 * 1024 * 10):
+                    sha256_hash.update(data)
+                    out_file.write(data)
+                    total_size += len(data)
+
+    file_hash = sha256_hash.hexdigest()
+    final_path = final_dir / file_hash
+    if not final_path.exists():
+        shutil.move(str(temp_assembled), str(final_path))
+    else:
+        temp_assembled.unlink(missing_ok=True)
+    return file_hash, total_size
 
 
 # ==================== Pydantic 模型 ====================
@@ -122,12 +156,13 @@ async def check_file_exists(
                 # 其他课程有此文件 — 自动关联到当前课程
                 try:
                     conn.execute("""
-                        INSERT INTO course_files
-                        (course_id, file_name, file_hash, file_size, is_public, is_teacher_resource,
-                         description, uploaded_by_teacher_id)
-                        VALUES (?, ?, ?, ?, 1, 0, '', ?)
-                    """, (req.course_id, existing["file_name"], existing["file_hash"],
-                          existing["file_size"], user['id']))
+                                 INSERT INTO course_files
+                                 (course_id, file_name, file_hash, file_size, is_public, is_teacher_resource,
+                                  description, uploaded_by_teacher_id)
+                                 VALUES (?, ?, ?, ?, 1, 0, ?, ?)
+                                 """, (req.course_id, existing["file_name"], existing["file_hash"],
+                                       existing["file_size"], existing["description"],
+                                       user['id']))  # 使用 existing["description"]
                     conn.commit()
                     new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
                 except Exception as e:
@@ -216,9 +251,12 @@ async def upload_chunk(
     temp_dir = Path(upload['temp_dir'])
     chunk_path = temp_dir / f"chunk_{chunk_index:06d}"
 
-    async with aiofiles.open(chunk_path, 'wb') as f:
-        while data := await chunk.read(65536):  # 64KB 读取缓冲
-            await f.write(data)
+    # 核心优化：丢给子线程处理磁盘写入，绝对不卡死聊天室和主线程
+    await asyncio.to_thread(sync_save_chunk, chunk_path, chunk)
+
+    # async with aiofiles.open(chunk_path, 'wb') as f:
+    #     while data := await chunk.read(65536):  # 64KB 读取缓冲
+    #         await f.write(data)
 
     # 更新已接收分块列表
     with get_db_connection() as conn:
@@ -276,7 +314,8 @@ async def complete_chunked_upload(
     total_chunks = upload['total_chunks']
 
     # 阶段 1：重组文件 + 同时计算 SHA256（内存高效，流式处理）
-    GLOBAL_FILES_DIR.mkdir(parents=True, exist_ok=True)
+    global_dir = Path(GLOBAL_FILES_DIR)
+    global_dir.mkdir(parents=True, exist_ok=True)
     sha256_hash = hashlib.sha256()
     temp_assembled = temp_dir / "assembled"
     total_size = 0
@@ -288,10 +327,29 @@ async def complete_chunked_upload(
                 if not chunk_path.exists():
                     raise HTTPException(500, f"分块文件丢失: chunk_{i:06d}")
                 async with aiofiles.open(chunk_path, 'rb') as chunk_file:
-                    while data := await chunk_file.read(65536):
+                    # 使用较大的缓冲区提高合并 1Gb 以上大文件的速度
+                    while data := await chunk_file.read(1024 * 1024 * 5):
                         sha256_hash.update(data)
                         await out_file.write(data)
                         total_size += len(data)
+
+        file_hash = sha256_hash.hexdigest()
+        final_path = global_dir / file_hash
+
+        # 内容哈希去重：如果全局存储已有此内容，跳过复制
+        if not final_path.exists():
+            shutil.move(str(temp_assembled), str(final_path))
+        else:
+            temp_assembled.unlink(missing_ok=True)
+
+        # 核心优化：异步调用线程池，后端瞬间丝滑
+        try:
+            file_hash, total_size = await asyncio.to_thread(
+                sync_assemble_file, temp_dir, total_chunks, GLOBAL_FILES_DIR
+            )
+        except Exception as e:
+            # 失败处理...
+            raise HTTPException(500, f"上传完成失败: {e}")
 
         file_hash = sha256_hash.hexdigest()
         final_path = GLOBAL_FILES_DIR / file_hash

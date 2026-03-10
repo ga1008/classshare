@@ -6,8 +6,10 @@ from .config import DB_PATH
 def get_db_connection():
     """获取 SQLite 数据库连接"""
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.execute("PRAGMA foreign_keys = ON;")  # 启用外键约束
+        # 增加 timeout 避免高并发时的瞬间锁死报错
+        conn = sqlite3.connect(DB_PATH, timeout=20.0)
+        conn.execute("PRAGMA journal_mode=WAL;")  # 核心优化：开启 WAL 模式支持高并发读写
+        conn.execute("PRAGMA foreign_keys = ON;")
         conn.row_factory = sqlite3.Row
         return conn
     except sqlite3.Error as e:

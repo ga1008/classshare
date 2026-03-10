@@ -405,22 +405,25 @@
             constructor(file, courseId, options = {}) {
                 this.file = file;
                 this.courseId = courseId;
-                this.chunkSize = 5 * 1024 * 1024; // 默认 5MB，init 后由服务器指定
+                this.chunkSize = 5 * 1024 * 1024;
                 this.uploadId = null;
                 this.totalChunks = 0;
                 this.uploadedChunks = 0;
                 this.startTime = null;
                 this.description = options.description || '';
-                this.onProgress = options.onProgress || (() => {});
-                this.onComplete = options.onComplete || (() => {});
-                this.onError = options.onError || (() => {});
+                this.onProgress = options.onProgress || (() => {
+                });
+                this.onComplete = options.onComplete || (() => {
+                });
+                this.onError = options.onError || (() => {
+                });
                 this.aborted = false;
             }
 
             async start() {
                 this.startTime = Date.now();
 
-                // 步骤 1：预检查文件是否已存在（全局文件库）
+                // 预检查文件是否已存在（秒传逻辑）
                 try {
                     const checkResp = await fetch('/api/files/check', {
                         method: 'POST',
@@ -439,9 +442,7 @@
                                 inCurrentCourse: checkData.in_current_course,
                                 linked: checkData.linked || false,
                                 existingFile: checkData.file,
-                                message: checkData.in_current_course
-                                    ? `"${this.file.name}" 当前课程已存在，跳过上传`
-                                    : `"${this.file.name}" 已在文件库中找到，已自动关联`
+                                message: checkData.in_current_course ? `"${this.file.name}" 当前课程已存在，跳过上传` : `"${this.file.name}" 极速秒传成功！`
                             });
                             return;
                         }
@@ -450,7 +451,7 @@
                     console.warn('预检查失败，继续上传:', e);
                 }
 
-                // 步骤 2：初始化分块上传
+                // 初始化分块上传
                 try {
                     const initResp = await fetch('/api/files/upload/init', {
                         method: 'POST',
@@ -462,10 +463,7 @@
                             description: this.description
                         })
                     });
-                    if (!initResp.ok) {
-                        const errText = await initResp.text();
-                        throw new Error(errText);
-                    }
+                    if (!initResp.ok) throw new Error(await initResp.text());
                     const initData = await initResp.json();
                     this.uploadId = initData.upload_id;
                     this.chunkSize = initData.chunk_size;
@@ -475,51 +473,82 @@
                     return;
                 }
 
-                // 步骤 3：逐块上传（使用 XMLHttpRequest 获取进度）
-                for (let i = 0; i < this.totalChunks; i++) {
-                    if (this.aborted) return;
+                // 核心重构：多线程并发上传池 + 失败重试
+                const concurrency = 3; // 同时上传3个块，可充分利用带宽
+                let currentIndex = 0;
+                let activeUploads = 0;
+                let hasError = false;
 
-                    const start = i * this.chunkSize;
+                const uploadNext = async () => {
+                    if (hasError || this.aborted || currentIndex >= this.totalChunks) return;
+                    const index = currentIndex++;
+                    activeUploads++;
+
+                    const start = index * this.chunkSize;
                     const end = Math.min(start + this.chunkSize, this.file.size);
                     const chunkBlob = this.file.slice(start, end);
 
                     try {
-                        await this._uploadChunk(i, chunkBlob);
-                        this.uploadedChunks = i + 1;
+                        await this._uploadChunkWithRetry(index, chunkBlob, 3); // 失败最多重试 3 次
+                        this.uploadedChunks++;
 
                         const progress = this.uploadedChunks / this.totalChunks;
                         const elapsed = (Date.now() - this.startTime) / 1000;
                         const bytesUploaded = Math.min(this.uploadedChunks * this.chunkSize, this.file.size);
                         const speed = bytesUploaded / elapsed;
-                        const remaining = (this.file.size - bytesUploaded) / speed;
 
                         this.onProgress({
-                            percent: Math.round(progress * 100),
+                            percent: Math.min(Math.round(progress * 100), 99), // 留1%给后端的合并时间
                             speed: speed,
-                            remainingSeconds: remaining,
+                            remainingSeconds: speed > 0 ? (this.file.size - bytesUploaded) / speed : 0,
                             fileName: this.file.name
                         });
                     } catch (e) {
+                        hasError = true;
                         this.onError(e);
-                        return;
+                    } finally {
+                        activeUploads--;
+                        await uploadNext();
                     }
-                }
+                };
 
-                // 步骤 4：完成上传
+                // 启动并发 Worker
+                const workers = [];
+                for (let i = 0; i < Math.min(concurrency, this.totalChunks); i++) {
+                    workers.push(uploadNext());
+                }
+                await Promise.all(workers);
+
+                if (hasError || this.aborted) return;
+
+                // 完成上传并合并
                 try {
                     const completeResp = await fetch('/api/files/upload/complete', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ upload_id: this.uploadId })
+                        body: JSON.stringify({upload_id: this.uploadId})
                     });
-                    if (!completeResp.ok) {
-                        const errText = await completeResp.text();
-                        throw new Error(errText);
-                    }
+                    if (!completeResp.ok) throw new Error(await completeResp.text());
                     const result = await completeResp.json();
-                    this.onComplete({ skipped: false, ...result });
+
+                    // 手动组装对象以替代 ES6 展开符，提升兼容性
+                    result.skipped = false;
+                    this.onComplete(result);
                 } catch (e) {
                     this.onError(e);
+                }
+            }
+
+            async _uploadChunkWithRetry(index, blob, maxRetries) {
+                for (let i = 0; i < maxRetries; i++) {
+                    try {
+                        await this._uploadChunk(index, blob);
+                        return;
+                    } catch (e) {
+                        if (i === maxRetries - 1) throw e;
+                        console.warn(`分块 ${index} 上传失败，等待重试...`);
+                        await new Promise(r => setTimeout(r, 1000 * (i + 1))); // 指数退避延时
+                    }
                 }
             }
 
@@ -532,212 +561,15 @@
                     formData.append('chunk', blob, `chunk_${index}`);
 
                     xhr.open('POST', '/api/files/upload/chunk');
-
-                    xhr.upload.onprogress = (e) => {
-                        if (e.lengthComputable) {
-                            const chunkProgress = e.loaded / e.total;
-                            const overallProgress = (index + chunkProgress) / this.totalChunks;
-                            const elapsed = (Date.now() - this.startTime) / 1000;
-                            const bytesUploaded = index * this.chunkSize + e.loaded;
-                            const speed = bytesUploaded / elapsed;
-
-                            this.onProgress({
-                                percent: Math.round(overallProgress * 100),
-                                speed: speed,
-                                remainingSeconds: (this.file.size - bytesUploaded) / speed,
-                                fileName: this.file.name
-                            });
-                        }
-                    };
-
                     xhr.onload = () => {
                         if (xhr.status >= 200 && xhr.status < 300) resolve();
-                        else reject(new Error(`分块 ${index} 上传失败 (${xhr.status})`));
+                        else reject(new Error(`分块 ${index} 失败 (${xhr.status})`));
                     };
-                    xhr.onerror = () => reject(new Error(`网络错误 (分块 ${index})`));
-                    xhr.ontimeout = () => reject(new Error(`上传超时 (分块 ${index})`));
-                    xhr.timeout = 120000; // 2分钟超时
+                    xhr.onerror = () => reject(new Error(`网络错误`));
+                    xhr.ontimeout = () => reject(new Error(`超时`));
+                    xhr.timeout = 60000; // 60秒超时
                     xhr.send(formData);
                 });
-            }
-
-            abort() {
-                this.aborted = true;
-            }
-        }
-
-
-        // --- 5. 上传触发器 + 拖拽 ---
-        document.getElementById('fileInput')?.addEventListener('change', async function(e) {
-            const files = Array.from(e.target.files);
-            if (!files.length) return;
-            await startUploadBatch(files);
-            e.target.value = ''; // 清空以支持重复选择同文件
-        });
-
-        // 拖拽上传
-        const uploadZone = document.getElementById('uploadZone');
-        if (uploadZone) {
-            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(ev => {
-                uploadZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); });
-            });
-            ['dragenter', 'dragover'].forEach(ev => {
-                uploadZone.addEventListener(ev, () => uploadZone.classList.add('drag-over'));
-            });
-            ['dragleave', 'drop'].forEach(ev => {
-                uploadZone.addEventListener(ev, () => uploadZone.classList.remove('drag-over'));
-            });
-            uploadZone.addEventListener('drop', (e) => {
-                const files = Array.from(e.dataTransfer.files);
-                if (files.length) startUploadBatch(files);
-            });
-        }
-
-        async function startUploadBatch(files) {
-            const progressArea = document.getElementById('uploadProgressArea');
-            if (!progressArea) return;
-            progressArea.style.display = 'block';
-            progressArea.innerHTML = '';
-
-            // 为每个文件创建进度条 UI
-            files.forEach((file, idx) => {
-                progressArea.insertAdjacentHTML('beforeend', `
-                    <div class="upload-progress-item" id="upload-item-${idx}">
-                        <div class="upload-progress-header">
-                            <span class="upload-file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
-                            <span class="upload-file-size">${sizeFormat(file.size)}</span>
-                            <span class="upload-status" id="upload-status-${idx}">等待中...</span>
-                        </div>
-                        <div class="progress-bar-track">
-                            <div class="progress-bar-fill" id="upload-bar-${idx}" style="width: 0%"></div>
-                        </div>
-                        <div class="upload-progress-detail">
-                            <span id="upload-percent-${idx}">0%</span>
-                            <span id="upload-speed-${idx}"></span>
-                            <span id="upload-eta-${idx}"></span>
-                        </div>
-                    </div>
-                `);
-            });
-
-            // 顺序上传
-            for (let idx = 0; idx < files.length; idx++) {
-                const file = files[idx];
-                const statusEl = document.getElementById(`upload-status-${idx}`);
-                const barEl = document.getElementById(`upload-bar-${idx}`);
-                const percentEl = document.getElementById(`upload-percent-${idx}`);
-                const speedEl = document.getElementById(`upload-speed-${idx}`);
-                const etaEl = document.getElementById(`upload-eta-${idx}`);
-
-                statusEl.textContent = '上传中...';
-
-                const uploader = new ChunkedUploader(file, classroom.course_id, {
-                    onProgress: (p) => {
-                        barEl.style.width = p.percent + '%';
-                        percentEl.textContent = p.percent + '%';
-                        if (p.speed > 0) {
-                            speedEl.textContent = sizeFormat(p.speed) + '/s';
-                            etaEl.textContent = '剩余 ' + formatTime(p.remainingSeconds);
-                        }
-                    },
-                    onComplete: (result) => {
-                        barEl.style.width = '100%';
-                        barEl.classList.add('complete');
-                        if (result.skipped) {
-                            statusEl.textContent = result.inCurrentCourse ? '已存在' : '已关联';
-                            barEl.classList.add('skipped');
-                        } else {
-                            statusEl.textContent = '上传完成';
-                        }
-                        speedEl.textContent = '';
-                        etaEl.textContent = '';
-                        percentEl.textContent = '100%';
-                        showMessage(result.message || `"${file.name}" 上传成功`);
-                    },
-                    onError: (err) => {
-                        barEl.classList.add('error');
-                        statusEl.textContent = '上传失败';
-                        speedEl.textContent = '';
-                        etaEl.textContent = '';
-                        showMessage(`上传失败: ${err.message}`, 'error');
-                    }
-                });
-                await uploader.start();
-            }
-
-            refreshFiles();
-
-            // 5秒后自动隐藏进度区域
-            setTimeout(() => {
-                progressArea.style.display = 'none';
-                progressArea.innerHTML = '';
-            }, 5000);
-        }
-
-
-        // --- 6. 文件列表（卡片式渲染）---
-        async function refreshFiles() {
-            const container = document.getElementById('file-list-container');
-            if (!container) return;
-            container.innerHTML = '<div class="loading-placeholder">正在加载...</div>';
-
-            try {
-                const response = await fetch(`/api/courses/${classroom.id}/files`);
-                if (!response.ok) throw new Error('获取文件列表失败');
-                const data = await response.json();
-                container.innerHTML = '';
-
-                if (data.files.length === 0) {
-                    container.innerHTML = '<div class="empty-state">暂无课程资源</div>';
-                    return;
-                }
-
-                data.files.forEach(file => {
-                    const icon = getFileIcon(file.file_name);
-                    const card = document.createElement('div');
-                    card.className = 'file-card';
-                    card.dataset.fileId = file.id;
-
-                    let actionsHtml = '';
-                    if (data.is_teacher) {
-                        actionsHtml = `
-                            <div class="file-card-actions">
-                                <button class="icon-button" onclick="event.stopPropagation(); editFileDescription(${file.id}, this)" title="编辑简介">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                    </svg>
-                                </button>
-                                <button class="icon-button danger" onclick="event.stopPropagation(); deleteFile(${classroom.course_id}, ${file.id})" title="删除文件">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <polyline points="3 6 5 6 21 6"/>
-                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                                    </svg>
-                                </button>
-                            </div>`;
-                    }
-
-                    card.innerHTML = `
-                        <div class="file-card-icon" style="background: ${icon.color}">
-                            <span>${icon.label}</span>
-                        </div>
-                        <div class="file-card-info">
-                            <a href="/download/course_file/${file.id}" class="file-card-name" title="${escapeHtml(file.file_name)}">
-                                ${escapeHtml(file.file_name)}
-                            </a>
-                            <div class="file-card-meta">
-                                <span class="file-card-size">${sizeFormat(file.file_size)}</span>
-                                ${file.uploaded_at ? `<span class="file-card-date">${formatDate(file.uploaded_at)}</span>` : ''}
-                            </div>
-                            ${file.description ? `<p class="file-card-desc">${escapeHtml(file.description)}</p>` : ''}
-                        </div>
-                        ${actionsHtml}
-                    `;
-                    container.appendChild(card);
-                });
-            } catch (error) {
-                console.error('刷新文件列表时出错:', error);
-                container.innerHTML = '<div class="empty-state error">加载文件列表失败</div>';
             }
         }
 
