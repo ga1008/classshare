@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>作业详情 - {{ assignment.title }}</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        :root {
+            --primary-color: #007bff;
+            --success-color: #28a745;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --bg-color: #f4f7f6;
+            --panel-bg-color: #ffffff;
+            --text-color: #333;
+            --border-color: #e0e0e0;
+        }
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+        }
+        .header {
+            background: var(--panel-bg-color);
+            padding: 15px 30px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .header h1 { margin: 0; font-size: 1.5rem; }
+        .header a { text-decoration: none; color: var(--primary-color); font-weight: 500; }
+
+        .main-layout {
+            display: flex;
+            max-width: 1200px;
+            margin: 20px auto;
+            gap: 20px;
+            padding: 0 20px;
+        }
+        .assignment-details { flex: 2; }
+        .submission-panel { flex: 1; }
+
+        .panel {
+            background: var(--panel-bg-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        .panel-header {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .panel-header h2 { margin: 0; font-size: 1.2rem; }
+        .panel-body { padding: 20px; }
+
+        /* Markdown display */
+        .md-content { line-height: 1.7; }
+        .md-content h1, .md-content h2, .md-content h3 { border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        .md-content ul, .md-content ol { padding-left: 20px; }
+        .md-content code { background: #f1f1f1; padding: 2px 5px; border-radius: 4px; font-family: monospace; }
+        .md-content pre { background: #f1f1f1; padding: 10px; border-radius: 5px; overflow-x: auto; }
+
+        /* Status boxes */
+        .status-box {
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .status-box.info {
+            background: #e6f7ff;
+            border: 1px solid #91d5ff;
+        }
+        .status-box.success {
+            background: #f6ffed;
+            border: 1px solid #b7eb8f;
+        }
+        .status-box.warning {
+            background: #fff7e6;
+            border: 1px solid #ffd591;
+        }
+        .status-box.error {
+            background: #fff1f0;
+            border: 1px solid #ffa39e;
+        }
+        .status-box h3 { margin: 0 0 10px; }
+        .score {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--success-color);
+            margin: 10px 0;
+        }
+
+        /* File list */
+        .file-list { margin: 15px 0; }
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            margin-bottom: 5px;
+        }
+        .file-name { flex: 1; }
+        .file-download {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        /* Upload form */
+        #upload-form { display: flex; flex-direction: column; gap: 15px; }
+        #file-drop-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            background: #fafafa;
+            transition: all 0.3s;
+        }
+        #file-drop-area.drag-over {
+            border-color: var(--primary-color);
+            background: #f0f8ff;
+        }
+        #file-input { display: none; }
+        #file-list { margin-top: 15px; }
+        #file-list div {
+            padding: 8px 12px;
+            background: #f1f1f1;
+            border-radius: 4px;
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .file-size { color: #666; font-size: 0.9rem; }
+        .remove-file {
+            color: var(--danger-color);
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        #submit-btn {
+            padding: 12px 20px;
+            border: none;
+            background: var(--primary-color);
+            color: white;
+            border-radius: 5px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        #submit-btn:hover { background: #0056b3; }
+        #submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .upload-status {
+            margin-top: 10px;
+            font-weight: 500;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .upload-status.success { background: #f6ffed; color: var(--success-color); }
+        .upload-status.error { background: #fff1f0; color: var(--danger-color); }
+        .upload-status.info { background: #e6f7ff; color: var(--primary-color); }
+
+        /* Assignment status badge */
+        .assignment-status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            margin-left: 10px;
+        }
+        .status-published { background: #f6ffed; color: var(--success-color); }
+        .status-closed { background: #fff2e8; color: #fa541c; }
+        .status-new { background: #e6f7ff; color: var(--primary-color); }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>
+            {{ assignment.title }}
+            <span class="assignment-status status-{{ assignment.status }}">
+                {% if assignment.status == 'published' %}已发布
+                {% elif assignment.status == 'closed' %}已截止
+                {% else %}新创建
+                {% endif %}
+            </span>
+        </h1>
+        <a href="/dashboard">&larr; 返回仪表盘</a>
+    </div>
+
+    <div class="main-layout">
+        <!-- 左侧：作业详情 -->
+        <div class="assignment-details">
+            <div class="panel">
+                <div class="panel-header"><h2>作业要求</h2></div>
+                <div class="panel-body">
+                    <div class="md-content" id="assignment-requirements"></div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header"><h2>评分标准</h2></div>
+                <div class="panel-body">
+                    <div class="md-content" id="assignment-rubric"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：提交面板 -->
+        <div class="submission-panel">
+            <div class="panel">
+                <div class="panel-header"><h2>我的提交</h2></div>
+                <div class="panel-body">
+                    {% if submission %}
+                        <!-- 已提交的情况 -->
+                        {% if submission.status == 'graded' %}
+                            <div class="status-box success">
+                                <h3>✅ 已批改</h3>
+                                <div class="score">得分: {{ submission.score }}/100</div>
+                                {% if submission.feedback_md %}
+                                    <h4>教师评语:</h4>
+                                    <div class="md-content" id="feedback-content"></div>
+                                {% endif %}
+                            </div>
+                        {% elif submission.status == 'grading' %}
+                            <div class="status-box warning">
+                                <h3>⏳ 批改中</h3>
+                                <p>AI 正在努力批改您的作业，请稍后刷新查看结果。</p>
+                            </div>
+                        {% else %}
+                            <div class="status-box info">
+                                <h3>📤 已提交</h3>
+                                <p>已成功提交，等待教师批改。</p>
+                                <p><strong>提交时间:</strong> <span id="submitted-time">{{ submission.submitted_at }}</span></p>
+                            </div>
+                        {% endif %}
+
+                        <h4>您提交的文件:</h4>
+                        <div class="file-list">
+                            {% for file in submission_files %}
+                                <div class="file-item">
+                                    <span class="file-name">{{ file.original_filename }}</span>
+                                    <a href="/submissions/download/{{ file.id }}" class="file-download" target="_blank">下载</a>
+                                </div>
+                            {% endfor %}
+                        </div>
+
+                    {% elif assignment.status == 'published' %}
+                        <!-- 未提交且作业已发布，显示上传表单 -->
+                        <div class="status-box info">
+                            <h3>📝 提交作业</h3>
+                            <p>请上传您的作业文件，文件总大小不能超过 {{ max_upload_mb }} MB。</p>
+                        </div>
+
+                        <form id="upload-form" onsubmit="submitHomework(event)">
+                            <div id="file-drop-area">
+                                <p>📁 将文件拖拽到此处，或点击选择文件</p>
+                                <p style="font-size: 0.9rem; color: #666;">支持多个文件，单个文件不超过 {{ max_upload_mb }} MB</p>
+                                <input type="file" id="file-input" multiple>
+                            </div>
+                            <div id="file-list"></div>
+                            <button type="submit" id="submit-btn">确认提交</button>
+                            <div id="upload-status" class="upload-status"></div>
+                        </form>
+
+                    {% else %}
+                        <!-- 作业未发布或已截止 -->
+                        {% if assignment.status == 'closed' %}
+                            <div class="status-box error">
+                                <h3>❌ 作业已截止</h3>
+                                <p>您未能在截止前提交作业。</p>
+                            </div>
+                        {% else %}
+                            <div class="status-box info">
+                                <h3>⏸️ 作业未发布</h3>
+                                <p>此作业尚未发布，暂时无法提交。</p>
+                            </div>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- 作业信息卡片 -->
+            <div class="panel">
+                <div class="panel-header"><h2>作业信息</h2></div>
+                <div class="panel-body">
+                    <p><strong>作业状态:</strong>
+                        <span class="assignment-status status-{{ assignment.status }}">
+                            {% if assignment.status == 'published' %}已发布
+                            {% elif assignment.status == 'closed' %}已截止
+                            {% else %}新创建
+                            {% endif %}
+                        </span>
+                    </p>
+                    <p><strong>批改模式:</strong>
+                        {% if assignment.grading_mode == 'manual' %}手动批改
+                        {% elif assignment.grading_mode == 'auto' %}自动批改
+                        {% else %}混合模式
+                        {% endif %}
+                    </p>
+                    <p><strong>创建时间:</strong> <span id="created-time">{{ assignment.created_at if assignment.created_at else '未知' }}</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        // 日期格式化函数
+        function formatDateTime(dateString) {
+            if (!dateString || dateString === '未知') return '未知';
+
+            try {
+                const date = new Date(dateString);
+                if (isNaN(date.getTime())) {
+                    return dateString; // 如果无法解析，返回原字符串
+                }
+
+                // 格式化为本地日期时间字符串
+                return date.toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            } catch (error) {
+                console.error('日期格式化错误:', error);
+                return dateString;
+            }
+        }
+
+        // 初始化页面
+        document.addEventListener('DOMContentLoaded', function() {
+            // 渲染Markdown内容
+            const requirementsElement = document.getElementById('assignment-requirements');
+            const rubricElement = document.getElementById('assignment-rubric');
+
+            if (requirementsElement) {
+                requirementsElement.innerHTML = marked.parse({{ assignment.requirements_md | tojson }} || '暂无内容');
+            }
+
+            if (rubricElement) {
+                rubricElement.innerHTML = marked.parse({{ assignment.rubric_md | tojson }} || '暂无内容');
+            }
+
+            // 渲染评语（如果存在）
+            const feedbackElement = document.getElementById('feedback-content');
+            {% if submission and submission.feedback_md %}
+            if (feedbackElement) {
+                feedbackElement.innerHTML = marked.parse({{ submission.feedback_md | tojson }});
+            }
+            {% endif %}
+
+            // 格式化日期显示
+            const submittedTimeElement = document.getElementById('submitted-time');
+            if (submittedTimeElement) {
+                submittedTimeElement.textContent = formatDateTime(submittedTimeElement.textContent);
+            }
+
+            const createdTimeElement = document.getElementById('created-time');
+            if (createdTimeElement) {
+                createdTimeElement.textContent = formatDateTime(createdTimeElement.textContent);
+            }
+
+            // 初始化文件上传功能（如果作业可提交）
+            {% if not submission and assignment.status == 'published' %}
+            initFileUpload();
+            {% endif %}
+        });
+
+        // 文件上传功能
+        {% if not submission and assignment.status == 'published' %}
+        let selectedFiles = [];
+        const MAX_SIZE = {{ max_upload_mb }} * 1024 * 1024;
+
+        function initFileUpload() {
+            const dropArea = document.getElementById('file-drop-area');
+            const fileInput = document.getElementById('file-input');
+            const fileListDiv = document.getElementById('file-list');
+            const submitBtn = document.getElementById('submit-btn');
+            const uploadStatus = document.getElementById('upload-status');
+
+            // 点击选择文件
+            dropArea.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+            // 拖拽功能
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, preventDefaults, false);
+            });
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropArea.addEventListener(eventName, () => dropArea.classList.add('drag-over'), false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, () => dropArea.classList.remove('drag-over'), false);
+            });
+
+            dropArea.addEventListener('drop', handleDrop, false);
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            function handleDrop(e) {
+                handleFiles(e.dataTransfer.files);
+            }
+        }
+
+        function handleFiles(files) {
+            const newFiles = Array.from(files);
+            const validFiles = [];
+
+            for (const file of newFiles) {
+                if (file.size > MAX_SIZE) {
+                    alert(`文件 "${file.name}" 超过 {{ max_upload_mb }} MB 限制，已跳过。`);
+                    continue;
+                }
+                validFiles.push(file);
+            }
+
+            selectedFiles = [...selectedFiles, ...validFiles];
+            updateFileList();
+        }
+
+        function updateFileList() {
+            const fileListDiv = document.getElementById('file-list');
+            const submitBtn = document.getElementById('submit-btn');
+
+            fileListDiv.innerHTML = '';
+
+            if (selectedFiles.length === 0) {
+                fileListDiv.innerHTML = '<p style="color: #888; text-align: center;">未选择任何文件</p>';
+                submitBtn.disabled = true;
+                return;
+            }
+
+            let totalSize = 0;
+
+            selectedFiles.forEach((file, index) => {
+                const fileSizeMB = (file.size / 1024 / 1024).toFixed(2);
+                totalSize += file.size;
+
+                const fileElement = document.createElement('div');
+                fileElement.innerHTML = `
+                    <span>${file.name}</span>
+                    <span>
+                        <span class="file-size">${fileSizeMB} MB</span>
+                        <span class="remove-file" onclick="removeFile(${index})">❌</span>
+                    </span>
+                `;
+                fileListDiv.appendChild(fileElement);
+            });
+
+            // 检查总大小
+            if (totalSize > MAX_SIZE) {
+                fileListDiv.innerHTML += `
+                    <div style="color: var(--danger-color); font-weight: bold; text-align: center;">
+                        总大小超过 {{ max_upload_mb }} MB 限制！
+                    </div>
+                `;
+                submitBtn.disabled = true;
+            } else {
+                submitBtn.disabled = false;
+            }
+        }
+
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            updateFileList();
+        }
+
+        async function submitHomework(event) {
+            event.preventDefault();
+
+            if (selectedFiles.length === 0) {
+                showUploadStatus('请至少选择一个文件。', 'error');
+                return;
+            }
+
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.textContent = '提交中...';
+
+            showUploadStatus('正在上传文件，请勿关闭页面...', 'info');
+
+            const formData = new FormData();
+            selectedFiles.forEach(file => {
+                formData.append('files', file);
+            });
+
+            try {
+                const response = await fetch('/api/assignments/{{ assignment.id }}/submit', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    showUploadStatus('提交成功！正在刷新页面...', 'success');
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || '提交失败');
+                }
+            } catch (err) {
+                showUploadStatus('错误: ' + err.message, 'error');
+                submitBtn.disabled = false;
+                submitBtn.textContent = '确认提交';
+            }
+        }
+
+        function showUploadStatus(message, type) {
+            const statusElement = document.getElementById('upload-status');
+            statusElement.textContent = message;
+            statusElement.className = `upload-status ${type}`;
+        }
+        {% endif %}
+    </script>
+</body>
+</html>

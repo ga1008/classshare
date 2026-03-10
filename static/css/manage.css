@@ -1,0 +1,278 @@
+
+:root {
+    --primary-color: #007bff;
+    --success-color: #28a745;
+    --bg-color: #f4f7f6;
+    --panel-bg: #ffffff;
+    --border-color: #e0e0e0;
+    --text-color: #333;
+    --text-light: #555;
+    --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: var(--font-family), monospace;
+    background: var(--bg-color);
+    color: var(--text-color);
+    line-height: 1.6;
+}
+
+.header {
+    background: var(--panel-bg);
+    padding: 15px 30px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.header h1 {
+    font-size: 1.5rem;
+}
+.header h1 a {
+    text-decoration: none;
+    color: inherit;
+}
+.header .nav-links a {
+    text-decoration: none;
+    color: var(--primary-color);
+    margin-left: 20px;
+    font-weight: 500;
+}
+.header .nav-links a:hover {
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 20px auto;
+    padding: 0 20px;
+}
+
+/* 标签页导航 */
+.tab-nav {
+    display: flex;
+    border-bottom: 2px solid var(--border-color);
+    margin-bottom: 20px;
+}
+.tab-btn {
+    padding: 10px 20px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--text-light);
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px; /* 关键：让激活的边框覆盖父边框 */
+}
+.tab-btn.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+}
+
+/* 标签页内容 */
+.tab-content {
+    display: none;
+}
+.tab-content.active {
+    display: block;
+}
+
+/* 布局 */
+.grid-2-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+.grid-1-col {
+     display: grid;
+     grid-template-columns: 1fr;
+     gap: 20px;
+     max-width: 800px;
+     margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+    .grid-2-col {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* 面板 */
+.panel {
+    background: var(--panel-bg);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    overflow: hidden;
+}
+.panel-header {
+    background: #f8f9fa;
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+.panel-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+}
+.panel-body {
+    padding: 20px;
+}
+.panel-body h3 {
+    font-size: 1.1rem;
+    margin-bottom: 15px;
+}
+
+/* 表单 */
+.form-group {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 15px;
+}
+.form-group label {
+    font-weight: 500;
+    margin-bottom: 5px;
+}
+.form-group input,
+.form-group select,
+.form-group textarea {
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 1rem;
+    font-family: var(--font-family);
+}
+.form-group textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+.form-group .description {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    margin-top: 5px;
+}
+
+/* 按钮 */
+.btn {
+    padding: 10px 15px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 1rem;
+    color: white;
+    text-align: center;
+    display: inline-block;
+    margin-top: 10px;
+}
+.btn-primary {
+    background: var(--primary-color);
+}
+.btn-primary:hover {
+    background: #0056b3;
+}
+.btn-success {
+    background: var(--success-color);
+}
+.btn-success:hover {
+    background: #1e7e34;
+}
+.btn-block {
+     display: block;
+     width: 100%;
+}
+
+/* 列表 */
+.item-list {
+    list-style: none;
+    padding: 0;
+    max-height: 250px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+}
+.item-list li {
+    padding: 10px 15px;
+    border-bottom: 1px solid #eee;
+}
+.item-list li:last-child {
+    border-bottom: none;
+}
+
+.divider {
+    border-top: 1px solid var(--border-color);
+    margin: 20px 0;
+}
+
+.placeholder {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-light);
+    background: #fdfdfd;
+    border: 1px dashed var(--border-color);
+    border-radius: 5px;
+}
+.hidden {
+    display: none;
+}
+
+
+.page-wrapper {
+    display: flex;
+}
+
+.sidebar {
+    width: var(--sidebar-width);
+    background: var(--panel-bg);
+    border-right: 1px solid var(--border-color);
+    height: calc(100vh - 65px); /* 减去 header 高度 */
+    padding: 20px 0;
+    position: sticky;
+    top: 65px; /* 匹配 header 高度 */
+}
+.sidebar-nav {
+    list-style: none;
+}
+.sidebar-nav li a {
+    display: block;
+    padding: 12px 20px;
+    text-decoration: none;
+    color: var(--text-color);
+    font-weight: 500;
+    border-left: 3px solid transparent;
+}
+.sidebar-nav li a:hover {
+    background: #f8f9fa;
+}
+.sidebar-nav li a.active {
+    color: var(--primary-color);
+    background: #f0f7ff;
+    border-left-color: var(--primary-color);
+}
+
+.main-content {
+    flex: 1;
+    padding: 20px;
+    max-width: calc(1200px - var(--sidebar-width));
+}
+
+.header {
+     /* 确保 header 在最上层 */
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+/* ... (此处省略原 .btn, .panel, .form-group 等样式) ... */
+.btn-danger {
+    background: var(--danger-color);
+}
+.btn-danger:hover {
+    background: #c82333;
+}

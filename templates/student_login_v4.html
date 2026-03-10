@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学生登录</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f7f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-container { background: #fff; padding: 40px; border-radius: 12px; box-shadow: 0 8px 25px rgba(0,0,0,0.1); width: 400px; text-align: center; }
+        h2 { margin: 0 0 30px; color: #007bff; }
+        form { display: flex; flex-direction: column; }
+        input { padding: 15px; margin-bottom: 20px; border-radius: 8px; border: 1px solid #ddd; font-size: 16px; }
+        button { padding: 15px; border-radius: 8px; border: none; background: #007bff; color: white; font-size: 18px; cursor: pointer; }
+        .footer-link { margin-top: 20px; }
+        .footer-link a { color: #28a745; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h2>学生登录</h2>
+        <form action="/student/login" method="post">
+            <input type="text" name="name" placeholder="请输入姓名" required>
+            <input type="text" name="student_id_number" placeholder="请输入学号" required>
+            <button type="submit">登 录</button>
+        </form>
+    </div>
+</body>
+</html>

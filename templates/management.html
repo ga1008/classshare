@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理中心 - 教学辅助平台</title>
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --success-color: #28a745;
+            --bg-color: #f4f7f6;
+            --panel-bg: #ffffff;
+            --border-color: #e0e0e0;
+            --text-color: #333;
+            --text-light: #555;
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+        }
+
+        .header {
+            background: var(--panel-bg);
+            padding: 15px 30px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+        }
+        .header h1 a {
+            text-decoration: none;
+            color: inherit;
+        }
+        .header .nav-links a {
+            text-decoration: none;
+            color: var(--primary-color);
+            margin-left: 20px;
+            font-weight: 500;
+        }
+        .header .nav-links a:hover {
+            text-decoration: underline;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+
+        /* 标签页导航 */
+        .tab-nav {
+            display: flex;
+            border-bottom: 2px solid var(--border-color);
+            margin-bottom: 20px;
+        }
+        .tab-btn {
+            padding: 10px 20px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: var(--text-light);
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px; /* 关键：让激活的边框覆盖父边框 */
+        }
+        .tab-btn.active {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
+        }
+
+        /* 标签页内容 */
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+
+        /* 布局 */
+        .grid-2-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .grid-1-col {
+             display: grid;
+             grid-template-columns: 1fr;
+             gap: 20px;
+             max-width: 800px;
+             margin: 0 auto;
+        }
+
+        @media (max-width: 768px) {
+            .grid-2-col {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* 面板 */
+        .panel {
+            background: var(--panel-bg);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            overflow: hidden;
+        }
+        .panel-header {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .panel-header h2 {
+            margin: 0;
+            font-size: 1.25rem;
+        }
+        .panel-body {
+            padding: 20px;
+        }
+        .panel-body h3 {
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+        }
+
+        /* 表单 */
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            font-weight: 500;
+            margin-bottom: 5px;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 1rem;
+            font-family: var(--font-family);
+        }
+        .form-group textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+        .form-group .description {
+            font-size: 0.85rem;
+            color: var(--text-light);
+            margin-top: 5px;
+        }
+
+        /* 按钮 */
+        .btn {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 1rem;
+            color: white;
+            text-align: center;
+            display: inline-block;
+            margin-top: 10px;
+        }
+        .btn-primary {
+            background: var(--primary-color);
+        }
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+        .btn-success {
+            background: var(--success-color);
+        }
+        .btn-success:hover {
+            background: #1e7e34;
+        }
+        .btn-block {
+             display: block;
+             width: 100%;
+        }
+
+        /* 列表 */
+        .item-list {
+            list-style: none;
+            padding: 0;
+            max-height: 250px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+        }
+        .item-list li {
+            padding: 10px 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .item-list li:last-child {
+            border-bottom: none;
+        }
+
+        .divider {
+            border-top: 1px solid var(--border-color);
+            margin: 20px 0;
+        }
+
+        .placeholder {
+            padding: 20px;
+            text-align: center;
+            color: var(--text-light);
+            background: #fdfdfd;
+            border: 1px dashed var(--border-color);
+            border-radius: 5px;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1><a href="/dashboard">管理中心</a></h1>
+        <div class="nav-links">
+            <a href="/dashboard">我的仪表盘</a>
+            <a href="/logout">退出登录</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="tab-nav">
+            <button class="tab-btn active" data-tab="tab-setup">1. 班级与课程</button>
+            <button class="tab-btn" data-tab="tab-offering">2. 开设新课堂</button>
+            <button class="tab-btn" data-tab="tab-ai-config">3. 课堂AI配置</button>
+        </div>
+
+        <div id="tab-setup" class="tab-content active">
+            <div class="grid-2-col">
+                <div class="panel">
+                    <div class="panel-header"><h2>班级管理</h2></div>
+                    <div class="panel-body">
+                        <h3>新建班级 (从Excel)</h3>
+                        <form id="form-create-class">
+                            <div class="form-group">
+                                <label for="class_name">班级名称 (如: 软工2406班)</label>
+                                <input type="text" id="class_name" name="class_name" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="roster_file">学生名单Excel/CSV</label>
+                                <input type="file" id="roster_file" name="file" required accept=".xlsx,.xls,.csv">
+                                <span class="description">文件需包含 '姓名' 和 '学号' 两列。</span>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-block">创建班级并导入学生</button>
+                        </form>
+                        <div class="divider"></div>
+                        <h3>我的班级</h3>
+                        <ul class="item-list">
+                            {% for class in my_classes %}
+                                <li>{{ class.name }}</li>
+                            {% else %}
+                                <li class="placeholder">暂无班级</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header"><h2>课程管理</h2></div>
+                    <div class="panel-body">
+                        <h3>新建课程 (模板)</h3>
+                        <form id="form-create-course">
+                            <div class="form-group">
+                                <label for="course_name">课程名称 (如: Python程序设计)</label>
+                                <input type="text" id="course_name" name="name" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="description">课程简介</label>
+                                <textarea id="description" name="description" rows="3"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label for="credits">学分</label>
+                                <input type="number" id="credits" name="credits" value="1.0" step="0.5" min="0">
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-block">创建新课程</button>
+                        </form>
+                        <div class="divider"></div>
+                        <h3>我的课程</h3>
+                        <ul class="item-list">
+                            {% for course in my_courses %}
+                                <li>{{ course.name }}</li>
+                            {% else %}
+                                <li class="placeholder">暂无课程</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-offering" class="tab-content">
+            <div class="grid-1-col">
+                <div class="panel">
+                    <div class="panel-header"><h2>开设新课堂 (关联)</h2></div>
+                    <div class="panel-body">
+                        <p class="description" style="margin-bottom: 15px;">
+                            “课堂”是将您的一个“班级”和一门“课程”在特定学期关联起来的实例。
+                        </p>
+                        <form id="form-create-offering">
+                            <div class="form-group">
+                                <label for="select-class">选择班级</label>
+                                <select id="select-class" name="class_id" required>
+                                    <option value="">-- 请选择班级 --</option>
+                                    {% for class in my_classes %}
+                                    <option value="{{ class.id }}">{{ class.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="select-course">选择课程</label>
+                                <select id="select-course" name="course_id" required>
+                                    <option value="">-- 请选择课程 --</option>
+                                    {% for course in my_courses %}
+                                    <option value="{{ course.id }}">{{ course.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="semester">学期 (可选)</label>
+                                <input type="text" id="semester" name="semester" placeholder="例如: 2025-2026-1 或 2025-Fall">
+                            </div>
+                            <button type="submit" class="btn btn-success btn-block">关联班级与课程</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header"><h2>已开设的课堂</h2></div>
+                    <div class="panel-body">
+                         <ul class="item-list">
+                            {% for offering in my_offerings %}
+                                <li>
+                                    <strong>{{ offering.course_name }}</strong> - {{ offering.class_name }}
+                                    <span style="color: #666; font-size: 0.9rem; float: right;">
+                                        {{ offering.semester }}
+                                    </span>
+                                </li>
+                            {% else %}
+                                <li class="placeholder">暂未开设任何课堂</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-ai-config" class="tab-content">
+            <div class="grid-1-col">
+                <div class="panel">
+                    <div class="panel-header"><h2>课堂AI助手配置</h2></div>
+                    <div class="panel-body">
+
+                        {% if my_offerings %}
+                        <form id="form-configure-ai">
+                            <div class="form-group">
+                                <label for="ai-select-offering">选择要配置的课堂</label>
+                                <select id="ai-select-offering" name="class_offering_id" required>
+                                    <option value="">-- 请选择一个已开设的课堂 --</option>
+                                    {% for offering in my_offerings %}
+                                    <option value="{{ offering.id }}">{{ offering.course_name }} - {{ offering.class_name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <div id="ai-config-details" class="hidden">
+                                <div class="divider"></div>
+
+                                <div class="form-group">
+                                    <label for="ai-system-prompt">AI 系统提示 (System Prompt)</label>
+                                    <textarea id="ai-system-prompt" name="system_prompt" rows="8" placeholder="例如：
+你是一个专业的《[此处填写课程名称]》课程教学助手。
+你的任务是回答学生关于课程内容的问题，并辅助教师（{{ user_info.name }}）进行教学。
+课程名称: [课程名称]
+班级: [班级名称]
+学生提问时，请结合课程大纲和以下知识点进行回答。
+...
+"></textarea>
+                                    <span class="description">
+                                        定义AI的角色和基本指令。
+                                    </span>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="ai-syllabus">课程大纲 / 知识点</label>
+                                    <textarea id="ai-syllabus" name="syllabus" rows="10" placeholder="请粘贴课程的核心知识点、章节大纲或评分标准...
+- 变量与数据类型
+- 列表、元组、字典
+- 循环与条件判断
+- 函数定义与调用
+...
+"></textarea>
+                                    <span class="description">
+                                        这是AI回答专业问题的主要参考材料 (将用于RAG)。
+                                    </span>
+                                </div>
+
+                                <button type="submit" class="btn btn-success btn-block">保存AI配置</button>
+                            </div>
+                        </form>
+
+                        {% else %}
+
+                        <div class="placeholder">
+                            <p><strong>您还没有开设任何课堂。</strong></p>
+                            <p>请先在 "2. 开设新课堂" 标签页中至少创建一个课堂，然后才能进行AI配置。</p>
+                        </div>
+
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // 辅助函数：处理表单提交
+        async function handleFormSubmit(event, successCallback) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            const url = form.action;
+
+            try {
+                const response = await fetch(url, { method: 'POST', body: formData });
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert(data.message || '操作成功！');
+                    if (successCallback) {
+                        successCallback(data);
+                    } else {
+                        location.reload(); // 默认重载页面
+                    }
+                } else {
+                    alert('操作失败: ' + (data.detail || '未知错误'));
+                }
+            } catch (err) {
+                alert('请求出错: ' + err.message);
+            }
+        }
+
+        // 页面加载完成后运行
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // --- 标签页切换逻辑 ---
+            const tabContainer = document.querySelector('.tab-nav');
+            const tabButtons = document.querySelectorAll('.tab-btn');
+            const tabContents = document.querySelectorAll('.tab-content');
+
+            tabContainer.addEventListener('click', (e) => {
+                const clickedButton = e.target.closest('.tab-btn');
+                if (!clickedButton) return;
+
+                const tabId = clickedButton.dataset.tab;
+
+                // 移除所有 active
+                tabButtons.forEach(btn => btn.classList.remove('active'));
+                tabContents.forEach(content => content.classList.remove('active'));
+
+                // 添加 active
+                clickedButton.classList.add('active');
+                document.getElementById(tabId).classList.add('active');
+            });
+
+            // --- 表单提交绑定 ---
+
+            // 1. 创建班级
+            const formCreateClass = document.getElementById('form-create-class');
+            if(formCreateClass) {
+                formCreateClass.action = '/api/manage/classes/create';
+                formCreateClass.onsubmit = e => handleFormSubmit(e);
+            }
+
+            // 2. 创建课程
+            const formCreateCourse = document.getElementById('form-create-course');
+            if(formCreateCourse) {
+                formCreateCourse.action = '/api/manage/courses/create';
+                formCreateCourse.onsubmit = e => handleFormSubmit(e);
+            }
+
+            // 3. 创建课堂
+            const formCreateOffering = document.getElementById('form-create-offering');
+            if(formCreateOffering) {
+                formCreateOffering.action = '/api/manage/class_offerings/create';
+                formCreateOffering.onsubmit = e => handleFormSubmit(e);
+            }
+
+            // 4. AI 配置 (新功能)
+            const formConfigureAI = document.getElementById('form-configure-ai');
+            const aiSelect = document.getElementById('ai-select-offering');
+            const aiConfigDetails = document.getElementById('ai-config-details');
+
+            if(formConfigureAI) {
+                // (后端实现后) 设置 action
+                formConfigureAI.action = '/api/manage/ai/configure'; // 假设的后端接口
+
+                formConfigureAI.onsubmit = e => handleFormSubmit(e, (data) => {
+                    // 成功回调：不重载页面，只提示成功
+                    alert('AI配置保存成功！');
+                });
+
+                // (后端实现后) TODO: 在选择课堂时，应使用 fetch 加载该课堂已有的AI配置
+                // aiSelect.onchange = async (e) => { ... }
+
+                // 交互：选择了课堂后，才显示配置项
+                aiSelect.addEventListener('change', (e) => {
+                    if (e.target.value) {
+                        aiConfigDetails.classList.remove('hidden');
+                        // (未来) 在这里可以 fetch 加载已有的配置并填充表单
+                    } else {
+                        aiConfigDetails.classList.add('hidden');
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

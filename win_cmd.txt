@@ -1,0 +1,6 @@
+powershell禁用策略
+Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope CurrentUser
+
+pip 设置清华源
+python -m pip install --upgrade pip
+pip config set global.index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>发生错误 - {{ error_code }}</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #f4f7f6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            color: #333;
+        }
+        .status-container {
+            background-color: #ffffff;
+            padding: 40px 50px;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            border-left: 8px solid #dc3545; /* 红色边框表示错误 */
+            max-width: 500px;
+        }
+        .status-container h1 {
+            margin: 0 0 10px;
+            font-size: 3rem;
+            font-weight: 700;
+            color: #dc3545;
+        }
+        .status-container h2 {
+            margin: 0 0 25px;
+            font-size: 1.5rem;
+            font-weight: 500;
+        }
+        .status-container p {
+            font-size: 1rem;
+            color: #555;
+            margin-bottom: 30px;
+        }
+        .status-container a {
+            display: inline-block;
+            padding: 12px 30px;
+            border-radius: 8px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        .status-container a:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="status-container">
+        <h1>{{ error_code }}</h1>
+        <h2>{{ error_title }}</h2>
+        <p>{{ error_message }}</p>
+        <a href="{{ back_url or '/' }}">返回首页</a>
+    </div>
+</body>
+</html>

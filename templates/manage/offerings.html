@@ -1,0 +1,99 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}开设课堂{% endblock %}
+
+{% block content %}
+<div class="grid-1-col">
+    <div class="panel">
+        <div class="panel-header"><h2>开设新课堂 (关联)</h2></div>
+        <div class="panel-body">
+            <p class="description" style="margin-bottom: 15px;">
+                “课堂”是将您的一个“班级”和一门“课程”在特定学期关联起来的实例。
+            </p>
+            <form id="form-create-offering" action="/api/manage/class_offerings/create" method="POST">
+                <div class="form-group">
+                    <label for="select-class">选择班级</label>
+                    <select id="select-class" name="class_id" required>
+                        <option value="">-- 请选择班级 --</option>
+                        {% for class in my_classes %}
+                        <option value="{{ class.id }}">{{ class.name }}</option>
+                        {% else %}
+                        <option value="" disabled>请先创建班级</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="select-course">选择课程</label>
+                    <select id="select-course" name="course_id" required>
+                        <option value="">-- 请选择课程 --</option>
+                        {% for course in my_courses %}
+                        <option value="{{ course.id }}">{{ course.name }}</option>
+                        {% else %}
+                        <option value="" disabled>请先创建课程</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="semester">学期 (可选)</label>
+                    <input type="text" id="semester" name="semester" placeholder="例如: 2025-2026-1 或 2025-Fall">
+                </div>
+                <button type="submit" class="btn btn-success btn-block">关联班级与课程</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header"><h2>已开设的课堂</h2></div>
+        <div class="panel-body">
+            <ul class="item-list">
+                {% for offering in my_offerings %}
+                <li style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong>{{ offering.course_name }}</strong> - {{ offering.class_name }}
+                        {% if offering.semester %}
+                        <span style="color: #666; font-size: 0.9rem; margin-left: 10px;">
+                            ({{ offering.semester }})
+                        </span>
+                        {% endif %}
+                    </div>
+                    <button class="btn btn-danger btn-sm"
+                            data-id="{{ offering.id }}"
+                            data-name="{{ offering.course_name }} - {{ offering.class_name }}"
+                            onclick="deleteOffering(this)">删除</button>
+                </li>
+                {% else %}
+                <li class="placeholder">暂未开设任何课堂</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // 绑定创建课堂表单
+        const formCreateOffering = document.getElementById('form-create-offering');
+        if (formCreateOffering) {
+            formCreateOffering.onsubmit = e => handleFormSubmit(e);
+        }
+    });
+
+    // 删除课堂的 JS
+    async function deleteOffering(button) {
+        const offeringId = button.dataset.id;
+        const offeringName = button.dataset.name;
+        
+        if (!confirm(`确定要删除课堂 "${offeringName}" 吗？\n警告：这将同时删除该课堂的所有AI配置和聊天记录！`)) {
+            return;
+        }
+
+        const data = await apiRequest(`/api/manage/class_offerings/${offeringId}`, 'DELETE');
+        if(data) {
+            alert(data.message || '删除成功！');
+            location.reload();
+        }
+    }
+</script>
+{% endblock %}

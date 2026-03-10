@@ -1,0 +1,23 @@
+# Git 和 OS 文件
+.git
+.gitignore
+.idea
+__pycache__
+*.pyc
+
+# Docker 相关文件
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# 环境变量文件 (将通过 compose 注入)
+.env
+docker.env
+
+# 必须忽略所有数据卷，防止它们被复制到镜像中
+attendance
+chat_logs
+data
+rosters
+shared_files
+homework_submissions

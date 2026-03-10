@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+jinja2
+python-multipart
+qrcode
+pandas
+openpyxl
+xlrd
+python-jose[cryptography]
+tk
+python-dotenv
+aiofiles
+httpx
+openai
+volcengine-python-sdk[ark]
+pillow
+passlib

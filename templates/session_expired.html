@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>会话已过期</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 100px auto;
+            padding: 20px;
+            text-align: center;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .button {
+            background: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <h1>⚠️ 会话已过期</h1>
+
+    <div class="warning">
+        <h3>检测到您的账户在其他位置登录</h3>
+        <p>您的会话已被新的登录强制下线。这通常是因为：</p>
+        <ul style="text-align: left; display: inline-block;">
+            <li>您在另一台设备上登录了同一账户</li>
+            <li>您的网络IP地址发生了变化</li>
+            <li>管理员强制终止了您的会话</li>
+        </ul>
+    </div>
+
+    <p>为了保障账户安全，系统只允许一个活跃会话。</p>
+
+    <a href="/" class="button">重新登录</a>
+
+    <script>
+        // 清除可能残留的cookie
+        document.cookie = "access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+
+        // 5秒后自动跳转
+        setTimeout(() => {
+            window.location.href = '/';
+        }, 5000);
+    </script>
+</body>
+</html>

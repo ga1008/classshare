@@ -1,0 +1,76 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}班级管理{% endblock %}
+
+{% block content %}
+<div class="grid-2-col">
+    <div class="panel">
+        <div class="panel-header"><h2>新建班级 (从Excel)</h2></div>
+        <div class="panel-body">
+            <form id="form-create-class" action="/api/manage/classes/create" method="POST">
+                <div class="form-group">
+                    <label for="class_name">班级名称 (如: 软工2406班)</label>
+                    <input type="text" id="class_name" name="class_name" required>
+                </div>
+                <div class="form-group">
+                    <label for="roster_file">学生名单Excel/CSV</label>
+                    <input type="file" id="roster_file" name="file" required accept=".xlsx,.xls,.csv">
+                    <span class="description">文件需包含 '姓名' 和 '学号' 两列。</span>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">创建班级并导入学生</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header"><h2>我的班级</h2></div>
+        <div class="panel-body">
+            <ul class="item-list">
+                {% for class in my_classes %}
+                <li style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>
+                        {{ class.name }} ({{ class.student_count }}人)
+                    </span>
+                    <div>
+                        <button class="btn btn-danger btn-sm" 
+                                data-id="{{ class.id }}" 
+                                data-name="{{ class.name }}"
+                                onclick="deleteClass(this)">删除</button>
+                    </div>
+                </li>
+                {% else %}
+                <li class="placeholder">暂无班级</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // 绑定创建班级表单
+        const formCreateClass = document.getElementById('form-create-class');
+        if (formCreateClass) {
+            formCreateClass.onsubmit = e => handleFormSubmit(e);
+        }
+    });
+
+    // 删除班级的 JS
+    async function deleteClass(button) {
+        const classId = button.dataset.id;
+        const className = button.dataset.name;
+        
+        if (!confirm(`确定要删除班级 "${className}" 吗？\n警告：这将同时删除该班级下的所有学生和课堂关联！`)) {
+            return;
+        }
+
+        const data = await apiRequest(`/api/manage/classes/${classId}`, 'DELETE');
+        if(data) {
+            alert(data.message || '删除成功！');
+            location.reload();
+        }
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>教师登录</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        :root {
+            --primary-color: #28a745;
+            --background-color: #f4f7f6;
+            --form-background: #ffffff;
+            --text-color: #333;
+            --border-color: #ddd;
+            --button-hover-color: #218838;
+        }
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        .login-container {
+            background-color: var(--form-background);
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+        .login-container h2 {
+            margin: 0 0 10px;
+            font-weight: 700;
+            font-size: 28px;
+            color: var(--primary-color);
+        }
+        .login-container h3 {
+            margin: 0 0 30px;
+            font-weight: 400;
+            font-size: 16px;
+            color: #666;
+        }
+        form { display: flex; flex-direction: column; }
+        input {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            font-size: 16px;
+            font-family: inherit;
+        }
+        input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 8px rgba(40, 167, 69, 0.2);
+        }
+        button {
+            padding: 15px;
+            border-radius: 8px;
+            border: none;
+            background-color: var(--primary-color);
+            color: white;
+            font-size: 18px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover { background-color: var(--button-hover-color); }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h2>教师登录</h2>
+        <h3>( 登录密码已在 .env 文件中配置 )</h3>
+        <form action="/teacher/login" method="post">
+            <input type="text" name="name" placeholder="请输入您的姓名 (将展示给学生)" required autocomplete="off" value="{{ teacher_name }}">
+            <input type="password" name="password" placeholder="请输入密码" required>
+            <button type="submit">登 录</button>
+        </form>
+    </div>
+</body>
+</html>

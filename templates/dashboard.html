@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的仪表盘</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f7f6; margin: 0; }
+        .header { background: #fff; padding: 15px 30px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { margin: 0; font-size: 1.5rem; }
+        .header .user-info { font-size: 1rem; color: #333; }
+        .header .user-info a { color: #dc3545; text-decoration: none; margin-left: 15px; }
+        .container { max-width: 1200px; margin: 20px auto; padding: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        .card { background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden; transition: box-shadow 0.3s; text-decoration: none; color: inherit; }
+        .card:hover { box-shadow: 0 6px 16px rgba(0,0,0,0.1); }
+        .card-header { padding: 20px; background: #007bff; color: white; }
+        .card-header.teacher { background: #28a745; }
+        .card-header h3 { margin: 0; }
+        .card-body { padding: 20px; }
+        .card-body p { margin: 0; color: #555; }
+        .card-body .teacher-name { font-style: italic; margin-top: 10px; }
+        .manage-link { display: inline-block; margin-top: 20px; padding: 10px 15px; background: #6c757d; color: white; border-radius: 5px; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>我的仪表盘</h1>
+        <div class="user-info">
+            欢迎, <strong>{{ user_info.name }}</strong>（{{ user_info.nickname if user_info.nickname else '学生' }}）
+            {% if user_info.role == 'teacher' %}
+            <a href="/manage" class="manage-link" style="margin-top:0; margin-left: 15px; background: #17a2b8;">管理中心</a>
+            {% endif %}
+            <a href="/logout">退出登录</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>我的班级课堂</h2>
+        <div class="grid">
+            {% for offering in class_offerings %}
+            <a href="/classroom/{{ offering.id }}" class="card">
+                <div class="card-header {{ 'teacher' if user_info.role == 'teacher' else '' }}">
+                    <h3>{{ offering.course_name }}</h3>
+                </div>
+                <div class="card-body">
+                    <p><strong>班级:</strong> {{ offering.class_name }}</p>
+                    {% if user_info.role == 'student' %}
+                    <p class="teacher-name"><strong>教师:</strong> {{ offering.teacher_name }}</p>
+                    {% endif %}
+                </div>
+            </a>
+            {% else %}
+            <p>您目前没有加入任何班级课堂。</p>
+            {% endfor %}
+        </div>
+    </div>
+</body>
+</html>

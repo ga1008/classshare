@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }} - 管理中心</title>
+    <link rel="stylesheet" href="/static/css/manage.css">
+</head>
+<body>
+    <div class="header">
+        <h1><a href="/dashboard">管理中心</a></h1>
+        <div class="nav-links">
+            <span>{{ user_info.name }} ({{ user_info.email }})</span>
+            <a href="/dashboard">我的仪表盘</a>
+            <a href="/logout">退出登录</a>
+        </div>
+    </div>
+
+    <div class="page-wrapper">
+        <nav class="sidebar">
+            <ul class="sidebar-nav">
+                <li>
+                    <a href="/manage/classes"
+                       class="{{ 'active' if active_page == 'classes' }}">班级管理</a>
+                </li>
+                <li>
+                    <a href="/manage/courses"
+                       class="{{ 'active' if active_page == 'courses' }}">课程管理</a>
+                </li>
+                <li>
+                    <a href="/manage/offerings"
+                       class="{{ 'active' if active_page == 'offerings' }}">开设课堂</a>
+                </li>
+                <li>
+                    <a href="/manage/ai"
+                       class="{{ 'active' if active_page == 'ai' }}">课堂AI配置</a>
+                </li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            {% block content %}
+            {% endblock %}
+        </main>
+    </div>
+
+    <script>
+        // 辅助函数：处理 API 请求 (支持 FormData 和 JSON)
+        async function apiRequest(url, method = 'POST', body = null) {
+            try {
+                const options = { method };
+                if (body) {
+                    if (body instanceof FormData) {
+                        options.body = body;
+                    } else {
+                        options.body = JSON.stringify(body);
+                        options.headers = { 'Content-Type': 'application/json' };
+                    }
+                }
+                const response = await fetch(url, options);
+                const data = await response.json();
+
+                if (response.ok) {
+                    return data;
+                } else {
+                    throw new Error(data.detail || '未知错误');
+                }
+            } catch (err) {
+                console.error('API 请求失败:', err);
+                alert('操作失败: ' + err.message);
+                return null;
+            }
+        }
+
+        // 辅助函数：处理表单提交
+        async function handleFormSubmit(event, successCallback) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            const url = form.action;
+
+            const data = await apiRequest(url, form.method || 'POST', formData);
+            if(data) {
+                alert(data.message || '操作成功！');
+                if (successCallback) {
+                    successCallback(data);
+                } else {
+                    location.reload(); // 默认重载
+                }
+            }
+        }
+    </script>
+
+    {% block scripts %}
+    {% endblock %}
+</body>
+</html>

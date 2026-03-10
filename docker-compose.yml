@@ -1,0 +1,67 @@
+services:
+  # ----------------------------------
+  # 服务 1: Nginx (新的公共入口)
+  # ----------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: classroom_nginx
+    ports:
+      # --- 关键 ---
+      # 这是唯一暴露给主机的端口
+      - "80:80"  
+    volumes:
+      # 1. 挂载我们刚创建的 Nginx 配置文件
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # 2. 挂载共享的静态文件卷 (只读)
+      - static_volume:/var/www/static:ro
+    depends_on:
+      - app
+
+  # ----------------------------------
+  # 服务 2: 课堂管理主应用 (内部)
+  # ----------------------------------
+  app:
+    build: .
+    container_name: classroom_app
+    command: python main.py
+    env_file:
+      - ./docker.env
+    # --- 关键 ---
+    # 'ports' 部分已被移除，不再对外暴露 8000 端口
+    volumes:
+      # 挂载所有持久化数据目录 (不变)
+      - ./attendance:/app/attendance
+      - ./chat_logs:/app/chat_logs
+      - ./data:/app/data
+      - ./rosters:/app/rosters
+      - ./shared_files:/app/shared_files
+      - ./storage:/app/storage
+      - ./homework_submissions:/app/homework_submissions
+      
+      # --- 关键 ---
+      # 1. 'app' 容器内的 /app/static 目录
+      #    (由 Dockerfile COPY . . 命令填充)
+      # 2. 将此目录的内容填充到 'static_volume' 中
+      - static_volume:/app/static
+    depends_on:
+      - ai
+
+  # ----------------------------------
+  # 服务 3: AI 助手 (内部)
+  # ----------------------------------
+  ai:
+    build: .
+    container_name: classroom_ai
+    command: python ai_assistant.py
+    env_file:
+      - ./docker.env
+    # --- 关键 ---
+    # 'ports' 部分已被移除，不再对外暴露 8001 端口
+
+# ----------------------------------
+# 定义共享卷
+# ----------------------------------
+volumes:
+  # 'static_volume' 将被 app 容器在启动时
+  # 用 /app/static 目录的内容自动填充
+  static_volume:

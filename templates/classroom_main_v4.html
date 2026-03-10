@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ classroom.course_name }} - {{ classroom.class_name }}</title>
+    <link rel="stylesheet" href="/static/css/classroom_main_v4.css">
+    <link rel="stylesheet" href="/static/css/ai_chat.css">
+
+    <script src="/static/js/marked.min.js"></script>
+    <script src="/static/js/tools.js"></script>
+
+</head>
+<body>
+    <div class="page-header">
+        <div class="breadcrumbs">
+            <h1>
+                <a href="/dashboard">我的仪表盘</a> &gt; {{ classroom.course_name }} ({{ classroom.class_name }})
+            </h1>
+        </div>
+        <div class="user-info">
+            欢迎, <strong>{{ user_info.name }}</strong>（{{ user_info.nickname if user_info.nickname else '学生' }}）
+            <a href="/logout">退出登录</a>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="panel content-panel">
+            <div class="assignments-panel">
+                <div class="panel-header">
+                    <h2>{% if user_info.role == 'teacher' %}作业管理{% else %}我的作业{% endif %}</h2>
+                    {% if user_info.role == 'teacher' %}
+                    <button class="button primary-button" onclick="openAssignmentModal()">+ 新建作业</button>
+                    {% endif %}
+                </div>
+                <div class="panel-content">
+                    <div class="assignments-grid">
+                        {% for assignment in assignments %}
+                        <div class="assignment-card" onclick="location.href='/assignment/{{ assignment.id }}'">
+                            <h3>{{ assignment.title }}</h3>
+                            {% if user_info.role == 'teacher' %}
+                                <span class="status-badge status-{{ assignment.status }}">
+                                    {{ {'new': '草稿', 'published': '已发布'}[assignment.status] }}
+                                </span>
+                            {% else %}
+                                {% if assignment.submission_status == 'unsubmitted' %}
+                                    <span class="status-badge status-unsubmitted">未提交</span>
+                                {% elif assignment.submission_status == 'submitted' %}
+                                    <span class="status-badge status-submitted">已提交</span>
+                                {% elif assignment.submission_status == 'grading' %}
+                                    <span class="status-badge status-grading">批改中</span>
+                                {% elif assignment.submission_status == 'graded' %}
+                                    <span class="status-badge status-graded">已批改 ({{ assignment.submission_score }}分)</span>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="files-panel">
+                <div class="panel-content">
+                    <div class="content-section">
+                        <div class="header-actions" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <h2>课程资源</h2>
+                            <div class="actions">
+                                <button type="button" class="button secondary-button" onclick="refreshFiles()">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                                        <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                                    </svg>
+                                    刷新列表
+                                </button>
+                            </div>
+                        </div>
+
+                        {% if user_info.role == 'teacher' %}
+                        <div class="upload-zone" id="uploadZone">
+                            <input type="file" id="fileInput" style="display: none;" multiple>
+                            <button type="button" class="button primary-button" onclick="document.getElementById('fileInput').click()">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="17 8 12 3 7 8"/>
+                                    <line x1="12" y1="3" x2="12" y2="15"/>
+                                </svg>
+                                上传文件
+                            </button>
+                            <span class="upload-hint">支持拖拽文件到此处上传，支持大文件</span>
+                        </div>
+                        <div id="uploadProgressArea" style="display: none;"></div>
+                        {% endif %}
+
+                        <div id="file-list-container" class="file-cards-grid">
+                            <div class="loading-placeholder">正在加载文件列表...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="panel chat-panel">
+            <div class="panel-header">
+                <h2>课堂研讨室</h2>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                </div>
+            <div class="chat-input">
+                <input type="text" id="chat-input" placeholder="输入消息..." onkeypress="handleKeyPress(event)">
+                <button onclick="sendMessage()">发送</button>
+            </div>
+        </div>
+    </div>
+
+    {% if user_info.role == 'teacher' %}
+    <div id="assignment-modal" class="modal-overlay" style="display: none;"> <div class="modal-content">
+            <h2>作业编辑器</h2>
+            <input type="hidden" id="assignment-id">
+            <div>
+                <label for="assignment-title">标题:</label>
+                <input type="text" id="assignment-title">
+            </div>
+            <div>
+                <label for="assignment-requirements">要求说明:</label>
+                <textarea id="assignment-requirements"></textarea>
+            </div>
+            <div>
+                <label for="assignment-rubric">评分标准:</label>
+                <textarea id="assignment-rubric"></textarea>
+            </div>
+            <div>
+                <label for="assignment-grading-mode">批改模式:</label>
+                <select id="assignment-grading-mode">
+                    <option value="manual">手动批改</option>
+                    <option value="ai">AI辅助批改</option>
+                </select>
+            </div>
+            <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="button secondary-button" onclick="closeAssignmentModal()">取消</button>
+                <button class="button primary-button" onclick="saveAssignment()">保存</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <button id="ai-chat-fab" title="课堂AI助手">
+        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v.01M12 21v.01M3 12h.01M21 12h.01M5.64 5.64l.01.01M18.36 18.36l.01.01M5.64 18.36l.01.01M18.36 5.64l.01.01M12 8a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM16 12a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/>
+        </svg>
+    </button>
+
+    <div id="ai-chat-modal">
+        <div class="ai-chat-container">
+            <div class="ai-chat-header">
+                <h3>课堂AI助手</h3>
+                <div class="header-buttons">
+                    <button id="ai-chat-btn-new" class="chat-btn" title="新对话">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14m-7-7h14"/></svg>
+                    </button>
+                    <button id="ai-chat-btn-fullscreen" class="chat-btn" title="全屏">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                        </svg>
+                    </button>
+                    <button id="ai-chat-btn-close" class="chat-btn" title="关闭">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="ai-chat-messages" id="ai-chat-messages-box">
+                <div class="ai-chat-message system">
+                    <div class="bubble">
+                        你好！我是你的AI助教。你可以向我提问，或上传图片/截图。
+                    </div>
+                </div>
+            </div>
+
+            <div class="ai-chat-attachment-previews" id="ai-chat-previews">
+                </div>
+
+            <div class="ai-chat-input-area">
+                <div class="input-row">
+                    <input type="file" id="ai-chat-file-input" accept="image/*" multiple style="display: none;">
+
+                    <!-- 左侧按钮组：深度思考 -->
+                    <div class="left-buttons">
+                        <button id="ai-deep-think-btn" class="chat-btn deep-think" title="深度思考">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l4 4-1.5 1.5-4-4v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3"/>
+                                <path d="m9 9 1.88 1.88"/>
+                                <path d="M9 13.5V15l1.88-1.88"/>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- 中间：文本输入框 -->
+                    <textarea id="ai-chat-textarea" placeholder="输入消息..." rows="1"></textarea>
+
+                    <!-- 右侧按钮组：附件和发送 -->
+                    <div class="right-buttons">
+                        <button id="ai-chat-btn-attach" class="chat-btn attach" title="上传图片">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.49"/></svg>
+                        </button>
+                        <button id="ai-chat-btn-send" class="chat-btn send" title="发送">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="resizer resizer-top"></div>
+            <div class="resizer resizer-right"></div>
+            <div class="resizer resizer-bottom"></div>
+            <div class="resizer resizer-left"></div>
+            <div class="resizer resizer-top-left"></div>
+            <div class="resizer resizer-top-right"></div>
+            <div class="resizer resizer-bottom-left"></div>
+            <div class="resizer resizer-bottom-right"></div>
+
+        </div>
+    </div>
+
+    <script src="/static/js/ai_chat_component.js"></script>
+
+    <script>
+        // --- 页面全局变量 ---
+        const userInfo = {{ user_info | tojson }};
+        const classroom = {{ classroom | tojson }};
+        const classOfferingId = {{ classroom.id }};
+
+        // --- 1. 课堂研讨室 (WebSocket) 逻辑 ---
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/${classroom.id}`);
+
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.type === 'chat') {
+                appendChatMessage(data);
+            } else if (data.type === 'system') {
+                appendSystemMessage(data.message);
+                // 文件更新时自动刷新文件列表
+                if (data.message && (data.message.includes('上传了新文件') || data.message.includes('删除了文件'))) {
+                    refreshFiles();
+                }
+            } else if (data.type === 'history') {
+                data.data.forEach(msg => {
+                    if (msg.type === 'chat') appendChatMessage(msg);
+                    else if (msg.type === 'system') appendSystemMessage(msg.message);
+                });
+            }
+        };
+
+        function appendChatMessage(msg) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'chat-message';
+            msgDiv.innerHTML = `
+                <span class="sender">${msg.sender}</span>
+                <span class="time">${msg.timestamp}</span><br>
+                <span class="message"></span>
+            `;
+            msgDiv.querySelector('.message').textContent = msg.message;
+            const chatBox = document.getElementById('chat-messages');
+            chatBox.appendChild(msgDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function appendSystemMessage(message) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'chat-message system';
+            msgDiv.innerHTML = `<span class="message"></span>`;
+            msgDiv.querySelector('.message').textContent = message;
+            const chatBox = document.getElementById('chat-messages');
+            chatBox.appendChild(msgDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            if (message && ws.readyState === WebSocket.OPEN) {
+                ws.send(message);
+                input.value = '';
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        // --- 2. 作业模态框 (教师) 逻辑 ---
+        {% if user_info.role == 'teacher' %}
+        function openAssignmentModal() {
+            document.getElementById('assignment-modal').style.display = 'flex';
+            document.getElementById('assignment-id').value = '';
+            document.getElementById('assignment-title').value = '';
+            document.getElementById('assignment-requirements').value = '';
+            document.getElementById('assignment-rubric').value = '';
+            document.getElementById('assignment-grading-mode').value = 'manual';
+        }
+
+        function closeAssignmentModal() {
+            document.getElementById('assignment-modal').style.display = 'none';
+        }
+
+        async function saveAssignment() {
+            const id = document.getElementById('assignment-id').value;
+            const data = {
+                title: document.getElementById('assignment-title').value,
+                requirements_md: document.getElementById('assignment-requirements').value,
+                rubric_md: document.getElementById('assignment-rubric').value,
+                grading_mode: document.getElementById('assignment-grading-mode').value,
+                status: 'new'
+            };
+
+            try {
+                const url = id ? `/api/assignments/${id}` : `/api/courses/${classroom.course_id}/assignments`;
+                const response = await fetch(url, {
+                    method: id ? 'PUT' : 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    const error = await response.json();
+                    alert('保存失败: ' + error.detail);
+                }
+            } catch (e) {
+                alert('保存失败: ' + e);
+            }
+        }
+        {% endif %}
+
+
+        // --- 3. 课程资源：工具函数 ---
+        function escapeHtml(text) {
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+
+        function sizeFormat(bytes) {
+            if (!bytes && bytes !== 0) return '--';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let i = 0;
+            while (bytes >= 1024 && i < units.length - 1) {
+                bytes /= 1024;
+                i++;
+            }
+            return `${bytes.toFixed(i > 0 ? 2 : 0)} ${units[i]}`;
+        }
+
+        function formatTime(seconds) {
+            if (!seconds || !isFinite(seconds) || seconds < 0) return '--';
+            if (seconds < 60) return Math.round(seconds) + '秒';
+            if (seconds < 3600) return Math.round(seconds / 60) + '分钟';
+            return (seconds / 3600).toFixed(1) + '小时';
+        }
+
+        function getFileIcon(filename) {
+            const ext = (filename.split('.').pop() || '').toLowerCase();
+            const iconMap = {
+                'pdf': {color: '#e74c3c', label: 'PDF'},
+                'doc': {color: '#2b579a', label: 'DOC'}, 'docx': {color: '#2b579a', label: 'DOC'},
+                'xls': {color: '#217346', label: 'XLS'}, 'xlsx': {color: '#217346', label: 'XLS'},
+                'ppt': {color: '#d24726', label: 'PPT'}, 'pptx': {color: '#d24726', label: 'PPT'},
+                'zip': {color: '#f39c12', label: 'ZIP'}, 'rar': {color: '#f39c12', label: 'RAR'}, '7z': {color: '#f39c12', label: '7Z'},
+                'jpg': {color: '#8e44ad', label: 'IMG'}, 'jpeg': {color: '#8e44ad', label: 'IMG'},
+                'png': {color: '#8e44ad', label: 'PNG'}, 'gif': {color: '#8e44ad', label: 'GIF'},
+                'svg': {color: '#8e44ad', label: 'SVG'}, 'bmp': {color: '#8e44ad', label: 'BMP'},
+                'mp4': {color: '#e67e22', label: 'MP4'}, 'avi': {color: '#e67e22', label: 'AVI'},
+                'mkv': {color: '#e67e22', label: 'MKV'}, 'mov': {color: '#e67e22', label: 'MOV'},
+                'mp3': {color: '#1abc9c', label: 'MP3'}, 'wav': {color: '#1abc9c', label: 'WAV'},
+                'flac': {color: '#1abc9c', label: 'FLAC'},
+                'py': {color: '#3776AB', label: 'PY'}, 'js': {color: '#f7df1e', label: 'JS'},
+                'java': {color: '#b07219', label: 'JAVA'}, 'c': {color: '#555555', label: 'C'},
+                'cpp': {color: '#f34b7d', label: 'C++'}, 'cs': {color: '#178600', label: 'C#'},
+                'html': {color: '#e34c26', label: 'HTML'}, 'css': {color: '#563d7c', label: 'CSS'},
+                'txt': {color: '#95a5a6', label: 'TXT'}, 'md': {color: '#083fa1', label: 'MD'},
+                'json': {color: '#292929', label: 'JSON'}, 'xml': {color: '#0060ac', label: 'XML'},
+                'sql': {color: '#e38c00', label: 'SQL'},
+                'exe': {color: '#777', label: 'EXE'}, 'msi': {color: '#777', label: 'MSI'},
+                'iso': {color: '#777', label: 'ISO'}, 'dmg': {color: '#777', label: 'DMG'},
+            };
+            return iconMap[ext] || {color: '#bdc3c7', label: ext ? ext.toUpperCase().substring(0, 4) : 'FILE'};
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            try {
+                const d = new Date(dateStr);
+                if (isNaN(d.getTime())) return dateStr;
+                return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+            } catch { return dateStr; }
+        }
+
+
+        // --- 4. 分块上传引擎 ---
+        class ChunkedUploader {
+            constructor(file, courseId, options = {}) {
+                this.file = file;
+                this.courseId = courseId;
+                this.chunkSize = 5 * 1024 * 1024; // 默认 5MB，init 后由服务器指定
+                this.uploadId = null;
+                this.totalChunks = 0;
+                this.uploadedChunks = 0;
+                this.startTime = null;
+                this.description = options.description || '';
+                this.onProgress = options.onProgress || (() => {});
+                this.onComplete = options.onComplete || (() => {});
+                this.onError = options.onError || (() => {});
+                this.aborted = false;
+            }
+
+            async start() {
+                this.startTime = Date.now();
+
+                // 步骤 1：预检查文件是否已存在（全局文件库）
+                try {
+                    const checkResp = await fetch('/api/files/check', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            file_name: this.file.name,
+                            file_size: this.file.size,
+                            course_id: this.courseId
+                        })
+                    });
+                    if (checkResp.ok) {
+                        const checkData = await checkResp.json();
+                        if (checkData.exists) {
+                            this.onComplete({
+                                skipped: true,
+                                inCurrentCourse: checkData.in_current_course,
+                                linked: checkData.linked || false,
+                                existingFile: checkData.file,
+                                message: checkData.in_current_course
+                                    ? `"${this.file.name}" 当前课程已存在，跳过上传`
+                                    : `"${this.file.name}" 已在文件库中找到，已自动关联`
+                            });
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('预检查失败，继续上传:', e);
+                }
+
+                // 步骤 2：初始化分块上传
+                try {
+                    const initResp = await fetch('/api/files/upload/init', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            file_name: this.file.name,
+                            file_size: this.file.size,
+                            course_id: this.courseId,
+                            description: this.description
+                        })
+                    });
+                    if (!initResp.ok) {
+                        const errText = await initResp.text();
+                        throw new Error(errText);
+                    }
+                    const initData = await initResp.json();
+                    this.uploadId = initData.upload_id;
+                    this.chunkSize = initData.chunk_size;
+                    this.totalChunks = initData.total_chunks;
+                } catch (e) {
+                    this.onError(e);
+                    return;
+                }
+
+                // 步骤 3：逐块上传（使用 XMLHttpRequest 获取进度）
+                for (let i = 0; i < this.totalChunks; i++) {
+                    if (this.aborted) return;
+
+                    const start = i * this.chunkSize;
+                    const end = Math.min(start + this.chunkSize, this.file.size);
+                    const chunkBlob = this.file.slice(start, end);
+
+                    try {
+                        await this._uploadChunk(i, chunkBlob);
+                        this.uploadedChunks = i + 1;
+
+                        const progress = this.uploadedChunks / this.totalChunks;
+                        const elapsed = (Date.now() - this.startTime) / 1000;
+                        const bytesUploaded = Math.min(this.uploadedChunks * this.chunkSize, this.file.size);
+                        const speed = bytesUploaded / elapsed;
+                        const remaining = (this.file.size - bytesUploaded) / speed;
+
+                        this.onProgress({
+                            percent: Math.round(progress * 100),
+                            speed: speed,
+                            remainingSeconds: remaining,
+                            fileName: this.file.name
+                        });
+                    } catch (e) {
+                        this.onError(e);
+                        return;
+                    }
+                }
+
+                // 步骤 4：完成上传
+                try {
+                    const completeResp = await fetch('/api/files/upload/complete', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ upload_id: this.uploadId })
+                    });
+                    if (!completeResp.ok) {
+                        const errText = await completeResp.text();
+                        throw new Error(errText);
+                    }
+                    const result = await completeResp.json();
+                    this.onComplete({ skipped: false, ...result });
+                } catch (e) {
+                    this.onError(e);
+                }
+            }
+
+            _uploadChunk(index, blob) {
+                return new Promise((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    const formData = new FormData();
+                    formData.append('upload_id', this.uploadId);
+                    formData.append('chunk_index', index.toString());
+                    formData.append('chunk', blob, `chunk_${index}`);
+
+                    xhr.open('POST', '/api/files/upload/chunk');
+
+                    xhr.upload.onprogress = (e) => {
+                        if (e.lengthComputable) {
+                            const chunkProgress = e.loaded / e.total;
+                            const overallProgress = (index + chunkProgress) / this.totalChunks;
+                            const elapsed = (Date.now() - this.startTime) / 1000;
+                            const bytesUploaded = index * this.chunkSize + e.loaded;
+                            const speed = bytesUploaded / elapsed;
+
+                            this.onProgress({
+                                percent: Math.round(overallProgress * 100),
+                                speed: speed,
+                                remainingSeconds: (this.file.size - bytesUploaded) / speed,
+                                fileName: this.file.name
+                            });
+                        }
+                    };
+
+                    xhr.onload = () => {
+                        if (xhr.status >= 200 && xhr.status < 300) resolve();
+                        else reject(new Error(`分块 ${index} 上传失败 (${xhr.status})`));
+                    };
+                    xhr.onerror = () => reject(new Error(`网络错误 (分块 ${index})`));
+                    xhr.ontimeout = () => reject(new Error(`上传超时 (分块 ${index})`));
+                    xhr.timeout = 120000; // 2分钟超时
+                    xhr.send(formData);
+                });
+            }
+
+            abort() {
+                this.aborted = true;
+            }
+        }
+
+
+        // --- 5. 上传触发器 + 拖拽 ---
+        document.getElementById('fileInput')?.addEventListener('change', async function(e) {
+            const files = Array.from(e.target.files);
+            if (!files.length) return;
+            await startUploadBatch(files);
+            e.target.value = ''; // 清空以支持重复选择同文件
+        });
+
+        // 拖拽上传
+        const uploadZone = document.getElementById('uploadZone');
+        if (uploadZone) {
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(ev => {
+                uploadZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); });
+            });
+            ['dragenter', 'dragover'].forEach(ev => {
+                uploadZone.addEventListener(ev, () => uploadZone.classList.add('drag-over'));
+            });
+            ['dragleave', 'drop'].forEach(ev => {
+                uploadZone.addEventListener(ev, () => uploadZone.classList.remove('drag-over'));
+            });
+            uploadZone.addEventListener('drop', (e) => {
+                const files = Array.from(e.dataTransfer.files);
+                if (files.length) startUploadBatch(files);
+            });
+        }
+
+        async function startUploadBatch(files) {
+            const progressArea = document.getElementById('uploadProgressArea');
+            if (!progressArea) return;
+            progressArea.style.display = 'block';
+            progressArea.innerHTML = '';
+
+            // 为每个文件创建进度条 UI
+            files.forEach((file, idx) => {
+                progressArea.insertAdjacentHTML('beforeend', `
+                    <div class="upload-progress-item" id="upload-item-${idx}">
+                        <div class="upload-progress-header">
+                            <span class="upload-file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+                            <span class="upload-file-size">${sizeFormat(file.size)}</span>
+                            <span class="upload-status" id="upload-status-${idx}">等待中...</span>
+                        </div>
+                        <div class="progress-bar-track">
+                            <div class="progress-bar-fill" id="upload-bar-${idx}" style="width: 0%"></div>
+                        </div>
+                        <div class="upload-progress-detail">
+                            <span id="upload-percent-${idx}">0%</span>
+                            <span id="upload-speed-${idx}"></span>
+                            <span id="upload-eta-${idx}"></span>
+                        </div>
+                    </div>
+                `);
+            });
+
+            // 顺序上传
+            for (let idx = 0; idx < files.length; idx++) {
+                const file = files[idx];
+                const statusEl = document.getElementById(`upload-status-${idx}`);
+                const barEl = document.getElementById(`upload-bar-${idx}`);
+                const percentEl = document.getElementById(`upload-percent-${idx}`);
+                const speedEl = document.getElementById(`upload-speed-${idx}`);
+                const etaEl = document.getElementById(`upload-eta-${idx}`);
+
+                statusEl.textContent = '上传中...';
+
+                const uploader = new ChunkedUploader(file, classroom.course_id, {
+                    onProgress: (p) => {
+                        barEl.style.width = p.percent + '%';
+                        percentEl.textContent = p.percent + '%';
+                        if (p.speed > 0) {
+                            speedEl.textContent = sizeFormat(p.speed) + '/s';
+                            etaEl.textContent = '剩余 ' + formatTime(p.remainingSeconds);
+                        }
+                    },
+                    onComplete: (result) => {
+                        barEl.style.width = '100%';
+                        barEl.classList.add('complete');
+                        if (result.skipped) {
+                            statusEl.textContent = result.inCurrentCourse ? '已存在' : '已关联';
+                            barEl.classList.add('skipped');
+                        } else {
+                            statusEl.textContent = '上传完成';
+                        }
+                        speedEl.textContent = '';
+                        etaEl.textContent = '';
+                        percentEl.textContent = '100%';
+                        showMessage(result.message || `"${file.name}" 上传成功`);
+                    },
+                    onError: (err) => {
+                        barEl.classList.add('error');
+                        statusEl.textContent = '上传失败';
+                        speedEl.textContent = '';
+                        etaEl.textContent = '';
+                        showMessage(`上传失败: ${err.message}`, 'error');
+                    }
+                });
+                await uploader.start();
+            }
+
+            refreshFiles();
+
+            // 5秒后自动隐藏进度区域
+            setTimeout(() => {
+                progressArea.style.display = 'none';
+                progressArea.innerHTML = '';
+            }, 5000);
+        }
+
+
+        // --- 6. 文件列表（卡片式渲染）---
+        async function refreshFiles() {
+            const container = document.getElementById('file-list-container');
+            if (!container) return;
+            container.innerHTML = '<div class="loading-placeholder">正在加载...</div>';
+
+            try {
+                const response = await fetch(`/api/courses/${classroom.id}/files`);
+                if (!response.ok) throw new Error('获取文件列表失败');
+                const data = await response.json();
+                container.innerHTML = '';
+
+                if (data.files.length === 0) {
+                    container.innerHTML = '<div class="empty-state">暂无课程资源</div>';
+                    return;
+                }
+
+                data.files.forEach(file => {
+                    const icon = getFileIcon(file.file_name);
+                    const card = document.createElement('div');
+                    card.className = 'file-card';
+                    card.dataset.fileId = file.id;
+
+                    let actionsHtml = '';
+                    if (data.is_teacher) {
+                        actionsHtml = `
+                            <div class="file-card-actions">
+                                <button class="icon-button" onclick="event.stopPropagation(); editFileDescription(${file.id}, this)" title="编辑简介">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                    </svg>
+                                </button>
+                                <button class="icon-button danger" onclick="event.stopPropagation(); deleteFile(${classroom.course_id}, ${file.id})" title="删除文件">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="3 6 5 6 21 6"/>
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                    </svg>
+                                </button>
+                            </div>`;
+                    }
+
+                    card.innerHTML = `
+                        <div class="file-card-icon" style="background: ${icon.color}">
+                            <span>${icon.label}</span>
+                        </div>
+                        <div class="file-card-info">
+                            <a href="/download/course_file/${file.id}" class="file-card-name" title="${escapeHtml(file.file_name)}">
+                                ${escapeHtml(file.file_name)}
+                            </a>
+                            <div class="file-card-meta">
+                                <span class="file-card-size">${sizeFormat(file.file_size)}</span>
+                                ${file.uploaded_at ? `<span class="file-card-date">${formatDate(file.uploaded_at)}</span>` : ''}
+                            </div>
+                            ${file.description ? `<p class="file-card-desc">${escapeHtml(file.description)}</p>` : ''}
+                        </div>
+                        ${actionsHtml}
+                    `;
+                    container.appendChild(card);
+                });
+            } catch (error) {
+                console.error('刷新文件列表时出错:', error);
+                container.innerHTML = '<div class="empty-state error">加载文件列表失败</div>';
+            }
+        }
+
+
+        // --- 7. 文件删除 ---
+        async function deleteFile(courseId, fileId) {
+            if (!confirm('确定要删除此文件吗?')) return;
+            try {
+                const response = await fetch(`/api/courses/${courseId}/files/${fileId}`, {
+                    method: 'DELETE'
+                });
+                if (!response.ok) throw new Error(await response.text());
+                const result = await response.json();
+                if (result.status === 'success') {
+                    showMessage('文件删除成功');
+                    refreshFiles();
+                }
+            } catch (error) {
+                showMessage(`删除失败: ${error.message}`, 'error');
+            }
+        }
+
+
+        // --- 8. 文件简介编辑 ---
+        async function editFileDescription(fileId, btn) {
+            const card = btn.closest('.file-card');
+            const descEl = card ? card.querySelector('.file-card-desc') : null;
+            const currentDesc = descEl ? descEl.textContent : '';
+            const newDesc = prompt('请输入文件简介:', currentDesc);
+            if (newDesc === null) return; // 取消
+
+            try {
+                const resp = await fetch(`/api/files/${fileId}/description`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ description: newDesc })
+                });
+                if (!resp.ok) throw new Error(await resp.text());
+                showMessage('文件简介已更新');
+                refreshFiles();
+            } catch (e) {
+                showMessage('更新简介失败: ' + e.message, 'error');
+            }
+        }
+
+
+        // --- 9. 消息提示 ---
+        function showMessage(message, type = 'success') {
+            const div = document.createElement('div');
+            div.textContent = message;
+            div.className = 'toast-message toast-' + type;
+            div.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 12px 24px;
+                border-radius: 8px;
+                background: ${type === 'success' ? '#52c41a' : type === 'error' ? '#f5222d' : '#1890ff'};
+                color: white;
+                z-index: 9999;
+                box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+                font-size: 0.9rem;
+                font-weight: 500;
+                animation: toastSlideIn 0.3s ease;
+                max-width: 400px;
+                word-break: break-word;
+            `;
+            document.body.appendChild(div);
+            setTimeout(() => {
+                div.style.animation = 'toastSlideOut 0.3s ease forwards';
+                setTimeout(() => div.remove(), 300);
+            }, 3000);
+        }
+
+
+        // --- 10. AI 聊天组件初始化 ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // 初始化文件列表
+            refreshFiles();
+
+            // 初始化 AI 组件
+            try {
+                const aiChat = new AIChatComponent({
+                    classOfferingId: classOfferingId
+                });
+                aiChat.init();
+            } catch (e) {
+                console.error("初始化 AI 助手失败:", e);
+            }
+        });
+    </script>
+
+    <style>
+        @keyframes toastSlideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes toastSlideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+    </style>
+</body>
+</html>
