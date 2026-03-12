@@ -400,6 +400,131 @@
         }
 
 
+        // --- 新增：文件列表刷新与渲染逻辑 ---
+        async function refreshFiles() {
+            const container = document.getElementById('file-list-container');
+            container.innerHTML = '<div class="loading-placeholder">正在加载文件列表...</div>';
+            try {
+                const resp = await fetch(`/api/courses/${classOfferingId}/files`);
+                if (!resp.ok) throw new Error('网络响应异常');
+                const data = await resp.json();
+                renderFiles(data.files, data.is_teacher);
+            } catch (error) {
+                container.innerHTML = `<div class="error-placeholder" style="color: #f5222d;">加载失败: ${error.message}</div>`;
+            }
+        }
+
+        function renderFiles(files, isTeacher) {
+            const container = document.getElementById('file-list-container');
+            container.innerHTML = '';
+
+            if (!files || files.length === 0) {
+                container.innerHTML = '<div class="empty-placeholder">课堂暂无分享的文件</div>';
+                return;
+            }
+
+            files.forEach(file => {
+                const icon = getFileIcon(file.file_name);
+                const card = document.createElement('div');
+                card.className = 'file-card neomorph-card'; // 引入轻拟物样式
+
+                card.innerHTML = `
+                    <div class="file-icon" style="background-color: ${icon.color}15; color: ${icon.color}">
+                        ${icon.label}
+                    </div>
+                    <div class="file-info">
+                        <div class="file-name" title="${escapeHtml(file.file_name)}">${escapeHtml(file.file_name)}</div>
+                        <div class="file-meta">
+                            <span>${sizeFormat(file.file_size)}</span>
+                            <span>${formatDate(file.uploaded_at)}</span>
+                        </div>
+                        <div class="file-card-desc" title="${escapeHtml(file.description || '')}">${escapeHtml(file.description || '暂无简介')}</div>
+
+                        <div class="file-progress-container" id="dl-progress-container-${file.id}" style="display: none;">
+                            <div class="file-progress-bar dl-bar" id="dl-progress-bar-${file.id}"></div>
+                            <div class="file-progress-text" id="dl-progress-text-${file.id}">0%</div>
+                        </div>
+                    </div>
+                    <div class="file-actions">
+                        <button class="button secondary-button dl-btn" onclick="downloadFileWithProgress(${file.id}, '${escapeHtml(file.file_name)}')">
+                            下载
+                        </button>
+                        ${isTeacher ? `
+                        <button class="button secondary-button" onclick="editFileDescription(${file.id}, this)">简介</button>
+                        <button class="button secondary-button delete-btn" onclick="deleteFile(${classroom.course_id}, ${file.id})">删除</button>
+                        ` : ''}
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // --- 新增：带有进度条的 XHR 文件下载 ---
+        function downloadFileWithProgress(fileId, fileName) {
+            const container = document.getElementById(`dl-progress-container-${fileId}`);
+            const bar = document.getElementById(`dl-progress-bar-${fileId}`);
+            const textEl = document.getElementById(`dl-progress-text-${fileId}`);
+
+            container.style.display = 'flex';
+            bar.style.width = '0%';
+            bar.style.backgroundColor = '#1890ff';
+            textEl.innerText = '0%';
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', `/download/course_file/${fileId}`, true);
+            xhr.responseType = 'blob';
+
+            xhr.onprogress = function (event) {
+                if (event.lengthComputable) {
+                    const percentComplete = Math.round((event.loaded / event.total) * 100);
+                    bar.style.width = percentComplete + '%';
+                    textEl.innerText = percentComplete + '%';
+                } else {
+                    // 若后端未返回 Content-Length，则只显示已下载体积
+                    textEl.innerText = sizeFormat(event.loaded);
+                }
+            };
+
+            xhr.onload = function () {
+                if (this.status === 200) {
+                    bar.style.backgroundColor = '#52c41a'; // 成功绿
+                    textEl.innerText = '完成';
+
+                    // 触发下载
+                    const blob = this.response;
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+
+                    // 3秒后隐藏进度条
+                    setTimeout(() => {
+                        container.style.display = 'none';
+                    }, 3000);
+                } else {
+                    handleDownloadError();
+                }
+            };
+
+            xhr.onerror = handleDownloadError;
+
+            function handleDownloadError() {
+                bar.style.backgroundColor = '#f5222d'; // 错误红
+                textEl.innerText = '失败';
+                showMessage(`下载 ${fileName} 失败，请检查网络`, 'error');
+                setTimeout(() => {
+                    container.style.display = 'none';
+                }, 3000);
+            }
+
+            xhr.send();
+        }
+
         // --- 4. 分块上传引擎 ---
         class ChunkedUploader {
             constructor(file, courseId, options = {}) {
@@ -573,6 +698,58 @@
             }
         }
 
+        // --- 5. 绑定上传按钮逻辑 (带进度条渲染) ---
+        {% if user_info.role === 'teacher' %}
+        document.getElementById('fileInput').addEventListener('change', function (e) {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+
+            const progressArea = document.getElementById('uploadProgressArea');
+            progressArea.style.display = 'block';
+
+            Array.from(files).forEach(file => {
+                const fileId = 'up_' + Math.random().toString(36).substr(2, 9);
+
+                // 动态构建单个文件的上传状态卡片
+                const progressItem = document.createElement('div');
+                progressItem.className = 'upload-progress-item neomorph-card';
+                progressItem.id = fileId;
+                progressItem.innerHTML = `
+                    <div class="up-info">
+                        <span class="up-name">${escapeHtml(file.name)}</span>
+                        <span class="up-status" id="up-status-${fileId}">准备上传...</span>
+                    </div>
+                    <div class="file-progress-container" style="display: flex;">
+                        <div class="file-progress-bar" id="up-bar-${fileId}" style="width: 0%; background-color: #1890ff;"></div>
+                    </div>
+                `;
+                progressArea.appendChild(progressItem);
+
+                // 调用已存在的 ChunkedUploader
+                const uploader = new ChunkedUploader(file, classroom.course_id, {
+                    onProgress: (info) => {
+                        document.getElementById(`up-bar-${fileId}`).style.width = info.percent + '%';
+                        document.getElementById(`up-status-${fileId}`).innerText = `${info.percent}% (${sizeFormat(info.speed)}/s) - 剩余 ${formatTime(info.remainingSeconds)}`;
+                    },
+                    onComplete: (res) => {
+                        document.getElementById(`up-bar-${fileId}`).style.backgroundColor = '#52c41a';
+                        document.getElementById(`up-status-${fileId}`).innerText = res.message || '上传完成';
+                        refreshFiles(); // 上传完毕立即刷新大厅的文件列表
+                        setTimeout(() => progressItem.remove(), 4000); // 4秒后自动移除该状态条
+                    },
+                    onError: (err) => {
+                        document.getElementById(`up-bar-${fileId}`).style.backgroundColor = '#f5222d';
+                        document.getElementById(`up-status-${fileId}`).innerText = '失败: ' + err.message;
+                        document.getElementById(`up-status-${fileId}`).style.color = '#f5222d';
+                    }
+                });
+                uploader.start();
+            });
+
+            // 清空input，避免重复上传同一个文件无法触发change事件
+            this.value = '';
+        });
+        {% endif %}
 
         // --- 7. 文件删除 ---
         async function deleteFile(courseId, fileId) {
@@ -670,6 +847,145 @@
         @keyframes toastSlideOut {
             from { transform: translateX(0); opacity: 1; }
             to { transform: translateX(100%); opacity: 0; }
+        }
+
+        /* --- 轻拟物风格(Neomorphism) & 文件卡片样式 --- */
+        .neomorph-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            box-shadow: 6px 6px 12px #e6e7e8, -6px -6px 12px #ffffff;
+            border: 1px solid transparent;
+            transition: all 0.2s ease-in-out;
+        }
+
+        .neomorph-card:hover {
+            box-shadow: inset 2px 2px 5px #e6e7e8, inset -3px -3px 7px #ffffff;
+            border: 1px solid #f0f0f0;
+        }
+
+        .file-card {
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 12px;
+        }
+
+        .file-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 13px;
+        }
+
+        .file-info {
+            flex-grow: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .file-name {
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: #2c3e50;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .file-meta, .file-card-desc {
+            font-size: 0.8rem;
+            color: #7f8c8d;
+            margin-top: 4px;
+        }
+
+        .file-card-desc {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .file-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .file-actions .button {
+            padding: 4px 12px;
+            font-size: 0.8rem;
+            border-radius: 6px;
+        }
+
+        .delete-btn {
+            color: #e74c3c !important;
+            border-color: #fadbd8 !important;
+            background: #fdf2f0 !important;
+        }
+
+        /* --- 进度条通用样式 --- */
+        .file-progress-container {
+            width: 100%;
+            height: 6px;
+            background-color: #e0e5ec;
+            border-radius: 3px;
+            margin-top: 8px;
+            overflow: visible;
+            position: relative;
+            box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .file-progress-bar {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+
+        .file-progress-text {
+            position: absolute;
+            right: 0;
+            top: -18px;
+            font-size: 11px;
+            font-weight: 500;
+            color: #1890ff;
+        }
+
+        /* --- 上传列表区域 --- */
+        .upload-progress-item {
+            padding: 12px 16px;
+            margin-bottom: 12px;
+        }
+
+        .up-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .up-name {
+            font-weight: bold;
+            color: #333;
+            font-size: 0.9rem;
+        }
+
+        .up-status {
+            font-size: 0.8rem;
+            color: #666;
+        }
+
+        .empty-placeholder, .loading-placeholder {
+            text-align: center;
+            padding: 30px;
+            color: #95a5a6;
+            width: 100%;
+            grid-column: 1 / -1;
         }
     </style>
 </body>

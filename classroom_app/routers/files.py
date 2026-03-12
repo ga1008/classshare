@@ -538,6 +538,7 @@ async def delete_course_file(
             "message": "文件删除成功，" + ("物理文件已删除。" if save_status else "但物理文件删除失败。")}
 
 
+# 修改 classroom_app/routers/files.py 中的 download_course_file 函数
 @router.get("/download/course_file/{file_id}")
 async def download_course_file(
         file_id: int,
@@ -566,19 +567,18 @@ async def download_course_file(
     if not file_path.exists():
         raise HTTPException(404, "文件不存在")
 
-    # 获取文件锁
-    file_lock = await get_file_lock(file_info['file_hash'])
-
+    # 【重要优化】: 移除了原来的 file_lock。
+    # 因为 aiofiles 在底层的每一次 open 都拥有独立的文件描述符，
+    # 操作系统完全支持100个客户端并发读取同一个文件。加锁反而会导致排队串行下载。
     async def streamed_file():
-        async with file_lock:  # 使用异步锁控制并发
-            async for chunk in stream_file(file_path):
-                yield chunk
+        async for chunk in stream_file(file_path):
+            yield chunk
 
     return StreamingResponse(
         streamed_file(),
         media_type='application/octet-stream',
         headers={
-            'Content-Disposition': f'attachment; filename="{file_info["file_name"]}"',
+            'Content-Disposition': f'attachment; filename="{file_info["file_name"].encode("utf-8").decode("latin-1", "ignore")}"',
             'Content-Length': str(file_info['file_size'])
         }
     )
