@@ -6,6 +6,8 @@ import hashlib
 import shutil
 import aiofiles
 from datetime import datetime
+from urllib.parse import quote
+
 # 导入聊天管理器和 json
 from fastapi import WebSocket, status, WebSocketDisconnect, UploadFile, File, Form, APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse, StreamingResponse
@@ -22,6 +24,10 @@ from pathlib import Path
 from ..database import get_db_connection
 from ..services.file_handler import delete_file_safely
 from ..services.file_service import save_file_globally, get_file_lock, stream_file
+
+# --- 新增：专门针对 Windows 系统的并发保护限流器 ---
+# 允许同时最多 80 个物理读取流，既能打满内网千兆带宽，又能完美避开 Windows 文件句柄上限崩溃
+windows_io_semaphore = asyncio.Semaphore(80)
 
 
 def sync_save_chunk(chunk_path: Path, upload_file: UploadFile):
@@ -544,7 +550,7 @@ async def download_course_file(
         file_id: int,
         user: Optional[dict] = Depends(get_current_user)
 ):
-    """下载课程文件(支持断点续传和并发控制)"""
+    """下载课程文件(支持断点续传、高并发控制、中文防乱码)"""
     if not user:
         raise HTTPException(401, "Not authenticated")
 
@@ -567,18 +573,21 @@ async def download_course_file(
     if not file_path.exists():
         raise HTTPException(404, "文件不存在")
 
-    # 【重要优化】: 移除了原来的 file_lock。
-    # 因为 aiofiles 在底层的每一次 open 都拥有独立的文件描述符，
-    # 操作系统完全支持100个客户端并发读取同一个文件。加锁反而会导致排队串行下载。
     async def streamed_file():
-        async for chunk in stream_file(file_path):
-            yield chunk
+        # 【Windows 高并发守护】使用信号量代替 Lock，控制极限并发但不引起单线程阻塞排队
+        async with windows_io_semaphore:
+            async for chunk in stream_file(file_path):
+                yield chunk
+
+    # 【Windows 中文名防乱码】使用 RFC 5987 URL编码标准
+    safe_filename = quote(file_info['file_name'])
 
     return StreamingResponse(
         streamed_file(),
         media_type='application/octet-stream',
         headers={
-            'Content-Disposition': f'attachment; filename="{file_info["file_name"].encode("utf-8").decode("latin-1", "ignore")}"',
+            # 兼容旧版与现代浏览器的中文字符规范声明
+            'Content-Disposition': f"attachment; filename*=utf-8''{safe_filename}",
             'Content-Length': str(file_info['file_size'])
         }
     )
