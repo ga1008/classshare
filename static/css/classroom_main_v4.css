@@ -436,9 +436,9 @@ td a:hover {
     border: 2px dashed var(--border-color);
     border-radius: var(--border-radius);
     padding: 1.25rem 1.5rem;
+    margin-bottom: 5rem;
     text-align: center;
     transition: var(--transition);
-    margin-bottom: 1.25rem;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -590,12 +590,14 @@ td a:hover {
 
 /* =========================================
  * 13. 文件卡片网格 (File Cards Grid)
+ * 动画过度
  * ========================================= */
 
 .file-cards-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 0.75rem;
+    transition: all 0.5s ease;
 }
 
 .file-card {

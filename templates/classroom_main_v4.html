@@ -699,7 +699,7 @@
         }
 
         // --- 5. 绑定上传按钮逻辑 (带进度条渲染) ---
-        {% if user_info.role === 'teacher' %}
+        {% if user_info.role == 'teacher' %}
         document.getElementById('fileInput').addEventListener('change', function (e) {
             const files = e.target.files;
             if (!files || files.length === 0) return;
