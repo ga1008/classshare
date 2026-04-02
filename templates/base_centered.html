@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block css %}
+<link rel="stylesheet" href="/static/css/buttons.css">
+<link rel="stylesheet" href="/static/css/cards.css">
+<link rel="stylesheet" href="/static/css/forms.css">
+<link rel="stylesheet" href="/static/css/toast.css">
+<style>
+    body {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        {% block bg_gradient %}background: linear-gradient(135deg, var(--bg-color) 0%, var(--primary-light) 100%);{% endblock %}
+    }
+
+    .login-card {
+        width: 100%;
+        max-width: 420px;
+        padding: var(--spacing-xl, 2rem);
+        background: var(--surface-color);
+        border-radius: var(--radius-xl, 1.25rem);
+        box-shadow: var(--shadow-lg);
+        text-align: center;
+    }
+
+    .login-logo {
+        width: 64px;
+        height: 64px;
+        margin: 0 auto var(--spacing-lg, 1.5rem);
+        border-radius: var(--radius-full);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .login-logo svg {
+        width: 32px;
+        height: 32px;
+    }
+
+    .login-card h2 {
+        margin-bottom: var(--spacing-sm, 0.5rem);
+        color: var(--text-primary);
+    }
+
+    .login-card .subtitle {
+        color: var(--text-secondary);
+        margin-bottom: var(--spacing-xl, 2rem);
+        font-size: 0.875rem;
+    }
+
+    .footer-links {
+        margin-top: var(--spacing-lg, 1.5rem);
+        font-size: 0.875rem;
+    }
+
+    .footer-links a {
+        color: var(--text-muted);
+    }
+
+    /* Status/Error card variant */
+    .status-card {
+        background-color: var(--surface-color);
+        padding: var(--spacing-xl, 2rem) var(--spacing-2xl, 3rem);
+        border-radius: var(--radius-xl, 1.25rem);
+        box-shadow: var(--shadow-lg);
+        text-align: center;
+        max-width: 500px;
+        width: 100%;
+        border: 1px solid var(--border-color);
+        animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .status-icon {
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
+        width: 80px;
+        height: 80px;
+        border-radius: var(--radius-full);
+        margin-bottom: var(--spacing-lg, 1.5rem);
+    }
+
+    .status-card.success .status-icon { background-color: var(--success-light); color: var(--success-color); }
+    .status-card.failure .status-icon { background-color: var(--danger-light); color: var(--danger-color); }
+    .status-card.warning .status-icon { background-color: var(--warning-light); color: var(--warning-dark); }
+
+    .status-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: var(--spacing-md, 1rem);
+    }
+
+    .status-message {
+        font-size: 1.05rem;
+        color: var(--text-secondary);
+        margin-bottom: var(--spacing-xl, 2rem);
+        line-height: 1.6;
+    }
+
+    @keyframes slideUp {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+    {% block card_content %}{% endblock %}
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import { showToast } from '/static/js/ui.js';
+    window.showToast = showToast;
+</script>
+{% endblock %}

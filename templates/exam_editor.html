@@ -833,8 +833,7 @@ footer{text-align:center;padding:30px;font-size:0.85rem;color:#9CA3AF;}
 </style></head><body>
 <div class="exam-container">
 <div class="preview-badge">👀 教师全屏预览模式 (共 ${allQuestions.length} 题)</div>
-<div class="exam-header"><h1>${escapeHtml(title)}</h1>${desc ? '<div class="exam-desc">' + escapeHtml(desc).replace(/
-/g, '<br>') + '</div>' : ''}</div>
+<div class="exam-header"><h1>${escapeHtml(title)}</h1>${desc ? '<div class="exam-desc">' + escapeHtml(desc).replace(/\n/g, '<br>') + '</div>' : ''}</div>
 <div class="page-content">
 ${questionsHtml || '<div style="background:#fff;border-radius:12px;padding:40px;text-align:center;color:#6B7280;">暂无题目</div>'}
 </div>

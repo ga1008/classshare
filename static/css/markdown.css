@@ -1,0 +1,72 @@
+/*
+ * Markdown Content Formatting
+ * Shared styles for rendered markdown content across pages.
+ */
+
+.md-content {
+    line-height: 1.7;
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+}
+
+.md-content h1, .md-content h2, .md-content h3 {
+    color: var(--text-primary);
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+}
+
+.md-content h1 { font-size: 1.5rem; }
+.md-content h2 { font-size: 1.25rem; }
+.md-content h3 { font-size: 1.1rem; }
+.md-content p { margin-bottom: 1em; }
+.md-content ul, .md-content ol { padding-left: 1.5em; margin-bottom: 1em; }
+.md-content li { margin-bottom: 0.25em; }
+
+.md-content pre {
+    background: var(--gray-900, #0f172a);
+    color: var(--gray-100, #f1f5f9);
+    padding: 1rem;
+    border-radius: var(--radius-md, 0.5rem);
+    overflow-x: auto;
+    margin: 1em 0;
+}
+
+.md-content code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    background: var(--bg-color);
+    padding: 0.2em 0.4em;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+.md-content pre code {
+    background: transparent;
+    padding: 0;
+}
+
+.md-content blockquote {
+    border-left: 4px solid var(--primary-color);
+    padding: 0.5em 1em;
+    background: var(--primary-light);
+    margin: 1em 0;
+    border-radius: 0 var(--radius-md, 0.5rem) var(--radius-md, 0.5rem) 0;
+    color: var(--text-secondary);
+}
+
+.md-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1em 0;
+}
+
+.md-content th, .md-content td {
+    border: 1px solid var(--border-color);
+    padding: 0.5em 0.75em;
+    text-align: left;
+}
+
+.md-content th {
+    background: var(--bg-color);
+    font-weight: 600;
+}

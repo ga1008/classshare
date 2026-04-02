@@ -137,3 +137,64 @@
 .modal-dialog-scrollable .modal-body {
     overflow-y: auto;
 }
+
+/* =========================================
+   Modal Dialog & Content (classroom page)
+   ========================================= */
+.modal-dialog {
+    position: relative;
+    width: 100%;
+    max-width: 32rem;
+    margin: 1.75rem auto;
+    pointer-events: none;
+}
+
+.modal-content {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    pointer-events: auto;
+    background-color: var(--surface-color);
+    background-clip: padding-box;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    outline: 0;
+    transform: scale(0.95) translateY(-20px);
+    transition: transform var(--transition-normal), opacity var(--transition-normal);
+    opacity: 0;
+}
+
+.modal-backdrop.show .modal-content {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+}
+
+.modal-close {
+    background: transparent;
+    border: none;
+    font-size: 1.5rem;
+    line-height: 1;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.25rem;
+    transition: color var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+}
+
+/* Responsive modals */
+@media (max-width: 576px) {
+    .modal-dialog {
+        margin: 0.5rem;
+        max-width: calc(100vw - 1rem);
+    }
+
+    .modal-body {
+        max-height: calc(100vh - 160px);
+    }
+}

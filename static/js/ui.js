@@ -60,6 +60,11 @@ export function showToast(message, type = 'success', duration = 3000) {
     }
 }
 
+/**
+ * showMessage - alias for showToast, used by manage pages and exam_take
+ */
+export const showMessage = showToast;
+
 // Modals Management
 export function openModal(modalId) {
     const modalOverlay = document.getElementById(modalId);
@@ -98,10 +103,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Click outside to close (optional, if you want this behavior)
+    // Click outside to close
     document.querySelectorAll('.modal-backdrop').forEach(overlay => {
         overlay.addEventListener('click', (e) => {
-            // Check if clicked directly on backdrop, not inside modal content
             if (e.target === overlay) {
                 closeModal(overlay.id);
             }
@@ -130,6 +134,11 @@ export function formatDate(dateString) {
     }
 }
 
+/**
+ * formatDateLocal - alias for formatDate, used by assignment detail pages
+ */
+export const formatDateLocal = formatDate;
+
 export function escapeHtml(unsafe) {
     if (!unsafe && unsafe !== 0) return '';
     return String(unsafe)
@@ -143,46 +152,73 @@ export function escapeHtml(unsafe) {
 export function getFileIcon(filename) {
     const ext = (filename.split('.').pop() || '').toLowerCase();
     const iconMap = {
-        'pdf': { color: '#ef4444', label: 'PDF' },  // Danger Red
-        'doc': { color: '#2563eb', label: 'DOC' },  // Blue
+        'pdf': { color: '#ef4444', label: 'PDF' },
+        'doc': { color: '#2563eb', label: 'DOC' },
         'docx': { color: '#2563eb', label: 'DOC' },
-        'xls': { color: '#10b981', label: 'XLS' },  // Emerald Green
+        'xls': { color: '#10b981', label: 'XLS' },
         'xlsx': { color: '#10b981', label: 'XLS' },
-        'ppt': { color: '#f59e0b', label: 'PPT' },  // Amber/Orange
+        'ppt': { color: '#f59e0b', label: 'PPT' },
         'pptx': { color: '#f59e0b', label: 'PPT' },
-        'zip': { color: '#64748b', label: 'ZIP' },  // Slate Gray
+        'zip': { color: '#64748b', label: 'ZIP' },
         'rar': { color: '#64748b', label: 'RAR' },
         '7z': { color: '#64748b', label: '7Z' },
-        'jpg': { color: '#8b5cf6', label: 'IMG' },  // Purple
+        'jpg': { color: '#8b5cf6', label: 'IMG' },
         'jpeg': { color: '#8b5cf6', label: 'IMG' },
         'png': { color: '#8b5cf6', label: 'PNG' },
         'gif': { color: '#8b5cf6', label: 'GIF' },
         'svg': { color: '#8b5cf6', label: 'SVG' },
-        'mp4': { color: '#f43f5e', label: 'VID' },  // Rose Red
+        'mp4': { color: '#f43f5e', label: 'VID' },
         'avi': { color: '#f43f5e', label: 'VID' },
-        'mp3': { color: '#06b6d4', label: 'AUD' },  // Cyan
-        'py': { color: '#3b82f6', label: 'PY' },    // Blue
-        'js': { color: '#eab308', label: 'JS' },    // Yellow
+        'mp3': { color: '#06b6d4', label: 'AUD' },
+        'py': { color: '#3b82f6', label: 'PY' },
+        'js': { color: '#eab308', label: 'JS' },
         'java': { color: '#d97706', label: 'JAVA' },
         'c': { color: '#64748b', label: 'C' },
         'cpp': { color: '#64748b', label: 'C++' },
-        'html': { color: '#f97316', label: 'HTML' },// Orange
+        'html': { color: '#f97316', label: 'HTML' },
         'css': { color: '#3b82f6', label: 'CSS' },
-        'txt': { color: '#94a3b8', label: 'TXT' },  // Slate Light
+        'txt': { color: '#94a3b8', label: 'TXT' },
         'md': { color: '#475569', label: 'MD' },
     };
     return iconMap[ext] || { color: '#94a3b8', label: ext ? ext.toUpperCase().substring(0, 4) : 'FILE' };
 }
 
+/**
+ * renderMarkdown - render markdown content into a DOM element by ID
+ * Uses marked.js if available, falls back to escaped text with line breaks
+ */
+export function renderMarkdown(elementId, content) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    if (content == null || content === '') {
+        el.innerHTML = '<p class="text-muted">暂无内容</p>';
+        return;
+    }
+    try {
+        const text = String(content).trim();
+        if (typeof marked !== 'undefined' && marked.parse) {
+            el.innerHTML = marked.parse(text);
+        } else {
+            el.innerHTML = escapeHtml(text).replace(/\n/g, '<br>');
+        }
+    } catch (e) {
+        console.error('Markdown rendering error:', e);
+        el.innerHTML = escapeHtml(String(content)).replace(/\n/g, '<br>');
+    }
+}
+
 // Ensure global scope availability
 window.UI = {
     showToast,
+    showMessage,
     openModal,
     closeModal,
     formatSize,
     formatDate,
+    formatDateLocal,
     escapeHtml,
-    getFileIcon
+    getFileIcon,
+    renderMarkdown
 };
 
 // Aliases for backwards compatibility with old inline scripts

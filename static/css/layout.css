@@ -195,12 +195,310 @@
     background-color: var(--bg-color);
 }
 
-/* Classroom Split Layout */
+/* =========================================
+   Classroom Workspace Layout
+   ========================================= */
+.classroom-workspace {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) 350px;
+    gap: var(--spacing-lg);
+    height: calc(100vh - 64px);
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: var(--spacing-lg);
+    overflow: hidden;
+}
+
+.workspace-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xl);
+    overflow-y: auto;
+    min-width: 0;
+    padding-right: var(--spacing-sm);
+}
+
+.workspace-section {
+    flex-shrink: 0;
+}
+
+.workspace-sidebar {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* Section Headers */
+.section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--spacing-lg);
+    gap: var(--spacing-md);
+}
+
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-bottom: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    flex-shrink: 0;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: var(--spacing-2xl);
+    color: var(--text-muted);
+}
+
+/* Upload Dropzone */
+.upload-dropzone {
+    border: 2px dashed var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-xl);
+    text-align: center;
+    transition: all var(--transition-fast);
+    cursor: pointer;
+}
+
+.upload-dropzone:hover,
+.upload-dropzone.drag-over {
+    border-color: var(--primary-color);
+    background-color: var(--primary-light);
+}
+
+.upload-dropzone-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* Chat Panel (Classroom sidebar) */
+.chat-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+
+.chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--surface-hover);
+    flex-shrink: 0;
+}
+
+.chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.chat-input-area {
+    padding: var(--spacing-md);
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+/* Chat Messages */
+.chat-message {
+    max-width: 85%;
+    word-break: break-word;
+}
+
+.chat-message-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    margin-bottom: 2px;
+}
+
+.chat-message .sender {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+.chat-message .sender.teacher {
+    color: var(--success-color);
+}
+
+.chat-message .time {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.chat-message .message-content {
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--text-primary);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background-color: var(--surface-hover);
+    border-radius: var(--radius-md);
+}
+
+.chat-message.system {
+    max-width: 100%;
+    text-align: center;
+}
+
+.chat-message.system .message-content {
+    display: inline-block;
+    background: var(--bg-color);
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    padding: var(--spacing-xs) var(--spacing-md);
+    border-radius: var(--radius-full);
+}
+
+/* Status Indicator */
+.status-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.status-indicator.status-online {
+    background-color: var(--success-color);
+}
+
+/* Hover Lift */
+.hover-lift {
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+/* Navbar Title */
+.navbar-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Height utility */
+.h-full { height: 100%; }
+
+/* Padding right utility */
+.pr-2 { padding-right: var(--spacing-md); }
+
+/* =========================================
+   Classroom Responsive
+   ========================================= */
+@media (max-width: 1024px) {
+    .classroom-workspace {
+        grid-template-columns: 1fr;
+        height: auto;
+        min-height: calc(100vh - 64px);
+        overflow: visible;
+    }
+
+    .workspace-content {
+        overflow-y: visible;
+        padding-right: 0;
+    }
+
+    .workspace-sidebar {
+        height: 450px;
+    }
+}
+
+@media (max-width: 768px) {
+    .navbar {
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-sm) var(--spacing-md);
+    }
+
+    .navbar-brand {
+        font-size: 1rem;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .navbar-title {
+        font-size: 0.95rem;
+    }
+
+    .navbar-user {
+        width: 100%;
+        justify-content: flex-end;
+        font-size: 0.8rem;
+    }
+
+    .classroom-workspace {
+        padding: var(--spacing-md);
+        gap: var(--spacing-md);
+    }
+
+    .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--spacing-sm);
+    }
+
+    .header-actions {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .workspace-sidebar {
+        height: 400px;
+    }
+
+    .upload-dropzone {
+        padding: var(--spacing-md);
+    }
+
+    .upload-dropzone h4 {
+        font-size: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .workspace-sidebar {
+        height: 350px;
+    }
+
+    .navbar-title .text-sm {
+        display: none;
+    }
+}
+
+/* Legacy aliases for backward compatibility */
 .classroom-layout {
     display: grid;
     grid-template-columns: minmax(0, 2fr) 350px;
     gap: var(--spacing-lg);
-    height: calc(100vh - 64px); /* Assuming 64px navbar */
+    height: calc(100vh - 64px);
     padding: var(--spacing-lg);
     max-width: 1600px;
     margin: 0 auto;
@@ -211,7 +509,7 @@
     flex-direction: column;
     gap: var(--spacing-lg);
     overflow-y: auto;
-    padding-right: var(--spacing-sm); /* for scrollbar */
+    padding-right: var(--spacing-sm);
 }
 
 .classroom-sidebar {
@@ -222,20 +520,4 @@
     border-radius: var(--radius-lg);
     overflow: hidden;
     box-shadow: var(--shadow-sm);
-}
-
-@media (max-width: 1024px) {
-    .classroom-layout {
-        grid-template-columns: 1fr;
-        height: auto;
-        min-height: calc(100vh - 64px);
-    }
-
-    .classroom-main {
-        overflow-y: visible;
-    }
-
-    .classroom-sidebar {
-        height: 500px; /* Fixed height when stacked */
-    }
 }

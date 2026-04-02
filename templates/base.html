@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}课堂互动平台{% endblock %}</title>
+
+    <!-- Core Design System (always loaded) -->
+    <link rel="stylesheet" href="/static/css/core.css">
+
+    {% block css %}{% endblock %}
+
+    {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+    {% block body %}{% endblock %}
+
+    <!-- Global Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

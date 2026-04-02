@@ -1,213 +1,68 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>作业管理 - {{ assignment.title }} | 课堂平台</title>
+{% extends "base.html" %}
 
-    <!-- Core modern CSS system -->
-    <link rel="stylesheet" href="/static/css/core.css">
-    <link rel="stylesheet" href="/static/css/layout.css">
-    <link rel="stylesheet" href="/static/css/buttons.css">
-    <link rel="stylesheet" href="/static/css/cards.css">
-    <link rel="stylesheet" href="/static/css/forms.css">
-    <link rel="stylesheet" href="/static/css/tables.css">
-    <link rel="stylesheet" href="/static/css/modals.css">
-    <link rel="stylesheet" href="/static/css/toast.css">
+{% block title %}作业管理 - {{ assignment.title }} | 课堂平台{% endblock %}
 
-    <style>
-        .assignment-header {
-            background: var(--surface-color);
-            border-bottom: 1px solid var(--border-color);
-            padding: var(--spacing-md) var(--spacing-xl);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 40;
-            box-shadow: var(--shadow-sm);
-        }
+{% block css %}
+<link rel="stylesheet" href="/static/css/layout.css">
+<link rel="stylesheet" href="/static/css/buttons.css">
+<link rel="stylesheet" href="/static/css/cards.css">
+<link rel="stylesheet" href="/static/css/forms.css">
+<link rel="stylesheet" href="/static/css/tables.css">
+<link rel="stylesheet" href="/static/css/modals.css">
+<link rel="stylesheet" href="/static/css/toast.css">
+<link rel="stylesheet" href="/static/css/markdown.css">
+<style>
+    .assignment-header {
+        background: var(--surface-color);
+        border-bottom: 1px solid var(--border-color);
+        padding: var(--spacing-md) var(--spacing-xl);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        box-shadow: var(--shadow-sm);
+    }
+    .header-title-group { display: flex; align-items: center; gap: var(--spacing-md); }
+    .back-link {
+        display: inline-flex; align-items: center; gap: 6px;
+        color: var(--text-muted); text-decoration: none;
+        font-size: 0.9rem; font-weight: 500; transition: color 0.2s;
+    }
+    .back-link:hover { color: var(--primary-color); }
+    .workspace-container {
+        max-width: 1400px; margin: 0 auto;
+        padding: var(--spacing-xl) var(--spacing-md);
+        display: grid; grid-template-columns: 1fr 1.5fr;
+        gap: var(--spacing-xl); align-items: start;
+    }
+    @media (max-width: 1024px) { .workspace-container { grid-template-columns: 1fr; } }
 
-        .header-title-group {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-md);
-        }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--spacing-md); margin-bottom: var(--spacing-lg); }
+    .stat-card { background: var(--bg-color); padding: var(--spacing-md); border-radius: var(--radius-md); text-align: center; border: 1px solid var(--border-color); }
+    .stat-value { font-size: 1.8rem; font-weight: 700; color: var(--text-primary); line-height: 1.2; }
+    .stat-label { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
 
-        .back-link {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            color: var(--text-muted);
-            text-decoration: none;
-            font-size: 0.9rem;
-            font-weight: 500;
-            transition: color 0.2s;
-        }
+    .answer-card { background: var(--bg-color); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); border-left: 4px solid var(--primary-color); }
+    .answer-card .q-title { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); margin-bottom: 8px; }
+    .answer-card .q-content { font-size: 0.95rem; color: var(--text-secondary); line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+    .answer-card .q-content pre { margin: 8px 0 0 0; }
+    .submission-meta { display: flex; gap: 20px; flex-wrap: wrap; padding: 12px 16px; background: var(--bg-color); border-radius: var(--radius-md); margin-bottom: var(--spacing-md); font-size: 0.85rem; color: var(--text-muted); border: 1px solid var(--border-color); }
+    .submission-meta span { display: inline-flex; align-items: center; gap: 6px; }
 
-        .back-link:hover {
-            color: var(--primary-color);
-        }
+    .dropdown { position: relative; display: inline-block; }
+    .dropdown-menu { display: none; position: absolute; background: var(--surface-color); border: 1px solid var(--border-color); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); z-index: 1000; min-width: 180px; top: 100%; right: 0; margin-top: 4px; overflow: hidden; }
+    .dropdown-item { display: block; width: 100%; padding: 10px 16px; border: none; background: none; text-align: left; cursor: pointer; font-size: 0.9rem; color: var(--text-primary); transition: background 0.15s; }
+    .dropdown-item:hover { background: var(--bg-color); }
+    .dropdown-item svg { width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px; }
+</style>
+{% endblock %}
 
-        .workspace-container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: var(--spacing-xl) var(--spacing-md);
-            display: grid;
-            grid-template-columns: 1fr 1.5fr;
-            gap: var(--spacing-xl);
-            align-items: start;
-        }
-        @media (max-width: 1024px) {
-            .workspace-container {
-                grid-template-columns: 1fr;
-            }
-        }
+{% block body_class %}page-wrapper{% endblock %}
 
-        /* Stats Grid */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: var(--spacing-md);
-            margin-bottom: var(--spacing-lg);
-        }
-        .stat-card {
-            background: var(--bg-color);
-            padding: var(--spacing-md);
-            border-radius: var(--radius-md);
-            text-align: center;
-            border: 1px solid var(--border-color);
-        }
-        .stat-value {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: var(--text-primary);
-            line-height: 1.2;
-        }
-        .stat-label {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            margin-top: 4px;
-        }
-
-        /* Markdown Content Formatting */
-        .md-content {
-            line-height: 1.7;
-            font-size: 0.95rem;
-            color: var(--text-secondary);
-        }
-        .md-content h1, .md-content h2, .md-content h3 {
-            color: var(--text-primary);
-            margin-top: 1.5em;
-            margin-bottom: 0.5em;
-            font-weight: 600;
-        }
-        .md-content h1 { font-size: 1.3rem; }
-        .md-content h2 { font-size: 1.15rem; }
-        .md-content h3 { font-size: 1.05rem; }
-        .md-content p { margin-bottom: 1em; }
-        .md-content ul, .md-content ol { padding-left: 1.5em; margin-bottom: 1em; }
-        .md-content li { margin-bottom: 0.25em; }
-        .md-content pre {
-            background: var(--gray-900);
-            color: var(--gray-100);
-            padding: 1rem;
-            border-radius: var(--radius-md);
-            overflow-x: auto;
-            margin: 1em 0;
-        }
-        .md-content code {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-            background: var(--bg-color);
-            padding: 0.2em 0.4em;
-            border-radius: 4px;
-            font-size: 0.9em;
-        }
-        .md-content pre code {
-            background: transparent;
-            padding: 0;
-        }
-        .md-content blockquote {
-            border-left: 4px solid var(--primary-color);
-            padding: 0.5em 1em;
-            background: var(--primary-light);
-            margin: 1em 0;
-            border-radius: 0 var(--radius-md) var(--radius-md) 0;
-            color: var(--text-secondary);
-        }
-
-        /* Submitted Answer Card (in modal) */
-        .answer-card {
-            background: var(--bg-color);
-            border-radius: var(--radius-md);
-            padding: var(--spacing-md);
-            margin-bottom: var(--spacing-md);
-            border-left: 4px solid var(--primary-color);
-        }
-        .answer-card .q-title {
-            font-weight: 600;
-            font-size: 0.9rem;
-            color: var(--text-primary);
-            margin-bottom: 8px;
-        }
-        .answer-card .q-content {
-            font-size: 0.95rem;
-            color: var(--text-secondary);
-            line-height: 1.7;
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-        .answer-card .q-content pre { margin: 8px 0 0 0; }
-
-        .submission-meta {
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-            padding: 12px 16px;
-            background: var(--bg-color);
-            border-radius: var(--radius-md);
-            margin-bottom: var(--spacing-md);
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            border: 1px solid var(--border-color);
-        }
-        .submission-meta span { display: inline-flex; align-items: center; gap: 6px; }
-
-        /* Dropdown */
-        .dropdown { position: relative; display: inline-block; }
-        .dropdown-menu {
-            display: none;
-            position: absolute;
-            background: var(--surface-color);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
-            box-shadow: var(--shadow-lg);
-            z-index: 1000;
-            min-width: 180px;
-            top: 100%;
-            right: 0;
-            margin-top: 4px;
-            overflow: hidden;
-        }
-        .dropdown-item {
-            display: block;
-            width: 100%;
-            padding: 10px 16px;
-            border: none;
-            background: none;
-            text-align: left;
-            cursor: pointer;
-            font-size: 0.9rem;
-            color: var(--text-primary);
-            transition: background 0.15s;
-        }
-        .dropdown-item:hover { background: var(--bg-color); }
-        .dropdown-item svg { width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px; }
-    </style>
-</head>
-<body class="page-wrapper">
-    <header class="assignment-header">
+{% block body %}
+<header class="assignment-header">
         <div class="header-title-group">
             <a href="/dashboard" class="back-link">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
@@ -406,14 +261,13 @@
         </div>
     </div>
 
-    <!-- Global Toast Container -->
-    <div id="toast-container" class="toast-container"></div>
-
     <script src="/static/js/marked.min.js"></script>
-    <script type="module">
-        import { showToast, openModal, closeModal } from '/static/js/ui.js';
+{% endblock %}
 
-        // Expose to window for inline onclick handlers
+{% block scripts %}
+    <script type="module">
+        import { showToast, openModal, closeModal, renderMarkdown, escapeHtml, formatDateLocal } from '/static/js/ui.js';
+
         window.openEditModal = () => openModal('edit-modal');
         window.closeEditModal = () => closeModal('edit-modal');
         window.openDeleteModal = () => openModal('delete-modal');
@@ -574,8 +428,7 @@
 
         function formatAnswer(text) {
             if (!text) return '<span class="text-muted italic">(未作答)</span>';
-            if (text.includes('
-') && (text.includes('def ') || text.includes('import ') || text.includes('function ') || text.includes('class ') || text.includes('```'))) {
+            if (text.includes('\n') && (text.includes('def ') || text.includes('import ') || text.includes('function ') || text.includes('class ') || text.includes('```'))) {
                 return `<pre><code>${escapeHtml(text)}</code></pre>`;
             }
             return escapeHtml(text);
@@ -689,8 +542,8 @@
 
         window.exportGrades = async function() {
             try {
-                // Hardcoded class offering id 1 for now as in original template, should probably be dynamic
-                const response = await fetch(`/api/assignments/${currentAssignmentId}/export/1`);
+                const classOfferingId = "{{ assignment.class_offering_id }}";
+                const response = await fetch(`/api/assignments/${currentAssignmentId}/export/${classOfferingId}`);
                 if (response.ok) {
                     const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
@@ -779,5 +632,4 @@
             return { 'new': '草稿', 'published': '进行中', 'closed': '已截止', 'submitted': '已提交', 'grading': '批改中', 'graded': '已批改' }[status] || status;
         }
     </script>
-</body>
-</html>
+{% endblock %}

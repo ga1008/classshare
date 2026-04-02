@@ -66,9 +66,9 @@
             return;
         }
 
-        const data = await apiRequest(`/api/manage/classes/${classId}`, 'DELETE');
+        const data = await apiFetch(`/api/manage/classes/${classId}`, { method: 'DELETE' });
         if(data) {
-            alert(data.message || '删除成功！');
+            showMessage(data.message || '删除成功！', 'success');
             location.reload();
         }
     }

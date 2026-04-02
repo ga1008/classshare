@@ -96,3 +96,5 @@ export const API = {
 // Make available globally for inline scripts compatibility
 window.API = API;
 window.apiFetch = apiFetch;
+// Alias used by manage pages and some inline scripts
+window.apiRequest = apiFetch;

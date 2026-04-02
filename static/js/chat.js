@@ -26,6 +26,15 @@ export class ClassroomChat {
 
         this.ws.onmessage = this.handleMessage.bind(this);
 
+        this.ws.onopen = () => {
+            console.log("WebSocket connected.");
+            const statusEl = document.getElementById('ws-status');
+            if (statusEl) {
+                statusEl.classList.add('status-online');
+                statusEl.title = '连接正常';
+            }
+        };
+
         this.ws.onerror = (error) => {
             console.error("WebSocket error:", error);
             if (window.UI) window.UI.showToast("聊天室连接出现错误", "error");
@@ -34,10 +43,18 @@ export class ClassroomChat {
         this.ws.onclose = () => {
             console.warn("WebSocket connection closed.");
             this.appendSystemMessage("连接已断开，请刷新页面重试。");
+            const statusEl = document.getElementById('ws-status');
+            if (statusEl) {
+                statusEl.classList.remove('status-online');
+                statusEl.title = '连接已断开';
+            }
         };
 
         // Bind UI events
-        this.sendBtn.addEventListener('click', this.sendMessage.bind(this));
+        this.sendBtn.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.sendMessage();
+        });
         this.chatInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -80,7 +97,7 @@ export class ClassroomChat {
         msgDiv.className = 'chat-message';
 
         // Add special class for teacher
-        const isTeacher = msg.sender_role === 'teacher' || msg.sender.includes('教师');
+        const isTeacher = msg.role === 'teacher' || msg.sender.includes('教师');
         const senderClass = isTeacher ? 'sender teacher' : 'sender';
 
         msgDiv.innerHTML = `

@@ -24,12 +24,14 @@
         .manage-sidebar {
             width: 260px;
             background-color: var(--surface-color);
-            border-right: 1px solid var(--border-color);
+            border-right: none; /* Removed hard border */
+            box-shadow: var(--shadow-sm); /* Added subtle shadow for separation */
             display: flex;
             flex-direction: column;
             position: sticky;
             top: 0;
             height: 100vh;
+            z-index: 20; /* Ensure shadow shows over main content */
         }
 
         .manage-brand {
@@ -124,7 +126,8 @@
             height: 70px;
             padding: 0 var(--spacing-6);
             background-color: var(--surface-color);
-            border-bottom: 1px solid var(--border-color);
+            border-bottom: none; /* Removed hard border */
+            box-shadow: var(--shadow-sm); /* Added subtle shadow */
             display: flex;
             align-items: center;
             justify-content: space-between;

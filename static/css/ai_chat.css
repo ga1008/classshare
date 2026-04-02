@@ -1,9 +1,8 @@
 /* ========================
    AI Chat Modal Styles
-   (V3 - Fullscreen UI Overhaul)
    ======================== */
 
-/* 浮动按钮 (无变化) */
+/* Floating Action Button */
 #ai-chat-fab {
     position: fixed;
     bottom: 30px;
@@ -28,7 +27,7 @@
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
 }
 
-/* 聊天浮窗 (Overlay) (无变化) */
+/* Chat Overlay */
 #ai-chat-modal {
     display: none;
     position: fixed;
@@ -39,7 +38,7 @@
     z-index: 1001;
 }
 
-/* 聊天窗口容器 (无变化) */
+/* Chat Window Container */
 .ai-chat-container {
     position: fixed;
     bottom: 30px;
@@ -50,9 +49,9 @@
     min-height: 400px;
     max-width: 100vw;
     max-height: 100vh;
-    background: #fff;
-    border-radius: 12px;
-    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+    background: var(--surface-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xl);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -61,7 +60,7 @@
 }
 
 /* ========================
-   * 新增: 全屏模式 (V3 核心修改)
+   Fullscreen Mode
    ======================== */
 .ai-chat-container.fullscreen {
     width: 100vw;
@@ -74,81 +73,71 @@
     bottom: 0;
     border-radius: 0;
     animation: none;
-    /* 关键: 全屏时使用深色背景，让内容居中 */
-    background: #f0f2f5;
+    background: var(--bg-color);
 }
 
-/* 调整头部: 全屏时头部也居中 (可选, 但更像 Gemini) */
 .ai-chat-container.fullscreen .ai-chat-header {
     max-width: 900px;
     margin: 0 auto;
     width: 100%;
     background: transparent;
     border-bottom: none;
-    padding: 16px 0; /* 给点空间 */
+    padding: 16px 0;
 }
 
-/* 调整消息区: 全屏时滚动、居中 */
 .ai-chat-container.fullscreen .ai-chat-messages {
     flex: 1;
-    max-width: 900px; /* 核心: 居中最大宽度 */
+    max-width: 900px;
     width: 100%;
     margin: 0 auto;
     background: transparent;
-    padding: 16px 0; /* 移除左右 padding */
+    padding: 16px 0;
 }
 
-/* 调整消息体: 全屏时消息也需要居中 */
 .ai-chat-container.fullscreen .ai-chat-message {
-    max-width: 100%; /* 消息体本身占满 900px 宽度 */
+    max-width: 100%;
 }
-/* 助手消息在全屏时背景改为白色卡片 */
+
 .ai-chat-container.fullscreen .ai-chat-message.assistant .bubble {
-     background: #fff;
-     border: none;
-     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    background: var(--surface-color);
+    border: none;
+    box-shadow: var(--shadow-sm);
 }
-/* 用户消息在全屏时更突出 */
+
 .ai-chat-container.fullscreen .ai-chat-message.user {
-    margin-left: 0; /* 用户消息也居中 */
+    margin-left: 0;
 }
 .ai-chat-container.fullscreen .ai-chat-message.user .bubble {
-    margin-left: auto; /* 气泡还是靠右 */
-    max-width: 85%; /* 保持气泡宽度 */
+    margin-left: auto;
+    max-width: 85%;
 }
 
-
-/* 调整输入区: 全屏时居中、变大 */
 .ai-chat-container.fullscreen .ai-chat-input-area {
-    max-width: 900px; /* 核心: 居中最大宽度 */
+    max-width: 900px;
     width: 100%;
     margin: 0 auto;
     background: transparent;
     border-top: none;
-    padding: 12px 0 40px 0; /* 底部留多点空间 */
+    padding: 12px 0 40px 0;
 }
 .ai-chat-container.fullscreen .ai-chat-input-area .input-row {
-    background: #fff;
-    border: 1px solid var(--border-color, #e0e0e0);
-    border-radius: 12px;
-    padding: 8px; /* 内边距 */
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 8px;
+    box-shadow: var(--shadow-sm);
 }
 .ai-chat-container.fullscreen .ai-chat-input-area textarea {
-    /* 核心: 4-5 行初始高度 */
-    height: 6rem; /* 1.5rem line-height * 4 lines */
-    /* 核心: 8-9 行最大高度 */
-    max-height: 13.5rem; /* 1.5rem * 9 lines */
+    height: 6rem;
+    max-height: 13.5rem;
     border: none;
     padding: 10px;
     font-size: 1rem;
 }
 
 /* ========================
-   (非全屏模式下的样式)
+   Resizer Handles
    ======================== */
-
-/* Resizer (无变化) */
 .resizer {
     position: absolute;
     background: transparent;
@@ -167,19 +156,21 @@
     display: none;
 }
 
-/* 窗口头部 (无变化) */
+/* ========================
+   Chat Header
+   ======================== */
 .ai-chat-header {
     padding: 12px 16px;
     border-bottom: 1px solid var(--border-color);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: #f8f9fa;
+    background: var(--surface-hover);
 }
 .ai-chat-header h3 {
     margin: 0;
     font-size: 1.1rem;
-    color: var(--text-color);
+    color: var(--text-primary);
 }
 .ai-chat-header .header-buttons {
     display: flex;
@@ -189,7 +180,7 @@
     background: none;
     border: none;
     cursor: pointer;
-    color: var(--text-light, #666);
+    color: var(--text-muted);
     padding: 4px;
     display: flex;
     align-items: center;
@@ -199,17 +190,19 @@
     color: var(--primary-color);
 }
 
-/* 消息区域 (非全屏) (无变化) */
+/* ========================
+   Messages Area
+   ======================== */
 .ai-chat-messages {
     flex: 1;
     overflow-y: auto;
     padding: 16px;
-    background: #f4f7f6;
+    background: var(--bg-color);
 }
 
 .ai-chat-message {
     display: flex;
-    flex-direction: column; /* 修改: 允许 actions 在 bubble 下方 */
+    flex-direction: column;
     margin-bottom: 12px;
     max-width: 85%;
 }
@@ -223,35 +216,34 @@
 .ai-chat-message .bubble p:not(:last-child) { margin-bottom: 8px; }
 .ai-chat-message .bubble img { max-width: 100%; border-radius: 8px; margin-top: 8px; }
 
-/* 用户消息 (非全屏) (无变化) */
+/* User Messages */
 .ai-chat-message.user {
     margin-left: auto;
 }
 .ai-chat-message.user .bubble {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-inverse);
     border-bottom-right-radius: 4px;
 }
 
-/* 助手消息 (非全屏) */
+/* Assistant Messages */
 .ai-chat-message.assistant {
     margin-right: auto;
 }
 .ai-chat-message.assistant .bubble {
-    background: #fff;
-    color: var(--text-color);
+    background: var(--surface-color);
+    color: var(--text-primary);
     border: 1px solid var(--border-color);
     border-bottom-left-radius: 4px;
 }
 
-/* 助手消息中的代码块 */
+/* Assistant code blocks */
 .ai-chat-message.assistant .bubble pre {
-    /* * 新增: 相对定位，用于锚定复制按钮 */
     position: relative;
-    background: #2d2d2d;
-    color: #f1f1f1;
+    background: var(--gray-900);
+    color: var(--gray-100);
     padding: 10px;
-    padding-top: 35px; /* * 新增: 为复制按钮留出空间 */
+    padding-top: 35px;
     border-radius: 5px;
     overflow-x: auto;
     font-size: 0.85em;
@@ -259,15 +251,15 @@
     word-wrap: break-word;
 }
 .ai-chat-message.assistant .bubble code {
-     word-wrap: break-word;
+    word-wrap: break-word;
 }
 
-/* 系统消息 (无变化) */
+/* System Messages */
 .ai-chat-message.system {
     max-width: 100%;
     text-align: center;
     font-size: 0.85rem;
-    color: var(--text-light);
+    color: var(--text-muted);
 }
 .ai-chat-message.loading .bubble {
     animation: ai-chat-loading 1.5s infinite ease-in-out;
@@ -278,14 +270,12 @@
 }
 
 /* ========================
-   AI Chat Input Area Layout (新增)
+   Input Area
    ======================== */
-
-/* 输入区域 (非全屏) */
 .ai-chat-input-area {
     border-top: 1px solid var(--border-color);
     padding: 12px;
-    background: #fff;
+    background: var(--surface-color);
 }
 .ai-chat-input-area .input-row {
     display: flex;
@@ -293,13 +283,10 @@
     gap: 8px;
 }
 
-/* 左侧按钮组 */
 .ai-chat-input-area .left-buttons {
     display: flex;
     align-items: center;
 }
-
-/* 右侧按钮组 */
 .ai-chat-input-area .right-buttons {
     display: flex;
     align-items: center;
@@ -308,17 +295,24 @@
 
 .ai-chat-input-area textarea {
     flex: 1;
-    border: 1px solid #ccc;
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 10px;
     font-size: 1rem;
     font-family: inherit;
     resize: none;
-    max-height: 100px; /* 非全屏最大高度 */
+    max-height: 100px;
     overflow-y: auto;
+    background: var(--surface-color);
+    color: var(--text-primary);
+}
+.ai-chat-input-area textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: var(--shadow-focus);
 }
 
-/* 按钮通用样式 */
+/* Chat Buttons */
 .ai-chat-input-area .chat-btn {
     background: var(--primary-color);
     color: white;
@@ -335,28 +329,27 @@
     transition: all 0.3s ease;
 }
 .ai-chat-input-area .chat-btn.attach {
-    background: #f0f0f0;
-    color: var(--text-light);
+    background: var(--secondary-color);
+    color: var(--text-muted);
 }
 .ai-chat-input-area .chat-btn:disabled {
-    background: #ccc;
+    background: var(--border-color);
     cursor: not-allowed;
 }
 .ai-chat-input-area .chat-btn:hover:not(:disabled) {
     transform: scale(1.05);
 }
 .ai-chat-input-area .chat-btn.attach:hover:not(:disabled) {
-    background: #e0e0e0;
-    color: var(--text-color);
+    background: var(--secondary-hover);
+    color: var(--text-primary);
 }
 
 /* ========================
-   深度思考按钮样式 (新增)
+   Deep Think Button
    ======================== */
-
 #ai-deep-think-btn {
-    background: #f0f0f0;
-    color: var(--text-light, #666);
+    background: var(--secondary-color);
+    color: var(--text-muted);
     border: none;
     border-radius: 50%;
     width: 40px;
@@ -369,35 +362,33 @@
     justify-content: center;
     transition: all 0.3s ease;
 }
-
 #ai-deep-think-btn:hover {
-    background: #e0e0e0;
+    background: var(--secondary-hover);
     color: var(--primary-color);
     transform: scale(1.05);
 }
-
 #ai-deep-think-btn.active {
     background: var(--primary-color);
     color: white;
-    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.3);
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.3);
 }
 
-/* 全屏模式下的按钮布局调整 */
+/* Fullscreen button layout adjustments */
 .ai-chat-container.fullscreen .ai-chat-input-area .input-row {
-    align-items: flex-end; /* 让按钮对齐底部 */
+    align-items: flex-end;
 }
-
 .ai-chat-container.fullscreen .ai-chat-input-area .left-buttons {
-    align-self: flex-start; /* 左侧按钮在顶部 */
+    align-self: flex-start;
     margin-top: 2px;
 }
-
 .ai-chat-container.fullscreen .ai-chat-input-area .right-buttons {
-    align-self: flex-end; /* 右侧按钮在底部 */
+    align-self: flex-end;
     margin-bottom: 2px;
 }
 
-/* 附件预览 (无变化) */
+/* ========================
+   Attachment Previews
+   ======================== */
 .ai-chat-attachment-previews {
     display: flex;
     flex-wrap: wrap;
@@ -439,12 +430,14 @@
     justify-content: center;
 }
 
-/* 闪烁光标 (无变化) */
+/* ========================
+   Streaming Cursor
+   ======================== */
 .streaming-cursor {
     display: inline-block;
     width: 10px;
     height: 1.2em;
-    background-color: var(--text-color, #333);
+    background-color: var(--text-primary);
     margin-left: 2px;
     animation: blink 1s infinite;
     vertical-align: text-bottom;
@@ -455,16 +448,14 @@
 }
 
 /* ========================
-   * 新增: 复制按钮 (V3)
+   Copy Code Button
    ======================== */
-
-/* 1. 单个代码块的复制按钮 */
 .copy-code-btn {
     position: absolute;
     top: 8px;
     right: 8px;
-    background: #555;
-    color: #f0f0f0;
+    background: var(--gray-500);
+    color: var(--gray-100);
     border: none;
     border-radius: 4px;
     padding: 4px 8px;
@@ -477,29 +468,30 @@
     opacity: 1;
 }
 .copy-code-btn:hover {
-    background: #666;
+    background: var(--gray-600);
 }
 .copy-code-btn.copied {
-    background: #4caf50; /* 绿色 */
+    background: var(--success-color);
     color: white;
 }
 
-/* 2. 整条消息的操作栏 (用于放"复制Markdown"按钮) */
+/* ========================
+   Message Actions Bar
+   ======================== */
 .message-actions {
     margin-top: 8px;
-    margin-left: 4px; /* 对齐气泡 */
+    margin-left: 4px;
 }
-/* 全屏时，操作栏也居中 */
 .ai-chat-container.fullscreen .message-actions {
-     max-width: 900px;
-     margin: 8px auto 0 auto;
-     padding: 0;
+    max-width: 900px;
+    margin: 8px auto 0 auto;
+    padding: 0;
 }
 
 .message-actions .copy-btn {
     background: none;
     border: none;
-    color: var(--text-light, #666);
+    color: var(--text-muted);
     cursor: pointer;
     padding: 4px;
     font-size: 0.8rem;
@@ -509,32 +501,19 @@
     border-radius: 4px;
 }
 .message-actions .copy-btn:hover {
-    background: #f0f0f0;
-    color: var(--text-color, #333);
+    background: var(--secondary-color);
+    color: var(--text-primary);
 }
 .message-actions .copy-btn.copied {
-    color: #4caf50;
-}
-
-/* 头部深度思考按钮样式 (无变化) */
-#ai-deep-think-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--text-light, #666);
-    padding: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    color: var(--success-color);
 }
 
 /* ========================
-   思考过程样式 (新增)
+   Thinking Container
    ======================== */
-
 .thinking-container {
     margin-bottom: 16px;
-    border: 1px solid #e9ecef;
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     overflow: hidden;
 }
@@ -544,8 +523,8 @@
     justify-content: space-between;
     align-items: center;
     padding: 12px 16px;
-    background: #f8f9fa;
-    border-bottom: 1px solid #e9ecef;
+    background: var(--surface-hover);
+    border-bottom: 1px solid var(--border-color);
     cursor: pointer;
     user-select: none;
 }
@@ -556,7 +535,7 @@
     gap: 8px;
     background: none;
     border: none;
-    color: #6c757d;
+    color: var(--text-secondary);
     font-size: 0.875rem;
     cursor: pointer;
     padding: 4px 8px;
@@ -565,8 +544,8 @@
 }
 
 .thinking-toggle:hover {
-    background: #e9ecef;
-    color: #495057;
+    background: var(--secondary-color);
+    color: var(--text-primary);
 }
 
 .thinking-toggle svg {
@@ -579,7 +558,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    color: #6c757d;
+    color: var(--text-secondary);
     font-size: 0.875rem;
 }
 
@@ -603,7 +582,7 @@
 }
 
 .thinking-content {
-    background: #f8f9fa;
+    background: var(--surface-hover);
     padding: 0;
     max-height: 300px;
     overflow-y: auto;
@@ -615,77 +594,89 @@
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
     font-size: 0.875rem;
     line-height: 1.5;
-    color: #6c757d;
-    border-top: 1px solid #e9ecef;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border-color);
 }
 
-/* 最终回答样式 */
+/* Final answer styles */
 .final-answer {
     margin-top: 16px;
 }
+.final-answer p:first-child { margin-top: 0; }
+.final-answer p:last-child { margin-bottom: 0; }
 
-.final-answer p:first-child {
-    margin-top: 0;
-}
-
-.final-answer p:last-child {
-    margin-bottom: 0;
-}
-
-/* 流式显示时的特殊样式 */
 .ai-chat-message.assistant .thinking-container .final-answer {
-    border-top: 1px solid #e9ecef;
+    border-top: 1px solid var(--border-color);
     padding-top: 16px;
     margin-top: 0;
 }
 
-/* 全屏模式下的调整 */
+/* Fullscreen thinking adjustments */
 .ai-chat-container.fullscreen .thinking-container {
-    background: #fff;
-    border: 1px solid var(--border-color, #e0e0e0);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
 }
-
 .ai-chat-container.fullscreen .thinking-header {
-    background: #fafafa;
+    background: var(--gray-50);
 }
-
 .ai-chat-container.fullscreen .thinking-content {
-    background: #fafafa;
+    background: var(--gray-50);
 }
 
-/* 响应式调整 */
+/* ========================
+   Responsive
+   ======================== */
 @media (max-width: 768px) {
-    .thinking-header {
-        padding: 10px 12px;
+    .thinking-header { padding: 10px 12px; }
+    .thinking-text { padding: 12px; font-size: 0.8rem; }
+    .thinking-toggle, .thinking-indicator { font-size: 0.8rem; }
+}
+
+/* Scrollbar styles */
+.thinking-content::-webkit-scrollbar { width: 6px; }
+.thinking-content::-webkit-scrollbar-track { background: var(--bg-color); border-radius: 3px; }
+.thinking-content::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 3px; }
+.thinking-content::-webkit-scrollbar-thumb:hover { background: var(--gray-400); }
+
+/* Pop-in animation */
+@keyframes ai-chat-pop-in {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* ========================
+   Mobile Responsive
+   ======================== */
+@media (max-width: 768px) {
+    .ai-chat-container {
+        width: calc(100vw - 16px);
+        height: calc(100vh - 80px);
+        bottom: 8px;
+        right: 8px;
+        min-width: unset;
+        min-height: unset;
     }
 
-    .thinking-text {
-        padding: 12px;
-        font-size: 0.8rem;
+    #ai-chat-fab {
+        bottom: 20px;
+        right: 20px;
+        width: 52px;
+        height: 52px;
     }
 
-    .thinking-toggle,
-    .thinking-indicator {
-        font-size: 0.8rem;
+    #ai-chat-fab svg {
+        width: 24px;
+        height: 24px;
     }
 }
 
-/* 滚动条样式 */
-.thinking-content::-webkit-scrollbar {
-    width: 6px;
-}
-
-.thinking-content::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 3px;
-}
-
-.thinking-content::-webkit-scrollbar-thumb {
-    background: #c1c1c1;
-    border-radius: 3px;
-}
-
-.thinking-content::-webkit-scrollbar-thumb:hover {
-    background: #a8a8a8;
+@media (max-width: 480px) {
+    .ai-chat-container {
+        width: 100vw;
+        height: 100vh;
+        bottom: 0;
+        right: 0;
+        border-radius: 0;
+    }
 }

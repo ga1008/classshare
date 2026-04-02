@@ -1220,8 +1220,7 @@
     function formatText(s) {
         if(!s) return '';
         // Convert newlines to br, but keep basic escaping
-        return esc(s).replace(/
-/g, '<br>');
+        return esc(s).replace(/\n/g, '<br>');
     }
 
     function truncate(s, n) {
