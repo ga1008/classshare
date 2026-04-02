@@ -1,0 +1,250 @@
+/*
+ * =========================================
+ * Card Styles (Clean Modern)
+ * =========================================
+ */
+
+.card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    word-wrap: break-word;
+    background-color: var(--surface-color);
+    background-clip: border-box;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    transition: var(--transition-normal);
+}
+
+.card:hover {
+    box-shadow: var(--shadow-md);
+}
+
+/* Card Header */
+.card-header {
+    padding: var(--spacing-lg);
+    margin-bottom: 0;
+    background-color: transparent;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.card-header:first-child {
+    border-radius: calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 0 0;
+}
+
+.card-title {
+    margin-bottom: 0;
+    font-size: 1.125rem; /* 18px */
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Card Body */
+.card-body {
+    flex: 1 1 auto;
+    padding: var(--spacing-lg);
+}
+
+/* Card Footer */
+.card-footer {
+    padding: var(--spacing-md) var(--spacing-lg);
+    background-color: var(--bg-color);
+    border-top: 1px solid var(--border-color);
+}
+
+.card-footer:last-child {
+    border-radius: 0 0 calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px);
+}
+
+/* Interactive Card */
+.card-interactive {
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
+}
+
+.card-interactive:hover, .card-interactive:focus {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--border-color-focus);
+    text-decoration: none;
+    color: inherit;
+}
+
+/* Dashboard Specific Cards */
+.course-card {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    border-top: 4px solid var(--primary-color);
+}
+
+.course-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+}
+
+.course-card.teacher-card {
+    border-top-color: var(--success-color);
+}
+
+.course-card-body {
+    padding: var(--spacing-lg);
+}
+
+.course-card-title {
+    font-size: 1.25rem; /* 20px */
+    font-weight: 600;
+    margin-bottom: var(--spacing-sm);
+    color: var(--text-primary);
+}
+
+.course-card-subtitle {
+    font-size: 0.875rem; /* 14px */
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-md);
+}
+
+.course-card-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    font-size: 0.75rem; /* 12px */
+    color: var(--text-muted);
+}
+
+/* File Cards */
+.file-card {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--surface-color);
+    transition: var(--transition-fast);
+}
+
+.file-card:hover {
+    border-color: var(--border-color-focus);
+    box-shadow: var(--shadow-sm);
+    transform: translateY(-1px);
+}
+
+.file-icon {
+    flex-shrink: 0;
+    width: 2.5rem;
+    height: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    font-weight: 700;
+    font-size: 0.75rem;
+}
+
+.file-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.file-name {
+    font-size: 0.875rem; /* 14px */
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.file-meta {
+    display: flex;
+    gap: var(--spacing-md);
+    font-size: 0.75rem; /* 12px */
+    color: var(--text-muted);
+}
+
+.file-actions {
+    display: flex;
+    gap: var(--spacing-xs);
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+}
+
+.file-card:hover .file-actions {
+    opacity: 1;
+}
+
+/* Assignment Cards */
+.assignment-card {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    background: var(--surface-color);
+    transition: var(--transition-fast);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+}
+
+.assignment-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background-color: var(--primary-light);
+    transition: background-color var(--transition-fast);
+}
+
+.assignment-card:hover {
+    border-color: var(--primary-color);
+    box-shadow: var(--shadow-md);
+}
+
+.assignment-card:hover::before {
+    background-color: var(--primary-color);
+}
+
+.assignment-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-xs);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.assignment-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: var(--spacing-sm);
+}
+
+/* Badges inside cards */
+.badge {
+    display: inline-block;
+    padding: 0.25em 0.5em;
+    font-size: 0.75em;
+    font-weight: 500;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+    vertical-align: baseline;
+    border-radius: var(--radius-full);
+}
+
+.badge-primary { background-color: var(--primary-light); color: var(--primary-hover); }
+.badge-success { background-color: var(--success-light); color: var(--success-color); }
+.badge-warning { background-color: var(--warning-light); color: #d97706; } /* darker warning text */
+.badge-danger { background-color: var(--danger-light); color: var(--danger-hover); }
+.badge-secondary { background-color: var(--secondary-hover); color: var(--text-secondary); }

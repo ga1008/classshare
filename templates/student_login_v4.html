@@ -3,26 +3,83 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>学生登录</title>
+    <title>学生登录 - 课堂平台</title>
+    <link rel="stylesheet" href="/static/css/core.css">
+    <link rel="stylesheet" href="/static/css/forms.css">
+    <link rel="stylesheet" href="/static/css/buttons.css">
+    <link rel="stylesheet" href="/static/css/cards.css">
     <style>
-        body { font-family: sans-serif; background: #f4f7f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .login-container { background: #fff; padding: 40px; border-radius: 12px; box-shadow: 0 8px 25px rgba(0,0,0,0.1); width: 400px; text-align: center; }
-        h2 { margin: 0 0 30px; color: #007bff; }
-        form { display: flex; flex-direction: column; }
-        input { padding: 15px; margin-bottom: 20px; border-radius: 8px; border: 1px solid #ddd; font-size: 16px; }
-        button { padding: 15px; border-radius: 8px; border: none; background: #007bff; color: white; font-size: 18px; cursor: pointer; }
-        .footer-link { margin-top: 20px; }
-        .footer-link a { color: #28a745; text-decoration: none; }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, var(--bg-color) 0%, var(--primary-light) 100%);
+        }
+        .login-card {
+            width: 100%;
+            max-width: 400px;
+            padding: var(--spacing-xl);
+            background: var(--surface-color);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            text-align: center;
+        }
+        .login-logo {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto var(--spacing-lg);
+            background: var(--primary-light);
+            color: var(--primary-color);
+            border-radius: var(--radius-full);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-logo svg {
+            width: 32px;
+            height: 32px;
+        }
+        .login-card h2 {
+            margin-bottom: var(--spacing-sm);
+            color: var(--text-primary);
+        }
+        .login-card p.subtitle {
+            color: var(--text-secondary);
+            margin-bottom: var(--spacing-xl);
+            font-size: 0.875rem;
+        }
+        .footer-links {
+            margin-top: var(--spacing-lg);
+            font-size: 0.875rem;
+        }
     </style>
 </head>
 <body>
-    <div class="login-container">
+    <div class="login-card">
+        <div class="login-logo">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+        </div>
         <h2>学生登录</h2>
+        <p class="subtitle">请输入您的真实姓名与学号进入课堂</p>
+
         <form action="/student/login" method="post">
-            <input type="text" name="name" placeholder="请输入姓名" required>
-            <input type="text" name="student_id_number" placeholder="请输入学号" required>
-            <button type="submit">登 录</button>
+            <div class="form-group text-left">
+                <label class="form-label" for="name">姓名</label>
+                <input type="text" id="name" name="name" class="form-control" placeholder="请输入姓名" required autofocus>
+            </div>
+            <div class="form-group text-left">
+                <label class="form-label" for="student_id_number">学号</label>
+                <input type="text" id="student_id_number" name="student_id_number" class="form-control" placeholder="请输入学号" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-full btn-lg">登 录</button>
         </form>
+
+        <div class="footer-links">
+            <a href="/teacher/login" class="text-muted">我是教师，前往教师登录 &rarr;</a>
+        </div>
     </div>
 </body>
 </html>

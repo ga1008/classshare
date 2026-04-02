@@ -3,92 +3,323 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ page_title }} - 管理中心</title>
-    <link rel="stylesheet" href="/static/css/manage.css">
+    <title>{{ page_title }} - 教师管理中心</title>
+    <!-- New Core Design System -->
+    <link rel="stylesheet" href="/static/css/core.css">
+    <link rel="stylesheet" href="/static/css/layout.css">
+    <link rel="stylesheet" href="/static/css/buttons.css">
+    <link rel="stylesheet" href="/static/css/cards.css">
+    <link rel="stylesheet" href="/static/css/tables.css">
+    <link rel="stylesheet" href="/static/css/forms.css">
+    <link rel="stylesheet" href="/static/css/toast.css">
+    <style>
+        body { background-color: var(--bg-color); }
+
+        .manage-layout {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* --- Sidebar --- */
+        .manage-sidebar {
+            width: 260px;
+            background-color: var(--surface-color);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+        }
+
+        .manage-brand {
+            padding: var(--spacing-5) var(--spacing-6);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-3);
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+
+        .manage-nav {
+            padding: var(--spacing-4) 0;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .manage-nav-item {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-3);
+            padding: var(--spacing-3) var(--spacing-6);
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-weight: 500;
+            transition: all var(--transition-fast);
+            border-left: 3px solid transparent;
+        }
+
+        .manage-nav-item:hover {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+        }
+
+        .manage-nav-item.active {
+            background-color: var(--primary-light);
+            color: var(--primary-color);
+            border-left-color: var(--primary-color);
+        }
+
+        .manage-user {
+            padding: var(--spacing-4) var(--spacing-6);
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-3);
+        }
+
+        .manage-user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: var(--radius-full);
+            background-color: var(--primary-color);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.2rem;
+        }
+
+        .manage-user-info {
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .manage-user-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .manage-user-role {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* --- Main Content --- */
+        .manage-main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0; /* Important for flex-child truncation */
+        }
+
+        .manage-header {
+            height: 70px;
+            padding: 0 var(--spacing-6);
+            background-color: var(--surface-color);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .manage-header-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin: 0;
+        }
+
+        .manage-content {
+            padding: var(--spacing-6);
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .page-header-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: var(--spacing-5);
+        }
+
+        /* --- Mobile Styles --- */
+        .mobile-toggle {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            cursor: pointer;
+            padding: var(--spacing-2);
+        }
+
+        @media (max-width: 768px) {
+            .manage-sidebar {
+                position: fixed;
+                left: -260px;
+                z-index: 50;
+                transition: left 0.3s ease;
+            }
+            .manage-sidebar.open {
+                left: 0;
+                box-shadow: var(--shadow-lg);
+            }
+            .mobile-toggle {
+                display: block;
+            }
+            .manage-content {
+                padding: var(--spacing-4);
+            }
+        }
+    </style>
 </head>
 <body>
-    <div class="header">
-        <h1><a href="/dashboard">管理中心</a></h1>
-        <div class="nav-links">
-            <span>{{ user_info.name }} ({{ user_info.email }})</span>
-            <a href="/dashboard">我的仪表盘</a>
-            <a href="/logout">退出登录</a>
-        </div>
-    </div>
+    <div class="manage-layout">
+        <!-- Sidebar Navigation -->
+        <aside class="manage-sidebar" id="sidebar">
+            <a href="/dashboard" class="manage-brand">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>
+                课堂平台
+            </a>
 
-    <div class="page-wrapper">
-        <nav class="sidebar">
-            <ul class="sidebar-nav">
-                <li>
-                    <a href="/manage/classes"
-                       class="{{ 'active' if active_page == 'classes' }}">班级管理</a>
-                </li>
-                <li>
-                    <a href="/manage/courses"
-                       class="{{ 'active' if active_page == 'courses' }}">课程管理</a>
-                </li>
-                <li>
-                    <a href="/manage/offerings"
-                       class="{{ 'active' if active_page == 'offerings' }}">开设课堂</a>
-                </li>
-                <li>
-                    <a href="/manage/ai"
-                       class="{{ 'active' if active_page == 'ai' }}">课堂AI配置</a>
-                </li>
-            </ul>
-        </nav>
+            <nav class="manage-nav">
+                <a href="/dashboard" class="manage-nav-item">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
+                    返回仪表盘
+                </a>
 
-        <main class="main-content">
-            {% block content %}
-            {% endblock %}
+                <div style="padding: var(--spacing-3) var(--spacing-6); font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-top: var(--spacing-2);">管理中心</div>
+
+                <a href="/manage/offerings" class="manage-nav-item {{ 'active' if active_page == 'offerings' }}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    开设课堂
+                </a>
+                <a href="/manage/classes" class="manage-nav-item {{ 'active' if active_page == 'classes' }}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                    班级管理
+                </a>
+                <a href="/manage/courses" class="manage-nav-item {{ 'active' if active_page == 'courses' }}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+                    课程管理
+                </a>
+                <a href="/manage/exams" class="manage-nav-item {{ 'active' if active_page == 'exams' }}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    试卷库
+                </a>
+                <a href="/manage/ai" class="manage-nav-item {{ 'active' if active_page == 'ai' }}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path><line x1="8" y1="16" x2="8" y2="16"></line><line x1="16" y1="16" x2="16" y2="16"></line></svg>
+                    课堂AI配置
+                </a>
+            </nav>
+
+            <div class="manage-user">
+                <div class="manage-user-avatar">
+                    {{ user_info.name[0] if user_info.name else 'T' }}
+                </div>
+                <div class="manage-user-info">
+                    <div class="manage-user-name">{{ user_info.name }}</div>
+                    <div class="manage-user-role">{{ user_info.email }}</div>
+                </div>
+                <a href="/logout" class="btn btn-ghost btn-sm text-danger" title="退出登录" style="padding: 4px;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="manage-main">
+            <header class="manage-header">
+                <div style="display: flex; align-items: center; gap: var(--spacing-3);">
+                    <button class="mobile-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                    </button>
+                    <h1 class="manage-header-title">{{ page_title }}</h1>
+                </div>
+                <div>
+                    <!-- Header Actions Slot -->
+                    {% block header_actions %}{% endblock %}
+                </div>
+            </header>
+
+            <div class="manage-content">
+                {% block content %}
+                {% endblock %}
+            </div>
         </main>
     </div>
 
-    <script>
-        // 辅助函数：处理 API 请求 (支持 FormData 和 JSON)
-        async function apiRequest(url, method = 'POST', body = null) {
-            try {
-                const options = { method };
-                if (body) {
-                    if (body instanceof FormData) {
-                        options.body = body;
-                    } else {
-                        options.body = JSON.stringify(body);
-                        options.headers = { 'Content-Type': 'application/json' };
-                    }
-                }
-                const response = await fetch(url, options);
-                const data = await response.json();
+    <!-- Global Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
 
-                if (response.ok) {
-                    return data;
-                } else {
-                    throw new Error(data.detail || '未知错误');
-                }
-            } catch (err) {
-                console.error('API 请求失败:', err);
-                alert('操作失败: ' + err.message);
-                return null;
-            }
-        }
+    <script type="module">
+        import { showMessage } from '/static/js/ui.js';
+        import { apiFetch } from '/static/js/api.js';
 
-        // 辅助函数：处理表单提交
-        async function handleFormSubmit(event, successCallback) {
+        // Expose to global scope for legacy inline handlers if needed,
+        // but prefer attaching event listeners in block scripts.
+        window.showMessage = showMessage;
+        window.apiFetch = apiFetch;
+
+        window.handleFormSubmit = async function(event, successCallback) {
             event.preventDefault();
             const form = event.target;
-            const formData = new FormData(form);
-            const url = form.action;
+            const submitBtn = form.querySelector('button[type="submit"]');
 
-            const data = await apiRequest(url, form.method || 'POST', formData);
-            if(data) {
-                alert(data.message || '操作成功！');
+            if(submitBtn) {
+                submitBtn.dataset.originalText = submitBtn.innerHTML;
+                submitBtn.innerHTML = '<span class="spinner" style="width: 14px; height: 14px; border-width: 2px;"></span> 提交中...';
+                submitBtn.disabled = true;
+            }
+
+            try {
+                const formData = new FormData(form);
+                const url = form.action;
+                const method = form.method || 'POST';
+
+                const data = await apiFetch(url, {
+                    method: method,
+                    body: formData
+                });
+
+                showMessage(data.message || '操作成功！', 'success');
+
                 if (successCallback) {
                     successCallback(data);
                 } else {
-                    location.reload(); // 默认重载
+                    setTimeout(() => location.reload(), 1000);
+                }
+            } catch (err) {
+                showMessage(err.message || '操作失败', 'error');
+            } finally {
+                if(submitBtn) {
+                    submitBtn.innerHTML = submitBtn.dataset.originalText;
+                    submitBtn.disabled = false;
                 }
             }
-        }
+        };
+
+        // Handle mobile sidebar click outside
+        document.addEventListener('click', (e) => {
+            const sidebar = document.getElementById('sidebar');
+            const toggle = document.querySelector('.mobile-toggle');
+            if (window.innerWidth <= 768 &&
+                sidebar.classList.contains('open') &&
+                !sidebar.contains(e.target) &&
+                !toggle.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        });
     </script>
 
     {% block scripts %}

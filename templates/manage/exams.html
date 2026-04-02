@@ -1,0 +1,399 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}试卷库{% endblock %}
+
+{% block header_actions %}
+<a href="/exam/new" class="btn btn-primary">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+    新建试卷
+</a>
+{% endblock %}
+
+{% block content %}
+<!-- Use standard CSS grid instead of inline style block where possible, rely on core CSS -->
+<style>
+    .exams-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: var(--spacing-5);
+    }
+
+    .exam-card {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+    }
+
+    .exam-card-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .exam-title {
+        font-size: 1.15rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: var(--spacing-2);
+        line-height: 1.4;
+    }
+
+    .exam-desc {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        line-height: 1.5;
+        margin-bottom: var(--spacing-4);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        flex: 1;
+    }
+
+    .exam-meta-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--spacing-3);
+        padding-top: var(--spacing-3);
+        border-top: 1px solid var(--border-color);
+        margin-bottom: var(--spacing-4);
+    }
+
+    .meta-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+
+    .exam-actions {
+        display: flex;
+        gap: var(--spacing-2);
+        flex-wrap: wrap;
+    }
+
+    .exam-actions .btn {
+        flex: 1;
+        justify-content: center;
+    }
+
+    /* Modal Styling handled by new UI design system, but keeping specific overrides here */
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(2px);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+
+    .modal-overlay.active {
+        display: flex;
+        opacity: 1;
+    }
+
+    .modal-box {
+        background: var(--surface-color);
+        border-radius: var(--radius-lg);
+        width: 90%;
+        max-width: 500px;
+        box-shadow: var(--shadow-xl);
+        transform: translateY(20px);
+        transition: transform 0.2s;
+        display: flex;
+        flex-direction: column;
+        max-height: 90vh;
+    }
+
+    .modal-overlay.active .modal-box {
+        transform: translateY(0);
+    }
+
+    .modal-header {
+        padding: var(--spacing-4) var(--spacing-5);
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-title {
+        font-size: 1.15rem;
+        font-weight: 600;
+        margin: 0;
+    }
+
+    .modal-close {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 4px;
+        border-radius: var(--radius-sm);
+    }
+
+    .modal-close:hover {
+        background: var(--bg-color);
+        color: var(--text-primary);
+    }
+
+    .modal-body {
+        padding: var(--spacing-5);
+        overflow-y: auto;
+    }
+
+    .modal-footer {
+        padding: var(--spacing-4) var(--spacing-5);
+        border-top: 1px solid var(--border-color);
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--spacing-3);
+    }
+
+    .offering-option {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-3);
+        padding: var(--spacing-3);
+        background: var(--bg-color);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        margin-bottom: var(--spacing-2);
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .offering-option:hover {
+        border-color: var(--primary-color);
+    }
+
+    .offering-option input[type="checkbox"] {
+        accent-color: var(--primary-color);
+        width: 1.2rem;
+        height: 1.2rem;
+    }
+</style>
+
+{% if papers %}
+<div class="exams-grid">
+    {% for paper in papers %}
+    <div class="card exam-card">
+        <div class="card-body exam-card-body">
+            <div class="flex justify-between items-start mb-3">
+                <span class="badge {{ 'badge-success' if paper.status == 'ready' else ('badge-primary' if paper.status == 'published' else 'badge-secondary') }}">
+                    {{ {'draft':'草稿','ready':'就绪', 'published':'已发布'}.get(paper.status, paper.status) }}
+                </span>
+                <span class="text-xs text-muted" title="创建时间">
+                    {{ paper.created_at[:10] if paper.created_at else '未知' }}
+                </span>
+            </div>
+
+            <h3 class="exam-title" title="{{ paper.title }}">{{ paper.title }}</h3>
+
+            {% if paper.description %}
+            <div class="exam-desc" title="{{ paper.description }}">{{ paper.description }}</div>
+            {% else %}
+            <div class="exam-desc italic text-muted">暂无描述</div>
+            {% endif %}
+
+            <div class="exam-meta-grid">
+                <div class="meta-item" title="题目页数">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    {% if paper.questions_json %}
+                    {% set pages = paper.questions_json|safe %}
+                    {{ pages|length }} 页
+                    {% else %}
+                    0 页
+                    {% endif %}
+                </div>
+                <div class="meta-item" title="已分配班级数">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                    已分配 {{ paper.assigned_count }} 次
+                </div>
+            </div>
+
+            <div class="exam-actions">
+                <a href="/exam/{{ paper.id }}/edit" class="btn btn-outline btn-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    编辑
+                </a>
+                <button class="btn btn-primary btn-sm" onclick="openAssignModal('{{ paper.id }}', '{{ paper.title|e }}')">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    分配
+                </button>
+                <button class="btn btn-ghost btn-sm text-danger" style="flex: 0 0 auto; padding: 0 8px;" onclick="deletePaper('{{ paper.id }}', '{{ paper.title|e }}')" title="删除试卷">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body text-center p-xl">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="text-muted mx-auto mb-3"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+        <h3 class="text-lg font-medium text-primary mb-2">试卷库为空</h3>
+        <p class="text-muted mb-4">您还没有创建任何试卷。点击上方按钮开始创建您的第一份试卷。</p>
+        <a href="/exam/new" class="btn btn-primary">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            新建试卷
+        </a>
+    </div>
+</div>
+{% endif %}
+
+<!-- 分配模态框 -->
+<div class="modal-overlay" id="assignModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3 class="modal-title">分配试卷到课堂</h3>
+            <button class="modal-close" onclick="closeAssignModal()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="alert alert-info mb-4" style="padding: 1rem; border-radius: 8px; background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; display: flex; gap: 8px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                <div>
+                    <strong>试卷:</strong> <span id="assign-exam-name">加载中...</span><br>
+                    <span style="font-size: 0.85rem;">试卷被分配到课堂后，将作为该课堂的一个作业任务发给学生。</span>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">选择目标课堂 (可多选)</label>
+                <div id="offering-list" style="border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: var(--spacing-3); max-height: 250px; overflow-y: auto; background: var(--bg-color);">
+                    <div class="text-center p-3 text-muted">
+                        <span class="spinner" style="display:inline-block; width:16px; height:16px; border-width:2px; vertical-align:middle; margin-right:8px;"></span> 加载中...
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeAssignModal()">取消</button>
+            <button class="btn btn-primary" id="confirm-assign-btn" onclick="confirmAssign()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                确认分配
+            </button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let currentExamId = null;
+
+    async function openAssignModal(examId, examTitle) {
+        currentExamId = examId;
+        document.getElementById('assign-exam-name').textContent = examTitle;
+        const listDiv = document.getElementById('offering-list');
+
+        try {
+            // First show modal with loading state
+            document.getElementById('assignModal').classList.add('active');
+
+            const resp = await fetch('/api/manage/offerings/list');
+            const data = await resp.json();
+
+            if (data.status === 'success' && data.offerings && data.offerings.length > 0) {
+                listDiv.innerHTML = data.offerings.map(o => `
+                    <label class="offering-option">
+                        <input type="checkbox" value="${o.id}" name="offering_ids">
+                        <div style="flex:1;">
+                            <div class="font-medium">${o.course_name}</div>
+                            <div class="text-xs text-muted">${o.class_name}${o.semester ? ' · ' + o.semester : ''}</div>
+                        </div>
+                    </label>
+                `).join('');
+            } else {
+                listDiv.innerHTML = `
+                    <div class="text-center p-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-muted mx-auto mb-2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                        <p class="text-muted text-sm">暂无可用的课堂</p>
+                        <a href="/manage/offerings" class="btn btn-outline btn-sm mt-2">前往开设课堂</a>
+                    </div>`;
+            }
+        } catch(e) {
+            listDiv.innerHTML = `<div class="text-danger text-center p-3">加载课堂列表失败: ${e.message}</div>`;
+        }
+    }
+
+    function closeAssignModal() {
+        document.getElementById('assignModal').classList.remove('active');
+        currentExamId = null;
+    }
+
+    async function confirmAssign() {
+        if (!currentExamId) return;
+        const checkboxes = document.querySelectorAll('input[name="offering_ids"]:checked');
+
+        if (checkboxes.length === 0) {
+            window.showMessage('请至少选择一个目标课堂', 'warning');
+            return;
+        }
+
+        const btn = document.getElementById('confirm-assign-btn');
+        const originalContent = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;margin-right:8px;"></span> 分配中...';
+
+        let success = 0, fail = 0;
+
+        // Note: Usually this should be a single batch API call, but simulating the existing loop logic
+        for (const cb of checkboxes) {
+            try {
+                const resp = await window.apiFetch(`/api/exam-papers/${currentExamId}/assign`, {
+                    method: 'POST',
+                    body: JSON.stringify({ class_offering_id: parseInt(cb.value) }),
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                success++;
+            } catch(e) {
+                console.error("Assign failed:", e);
+                fail++;
+            }
+        }
+
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
+
+        if (success > 0 && fail === 0) {
+            window.showMessage(`成功分配到 ${success} 个课堂！`, 'success');
+            closeAssignModal();
+        } else if (success > 0 && fail > 0) {
+            window.showMessage(`部分成功: 成功 ${success} 个，失败 ${fail} 个。`, 'warning');
+            closeAssignModal();
+        } else {
+            window.showMessage('分配失败，请重试', 'error');
+        }
+
+        // Always reload to refresh the assigned_count badge
+        if (success > 0) {
+            setTimeout(() => location.reload(), 1500);
+        }
+    }
+
+    async function deletePaper(paperId, paperTitle) {
+        if (!confirm(`确定要删除试卷 "${paperTitle}" 吗？
+注意：此操作不可恢复。如果试卷已分配给学生，可能会影响学生查看成绩。`)) return;
+
+        try {
+            const data = await window.apiFetch(`/api/exam-papers/${paperId}`, { method: 'DELETE' });
+            window.showMessage(data.message || '删除成功！', 'success');
+            setTimeout(() => location.reload(), 1000);
+        } catch(e) {
+            window.showMessage(e.message || '删除失败', 'error');
+        }
+    }
+</script>
+{% endblock %}

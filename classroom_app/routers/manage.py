@@ -335,3 +335,27 @@ async def api_get_ai_config(class_offering_id: int, user: dict = Depends(get_cur
         raise HTTPException(status_code=500, detail=f"服务器内部错误: {e}")
     finally:
         conn.close()
+
+
+# --- 课堂列表 API (试卷分配用) ---
+@router.get("/offerings/list", response_class=JSONResponse)
+async def api_list_offerings(user: dict = Depends(get_current_teacher)):
+    """获取当前教师的课堂列表（用于试卷分配）"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.execute(
+            """SELECT o.id, o.semester,
+                      c.name as class_name,
+                      co.name as course_name
+               FROM class_offerings o
+               JOIN classes c ON o.class_id = c.id
+               JOIN courses co ON o.course_id = co.id
+               WHERE o.teacher_id = ?
+               ORDER BY co.name, c.name""",
+            (user['id'],)
+        )
+        offerings = [dict(row) for row in cursor]
+        conn.close()
+        return {"status": "success", "offerings": offerings}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

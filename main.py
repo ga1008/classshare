@@ -54,7 +54,7 @@ def run_server():
             host=HOST,
             port=PORT,
             log_level="info",
-            reload=True  # 在开发时使用 reload，生产环境请设为 False
+            reload=False  # reload=True 需要 multiprocessing，当前 venv 基础路径缺失时无法使用
         )
     except Exception as e:
         print(f"[ERROR] 服务器启动失败: {e}")

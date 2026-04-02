@@ -1,0 +1,145 @@
+/*
+ * =========================================
+ * Core Design System Variables & Base Styles
+ * =========================================
+ */
+
+:root {
+    /* Colors */
+    --primary-color: #4f46e5;      /* Indigo 600 */
+    --primary-hover: #4338ca;      /* Indigo 700 */
+    --primary-light: #e0e7ff;      /* Indigo 100 */
+
+    --secondary-color: #f3f4f6;    /* Gray 100 */
+    --secondary-hover: #e5e7eb;    /* Gray 200 */
+    --secondary-dark: #6b7280;     /* Gray 500 */
+
+    --success-color: #10b981;      /* Emerald 500 */
+    --success-light: #d1fae5;      /* Emerald 100 */
+
+    --warning-color: #f59e0b;      /* Amber 500 */
+    --warning-light: #fef3c7;      /* Amber 100 */
+
+    --danger-color: #ef4444;       /* Red 500 */
+    --danger-hover: #dc2828;       /* Red 600 */
+    --danger-light: #fee2e2;       /* Red 100 */
+
+    /* Backgrounds & Surfaces */
+    --bg-color: #f8fafc;           /* Slate 50 */
+    --surface-color: #ffffff;      /* White */
+    --surface-hover: #f9fafb;      /* Gray 50 */
+
+    /* Borders */
+    --border-color: #e2e8f0;       /* Slate 200 */
+    --border-color-focus: #94a3b8; /* Slate 400 */
+
+    /* Typography */
+    --text-primary: #0f172a;       /* Slate 900 */
+    --text-secondary: #475569;     /* Slate 600 */
+    --text-muted: #94a3b8;         /* Slate 400 */
+    --text-inverse: #ffffff;       /* White */
+
+    /* Spacing */
+    --spacing-xs: 0.25rem;  /* 4px */
+    --spacing-sm: 0.5rem;   /* 8px */
+    --spacing-md: 1rem;     /* 16px */
+    --spacing-lg: 1.5rem;   /* 24px */
+    --spacing-xl: 2rem;     /* 32px */
+    --spacing-2xl: 3rem;    /* 48px */
+
+    /* Borders */
+    --radius-sm: 0.375rem;  /* 6px */
+    --radius-md: 0.5rem;    /* 8px */
+    --radius-lg: 0.75rem;   /* 12px */
+    --radius-full: 9999px;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --shadow-focus: 0 0 0 3px rgba(79, 70, 229, 0.2);
+
+    /* Transitions */
+    --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Base Reset & Typography */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: var(--text-primary);
+    font-weight: 600;
+    line-height: 1.2;
+    margin-bottom: var(--spacing-sm);
+}
+
+h1 { font-size: 1.875rem; } /* 30px */
+h2 { font-size: 1.5rem; }   /* 24px */
+h3 { font-size: 1.25rem; }  /* 20px */
+h4 { font-size: 1.125rem; } /* 18px */
+
+p {
+    margin-bottom: var(--spacing-md);
+    color: var(--text-secondary);
+}
+
+a {
+    color: var(--primary-color);
+    text-decoration: none;
+    transition: color var(--transition-fast);
+}
+
+a:hover {
+    color: var(--primary-hover);
+    text-decoration: underline;
+}
+
+img, svg {
+    max-width: 100%;
+    height: auto;
+}
+
+ul, ol {
+    margin-bottom: var(--spacing-md);
+    padding-left: var(--spacing-lg);
+}
+
+hr {
+    border: 0;
+    border-top: 1px solid var(--border-color);
+    margin: var(--spacing-lg) 0;
+}
+
+/* Utilities */
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.text-muted { color: var(--text-muted); }
+.mt-0 { margin-top: 0; }
+.mt-1 { margin-top: var(--spacing-sm); }
+.mt-2 { margin-top: var(--spacing-md); }
+.mt-3 { margin-top: var(--spacing-lg); }
+.mb-0 { margin-bottom: 0; }
+.mb-1 { margin-bottom: var(--spacing-sm); }
+.mb-2 { margin-bottom: var(--spacing-md); }
+.mb-3 { margin-bottom: var(--spacing-lg); }
+.flex { display: flex; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.justify-end { justify-content: flex-end; }
+.gap-2 { gap: var(--spacing-sm); }
+.gap-3 { gap: var(--spacing-md); }
+.w-full { width: 100%; }

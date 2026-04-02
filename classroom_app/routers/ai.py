@@ -10,7 +10,6 @@ from fastapi.responses import StreamingResponse
 import httpx
 from fastapi import APIRouter, Request, HTTPException, Depends, UploadFile, File, Form
 from fastapi.responses import JSONResponse
-from pandas.core.missing import find_valid_index
 
 from ..config import MAX_UPLOAD_SIZE_MB, MAX_UPLOAD_SIZE_BYTES
 from ..core import ai_client
@@ -40,24 +39,29 @@ async def ai_generate_assignment(request: Request, user: dict = Depends(get_curr
 
 @router.post("/submissions/{submission_id}/regrade", response_class=JSONResponse)
 async def ai_regrade_submission(submission_id: int, user: dict = Depends(get_current_teacher)):
-    """向 AI 助手服务提交一个异步批改任务"""
+    """向 AI 助手服务提交一个异步批改任务 (支持文件 + JSON 答案)"""
     with get_db_connection() as conn:
         submission = conn.execute("SELECT * FROM submissions WHERE id = ?", (submission_id,)).fetchone()
         if not submission: raise HTTPException(status_code=404, detail="Submission not found")
         if submission['status'] == 'grading': return {"status": "already_grading"}
-        assignment = conn.execute("SELECT rubric_md FROM assignments WHERE id = ?",
+        assignment = conn.execute("SELECT requirements_md, rubric_md FROM assignments WHERE id = ?",
                                   (submission['assignment_id'],)).fetchone()
         files_cursor = conn.execute("SELECT stored_path FROM submission_files WHERE submission_id = ?",
                                     (submission_id,))
         file_paths = [row['stored_path'] for row in files_cursor]
 
-    if not file_paths:
-        raise HTTPException(status_code=400, detail="该学生未提交任何文件，AI无法批改。")
+    # 检查是否有可批改的内容（文件或JSON答案均可）
+    has_files = bool(file_paths)
+    has_answers = bool(submission['answers_json'])
+    if not has_files and not has_answers:
+        raise HTTPException(status_code=400, detail="该提交没有可批改的内容（无文件也无答案）。")
 
     job_data = {
         "submission_id": submission_id,
         "rubric_md": assignment['rubric_md'],
-        "file_paths": [str(Path(p).resolve()) for p in file_paths]  # 确保发送绝对路径
+        "requirements_md": assignment['requirements_md'] or '',
+        "file_paths": [str(Path(p).resolve()) for p in file_paths] if has_files else [],
+        "answers_json": submission['answers_json'] if has_answers else None,
     }
     try:
         response = await ai_client.post("/api/ai/submit-grading-job", json=job_data)

@@ -3,57 +3,78 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>我的仪表盘</title>
+    <title>我的仪表盘 - 课堂平台</title>
+    <link rel="stylesheet" href="/static/css/core.css">
+    <link rel="stylesheet" href="/static/css/layout.css">
+    <link rel="stylesheet" href="/static/css/buttons.css">
+    <link rel="stylesheet" href="/static/css/cards.css">
     <style>
-        body { font-family: sans-serif; background: #f4f7f6; margin: 0; }
-        .header { background: #fff; padding: 15px 30px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; }
-        .header h1 { margin: 0; font-size: 1.5rem; }
-        .header .user-info { font-size: 1rem; color: #333; }
-        .header .user-info a { color: #dc3545; text-decoration: none; margin-left: 15px; }
-        .container { max-width: 1200px; margin: 20px auto; padding: 20px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
-        .card { background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden; transition: box-shadow 0.3s; text-decoration: none; color: inherit; }
-        .card:hover { box-shadow: 0 6px 16px rgba(0,0,0,0.1); }
-        .card-header { padding: 20px; background: #007bff; color: white; }
-        .card-header.teacher { background: #28a745; }
-        .card-header h3 { margin: 0; }
-        .card-body { padding: 20px; }
-        .card-body p { margin: 0; color: #555; }
-        .card-body .teacher-name { font-style: italic; margin-top: 10px; }
-        .manage-link { display: inline-block; margin-top: 20px; padding: 10px 15px; background: #6c757d; color: white; border-radius: 5px; text-decoration: none; }
+        body { background-color: var(--bg-color); }
     </style>
 </head>
-<body>
-    <div class="header">
-        <h1>我的仪表盘</h1>
-        <div class="user-info">
-            欢迎, <strong>{{ user_info.name }}</strong>（{{ user_info.nickname if user_info.nickname else '学生' }}）
-            {% if user_info.role == 'teacher' %}
-            <a href="/manage" class="manage-link" style="margin-top:0; margin-left: 15px; background: #17a2b8;">管理中心</a>
-            {% endif %}
-            <a href="/logout">退出登录</a>
+<body class="page-wrapper">
+    <!-- Navbar -->
+    <header class="navbar">
+        <a href="/dashboard" class="navbar-brand">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary">
+                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
+            </svg>
+            课堂互动平台
+        </a>
+        <div class="navbar-user">
+            <span class="user-name">欢迎, {{ user_info.name }} <span class="text-muted">({{ user_info.nickname if user_info.nickname else ('教师' if user_info.role == 'teacher' else '学生') }})</span></span>
+            <div class="flex items-center gap-2">
+                {% if user_info.role == 'teacher' %}
+                <a href="/manage" class="btn btn-outline btn-sm">管理中心</a>
+                {% endif %}
+                <a href="/logout" class="btn btn-ghost btn-sm text-danger">退出登录</a>
+            </div>
         </div>
-    </div>
+    </header>
 
-    <div class="container">
-        <h2>我的班级课堂</h2>
-        <div class="grid">
+    <!-- Main Content -->
+    <main class="main-content container">
+        <div class="flex items-center justify-between mb-3">
+            <h2>我的班级课堂</h2>
+            {% if user_info.role == 'teacher' %}
+            <a href="/manage/offerings" class="btn btn-primary btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                开设新课堂
+            </a>
+            {% endif %}
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
             {% for offering in class_offerings %}
-            <a href="/classroom/{{ offering.id }}" class="card">
-                <div class="card-header {{ 'teacher' if user_info.role == 'teacher' else '' }}">
-                    <h3>{{ offering.course_name }}</h3>
-                </div>
-                <div class="card-body">
-                    <p><strong>班级:</strong> {{ offering.class_name }}</p>
-                    {% if user_info.role == 'student' %}
-                    <p class="teacher-name"><strong>教师:</strong> {{ offering.teacher_name }}</p>
-                    {% endif %}
+            <a href="/classroom/{{ offering.id }}" class="card course-card {{ 'teacher-card' if user_info.role == 'teacher' else '' }}">
+                <div class="course-card-body">
+                    <h3 class="course-card-title">{{ offering.course_name }}</h3>
+                    <p class="course-card-subtitle">{{ offering.class_name }}</p>
+                    <div class="course-card-meta">
+                        {% if user_info.role == 'student' %}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                        教师: {{ offering.teacher_name }}
+                        {% else %}
+                        <span class="badge badge-success">教师身份</span>
+                        {% endif %}
+                    </div>
                 </div>
             </a>
             {% else %}
-            <p>您目前没有加入任何班级课堂。</p>
+            <div class="col-span-full">
+                <div class="card text-center p-xl">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="text-muted mx-auto mb-2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                    <h3 class="text-muted mb-1">暂无课堂</h3>
+                    {% if user_info.role == 'teacher' %}
+                    <p class="text-muted mb-3">您目前没有开设任何班级课堂。</p>
+                    <a href="/manage/offerings" class="btn btn-primary">前往开设课堂</a>
+                    {% else %}
+                    <p class="text-muted">您目前没有加入任何班级课堂，请联系您的教师。</p>
+                    {% endif %}
+                </div>
+            </div>
             {% endfor %}
         </div>
-    </div>
+    </main>
 </body>
 </html>

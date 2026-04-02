@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if paper %}编辑试卷{% else %}新建试卷{% endif %} | 试卷编辑器</title>
+
+    <!-- Core modern CSS system -->
+    <link rel="stylesheet" href="/static/css/core.css">
+    <link rel="stylesheet" href="/static/css/buttons.css">
+    <link rel="stylesheet" href="/static/css/forms.css">
+    <link rel="stylesheet" href="/static/css/toast.css">
+
+    <style>
+        :root {
+            --editor-header-height: 64px;
+            --sidebar-width: 280px;
+            --preview-width: 400px;
+        }
+
+        body {
+            background: var(--bg-color);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Editor Header */
+        .editor-header {
+            height: var(--editor-header-height);
+            background: var(--surface-color);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 var(--spacing-lg);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+            z-index: 40;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        /* Main Layout */
+        .editor-layout {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar Panel */
+        .sidebar-panel {
+            width: var(--sidebar-width);
+            background: var(--surface-color);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .sidebar-section {
+            padding: var(--spacing-md);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .sidebar-section:last-child {
+            border-bottom: none;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .section-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: var(--spacing-sm);
+        }
+
+        /* Page List */
+        .page-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .page-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+            color: var(--text-secondary);
+        }
+        .page-item:hover {
+            background: var(--bg-color);
+        }
+        .page-item.active {
+            background: var(--primary-light);
+            color: var(--primary-dark);
+            border-color: var(--primary-color);
+            font-weight: 600;
+        }
+        .page-name {
+            flex: 1;
+            font-size: 0.9rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .page-item[contenteditable="true"] {
+            cursor: text;
+            background: white;
+            outline: none;
+            border-color: var(--primary-color);
+        }
+        .page-count {
+            font-size: 0.75rem;
+            background: var(--bg-color);
+            padding: 2px 6px;
+            border-radius: var(--radius-full);
+            color: var(--text-muted);
+        }
+        .page-item.active .page-count {
+            background: white;
+            color: var(--primary-color);
+        }
+        .page-delete {
+            opacity: 0;
+            color: var(--danger-color);
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 2px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.2s, background 0.2s;
+        }
+        .page-item:hover .page-delete {
+            opacity: 1;
+        }
+        .page-delete:hover {
+            background: var(--danger-light);
+        }
+
+        /* Main Editing Area */
+        .main-panel {
+            flex: 1;
+            background: var(--bg-color);
+            overflow-y: auto;
+            padding: var(--spacing-xl);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .editor-content-wrapper {
+            width: 100%;
+            max-width: 800px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        /* Question Cards */
+        .question-card {
+            background: var(--surface-color);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-lg);
+            margin-bottom: var(--spacing-md);
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border-color);
+            position: relative;
+            transition: box-shadow 0.2s, border-color 0.2s;
+        }
+        .question-card:hover, .question-card:focus-within {
+            box-shadow: var(--shadow-md);
+            border-color: var(--primary-light);
+        }
+
+        .q-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--spacing-md);
+        }
+        .q-badge {
+            background: var(--primary-light);
+            color: var(--primary-color);
+            padding: 4px 12px;
+            border-radius: var(--radius-full);
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+        .q-actions {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .q-type-select {
+            padding: 4px 8px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+            background: var(--surface-color);
+            color: var(--text-secondary);
+            outline: none;
+        }
+        .q-type-select:focus {
+            border-color: var(--primary-color);
+        }
+
+        .q-title-input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid transparent;
+            border-radius: var(--radius-md);
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--text-primary);
+            background: var(--bg-color);
+            margin-bottom: var(--spacing-md);
+            transition: all 0.2s;
+        }
+        .q-title-input:focus, .q-title-input:hover {
+            border-color: var(--border-color);
+            background: var(--surface-color);
+            outline: none;
+        }
+
+        .q-id-input {
+            width: auto;
+            min-width: 120px;
+            padding: 4px 8px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            background: transparent;
+            border: 1px dashed transparent;
+            border-radius: var(--radius-sm);
+        }
+        .q-id-input:focus, .q-id-input:hover {
+            border-color: var(--border-color);
+            background: var(--bg-color);
+            outline: none;
+        }
+
+        /* Options List (Radio/Checkbox) */
+        .option-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: var(--spacing-sm);
+        }
+        .option-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .option-marker {
+            width: 16px;
+            height: 16px;
+            border: 1.5px solid var(--text-muted);
+            display: inline-block;
+            flex-shrink: 0;
+        }
+        .option-marker.radio { border-radius: 50%; }
+        .option-marker.checkbox { border-radius: 3px; }
+
+        .option-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 0.9rem;
+            transition: border-color 0.2s;
+        }
+        .option-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        /* Text Input Preview */
+        .text-preview-input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px dashed var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            background: transparent;
+        }
+        .text-preview-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            border-style: solid;
+        }
+
+        .add-question-bar {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            padding: var(--spacing-lg);
+            background: transparent;
+            border-radius: var(--radius-lg);
+            border: 2px dashed var(--border-color);
+            margin-top: var(--spacing-lg);
+            transition: all 0.2s;
+        }
+        .add-question-bar:hover {
+            border-color: var(--primary-color);
+            background: var(--primary-light);
+        }
+
+        /* Preview Panel */
+        .preview-panel {
+            width: var(--preview-width);
+            background: var(--surface-color);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .preview-header {
+            padding: var(--spacing-md);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .preview-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: var(--spacing-md);
+            background: var(--bg-color);
+        }
+
+        .preview-q {
+            background: var(--surface-color);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-md);
+            margin-bottom: var(--spacing-sm);
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+        }
+        .preview-q-title {
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-bottom: var(--spacing-sm);
+            color: var(--text-primary);
+        }
+        .preview-q-options {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .preview-q-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        .preview-q-input {
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 8px 12px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            width: 100%;
+        }
+
+        /* Media Queries for smaller screens */
+        @media (max-width: 1200px) {
+            .preview-panel { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <header class="editor-header">
+        <div class="header-title">
+            <div class="p-1 bg-primary-light text-primary rounded border border-primary-light flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
+            </div>
+            {% if paper %}{{ paper.title }} - 编辑{% else %}新建试卷{% endif %}
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="/manage/exams" class="btn btn-ghost btn-sm text-muted">取消</a>
+            <button class="btn btn-outline btn-sm" onclick="previewExam()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                全屏预览
+            </button>
+            <button class="btn btn-primary btn-sm ml-2" onclick="saveExam()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                保存试卷
+            </button>
+        </div>
+    </header>
+
+    <div class="editor-layout">
+        <!-- 左侧：设置与页面列表 -->
+        <aside class="sidebar-panel">
+            <div class="sidebar-section">
+                <h3 class="section-title">基本设置</h3>
+                <div class="form-group mb-sm">
+                    <label class="form-label text-xs text-muted mb-1">试卷标题</label>
+                    <input type="text" id="exam-title" class="form-control form-control-sm" value="{{ paper.title if paper else '' }}" placeholder="例如：期中测试卷">
+                </div>
+                <div class="form-group mb-0">
+                    <label class="form-label text-xs text-muted mb-1">试卷说明</label>
+                    <textarea id="exam-desc" class="form-control form-control-sm" rows="3" placeholder="填写注意事项或考试说明...">{{ paper.description if paper and paper.description else '' }}</textarea>
+                </div>
+            </div>
+
+            <div class="sidebar-section flex flex-col min-h-0">
+                <div class="flex justify-between items-center mb-sm">
+                    <h3 class="section-title m-0">页面 / 题组</h3>
+                    <button class="btn btn-ghost btn-sm p-1 h-auto text-primary" onclick="addPage()" title="添加新页">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    </button>
+                </div>
+                <div class="page-list overflow-y-auto flex-1 pr-1" id="page-list">
+                    <!-- Pages rendered by JS -->
+                </div>
+            </div>
+        </aside>
+
+        <!-- 中间：题目编辑 -->
+        <main class="main-panel" id="main-panel">
+            <div class="editor-content-wrapper" id="question-editor">
+                <div class="empty-state">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-3 opacity-50"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    <p>正在初始化编辑器...</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- 右侧：实时预览 -->
+        <aside class="preview-panel">
+            <div class="preview-header">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                实时预览
+            </div>
+            <div class="preview-content" id="preview-content">
+                <!-- Preview rendered by JS -->
+            </div>
+        </aside>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+
+    <script type="module">
+        import { showToast } from '/static/js/ui.js';
+
+        // Expose to window for inline onclick handlers
+        window.showToast = showToast;
+
+        const EXAM_ID = "{{ paper.id if paper else '' }}";
+        let examData = { pages: [] };
+        let currentPageIdx = -1;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            {% if paper and paper.questions_json %}
+            try {
+                const loaded = JSON.parse({{ paper.questions_json | tojson }});
+                if (loaded.pages) examData.pages = loaded.pages;
+            } catch(e) { console.error('解析试卷数据失败', e); }
+            {% endif %}
+
+            if (examData.pages.length === 0) {
+                window.addPage();
+            } else {
+                window.renderPageList();
+                window.selectPage(0);
+            }
+        });
+
+        // === 页面管理 ===
+        window.addPage = function() {
+            examData.pages.push({
+                name: `第${examData.pages.length + 1}部分`,
+                questions: []
+            });
+            window.renderPageList();
+            window.selectPage(examData.pages.length - 1);
+        }
+
+        window.removePage = function(idx) {
+            if (examData.pages.length <= 1) { showToast('试卷至少需要保留一个页面/部分', 'warning'); return; }
+            if (!confirm('确定删除此页面及其包含的所有题目吗？')) return;
+            examData.pages.splice(idx, 1);
+            if (currentPageIdx >= examData.pages.length) currentPageIdx = examData.pages.length - 1;
+            window.renderPageList();
+            if (currentPageIdx >= 0) window.selectPage(currentPageIdx);
+        }
+
+        window.renderPageList = function() {
+            const list = document.getElementById('page-list');
+            list.innerHTML = examData.pages.map((p, i) => `
+                <div class="page-item ${i === currentPageIdx ? 'active' : ''}" onclick="window.selectPage(${i})">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-50"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+                    <span class="page-name" contenteditable="${i === currentPageIdx}"
+                          onblur="window.renamePage(${i}, this.textContent)"
+                          onclick="event.stopPropagation()"
+                          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
+                        ${escapeHtml(p.name)}
+                    </span>
+                    <span class="page-count">${(p.questions||[]).length}题</span>
+                    <button class="page-delete" onclick="event.stopPropagation(); window.removePage(${i})" title="删除">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        window.renamePage = function(idx, newName) {
+            examData.pages[idx].name = newName.trim() || `第${idx+1}部分`;
+            window.renderPreview();
+        }
+
+        window.selectPage = function(idx) {
+            currentPageIdx = idx;
+            window.renderPageList();
+            window.renderQuestionEditor();
+            window.renderPreview();
+        }
+
+        // === 题目编辑器 ===
+        window.renderQuestionEditor = function() {
+            const page = examData.pages[currentPageIdx];
+            if (!page) return;
+            const editor = document.getElementById('question-editor');
+            const questions = page.questions || [];
+
+            let html = `
+                <div class="flex items-center justify-between mb-lg">
+                    <h2 class="text-lg font-bold text-primary m-0">${escapeHtml(page.name)}</h2>
+                    <span class="text-sm text-muted">共 ${questions.length} 题</span>
+                </div>
+            `;
+
+            questions.forEach((q, i) => {
+                html += renderQuestionCard(q, i);
+            });
+
+            html += `
+                <div class="add-question-bar">
+                    <span class="text-sm text-muted font-medium mr-2">添加题目:</span>
+                    <button class="btn btn-outline btn-sm bg-surface" onclick="window.addQuestion('radio')">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>单选题
+                    </button>
+                    <button class="btn btn-outline btn-sm bg-surface" onclick="window.addQuestion('checkbox')">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><polyline points="9 12 12 15 15 9"></polyline></svg>多选题
+                    </button>
+                    <button class="btn btn-outline btn-sm bg-surface" onclick="window.addQuestion('text')">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>填空题
+                    </button>
+                    <button class="btn btn-outline btn-sm bg-surface" onclick="window.addQuestion('textarea')">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="17" y2="21"></line><path d="M12 8h8"></path><path d="M12 12h8"></path><path d="M12 16h8"></path><path d="M4 4h4"></path><path d="M4 8h4"></path><path d="M4 12h4"></path><path d="M4 16h4"></path><path d="M4 20h4"></path></svg>问答题
+                    </button>
+                </div>
+            `;
+
+            editor.innerHTML = html;
+        }
+
+        function renderQuestionCard(q, idx) {
+            const isChoice = q.type === 'radio' || q.type === 'checkbox';
+            const typeLabels = {radio:'单选', checkbox:'多选', text:'填空', textarea:'问答'};
+
+            let html = `
+            <div class="question-card group">
+                <div class="q-header">
+                    <div class="flex items-center gap-3">
+                        <span class="q-badge">第 ${idx+1} 题</span>
+                        <div class="flex items-center border border-border rounded-md px-2 py-1 bg-bg group-hover:border-primary-light transition-colors">
+                            <span class="text-xs text-muted mr-1">ID:</span>
+                            <input class="q-id-input" value="${escapeHtml(q.id||'')}" placeholder="唯一标识" oninput="window.updateQId(${idx}, this.value)">
+                        </div>
+                    </div>
+                    <div class="q-actions opacity-50 group-hover:opacity-100 transition-opacity">
+                        <select class="q-type-select" onchange="window.changeQType(${idx}, this.value)">
+                            <option value="radio" ${q.type==='radio'?'selected':''}>单选题</option>
+                            <option value="checkbox" ${q.type==='checkbox'?'selected':''}>多选题</option>
+                            <option value="text" ${q.type==='text'?'selected':''}>填空题</option>
+                            <option value="textarea" ${q.type==='textarea'?'selected':''}>问答题</option>
+                        </select>
+                        <div class="flex bg-surface border border-border rounded-md overflow-hidden ml-1">
+                            <button class="btn btn-ghost btn-sm p-1 rounded-none border-r border-border text-muted h-auto ${idx === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:text-primary'}" onclick="window.moveQ(${idx},-1)" ${idx === 0 ? 'disabled' : ''} title="上移">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                            </button>
+                            <button class="btn btn-ghost btn-sm p-1 rounded-none text-muted h-auto ${idx === (examData.pages[currentPageIdx].questions||[]).length-1 ? 'opacity-30 cursor-not-allowed' : 'hover:text-primary'}" onclick="window.moveQ(${idx},1)" ${idx === (examData.pages[currentPageIdx].questions||[]).length-1 ? 'disabled' : ''} title="下移">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </button>
+                        </div>
+                        <button class="btn btn-ghost btn-sm p-1 ml-1 text-danger h-auto hover:bg-danger-light rounded-md" onclick="window.removeQ(${idx})" title="删除该题">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <input class="q-title-input" value="${escapeHtml(q.text||'')}" placeholder="在此输入题目内容..." oninput="window.updateQText(${idx}, this.value)">
+            `;
+
+            if (isChoice) {
+                html += `<div class="option-list pl-1">`;
+                (q.options || []).forEach((opt, oi) => {
+                    html += `
+                    <div class="option-item group/opt">
+                        <div class="option-marker ${q.type}"></div>
+                        <input class="option-input" value="${escapeHtml(opt)}" placeholder="选项 ${oi+1}" oninput="window.updateOption(${idx},${oi},this.value)">
+                        <button class="btn btn-ghost btn-sm p-1 h-auto text-muted hover:text-danger opacity-0 group-hover/opt:opacity-100 transition-opacity" onclick="window.removeOption(${idx},${oi})" title="移除选项">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                    </div>`;
+                });
+                html += `</div>
+                <button class="btn btn-ghost btn-sm text-primary pl-1 flex items-center gap-1 hover:bg-primary-light mt-2" onclick="window.addOption(${idx})">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    添加选项
+                </button>`;
+            } else {
+                if (q.type === 'text') {
+                    html += `<input class="text-preview-input" value="${escapeHtml(q.placeholder||'')}" placeholder="提示文本 (例如: 请输入函数名)" oninput="window.updatePlaceholder(${idx}, this.value)">`;
+                } else {
+                    html += `<textarea class="text-preview-input" rows="3" placeholder="提示文本 (例如: 请详细说明...)" oninput="window.updatePlaceholder(${idx}, this.value)">${escapeHtml(q.placeholder||'')}</textarea>`;
+                }
+            }
+
+            html += `</div>`;
+            return html;
+        }
+
+        // Questions Actions
+        window.addQuestion = function(type) {
+            const page = examData.pages[currentPageIdx];
+            if (!page.questions) page.questions = [];
+            const qNum = page.questions.length + 1;
+            const qId = `p${currentPageIdx+1}_q${qNum}`;
+            const newQ = { id: qId, type: type, text: '', placeholder: '' };
+            if (type === 'radio' || type === 'checkbox') newQ.options = ['', '', '', ''];
+            page.questions.push(newQ);
+            window.renderQuestionEditor();
+            window.renderPreview();
+            window.renderPageList();
+
+            // Scroll to bottom
+            setTimeout(() => {
+                const editor = document.getElementById('main-panel');
+                editor.scrollTo({ top: editor.scrollHeight, behavior: 'smooth' });
+            }, 50);
+        }
+
+        window.removeQ = function(idx) {
+            if(!confirm('确定删除此题吗？')) return;
+            examData.pages[currentPageIdx].questions.splice(idx, 1);
+            window.renderQuestionEditor();
+            window.renderPreview();
+            window.renderPageList();
+        }
+
+        window.moveQ = function(idx, dir) {
+            const qs = examData.pages[currentPageIdx].questions;
+            const newIdx = idx + dir;
+            if (newIdx < 0 || newIdx >= qs.length) return;
+            [qs[idx], qs[newIdx]] = [qs[newIdx], qs[idx]];
+            window.renderQuestionEditor();
+            window.renderPreview();
+        }
+
+        window.changeQType = function(idx, newType) {
+            const q = examData.pages[currentPageIdx].questions[idx];
+            q.type = newType;
+            if ((newType === 'radio' || newType === 'checkbox') && !q.options) {
+                q.options = ['', '', '', ''];
+            }
+            if (newType === 'text' || newType === 'textarea') {
+                delete q.options;
+                if (!q.placeholder) q.placeholder = '';
+            }
+            window.renderQuestionEditor();
+            window.renderPreview();
+        }
+
+        window.updateQText = function(idx, val) { examData.pages[currentPageIdx].questions[idx].text = val; window.renderPreview(); }
+        window.updateQId = function(idx, val) { examData.pages[currentPageIdx].questions[idx].id = val; }
+        window.updatePlaceholder = function(idx, val) { examData.pages[currentPageIdx].questions[idx].placeholder = val; window.renderPreview(); }
+        window.updateOption = function(qIdx, optIdx, val) { examData.pages[currentPageIdx].questions[qIdx].options[optIdx] = val; window.renderPreview(); }
+        window.addOption = function(qIdx) { examData.pages[currentPageIdx].questions[qIdx].options.push(''); window.renderQuestionEditor(); window.renderPreview(); }
+        window.removeOption = function(qIdx, optIdx) { examData.pages[currentPageIdx].questions[qIdx].options.splice(optIdx, 1); window.renderQuestionEditor(); window.renderPreview(); }
+
+        // === 预览 ===
+        window.renderPreview = function() {
+            const page = examData.pages[currentPageIdx];
+            if (!page) return;
+            const container = document.getElementById('preview-content');
+            const questions = page.questions || [];
+
+            let html = `<div class="text-sm font-semibold text-primary mb-3">${escapeHtml(page.name)}</div>`;
+
+            if (questions.length === 0) {
+                container.innerHTML = html + '<p class="text-center text-muted text-sm py-4 border border-dashed border-border rounded">本页暂无题目</p>';
+                return;
+            }
+
+            questions.forEach((q, i) => {
+                html += `
+                <div class="preview-q">
+                    <div class="preview-q-title"><span class="text-muted mr-1">${i+1}.</span> ${escapeHtml(q.text || '(未填写题干)')}</div>`;
+
+                if ((q.type === 'radio' || q.type === 'checkbox') && q.options) {
+                    html += `<div class="preview-q-options">`;
+                    const inputType = q.type === 'radio' ? 'radio' : 'checkbox';
+                    q.options.forEach(opt => {
+                        html += `
+                        <label class="preview-q-option">
+                            <input type="${inputType}" disabled class="cursor-not-allowed">
+                            <span>${escapeHtml(opt || '(空)')}</span>
+                        </label>`;
+                    });
+                    html += `</div>`;
+                } else if (q.type === 'text') {
+                    html += `<input type="text" class="preview-q-input cursor-not-allowed" disabled placeholder="${escapeHtml(q.placeholder || '填空答案')}">`;
+                } else {
+                    html += `<textarea class="preview-q-input cursor-not-allowed" rows="3" disabled placeholder="${escapeHtml(q.placeholder || '问答作答区域...')}"></textarea>`;
+                }
+                html += `</div>`;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // === 保存 ===
+        window.saveExam = async function() {
+            const title = document.getElementById('exam-title').value.trim();
+            if (!title) { showToast('请输入试卷标题', 'warning'); return; }
+
+            const payload = {
+                title: title,
+                description: document.getElementById('exam-desc').value,
+                questions: examData,
+                status: 'draft'
+            };
+
+            try {
+                const url = EXAM_ID ? `/api/exam-papers/${EXAM_ID}` : '/api/exam-papers';
+                const method = EXAM_ID ? 'PUT' : 'POST';
+                const resp = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    showToast('试卷保存成功', 'success');
+                    if (!EXAM_ID && data.paper_id) {
+                        setTimeout(() => window.location.href = `/exam/${data.paper_id}/edit`, 800);
+                    }
+                } else {
+                    throw new Error(data.detail || '保存失败');
+                }
+            } catch(e) {
+                showToast('保存失败: ' + e.message, 'error');
+            }
+        }
+
+        window.previewExam = function() {
+            const title = document.getElementById('exam-title').value || '试卷预览';
+            const desc = document.getElementById('exam-desc').value || '';
+            let allQuestions = [];
+            examData.pages.forEach(page => {
+                (page.questions || []).forEach(q => allQuestions.push({...q, pageName: page.name}));
+            });
+
+            let questionsHtml = '';
+            allQuestions.forEach((q, i) => {
+                questionsHtml += `<div style="background:#fff;border-radius:12px;padding:24px;box-shadow:0 1px 3px rgba(0,0,0,0.1);border:1px solid #E5E7EB;margin-bottom:20px;">`;
+                questionsHtml += `<div style="font-weight:600;font-size:1.05rem;margin-bottom:16px;display:flex;align-items:baseline;gap:8px;color:#111827;">`;
+                questionsHtml += `<span style="background:#EEF2FF;color:#4F46E5;padding:4px 10px;border-radius:20px;font-size:0.8rem;font-weight:700;">${i+1}</span>`;
+                questionsHtml += `<span>${escapeHtml(q.text || '(未填写题目)')}</span></div>`;
+
+                if (q.type === 'radio' && q.options) {
+                    q.options.forEach(opt => {
+                        questionsHtml += `<label style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:12px;border:1px solid #E5E7EB;border-radius:8px;font-size:0.95rem;color:#374151;">`;
+                        questionsHtml += `<input type="radio" disabled style="width:16px;height:16px;"> ${escapeHtml(opt || '(空)')}</label>`;
+                    });
+                } else if (q.type === 'checkbox' && q.options) {
+                    q.options.forEach(opt => {
+                        questionsHtml += `<label style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:12px;border:1px solid #E5E7EB;border-radius:8px;font-size:0.95rem;color:#374151;">`;
+                        questionsHtml += `<input type="checkbox" disabled style="width:16px;height:16px;"> ${escapeHtml(opt || '(空)')}</label>`;
+                    });
+                } else if (q.type === 'text') {
+                    questionsHtml += `<input type="text" disabled placeholder="${escapeHtml(q.placeholder || '请输入答案')}" style="width:100%;padding:12px 16px;border:2px solid #E5E7EB;border-radius:8px;font-size:0.95rem;background:#F9FAFB;">`;
+                } else {
+                    questionsHtml += `<textarea disabled rows="5" placeholder="${escapeHtml(q.placeholder || '请在此作答...')}" style="width:100%;padding:12px 16px;border:2px solid #E5E7EB;border-radius:8px;font-size:0.95rem;background:#F9FAFB;resize:vertical;"></textarea>`;
+                }
+                questionsHtml += `</div>`;
+            });
+
+            const previewHtml = `<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>${escapeHtml(title)} - 预览</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background-color:#F3F4F6;font-family:'Inter',-apple-system,sans-serif;color:#111827;padding:40px 20px;}
+.exam-container{max-width:800px;margin:0 auto;}
+.exam-header{background:#fff;border-radius:16px;padding:32px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);margin-bottom:24px;border-top:6px solid #4F46E5;}
+.exam-header h1{font-size:1.75rem;font-weight:700;margin-bottom:12px;}
+.exam-desc{font-size:0.95rem;color:#4B5563;line-height:1.6;}
+.preview-badge{display:inline-block;background:#FEF3C7;color:#92400E;padding:6px 14px;border-radius:20px;font-size:0.85rem;font-weight:600;margin-bottom:24px;border:1px solid #FDE68A;}
+footer{text-align:center;padding:30px;font-size:0.85rem;color:#9CA3AF;}
+</style></head><body>
+<div class="exam-container">
+<div class="preview-badge">👀 教师全屏预览模式 (共 ${allQuestions.length} 题)</div>
+<div class="exam-header"><h1>${escapeHtml(title)}</h1>${desc ? '<div class="exam-desc">' + escapeHtml(desc).replace(/
+/g, '<br>') + '</div>' : ''}</div>
+<div class="page-content">
+${questionsHtml || '<div style="background:#fff;border-radius:12px;padding:40px;text-align:center;color:#6B7280;">暂无题目</div>'}
+</div>
+<footer>这仅是教师端题目渲染预览，非学生真实考试环境交互界面</footer>
+</div></body></html>`;
+
+            const blob = new Blob([previewHtml], {type: 'text/html'});
+            const url = URL.createObjectURL(blob);
+            window.open(url, '_blank');
+        }
+
+        // Utility
+        function escapeHtml(s) {
+            if(!s) return '';
+            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+    </script>
+</body>
+</html>

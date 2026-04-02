@@ -1,0 +1,116 @@
+/*
+ * =========================================
+ * Table Styles
+ * =========================================
+ */
+
+.table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    margin-bottom: var(--spacing-lg);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+}
+
+.table {
+    width: 100%;
+    margin-bottom: 0; /* Reset margin since wrapper has it */
+    color: var(--text-primary);
+    vertical-align: top;
+    border-collapse: collapse;
+    background-color: var(--surface-color);
+}
+
+/* Headings */
+.table > thead {
+    vertical-align: bottom;
+    background-color: var(--bg-color); /* Light gray header */
+}
+
+.table > thead > tr > th {
+    padding: 0.75rem 1rem;
+    font-size: 0.75rem; /* 12px */
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* Body & Cells */
+.table > tbody {
+    vertical-align: inherit;
+}
+
+.table > tbody > tr > td {
+    padding: 1rem;
+    font-size: 0.875rem; /* 14px */
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
+}
+
+.table > tbody > tr:last-child > td {
+    border-bottom: 0;
+}
+
+/* Hover Effect */
+.table-hover > tbody > tr:hover > * {
+    background-color: var(--surface-hover);
+    color: var(--text-primary);
+}
+
+/* Striped Effect */
+.table-striped > tbody > tr:nth-of-type(odd) > * {
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+}
+
+/* Bordered Table */
+.table-bordered > :not(caption) > * {
+    border-width: 1px 0;
+}
+
+.table-bordered > :not(caption) > * > * {
+    border-width: 0 1px;
+    border-color: var(--border-color);
+}
+
+/* Table Sizes */
+.table-sm > :not(caption) > * > * {
+    padding: 0.5rem;
+}
+
+/* Alignment utilities for cells */
+.table .text-center { text-align: center; }
+.table .text-right { text-align: right; }
+.table .align-middle { vertical-align: middle; }
+.table .align-top { vertical-align: top; }
+
+/* Table Actions (Buttons inside tables) */
+.table-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+    justify-content: flex-end;
+}
+
+.table-actions .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+}
+
+/* Empty State */
+.table-empty {
+    text-align: center;
+    padding: var(--spacing-xl) var(--spacing-md);
+    color: var(--text-muted);
+}
+
+.table-empty svg {
+    width: 3rem;
+    height: 3rem;
+    margin-bottom: var(--spacing-sm);
+    opacity: 0.5;
+}

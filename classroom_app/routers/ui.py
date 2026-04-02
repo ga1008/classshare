@@ -252,8 +252,8 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
         # 修复：从 V3.2 复制，但 V4.0 还不支持显示大小
         files_info = [{"id": row['id'], "name": row['file_name'], "size": format_size(row['file_size'])} for row in files_cursor]
 
-        assignments_cursor = conn.execute("SELECT * FROM assignments WHERE course_id = ? ORDER BY created_at DESC",
-                                          (course_id,))
+        assignments_cursor = conn.execute("SELECT * FROM assignments WHERE course_id = ? AND (class_offering_id = ? OR class_offering_id IS NULL) ORDER BY created_at DESC",
+                                          (course_id, class_offering_id))
         assignments = []
         for row in assignments_cursor:
             assignment = dict(row)
@@ -291,7 +291,10 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
         raise HTTPException(404, "Assignment not found")
     assignment = dict(assignment_row)
 
-    # 模板名称已在 V3.1 中更正
+    # 如果是试卷型作业且用户是学生 → 重定向到考试页面
+    if assignment.get('exam_paper_id') and user['role'] == 'student':
+        return RedirectResponse(url=f"/exam/take/{assignment_id}")
+
     if user['role'] == 'teacher':
         return templates.TemplateResponse("assignment_detail_teacher.html", {
             "request": request, "user_info": user, "assignment": assignment
@@ -432,5 +435,124 @@ async def get_manage_ai_page(request: Request, user: dict = Depends(get_current_
         "my_offerings": my_offerings,
         "page_title": "课堂AI配置",
         "active_page": "ai"
+    })
+
+
+# ============================
+# V4.5: 试卷库管理路由
+# ============================
+
+@router.get("/manage/exams", response_class=HTMLResponse)
+async def manage_exams_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """试卷库管理页面"""
+    with get_db_connection() as conn:
+        papers_cursor = conn.execute(
+            """SELECT ep.*,
+                      (SELECT COUNT(*) FROM assignments WHERE exam_paper_id = ep.id) as assigned_count
+               FROM exam_papers ep
+               WHERE ep.teacher_id = ?
+               ORDER BY ep.updated_at DESC""",
+            (user['id'],)
+        )
+        papers = [dict(row) for row in papers_cursor]
+
+    return templates.TemplateResponse("manage/exams.html", {
+        "request": request,
+        "user_info": user,
+        "papers": papers,
+        "page_title": "试卷库",
+        "active_page": "exams"
+    })
+
+
+@router.get("/exam/{exam_id}/edit", response_class=HTMLResponse)
+async def exam_editor_page(request: Request, exam_id: str, user: dict = Depends(get_current_teacher)):
+    """试卷编辑器页面"""
+    with get_db_connection() as conn:
+        paper = conn.execute(
+            "SELECT * FROM exam_papers WHERE id = ? AND teacher_id = ?",
+            (exam_id, user['id'])
+        ).fetchone()
+        if not paper:
+            raise HTTPException(404, "试卷不存在")
+
+        # 获取教师所有课堂（用于分配）
+        offerings = conn.execute(
+            """SELECT o.id, c.name as class_name, co.name as course_name
+               FROM class_offerings o
+               JOIN classes c ON o.class_id = c.id
+               JOIN courses co ON o.course_id = co.id
+               WHERE o.teacher_id = ?
+               ORDER BY co.name""",
+            (user['id'],)
+        ).fetchall()
+
+    return templates.TemplateResponse("exam_editor.html", {
+        "request": request,
+        "user_info": user,
+        "paper": dict(paper),
+        "offerings": [dict(row) for row in offerings]
+    })
+
+
+@router.get("/exam/new", response_class=HTMLResponse)
+async def exam_new_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """新建试卷页面"""
+    with get_db_connection() as conn:
+        offerings = conn.execute(
+            """SELECT o.id, c.name as class_name, co.name as course_name
+               FROM class_offerings o
+               JOIN classes c ON o.class_id = c.id
+               JOIN courses co ON o.course_id = co.id
+               WHERE o.teacher_id = ?
+               ORDER BY co.name""",
+            (user['id'],)
+        ).fetchall()
+
+    return templates.TemplateResponse("exam_editor.html", {
+        "request": request,
+        "user_info": user,
+        "paper": None,
+        "offerings": [dict(row) for row in offerings]
+    })
+
+
+@router.get("/exam/take/{assignment_id}", response_class=HTMLResponse)
+async def exam_take_page(request: Request, assignment_id: str, user: dict = Depends(get_current_user)):
+    """学生考试界面"""
+    with get_db_connection() as conn:
+        assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
+        if not assignment:
+            raise HTTPException(404, "作业不存在")
+        assignment = dict(assignment)
+
+        if not assignment.get('exam_paper_id'):
+            # 不是试卷型作业，跳转到普通作业页
+            return RedirectResponse(url=f"/assignment/{assignment_id}")
+
+        if user['role'] == 'student' and assignment['status'] == 'new':
+            return templates.TemplateResponse("status.html",
+                {"request": request, "success": False, "message": "该考试尚未发布", "back_url": "/dashboard"})
+
+        paper = conn.execute("SELECT * FROM exam_papers WHERE id = ?", (assignment['exam_paper_id'],)).fetchone()
+        if not paper:
+            raise HTTPException(404, "试卷不存在")
+
+        # 检查学生是否已提交
+        submission = None
+        if user['role'] == 'student':
+            submission_row = conn.execute(
+                "SELECT * FROM submissions WHERE assignment_id = ? AND student_pk_id = ?",
+                (assignment_id, user['id'])
+            ).fetchone()
+            submission = dict(submission_row) if submission_row else None
+
+    return templates.TemplateResponse("exam_take.html", {
+        "request": request,
+        "user_info": user,
+        "assignment": assignment,
+        "paper": dict(paper),
+        "submission": submission,
+        "max_upload_mb": MAX_UPLOAD_SIZE_MB
     })
 

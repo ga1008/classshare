@@ -3,29 +3,94 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>教师注册</title>
+    <title>教师注册 - 课堂平台</title>
+    <link rel="stylesheet" href="/static/css/core.css">
+    <link rel="stylesheet" href="/static/css/forms.css">
+    <link rel="stylesheet" href="/static/css/buttons.css">
+    <link rel="stylesheet" href="/static/css/cards.css">
     <style>
-        body { font-family: sans-serif; background: #f4f7f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .login-container { background: #fff; padding: 40px; border-radius: 12px; box-shadow: 0 8px 25px rgba(0,0,0,0.1); width: 400px; text-align: center; }
-        h2 { margin: 0 0 30px; color: #28a745; }
-        form { display: flex; flex-direction: column; }
-        input { padding: 15px; margin-bottom: 20px; border-radius: 8px; border: 1px solid #ddd; font-size: 16px; }
-        button { padding: 15px; border-radius: 8px; border: none; background: #28a745; color: white; font-size: 18px; cursor: pointer; }
-        .footer-link { margin-top: 20px; }
-        .footer-link a { color: #007bff; text-decoration: none; }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, var(--bg-color) 0%, var(--success-light) 100%);
+        }
+        .login-card {
+            width: 100%;
+            max-width: 450px;
+            padding: var(--spacing-xl);
+            background: var(--surface-color);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+        }
+        .login-logo {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto var(--spacing-lg);
+            background: var(--success-light);
+            color: var(--success-color);
+            border-radius: var(--radius-full);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-logo svg {
+            width: 32px;
+            height: 32px;
+        }
+        .login-card h2 {
+            margin-bottom: var(--spacing-sm);
+            color: var(--text-primary);
+            text-align: center;
+        }
+        .login-card p.subtitle {
+            color: var(--text-secondary);
+            margin-bottom: var(--spacing-xl);
+            font-size: 0.875rem;
+            text-align: center;
+        }
+        .footer-links {
+            margin-top: var(--spacing-lg);
+            font-size: 0.875rem;
+            text-align: center;
+        }
+        .footer-links a {
+            color: var(--text-muted);
+        }
+        .footer-links a:hover {
+            color: var(--success-color);
+        }
     </style>
 </head>
 <body>
-    <div class="login-container">
+    <div class="login-card">
+        <div class="login-logo">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+            </svg>
+        </div>
         <h2>创建教师账户</h2>
+        <p class="subtitle">填写以下信息，开启您的智慧课堂</p>
+
         <form action="/teacher/register" method="post">
-            <input type="text" name="name" placeholder="您的姓名" required>
-            <input type="email" name="email" placeholder="登录邮箱" required>
-            <input type="password" name="password" placeholder="设置密码" required>
-            <button type="submit">注 册</button>
+            <div class="form-group">
+                <label class="form-label required" for="name">真实姓名</label>
+                <input type="text" id="name" name="name" class="form-control" placeholder="如：张三老师" required autofocus>
+            </div>
+            <div class="form-group">
+                <label class="form-label required" for="email">登录邮箱</label>
+                <input type="email" id="email" name="email" class="form-control" placeholder="your@email.com" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label required" for="password">设置密码</label>
+                <input type="password" id="password" name="password" class="form-control" placeholder="至少6位字符" minlength="6" required>
+            </div>
+            <button type="submit" class="btn btn-success w-full btn-lg mt-3">注 册</button>
         </form>
-        <div class="footer-link">
-            <a href="/teacher/login">已有账户？立即登录</a>
+
+        <div class="footer-links">
+            <a href="/teacher/login">已有账户？立即登录 &rarr;</a>
         </div>
     </div>
 </body>

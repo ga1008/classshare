@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>{{ paper.title }} - 在线考试</title>
+    <link rel="stylesheet" href="/static/css/core.css">
+    <link rel="stylesheet" href="/static/css/layout.css">
+    <link rel="stylesheet" href="/static/css/buttons.css">
+    <link rel="stylesheet" href="/static/css/forms.css">
+    <link rel="stylesheet" href="/static/css/cards.css">
+    <link rel="stylesheet" href="/static/css/toast.css">
+    <style>
+        body {
+            background-color: var(--bg-color);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* === Exam Layout === */
+        .exam-layout {
+            display: flex;
+            max-width: 1400px;
+            margin: 0 auto;
+            min-height: 100vh;
+        }
+
+        /* === Sidebar Navigation === */
+        .exam-sidebar {
+            width: 280px;
+            min-width: 280px;
+            background: var(--surface-color);
+            border-right: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            z-index: 40;
+            transition: transform 0.3s ease;
+        }
+
+        .exam-sidebar-header {
+            padding: var(--spacing-4) var(--spacing-5);
+            border-bottom: 1px solid var(--border-color);
+            background: var(--surface-color);
+        }
+
+        .exam-paper-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1.4;
+            margin-bottom: var(--spacing-2);
+            word-break: break-all;
+        }
+
+        .exam-progress-summary {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .answered-count-badge {
+            background: var(--primary-light);
+            color: var(--primary-color);
+            padding: 2px 8px;
+            border-radius: var(--radius-full);
+            font-weight: 600;
+            font-size: 0.75rem;
+        }
+
+        .answered-count-badge.complete {
+            background: var(--success-light);
+            color: var(--success-color);
+        }
+
+        .exam-sidebar-body {
+            flex: 1;
+            overflow-y: auto;
+            padding-bottom: var(--spacing-4);
+        }
+
+        /* Scrollbar for sidebar */
+        .exam-sidebar-body::-webkit-scrollbar { width: 4px; }
+        .exam-sidebar-body::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+
+        .exam-section {
+            padding: var(--spacing-3) var(--spacing-4);
+        }
+
+        .exam-section-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: var(--spacing-2);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .exam-section + .exam-section {
+            border-top: 1px solid var(--bg-color);
+        }
+
+        .q-nav-list {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .q-nav-item {
+            display: flex;
+            align-items: flex-start;
+            gap: var(--spacing-3);
+            padding: var(--spacing-2) var(--spacing-3);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            position: relative;
+        }
+
+        .q-nav-item:hover {
+            background: var(--bg-color);
+            color: var(--text-primary);
+        }
+
+        .q-nav-item.active {
+            background: var(--primary-light);
+            color: var(--primary-color);
+            font-weight: 500;
+        }
+
+        .q-nav-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 3px;
+            height: 60%;
+            background: var(--primary-color);
+            border-radius: 0 4px 4px 0;
+        }
+
+        .q-status-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.65rem;
+            flex-shrink: 0;
+            transition: all var(--transition-fast);
+            margin-top: 2px;
+        }
+
+        .q-status-indicator.unanswered {
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            color: transparent;
+        }
+
+        .q-status-indicator.answered {
+            background: var(--success-color);
+            border: 1px solid var(--success-color);
+            color: white;
+        }
+
+        .q-nav-item.active .q-status-indicator.unanswered {
+            border-color: var(--primary-color);
+            background: white;
+        }
+
+        .q-nav-label {
+            flex: 1;
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .q-nav-id {
+            font-weight: 600;
+            margin-right: 4px;
+            opacity: 0.7;
+        }
+
+        .exam-sidebar-footer {
+            margin-top: auto;
+            padding: var(--spacing-4);
+            border-top: 1px solid var(--border-color);
+            background: var(--surface-color);
+            text-align: center;
+        }
+
+        .save-status {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .save-status.saved { color: var(--success-color); }
+
+        /* === Main Exam Area === */
+        .exam-main {
+            flex: 1;
+            min-width: 0;
+            padding: var(--spacing-6);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: var(--bg-color);
+        }
+
+        .exam-paper-container {
+            width: 100%;
+            max-width: 800px;
+            background: var(--surface-color);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Exam Header inside Paper */
+        .paper-header {
+            padding: var(--spacing-5) var(--spacing-6);
+            border-bottom: 1px solid var(--border-color);
+            background: var(--surface-color);
+            text-align: center;
+        }
+
+        .paper-header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: var(--spacing-2);
+        }
+
+        .paper-sub-title {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        /* Progress Bar */
+        .exam-progress {
+            padding: var(--spacing-3) var(--spacing-6);
+            background: var(--bg-color);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .progress-bar-bg {
+            background: var(--border-color);
+            border-radius: var(--radius-full);
+            height: 6px;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            background: var(--primary-color);
+            height: 100%;
+            border-radius: var(--radius-full);
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .progress-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: var(--spacing-2);
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        /* Page Content */
+        .paper-content {
+            padding: var(--spacing-6);
+            min-height: 50vh;
+        }
+
+        .page-heading {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: var(--spacing-5);
+            padding-bottom: var(--spacing-3);
+            border-bottom: 2px solid var(--bg-color);
+        }
+
+        /* Questions */
+        .question-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-6);
+        }
+
+        .question-card {
+            background: var(--surface-color);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-5);
+            border: 1px solid var(--border-color);
+            transition: all var(--transition-normal);
+            scroll-margin-top: 100px;
+        }
+
+        .question-card:hover {
+            border-color: var(--border-hover);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .question-card.answered {
+            border-left: 4px solid var(--success-color);
+        }
+
+        .question-card.highlight {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px var(--primary-light);
+        }
+
+        .q-header {
+            display: flex;
+            align-items: flex-start;
+            gap: var(--spacing-3);
+            margin-bottom: var(--spacing-4);
+        }
+
+        .q-number {
+            background: var(--bg-color);
+            color: var(--text-secondary);
+            padding: 4px 8px;
+            border-radius: var(--radius-sm);
+            font-size: 0.8rem;
+            font-weight: 600;
+            white-space: nowrap;
+            border: 1px solid var(--border-color);
+        }
+
+        .q-body {
+            font-weight: 500;
+            color: var(--text-primary);
+            line-height: 1.6;
+            flex: 1;
+        }
+
+        .q-options {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-2);
+            padding-left: calc(var(--spacing-3) + 35px); /* Align with text, skipping number badge */
+        }
+
+        .option-label {
+            display: flex;
+            align-items: flex-start;
+            gap: var(--spacing-3);
+            padding: var(--spacing-3) var(--spacing-4);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-color);
+            transition: all var(--transition-fast);
+            cursor: pointer;
+            background: var(--surface-color);
+        }
+
+        .option-label:hover {
+            background: var(--bg-color);
+            border-color: var(--border-hover);
+        }
+
+        .option-label.selected {
+            background: var(--primary-light);
+            border-color: var(--primary-color);
+        }
+
+        .option-label input[type="radio"],
+        .option-label input[type="checkbox"] {
+            margin-top: 4px;
+        }
+
+        .q-text-input {
+            padding-left: calc(var(--spacing-3) + 35px);
+        }
+
+        /* Navigation Footer */
+        .paper-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--spacing-4) var(--spacing-6);
+            background: var(--bg-color);
+            border-top: 1px solid var(--border-color);
+        }
+
+        .submit-section {
+            padding: var(--spacing-6);
+            text-align: center;
+            background: var(--surface-color);
+            border-top: 1px dashed var(--border-color);
+            margin-top: var(--spacing-4);
+        }
+
+        /* Result View */
+        .result-banner {
+            padding: var(--spacing-6);
+            text-align: center;
+            border-radius: var(--radius-md);
+            margin-bottom: var(--spacing-6);
+        }
+
+        .result-banner.success {
+            background: var(--success-light);
+            border: 1px solid var(--success-color);
+            color: var(--success-dark);
+        }
+
+        .result-banner.warning {
+            background: var(--warning-light);
+            border: 1px solid var(--warning-color);
+            color: var(--warning-dark);
+        }
+
+        .result-icon {
+            font-size: 2.5rem;
+            margin-bottom: var(--spacing-3);
+        }
+
+        .result-banner h3 {
+            font-size: 1.25rem;
+            margin-bottom: var(--spacing-2);
+            color: inherit;
+        }
+
+        .result-score {
+            font-size: 3rem;
+            font-weight: 800;
+            margin: var(--spacing-3) 0;
+            line-height: 1;
+        }
+
+        .readonly-answer {
+            padding: var(--spacing-3) var(--spacing-4);
+            background: var(--bg-color);
+            border-radius: var(--radius-md);
+            white-space: pre-wrap;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            margin-left: calc(var(--spacing-3) + 35px);
+            border: 1px solid var(--border-color);
+        }
+
+        .readonly-answer.empty {
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        /* Mobile Controls */
+        .mobile-nav-bar {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 56px;
+            background: var(--surface-color);
+            border-bottom: 1px solid var(--border-color);
+            z-index: 30;
+            align-items: center;
+            padding: 0 var(--spacing-4);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .sidebar-toggle-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: var(--spacing-2);
+            margin-left: -var(--spacing-2);
+        }
+
+        .mobile-title {
+            flex: 1;
+            font-weight: 600;
+            font-size: 1rem;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding: 0 var(--spacing-4);
+        }
+
+        .sidebar-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(2px);
+            z-index: 35;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        @media (max-width: 900px) {
+            .mobile-nav-bar { display: flex; }
+            .exam-main { padding: calc(56px + var(--spacing-4)) var(--spacing-2) var(--spacing-4); }
+
+            .exam-sidebar {
+                position: fixed;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                transform: translateX(-100%);
+                width: 280px;
+                max-width: 85vw;
+                box-shadow: var(--shadow-lg);
+            }
+
+            .exam-sidebar.show { transform: translateX(0); }
+            .sidebar-backdrop.show { display: block; opacity: 1; }
+
+            .paper-content { padding: var(--spacing-4) var(--spacing-3); }
+            .paper-header { padding: var(--spacing-4) var(--spacing-3); }
+            .paper-footer { padding: var(--spacing-4) var(--spacing-3); flex-direction: column; gap: var(--spacing-3); }
+            .paper-footer .btn { width: 100%; justify-content: center; }
+
+            .q-options { padding-left: 0; margin-top: var(--spacing-3); }
+            .q-text-input { padding-left: 0; margin-top: var(--spacing-3); }
+            .readonly-answer { margin-left: 0; margin-top: var(--spacing-3); }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Mobile Header -->
+<div class="mobile-nav-bar">
+    <button class="sidebar-toggle-btn" id="mobileSidebarToggle" title="题目导航">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+    </button>
+    <div class="mobile-title">{{ paper.title }}</div>
+</div>
+
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+<div class="exam-layout">
+    <!-- Left Sidebar (Question Navigation) -->
+    <aside class="exam-sidebar" id="sidebar">
+        <div class="exam-sidebar-header">
+            <div class="exam-paper-title">{{ paper.title }}</div>
+            <div class="exam-progress-summary">
+                <span>答题进度</span>
+                <span class="answered-count-badge" id="sidebarProgressBadge">
+                    <span id="answeredCount">0</span> / <span id="totalCount">0</span>
+                </span>
+            </div>
+        </div>
+        <div class="exam-sidebar-body" id="sidebarBody">
+            <!-- Sidebar content injected via JS -->
+        </div>
+        <div class="exam-sidebar-footer">
+            <div class="save-status" id="saveStatus">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                本地自动保存
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="exam-main">
+        <div class="exam-paper-container" id="app">
+
+            <div class="paper-header">
+                <h1>{{ paper.title }}</h1>
+                <div class="paper-sub-title">{{ assignment.title }}</div>
+            </div>
+
+            <!-- Dynamic content area -->
+            <div id="dynamicArea">
+                <!-- Progress injected here -->
+                <div class="exam-progress" id="progressContainer">
+                    <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+                    <div class="progress-labels">
+                        <span id="pageNameLabel">加载中...</span>
+                        <span id="pageIdxLabel">第1页 / 共?页</span>
+                    </div>
+                </div>
+
+                <!-- Questions injected here -->
+                <div class="paper-content" id="pageContent"></div>
+
+                <!-- Navigation injected here -->
+                <div class="paper-footer" id="navContainer">
+                    <button class="btn btn-outline" id="prevBtn" disabled>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                        上一页
+                    </button>
+                    <button class="btn btn-primary" id="nextBtn">
+                        下一页
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </main>
+</div>
+
+<script type="module">
+    import { showMessage } from '/static/js/ui.js';
+    import { apiFetch } from '/static/js/api.js';
+
+    // Global configurations injected by Jinja2
+    const ASSIGNMENT_ID = "{{ assignment.id }}";
+    const USER_ROLE = "{{ user_info.role }}";
+
+    {% if submission %}
+    const SUBMISSION_EXISTS = true;
+    const SUBMISSION_RAW = {{ submission.answers_json | tojson }};
+    let SUBMISSION_DATA = null;
+    try { SUBMISSION_DATA = typeof SUBMISSION_RAW === 'string' ? JSON.parse(SUBMISSION_RAW) : (SUBMISSION_RAW || null); } catch(e) { SUBMISSION_DATA = null; }
+    const SUBMISSION_STATUS = "{{ submission.status }}";
+    const SUBMISSION_SCORE = {{ submission.score | tojson }};
+    {% else %}
+    const SUBMISSION_EXISTS = false;
+    const SUBMISSION_DATA = null;
+    const SUBMISSION_STATUS = null;
+    const SUBMISSION_SCORE = null;
+    {% endif %}
+
+    // Paper data
+    const EXAM_PAGES_RAW = {{ paper.questions_json | tojson }};
+    let EXAM_PAGES = {};
+    try { EXAM_PAGES = typeof EXAM_PAGES_RAW === 'string' ? JSON.parse(EXAM_PAGES_RAW) : (EXAM_PAGES_RAW || {}); } catch(e) { EXAM_PAGES = {}; }
+
+    // Application State
+    const state = {
+        pages: EXAM_PAGES.pages || [],
+        currentPageIdx: 0,
+        answers: {},
+        activeQuestionId: null,
+        totalQuestions: 0
+    };
+
+    // DOM Elements
+    const elements = {
+        sidebar: document.getElementById('sidebar'),
+        sidebarBody: document.getElementById('sidebarBody'),
+        sidebarBackdrop: document.getElementById('sidebarBackdrop'),
+        mobileToggle: document.getElementById('mobileSidebarToggle'),
+        dynamicArea: document.getElementById('dynamicArea'),
+        pageContent: document.getElementById('pageContent'),
+        progressFill: document.getElementById('progressFill'),
+        pageNameLabel: document.getElementById('pageNameLabel'),
+        pageIdxLabel: document.getElementById('pageIdxLabel'),
+        prevBtn: document.getElementById('prevBtn'),
+        nextBtn: document.getElementById('nextBtn'),
+        answeredCount: document.getElementById('answeredCount'),
+        totalCount: document.getElementById('totalCount'),
+        progressBadge: document.getElementById('sidebarProgressBadge'),
+        saveStatus: document.getElementById('saveStatus')
+    };
+
+    // Initialize
+    function init() {
+        // Calculate total questions
+        state.totalQuestions = state.pages.reduce((acc, page) => acc + (page.questions ? page.questions.length : 0), 0);
+
+        setupEventListeners();
+
+        if (SUBMISSION_EXISTS) {
+            renderSubmittedView();
+        } else {
+            loadFromLocal();
+            renderCurrentPage();
+        }
+    }
+
+    // --- Data Persistence ---
+    function saveToLocal() {
+        if (SUBMISSION_EXISTS) return;
+        localStorage.setItem(`exam_${ASSIGNMENT_ID}`, JSON.stringify({
+            answers: state.answers,
+            currentPage: state.currentPageIdx
+        }));
+
+        // Visual indicator
+        if(elements.saveStatus) {
+            elements.saveStatus.classList.add('saved');
+            elements.saveStatus.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> 已保存`;
+            setTimeout(() => {
+                elements.saveStatus.classList.remove('saved');
+                elements.saveStatus.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg> 本地自动保存`;
+            }, 2000);
+        }
+    }
+
+    function loadFromLocal() {
+        try {
+            const raw = localStorage.getItem(`exam_${ASSIGNMENT_ID}`);
+            if (raw) {
+                const d = JSON.parse(raw);
+                state.answers = d.answers || {};
+                if (typeof d.currentPage === 'number' && d.currentPage < state.pages.length) {
+                    state.currentPageIdx = d.currentPage;
+                }
+            }
+        } catch(e) {
+            console.error("Failed to load local save", e);
+        }
+
+        // Ensure all questions have at least an empty string entry
+        for (const page of state.pages) {
+            for (const q of (page.questions || [])) {
+                if (state.answers[q.id] === undefined) state.answers[q.id] = '';
+            }
+        }
+    }
+
+    // --- UI Rendering ---
+
+    function renderSidebar() {
+        if (!elements.sidebarBody) return;
+
+        let answeredCount = 0;
+        state.pages.forEach(p => (p.questions || []).forEach(q => {
+            if (state.answers[q.id] && String(state.answers[q.id]).trim()) answeredCount++;
+        }));
+
+        elements.answeredCount.textContent = answeredCount;
+        elements.totalCount.textContent = state.totalQuestions;
+
+        if (answeredCount === state.totalQuestions && state.totalQuestions > 0) {
+            elements.progressBadge.classList.add('complete');
+        } else {
+            elements.progressBadge.classList.remove('complete');
+        }
+
+        const page = state.pages[state.currentPageIdx];
+        if (!page) return;
+
+        let html = '';
+
+        // Current Page Questions
+        html += `
+            <div class="exam-section">
+                <div class="exam-section-title">当前页: ${esc(page.name)}</div>
+                <div class="q-nav-list">
+        `;
+
+        (page.questions || []).forEach((q) => {
+            const val = state.answers[q.id] || '';
+            const isDone = val && String(val).trim();
+            const isActive = state.activeQuestionId === q.id;
+
+            html += `
+                <div class="q-nav-item ${isActive ? 'active' : ''}" data-qid="${q.id}">
+                    <div class="q-status-indicator ${isDone ? 'answered' : 'unanswered'}">
+                        ${isDone ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ''}
+                    </div>
+                    <div class="q-nav-label">
+                        <span class="q-nav-id">${esc(q.id)}</span>
+                        ${esc(truncate(q.text, 25))}
+                    </div>
+                </div>
+            `;
+        });
+        html += `</div></div>`;
+
+        // Other Pages Summary
+        const otherPages = state.pages.map((p, i) => ({ page: p, idx: i })).filter(x => x.idx !== state.currentPageIdx);
+        if (otherPages.length > 0) {
+            otherPages.forEach(({ page: op, idx }) => {
+                const oq = op.questions || [];
+                let oDone = 0;
+                oq.forEach(q => { if (state.answers[q.id] && String(state.answers[q.id]).trim()) oDone++; });
+
+                html += `
+                    <div class="exam-section" style="opacity: 0.7;">
+                        <div class="exam-section-title" style="cursor:pointer;" data-pageidx="${idx}">
+                            <span>${esc(op.name)}</span>
+                            <span>${oDone}/${oq.length}</span>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        elements.sidebarBody.innerHTML = html;
+
+        // Bind clicks for sidebar nav
+        elements.sidebarBody.querySelectorAll('.q-nav-item').forEach(el => {
+            el.addEventListener('click', () => scrollToQuestion(el.dataset.qid));
+        });
+        elements.sidebarBody.querySelectorAll('.exam-section-title[data-pageidx]').forEach(el => {
+            el.addEventListener('click', () => goToPage(parseInt(el.dataset.pageidx)));
+        });
+    }
+
+    function renderCurrentPage() {
+        const page = state.pages[state.currentPageIdx];
+        if (!page) return;
+
+        let html = `
+            <h2 class="page-heading">${esc(page.name)}</h2>
+            <div class="question-list">
+        `;
+
+        (page.questions || []).forEach((q) => {
+            const val = state.answers[q.id] || '';
+            const isAnswered = val && String(val).trim() !== '';
+
+            html += `
+                <div class="question-card ${isAnswered ? 'answered' : ''}" id="q-${q.id}">
+                    <div class="q-header">
+                        <span class="q-number">${q.id}</span>
+                        <div class="q-body">${formatText(q.text)}</div>
+                    </div>
+            `;
+
+            if (q.type === 'radio' && q.options) {
+                html += `<div class="q-options">`;
+                q.options.forEach((opt, idx) => {
+                    const isSelected = val === opt;
+                    const optId = `q_${q.id}_opt_${idx}`;
+                    html += `
+                        <label class="option-label ${isSelected ? 'selected' : ''}" for="${optId}">
+                            <input type="radio" id="${optId}" name="${q.id}" value="${esc(opt)}" ${isSelected ? 'checked' : ''} class="q-radio-input">
+                            <span>${esc(opt)}</span>
+                        </label>
+                    `;
+                });
+                html += `</div>`;
+            } else if (q.type === 'checkbox' && q.options) {
+                html += `<div class="q-options">`;
+                const selectedList = val ? val.split('|||') : [];
+                q.options.forEach((opt, idx) => {
+                    const isSelected = selectedList.includes(opt);
+                    const optId = `q_${q.id}_opt_${idx}`;
+                    html += `
+                        <label class="option-label ${isSelected ? 'selected' : ''}" for="${optId}">
+                            <input type="checkbox" id="${optId}" value="${esc(opt)}" ${isSelected ? 'checked' : ''} class="q-check-input" data-qid="${q.id}">
+                            <span>${esc(opt)}</span>
+                        </label>
+                    `;
+                });
+                html += `</div>`;
+            } else if (q.type === 'text') {
+                html += `
+                    <div class="q-text-input">
+                        <input type="text" class="form-control" value="${esc(val)}" placeholder="${esc(q.placeholder || '请输入答案')}" data-text-input="${q.id}">
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="q-text-input">
+                        <textarea class="form-control" rows="5" placeholder="${esc(q.placeholder || '请在此作答...')}" data-text-input="${q.id}">${esc(val)}</textarea>
+                    </div>
+                `;
+            }
+            html += `</div>`;
+        });
+
+        html += `</div>`; // end question-list
+
+        // Add submit section on last page
+        if (state.currentPageIdx === state.pages.length - 1) {
+            html += `
+                <div class="submit-section">
+                    <p class="text-muted mb-3" style="font-size:0.9rem;">请确认所有题目已作答完毕，提交后不可修改。</p>
+                    <button class="btn btn-success btn-lg" id="submitExamBtn" style="min-width: 200px;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                        确认交卷
+                    </button>
+                </div>
+            `;
+        }
+
+        elements.pageContent.innerHTML = html;
+        updateProgress();
+        renderSidebar();
+        bindQuestionInputs();
+
+        // Scroll to top
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function updateProgress() {
+        elements.pageNameLabel.textContent = state.pages[state.currentPageIdx].name;
+        elements.pageIdxLabel.textContent = `第 ${state.currentPageIdx + 1} 页 / 共 ${state.pages.length} 页`;
+
+        const progressPct = state.pages.length > 1
+            ? (state.currentPageIdx / (state.pages.length - 1)) * 100
+            : 100;
+        elements.progressFill.style.width = `${progressPct}%`;
+
+        elements.prevBtn.disabled = state.currentPageIdx === 0;
+
+        if (state.currentPageIdx === state.pages.length - 1) {
+            elements.nextBtn.style.display = 'none';
+        } else {
+            elements.nextBtn.style.display = 'inline-flex';
+        }
+    }
+
+    function bindQuestionInputs() {
+        // Radio buttons
+        document.querySelectorAll('.q-radio-input').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                const qId = e.target.name;
+                state.answers[qId] = e.target.value;
+
+                // Update styling
+                const card = document.getElementById(`q-${qId}`);
+                if(card) card.classList.add('answered');
+
+                card.querySelectorAll('.option-label').forEach(lbl => lbl.classList.remove('selected'));
+                e.target.closest('.option-label').classList.add('selected');
+
+                saveToLocal();
+                renderSidebar();
+            });
+        });
+
+        // Checkboxes
+        document.querySelectorAll('.q-check-input').forEach(checkbox => {
+            checkbox.addEventListener('change', (e) => {
+                const qId = e.target.dataset.qid;
+                const val = e.target.value;
+                const isChecked = e.target.checked;
+
+                let current = state.answers[qId] ? state.answers[qId].split('|||') : [];
+                if (isChecked && !current.includes(val)) current.push(val);
+                if (!isChecked) current = current.filter(v => v !== val);
+
+                const newAns = current.join('|||');
+                state.answers[qId] = newAns;
+
+                // Update styling
+                const card = document.getElementById(`q-${qId}`);
+                if(card) {
+                    if(newAns) card.classList.add('answered');
+                    else card.classList.remove('answered');
+                }
+
+                const label = e.target.closest('.option-label');
+                if(isChecked) label.classList.add('selected');
+                else label.classList.remove('selected');
+
+                saveToLocal();
+                renderSidebar();
+            });
+        });
+
+        // Text inputs & textareas
+        document.querySelectorAll('[data-text-input]').forEach(input => {
+            // Use debounce for performance on typing
+            let timeout = null;
+            input.addEventListener('input', (e) => {
+                const qId = e.target.dataset.textInput;
+                const val = e.target.value;
+                state.answers[qId] = val;
+
+                const card = document.getElementById(`q-${qId}`);
+                if(card) {
+                    if(val.trim()) card.classList.add('answered');
+                    else card.classList.remove('answered');
+                }
+
+                clearTimeout(timeout);
+                timeout = setTimeout(() => {
+                    saveToLocal();
+                    renderSidebar();
+                }, 500);
+            });
+        });
+
+        // Submit button
+        const submitBtn = document.getElementById('submitExamBtn');
+        if (submitBtn) {
+            submitBtn.addEventListener('click', handleSubmission);
+        }
+    }
+
+    // --- Actions ---
+
+    function goToPage(idx) {
+        if (idx === state.currentPageIdx || idx < 0 || idx >= state.pages.length) return;
+        state.currentPageIdx = idx;
+        renderCurrentPage();
+        saveToLocal();
+        closeMobileSidebar();
+    }
+
+    function scrollToQuestion(qId) {
+        state.activeQuestionId = qId;
+        const el = document.getElementById(`q-${qId}`);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.add('highlight');
+            setTimeout(() => { el.classList.remove('highlight'); }, 1500);
+        } else {
+            // Question is on a different page, find it and navigate
+            const targetPageIdx = state.pages.findIndex(p => (p.questions || []).some(q => q.id === qId));
+            if (targetPageIdx !== -1 && targetPageIdx !== state.currentPageIdx) {
+                state.currentPageIdx = targetPageIdx;
+                renderCurrentPage();
+                setTimeout(() => scrollToQuestion(qId), 100);
+                saveToLocal();
+            }
+        }
+        renderSidebar();
+        closeMobileSidebar();
+    }
+
+    async function handleSubmission() {
+        const allQuestions = [];
+        state.pages.forEach(p => (p.questions || []).forEach(q => allQuestions.push(q)));
+
+        const unanswered = allQuestions.filter(q => !state.answers[q.id] || !state.answers[q.id].trim());
+
+        if (unanswered.length > 0) {
+            if (!confirm(`还有 ${unanswered.length} 道题未作答，确定要强行交卷吗？`)) return;
+        } else {
+            if (!confirm('确定要提交试卷吗？提交后不可修改。')) return;
+        }
+
+        const btn = document.getElementById('submitExamBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;margin-right:8px;"></span> 提交中...';
+
+        const answersList = allQuestions.map(q => ({
+            question_id: q.id,
+            question: q.text,
+            answer: state.answers[q.id] || ''
+        }));
+
+        const formData = new FormData();
+        formData.append('answers_json', JSON.stringify({ answers: answersList }));
+
+        try {
+            const resp = await apiFetch(`/api/assignments/${ASSIGNMENT_ID}/submit`, {
+                method: 'POST',
+                body: formData
+            });
+
+            showMessage('交卷成功！', 'success');
+            localStorage.removeItem(`exam_${ASSIGNMENT_ID}`);
+
+            // Reload to show submitted state
+            setTimeout(() => location.reload(), 1500);
+
+        } catch(e) {
+            showMessage(e.message || '提交失败，请重试', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> 确认交卷';
+        }
+    }
+
+    // --- Submitted View (Read-Only) ---
+
+    function renderSubmittedView() {
+        // Hide nav controls
+        if(elements.navContainer) elements.navContainer.style.display = 'none';
+        if(elements.progressContainer) elements.progressContainer.style.display = 'none';
+
+        let html = '';
+
+        // Status Banner
+        if (SUBMISSION_STATUS === 'graded') {
+            html += `
+                <div class="result-banner success">
+                    <div class="result-icon">🎉</div>
+                    <h3>考试已批改</h3>
+                    <div class="result-score">${SUBMISSION_SCORE || 0} <span style="font-size:1.2rem;color:var(--text-muted);">分</span></div>
+                </div>
+            `;
+        } else if (SUBMISSION_STATUS === 'grading') {
+            html += `
+                <div class="result-banner warning">
+                    <div class="result-icon">⏳</div>
+                    <h3>批改中</h3>
+                    <p>AI 助手正在为您批改试卷，请稍后刷新查看结果。</p>
+                </div>
+            `;
+        } else {
+            html += `
+                <div class="result-banner success">
+                    <div class="result-icon">✅</div>
+                    <h3>已提交</h3>
+                    <p>试卷已成功提交，等待教师批改。</p>
+                </div>
+            `;
+        }
+
+        // Reconstruct answers from submission data
+        const submittedAnswers = {};
+        if (SUBMISSION_DATA) {
+            const ansList = SUBMISSION_DATA.answers || SUBMISSION_DATA;
+            if (Array.isArray(ansList)) {
+                ansList.forEach(item => {
+                    const key = item.question_id || item.question;
+                    if (key) submittedAnswers[key] = item.answer || '';
+                });
+            }
+        }
+
+        const allQuestions = [];
+        state.pages.forEach(page => {
+            (page.questions || []).forEach(q => allQuestions.push({...q, pageName: page.name}));
+        });
+
+        html += `
+            <div class="page-heading" style="margin-top: 2rem;">我的答卷</div>
+            <div class="question-list">
+        `;
+
+        allQuestions.forEach((q) => {
+            const ans = submittedAnswers[q.id];
+            const hasAns = ans && ans.trim() !== '';
+
+            html += `
+                <div class="question-card" id="q-${q.id}">
+                    <div class="q-header">
+                        <span class="q-number">${q.id}</span>
+                        <div class="q-body">${formatText(q.text)}</div>
+                    </div>
+                    <div class="readonly-answer ${!hasAns ? 'empty' : ''}">
+                        ${hasAns ? esc(ans) : '(未作答)'}
+                    </div>
+                </div>
+            `;
+        });
+
+        html += `</div>`;
+        elements.dynamicArea.innerHTML = `<div class="paper-content">${html}</div>`;
+
+        // Update sidebar
+        renderSidebarForSubmitted(allQuestions, submittedAnswers);
+    }
+
+    function renderSidebarForSubmitted(allQuestions, submittedAnswers) {
+        if (!elements.sidebarBody) return;
+
+        let done = 0;
+        allQuestions.forEach(q => {
+            if (submittedAnswers[q.id] && submittedAnswers[q.id].trim() !== '') done++;
+        });
+
+        elements.answeredCount.textContent = done;
+        elements.totalCount.textContent = allQuestions.length;
+        if(elements.saveStatus) elements.saveStatus.style.display = 'none';
+        if (done === allQuestions.length) elements.progressBadge.classList.add('complete');
+
+        let html = `
+            <div class="exam-section">
+                <div class="exam-section-title">全部题目摘要</div>
+                <div class="q-nav-list">
+        `;
+
+        allQuestions.forEach(q => {
+            const ans = submittedAnswers[q.id];
+            const answered = ans && ans.trim() !== '';
+            html += `
+                <div class="q-nav-item" onclick="document.getElementById('q-${q.id}').scrollIntoView({behavior:'smooth', block:'center'})">
+                    <div class="q-status-indicator ${answered ? 'answered' : 'unanswered'}">
+                        ${answered ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ''}
+                    </div>
+                    <div class="q-nav-label">
+                        <span class="q-nav-id">${esc(q.id)}</span>
+                        ${esc(truncate(q.text, 20))}
+                    </div>
+                </div>
+            `;
+        });
+        html += `</div></div>`;
+        elements.sidebarBody.innerHTML = html;
+    }
+
+    // --- Utilities & Events ---
+
+    function setupEventListeners() {
+        if (elements.prevBtn) elements.prevBtn.addEventListener('click', () => goToPage(state.currentPageIdx - 1));
+        if (elements.nextBtn) elements.nextBtn.addEventListener('click', () => goToPage(state.currentPageIdx + 1));
+
+        // Mobile sidebar
+        if (elements.mobileToggle) elements.mobileToggle.addEventListener('click', () => {
+            elements.sidebar.classList.add('show');
+            elements.sidebarBackdrop.classList.add('show');
+        });
+        if (elements.sidebarBackdrop) elements.sidebarBackdrop.addEventListener('click', closeMobileSidebar);
+
+        window.addEventListener('beforeunload', () => {
+            if(!SUBMISSION_EXISTS) saveToLocal();
+        });
+    }
+
+    function closeMobileSidebar() {
+        elements.sidebar.classList.remove('show');
+        elements.sidebarBackdrop.classList.remove('show');
+    }
+
+    function esc(s) {
+        if(!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function formatText(s) {
+        if(!s) return '';
+        // Convert newlines to br, but keep basic escaping
+        return esc(s).replace(/
+/g, '<br>');
+    }
+
+    function truncate(s, n) {
+        if (!s) return '';
+        return s.length > n ? s.slice(0, n) + '...' : s;
+    }
+
+    // Boot
+    document.addEventListener('DOMContentLoaded', init);
+
+</script>
+</body>
+</html>

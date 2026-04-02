@@ -98,24 +98,26 @@ class GenerationRequest(BaseModel):
 class GradingJob(BaseModel):
     submission_id: int
     rubric_md: str
-    file_paths: List[str]
+    requirements_md: str = ""
+    file_paths: List[str] = []
+    answers_json: Optional[str] = None
     # model_type 将在 run_grading_job 中动态决定，这里不再需要
 
 
 # --- 提示词模板 (更新) ---
 GRADING_SYSTEM_PROMPT = """
-你是一个严格、公正的AI编程作业批改助教。
-你的任务是根据用户提供的【评分标准】（Rubric）和【学生提交的文件】（代码或图片），对作业进行批改。
+你是一个严格、公正的AI作业批改助教。
+你的任务是根据提供的【作业要求】、【评分标准】和【学生提交内容】（可能是代码文件、文本答案、图片等），对作业进行批改。
 请务必使用 **中文** 进行回复。
 你必须严格按照以下JSON格式返回结果，不要包含任何额外的解释或代码块标记：
 {
-  "score": <评分，整数>,
-  "feedback_md": "<详细的批改反馈，使用Markdown格式说明得分点和失分点>"
+  "score": <评分，整数，0-100>,
+  "feedback_md": "<详细的批改反馈，使用Markdown格式，按评分标准的每个维度逐一说明得分点和失分点>"
 }
 例如:
 {
   "score": 85,
-  "feedback_md": "- **正确使用turtle模块 (30/30)**: 代码成功导入并使用了turtle。\n- **准确绘制数字 (25/30)**: 数字形状基本正确，但比例稍有失衡。\n- **代码可读性 (15/20)**: 有部分注释，但变量名可以更清晰。\n- **文件命名 (10/10)**: 文件名符合要求。\n\n**总结**: 整体完成度较好，请注意代码规范和细节。"
+  "feedback_md": "- **知识点理解 (30/30)**: 概念理解准确，论述清晰。\n- **代码实现 (25/30)**: 核心逻辑正确，但边界条件处理不完整。\n- **规范性 (15/20)**: 代码格式基本规范，缺少部分注释。\n- **完成度 (15/20)**: 大部分功能已实现，少数功能缺失。\n\n**总结**: 整体完成度较好，建议加强对边界条件的处理和代码注释。"
 }
 """
 
@@ -187,11 +189,37 @@ def file_to_base64_url(file_path: Path) -> str:
         print(f"[ERROR] file_to_base64_url {file_path}: {e}"); return ""
 
 
-def build_vision_messages(rubric: str, files: List[Path], platform_type: str) -> List[Dict[str, Any]]:
-    # ... (函数实现保持不变) ...
+def build_vision_messages(rubric: str, files: List[Path], platform_type: str,
+                          requirements_md: str = "", answers_json: str = None) -> List[Dict[str, Any]]:
+    """构建视觉消息 (支持文件 + JSON 答案混合)"""
+    # 构建 JSON 答案的文本描述
+    answers_text = ""
+    if answers_json:
+        try:
+            answers_data = json.loads(answers_json) if isinstance(answers_json, str) else answers_json
+            answers = answers_data.get("answers", answers_data)
+            if isinstance(answers, list):
+                answers_text = "【学生文字答案】\n"
+                for i, item in enumerate(answers):
+                    q = item.get("question", f"第 {i+1} 题")
+                    a = item.get("answer", item.get("content", item.get("text", "")))
+                    answers_text += f"\n### {q}\n{a}\n"
+            elif isinstance(answers, dict):
+                answers_text = "【学生文字答案】\n"
+                for key, value in answers.items():
+                    answers_text += f"\n### {key}\n{value}\n"
+        except (json.JSONDecodeError, AttributeError):
+            answers_text = f"\n【学生文字答案】\n{answers_json}\n"
+
     if platform_type == "volcengine":
         content = []
-        text_content = f"【评分标准】\n{rubric}\n\n【学生提交内容】\n"
+        text_content = ""
+        if requirements_md:
+            text_content += f"【作业要求】\n{requirements_md}\n\n"
+        text_content += f"【评分标准】\n{rubric}\n\n"
+        if answers_text:
+            text_content += answers_text + "\n"
+        text_content += "【学生提交文件】\n"
         for file_path in files:
             if is_image_file(file_path):
                 text_content += f"- 图片文件: {file_path.name}\n"
@@ -199,14 +227,21 @@ def build_vision_messages(rubric: str, files: List[Path], platform_type: str) ->
                 if b64_url: content.append({"type": "image_url", "image_url": {"url": b64_url}})
             else:
                 try:
-                    code = file_path.read_text(encoding='utf-8',
-                                               errors='ignore'); text_content += f"\n--- {file_path.name} ---\n```\n{code}\n```\n"  # Added errors='ignore'
+                    code = file_path.read_text(encoding='utf-8', errors='ignore')
+                    text_content += f"\n--- {file_path.name} ---\n```\n{code}\n```\n"
                 except Exception:
                     text_content += f"\n--- {file_path.name} (无法读取) ---\n"
         content.append({"type": "text", "text": text_content})
         return [{"role": "user", "content": content}]
     else:  # OpenAI compatible format
-        content = [{"type": "text", "text": f"【评分标准】\n{rubric}\n\n【学生提交内容】\n请根据以下文件内容进行评分:"}]
+        header_text = ""
+        if requirements_md:
+            header_text += f"【作业要求】\n{requirements_md}\n\n"
+        header_text += f"【评分标准】\n{rubric}\n\n"
+        if answers_text:
+            header_text += answers_text + "\n"
+        header_text += "【学生提交文件】\n请根据以上内容进行评分:"
+        content = [{"type": "text", "text": header_text}]
         for file_path in files:
             if is_image_file(file_path):
                 b64_url = file_to_base64_url(file_path)
@@ -602,39 +637,71 @@ async def submit_grading_task(job: GradingJob):
     return {"status": "queued", "submission_id": job.submission_id}
 
 
-# --- 后台任务 (更新) ---
+# --- 后台任务 (更新: 支持文件 + JSON 答案) ---
 async def run_grading_job(job: GradingJob):
     callback_data = {}
     selected_capability: Literal["standard", "thinking", "vision"] = "thinking"  # 默认使用 thinking
     try:
         file_paths = [Path(p) for p in job.file_paths if Path(p).exists()]
-        if not file_paths: raise ValueError("没有找到有效的提交文件路径")
+        has_files = bool(file_paths)
+        has_answers = bool(job.answers_json)
 
-        # *** 核心修改：检查是否有图片文件 ***
-        has_image = any(is_image_file(fp) for fp in file_paths)
+        if not has_files and not has_answers:
+            raise ValueError("没有找到可批改的内容（无文件也无答案）")
+
+        # 检查是否有图片文件
+        has_image = has_files and any(is_image_file(fp) for fp in file_paths)
         if has_image:
             selected_capability = "vision"
             print(f"[AI WORKER] 检测到图片文件，将使用 '{selected_capability}' 能力。")
         else:
-            print(f"[AI WORKER] 未检测到图片文件，将使用 '{selected_capability}' 能力。")
-        # *** 修改结束 ***
+            print(f"[AI WORKER] 将使用 '{selected_capability}' 能力。")
 
-        selected_platform = _get_selected_platform_config(selected_capability)  # 使用动态选择的能力
+        selected_platform = _get_selected_platform_config(selected_capability)
         if not selected_platform: raise ValueError(f"没有找到支持 {selected_capability} 能力的平台")
         platform_type = selected_platform["type"]
 
-        messages = [{"role": "system", "content": GRADING_SYSTEM_PROMPT}, ]
-        # 根据选择的能力构建消息
-        if selected_capability == "vision":
-            messages.extend(build_vision_messages(job.rubric_md, file_paths, platform_type))
-        else:  # thinking or standard (只处理文本)
-            text_content = f"【评分标准】\n{job.rubric_md}\n\n【学生提交内容】\n"
-            for file_path in file_paths:
+        messages = [{"role": "system", "content": GRADING_SYSTEM_PROMPT}]
+
+        if selected_capability == "vision" and has_files:
+            # 图片类作业：构建视觉消息
+            messages.extend(build_vision_messages(job.rubric_md, file_paths, platform_type,
+                                                  job.requirements_md, job.answers_json))
+        else:
+            # 文本类作业：构建文本消息
+            text_content = ""
+            if job.requirements_md:
+                text_content += f"【作业要求】\n{job.requirements_md}\n\n"
+            text_content += f"【评分标准】\n{job.rubric_md}\n\n"
+
+            # 添加 JSON 答案内容
+            if has_answers:
+                text_content += "【学生提交答案】\n"
                 try:
-                    code = file_path.read_text(encoding='utf-8',
-                                               errors='ignore'); text_content += f"\n--- 文件: {file_path.name} ---\n```\n{code}\n```\n"
-                except Exception:
-                    text_content += f"\n--- 文件: {file_path.name} (无法读取) ---\n"
+                    answers_data = json.loads(job.answers_json) if isinstance(job.answers_json, str) else job.answers_json
+                    answers = answers_data.get("answers", answers_data)
+                    if isinstance(answers, list):
+                        for i, item in enumerate(answers):
+                            q = item.get("question", f"第 {i+1} 题")
+                            a = item.get("answer", item.get("content", item.get("text", "")))
+                            text_content += f"\n### {q}\n{a}\n"
+                    elif isinstance(answers, dict):
+                        for key, value in answers.items():
+                            text_content += f"\n### {key}\n{value}\n"
+                except (json.JSONDecodeError, AttributeError):
+                    text_content += job.answers_json
+                text_content += "\n"
+
+            # 添加文件内容
+            if has_files:
+                text_content += "【学生提交文件】\n"
+                for file_path in file_paths:
+                    try:
+                        code = file_path.read_text(encoding='utf-8', errors='ignore')
+                        text_content += f"\n--- 文件: {file_path.name} ---\n```\n{code}\n```\n"
+                    except Exception:
+                        text_content += f"\n--- 文件: {file_path.name} (无法读取) ---\n"
+
             messages.append({"role": "user", "content": text_content})
 
         # 批改任务总是要求 JSON 输出
