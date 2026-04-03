@@ -14,11 +14,11 @@
             </div>
             <div class="card-body">
                 {% if my_offerings %}
-                <div class="alert alert-info mb-5" style="padding: 1rem; border-radius: 8px; background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;">
-                    <p style="margin-bottom: 0.5rem;">
+                <div class="alert alert-info mb-5">
+                    <p class="mb-1">
                         <strong>配置说明：</strong> 每个课堂都可以拥有独立的AI助手配置。
                     </p>
-                    <ul style="margin: 0; padding-left: 1.5rem; font-size: 0.9rem;">
+                    <ul class="ai-config-list">
                         <li><strong>System Prompt:</strong> 决定了AI的角色、语气和行为边界。</li>
                         <li><strong>RAG 材料:</strong> 作为AI回答专业问题的首要参考知识库。</li>
                     </ul>
@@ -27,7 +27,7 @@
                 <form id="form-configure-ai" action="/api/manage/ai/configure" method="POST">
                     <div class="form-group">
                         <label class="form-label" for="ai-select-offering">选择要配置的课堂</label>
-                        <select class="form-control" id="ai-select-offering" name="class_offering_id" required style="font-weight: 500;">
+                        <select id="ai-select-offering" name="class_offering_id" required class="form-control ai-select">
                             <option value="">-- 请选择一个已开设的课堂 --</option>
                             {% for offering in my_offerings %}
                             <!-- 使用 data-* 属性存储预填充所需的信息 -->
@@ -42,37 +42,37 @@
                         </select>
                     </div>
 
-                    <div id="ai-config-details" style="display: none; margin-top: var(--spacing-5); animation: fadeIn 0.3s ease;">
-                        <div style="height: 1px; background: var(--border-color); margin: var(--spacing-5) 0;"></div>
+                    <div id="ai-config-details" class="ai-config-details" style="display: none;">
+                        <div class="ai-divider"></div>
 
                         <div class="form-group">
                             <div class="flex justify-between items-end mb-2">
-                                <label class="form-label" for="ai-system-prompt" style="margin-bottom: 0;">AI 系统提示 (System Prompt)</label>
+                                <label class="form-label mb-0" for="ai-system-prompt">AI 系统提示 (System Prompt)</label>
                                 <span class="badge badge-outline">角色设定</span>
                             </div>
-                            <textarea class="form-control" id="ai-system-prompt" name="system_prompt" rows="8" placeholder="例如：
+                            <textarea class="form-control ai-mono" id="ai-system-prompt" name="system_prompt" rows="8" placeholder="例如：
 你是一个专业的《[此处填写课程名称]》课程教学助手。
 你的任务是回答学生关于课程内容的问题，并辅助教师（{{ user_info.name }}）进行教学。
 ...
-" style="font-family: monospace; font-size: 0.9rem; line-height: 1.6;"></textarea>
+"></textarea>
                             <p class="form-hint mt-2 text-muted text-sm">定义AI的角色、行为准则和回答策略。</p>
                         </div>
 
                         <div class="form-group mt-5">
                             <div class="flex justify-between items-end mb-2">
-                                <label class="form-label" for="ai-syllabus" style="margin-bottom: 0;">课程大纲 / 知识点 (RAG材料)</label>
+                                <label class="form-label mb-0" for="ai-syllabus">课程大纲 / 知识点 (RAG材料)</label>
                                 <span class="badge badge-outline">知识库</span>
                             </div>
-                            <textarea class="form-control" id="ai-syllabus" name="syllabus" rows="12" placeholder="请粘贴课程的核心知识点、章节大纲或评分标准...
+                            <textarea class="form-control ai-mono" id="ai-syllabus" name="syllabus" rows="12" placeholder="请粘贴课程的核心知识点、章节大纲或评分标准...
 - 变量与数据类型
 - 列表、元组、字典
 ...
-" style="font-family: monospace; font-size: 0.9rem; line-height: 1.6;"></textarea>
+"></textarea>
                             <p class="form-hint mt-2 text-muted text-sm">作为AI回答专业问题的主要依据，内容越详细，AI回答越准确。</p>
                         </div>
 
                         <div class="mt-6 flex justify-end">
-                            <button type="submit" class="btn btn-primary" style="min-width: 150px;">
+                            <button type="submit" class="btn btn-primary ai-save-btn">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
                                 保存AI配置
                             </button>
@@ -93,7 +93,13 @@
     </div>
 </div>
 
+
 <style>
+    .ai-config-list { margin: 0; padding-left: 1.5rem; font-size: 0.9rem; }
+    .ai-config-details { margin-top: var(--spacing-5); animation: fadeIn 0.3s ease; }
+    .ai-divider { height: 1px; background: var(--border-color); margin: var(--spacing-5) 0; }
+    .ai-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.9rem; line-height: 1.65; }
+    .ai-save-btn { min-width: 150px; }
     @keyframes fadeIn {
         from { opacity: 0; transform: translateY(-10px); }
         to { opacity: 1; transform: translateY(0); }

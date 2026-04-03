@@ -8,16 +8,16 @@
         <div class="panel-body">
             <form id="form-create-course" action="/api/manage/courses/create" method="POST">
                 <div class="form-group">
-                    <label for="course_name">课程名称 (如: Python程序设计)</label>
-                    <input type="text" id="course_name" name="name" required>
+                    <label class="form-label" for="course_name">课程名称 (如: Python程序设计)</label>
+                    <input class="form-control" type="text" id="course_name" name="name" required>
                 </div>
                 <div class="form-group">
-                    <label for="description">课程简介</label>
-                    <textarea id="description" name="description" rows="3"></textarea>
+                    <label class="form-label" for="description">课程简介</label>
+                    <textarea class="form-control" id="description" name="description" rows="3"></textarea>
                 </div>
                 <div class="form-group">
-                    <label for="credits">学分</label>
-                    <input type="number" id="credits" name="credits" value="1.0" step="0.5" min="0">
+                    <label class="form-label" for="credits">学分</label>
+                    <input class="form-control" type="number" id="credits" name="credits" value="1.0" step="0.5" min="0">
                 </div>
                 <button type="submit" class="btn btn-primary btn-block">创建新课程</button>
             </form>
@@ -29,7 +29,7 @@
         <div class="panel-body">
             <ul class="item-list">
                 {% for course in my_courses %}
-                <li style="display: flex; justify-content: space-between; align-items: center;">
+                <li>
                     <span>
                         {{ course.name }}
                         {% if course.credits > 0 %}({{ course.credits }}学分){% endif %}

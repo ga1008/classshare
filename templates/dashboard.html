@@ -2,9 +2,46 @@
 
 {% block title %}我的仪表盘 - 课堂平台{% endblock %}
 
+{% block css %}
+{{ super() }}
+<style>
+    .dashboard-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-lg);
+        padding: var(--spacing-lg);
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border-color);
+        background: linear-gradient(135deg, rgba(79, 70, 229, 0.12), rgba(255, 255, 255, 0.85));
+        box-shadow: var(--shadow-sm);
+    }
+
+    .dashboard-subtitle {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: 0.92rem;
+    }
+
+    .course-card {
+        border: 1px solid var(--border-color);
+        border-top-width: 5px;
+        backdrop-filter: blur(5px);
+    }
+
+    @media (max-width: 768px) {
+        .dashboard-header { flex-direction: column; align-items: flex-start; }
+    }
+</style>
+{% endblock %}
+
 {% block main_content %}
-<div class="flex items-center justify-between mb-3">
-    <h2>我的班级课堂</h2>
+<div class="dashboard-header">
+    <div>
+        <h2 class="mb-1">我的班级课堂</h2>
+        <p class="dashboard-subtitle">统一查看课堂、作业与资源，保持教学流程高效顺畅。</p>
+    </div>
     {% if user_info.role == 'teacher' %}
     <a href="/manage/offerings" class="btn btn-primary btn-sm">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>

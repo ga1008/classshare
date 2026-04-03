@@ -7,13 +7,13 @@
     <div class="panel">
         <div class="panel-header"><h2>开设新课堂 (关联)</h2></div>
         <div class="panel-body">
-            <p class="description" style="margin-bottom: 15px;">
+            <p class="description mb-2">
                 “课堂”是将您的一个“班级”和一门“课程”在特定学期关联起来的实例。
             </p>
             <form id="form-create-offering" action="/api/manage/class_offerings/create" method="POST">
                 <div class="form-group">
-                    <label for="select-class">选择班级</label>
-                    <select id="select-class" name="class_id" required>
+                    <label class="form-label" for="select-class">选择班级</label>
+                    <select class="form-select" id="select-class" name="class_id" required>
                         <option value="">-- 请选择班级 --</option>
                         {% for class in my_classes %}
                         <option value="{{ class.id }}">{{ class.name }}</option>
@@ -23,8 +23,8 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label for="select-course">选择课程</label>
-                    <select id="select-course" name="course_id" required>
+                    <label class="form-label" for="select-course">选择课程</label>
+                    <select class="form-select" id="select-course" name="course_id" required>
                         <option value="">-- 请选择课程 --</option>
                         {% for course in my_courses %}
                         <option value="{{ course.id }}">{{ course.name }}</option>
@@ -34,8 +34,8 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label for="semester">学期 (可选)</label>
-                    <input type="text" id="semester" name="semester" placeholder="例如: 2025-2026-1 或 2025-Fall">
+                    <label class="form-label" for="semester">学期 (可选)</label>
+                    <input class="form-control" type="text" id="semester" name="semester" placeholder="例如: 2025-2026-1 或 2025-Fall">
                 </div>
                 <button type="submit" class="btn btn-success btn-block">关联班级与课程</button>
             </form>
@@ -47,11 +47,11 @@
         <div class="panel-body">
             <ul class="item-list">
                 {% for offering in my_offerings %}
-                <li style="display: flex; justify-content: space-between; align-items: center;">
+                <li>
                     <div>
                         <strong>{{ offering.course_name }}</strong> - {{ offering.class_name }}
                         {% if offering.semester %}
-                        <span style="color: #666; font-size: 0.9rem; margin-left: 10px;">
+                        <span class="text-muted text-sm ml-2">
                             ({{ offering.semester }})
                         </span>
                         {% endif %}

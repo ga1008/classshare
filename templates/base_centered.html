@@ -59,6 +59,22 @@
         color: var(--text-muted);
     }
 
+    .login-card {
+        border: 1px solid var(--border-color);
+        backdrop-filter: blur(8px);
+        animation: slideUp 0.35s ease;
+    }
+
+    .login-logo.logo-student { background: var(--primary-light); color: var(--primary-color); }
+    .login-logo.logo-teacher { background: var(--success-light); color: var(--success-color); }
+
+    .footer-links.row-links {
+        display: flex;
+        justify-content: center;
+        gap: var(--spacing-md);
+        align-items: center;
+    }
+
     /* Status/Error card variant */
     .status-card {
         background-color: var(--surface-color);
