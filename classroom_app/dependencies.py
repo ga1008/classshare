@@ -1,6 +1,7 @@
 import socket
 import math
 import uuid
+import threading
 from typing import Optional, Dict
 from fastapi import Request, HTTPException, Depends, status
 from jose import jwt, JWTError
@@ -16,6 +17,7 @@ from .config import SECRET_KEY, ALGORITHM
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 active_sessions: Dict[str, Dict] = {}
+_sessions_lock = threading.Lock()
 
 def verify_password(plain_password, hashed_password):
     # 验证逻辑保持不变
@@ -35,13 +37,14 @@ def create_access_token(data: dict, client_ip: str) -> str:
     token_data["session_id"] = session_id
     token_data["ip"] = client_ip
 
-    # 更新活跃会话
+    # 更新活跃会话 (线程安全)
     user_id = str(data["id"])  # 使用字符串作为键
-    active_sessions[user_id] = {
-        "session_id": session_id,
-        "ip": client_ip,
-        "last_login": data.get("login_time", "")
-    }
+    with _sessions_lock:
+        active_sessions[user_id] = {
+            "session_id": session_id,
+            "ip": client_ip,
+            "last_login": data.get("login_time", "")
+        }
 
     print(f"[SESSION] 用户 {data.get('name')} 登录，IP: {client_ip}, 会话ID: {session_id}")
     return jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
@@ -58,25 +61,26 @@ def verify_token(token: Optional[str], client_ip: Optional[str] = None) -> Optio
         token_ip = payload.get("ip")
 
         # 检查会话是否存在且匹配
-        if user_id not in active_sessions:
-            print(f"[SESSION] 用户 {user_id} 没有活跃会话")
-            return None
-
-        current_session = active_sessions[user_id]
-
-        # 如果提供了client_ip，则验证IP；否则只验证会话ID
-        if client_ip is not None:
-            # 完整验证：会话ID、IP地址
-            if (current_session["session_id"] != session_id or
-                    current_session["ip"] != token_ip or
-                    token_ip != client_ip):
-                print(f"[SESSION] 会话验证失败 - 用户: {user_id}, 期望IP: {current_session['ip']}, 实际IP: {client_ip}")
+        with _sessions_lock:
+            if user_id not in active_sessions:
+                print(f"[SESSION] 用户 {user_id} 没有活跃会话")
                 return None
-        else:
-            # 简化验证：只验证会话ID
-            if current_session["session_id"] != session_id:
-                print(f"[SESSION] 会话ID不匹配 - 用户: {user_id}")
-                return None
+
+            current_session = active_sessions[user_id]
+
+            # 如果提供了client_ip，则验证IP；否则只验证会话ID
+            if client_ip is not None:
+                # 完整验证：会话ID、IP地址
+                if (current_session["session_id"] != session_id or
+                        current_session["ip"] != token_ip or
+                        token_ip != client_ip):
+                    print(f"[SESSION] 会话验证失败 - 用户: {user_id}, 期望IP: {current_session['ip']}, 实际IP: {client_ip}")
+                    return None
+            else:
+                # 简化验证：只验证会话ID
+                if current_session["session_id"] != session_id:
+                    print(f"[SESSION] 会话ID不匹配 - 用户: {user_id}")
+                    return None
 
         return payload
     except JWTError:
@@ -85,9 +89,10 @@ def verify_token(token: Optional[str], client_ip: Optional[str] = None) -> Optio
 
 def invalidate_user_session(user_id: str):
     """使用户的所有会话失效"""
-    if user_id in active_sessions:
-        del active_sessions[user_id]
-        print(f"[SESSION] 用户 {user_id} 会话已失效")
+    with _sessions_lock:
+        if user_id in active_sessions:
+            del active_sessions[user_id]
+            print(f"[SESSION] 用户 {user_id} 会话已失效")
 
 
 def get_client_ip(request: Request) -> str:

@@ -1,5 +1,6 @@
 from datetime import datetime
 import sqlite3
+import json
 
 from fastapi import APIRouter, Request, Form, HTTPException, Depends, status, UploadFile, File
 from fastapi.responses import RedirectResponse, HTMLResponse
@@ -514,6 +515,42 @@ async def exam_new_page(request: Request, user: dict = Depends(get_current_teach
         "user_info": user,
         "paper": None,
         "offerings": [dict(row) for row in offerings]
+    })
+
+
+@router.get("/submission/{submission_id}", response_class=HTMLResponse)
+async def submission_detail_page(request: Request, submission_id: int, user: dict = Depends(get_current_user)):
+    """查看/批改提交详情页（教师+学生均可访问）"""
+    with get_db_connection() as conn:
+        submission = conn.execute("SELECT * FROM submissions WHERE id = ?", (submission_id,)).fetchone()
+        if not submission:
+            raise HTTPException(404, "提交记录不存在")
+        submission = dict(submission)
+
+        assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (submission['assignment_id'],)).fetchone()
+        if not assignment:
+            raise HTTPException(404, "作业不存在")
+        assignment = dict(assignment)
+
+        # 获取提交的附件
+        files_cursor = conn.execute("SELECT * FROM submission_files WHERE submission_id = ?", (submission_id,))
+        submission_files = [dict(row) for row in files_cursor]
+
+        # 如果是试卷型作业，获取题目信息
+        exam_questions = None
+        if assignment.get('exam_paper_id'):
+            paper = conn.execute("SELECT questions_json FROM exam_papers WHERE id = ?",
+                                 (assignment['exam_paper_id'],)).fetchone()
+            if paper:
+                exam_questions = json.loads(paper['questions_json'])
+
+    return templates.TemplateResponse("submission_detail.html", {
+        "request": request,
+        "user_info": user,
+        "assignment": assignment,
+        "submission": submission,
+        "submission_files": submission_files,
+        "exam_questions": exam_questions,
     })
 
 

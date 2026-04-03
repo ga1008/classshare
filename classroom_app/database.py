@@ -330,7 +330,7 @@ def init_database():
                              NOT
                              NULL
                              DEFAULT
-                             'draft',
+                             'new',
                              requirements_md
                              TEXT,
                              rubric_md

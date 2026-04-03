@@ -12,17 +12,14 @@
 <link rel="stylesheet" href="/static/css/toast.css">
 <link rel="stylesheet" href="/static/css/markdown.css">
 <style>
+    /* Header */
     .assignment-header {
         background: var(--surface-color);
         border-bottom: 1px solid var(--border-color);
         padding: var(--spacing-md) var(--spacing-xl);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        position: sticky;
-        top: 0;
-        z-index: 40;
-        box-shadow: var(--shadow-sm);
+        display: flex; justify-content: space-between; align-items: center;
+        position: sticky; top: 0; z-index: 40;
+        box-shadow: var(--shadow-sm); flex-wrap: wrap; gap: var(--spacing-sm);
     }
     .header-title-group { display: flex; align-items: center; gap: var(--spacing-md); }
     .back-link {
@@ -31,31 +28,137 @@
         font-size: 0.9rem; font-weight: 500; transition: color 0.2s;
     }
     .back-link:hover { color: var(--primary-color); }
+
+    /* Main layout - single column */
     .workspace-container {
-        max-width: 1400px; margin: 0 auto;
-        padding: var(--spacing-xl) var(--spacing-md);
-        display: grid; grid-template-columns: 1fr 1.5fr;
-        gap: var(--spacing-xl); align-items: start;
+        max-width: 1200px; margin: 0 auto;
+        padding: var(--spacing-lg) var(--spacing-md);
+        display: flex; flex-direction: column; gap: var(--spacing-lg);
     }
-    @media (max-width: 1024px) { .workspace-container { grid-template-columns: 1fr; } }
 
-    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--spacing-md); margin-bottom: var(--spacing-lg); }
-    .stat-card { background: var(--bg-color); padding: var(--spacing-md); border-radius: var(--radius-md); text-align: center; border: 1px solid var(--border-color); }
-    .stat-value { font-size: 1.8rem; font-weight: 700; color: var(--text-primary); line-height: 1.2; }
-    .stat-label { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+    /* Stats grid */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: var(--spacing-sm);
+        margin-bottom: var(--spacing-md);
+    }
+    @media (max-width: 768px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } }
+    .stat-card {
+        background: var(--bg-color); padding: var(--spacing-sm) var(--spacing-md);
+        border-radius: var(--radius-md); text-align: center;
+        border: 1px solid var(--border-color);
+    }
+    .stat-value { font-size: 1.4rem; font-weight: 700; color: var(--text-primary); line-height: 1.3; }
+    .stat-label { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
 
-    .answer-card { background: var(--bg-color); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); border-left: 4px solid var(--primary-color); }
-    .answer-card .q-title { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); margin-bottom: 8px; }
-    .answer-card .q-content { font-size: 0.95rem; color: var(--text-secondary); line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
-    .answer-card .q-content pre { margin: 8px 0 0 0; }
-    .submission-meta { display: flex; gap: 20px; flex-wrap: wrap; padding: 12px 16px; background: var(--bg-color); border-radius: var(--radius-md); margin-bottom: var(--spacing-md); font-size: 0.85rem; color: var(--text-muted); border: 1px solid var(--border-color); }
-    .submission-meta span { display: inline-flex; align-items: center; gap: 6px; }
+    /* Score distribution bar */
+    .dist-bar-container {
+        display: flex; height: 24px; border-radius: var(--radius-sm);
+        overflow: hidden; background: var(--border-color); margin-bottom: var(--spacing-md);
+    }
+    .dist-segment {
+        display: flex; align-items: center; justify-content: center;
+        font-size: 0.7rem; font-weight: 600; color: white;
+        transition: width var(--transition-normal); min-width: 0;
+        overflow: hidden; white-space: nowrap;
+    }
+    .dist-legend {
+        display: flex; gap: var(--spacing-md); flex-wrap: wrap;
+        font-size: 0.8rem; color: var(--text-secondary); margin-bottom: var(--spacing-md);
+    }
+    .dist-legend span { display: inline-flex; align-items: center; gap: 4px; }
+    .dist-dot {
+        display: inline-block; width: 10px; height: 10px;
+        border-radius: 2px; flex-shrink: 0;
+    }
 
+    /* Score colors */
+    .score-excellent { color: #059669; } .score-good { color: #2563eb; }
+    .score-medium { color: #0891b2; } .score-pass { color: #d97706; }
+    .score-fail { color: #dc2626; }
+
+    .score-badge-inline {
+        display: inline-block; padding: 2px 10px; border-radius: var(--radius-sm);
+        font-weight: 700; font-size: 0.9rem;
+    }
+    .sb-excellent { background: #d1fae5; color: #059669; }
+    .sb-good { background: #dbeafe; color: #2563eb; }
+    .sb-medium { background: #cffafe; color: #0891b2; }
+    .sb-pass { background: #fef3c7; color: #d97706; }
+    .sb-fail { background: #fee2e2; color: #dc2626; }
+    .sb-none { background: var(--bg-color); color: var(--text-muted); }
+
+    /* Dropdown */
     .dropdown { position: relative; display: inline-block; }
-    .dropdown-menu { display: none; position: absolute; background: var(--surface-color); border: 1px solid var(--border-color); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); z-index: 1000; min-width: 180px; top: 100%; right: 0; margin-top: 4px; overflow: hidden; }
-    .dropdown-item { display: block; width: 100%; padding: 10px 16px; border: none; background: none; text-align: left; cursor: pointer; font-size: 0.9rem; color: var(--text-primary); transition: background 0.15s; }
+    .dropdown-menu {
+        display: none; position: absolute; background: var(--surface-color);
+        border: 1px solid var(--border-color); border-radius: var(--radius-md);
+        box-shadow: var(--shadow-lg); z-index: 1000; min-width: 180px;
+        top: 100%; right: 0; margin-top: 4px; overflow: hidden;
+    }
+    .dropdown-item {
+        display: block; width: 100%; padding: 10px 16px; border: none;
+        background: none; text-align: left; cursor: pointer;
+        font-size: 0.9rem; color: var(--text-primary); transition: background 0.15s;
+    }
     .dropdown-item:hover { background: var(--bg-color); }
     .dropdown-item svg { width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px; }
+
+    /* Filter bar */
+    .filter-bar {
+        display: flex; align-items: center; gap: var(--spacing-sm);
+        padding: var(--spacing-sm) var(--spacing-md);
+        border-bottom: 1px solid var(--border-color); background: var(--bg-color);
+        flex-wrap: wrap;
+    }
+    .filter-bar .filter-input {
+        flex: 1; min-width: 120px; padding: 6px 10px;
+        border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+        font-size: 0.85rem; outline: none; transition: border-color var(--transition-fast);
+    }
+    .filter-bar .filter-input:focus { border-color: var(--primary-color); }
+    .filter-btn {
+        padding: 5px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+        background: var(--surface-color); font-size: 0.8rem; cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+    .filter-btn:hover, .filter-btn.active {
+        background: var(--primary-color); color: white; border-color: var(--primary-color);
+    }
+
+    /* Clickable table row */
+    .table-clickable tbody tr { cursor: pointer; transition: background 0.15s; }
+    .table-clickable tbody tr:hover { background: var(--primary-light); }
+    .table-clickable tbody tr.unsubmitted-row { opacity: 0.6; }
+    .table-clickable tbody tr.unsubmitted-row:hover { opacity: 0.85; background: var(--surface-hover); }
+
+    /* Score bar */
+    .score-bar {
+        height: 4px; border-radius: 2px; background: var(--border-color);
+        width: 50px; display: inline-block; vertical-align: middle; margin-left: 4px;
+    }
+    .score-bar-fill { height: 100%; border-radius: 2px; }
+
+    /* Requirements section */
+    .req-section {
+        margin-top: var(--spacing-md);
+        padding-top: var(--spacing-md);
+        border-top: 1px solid var(--border-color);
+    }
+    .req-section h3 {
+        font-size: 0.85rem; font-weight: 600; color: var(--text-muted);
+        text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: var(--spacing-sm);
+    }
+
+    /* Auto-refresh indicator */
+    .refresh-indicator {
+        display: inline-flex; align-items: center; gap: 4px;
+        font-size: 0.75rem; color: var(--text-muted);
+    }
+
+    /* Action buttons in table */
+    .action-btns { display: flex; gap: 4px; flex-wrap: nowrap; }
 </style>
 {% endblock %}
 
@@ -63,573 +166,565 @@
 
 {% block body %}
 <header class="assignment-header">
-        <div class="header-title-group">
-            <a href="/dashboard" class="back-link">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                返回
-            </a>
-            <h1 class="text-lg font-bold m-0">{{ assignment.title }}</h1>
-        </div>
-        <div class="flex items-center gap-2">
-            <button class="btn btn-outline btn-sm" onclick="openEditModal()">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
-                编辑作业
+    <div class="header-title-group">
+        <a href="/dashboard" class="back-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            返回
+        </a>
+        <h1 class="text-lg font-bold m-0">{{ assignment.title }}</h1>
+    </div>
+    <div class="flex items-center gap-2">
+        <button class="btn btn-outline btn-sm" onclick="openEditModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+            编辑作业
+        </button>
+        <div class="dropdown">
+            <button class="btn btn-primary btn-sm" onclick="toggleStatusDropdown()" id="status-btn">
+                状态: {% if assignment.status == 'new' %}草稿{% elif assignment.status == 'published' %}进行中{% elif assignment.status == 'closed' %}已截止{% else %}{{ assignment.status }}{% endif %}
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-1"><polyline points="6 9 12 15 18 9"></polyline></svg>
             </button>
+            <div class="dropdown-menu" id="status-dropdown">
+                <button class="dropdown-item" onclick="changeStatus('new')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg> 草稿</button>
+                <button class="dropdown-item" onclick="changeStatus('published')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg> 进行中 (发布给学生)</button>
+                <button class="dropdown-item" onclick="changeStatus('closed')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg> 已截止</button>
+            </div>
+        </div>
+        <button class="btn btn-outline btn-sm text-danger" onclick="openDeleteModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+            删除
+        </button>
+        <button class="btn btn-success btn-sm" onclick="exportGrades()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            导出成绩
+        </button>
+    </div>
+</header>
 
-            <div class="dropdown">
-                <button class="btn btn-primary btn-sm" onclick="toggleStatusDropdown()" id="status-btn">
-                    状态: {% if assignment.status == 'new' %}草稿{% elif assignment.status == 'published' %}进行中{% elif assignment.status == 'closed' %}已截止{% else %}{{ assignment.status }}{% endif %}
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-1"><polyline points="6 9 12 15 18 9"></polyline></svg>
+<main class="workspace-container">
+    <!-- ====== 作业信息板块 (上方) ====== -->
+    <div class="card">
+        <div class="card-header flex justify-between items-center">
+            <h2 class="card-title text-base m-0">作业信息</h2>
+            <span class="badge {% if assignment.status == 'new' %}badge-warning{% elif assignment.status == 'published' %}badge-success{% else %}badge-danger{% endif %}">
+                {% if assignment.status == 'new' %}草稿
+                {% elif assignment.status == 'published' %}进行中
+                {% elif assignment.status == 'closed' %}已截止
+                {% else %}{{ assignment.status }}{% endif %}
+            </span>
+        </div>
+        <div class="card-body">
+            <!-- Row 1: People stats -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-total-students">-</div>
+                    <div class="stat-label">总人数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-primary" id="stat-submitted">-</div>
+                    <div class="stat-label">已提交</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-warning" id="stat-unsubmitted">-</div>
+                    <div class="stat-label">未提交</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-success" id="stat-graded">-</div>
+                    <div class="stat-label">已批改</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color:#f59e0b" id="stat-pending">-</div>
+                    <div class="stat-label">待批改</div>
+                </div>
+            </div>
+            <!-- Row 2: Score stats -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-avg">-</div>
+                    <div class="stat-label">平均分</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value score-excellent" id="stat-max">-</div>
+                    <div class="stat-label">最高分</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value score-fail" id="stat-min">-</div>
+                    <div class="stat-label">最低分</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value score-good" id="stat-pass-rate">-</div>
+                    <div class="stat-label">及格率</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-muted" id="stat-grading">-</div>
+                    <div class="stat-label">批改中</div>
+                </div>
+            </div>
+
+            <!-- Score Distribution -->
+            <div id="dist-section" style="display:none;">
+                <div class="req-section" style="border-top:none; padding-top:0;">
+                    <h3>分数分布</h3>
+                </div>
+                <div class="dist-bar-container" id="dist-bar"></div>
+                <div class="dist-legend" id="dist-legend"></div>
+            </div>
+
+            <!-- Requirements -->
+            <div class="req-section">
+                <h3>作业要求</h3>
+                <div class="md-content" id="assignment-requirements">
+                    <div class="spinner mx-auto"></div>
+                </div>
+            </div>
+
+            {% if assignment.rubric_md %}
+            <div class="req-section">
+                <h3>评分标准</h3>
+                <div class="md-content" id="assignment-rubric">
+                    <div class="spinner mx-auto"></div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ====== 学生提交板块 (下方) ====== -->
+    <div class="card">
+        <div class="card-header flex justify-between items-center">
+            <h2 class="card-title text-base m-0">学生提交</h2>
+            <div class="flex items-center gap-2">
+                <span class="refresh-indicator" id="refresh-indicator">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    自动刷新
+                </span>
+                <button class="btn btn-outline btn-sm text-primary" onclick="aiGradeAll()" id="ai-grade-all-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                    AI 批量批改
                 </button>
-                <div class="dropdown-menu" id="status-dropdown">
-                    <button class="dropdown-item" onclick="changeStatus('new')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg> 草稿</button>
-                    <button class="dropdown-item" onclick="changeStatus('published')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg> 进行中 (发布给学生)</button>
-                    <button class="dropdown-item" onclick="changeStatus('closed')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg> 已截止</button>
-                </div>
-            </div>
-
-            <button class="btn btn-outline btn-sm text-danger" onclick="openDeleteModal()">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                删除
-            </button>
-            <button class="btn btn-success btn-sm" onclick="exportGrades()">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                导出成绩
-            </button>
-        </div>
-    </header>
-
-    <main class="workspace-container">
-        <!-- 左侧：作业详情 -->
-        <div class="assignment-details">
-            <div class="card">
-                <div class="card-header flex justify-between items-center">
-                    <h2 class="card-title text-base m-0">作业信息</h2>
-                    <span class="badge {% if assignment.status == 'new' %}badge-warning{% elif assignment.status == 'published' %}badge-success{% else %}badge-danger{% endif %}">
-                        {% if assignment.status == 'new' %}草稿
-                        {% elif assignment.status == 'published' %}进行中
-                        {% elif assignment.status == 'closed' %}已截止
-                        {% else %}{{ assignment.status }}{% endif %}
-                    </span>
-                </div>
-                <div class="card-body">
-                    <div class="stats-grid">
-                        <div class="stat-card">
-                            <div class="stat-value" id="total-submissions">0</div>
-                            <div class="stat-label">总提交</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value text-success" id="graded-count">0</div>
-                            <div class="stat-label">已批改</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value text-primary" id="average-score">0</div>
-                            <div class="stat-label">平均分</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value text-warning" id="grading-count">0</div>
-                            <div class="stat-label">批改中</div>
-                        </div>
-                    </div>
-
-                    <h3 class="text-sm font-semibold text-muted mb-2 uppercase tracking-wide">作业要求</h3>
-                    <div class="bg-bg rounded-md p-md mb-lg border border-border">
-                        <div class="md-content" id="assignment-requirements">
-                            <div class="spinner mx-auto"></div>
-                        </div>
-                    </div>
-
-                    {% if assignment.rubric_md %}
-                    <h3 class="text-sm font-semibold text-muted mb-2 uppercase tracking-wide">评分标准</h3>
-                    <div class="bg-bg rounded-md p-md border border-border">
-                        <div class="md-content" id="assignment-rubric">
-                            <div class="spinner mx-auto"></div>
-                        </div>
-                    </div>
-                    {% endif %}
-                </div>
             </div>
         </div>
-
-        <!-- 右侧：提交列表 -->
-        <div class="submissions-panel">
-            <div class="card">
-                <div class="card-header flex justify-between items-center">
-                    <h2 class="card-title text-base m-0">学生提交</h2>
-                    <button class="btn btn-outline btn-sm text-primary" onclick="aiGradeAll()" id="ai-grade-all-btn">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-                        AI 批量批改
-                    </button>
-                </div>
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>学生姓名</th>
-                                <th>状态</th>
-                                <th>得分</th>
-                                <th>提交时间</th>
-                                <th>操作</th>
-                            </tr>
-                        </thead>
-                        <tbody id="submissions-list">
-                            <tr><td colspan="5" class="text-center p-xl"><div class="spinner"></div></td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+        <div class="filter-bar">
+            <input type="text" class="filter-input" id="submission-filter" placeholder="搜索学生姓名 / 学号..." oninput="filterSubmissions()">
+            <button class="filter-btn active" data-filter="all" onclick="setFilter('all', this)">全部</button>
+            <button class="filter-btn" data-filter="submitted" onclick="setFilter('submitted', this)">待批改</button>
+            <button class="filter-btn" data-filter="graded" onclick="setFilter('graded', this)">已批改</button>
+            <button class="filter-btn" data-filter="unsubmitted" onclick="setFilter('unsubmitted', this)">未提交</button>
         </div>
-    </main>
-
-    <!-- 查看/批改 模态框 -->
-    <div class="modal" id="grading-modal">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3 class="modal-title" id="grading-modal-title">查看提交</h3>
-                    <button class="modal-close" onclick="closeGradingModal()">&times;</button>
-                </div>
-                <div class="modal-body" id="grading-modal-body">
-                    <!-- Dynamic content -->
-                </div>
-            </div>
+        <div class="table-responsive">
+            <table class="table table-hover table-clickable">
+                <thead>
+                    <tr>
+                        <th>学号</th>
+                        <th>学生姓名</th>
+                        <th>状态</th>
+                        <th>得分</th>
+                        <th>提交时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="submissions-list">
+                    <tr><td colspan="6" class="text-center p-xl"><div class="spinner"></div></td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
+</main>
 
-    <!-- 编辑作业模态框 -->
-    <div class="modal" id="edit-modal">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3 class="modal-title">编辑作业</h3>
-                    <button class="modal-close" onclick="closeEditModal()">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <form id="edit-assignment-form">
-                        <div class="form-group">
-                            <label class="form-label required">作业标题</label>
-                            <input type="text" id="edit-title" class="form-control" value="{{ assignment.title }}" required>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label required">作业要求 (Markdown)</label>
-                            <textarea id="edit-requirements" class="form-control" rows="8">{{ assignment.requirements_md }}</textarea>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">评分标准 (Markdown)</label>
-                            <textarea id="edit-rubric" class="form-control" rows="4">{{ assignment.rubric_md }}</textarea>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">批改模式</label>
-                            <select id="edit-grading-mode" class="form-select">
-                                <option value="manual" {{ 'selected' if assignment.grading_mode == 'manual' else '' }}>手动批改</option>
-                                <option value="auto" {{ 'selected' if assignment.grading_mode == 'auto' else '' }}>自动批改 (AI)</option>
-                                <option value="mixed" {{ 'selected' if assignment.grading_mode == 'mixed' else '' }}>混合模式</option>
-                            </select>
-                        </div>
-                        <div class="flex justify-end gap-2 mt-4">
-                            <button type="button" class="btn btn-outline" onclick="closeEditModal()">取消</button>
-                            <button type="submit" class="btn btn-primary">保存修改</button>
-                        </div>
-                    </form>
-                </div>
+<!-- 编辑作业模态框 -->
+<div class="modal-backdrop" id="edit-modal">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">编辑作业</h3>
+                <button class="modal-close" onclick="closeEditModal()">&times;</button>
             </div>
-        </div>
-    </div>
-
-    <!-- 删除确认模态框 -->
-    <div class="modal" id="delete-modal">
-        <div class="modal-dialog modal-sm">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3 class="modal-title text-danger flex items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                        确认删除
-                    </h3>
-                    <button class="modal-close" onclick="closeDeleteModal()">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <p>确定要删除作业 "<strong>{{ assignment.title }}</strong>" 吗？</p>
-                    <p class="text-sm text-danger mt-2 bg-danger-light p-2 rounded border border-danger-light">
-                        此操作不可逆，将会删除所有相关的学生提交记录和文件！
-                    </p>
+            <div class="modal-body">
+                <form id="edit-assignment-form">
+                    <div class="form-group">
+                        <label class="form-label required">作业标题</label>
+                        <input type="text" id="edit-title" class="form-control" value="{{ assignment.title }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label required">作业要求 (Markdown)</label>
+                        <textarea id="edit-requirements" class="form-control" rows="8">{{ assignment.requirements_md }}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">评分标准 (Markdown)</label>
+                        <textarea id="edit-rubric" class="form-control" rows="4">{{ assignment.rubric_md }}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">批改模式</label>
+                        <select id="edit-grading-mode" class="form-select">
+                            <option value="manual" {{ 'selected' if assignment.grading_mode == 'manual' else '' }}>手动批改</option>
+                            <option value="auto" {{ 'selected' if assignment.grading_mode == 'auto' else '' }}>自动批改 (AI)</option>
+                            <option value="mixed" {{ 'selected' if assignment.grading_mode == 'mixed' else '' }}>混合模式</option>
+                        </select>
+                    </div>
                     <div class="flex justify-end gap-2 mt-4">
-                        <button class="btn btn-outline" onclick="closeDeleteModal()">取消</button>
-                        <button class="btn btn-danger" onclick="confirmDelete()">确认删除</button>
+                        <button type="button" class="btn btn-outline" onclick="closeEditModal()">取消</button>
+                        <button type="submit" class="btn btn-primary">保存修改</button>
                     </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 删除确认模态框 -->
+<div class="modal-backdrop" id="delete-modal">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title text-danger flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                    确认删除
+                </h3>
+                <button class="modal-close" onclick="closeDeleteModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>确定要删除作业 "<strong>{{ assignment.title }}</strong>" 吗？</p>
+                <p class="text-sm text-danger mt-2 bg-danger-light p-2 rounded border border-danger-light">
+                    此操作不可逆，将会删除所有相关的学生提交记录和文件！
+                </p>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button class="btn btn-outline" onclick="closeDeleteModal()">取消</button>
+                    <button class="btn btn-danger" onclick="confirmDelete()">确认删除</button>
                 </div>
             </div>
         </div>
     </div>
+</div>
 
-    <script src="/static/js/marked.min.js"></script>
+<script src="/static/js/marked.min.js"></script>
 {% endblock %}
 
 {% block scripts %}
-    <script type="module">
-        import { showToast, openModal, closeModal, renderMarkdown, escapeHtml, formatDateLocal } from '/static/js/ui.js';
+<script type="module">
+    import { showToast, openModal, closeModal, renderMarkdown, escapeHtml } from '/static/js/ui.js';
 
-        window.openEditModal = () => openModal('edit-modal');
-        window.closeEditModal = () => closeModal('edit-modal');
-        window.openDeleteModal = () => openModal('delete-modal');
-        window.closeDeleteModal = () => closeModal('delete-modal');
-        window.closeGradingModal = () => closeModal('grading-modal');
+    window.openEditModal = () => openModal('edit-modal');
+    window.closeEditModal = () => closeModal('edit-modal');
+    window.openDeleteModal = () => openModal('delete-modal');
+    window.closeDeleteModal = () => closeModal('delete-modal');
 
-        const currentAssignmentId = "{{ assignment.id }}";
-        let submissions = [];
+    const currentAssignmentId = "{{ assignment.id }}";
+    const currentClassOfferingId = {{ assignment.class_offering_id | tojson }};
+    let allEntries = [];
+    let currentFilter = 'all';
+    let autoRefreshTimer = null;
 
-        document.addEventListener('DOMContentLoaded', () => {
-            renderMarkdown('assignment-requirements', {{ assignment.requirements_md | tojson }});
-            renderMarkdown('assignment-rubric', {{ assignment.rubric_md | tojson }});
-            loadSubmissions();
+    document.addEventListener('DOMContentLoaded', () => {
+        renderMarkdown('assignment-requirements', {{ assignment.requirements_md | tojson }});
+        renderMarkdown('assignment-rubric', {{ assignment.rubric_md | tojson }});
+        loadSubmissions();
 
-            // Click outside dropdown to close
-            document.addEventListener('click', function(event) {
-                const dd = document.getElementById('status-dropdown');
-                if (!event.target.closest('.dropdown')) dd.style.display = 'none';
-            });
-        });
-
-        function renderMarkdown(elementId, content) {
-            const el = document.getElementById(elementId);
-            if (el) {
-                el.innerHTML = content ? marked.parse(content) : '<p class="text-muted">暂无内容</p>';
+        autoRefreshTimer = setInterval(() => {
+            if (allEntries.some(s => s.status === 'grading')) {
+                loadSubmissions();
             }
-        }
+        }, 30000);
 
-        async function loadSubmissions() {
-            try {
-                const response = await fetch(`/api/assignments/${currentAssignmentId}/submissions`);
-                const data = await response.json();
-                if (data.status === 'success') {
-                    submissions = data.submissions;
-                    renderSubmissions();
-                    updateStats(data.stats);
-                }
-            } catch (error) {
-                console.error('加载提交数据失败:', error);
-                showToast('加载数据失败', 'error');
-                document.getElementById('submissions-list').innerHTML = '<tr><td colspan="5" class="text-center text-danger p-lg">加载失败</td></tr>';
-            }
-        }
-
-        function renderSubmissions() {
-            const tbody = document.getElementById('submissions-list');
-            tbody.innerHTML = '';
-            if (submissions.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted p-xl">暂无学生提交</td></tr>';
-                return;
-            }
-            submissions.forEach(sub => {
-                const row = document.createElement('tr');
-                const statusMap = {
-                    'submitted': { cls: 'badge-primary', text: '已提交' },
-                    'grading': { cls: 'badge-warning', text: '批改中' },
-                    'graded': { cls: 'badge-success', text: '已批改' },
-                };
-                const s = statusMap[sub.status] || { cls: 'badge-secondary', text: sub.status };
-                const scoreDisplay = sub.score != null ? `<span class="font-bold text-success">${sub.score}</span>` : '<span class="text-muted">-</span>';
-
-                row.innerHTML = `
-                    <td class="font-medium">${escapeHtml(sub.student_name)}</td>
-                    <td><span class="badge ${s.cls}">${s.text}</span></td>
-                    <td>${scoreDisplay}</td>
-                    <td class="text-sm text-muted">${fmtDate(sub.submitted_at)}</td>
-                    <td>
-                        <div class="flex gap-2">
-                            <button class="btn btn-ghost btn-sm text-primary" onclick="window.viewSubmission(${sub.id})">查看</button>
-                            <button class="btn btn-outline btn-sm text-success" onclick="window.gradeSubmission(${sub.id})">批改</button>
-                            <button class="btn btn-outline btn-sm text-warning" onclick="window.aiRegrade(${sub.id})"
-                                ${sub.status === 'grading' ? 'disabled title="批改中"' : 'title="AI 辅助批改"'}>AI</button>
-                        </div>
-                    </td>
-                `;
-                tbody.appendChild(row);
-            });
-        }
-
-        function updateStats(stats) {
-            document.getElementById('total-submissions').textContent = stats.total_submissions || 0;
-            document.getElementById('average-score').textContent = stats.average_score ? parseFloat(stats.average_score).toFixed(1) : 0;
-            const graded = submissions.filter(s => s.status === 'graded').length;
-            const grading = submissions.filter(s => s.status === 'grading').length;
-            document.getElementById('graded-count').textContent = graded;
-            document.getElementById('grading-count').textContent = grading;
-        }
-
-        window.viewSubmission = function(subId) {
-            const sub = submissions.find(s => s.id === subId);
-            if (!sub) return;
-
-            document.getElementById('grading-modal-title').textContent = `${sub.student_name} 的提交`;
-            const body = document.getElementById('grading-modal-body');
-
-            let html = `
-                <div class="submission-meta">
-                    <span><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg> ${escapeHtml(sub.student_name)}</span>
-                    <span><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> ${fmtDate(sub.submitted_at)}</span>
-                    <span class="badge ${sub.status === 'graded' ? 'badge-success' : sub.status === 'grading' ? 'badge-warning' : 'badge-primary'}">${getStatusText(sub.status)}</span>
-                    ${sub.score != null ? `<span class="font-bold text-success ml-2"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> ${sub.score} 分</span>` : ''}
-                </div>
-            `;
-
-            if (sub.answers_json) {
-                html += renderAnswersJson(sub.answers_json);
-            }
-
-            if (sub.feedback_md) {
-                html += `
-                    <div class="mt-md pt-md border-t border-border">
-                        <h4 class="text-sm font-semibold text-muted uppercase mb-2">教师/AI 评语</h4>
-                        <div class="md-content bg-bg p-md rounded border border-border" id="view-feedback-${sub.id}"></div>
-                    </div>
-                `;
-            }
-
-            body.innerHTML = html;
-
-            if (sub.feedback_md) {
-                renderMarkdown(`view-feedback-${sub.id}`, sub.feedback_md);
-            }
-
-            openModal('grading-modal');
-        }
-
-        function renderAnswersJson(jsonStr) {
-            if (!jsonStr) return '';
-            try {
-                const data = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
-                const answers = data.answers || data;
-                let html = '<h4 class="text-sm font-semibold text-muted uppercase mb-2">学生答案</h4>';
-
-                if (Array.isArray(answers)) {
-                    answers.forEach((item, i) => {
-                        const q = item.question || `第 ${i + 1} 题`;
-                        const a = item.answer || item.content || item.text || '(未作答)';
-                        html += `
-                            <div class="answer-card">
-                                <div class="q-title">${escapeHtml(q)}</div>
-                                <div class="q-content">${formatAnswer(String(a))}</div>
-                            </div>`;
-                    });
-                } else if (typeof answers === 'object') {
-                    Object.entries(answers).forEach(([key, value]) => {
-                        html += `
-                            <div class="answer-card">
-                                <div class="q-title">${escapeHtml(key)}</div>
-                                <div class="q-content">${formatAnswer(String(value))}</div>
-                            </div>`;
-                    });
-                }
-                return html;
-            } catch (e) {
-                return `<div class="answer-card"><div class="q-content">${escapeHtml(jsonStr)}</div></div>`;
-            }
-        }
-
-        function formatAnswer(text) {
-            if (!text) return '<span class="text-muted italic">(未作答)</span>';
-            if (text.includes('\n') && (text.includes('def ') || text.includes('import ') || text.includes('function ') || text.includes('class ') || text.includes('```'))) {
-                return `<pre><code>${escapeHtml(text)}</code></pre>`;
-            }
-            return escapeHtml(text);
-        }
-
-        window.gradeSubmission = function(subId) {
-            const sub = submissions.find(s => s.id === subId);
-            if (!sub) return;
-
-            document.getElementById('grading-modal-title').textContent = `批改 - ${sub.student_name}`;
-            const body = document.getElementById('grading-modal-body');
-
-            let html = `
-                <div class="submission-meta">
-                    <span><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg> ${escapeHtml(sub.student_name)}</span>
-                    <span><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> ${fmtDate(sub.submitted_at)}</span>
-                </div>
-            `;
-
-            if (sub.answers_json) {
-                html += renderAnswersJson(sub.answers_json);
-            }
-
-            html += `
-                <div class="mt-lg pt-md border-t border-border bg-bg p-md rounded border">
-                    <div class="form-group">
-                        <label class="form-label required">得分 (0-100)</label>
-                        <input type="number" id="grade-score" class="form-control max-w-[150px] text-lg font-bold text-success" min="0" max="100"
-                            value="${sub.score || ''}" placeholder="0-100">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">评语 (支持 Markdown)</label>
-                        <textarea id="grade-feedback" class="form-control" rows="4"
-                            placeholder="输入评语，给出具体反馈...">${sub.feedback_md || ''}</textarea>
-                    </div>
-                    <div class="flex justify-end mt-4">
-                        <button class="btn btn-primary" onclick="submitGrade(${subId})">提交批改结果</button>
-                    </div>
-                </div>
-            `;
-
-            body.innerHTML = html;
-            openModal('grading-modal');
-        }
-
-        window.submitGrade = async function(subId) {
-            const score = document.getElementById('grade-score').value;
-            const feedback = document.getElementById('grade-feedback').value;
-            if (score === '' || score < 0 || score > 100) {
-                showToast('请输入有效得分 (0-100)', 'warning');
-                return;
-            }
-            try {
-                const response = await fetch(`/api/submissions/${subId}/grade`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ score: parseInt(score), feedback_md: feedback })
-                });
-                if (response.ok) {
-                    showToast('批改成功', 'success');
-                    closeGradingModal();
-                    await loadSubmissions();
-                } else {
-                    throw new Error('批改失败');
-                }
-            } catch (error) {
-                showToast('批改失败', 'error');
-            }
-        }
-
-        window.aiRegrade = async function(subId) {
-            if (!confirm('确定要使用 AI 重新批改此作业吗？')) return;
-            try {
-                const response = await fetch(`/api/submissions/${subId}/regrade`, { method: 'POST' });
-                const data = await response.json();
-                if (response.ok) {
-                    showToast(data.status === 'already_grading' ? '正在批改中' : 'AI 批改任务已提交', 'success');
-                    await loadSubmissions();
-                } else {
-                    throw new Error(data.detail || 'AI批改失败');
-                }
-            } catch (error) {
-                showToast(error.message, 'error');
-            }
-        }
-
-        window.aiGradeAll = async function() {
-            const ungraded = submissions.filter(s => s.status === 'submitted');
-            if (ungraded.length === 0) { showToast('没有需要批改的作业', 'info'); return; }
-            if (!confirm(`确定要对 ${ungraded.length} 份未批改作业进行 AI 批量批改吗？`)) return;
-
-            const btn = document.getElementById('ai-grade-all-btn');
-            btn.disabled = true;
-            let processed = 0, errors = 0;
-
-            for (const sub of ungraded) {
-                try {
-                    const r = await fetch(`/api/submissions/${sub.id}/regrade`, { method: 'POST' });
-                    if (!r.ok) errors++;
-                    processed++;
-                    btn.innerHTML = `<div class="spinner spinner-sm mr-2"></div> 批改中 (${processed}/${ungraded.length})`;
-                    await new Promise(r => setTimeout(r, 500)); // Small delay to avoid hammering server
-                } catch { errors++; processed++; }
-            }
-
-            btn.disabled = false;
-            btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg> AI 批量批改`;
-            showToast(errors === 0 ? `成功提交 ${processed} 份` : `${processed} 份提交，${errors} 份失败`, errors === 0 ? 'success' : 'warning');
-            await loadSubmissions();
-        }
-
-        window.exportGrades = async function() {
-            try {
-                const classOfferingId = "{{ assignment.class_offering_id }}";
-                const response = await fetch(`/api/assignments/${currentAssignmentId}/export/${classOfferingId}`);
-                if (response.ok) {
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url; a.download = `成绩_${currentAssignmentId}.xlsx`;
-                    document.body.appendChild(a); a.click();
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                    showToast('导出成功', 'success');
-                } else { throw new Error('导出失败'); }
-            } catch (error) { showToast('导出成绩失败', 'error'); }
-        }
-
-        window.toggleStatusDropdown = function() {
+        document.addEventListener('click', function(event) {
             const dd = document.getElementById('status-dropdown');
-            dd.style.display = dd.style.display === 'block' ? 'none' : 'block';
-        }
-
-        window.changeStatus = async function(newStatus) {
-            try {
-                const response = await fetch(`/api/assignments/${currentAssignmentId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        title: "{{ assignment.title | e }}",
-                        requirements_md: {{ assignment.requirements_md | tojson }},
-                        rubric_md: {{ assignment.rubric_md | tojson }},
-                        grading_mode: "{{ assignment.grading_mode }}",
-                        status: newStatus
-                    })
-                });
-                if (response.ok) {
-                    showToast(`状态已更新为: ${getStatusText(newStatus)}`, 'success');
-                    document.getElementById('status-dropdown').style.display = 'none';
-                    setTimeout(() => location.reload(), 800);
-                } else { throw new Error('状态更新失败'); }
-            } catch (error) { showToast('更新状态失败', 'error'); }
-        }
-
-        document.getElementById('edit-assignment-form').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            try {
-                const response = await fetch(`/api/assignments/${currentAssignmentId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        title: document.getElementById('edit-title').value,
-                        requirements_md: document.getElementById('edit-requirements').value,
-                        rubric_md: document.getElementById('edit-rubric').value,
-                        grading_mode: document.getElementById('edit-grading-mode').value,
-                        status: "{{ assignment.status }}"
-                    })
-                });
-                if (response.ok) {
-                    showToast('作业更新成功', 'success');
-                    closeEditModal();
-                    setTimeout(() => location.reload(), 800);
-                } else { throw new Error('更新失败'); }
-            } catch (error) { showToast('更新失败', 'error'); }
+            if (!event.target.closest('.dropdown')) dd.style.display = 'none';
         });
+    });
 
-        window.confirmDelete = async function() {
+    // ==================== Data Loading ====================
+    async function loadSubmissions() {
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}/submissions`);
+            const data = await response.json();
+            if (data.status === 'success') {
+                allEntries = data.submissions;
+                renderSubmissions();
+                updateStats(data.stats);
+            }
+        } catch (error) {
+            console.error('加载数据失败:', error);
+            showToast('加载数据失败', 'error');
+            document.getElementById('submissions-list').innerHTML =
+                '<tr><td colspan="6" class="text-center text-danger p-lg">加载失败</td></tr>';
+        }
+    }
+
+    // ==================== Statistics ====================
+    function updateStats(stats) {
+        document.getElementById('stat-total-students').textContent = stats.total_students ?? '-';
+        document.getElementById('stat-submitted').textContent = stats.total_submissions ?? 0;
+        document.getElementById('stat-unsubmitted').textContent = stats.unsubmitted_count ?? 0;
+        document.getElementById('stat-graded').textContent = stats.graded_count ?? 0;
+        document.getElementById('stat-pending').textContent = stats.submitted_count ?? 0;
+        document.getElementById('stat-avg').textContent = stats.average_score ?? '-';
+        document.getElementById('stat-max').textContent = stats.max_score ?? '-';
+        document.getElementById('stat-min').textContent = stats.min_score ?? '-';
+        document.getElementById('stat-pass-rate').textContent = stats.pass_rate != null ? stats.pass_rate + '%' : '-';
+        document.getElementById('stat-grading').textContent = stats.grading_count ?? 0;
+
+        // Score distribution
+        const dist = stats.score_distribution;
+        if (dist && stats.graded_count > 0) {
+            const total = stats.graded_count;
+            const segments = [
+                { label: '优秀', count: dist.excellent, color: '#10b981' },
+                { label: '良好', count: dist.good, color: '#3b82f6' },
+                { label: '中等', count: dist.medium, color: '#06b6d4' },
+                { label: '及格', count: dist.pass, color: '#f59e0b' },
+                { label: '不及格', count: dist.fail, color: '#ef4444' },
+            ];
+            let barHtml = '';
+            let legendHtml = '';
+            segments.forEach(seg => {
+                if (seg.count > 0) {
+                    const pct = (seg.count / total * 100).toFixed(1);
+                    barHtml += `<div class="dist-segment" style="width:${pct}%;background:${seg.color}">${seg.count}</div>`;
+                }
+                legendHtml += `<span><span class="dist-dot" style="background:${seg.color}"></span>${seg.label}: ${seg.count}人</span>`;
+            });
+            document.getElementById('dist-bar').innerHTML = barHtml;
+            document.getElementById('dist-legend').innerHTML = legendHtml;
+            document.getElementById('dist-section').style.display = '';
+        } else {
+            document.getElementById('dist-section').style.display = 'none';
+        }
+    }
+
+    // ==================== Render Submissions Table ====================
+    function renderSubmissions() {
+        const tbody = document.getElementById('submissions-list');
+        const searchText = (document.getElementById('submission-filter')?.value || '').toLowerCase();
+
+        let filtered = allEntries;
+        if (currentFilter !== 'all') {
+            filtered = filtered.filter(s => s.status === currentFilter);
+        }
+        if (searchText) {
+            filtered = filtered.filter(s => {
+                const name = (s.student_name || '').toLowerCase();
+                const sid = (s.student_id_number || '').toLowerCase();
+                return name.includes(searchText) || sid.includes(searchText);
+            });
+        }
+
+        tbody.innerHTML = '';
+        if (filtered.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted p-xl">
+                ${allEntries.length === 0 ? '暂无学生数据' : '没有匹配的记录'}
+            </td></tr>`;
+            return;
+        }
+
+        filtered.forEach(sub => {
+            const row = document.createElement('tr');
+            const isUnsubmitted = sub.status === 'unsubmitted';
+            if (isUnsubmitted) row.classList.add('unsubmitted-row');
+
+            // Status badge
+            const statusMap = {
+                'submitted': { cls: 'badge-primary', text: '已提交' },
+                'grading': { cls: 'badge-warning', text: '批改中' },
+                'graded': { cls: 'badge-success', text: '已批改' },
+                'unsubmitted': { cls: 'badge-secondary', text: '未提交' },
+            };
+            const st = statusMap[sub.status] || { cls: 'badge-secondary', text: sub.status || '-' };
+
+            // Score display with color
+            const scoreDisplay = sub.score != null
+                ? `<span class="score-badge-inline ${getScoreBadgeClass(sub.score)}">${sub.score}</span>
+                   <div class="score-bar"><div class="score-bar-fill" style="width:${sub.score}%;background:${getScoreColor(sub.score)}"></div></div>`
+                : '<span class="text-muted">-</span>';
+
+            row.innerHTML = `
+                <td class="text-sm text-muted">${escapeHtml(sub.student_id_number || '-')}</td>
+                <td class="font-medium">${escapeHtml(sub.student_name || '-')}</td>
+                <td><span class="badge ${st.cls}">${st.text}</span></td>
+                <td>${scoreDisplay}</td>
+                <td class="text-sm text-muted">${isUnsubmitted ? '-' : fmtDate(sub.submitted_at)}</td>
+                <td>
+                    <div class="action-btns">
+                        ${!isUnsubmitted ? `
+                        <button class="btn btn-ghost btn-sm text-primary" onclick="event.stopPropagation(); goDetail(${sub.id})" title="查看详情">详情</button>
+                        <button class="btn btn-outline btn-sm text-warning" onclick="event.stopPropagation(); aiRegrade(${sub.id})"
+                            ${sub.status === 'grading' ? 'disabled title="批改中"' : 'title="AI 辅助批改"'}>AI</button>
+                        ` : '<span class="text-muted text-sm">-</span>'}
+                    </div>
+                </td>
+            `;
+
+            // Click row to go to detail
+            if (!isUnsubmitted && sub.id) {
+                row.onclick = () => goDetail(sub.id);
+            }
+
+            tbody.appendChild(row);
+        });
+    }
+
+    function getScoreColor(score) {
+        if (score >= 90) return '#10b981';
+        if (score >= 80) return '#3b82f6';
+        if (score >= 70) return '#06b6d4';
+        if (score >= 60) return '#f59e0b';
+        return '#ef4444';
+    }
+
+    function getScoreBadgeClass(score) {
+        if (score >= 90) return 'sb-excellent';
+        if (score >= 80) return 'sb-good';
+        if (score >= 70) return 'sb-medium';
+        if (score >= 60) return 'sb-pass';
+        return 'sb-fail';
+    }
+
+    // ==================== Navigation ====================
+    window.goDetail = function(subId) {
+        window.location.href = `/submission/${subId}`;
+    };
+
+    // ==================== Filters ====================
+    window.setFilter = function(filter, btn) {
+        currentFilter = filter;
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderSubmissions();
+    };
+
+    window.filterSubmissions = function() {
+        renderSubmissions();
+    };
+
+    // ==================== Actions ====================
+    window.aiRegrade = async function(subId) {
+        if (!confirm('确定要使用 AI 重新批改此作业吗？')) return;
+        try {
+            const response = await fetch(`/api/submissions/${subId}/regrade`, { method: 'POST' });
+            const data = await response.json();
+            if (response.ok) {
+                showToast(data.status === 'already_grading' ? '正在批改中' : 'AI 批改任务已提交', 'success');
+                await loadSubmissions();
+            } else {
+                throw new Error(data.detail || 'AI批改失败');
+            }
+        } catch (error) {
+            showToast(error.message, 'error');
+        }
+    };
+
+    window.aiGradeAll = async function() {
+        const ungraded = allEntries.filter(s => s.status === 'submitted');
+        if (ungraded.length === 0) { showToast('没有需要批改的作业', 'info'); return; }
+        if (!confirm(`确定要对 ${ungraded.length} 份未批改作业进行 AI 批量批改吗？`)) return;
+
+        const btn = document.getElementById('ai-grade-all-btn');
+        btn.disabled = true;
+        let processed = 0, errors = 0;
+
+        for (const sub of ungraded) {
             try {
-                const response = await fetch(`/api/assignments/${currentAssignmentId}`, { method: 'DELETE' });
-                if (response.ok) {
-                    showToast('删除成功', 'success');
-                    setTimeout(() => window.location.href = '/dashboard', 1000);
-                } else { throw new Error('删除失败'); }
-            } catch (error) { showToast('删除失败', 'error'); closeDeleteModal(); }
+                const r = await fetch(`/api/submissions/${sub.id}/regrade`, { method: 'POST' });
+                if (!r.ok) errors++;
+                processed++;
+                btn.innerHTML = `<div class="spinner spinner-sm mr-2"></div> 批改中 (${processed}/${ungraded.length})`;
+                await new Promise(r => setTimeout(r, 500));
+            } catch { errors++; processed++; }
         }
 
-        // Utils
-        function escapeHtml(text) {
-            const d = document.createElement('div');
-            d.textContent = text;
-            return d.innerHTML;
-        }
+        btn.disabled = false;
+        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg> AI 批量批改`;
+        showToast(errors === 0 ? `成功提交 ${processed} 份` : `${processed} 份提交，${errors} 份失败`, errors === 0 ? 'success' : 'warning');
+        await loadSubmissions();
+    };
 
-        function fmtDate(s) {
-            if (!s) return '-';
-            try { return new Date(s).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); }
-            catch { return s; }
+    window.exportGrades = async function() {
+        if (!currentClassOfferingId) {
+            showToast('此作业未关联班级课堂，无法导出成绩', 'warning');
+            return;
         }
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}/export/${currentClassOfferingId}`);
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `成绩_${currentAssignmentId}.xlsx`;
+                document.body.appendChild(a); a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                showToast('导出成功', 'success');
+            } else { throw new Error('导出失败'); }
+        } catch (error) { showToast('导出成绩失败', 'error'); }
+    };
 
-        function getStatusText(status) {
-            return { 'new': '草稿', 'published': '进行中', 'closed': '已截止', 'submitted': '已提交', 'grading': '批改中', 'graded': '已批改' }[status] || status;
-        }
-    </script>
+    // ==================== Status Dropdown ====================
+    window.toggleStatusDropdown = function() {
+        const dd = document.getElementById('status-dropdown');
+        dd.style.display = dd.style.display === 'block' ? 'none' : 'block';
+    };
+
+    window.changeStatus = async function(newStatus) {
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: "{{ assignment.title | e }}",
+                    requirements_md: {{ assignment.requirements_md | tojson }},
+                    rubric_md: {{ assignment.rubric_md | tojson }},
+                    grading_mode: "{{ assignment.grading_mode }}",
+                    status: newStatus
+                })
+            });
+            if (response.ok) {
+                showToast(`状态已更新为: ${getStatusText(newStatus)}`, 'success');
+                document.getElementById('status-dropdown').style.display = 'none';
+                setTimeout(() => location.reload(), 800);
+            } else { throw new Error('状态更新失败'); }
+        } catch (error) { showToast('更新状态失败', 'error'); }
+    };
+
+    // ==================== Edit Form ====================
+    document.getElementById('edit-assignment-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: document.getElementById('edit-title').value,
+                    requirements_md: document.getElementById('edit-requirements').value,
+                    rubric_md: document.getElementById('edit-rubric').value,
+                    grading_mode: document.getElementById('edit-grading-mode').value,
+                    status: "{{ assignment.status }}"
+                })
+            });
+            if (response.ok) {
+                showToast('作业更新成功', 'success');
+                closeEditModal();
+                setTimeout(() => location.reload(), 800);
+            } else { throw new Error('更新失败'); }
+        } catch (error) { showToast('更新失败', 'error'); }
+    });
+
+    // ==================== Delete ====================
+    window.confirmDelete = async function() {
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}`, { method: 'DELETE' });
+            if (response.ok) {
+                showToast('删除成功', 'success');
+                setTimeout(() => window.location.href = '/dashboard', 1000);
+            } else { throw new Error('删除失败'); }
+        } catch (error) { showToast('删除失败', 'error'); closeDeleteModal(); }
+    };
+
+    // ==================== Utilities ====================
+    function fmtDate(s) {
+        if (!s) return '-';
+        try { return new Date(s).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+        catch { return s; }
+    }
+
+    function getStatusText(status) {
+        return { 'new': '草稿', 'published': '进行中', 'closed': '已截止', 'submitted': '已提交', 'grading': '批改中', 'graded': '已批改', 'unsubmitted': '未提交' }[status] || status;
+    }
+</script>
 {% endblock %}

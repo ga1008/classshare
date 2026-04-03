@@ -66,15 +66,82 @@ async def delete_assignment(assignment_id: str, user: dict = Depends(get_current
 @router.get("/assignments/{assignment_id}/submissions", response_class=JSONResponse)
 async def get_submissions_for_assignment(assignment_id: str, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
+        assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
+        if not assignment:
+            raise HTTPException(404, "作业不存在")
+
         submissions_cursor = conn.execute(
             "SELECT * FROM submissions WHERE assignment_id = ? ORDER BY submitted_at DESC", (assignment_id,))
         submissions = [dict(row) for row in submissions_cursor]
-    total_submissions = len(submissions)
-    graded_submissions = [s for s in submissions if s['status'] == 'graded' and s['score'] is not None]
-    average_score = sum(s['score'] for s in graded_submissions) / len(graded_submissions) if graded_submissions else 0
-    return {"status": "success",
-            "stats": {"total_submissions": total_submissions, "average_score": round(average_score, 1),
-                      "common_mistakes": "N/A"}, "submissions": submissions}
+
+        # 获取班级花名册以包含未提交学生
+        total_students = 0
+        roster = []
+        if assignment['class_offering_id']:
+            offering = conn.execute("SELECT class_id FROM class_offerings WHERE id = ?",
+                                    (assignment['class_offering_id'],)).fetchone()
+            if offering:
+                students_cursor = conn.execute(
+                    "SELECT id, student_id_number, name FROM students WHERE class_id = ? ORDER BY student_id_number",
+                    (offering['class_id'],))
+                roster = [dict(row) for row in students_cursor]
+                total_students = len(roster)
+
+    # 构建提交映射
+    submission_map = {s['student_pk_id']: s for s in submissions}
+
+    # 合并花名册和提交数据（包含未提交学生）
+    all_entries = []
+    for student in roster:
+        if student['id'] in submission_map:
+            entry = submission_map[student['id']]
+            entry['student_id_number'] = student['student_id_number']
+            all_entries.append(entry)
+        else:
+            all_entries.append({
+                'id': None,
+                'student_pk_id': student['id'],
+                'student_name': student['name'],
+                'student_id_number': student['student_id_number'],
+                'assignment_id': assignment_id,
+                'status': 'unsubmitted',
+                'score': None,
+                'feedback_md': None,
+                'submitted_at': None,
+                'answers_json': None,
+            })
+
+    # 如果没有花名册信息，退回只显示已提交学生
+    if not roster:
+        all_entries = submissions
+        total_students = len(submissions)
+
+    # 计算统计数据
+    submitted_entries = [e for e in all_entries if e['status'] != 'unsubmitted']
+    graded_entries = [s for s in submitted_entries if s['status'] == 'graded' and s['score'] is not None]
+    scores = [s['score'] for s in graded_entries]
+
+    stats = {
+        "total_students": total_students,
+        "total_submissions": len(submitted_entries),
+        "unsubmitted_count": total_students - len(submitted_entries),
+        "graded_count": len(graded_entries),
+        "submitted_count": len([s for s in submitted_entries if s['status'] == 'submitted']),
+        "grading_count": len([s for s in submitted_entries if s['status'] == 'grading']),
+        "average_score": round(sum(scores) / len(scores), 1) if scores else 0,
+        "max_score": max(scores) if scores else 0,
+        "min_score": min(scores) if scores else 0,
+        "pass_rate": round(len([s for s in scores if s >= 60]) / len(scores) * 100, 1) if scores else 0,
+        "score_distribution": {
+            "excellent": len([s for s in scores if s >= 90]),
+            "good": len([s for s in scores if 80 <= s < 90]),
+            "medium": len([s for s in scores if 70 <= s < 80]),
+            "pass": len([s for s in scores if 60 <= s < 70]),
+            "fail": len([s for s in scores if s < 60]),
+        }
+    }
+
+    return {"status": "success", "stats": stats, "submissions": all_entries}
 
 
 @router.post("/submissions/{submission_id}/grade", response_class=JSONResponse)
@@ -219,6 +286,42 @@ async def submit_assignment(assignment_id: str,
             raise HTTPException(500, f"数据库错误: {e}")
 
     return {"status": "success", "submission_id": submission_id}
+
+
+@router.delete("/assignments/{assignment_id}/withdraw", response_class=JSONResponse)
+async def withdraw_submission(assignment_id: str, user: dict = Depends(get_current_student)):
+    """学生撤回已提交的作业（仅限未批改的提交）"""
+    with get_db_connection() as conn:
+        submission = conn.execute(
+            "SELECT * FROM submissions WHERE assignment_id = ? AND student_pk_id = ?",
+            (assignment_id, user['id'])
+        ).fetchone()
+        if not submission:
+            raise HTTPException(404, "未找到提交记录")
+        if submission['status'] == 'graded':
+            raise HTTPException(400, "已批改的作业无法撤回")
+        if submission['status'] == 'grading':
+            raise HTTPException(400, "正在批改中的作业无法撤回")
+
+        # 删除提交的文件记录和磁盘文件
+        files = conn.execute(
+            "SELECT stored_path FROM submission_files WHERE submission_id = ?",
+            (submission['id'],)
+        ).fetchall()
+
+        for f in files:
+            try:
+                file_path = Path(f['stored_path'])
+                if file_path.exists():
+                    file_path.unlink()
+            except Exception as e:
+                print(f"[WARN] 删除提交文件失败: {e}")
+
+        conn.execute("DELETE FROM submission_files WHERE submission_id = ?", (submission['id'],))
+        conn.execute("DELETE FROM submissions WHERE id = ?", (submission['id'],))
+        conn.commit()
+
+    return {"status": "success", "message": "作业已撤回"}
 
 
 # --- 试卷库 API ---

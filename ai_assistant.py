@@ -72,9 +72,9 @@ PLATFORMS_CONFIG = {
         "enabled": os.getenv("VOLCENGINE_ENABLED", "True").lower() == "true",
         "api_key": os.getenv("ARK_API_KEY"), "base_url": None,
         "models": {
-            "standard": os.getenv("VOLCENGINE_MODEL_STANDARD", "doubao-1-5-pro-32k-250115"),
-            "thinking": os.getenv("VOLCENGINE_MODEL_THINKING", "doubao-1-5-pro-32k-250115"),
-            "vision": os.getenv("VOLCENGINE_MODEL_VISION", "doubao-1-5-vision-pro-32k-250115")
+            "standard": os.getenv("VOLCENGINE_MODEL_STANDARD", "doubao-seed-2-0-pro-260215"),
+            "thinking": os.getenv("VOLCENGINE_MODEL_THINKING", "doubao-seed-2-0-pro-260215"),
+            "vision": os.getenv("VOLCENGINE_MODEL_VISION", "doubao-seed-2-0-pro-260215")
         },
         "can_force_json": {
             "standard": False, "thinking": False, "vision": False

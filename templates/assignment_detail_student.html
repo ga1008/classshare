@@ -262,6 +262,10 @@
                         </div>
                         <p class="text-muted">作业已成功提交，等待教师批改。</p>
                         <p class="text-sm text-muted mt-1">提交时间: <span class="format-date">{{ submission.submitted_at }}</span></p>
+                        <button class="btn btn-outline btn-sm text-warning mt-md" onclick="withdrawSubmission()">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                            撤回作业
+                        </button>
                     </div>
                 {% endif %}
 
@@ -585,6 +589,22 @@
             showToast('提交失败: ' + e.message, 'error');
             submitBtn.disabled = false;
             submitBtn.innerHTML = '确认提交作业';
+        }
+    }
+
+    window.withdrawSubmission = async function() {
+        if (!confirm('确定要撤回此作业吗？撤回后可以重新提交。')) return;
+        try {
+            const response = await fetch(`/api/assignments/${ASSIGNMENT_ID}/withdraw`, { method: 'DELETE' });
+            if (response.ok) {
+                showToast('作业已撤回', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                const err = await response.json();
+                throw new Error(err.detail || '撤回失败');
+            }
+        } catch (e) {
+            showToast('撤回失败: ' + e.message, 'error');
         }
     }
 </script>
