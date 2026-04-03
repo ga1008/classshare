@@ -38,7 +38,7 @@ export async function loadExamPapers() {
         container.innerHTML = papers.map(p => `
             <label class="card card-interactive" style="padding: var(--spacing-md); cursor: pointer;">
                 <div class="flex items-center gap-3">
-                    <input type="radio" name="exam-paper" value="${p.id}" class="shrink-0">
+                    <input type="radio" name="exam-paper" value="${p.id}" class="exam-paper-radio shrink-0">
                     <div class="flex-1 min-w-0">
                         <div class="font-semibold truncate">${escapeHtml(p.title)}</div>
                         <div class="text-muted text-sm">${p.question_count || 0} 道题${p.description ? ' · ' + escapeHtml(p.description).substring(0, 40) : ''}</div>
@@ -62,7 +62,11 @@ export async function confirmExamAssign() {
         return;
     }
 
-    const paperId = parseInt(selected.value);
+    const paperId = (selected.value || '').trim();
+    if (!paperId) {
+        showToast('试卷标识无效，请重新选择', 'warning');
+        return;
+    }
     const btn = document.getElementById('exam-assign-confirm-btn');
     if (btn) { btn.disabled = true; btn.textContent = '发布中...'; }
 

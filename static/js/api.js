@@ -58,7 +58,14 @@ export async function apiFetch(endpoint, options = {}) {
             if (data && typeof data === 'object' && data.detail) {
                 errorMessage = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
             } else if (typeof data === 'string' && data.length > 0) {
-                errorMessage = data;
+                const trimmed = data.trim();
+                const looksLikeHtml = /<!doctype html>|<html[\s>]/i.test(trimmed);
+                if (looksLikeHtml) {
+                    const titleMatch = trimmed.match(/<title[^>]*>(.*?)<\/title>/i);
+                    errorMessage = titleMatch ? `服务异常：${titleMatch[1].trim()}` : '服务异常，请稍后重试';
+                } else {
+                    errorMessage = trimmed.length > 180 ? `${trimmed.slice(0, 180)}...` : trimmed;
+                }
             } else if (response.statusText) {
                 errorMessage = response.statusText;
             }

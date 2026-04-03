@@ -55,11 +55,15 @@ export class ClassroomChat {
             e.preventDefault();
             this.sendMessage();
         });
-        this.chatInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
+        this.chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 this.sendMessage();
             }
+        });
+        this.chatInput.addEventListener('input', () => {
+            this.chatInput.style.height = 'auto';
+            this.chatInput.style.height = `${Math.min(this.chatInput.scrollHeight, 120)}px`;
         });
     }
 
@@ -126,6 +130,7 @@ export class ClassroomChat {
         if (message && this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(message);
             this.chatInput.value = '';
+            this.chatInput.style.height = '';
         }
     }
 
