@@ -15,6 +15,15 @@
     <style>
         body { background-color: var(--bg-color); }
 
+        .manage-layout::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at top left, rgba(79, 70, 229, 0.09), transparent 30%), radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.08), transparent 26%);
+            pointer-events: none;
+            z-index: -1;
+        }
+
         .manage-layout {
             display: flex;
             min-height: 100vh;
@@ -23,9 +32,9 @@
         /* --- Sidebar --- */
         .manage-sidebar {
             width: 260px;
-            background-color: var(--surface-color);
-            border-right: none; /* Removed hard border */
-            box-shadow: var(--shadow-sm); /* Added subtle shadow for separation */
+            background-color: rgba(255, 255, 255, 0.93);
+            border-right: 1px solid var(--border-color);
+            box-shadow: var(--shadow-md);
             display: flex;
             flex-direction: column;
             position: sticky;
@@ -52,6 +61,16 @@
             overflow-y: auto;
         }
 
+        .manage-nav-section-title {
+            padding: var(--spacing-3) var(--spacing-6);
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-top: var(--spacing-2);
+        }
+
         .manage-nav-item {
             display: flex;
             align-items: center;
@@ -62,16 +81,19 @@
             font-weight: 500;
             transition: all var(--transition-fast);
             border-left: 3px solid transparent;
+            border-radius: 0 var(--radius-md) var(--radius-md) 0;
+            margin-right: var(--spacing-sm);
         }
 
         .manage-nav-item:hover {
-            background-color: var(--bg-color);
+            background-color: rgba(79, 70, 229, 0.08);
             color: var(--text-primary);
         }
 
         .manage-nav-item.active {
-            background-color: var(--primary-light);
+            background-color: rgba(79, 70, 229, 0.12);
             color: var(--primary-color);
+            box-shadow: inset 0 0 0 1px rgba(79, 70, 229, 0.18);
             border-left-color: var(--primary-color);
         }
 
@@ -125,9 +147,10 @@
         .manage-header {
             height: 70px;
             padding: 0 var(--spacing-6);
-            background-color: var(--surface-color);
-            border-bottom: none; /* Removed hard border */
-            box-shadow: var(--shadow-sm); /* Added subtle shadow */
+            background-color: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -145,6 +168,9 @@
 
         .manage-content {
             padding: var(--spacing-6);
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-lg);
             max-width: 1200px;
             width: 100%;
             margin: 0 auto;
@@ -202,7 +228,7 @@
                     返回仪表盘
                 </a>
 
-                <div style="padding: var(--spacing-3) var(--spacing-6); font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-top: var(--spacing-2);">管理中心</div>
+                <div class="manage-nav-section-title">管理中心</div>
 
                 <a href="/manage/offerings" class="manage-nav-item {{ 'active' if active_page == 'offerings' }}">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>

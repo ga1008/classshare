@@ -56,7 +56,9 @@
     align-items: center;
     justify-content: space-between;
     padding: var(--spacing-md) var(--spacing-xl);
-    background-color: var(--surface-color);
+    background-color: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border-color);
     box-shadow: var(--shadow-sm);
     position: sticky;
     top: 0;
@@ -64,6 +66,7 @@
 }
 
 .navbar-brand {
+    cursor: pointer;
     display: flex;
     align-items: center;
     gap: var(--spacing-sm);
@@ -439,6 +442,7 @@
     }
 
     .navbar-brand {
+    cursor: pointer;
         font-size: 1rem;
         flex: 1;
         min-width: 0;
@@ -520,4 +524,21 @@
     border-radius: var(--radius-lg);
     overflow: hidden;
     box-shadow: var(--shadow-sm);
+}
+
+@media (max-width: 900px) {
+    .classroom-workspace {
+        grid-template-columns: 1fr;
+        height: auto;
+        min-height: calc(100vh - 64px);
+        overflow: visible;
+    }
+    .workspace-content { overflow: visible; padding-right: 0; }
+    .workspace-sidebar { min-height: 460px; }
+}
+
+@media (max-width: 768px) {
+    .navbar { padding: var(--spacing-sm) var(--spacing-md); }
+    .navbar-user { gap: var(--spacing-sm); }
+    .main-content { padding-top: var(--spacing-lg); }
 }
