@@ -152,6 +152,45 @@ def get_log_path_for_room(room_id: int) -> Path:
     return CHAT_LOG_DIR / log_filename
 
 
+def normalize_history_message(raw_message: dict) -> Optional[dict]:
+    """兼容历史日志中旧消息结构，统一为前端可直接渲染的格式。"""
+    if not isinstance(raw_message, dict):
+        return None
+
+    msg_type = raw_message.get("type")
+    if msg_type in {"chat", "system"}:
+        if msg_type == "chat":
+            message = dict(raw_message)
+            if not message.get("sender"):
+                message["sender"] = message.get("user_name", "课堂成员")
+            if not message.get("role"):
+                message["role"] = message.get("user_role", "student")
+            ts = message.get("timestamp")
+            if isinstance(ts, str) and "T" in ts and len(ts) >= 16:
+                message["timestamp"] = ts[11:16]
+            return message
+        return raw_message
+
+    # 旧格式聊天消息（无 type 字段）
+    if raw_message.get("message") is not None and (raw_message.get("user_name") or raw_message.get("sender")):
+        ts = raw_message.get("timestamp") or raw_message.get("logged_at") or ""
+        if isinstance(ts, str) and "T" in ts and len(ts) >= 16:
+            ts = ts[11:16]
+        return {
+            "type": "chat",
+            "sender": raw_message.get("sender") or raw_message.get("user_name", "课堂成员"),
+            "role": raw_message.get("role") or raw_message.get("user_role", "student"),
+            "message": raw_message.get("message", ""),
+            "timestamp": ts
+        }
+
+    # 兜底为系统消息，避免历史丢失
+    if raw_message.get("message") is not None:
+        return {"type": "system", "message": str(raw_message.get("message", ""))}
+
+    return None
+
+
 def load_chat_history_for_room(room_id: int):
     """为指定房间加载聊天记录到内存"""
     if room_id in chat_histories: return  # 已经加载
@@ -164,7 +203,10 @@ def load_chat_history_for_room(room_id: int):
             with open(log_file, 'r', encoding='utf-8') as f:
                 for line in f:
                     try:
-                        chat_histories[room_id].append(json.loads(line))
+                        parsed = json.loads(line)
+                        normalized = normalize_history_message(parsed)
+                        if normalized:
+                            chat_histories[room_id].append(normalized)
                     except json.JSONDecodeError:
                         continue
             print(f"[CHAT] 成功加载 {len(chat_histories[room_id])} 条聊天记录 (课堂: {room_id})")

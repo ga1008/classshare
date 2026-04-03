@@ -60,34 +60,59 @@
 {% endif %}
 
 <main class="classroom-workspace">
-    <div class="workspace-content">
-        <section class="workspace-hero">
-            <div class="workspace-hero-main">
-                <p class="workspace-kicker">班级课堂</p>
-                <h1>{{ classroom.course_name }}</h1>
-                <p class="workspace-hero-text">
-                    在同一工作区中管理课堂资源、作业考试与即时讨论，减少界面跳转造成的割裂感。
-                </p>
+    <section class="workspace-hero">
+        <div class="workspace-hero-main">
+            <p class="workspace-kicker">课堂信息</p>
+            <h1>{{ classroom.course_name }}</h1>
+            <p class="workspace-hero-text">
+                {% if classroom.course_description %}
+                {{ classroom.course_description }}
+                {% else %}
+                当前课程暂未填写课程简介。
+                {% endif %}
+            </p>
+            <div class="workspace-hero-meta">
+                <span>班级：{{ classroom.class_name }}</span>
+                <span>授课教师：{{ classroom.teacher_name }}</span>
+                {% if classroom.semester %}
+                <span>学期：{{ classroom.semester }}</span>
+                {% endif %}
+                {% if classroom.course_credits is not none %}
+                <span>学分：{{ classroom.course_credits }}</span>
+                {% endif %}
+                {% if classroom.class_student_count is not none %}
+                <span>班级人数：{{ classroom.class_student_count }}</span>
+                {% endif %}
+                {% if classroom.schedule_info %}
+                <span>上课安排：{{ classroom.schedule_info }}</span>
+                {% endif %}
             </div>
-            <div class="workspace-hero-stats">
-                <div class="workspace-stat-card">
-                    <span class="workspace-stat-label">课堂资源</span>
-                    <strong class="workspace-stat-value">{{ shared_files | length }}</strong>
-                </div>
-                <div class="workspace-stat-card">
-                    <span class="workspace-stat-label">{% if user_info.role == 'teacher' %}作业总数{% else %}当前任务{% endif %}</span>
-                    <strong class="workspace-stat-value">{{ assignment_count }}</strong>
-                </div>
-                <div class="workspace-stat-card">
-                    <span class="workspace-stat-label">考试试卷</span>
-                    <strong class="workspace-stat-value">{{ exam_count }}</strong>
-                </div>
-                <div class="workspace-stat-card">
-                    <span class="workspace-stat-label">{% if user_info.role == 'teacher' %}已发布{% else %}已提交{% endif %}</span>
-                    <strong class="workspace-stat-value">{% if user_info.role == 'teacher' %}{{ active_count }}{% else %}{{ submitted_count }}{% endif %}</strong>
-                </div>
+            {% if classroom.class_description %}
+            <p class="workspace-hero-class-note">班级说明：{{ classroom.class_description }}</p>
+            {% endif %}
+        </div>
+        <div class="workspace-hero-stats">
+            <div class="workspace-stat-card">
+                <span class="workspace-stat-label">课堂资源</span>
+                <strong class="workspace-stat-value">{{ shared_files | length }}</strong>
             </div>
-        </section>
+            <div class="workspace-stat-card">
+                <span class="workspace-stat-label">{% if user_info.role == 'teacher' %}作业总数{% else %}当前任务{% endif %}</span>
+                <strong class="workspace-stat-value">{{ assignment_count }}</strong>
+            </div>
+            <div class="workspace-stat-card">
+                <span class="workspace-stat-label">考试试卷</span>
+                <strong class="workspace-stat-value">{{ exam_count }}</strong>
+            </div>
+            <div class="workspace-stat-card">
+                <span class="workspace-stat-label">{% if user_info.role == 'teacher' %}已发布{% else %}已提交{% endif %}</span>
+                <strong class="workspace-stat-value">{% if user_info.role == 'teacher' %}{{ active_count }}{% else %}{{ submitted_count }}{% endif %}</strong>
+            </div>
+        </div>
+    </section>
+
+    <div class="workspace-columns">
+        <div class="workspace-content">
 
         <section class="workspace-panel assignment-panel">
             <div class="section-header">
@@ -98,9 +123,9 @@
                     </h2>
                     <p class="section-subtitle">
                         {% if user_info.role == 'teacher' %}
-                        保持统一卡片布局，无论当前是否已分配任务，都在同一视觉容器中展示。
+                        创建、发布并跟踪本课堂的作业和考试任务。
                         {% else %}
-                        所有课堂任务统一呈现在这里，支持直接进入作业详情或考试页面。
+                        查看教师发布的作业与考试，并按要求完成提交。
                         {% endif %}
                     </p>
                 </div>
@@ -200,9 +225,9 @@
                     <h3>当前还没有课堂任务</h3>
                     <p class="text-muted">
                         {% if user_info.role == 'teacher' %}
-                        新建作业或从试卷库发布考试后，这里会保持同样的版式展示，不再出现布局突变。
+                        新建作业或从试卷库发布考试后，这里会显示对应任务。
                         {% else %}
-                        教师发布作业或考试后，这里会以统一卡片列表形式显示，您可以直接进入完成任务。
+                        教师发布作业或考试后，您可以在这里直接进入任务并完成提交。
                         {% endif %}
                     </p>
                 </div>
@@ -217,7 +242,7 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                         软件分享与课堂资源
                     </h2>
-                    <p class="section-subtitle">支持课件、工具软件与辅助素材统一沉淀，保持与右侧研讨室的视觉区分。</p>
+                    <p class="section-subtitle">上传并共享课件、工具软件、实验资料与示例源码。</p>
                 </div>
                 <div class="header-actions">
                     <button type="button" class="btn btn-ghost btn-sm" onclick="window.fileApp.refreshFiles()">
@@ -259,7 +284,7 @@
                 <div>
                     <p class="discussion-room-kicker">课堂研讨室</p>
                     <h2>即时讨论</h2>
-                    <p class="discussion-room-subtitle">在不离开课堂页面的情况下交流问题、共享进度并同步资源更新。</p>
+                    <p class="discussion-room-subtitle">发布提问、答疑和课堂通知，消息会实时同步到本课堂成员。</p>
                 </div>
                 <div class="discussion-room-status">
                     <span class="status-indicator" id="ws-status" title="连接中"></span>
@@ -294,6 +319,7 @@
             </div>
         </section>
     </aside>
+    </div>
 </main>
 
 {% if user_info.role == 'teacher' %}

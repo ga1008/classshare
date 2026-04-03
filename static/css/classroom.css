@@ -3,7 +3,7 @@
  */
 
 .classroom-page {
-    overflow: hidden;
+    overflow-x: hidden;
 }
 
 .classroom-page .classroom-navbar {
@@ -30,16 +30,30 @@
 }
 
 .classroom-page .classroom-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    padding: var(--spacing-xl);
+    min-height: calc(100vh - 73px);
+    height: auto;
+    max-width: 1800px;
+    margin: 0 auto;
+    overflow: visible;
+}
+
+.classroom-page .workspace-columns {
+    display: grid;
     grid-template-columns: minmax(0, 1.8fr) minmax(320px, 0.95fr);
     gap: var(--spacing-xl);
-    padding: var(--spacing-xl);
-    height: calc(100vh - 73px);
-    max-width: 1800px;
+    align-items: start;
 }
 
 .classroom-page .workspace-content {
+    display: flex;
+    flex-direction: column;
     gap: var(--spacing-lg);
     min-height: 0;
+    overflow: visible;
 }
 
 .workspace-hero {
@@ -71,9 +85,30 @@
 }
 
 .workspace-hero-text {
-    margin: 0;
+    margin: 0 0 0.75rem;
     max-width: 56ch;
     color: var(--text-secondary);
+}
+
+.workspace-hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+}
+
+.workspace-hero-meta span {
+    padding: 0.35rem 0.65rem;
+    border-radius: var(--radius-full);
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+}
+
+.workspace-hero-class-note {
+    margin: 0.75rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
 }
 
 .workspace-hero-stats {
@@ -118,7 +153,7 @@
 }
 
 .assignment-panel {
-    min-height: 420px;
+    min-height: 320px;
     display: flex;
     flex-direction: column;
 }
@@ -266,7 +301,7 @@
 }
 
 .resource-panel {
-    min-height: 320px;
+    min-height: 260px;
 }
 
 .upload-dropzone-rich {
@@ -321,8 +356,8 @@
     position: relative;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto;
-    min-height: 100%;
-    height: 100%;
+    min-height: 420px;
+    height: clamp(460px, 62vh, 680px);
     border-radius: calc(var(--radius-xl) + 0.15rem);
     overflow: hidden;
     border: 1px solid rgba(15, 23, 42, 0.18);
@@ -687,25 +722,28 @@
 }
 
 @media (max-width: 1280px) {
-    .classroom-page .classroom-workspace {
-        grid-template-columns: minmax(0, 1fr) 380px;
+    .classroom-page .workspace-columns {
+        grid-template-columns: minmax(0, 1fr) 360px;
     }
 }
 
 @media (max-width: 1120px) {
-    .classroom-page {
-        overflow: auto;
+    .classroom-page .classroom-workspace {
+        padding: var(--spacing-lg);
     }
 
-    .classroom-page .classroom-workspace {
+    .classroom-page .workspace-columns {
         grid-template-columns: 1fr;
-        height: auto;
-        min-height: calc(100vh - 73px);
-        overflow: visible;
+        gap: var(--spacing-lg);
     }
 
     .workspace-sidebar {
-        min-height: 620px;
+        min-height: 0;
+    }
+
+    .discussion-room {
+        height: 560px;
+        min-height: 520px;
     }
 }
 
@@ -749,7 +787,12 @@
     }
 
     .workspace-sidebar {
-        min-height: 560px;
+        min-height: 0;
+    }
+
+    .discussion-room {
+        height: 520px;
+        min-height: 480px;
     }
 }
 
@@ -771,6 +814,11 @@
     }
 
     .workspace-sidebar {
-        min-height: 520px;
+        min-height: 0;
+    }
+
+    .discussion-room {
+        height: 500px;
+        min-height: 460px;
     }
 }

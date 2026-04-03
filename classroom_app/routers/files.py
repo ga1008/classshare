@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from ..config import GLOBAL_FILES_DIR, UPLOAD_CHUNK_SIZE_BYTES, CHUNKED_UPLOADS_DIR
-from ..dependencies import verify_token, get_current_user, get_current_teacher, get_client_ip
+from ..dependencies import verify_token, get_current_user, get_current_teacher, normalize_ip
 # 导入聊天管理器
 from ..services.chat_handler import manager, save_chat_message
 
@@ -674,11 +674,15 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
     try:
         # 首先尝试从 headers 获取真实IP（反向代理情况）
         forwarded_for = websocket.headers.get("x-forwarded-for")
+        real_ip = websocket.headers.get("x-real-ip")
         if forwarded_for:
             client_ip = forwarded_for.split(',')[0].strip()
+        elif real_ip:
+            client_ip = real_ip.strip()
         else:
             # 使用连接IP
             client_ip = websocket.client.host
+        client_ip = normalize_ip(client_ip) or client_ip
     except Exception as e:
         print(f"[WS ERROR] 获取客户端IP失败: {e}")
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -688,35 +692,82 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
 
     # 使用新的verify_token函数，传入client_ip
     user = verify_token(token, client_ip)
+    # 兼容代理环境中 WebSocket IP 与 HTTP 登录 IP 不一致的情况
+    if user is None and token is not None:
+        user = verify_token(token, None)
+        if user is not None:
+            print(f"[WS WARN] 回退到会话级验证通过 - IP: {client_ip}")
+
     if user is None:
         print(f"[WS ERROR] Token验证失败 - IP: {client_ip}")
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    # TODO: 验证用户是否有权进入这个 class_offering_id 房间
+    try:
+        user_pk = int(user.get("id"))
+    except (TypeError, ValueError):
+        print("[WS ERROR] 非法用户ID")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
 
-    client_id = f"{user['role']}_{user['id']}"
-    user['id'] = client_id  # 使用唯一的 client_id
+    # 验证用户是否有权进入当前课堂房间
+    with get_db_connection() as conn:
+        offering = conn.execute(
+            "SELECT id, class_id, teacher_id FROM class_offerings WHERE id = ?",
+            (class_offering_id,)
+        ).fetchone()
 
-    await manager.connect(websocket, user)
+        if not offering:
+            print(f"[WS ERROR] 课堂不存在 - class_offering_id: {class_offering_id}")
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        if user.get("role") == "teacher":
+            if int(offering["teacher_id"]) != user_pk:
+                print(f"[WS ERROR] 教师越权访问课堂 - teacher_id: {user_pk}, classroom: {class_offering_id}")
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+        elif user.get("role") == "student":
+            student_class = conn.execute(
+                "SELECT class_id FROM students WHERE id = ?",
+                (user_pk,)
+            ).fetchone()
+            if not student_class or int(student_class["class_id"]) != int(offering["class_id"]):
+                print(f"[WS ERROR] 学生越权访问课堂 - student_id: {user_pk}, classroom: {class_offering_id}")
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+        else:
+            print(f"[WS ERROR] 非法用户角色: {user.get('role')}")
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+    client_id = f"{user['role']}_{user_pk}"
+    ws_user = dict(user)
+    ws_user['id'] = client_id  # 使用唯一的 client_id
+
+    await manager.connect(websocket, ws_user)
     try:
         while True:
             data = await websocket.receive_text()
+            now = datetime.now()
+            display_time = now.strftime("%H:%M")
             message_obj = {
                 "type": "chat",
-                "sender": user['name'],
-                "role": user['role'],
+                "sender": ws_user['name'],
+                "role": ws_user['role'],
                 "message": data,
-                "timestamp": datetime.now().strftime("%H:%M")
+                "timestamp": display_time
             }
             # 保存消息
             db_message = {
-                "class_offering_id": class_offering_id,
-                "user_id": user['id'],
-                "user_name": user['name'],
-                "user_role": user['role'],
+                "type": "chat",
+                "sender": ws_user['name'],
+                "role": ws_user['role'],
                 "message": data,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": display_time,
+                "class_offering_id": class_offering_id,
+                "user_id": user_pk,
+                "logged_at": now.isoformat()
             }
             await save_chat_message(class_offering_id, db_message)
             # 广播消息

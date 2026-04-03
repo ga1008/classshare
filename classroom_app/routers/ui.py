@@ -215,7 +215,14 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
     """V4.0: 替换旧的 /app，这是特定班级课堂的主界面"""
     with get_db_connection() as conn:
         offering = conn.execute(
-            """SELECT o.*, c.name as course_name, cl.name as class_name, t.name as teacher_name
+            """SELECT o.*,
+                      c.name as course_name,
+                      c.description as course_description,
+                      c.credits as course_credits,
+                      cl.name as class_name,
+                      cl.description as class_description,
+                      t.name as teacher_name,
+                      (SELECT COUNT(*) FROM students s WHERE s.class_id = o.class_id) as class_student_count
                FROM class_offerings o
                         JOIN courses c ON o.course_id = c.id
                         JOIN classes cl ON o.class_id = cl.id
