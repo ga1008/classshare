@@ -6,8 +6,11 @@
 <link rel="stylesheet" href="/static/css/layout.css">
 <link rel="stylesheet" href="/static/css/buttons.css">
 <link rel="stylesheet" href="/static/css/cards.css">
+<link rel="stylesheet" href="/static/css/forms.css">
 <link rel="stylesheet" href="/static/css/modals.css">
+<link rel="stylesheet" href="/static/css/toast.css">
 <link rel="stylesheet" href="/static/css/ai_chat.css">
+<link rel="stylesheet" href="/static/css/classroom.css">
 {% endblock %}
 
 {% block head %}
@@ -16,47 +19,98 @@
     window.APP_CONFIG = {
         userInfo: {{ user_info | tojson }},
         classroom: {{ classroom | tojson }},
-        classOfferingId: {{ classroom.id }}
+        classOfferingId: {{ classroom.id }},
+        courseId: {{ classroom.course_id }}
     };
 </script>
 {% endblock %}
 
-{% block body_class %}page-wrapper{% endblock %}
+{% block body_class %}page-wrapper classroom-page{% endblock %}
 
 {% block body %}
-<!-- Navbar -->
-<header class="navbar">
-    <div class="navbar-brand">
-        <a href="/dashboard" class="btn btn-ghost btn-sm btn-icon" title="返回仪表盘">
+<header class="navbar classroom-navbar">
+    <div class="navbar-brand classroom-navbar-brand">
+        <a href="/dashboard" class="btn btn-ghost btn-sm btn-icon" title="返回我的课堂">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
         </a>
-        <span class="navbar-title">{{ classroom.course_name }} <span class="text-muted text-sm ml-2">({{ classroom.class_name }})</span></span>
+        <div class="classroom-navbar-copy">
+            <span class="navbar-title">{{ classroom.course_name }}</span>
+            <div class="classroom-navbar-meta">
+                <span>{{ classroom.class_name }}</span>
+                <span>教师：{{ classroom.teacher_name }}</span>
+                {% if classroom.semester %}
+                <span>{{ classroom.semester }}</span>
+                {% endif %}
+            </div>
+        </div>
     </div>
     <div class="navbar-user">
-        <span class="user-name">欢迎, {{ user_info.name }} <span class="badge badge-primary ml-2">{{ user_info.nickname if user_info.nickname else ('教师' if user_info.role == 'teacher' else '学生') }}</span></span>
-        <a href="/logout" class="btn btn-ghost btn-sm text-danger ml-3">退出登录</a>
+        <span class="user-name">欢迎，{{ user_info.name }} <span class="badge badge-primary ml-2">{{ user_info.nickname if user_info.nickname else ('教师' if user_info.role == 'teacher' else '学生') }}</span></span>
+        <a href="/logout" class="btn btn-ghost btn-sm text-danger">退出登录</a>
     </div>
 </header>
 
-<!-- Main Workspace -->
-<main class="classroom-workspace">
-    <!-- Left Column: Resources and Assignments -->
-    <div class="workspace-content">
+{% set assignment_count = assignments | length %}
+{% set exam_count = assignments | selectattr('exam_paper_id') | list | length %}
+{% if user_info.role == 'teacher' %}
+    {% set draft_count = assignments | selectattr('status', 'equalto', 'new') | list | length %}
+    {% set active_count = assignment_count - draft_count %}
+{% else %}
+    {% set submitted_count = assignments | rejectattr('submission_status', 'equalto', 'unsubmitted') | list | length %}
+{% endif %}
 
-        <!-- Assignments Section -->
-        <section class="workspace-section">
+<main class="classroom-workspace">
+    <div class="workspace-content">
+        <section class="workspace-hero">
+            <div class="workspace-hero-main">
+                <p class="workspace-kicker">班级课堂</p>
+                <h1>{{ classroom.course_name }}</h1>
+                <p class="workspace-hero-text">
+                    在同一工作区中管理课堂资源、作业考试与即时讨论，减少界面跳转造成的割裂感。
+                </p>
+            </div>
+            <div class="workspace-hero-stats">
+                <div class="workspace-stat-card">
+                    <span class="workspace-stat-label">课堂资源</span>
+                    <strong class="workspace-stat-value">{{ shared_files | length }}</strong>
+                </div>
+                <div class="workspace-stat-card">
+                    <span class="workspace-stat-label">{% if user_info.role == 'teacher' %}作业总数{% else %}当前任务{% endif %}</span>
+                    <strong class="workspace-stat-value">{{ assignment_count }}</strong>
+                </div>
+                <div class="workspace-stat-card">
+                    <span class="workspace-stat-label">考试试卷</span>
+                    <strong class="workspace-stat-value">{{ exam_count }}</strong>
+                </div>
+                <div class="workspace-stat-card">
+                    <span class="workspace-stat-label">{% if user_info.role == 'teacher' %}已发布{% else %}已提交{% endif %}</span>
+                    <strong class="workspace-stat-value">{% if user_info.role == 'teacher' %}{{ active_count }}{% else %}{{ submitted_count }}{% endif %}</strong>
+                </div>
+            </div>
+        </section>
+
+        <section class="workspace-panel assignment-panel">
             <div class="section-header">
-                <h2 class="section-title">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                    {% if user_info.role == 'teacher' %}作业管理{% else %}我的作业{% endif %}
-                </h2>
+                <div>
+                    <h2 class="section-title">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                        {% if user_info.role == 'teacher' %}作业与考试{% else %}我的作业与考试{% endif %}
+                    </h2>
+                    <p class="section-subtitle">
+                        {% if user_info.role == 'teacher' %}
+                        保持统一卡片布局，无论当前是否已分配任务，都在同一视觉容器中展示。
+                        {% else %}
+                        所有课堂任务统一呈现在这里，支持直接进入作业详情或考试页面。
+                        {% endif %}
+                    </p>
+                </div>
                 {% if user_info.role == 'teacher' %}
                 <div class="header-actions">
-                    <button class="btn btn-primary btn-sm" onclick="window.examApp.newAssignment()">
+                    <button class="btn btn-primary btn-sm" type="button" onclick="window.examApp.newAssignment()">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                         新建作业
                     </button>
-                    <button class="btn btn-outline btn-sm" onclick="window.UI.openModal('exam-assign-modal'); window.examApp.loadExamPapers();">
+                    <button class="btn btn-outline btn-sm" type="button" onclick="window.UI.openModal('exam-assign-modal'); window.examApp.loadExamPapers();">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
                         试卷库添加
                     </button>
@@ -64,56 +118,107 @@
                 {% endif %}
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 assignment-grid">
-                {% for assignment in assignments %}
-                <div class="card assignment-card hover-lift cursor-pointer" onclick="location.href='/assignment/{{ assignment.id }}'">
-                    <div class="card-body">
-                        <h3 class="card-title flex items-center justify-between">
-                            <span class="truncate pr-2">{{ assignment.title }}</span>
-                            {% if assignment.exam_paper_id %}
-                            <span class="badge badge-primary text-xs shrink-0">试卷</span>
-                            {% endif %}
-                        </h3>
+            <div class="assignment-summary-row">
+                <span class="summary-pill summary-pill-primary">共 {{ assignment_count }} 项</span>
+                <span class="summary-pill">考试 {{ exam_count }} 项</span>
+                {% if user_info.role == 'teacher' %}
+                <span class="summary-pill">草稿 {{ draft_count }} 项</span>
+                <span class="summary-pill">已发布 {{ active_count }} 项</span>
+                {% else %}
+                <span class="summary-pill">待提交 {{ assignment_count - submitted_count }} 项</span>
+                <span class="summary-pill">已提交 {{ submitted_count }} 项</span>
+                {% endif %}
+            </div>
 
-                        <div class="mt-3">
-                            {% if user_info.role == 'teacher' %}
-                                {% if assignment.status == 'new' %}
-                                    <span class="badge badge-warning">草稿</span>
+            <div class="assignment-board">
+                {% if assignments %}
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 assignment-grid">
+                    {% for assignment in assignments %}
+                    {% if user_info.role == 'teacher' %}
+                        {% if assignment.status == 'new' %}
+                            {% set status_label = '草稿' %}
+                            {% set status_class = 'badge-warning' %}
+                        {% else %}
+                            {% set status_label = '已发布' %}
+                            {% set status_class = 'badge-success' %}
+                        {% endif %}
+                    {% else %}
+                        {% if assignment.submission_status == 'unsubmitted' %}
+                            {% set status_label = '未提交' %}
+                            {% set status_class = 'badge-danger' %}
+                        {% elif assignment.submission_status == 'submitted' %}
+                            {% set status_label = '已提交' %}
+                            {% set status_class = 'badge-primary' %}
+                        {% elif assignment.submission_status == 'grading' %}
+                            {% set status_label = '批改中' %}
+                            {% set status_class = 'badge-warning' %}
+                        {% else %}
+                            {% set status_label = '已批改' %}
+                            {% set status_class = 'badge-success' %}
+                        {% endif %}
+                    {% endif %}
+                    <article class="card assignment-card assignment-card-unified hover-lift cursor-pointer" onclick="location.href='/assignment/{{ assignment.id }}'">
+                        <div class="card-body">
+                            <div class="assignment-card-top">
+                                <div class="assignment-card-tags">
+                                    <span class="badge {{ status_class }}">{{ status_label }}{% if assignment.submission_status == 'graded' and assignment.submission_score is not none %} · {{ assignment.submission_score }} 分{% endif %}</span>
+                                    {% if assignment.exam_paper_id %}
+                                    <span class="badge badge-outline">试卷</span>
+                                    {% else %}
+                                    <span class="badge badge-outline">作业</span>
+                                    {% endif %}
+                                </div>
+                                <span class="assignment-arrow" aria-hidden="true">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                                </span>
+                            </div>
+                            <h3 class="card-title assignment-card-title">{{ assignment.title }}</h3>
+                            <p class="assignment-card-desc">
+                                {% if assignment.exam_paper_id %}
+                                该任务来自试卷库，进入后可查看试卷详情、答题状态与发布信息。
+                                {% elif assignment.requirements_md %}
+                                {{ assignment.requirements_md[:90] | replace('\n', ' ') }}{% if assignment.requirements_md|length > 90 %}...{% endif %}
                                 {% else %}
-                                    <span class="badge badge-success">已发布</span>
+                                暂未填写详细说明，点击进入查看完整作业内容与提交要求。
                                 {% endif %}
-                            {% else %}
-                                {% if assignment.submission_status == 'unsubmitted' %}
-                                    <span class="badge badge-danger">未提交</span>
-                                {% elif assignment.submission_status == 'submitted' %}
-                                    <span class="badge badge-primary">已提交</span>
-                                {% elif assignment.submission_status == 'grading' %}
-                                    <span class="badge badge-warning">批改中</span>
-                                {% elif assignment.submission_status == 'graded' %}
-                                    <span class="badge badge-success">已批改 ({{ assignment.submission_score }}分)</span>
-                                {% endif %}
-                            {% endif %}
+                            </p>
+                            <div class="assignment-card-footer">
+                                <span class="assignment-meta-text">
+                                    {% if assignment.created_at %}创建于 {{ assignment.created_at[:10] }}{% else %}随时可进入查看{% endif %}
+                                </span>
+                                <span class="assignment-meta-link">查看详情</span>
+                            </div>
                         </div>
-                    </div>
+                    </article>
+                    {% endfor %}
                 </div>
                 {% else %}
-                <div class="col-span-full">
-                    <div class="empty-state assignment-empty-state">
-                        <h3 class="mb-2">当前还没有作业</h3>
-                        <p class="text-muted">布置后将以统一卡片样式展示，支持状态追踪与快速进入。</p>
+                <div class="empty-state assignment-empty-state">
+                    <div class="empty-state-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
                     </div>
+                    <h3>当前还没有课堂任务</h3>
+                    <p class="text-muted">
+                        {% if user_info.role == 'teacher' %}
+                        新建作业或从试卷库发布考试后，这里会保持同样的版式展示，不再出现布局突变。
+                        {% else %}
+                        教师发布作业或考试后，这里会以统一卡片列表形式显示，您可以直接进入完成任务。
+                        {% endif %}
+                    </p>
                 </div>
-                {% endfor %}
+                {% endif %}
             </div>
         </section>
 
-        <!-- Course Resources Section -->
-        <section class="workspace-section">
+        <section class="workspace-panel resource-panel">
             <div class="section-header">
-                <h2 class="section-title">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                    课程资源
-                </h2>
+                <div>
+                    <h2 class="section-title">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                        软件分享与课堂资源
+                    </h2>
+                    <p class="section-subtitle">支持课件、工具软件与辅助素材统一沉淀，保持与右侧研讨室的视觉区分。</p>
+                </div>
                 <div class="header-actions">
                     <button type="button" class="btn btn-ghost btn-sm" onclick="window.fileApp.refreshFiles()">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -123,82 +228,101 @@
             </div>
 
             {% if user_info.role == 'teacher' %}
-            <div class="upload-dropzone mb-lg" id="uploadZone">
+            <div class="upload-dropzone upload-dropzone-rich mb-lg" id="uploadZone">
                 <input type="file" id="fileInput" class="hidden" multiple>
                 <div class="upload-dropzone-content">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-primary mb-2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                    <h4 class="mb-1">点击或拖拽文件到此处上传</h4>
-                    <p class="text-muted text-sm">支持大文件分块上传与极速秒传</p>
-                    <button type="button" class="btn btn-primary mt-3" onclick="document.getElementById('fileInput').click()">选择文件</button>
+                    <div class="upload-illustration">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    </div>
+                    <div class="upload-copy">
+                        <h4>拖拽文件到此处，或直接点击选择文件</h4>
+                        <p class="text-muted text-sm">适合分享软件安装包、实验资料、课堂课件与示例源码。</p>
+                    </div>
+                    <button type="button" class="btn btn-primary" onclick="document.getElementById('fileInput').click()">选择文件</button>
                 </div>
             </div>
-            <div id="uploadProgressArea" class="mb-lg hidden"></div>
+            <div id="uploadProgressArea" class="upload-progress-stack mb-lg hidden"></div>
             {% endif %}
 
             <div id="file-list-container" class="space-y-sm">
                 <div class="empty-state">
                     <div class="spinner"></div>
-                    <p class="text-muted mt-2">加载资源中...</p>
+                    <p class="text-muted mt-2">正在加载课堂资源...</p>
                 </div>
             </div>
         </section>
-
     </div>
 
-    <!-- Right Column: Chat Panel -->
     <aside class="workspace-sidebar">
-        <div class="chat-container card h-full flex-col">
-            <div class="chat-header">
-                <h3 class="flex items-center m-0 text-base">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2 text-primary"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                    课堂研讨室
-                </h3>
-                <span class="status-indicator status-online" id="ws-status" title="连接正常"></span>
+        <section class="discussion-room">
+            <div class="discussion-room-header">
+                <div>
+                    <p class="discussion-room-kicker">课堂研讨室</p>
+                    <h2>即时讨论</h2>
+                    <p class="discussion-room-subtitle">在不离开课堂页面的情况下交流问题、共享进度并同步资源更新。</p>
+                </div>
+                <div class="discussion-room-status">
+                    <span class="status-indicator" id="ws-status" title="连接中"></span>
+                    <span id="ws-status-text">连接中</span>
+                </div>
             </div>
 
-            <div class="chat-messages flex-1" id="chat-messages">
-            </div>
-
-            <div class="chat-input-area">
-                <form id="chat-form" class="chat-composer">
-                    <div class="chat-composer-input-wrap">
-                        <textarea id="chat-input" class="form-control chat-composer-input" placeholder="输入讨论内容，Enter 发送 / Shift+Enter 换行" autocomplete="off" rows="1"></textarea>
+            <div class="discussion-room-body">
+                <div class="chat-messages" id="chat-messages">
+                    <div class="chat-empty-state" id="chat-empty-state">
+                        <div class="chat-empty-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                        </div>
+                        <strong>讨论从这里开始</strong>
+                        <p>发送课堂问题、实验心得或资源提醒，消息会实时同步到本课堂所有成员。</p>
                     </div>
-                    <button type="submit" class="btn btn-primary btn-icon shrink-0 chat-send-btn" title="发送">
+                </div>
+            </div>
+
+            <div class="discussion-room-composer">
+                <form id="chat-form" class="chat-composer">
+                    <label class="chat-composer-shell" for="chat-input">
+                        <span class="chat-composer-label">输入讨论内容</span>
+                        <textarea id="chat-input" class="form-control chat-composer-input" placeholder="输入课堂讨论内容，Enter 发送，Shift+Enter 换行" autocomplete="off" rows="1"></textarea>
+                        <span class="chat-composer-hint">支持多行输入，发送后会即时同步到课堂成员。</span>
+                    </label>
+                    <button type="submit" class="btn btn-primary chat-send-btn" title="发送">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                        <span>发送</span>
                     </button>
                 </form>
             </div>
-        </div>
+        </section>
     </aside>
 </main>
 
-<!-- Modals -->
 {% if user_info.role == 'teacher' %}
-<!-- Assignment Modal -->
 <div id="assignment-modal" class="modal-backdrop" style="display:none;">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-scrollable modal-dialog-wide">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title">作业编辑器</h3>
+                <div>
+                    <h3 class="modal-title">作业编辑器</h3>
+                    <p class="modal-subtitle">为当前课堂新建或调整作业要求，保留原有发布逻辑。</p>
+                </div>
                 <button class="modal-close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="assignment-id">
 
                 <div class="form-group">
-                    <label class="form-label" for="assignment-title">作业标题</label>
+                    <label class="form-label required" for="assignment-title">作业标题</label>
                     <input type="text" id="assignment-title" class="form-control" placeholder="例如：第一周课后作业">
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label" for="assignment-requirements">要求说明 (支持 Markdown)</label>
-                    <textarea id="assignment-requirements" class="form-control" rows="4" placeholder="请描述作业的具体要求..."></textarea>
+                    <label class="form-label" for="assignment-requirements">要求说明（支持 Markdown）</label>
+                    <textarea id="assignment-requirements" class="form-control" rows="5" placeholder="请描述作业目标、提交方式和截止说明..."></textarea>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label" for="assignment-rubric">评分标准 (支持 Markdown)</label>
-                    <textarea id="assignment-rubric" class="form-control" rows="3" placeholder="填写评分细则，有助于学生理解评分重点..."></textarea>
+                    <label class="form-label" for="assignment-rubric">评分标准（支持 Markdown）</label>
+                    <textarea id="assignment-rubric" class="form-control" rows="4" placeholder="填写评分细则，帮助学生理解重点与预期表现..."></textarea>
                 </div>
 
                 <div class="form-group">
@@ -207,42 +331,46 @@
                         <option value="manual">手动批改</option>
                         <option value="ai">AI 辅助批改</option>
                     </select>
-                    <p class="form-hint mt-1">选择 AI 辅助批改时，系统将自动基于评分标准生成初评建议。</p>
+                    <p class="form-hint">选择 AI 辅助批改时，系统会基于评分标准生成初步建议，但不会影响原有手动复核能力。</p>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" data-dismiss="modal">取消</button>
-                <button class="btn btn-primary" onclick="window.examApp.saveAssignment()" id="btn-save-assignment">保存作业</button>
+                <button class="btn btn-primary" type="button" onclick="window.examApp.saveAssignment()" id="btn-save-assignment">保存作业</button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Exam Assign Modal -->
 <div id="exam-assign-modal" class="modal-backdrop" style="display:none;">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-scrollable modal-dialog-wide">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title">从试卷库添加考试</h3>
+                <div>
+                    <h3 class="modal-title">从试卷库添加考试</h3>
+                    <p class="modal-subtitle">从已有试卷中选择一份加入当前课堂，发布后会直接生成课堂考试任务。</p>
+                </div>
                 <button class="modal-close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="text-muted mb-3">选择一份已创建的试卷发布给当前班级。</p>
-                <div id="exam-list-container" class="space-y-sm max-h-[300px] overflow-y-auto pr-2">
+                <div class="modal-callout">
+                    <strong>当前课堂：</strong> {{ classroom.course_name }} / {{ classroom.class_name }}
+                </div>
+                <div id="exam-assign-feedback" class="inline-feedback hidden" role="status" aria-live="polite"></div>
+                <div id="exam-list-container" class="exam-list-container">
                     <div class="text-center p-4"><div class="spinner"></div></div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" data-dismiss="modal">取消</button>
-                <button class="btn btn-primary" id="exam-assign-confirm-btn" onclick="window.examApp.confirmExamAssign()">确认发布</button>
+                <button class="btn btn-primary" id="exam-assign-confirm-btn" type="button" onclick="window.examApp.confirmExamAssign()">确认发布</button>
             </div>
         </div>
     </div>
 </div>
 {% endif %}
 
-<!-- AI Chat FAB & Container -->
-<button id="ai-chat-fab" title="课堂AI助手" class="shadow-lg">
+<button id="ai-chat-fab" title="课堂 AI 助手" class="shadow-lg">
     <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 3v.01M12 21v.01M3 12h.01M21 12h.01M5.64 5.64l.01.01M18.36 18.36l.01.01M5.64 18.36l.01.01M18.36 5.64l.01.01M12 8a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM16 12a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/>
     </svg>
@@ -251,7 +379,7 @@
 <div id="ai-chat-modal">
     <div class="ai-chat-container">
         <div class="ai-chat-header">
-            <h3>课堂AI助手</h3>
+            <h3>课堂 AI 助手</h3>
             <div class="header-buttons">
                 <button id="ai-chat-btn-new" class="chat-btn" title="新对话"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14m-7-7h14"/></svg></button>
                 <button id="ai-chat-btn-fullscreen" class="chat-btn" title="全屏"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
@@ -260,7 +388,7 @@
         </div>
         <div class="ai-chat-messages" id="ai-chat-messages-box">
             <div class="ai-chat-message system">
-                <div class="bubble">你好！我是你的AI助教。你可以向我提问，或上传图片/截图。</div>
+                <div class="bubble">你好，我是课堂 AI 助手。你可以向我提问，或上传图片 / 截图。</div>
             </div>
         </div>
         <div class="ai-chat-attachment-previews" id="ai-chat-previews"></div>
@@ -277,7 +405,6 @@
                 </div>
             </div>
         </div>
-        <!-- Resize handles -->
         <div class="resizer resizer-top"></div><div class="resizer resizer-right"></div><div class="resizer resizer-bottom"></div><div class="resizer resizer-left"></div>
         <div class="resizer resizer-top-left"></div><div class="resizer resizer-top-right"></div><div class="resizer resizer-bottom-left"></div><div class="resizer resizer-bottom-right"></div>
     </div>
@@ -291,31 +418,26 @@
     import * as fileApp from '/static/js/app_files.js';
     import * as examApp from '/static/js/app_exams.js';
 
-    // Expose modules to global window for inline onclick handlers
     window.UI = ui;
     window.fileApp = fileApp;
     window.examApp = examApp;
 
     document.addEventListener('DOMContentLoaded', () => {
-        // 1. Initialize WebSocket Chat
-        const chatApp = new ClassroomChat(
-            window.APP_CONFIG.classOfferingId,
-            'chat-messages',
-            'chat-input',
-            'chat-form'
-        );
+        const chatApp = new ClassroomChat({
+            classOfferingId: window.APP_CONFIG.classOfferingId,
+            chatMessagesContainerId: 'chat-messages',
+            chatInputId: 'chat-input',
+            chatFormId: 'chat-form',
+            statusIndicatorId: 'ws-status',
+            statusTextId: 'ws-status-text',
+            currentUser: window.APP_CONFIG.userInfo
+        });
         chatApp.init();
-
-        // Refresh files when chat reports file events
         chatApp.onFileEvent = () => fileApp.refreshFiles();
 
-        // 2. Initialize File System
         fileApp.init(window.APP_CONFIG);
-
-        // 3. Initialize Exam/Assignment module
         examApp.init(window.APP_CONFIG);
 
-        // 4. Initialize AI Chat
         try {
             if (typeof window.AIChatComponent !== 'undefined') {
                 const aiChat = new window.AIChatComponent({
@@ -324,11 +446,10 @@
                 aiChat.init();
             }
         } catch (e) {
-            console.error("Failed to init AI Chat", e);
+            console.error('Failed to init AI Chat', e);
         }
     });
 </script>
 
-<!-- AI Chat Component -->
 <script src="/static/js/ai_chat_component.js"></script>
 {% endblock %}

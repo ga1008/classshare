@@ -24,6 +24,10 @@ const createToastContainer = () => {
 export function showToast(message, type = 'success', duration = 3000) {
     const container = createToastContainer();
     const toast = document.createElement('div');
+    const normalizedMessage = String(message ?? '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 280);
 
     const icons = {
         success: `<svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
@@ -37,7 +41,7 @@ export function showToast(message, type = 'success', duration = 3000) {
     toast.innerHTML = `
         <div class="toast-icon">${icons[type] || icons.info}</div>
         <div class="toast-content">
-            <div class="toast-message">${escapeHtml(message)}</div>
+            <div class="toast-message">${escapeHtml(normalizedMessage || '操作已完成')}</div>
         </div>
         <button class="toast-close" aria-label="Close" onclick="this.parentElement.remove()">
             <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>

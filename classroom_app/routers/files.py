@@ -204,7 +204,6 @@ async def init_chunked_upload(
         ).fetchone()
         if not course:
             raise HTTPException(403, "无权操作此课程")
-
     upload_id = str(uuid.uuid4())
     chunk_size = UPLOAD_CHUNK_SIZE_BYTES
     total_chunks = max(1, math.ceil(req.file_size / chunk_size))
@@ -441,6 +440,25 @@ async def update_file_description(
 
 # ==================== 原有端点 (保留) ====================
 
+def resolve_teacher_course_id(conn, course_or_offering_id: int, teacher_id: int) -> int:
+    """兼容旧前端把 class_offering_id 当作 course_id 传入的情况。"""
+    offering = conn.execute(
+        "SELECT course_id FROM class_offerings WHERE id = ? AND teacher_id = ?",
+        (course_or_offering_id, teacher_id)
+    ).fetchone()
+    if offering:
+        return int(offering['course_id'])
+
+    course = conn.execute(
+        "SELECT id FROM courses WHERE id = ? AND created_by_teacher_id = ?",
+        (course_or_offering_id, teacher_id)
+    ).fetchone()
+    if course:
+        return int(course['id'])
+
+    raise HTTPException(403, "无权操作当前课堂资源")
+
+
 @router.post("/api/courses/{course_id}/files/upload")
 async def upload_course_file(
         course_id: int,
@@ -452,12 +470,8 @@ async def upload_course_file(
     """上传课程资源文件(教师) — 兼容旧版小文件直传"""
     # 检查课程权限
     with get_db_connection() as conn:
-        course = conn.execute(
-            "SELECT id FROM courses WHERE id = ? AND created_by_teacher_id = ?",
-            (course_id, user['id'])
-        ).fetchone()
-        if not course:
-            raise HTTPException(403, "无权操作此课程")
+        resolved_course_id = resolve_teacher_course_id(conn, course_id, user['id'])
+        # Permission already validated by resolve_teacher_course_id.
 
         # 全局保存文件
         file_info = await save_file_globally(file)
@@ -470,7 +484,7 @@ async def upload_course_file(
                          (course_id, file_name, file_hash, file_size, is_public, is_teacher_resource, uploaded_by_teacher_id)
                          VALUES (?, ?, ?, ?, ?, ?, ?)
                          """, (
-                             course_id,
+                             resolved_course_id,
                              file.filename,
                              file_info["hash"],
                              file_info["size"],
@@ -485,7 +499,7 @@ async def upload_course_file(
 
         # 广播消息
         try:
-            await broadcast_file_update(course_id, f"老师上传了新文件: {file.filename}。请刷新列表查看。")
+            await broadcast_file_update(resolved_course_id, f"老师上传了新文件: {file.filename}。请刷新列表查看。")
         except Exception as e:
             print(f"[ERROR] 广播上传消息失败: {e}")
 
@@ -504,17 +518,12 @@ async def delete_course_file(
     """删除课程文件"""
     with get_db_connection() as conn:
         # 检查权限
-        course = conn.execute(
-            "SELECT id FROM courses WHERE id = ? AND created_by_teacher_id = ?",
-            (course_id, user['id'])
-        ).fetchone()
-        if not course:
-            raise HTTPException(403, "无权操作此课程")
+        resolved_course_id = resolve_teacher_course_id(conn, course_id, user['id'])
 
         # 获取文件信息
         file_data = conn.execute(
             "SELECT file_name, file_hash FROM course_files WHERE id = ? AND course_id = ?",
-            (file_id, course_id)
+            (file_id, resolved_course_id)
         ).fetchone()
         if not file_data:
             raise HTTPException(404, "文件不存在")
@@ -536,7 +545,7 @@ async def delete_course_file(
 
         # 广播消息
         try:
-            await broadcast_file_update(course_id, f"老师删除了文件: {file_data['file_name']}")
+            await broadcast_file_update(resolved_course_id, f"老师删除了文件: {file_data['file_name']}")
         except Exception as e:
             print(f"[ERROR] 广播删除消息失败: {e}")
 

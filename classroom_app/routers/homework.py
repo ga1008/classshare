@@ -29,15 +29,32 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
     class_offering_id = data.get('class_offering_id')
 
     with get_db_connection() as conn:
+        actual_course_id = course_id
+        if class_offering_id:
+            offering = conn.execute(
+                "SELECT id, course_id FROM class_offerings WHERE id = ? AND teacher_id = ?",
+                (int(class_offering_id), user['id'])
+            ).fetchone()
+            if not offering:
+                raise HTTPException(404, "当前课堂不存在或您无权操作")
+            actual_course_id = int(offering['course_id'])
+        else:
+            owned_course = conn.execute(
+                "SELECT id FROM courses WHERE id = ? AND created_by_teacher_id = ?",
+                (course_id, user['id'])
+            ).fetchone()
+            if not owned_course:
+                raise HTTPException(404, "课程不存在或您无权操作")
+
         cursor = conn.execute(
             "INSERT INTO assignments (course_id, title, status, requirements_md, rubric_md, grading_mode, class_offering_id, created_at) VALUES (?, ?, 'new', ?, ?, ?, ?, ?)",
-            (course_id, data['title'], data['requirements_md'], data['rubric_md'], data['grading_mode'],
+            (actual_course_id, data['title'], data['requirements_md'], data['rubric_md'], data['grading_mode'],
              int(class_offering_id) if class_offering_id else None, created_at)
         )
         new_id = cursor.lastrowid
         conn.commit()
     # 作业文件夹现在按 Course / Assignment 组织
-    assignment_dir = HOMEWORK_SUBMISSIONS_DIR / str(course_id) / str(new_id)
+    assignment_dir = HOMEWORK_SUBMISSIONS_DIR / str(actual_course_id) / str(new_id)
     assignment_dir.mkdir(parents=True, exist_ok=True)
     return {"status": "success", "new_assignment_id": new_id}
 
@@ -46,9 +63,22 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
 async def update_assignment(assignment_id: str, request: Request, user: dict = Depends(get_current_teacher)):
     data = await request.json()
     with get_db_connection() as conn:
+        assignment = conn.execute(
+            """SELECT a.*, c.created_by_teacher_id
+               FROM assignments a
+               JOIN courses c ON a.course_id = c.id
+               WHERE a.id = ?""",
+            (assignment_id,)
+        ).fetchone()
+        if not assignment:
+            raise HTTPException(404, "作业不存在")
+        if assignment['created_by_teacher_id'] != user['id']:
+            raise HTTPException(403, "无权修改该作业")
+
         conn.execute(
             "UPDATE assignments SET title = ?, requirements_md = ?, rubric_md = ?, grading_mode = ?, status = ? WHERE id = ?",
-            (data['title'], data['requirements_md'], data['rubric_md'], data['grading_mode'], data['status'],
+            (data['title'], data['requirements_md'], data['rubric_md'], data['grading_mode'],
+             data.get('status', assignment['status']),
              assignment_id))
         conn.commit()
     return {"status": "success", "updated_assignment_id": assignment_id}
@@ -57,6 +87,18 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
 @router.delete("/assignments/{assignment_id}", response_class=JSONResponse)
 async def delete_assignment(assignment_id: str, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
+        assignment = conn.execute(
+            """SELECT a.id, c.created_by_teacher_id
+               FROM assignments a
+               JOIN courses c ON a.course_id = c.id
+               WHERE a.id = ?""",
+            (assignment_id,)
+        ).fetchone()
+        if not assignment:
+            raise HTTPException(404, "作业不存在")
+        if assignment['created_by_teacher_id'] != user['id']:
+            raise HTTPException(403, "无权删除该作业")
+
         conn.execute("DELETE FROM assignments WHERE id = ?", (assignment_id,))
         conn.commit()
     # TODO: 删除磁盘上的文件夹
@@ -365,7 +407,10 @@ async def create_exam_paper(request: Request, user: dict = Depends(get_current_t
 async def get_exam_paper(paper_id: str, user: dict = Depends(get_current_user)):
     """获取试卷详情"""
     with get_db_connection() as conn:
-        paper = conn.execute("SELECT * FROM exam_papers WHERE id = ?", (paper_id,)).fetchone()
+        paper = conn.execute(
+            "SELECT * FROM exam_papers WHERE id = ? AND teacher_id = ?",
+            (paper_id, user['id'])
+        ).fetchone()
         if not paper:
             raise HTTPException(404, "试卷不存在")
         result = dict(paper)
@@ -449,6 +494,13 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
             raise HTTPException(404, "课堂不存在或无权操作")
 
         # 创建作业记录
+        existing_assignment = conn.execute(
+            "SELECT id FROM assignments WHERE exam_paper_id = ? AND class_offering_id = ?",
+            (paper_id, int(class_offering_id))
+        ).fetchone()
+        if existing_assignment:
+            raise HTTPException(409, "该试卷已添加到当前课堂，请勿重复发布")
+
         created_at = datetime.now().isoformat()
         cursor = conn.execute(
             """INSERT INTO assignments (course_id, title, status, requirements_md, rubric_md, grading_mode, exam_paper_id, class_offering_id, created_at)
@@ -463,5 +515,9 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
         conn.commit()
         assignment_dir = HOMEWORK_SUBMISSIONS_DIR / str(offering['course_id']) / str(new_assignment_id)
         assignment_dir.mkdir(parents=True, exist_ok=True)
-    return {"status": "success", "assignment_id": new_assignment_id}
+    return {
+        "status": "success",
+        "assignment_id": new_assignment_id,
+        "message": "试卷已成功发布到当前课堂"
+    }
 

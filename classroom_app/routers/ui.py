@@ -237,10 +237,16 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
             if offering_data['teacher_id'] != user['id']:
                 raise HTTPException(403, "您不是此课堂的教师")
 
-        files_cursor = conn.execute(
-            "SELECT * FROM course_files WHERE course_id = ? AND is_public = TRUE AND is_teacher_resource = FALSE",
-            (course_id,)
-        )
+        if user['role'] == 'teacher':
+            files_cursor = conn.execute(
+                "SELECT * FROM course_files WHERE course_id = ?",
+                (course_id,)
+            )
+        else:
+            files_cursor = conn.execute(
+                "SELECT * FROM course_files WHERE course_id = ? AND is_public = TRUE AND is_teacher_resource = FALSE",
+                (course_id,)
+            )
 
         def format_size(size_bytes: int) -> str:
             """辅助函数：将字节大小转换为人类可读格式"""

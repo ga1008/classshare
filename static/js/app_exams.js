@@ -1,98 +1,167 @@
-/**
- * app_exams.js
- * Assignment and exam management module for classroom workspace.
- * Handles CRUD operations for assignments and exam paper assignment.
- */
-
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml } from './ui.js';
 
 let config = null;
 
-/**
- * Initialize the exam app module
- * @param {object} appConfig - window.APP_CONFIG from template
- */
+function getExamAssignFeedbackEl() {
+    return document.getElementById('exam-assign-feedback');
+}
+
+function setExamAssignFeedback(type, message) {
+    const feedback = getExamAssignFeedbackEl();
+    if (!feedback) return;
+
+    if (!message) {
+        feedback.textContent = '';
+        feedback.classList.add('hidden');
+        feedback.removeAttribute('data-type');
+        return;
+    }
+
+    feedback.textContent = message;
+    feedback.dataset.type = type;
+    feedback.classList.remove('hidden');
+}
+
+function getQuestionCount(paper) {
+    try {
+        const raw = typeof paper.questions_json === 'string'
+            ? JSON.parse(paper.questions_json)
+            : (paper.questions_json || {});
+        return (raw.pages || []).reduce((total, page) => total + ((page.questions || []).length), 0);
+    } catch {
+        return 0;
+    }
+}
+
+function getPageCount(paper) {
+    try {
+        const raw = typeof paper.questions_json === 'string'
+            ? JSON.parse(paper.questions_json)
+            : (paper.questions_json || {});
+        return (raw.pages || []).length;
+    } catch {
+        return 0;
+    }
+}
+
+function getConfirmButton() {
+    return document.getElementById('exam-assign-confirm-btn');
+}
+
 export function init(appConfig) {
     config = appConfig;
 }
 
-/**
- * Load exam papers for the exam-assign modal
- */
 export async function loadExamPapers() {
     const container = document.getElementById('exam-list-container');
     if (!container) return;
 
+    setExamAssignFeedback(null, '');
     container.innerHTML = '<div class="text-center p-4"><div class="spinner"></div></div>';
 
     try {
-        const data = await apiFetch('/api/exam-papers');
-        const papers = data.papers || data || [];
+        const data = await apiFetch('/api/exam-papers', { silent: true });
+        const papers = Array.isArray(data?.papers) ? data.papers : [];
 
         if (papers.length === 0) {
-            container.innerHTML = '<p class="text-muted text-center p-4">暂无试卷，请先在管理中心创建试卷。</p>';
+            container.innerHTML = `
+                <div class="empty-state assignment-empty-state">
+                    <h3>试卷库为空</h3>
+                    <p class="text-muted">请先前往管理中心创建试卷，然后再发布到当前课堂。</p>
+                    <a href="/manage/exams" class="btn btn-outline btn-sm">前往试卷库</a>
+                </div>
+            `;
             return;
         }
 
-        container.innerHTML = papers.map(p => `
-            <label class="card card-interactive" style="padding: var(--spacing-md); cursor: pointer;">
-                <div class="flex items-center gap-3">
-                    <input type="radio" name="exam-paper" value="${p.id}" class="exam-paper-radio shrink-0">
-                    <div class="flex-1 min-w-0">
-                        <div class="font-semibold truncate">${escapeHtml(p.title)}</div>
-                        <div class="text-muted text-sm">${p.question_count || 0} 道题${p.description ? ' · ' + escapeHtml(p.description).substring(0, 40) : ''}</div>
+        container.innerHTML = papers.map((paper) => {
+            const pageCount = getPageCount(paper);
+            const questionCount = getQuestionCount(paper);
+            const desc = paper.description
+                ? escapeHtml(String(paper.description).slice(0, 80))
+                : '未填写试卷说明。';
+
+            return `
+                <label class="exam-paper-option">
+                    <input type="radio" name="exam-paper" value="${escapeHtml(paper.id)}" class="exam-paper-radio shrink-0">
+                    <div class="exam-paper-option-main">
+                        <div class="exam-paper-option-title">${escapeHtml(paper.title)}</div>
+                        <p class="exam-paper-option-desc">${desc}</p>
+                        <div class="exam-paper-option-meta">
+                            <span class="badge badge-primary">${pageCount} 个部分</span>
+                            <span class="badge badge-outline">${questionCount} 道题</span>
+                            <span class="badge badge-outline">${paper.status === 'published' ? '已发布' : '试卷库'}</span>
+                        </div>
                     </div>
-                </div>
-            </label>
-        `).join('');
-    } catch (e) {
-        console.error('Failed to load exam papers:', e);
-        container.innerHTML = '<p class="text-danger text-center p-4">加载试卷列表失败</p>';
+                </label>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Failed to load exam papers:', error);
+        container.innerHTML = `
+            <div class="inline-feedback" data-type="error">
+                试卷列表加载失败，请刷新后重试。
+            </div>
+        `;
+        setExamAssignFeedback('error', error.message || '试卷列表加载失败，请稍后重试。');
     }
 }
 
-/**
- * Confirm assigning selected exam paper to current classroom
- */
 export async function confirmExamAssign() {
     const selected = document.querySelector('input[name="exam-paper"]:checked');
     if (!selected) {
+        setExamAssignFeedback('error', '请先从试卷库中选择一份试卷。');
         showToast('请先选择一份试卷', 'warning');
         return;
     }
 
-    const paperId = (selected.value || '').trim();
+    const paperId = String(selected.value || '').trim();
     if (!paperId) {
+        setExamAssignFeedback('error', '试卷标识无效，请重新选择。');
         showToast('试卷标识无效，请重新选择', 'warning');
         return;
     }
-    const btn = document.getElementById('exam-assign-confirm-btn');
-    if (btn) { btn.disabled = true; btn.textContent = '发布中...'; }
+
+    const btn = getConfirmButton();
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '发布中...';
+    }
+
+    setExamAssignFeedback(null, '');
 
     try {
-        await apiFetch(`/api/exam-papers/${paperId}/assign`, {
+        const result = await apiFetch(`/api/exam-papers/${encodeURIComponent(paperId)}/assign`, {
             method: 'POST',
             body: {
                 paper_id: paperId,
                 class_offering_id: config.classOfferingId
-            }
+            },
+            silent: true
         });
 
+        const message = result?.message || '试卷已成功加入当前课堂。';
+        setExamAssignFeedback('success', message);
         showToast('试卷已发布', 'success');
-        if (window.UI) window.UI.closeModal('exam-assign-modal');
-        // Reload page to show new assignment
-        setTimeout(() => location.reload(), 500);
-    } catch (e) {
-        showToast('发布失败: ' + (e.message || '未知错误'), 'error');
+
+        if (window.UI) {
+            window.UI.closeModal('exam-assign-modal');
+        }
+        setTimeout(() => window.location.reload(), 500);
+    } catch (error) {
+        console.error('Failed to assign exam paper:', error);
+        const message = error?.message || '发布失败，请稍后重试。';
+        setExamAssignFeedback('error', message);
+        showToast(`发布失败：${message}`, 'error');
     } finally {
-        if (btn) { btn.disabled = false; btn.textContent = '确认发布'; }
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '确认发布';
+        }
     }
 }
 
-/**
- * Save or update an assignment from the modal form
- */
 export async function saveAssignment() {
     const idEl = document.getElementById('assignment-id');
     const titleEl = document.getElementById('assignment-title');
@@ -108,7 +177,10 @@ export async function saveAssignment() {
 
     const assignmentId = idEl ? idEl.value : '';
     const btn = document.getElementById('btn-save-assignment');
-    if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '保存中...';
+    }
 
     const body = {
         title,
@@ -120,33 +192,34 @@ export async function saveAssignment() {
 
     try {
         if (assignmentId) {
-            // Update existing
             await apiFetch(`/api/assignments/${assignmentId}`, {
                 method: 'PUT',
                 body
             });
             showToast('作业已更新', 'success');
         } else {
-            // Create new
-            await apiFetch(`/api/courses/${config.classOfferingId}/assignments`, {
+            await apiFetch(`/api/courses/${config.courseId}/assignments`, {
                 method: 'POST',
                 body
             });
             showToast('作业已创建', 'success');
         }
 
-        if (window.UI) window.UI.closeModal('assignment-modal');
-        setTimeout(() => location.reload(), 500);
-    } catch (e) {
-        showToast('保存失败: ' + (e.message || '未知错误'), 'error');
+        if (window.UI) {
+            window.UI.closeModal('assignment-modal');
+        }
+        setTimeout(() => window.location.reload(), 500);
+    } catch (error) {
+        console.error('Failed to save assignment:', error);
+        showToast(`保存失败：${error.message || '未知错误'}`, 'error');
     } finally {
-        if (btn) { btn.disabled = false; btn.textContent = '保存作业'; }
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '保存作业';
+        }
     }
 }
 
-/**
- * Open assignment modal for editing
- */
 export function editAssignment(assignmentId, title, requirements, rubric, gradingMode) {
     const idEl = document.getElementById('assignment-id');
     const titleEl = document.getElementById('assignment-title');
@@ -160,12 +233,12 @@ export function editAssignment(assignmentId, title, requirements, rubric, gradin
     if (rubricEl) rubricEl.value = rubric || '';
     if (modeEl) modeEl.value = gradingMode || 'manual';
 
-    if (window.UI) window.UI.openModal('assignment-modal');
+    setExamAssignFeedback(null, '');
+    if (window.UI) {
+        window.UI.openModal('assignment-modal');
+    }
 }
 
-/**
- * Reset and open assignment modal for new assignment
- */
 export function newAssignment() {
     editAssignment('', '', '', '', 'manual');
 }

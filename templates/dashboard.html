@@ -1,6 +1,6 @@
 {% extends "base_navbar.html" %}
 
-{% block title %}我的仪表盘 - 课堂平台{% endblock %}
+{% block title %}我的班级课堂 - 课堂平台{% endblock %}
 
 {% block css %}
 {{ super() }}
@@ -22,12 +22,6 @@
         margin: 0;
         color: var(--text-secondary);
         font-size: 0.92rem;
-    }
-
-    .course-card {
-        border: 1px solid var(--border-color);
-        border-top-width: 5px;
-        backdrop-filter: blur(5px);
     }
 
     .course-list {
@@ -88,11 +82,30 @@
     }
 
     @media (max-width: 768px) {
-        .dashboard-header { flex-direction: column; align-items: flex-start; }
-        .course-list-item { grid-template-columns: 1fr; }
-        .course-list-enter { justify-content: flex-start; }
+        .dashboard-header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .course-list-item {
+            grid-template-columns: 1fr;
+        }
+
+        .course-list-enter {
+            justify-content: flex-start;
+        }
     }
 </style>
+{% endblock %}
+
+{% block navbar_actions %}
+{% if user_info.role == 'teacher' %}
+<a href="/manage" class="btn btn-outline btn-sm">管理中心</a>
+<a href="/manage/offerings" class="btn btn-primary btn-sm">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+    开设新课堂
+</a>
+{% endif %}
 {% endblock %}
 
 {% block main_content %}
@@ -101,12 +114,6 @@
         <h2 class="mb-1">我的班级课堂</h2>
         <p class="dashboard-subtitle">统一查看课堂、作业与资源，保持教学流程高效顺畅。</p>
     </div>
-    {% if user_info.role == 'teacher' %}
-    <a href="/manage/offerings" class="btn btn-primary btn-sm">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-        开设新课堂
-    </a>
-    {% endif %}
 </div>
 
 <div class="course-list">
@@ -117,12 +124,12 @@
             <p>{{ offering.class_name }}</p>
         </div>
         <div class="course-list-meta">
-                {% if user_info.role == 'student' %}
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                教师: {{ offering.teacher_name }}
-                {% else %}
-                <span class="badge badge-success">教师身份</span>
-                {% endif %}
+            {% if user_info.role == 'student' %}
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+            教师：{{ offering.teacher_name }}
+            {% else %}
+            <span class="badge badge-success">教师身份</span>
+            {% endif %}
         </div>
         <div class="course-list-enter">
             进入课堂
@@ -135,8 +142,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="text-muted mx-auto mb-2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
             <h3 class="text-muted mb-1">暂无课堂</h3>
             {% if user_info.role == 'teacher' %}
-            <p class="text-muted mb-3">您目前没有开设任何班级课堂。</p>
-            <a href="/manage/offerings" class="btn btn-primary">前往开设课堂</a>
+            <p class="text-muted mb-3">您目前没有开设任何班级课堂。请使用顶部导航中的“开设新课堂”按钮创建。</p>
             {% else %}
             <p class="text-muted">您目前没有加入任何班级课堂，请联系您的教师。</p>
             {% endif %}

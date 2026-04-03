@@ -51,6 +51,9 @@ async def not_found_exception_handler(request: Request, exc: HTTPException):
     """
     捕获所有 404 (Not Found) 错误，并返回一个友好的 HTML 页面。
     """
+    if request.url.path.startswith("/api"):
+        return JSONResponse({"detail": "接口不存在"}, status_code=404)
+
     return templates.TemplateResponse("error.html", {
         "request": request,
         "error_code": 404,
@@ -69,6 +72,9 @@ async def general_exception_handler(request: Request, exc: Exception):
     print(f"[ERROR] 发生未捕获的异常: {exc}", file=sys.stderr)
     import traceback
     traceback.print_exc()
+
+    if request.url.path.startswith("/api"):
+        return JSONResponse({"detail": "服务器内部错误，请稍后重试"}, status_code=500)
 
     return templates.TemplateResponse("error.html", {
         "request": request,

@@ -1,23 +1,20 @@
-/**
- * chat.js
- * Handles WebSocket connection and Chat UI for the classroom.
- */
-
 export class ClassroomChat {
-    constructor(classOfferingId, chatMessagesContainerId, chatInputId, sendButtonId) {
-        this.classOfferingId = classOfferingId;
-        this.messagesBox = document.getElementById(chatMessagesContainerId);
-        this.chatInput = document.getElementById(chatInputId);
-        this.sendBtn = document.getElementById(sendButtonId);
-        this.ws = null;
+    constructor(options) {
+        this.classOfferingId = options.classOfferingId;
+        this.messagesBox = document.getElementById(options.chatMessagesContainerId);
+        this.chatInput = document.getElementById(options.chatInputId);
+        this.chatForm = document.getElementById(options.chatFormId);
+        this.statusIndicator = document.getElementById(options.statusIndicatorId);
+        this.statusText = document.getElementById(options.statusTextId);
+        this.currentUser = options.currentUser || {};
 
-        // Callbacks for external components
-        this.onFileEvent = null; // Called when a file is uploaded/deleted to refresh file list
+        this.ws = null;
+        this.onFileEvent = null;
     }
 
     init() {
-        if (!this.messagesBox || !this.chatInput || !this.sendBtn) {
-            console.error("ClassroomChat: Required DOM elements not found.");
+        if (!this.messagesBox || !this.chatInput || !this.chatForm) {
+            console.error('ClassroomChat: required DOM elements not found.');
             return;
         }
 
@@ -25,116 +22,149 @@ export class ClassroomChat {
         this.ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/${this.classOfferingId}`);
 
         this.ws.onmessage = this.handleMessage.bind(this);
-
-        this.ws.onopen = () => {
-            console.log("WebSocket connected.");
-            const statusEl = document.getElementById('ws-status');
-            if (statusEl) {
-                statusEl.classList.add('status-online');
-                statusEl.title = '连接正常';
-            }
-        };
-
+        this.ws.onopen = () => this.updateConnectionState(true);
         this.ws.onerror = (error) => {
-            console.error("WebSocket error:", error);
-            if (window.UI) window.UI.showToast("聊天室连接出现错误", "error");
-        };
-
-        this.ws.onclose = () => {
-            console.warn("WebSocket connection closed.");
-            this.appendSystemMessage("连接已断开，请刷新页面重试。");
-            const statusEl = document.getElementById('ws-status');
-            if (statusEl) {
-                statusEl.classList.remove('status-online');
-                statusEl.title = '连接已断开';
+            console.error('WebSocket error:', error);
+            this.updateConnectionState(false, '连接异常');
+            if (window.UI) {
+                window.UI.showToast('课堂研讨室连接出现错误', 'error');
             }
         };
+        this.ws.onclose = () => {
+            this.updateConnectionState(false, '连接已断开');
+            this.appendSystemMessage('连接已断开，请刷新页面后重试。');
+        };
 
-        // Bind UI events
-        this.sendBtn.addEventListener('submit', (e) => {
-            e.preventDefault();
+        this.chatForm.addEventListener('submit', (event) => {
+            event.preventDefault();
             this.sendMessage();
         });
-        this.chatInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
+
+        this.chatInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
                 this.sendMessage();
             }
         });
+
         this.chatInput.addEventListener('input', () => {
             this.chatInput.style.height = 'auto';
-            this.chatInput.style.height = `${Math.min(this.chatInput.scrollHeight, 120)}px`;
+            this.chatInput.style.height = `${Math.min(this.chatInput.scrollHeight, 160)}px`;
         });
+    }
+
+    updateConnectionState(isOnline, text = null) {
+        if (this.statusIndicator) {
+            this.statusIndicator.classList.toggle('status-online', isOnline);
+        }
+        if (this.statusText) {
+            this.statusText.textContent = text || (isOnline ? '实时在线' : '连接异常');
+        }
+        if (this.statusIndicator) {
+            this.statusIndicator.title = text || (isOnline ? '连接正常' : '连接异常');
+        }
     }
 
     handleMessage(event) {
         try {
             const data = JSON.parse(event.data);
 
+            if (data.type === 'history') {
+                if (Array.isArray(data.data)) {
+                    data.data.forEach((item) => {
+                        if (item.type === 'chat') this.appendChatMessage(item);
+                        if (item.type === 'system') this.appendSystemMessage(item.message);
+                    });
+                }
+                return;
+            }
+
             if (data.type === 'chat') {
                 this.appendChatMessage(data);
-            } else if (data.type === 'system') {
-                this.appendSystemMessage(data.message);
+                return;
+            }
 
-                // Trigger external file refresh if system message is about files
-                if (data.message && (data.message.includes('上传了新文件') || data.message.includes('删除了文件'))) {
+            if (data.type === 'system') {
+                this.appendSystemMessage(data.message);
+                if (data.message && (data.message.includes('上传') || data.message.includes('删除'))) {
                     if (typeof this.onFileEvent === 'function') {
                         this.onFileEvent();
                     }
                 }
-            } else if (data.type === 'history') {
-                // Render history
-                if (Array.isArray(data.data)) {
-                    data.data.forEach(msg => {
-                        if (msg.type === 'chat') this.appendChatMessage(msg);
-                        else if (msg.type === 'system') this.appendSystemMessage(msg.message);
-                    });
-                }
             }
         } catch (error) {
-            console.error("Error parsing WebSocket message:", error, event.data);
+            console.error('Error parsing WebSocket message:', error, event.data);
         }
     }
 
-    appendChatMessage(msg) {
-        const msgDiv = document.createElement('div');
-        msgDiv.className = 'chat-message';
+    appendChatMessage(message) {
+        this.removeEmptyState();
 
-        // Add special class for teacher
-        const isTeacher = msg.role === 'teacher' || msg.sender.includes('教师');
-        const senderClass = isTeacher ? 'sender teacher' : 'sender';
+        const wrapper = document.createElement('div');
+        const sender = String(message.sender || '课堂成员');
+        const text = String(message.message || '');
+        const role = String(message.role || '');
+        const isCurrentUser = sender === this.currentUser.name && role === this.currentUser.role;
+        const initials = sender.trim().slice(0, 1).toUpperCase() || '?';
 
-        msgDiv.innerHTML = `
-            <div class="chat-message-header">
-                <span class="${senderClass}">${window.UI ? window.UI.escapeHtml(msg.sender) : msg.sender}</span>
-                <span class="time">${msg.timestamp}</span>
+        wrapper.className = `chat-message${isCurrentUser ? ' chat-self' : ''}`;
+        wrapper.innerHTML = `
+            <div class="chat-message-row">
+                <div class="chat-avatar" aria-hidden="true">${this.escape(initials)}</div>
+                <div class="chat-message-main">
+                    <div class="chat-message-header">
+                        <span class="sender${role === 'teacher' ? ' teacher' : ''}">${this.escape(sender)}</span>
+                        <span class="time">${this.escape(message.timestamp || '')}</span>
+                    </div>
+                    <div class="message-content">${this.escape(text).replace(/\n/g, '<br>')}</div>
+                </div>
             </div>
-            <div class="message-content">${window.UI ? window.UI.escapeHtml(msg.message) : msg.message}</div>
         `;
 
-        this.messagesBox.appendChild(msgDiv);
+        this.messagesBox.appendChild(wrapper);
         this.scrollToBottom();
     }
 
-    appendSystemMessage(message) {
-        const msgDiv = document.createElement('div');
-        msgDiv.className = 'chat-message system';
-        msgDiv.innerHTML = `<span class="message-content">${window.UI ? window.UI.escapeHtml(message) : message}</span>`;
+    appendSystemMessage(text) {
+        this.removeEmptyState();
 
-        this.messagesBox.appendChild(msgDiv);
+        const wrapper = document.createElement('div');
+        wrapper.className = 'chat-message system';
+        wrapper.innerHTML = `<span class="message-content">${this.escape(String(text || '系统消息'))}</span>`;
+
+        this.messagesBox.appendChild(wrapper);
         this.scrollToBottom();
     }
 
     sendMessage() {
         const message = this.chatInput.value.trim();
-        if (message && this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(message);
-            this.chatInput.value = '';
-            this.chatInput.style.height = '';
+        if (!message || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+        this.ws.send(message);
+        this.chatInput.value = '';
+        this.chatInput.style.height = '';
+    }
+
+    removeEmptyState() {
+        const emptyState = document.getElementById('chat-empty-state');
+        if (emptyState) {
+            emptyState.remove();
         }
     }
 
     scrollToBottom() {
         this.messagesBox.scrollTop = this.messagesBox.scrollHeight;
+    }
+
+    escape(value) {
+        if (window.UI && typeof window.UI.escapeHtml === 'function') {
+            return window.UI.escapeHtml(value);
+        }
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
     }
 }
