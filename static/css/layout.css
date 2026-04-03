@@ -323,6 +323,7 @@
     padding: var(--spacing-md);
     border-top: 1px solid var(--border-color);
     flex-shrink: 0;
+    background: linear-gradient(180deg, rgba(79, 70, 229, 0.02), rgba(255, 255, 255, 0.92));
 }
 
 /* Chat Messages */
@@ -412,6 +413,63 @@
 
 /* Padding right utility */
 .pr-2 { padding-right: var(--spacing-md); }
+
+.assignment-grid {
+    min-height: 220px;
+    align-content: start;
+}
+
+.assignment-empty-state {
+    border: 1px dashed var(--border-color);
+    border-radius: var(--radius-lg);
+    background: linear-gradient(135deg, rgba(79, 70, 229, 0.06), rgba(16, 185, 129, 0.05));
+}
+
+.chat-composer {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--spacing-sm);
+}
+
+.chat-composer-input-wrap {
+    flex: 1;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: #fff;
+    box-shadow: var(--shadow-sm);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.chat-composer-input-wrap:focus-within {
+    border-color: var(--primary-color);
+    box-shadow: var(--shadow-focus);
+}
+
+.chat-composer-input {
+    resize: none;
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    min-height: 42px;
+    max-height: 120px;
+}
+
+.chat-composer-input:focus {
+    box-shadow: none;
+}
+
+.chat-send-btn {
+    border-radius: var(--radius-full);
+    width: 42px;
+    height: 42px;
+    padding: 0;
+}
+
+.exam-paper-radio {
+    accent-color: var(--primary-color);
+    width: 16px;
+    height: 16px;
+}
 
 /* =========================================
    Classroom Responsive

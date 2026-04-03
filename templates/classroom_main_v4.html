@@ -64,7 +64,7 @@
                 {% endif %}
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 assignment-grid">
                 {% for assignment in assignments %}
                 <div class="card assignment-card hover-lift cursor-pointer" onclick="location.href='/assignment/{{ assignment.id }}'">
                     <div class="card-body">
@@ -98,8 +98,9 @@
                 </div>
                 {% else %}
                 <div class="col-span-full">
-                    <div class="empty-state">
-                        <p class="text-muted">暂无布置的作业或试卷</p>
+                    <div class="empty-state assignment-empty-state">
+                        <h3 class="mb-2">当前还没有作业</h3>
+                        <p class="text-muted">布置后将以统一卡片样式展示，支持状态追踪与快速进入。</p>
                     </div>
                 </div>
                 {% endfor %}
@@ -159,9 +160,11 @@
             </div>
 
             <div class="chat-input-area">
-                <form id="chat-form" class="flex gap-2">
-                    <input type="text" id="chat-input" class="form-control" placeholder="输入讨论内容..." autocomplete="off">
-                    <button type="submit" class="btn btn-primary btn-icon shrink-0" title="发送">
+                <form id="chat-form" class="chat-composer">
+                    <div class="chat-composer-input-wrap">
+                        <textarea id="chat-input" class="form-control chat-composer-input" placeholder="输入讨论内容，Enter 发送 / Shift+Enter 换行" autocomplete="off" rows="1"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-icon shrink-0 chat-send-btn" title="发送">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                     </button>
                 </form>

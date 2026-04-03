@@ -30,8 +30,67 @@
         backdrop-filter: blur(5px);
     }
 
+    .course-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+    }
+
+    .course-list-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto;
+        align-items: center;
+        gap: var(--spacing-md);
+        padding: var(--spacing-lg);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-xl);
+        background: linear-gradient(135deg, rgba(79, 70, 229, 0.06), rgba(255, 255, 255, 0.95));
+        text-decoration: none;
+        color: inherit;
+        box-shadow: var(--shadow-sm);
+        transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
+    }
+
+    .course-list-item:hover {
+        transform: translateY(-2px);
+        border-color: var(--primary-color);
+        box-shadow: var(--shadow-md);
+        text-decoration: none;
+        color: inherit;
+    }
+
+    .course-list-main h3 {
+        margin: 0;
+        font-size: 1.1rem;
+    }
+
+    .course-list-main p {
+        margin: 4px 0 0;
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+    }
+
+    .course-list-meta {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        color: var(--text-muted);
+        font-size: 0.86rem;
+    }
+
+    .course-list-enter {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--primary-color);
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+
     @media (max-width: 768px) {
         .dashboard-header { flex-direction: column; align-items: flex-start; }
+        .course-list-item { grid-template-columns: 1fr; }
+        .course-list-enter { justify-content: flex-start; }
     }
 </style>
 {% endblock %}
@@ -50,20 +109,24 @@
     {% endif %}
 </div>
 
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+<div class="course-list">
     {% for offering in class_offerings %}
-    <a href="/classroom/{{ offering.id }}" class="card course-card {{ 'teacher-card' if user_info.role == 'teacher' else '' }}">
-        <div class="course-card-body">
-            <h3 class="course-card-title">{{ offering.course_name }}</h3>
-            <p class="course-card-subtitle">{{ offering.class_name }}</p>
-            <div class="course-card-meta">
+    <a href="/classroom/{{ offering.id }}" class="course-list-item">
+        <div class="course-list-main">
+            <h3>{{ offering.course_name }}</h3>
+            <p>{{ offering.class_name }}</p>
+        </div>
+        <div class="course-list-meta">
                 {% if user_info.role == 'student' %}
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
                 教师: {{ offering.teacher_name }}
                 {% else %}
                 <span class="badge badge-success">教师身份</span>
                 {% endif %}
-            </div>
+        </div>
+        <div class="course-list-enter">
+            进入课堂
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
         </div>
     </a>
     {% else %}
