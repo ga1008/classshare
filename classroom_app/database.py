@@ -657,6 +657,14 @@ def init_database():
                             NULL
                             DEFAULT
                             'draft',
+                            ai_gen_task_id
+                            TEXT,
+                            ai_gen_status
+                            TEXT
+                            DEFAULT
+                            NULL,
+                            ai_gen_error
+                            TEXT,
                             created_at
                             TEXT
                             DEFAULT
@@ -675,6 +683,20 @@ def init_database():
                         )
                             )
                         ''')
+
+            # 兼容已有数据库：为 exam_papers 添加AI生成相关列
+            try:
+                conn.execute("ALTER TABLE exam_papers ADD COLUMN ai_gen_task_id TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE exam_papers ADD COLUMN ai_gen_status TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE exam_papers ADD COLUMN ai_gen_error TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
 
             conn.commit()
         print("[DB] V4.0 数据库架构初始化/验证完成。")

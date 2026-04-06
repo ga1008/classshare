@@ -10,6 +10,7 @@ export class ClassroomChat {
 
         this.ws = null;
         this.onFileEvent = null;
+        this.displayName = null;
     }
 
     init() {
@@ -84,6 +85,11 @@ export class ClassroomChat {
                 return;
             }
 
+            if (data.type === 'user_display_name') {
+                this.displayName = data.display_name || data.displayName;
+                return;
+            }
+
             if (data.type === 'system') {
                 this.appendSystemMessage(data.message);
                 if (data.message && (data.message.includes('上传') || data.message.includes('删除'))) {
@@ -104,7 +110,8 @@ export class ClassroomChat {
         const sender = String(message.sender || '课堂成员');
         const text = String(message.message || '');
         const role = String(message.role || '');
-        const isCurrentUser = sender === this.currentUser.name && role === this.currentUser.role;
+        const myName = this.displayName || this.currentUser.name;
+        const isCurrentUser = sender === myName && role === this.currentUser.role;
         const initials = sender.trim().slice(0, 1).toUpperCase() || '?';
 
         wrapper.className = `chat-message${isCurrentUser ? ' chat-self' : ''}`;

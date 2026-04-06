@@ -61,16 +61,22 @@
 
 <main class="classroom-workspace">
     <section class="workspace-hero">
-        <div class="workspace-hero-main">
+        <div class="workspace-hero-main" id="hero-info-card">
             <p class="workspace-kicker">课堂信息</p>
             <h1>{{ classroom.course_name }}</h1>
-            <p class="workspace-hero-text">
-                {% if classroom.course_description %}
-                {{ classroom.course_description }}
-                {% else %}
-                当前课程暂未填写课程简介。
-                {% endif %}
-            </p>
+            <div class="workspace-hero-desc-wrap">
+                <p class="workspace-hero-text">
+                    {% if classroom.course_description %}
+                    {{ classroom.course_description }}
+                    {% else %}
+                    当前课程暂未填写课程简介。
+                    {% endif %}
+                </p>
+                <button class="hero-desc-expand-btn" id="hero-desc-expand-btn" title="查看完整课程信息">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                    <span>展开详情</span>
+                </button>
+            </div>
             <div class="workspace-hero-meta">
                 <span>班级：{{ classroom.class_name }}</span>
                 <span>授课教师：{{ classroom.teacher_name }}</span>
@@ -396,6 +402,70 @@
 </div>
 {% endif %}
 
+<div id="course-info-popover" class="course-popover" style="display:none;">
+    <div class="course-popover-overlay" id="course-popover-overlay"></div>
+    <div class="course-popover-card">
+        <div class="course-popover-header">
+            <div>
+                <p class="course-popover-kicker">课程详情</p>
+                <h3 class="course-popover-title">{{ classroom.course_name }}</h3>
+            </div>
+            <button class="course-popover-close" id="course-popover-close" title="关闭">&times;</button>
+        </div>
+        <div class="course-popover-body">
+            {% if classroom.course_description %}
+            <div class="course-popover-section">
+                <h4>课程简介</h4>
+                <p>{{ classroom.course_description }}</p>
+            </div>
+            {% endif %}
+            <div class="course-popover-section">
+                <h4>基本信息</h4>
+                <div class="course-popover-info-grid">
+                    <div class="course-popover-info-item">
+                        <span class="info-label">班级</span>
+                        <span class="info-value">{{ classroom.class_name }}</span>
+                    </div>
+                    <div class="course-popover-info-item">
+                        <span class="info-label">授课教师</span>
+                        <span class="info-value">{{ classroom.teacher_name }}</span>
+                    </div>
+                    {% if classroom.semester %}
+                    <div class="course-popover-info-item">
+                        <span class="info-label">学期</span>
+                        <span class="info-value">{{ classroom.semester }}</span>
+                    </div>
+                    {% endif %}
+                    {% if classroom.course_credits is not none %}
+                    <div class="course-popover-info-item">
+                        <span class="info-label">学分</span>
+                        <span class="info-value">{{ classroom.course_credits }}</span>
+                    </div>
+                    {% endif %}
+                    {% if classroom.class_student_count is not none %}
+                    <div class="course-popover-info-item">
+                        <span class="info-label">班级人数</span>
+                        <span class="info-value">{{ classroom.class_student_count }}</span>
+                    </div>
+                    {% endif %}
+                    {% if classroom.schedule_info %}
+                    <div class="course-popover-info-item">
+                        <span class="info-label">上课安排</span>
+                        <span class="info-value">{{ classroom.schedule_info }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% if classroom.class_description %}
+            <div class="course-popover-section">
+                <h4>班级说明</h4>
+                <p>{{ classroom.class_description }}</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
 <button id="ai-chat-fab" title="课堂 AI 助手" class="shadow-lg">
     <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 3v.01M12 21v.01M3 12h.01M21 12h.01M5.64 5.64l.01.01M18.36 18.36l.01.01M5.64 18.36l.01.01M18.36 5.64l.01.01M12 8a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM16 12a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/>
@@ -449,6 +519,20 @@
     window.examApp = examApp;
 
     document.addEventListener('DOMContentLoaded', () => {
+        // Course info popover
+        const popover = document.getElementById('course-info-popover');
+        const overlay = document.getElementById('course-popover-overlay');
+        const closeBtn = document.getElementById('course-popover-close');
+        const expandBtn = document.getElementById('hero-desc-expand-btn');
+        const heroCard = document.getElementById('hero-info-card');
+        function openPopover() { popover.style.display = ''; popover.classList.add('popover-open'); }
+        function closePopover() { popover.classList.remove('popover-open'); setTimeout(() => { if (!popover.classList.contains('popover-open')) popover.style.display = 'none'; }, 280); }
+        if (expandBtn) expandBtn.addEventListener('click', e => { e.stopPropagation(); openPopover(); });
+        if (heroCard) heroCard.addEventListener('click', () => openPopover());
+        if (overlay) overlay.addEventListener('click', closePopover);
+        if (closeBtn) closeBtn.addEventListener('click', closePopover);
+        document.addEventListener('keydown', e => { if (e.key === 'Escape' && popover.classList.contains('popover-open')) closePopover(); });
+
         const chatApp = new ClassroomChat({
             classOfferingId: window.APP_CONFIG.classOfferingId,
             chatMessagesContainerId: 'chat-messages',

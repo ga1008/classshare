@@ -460,6 +460,14 @@ async def get_manage_ai_page(request: Request, user: dict = Depends(get_current_
 async def manage_exams_page(request: Request, user: dict = Depends(get_current_teacher)):
     """试卷库管理页面"""
     with get_db_connection() as conn:
+        # 自动将已完成的AI生成试卷从 generating 转为 draft
+        conn.execute(
+            """UPDATE exam_papers SET status = 'draft', ai_gen_status = NULL, updated_at = ?
+               WHERE teacher_id = ? AND status = 'generating' AND ai_gen_status = 'completed'""",
+            (datetime.now().isoformat(), user['id'])
+        )
+        conn.commit()
+
         papers_cursor = conn.execute(
             """SELECT ep.*,
                       (SELECT COUNT(*) FROM assignments WHERE exam_paper_id = ep.id) as assigned_count
@@ -468,7 +476,16 @@ async def manage_exams_page(request: Request, user: dict = Depends(get_current_t
                ORDER BY ep.updated_at DESC""",
             (user['id'],)
         )
-        papers = [dict(row) for row in papers_cursor]
+        papers = []
+        for row in papers_cursor:
+            paper = dict(row)
+            # 解析 questions_json
+            if paper.get('questions_json'):
+                try:
+                    paper['questions_json'] = json.loads(paper['questions_json'])
+                except (json.JSONDecodeError, TypeError):
+                    paper['questions_json'] = None
+            papers.append(paper)
 
     return templates.TemplateResponse("manage/exams.html", {
         "request": request,

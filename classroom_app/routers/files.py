@@ -751,9 +751,11 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
             data = await websocket.receive_text()
             now = datetime.now()
             display_time = now.strftime("%H:%M")
+            # 获取用户显示名字（临时名字或真实姓名）
+            display_name = manager.user_info.get(client_id, {}).get('display_name', ws_user['name'])
             message_obj = {
                 "type": "chat",
-                "sender": ws_user['name'],
+                "sender": display_name,
                 "role": ws_user['role'],
                 "message": data,
                 "timestamp": display_time
@@ -761,7 +763,7 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
             # 保存消息
             db_message = {
                 "type": "chat",
-                "sender": ws_user['name'],
+                "sender": display_name,
                 "role": ws_user['role'],
                 "message": data,
                 "timestamp": display_time,

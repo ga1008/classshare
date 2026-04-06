@@ -95,6 +95,14 @@ class GenerationRequest(BaseModel):
     model_type: Literal["standard", "thinking"] = "standard"
 
 
+class ExamGenerationRequest(BaseModel):
+    prompt: str
+    model_type: Literal["standard", "thinking"] = "thinking"
+    task_type: str = "exam_generation"
+    teacher_id: Optional[int] = None
+    class_offering_id: Optional[int] = None
+
+
 class GradingJob(BaseModel):
     submission_id: int
     rubric_md: str
@@ -135,6 +143,66 @@ GENERATION_SYSTEM_PROMPT = """
   "requirements_md": "## 作业：使用 Python Turtle 绘制学号最后一位数字\n\n**要求:**\n1. 使用 `turtle` 库。\n2. 绘制你学号的最后一位数字。\n3. ...",
   "rubric_md": "## 评分标准\n\n1. **正确使用turtle模块 (30分)**\n   - ...\n2. **准确绘制数字 (30分)**\n   - ...\n..."
 }
+"""
+
+EXAM_GENERATION_SYSTEM_PROMPT = """
+你是一个AI试卷生成专家，擅长根据教师的要求生成高质量的试卷题目。
+你的任务是生成完整的试卷题目，包括题目内容、选项（如果是选择题）、答案和解析。
+请务必使用 **中文** 进行回复。
+
+你必须严格按照以下JSON格式返回结果，不要包含任何额外的解释或代码块标记：
+{
+  "pages": [
+    {
+      "name": "第一部分",
+      "questions": [
+        {
+          "id": "q1",
+          "type": "radio",
+          "text": "题目内容",
+          "options": ["选项A", "选项B", "选项C", "选项D"],
+          "answer": "A",
+          "explanation": "解析内容"
+        },
+        {
+          "id": "q2",
+          "type": "checkbox",
+          "text": "多选题内容",
+          "options": ["选项A", "选项B", "选项C", "选项D"],
+          "answer": ["A", "B"],
+          "explanation": "解析内容"
+        },
+        {
+          "id": "q3",
+          "type": "text",
+          "text": "填空题内容",
+          "placeholder": "提示文本",
+          "answer": "正确答案",
+          "explanation": "解析内容"
+        },
+        {
+          "id": "q4",
+          "type": "textarea",
+          "text": "问答题内容",
+          "placeholder": "提示文本",
+          "answer": "参考答案",
+          "explanation": "解析内容"
+        }
+      ]
+    }
+  ],
+  "description": "试卷描述或说明"
+}
+
+注意：
+1. id字段格式：q1, q2, q3... 或 p1_q1, p1_q2...
+2. type字段必须是：radio（单选题）、checkbox（多选题）、text（填空题）、textarea（问答题）
+3. 对于radio和checkbox类型，必须提供options数组（至少2个选项）
+4. 对于text和textarea类型，可以提供placeholder作为提示文本
+5. answer字段：radio类型为单个选项字母（如"A"），checkbox类型为选项字母数组（如["A", "B"]），text和textarea类型为字符串答案
+6. explanation字段：每道题的解析，说明为什么答案正确或其他选项为什么错误
+7. 试卷可以包含多个pages（部分），每个部分有name和questions数组
+8. 根据教师要求的总题数、题型分布和难度生成题目
 """
 
 # --- Lifespan (替换旧的 Startup/Shutdown) ---
@@ -542,6 +610,61 @@ async def _call_ai_platform_chat(
 async def generate_assignment_task(req: GenerationRequest):
     messages = [{"role": "system", "content": GENERATION_SYSTEM_PROMPT}, {"role": "user", "content": req.prompt}]
     return await _call_ai_platform(messages, capability=req.model_type, require_json_output=True)
+
+
+@app.post("/api/ai/generate-exam")
+async def generate_exam_task(req: ExamGenerationRequest):
+    """生成试卷题目（使用高级模型）"""
+    # 构建系统提示词和用户提示词
+    system_prompt = EXAM_GENERATION_SYSTEM_PROMPT
+    user_prompt = req.prompt
+
+    # 如果有课堂ID，可以添加更多上下文信息
+    if req.class_offering_id:
+        user_prompt = f"课堂ID: {req.class_offering_id}\n{user_prompt}"
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+
+    # 使用thinking模型（高级模型）生成试卷
+    result = await _call_ai_platform(
+        messages,
+        capability=req.model_type,  # 使用thinking模型
+        require_json_output=True
+    )
+
+    # 验证返回的数据结构
+    if not isinstance(result, dict):
+        raise HTTPException(status_code=500, detail="AI返回的数据格式不正确")
+
+    # 确保有pages字段
+    if "pages" not in result:
+        # 尝试转换不同的格式
+        if "questions" in result:
+            # 如果是单个问题列表，转换为pages结构
+            result = {"pages": [{"name": "试卷题目", "questions": result["questions"]}]}
+        else:
+            raise HTTPException(status_code=500, detail="AI返回的数据缺少'pages'字段")
+
+    # 验证每个问题的结构
+    for page in result["pages"]:
+        if "questions" not in page:
+            page["questions"] = []
+        for question in page["questions"]:
+            # 确保每个问题都有必需的字段
+            if "id" not in question:
+                question["id"] = f"q{hash(str(question)) % 10000}"  # 生成一个简单的ID
+            if "type" not in question:
+                question["type"] = "radio"  # 默认类型
+            if "text" not in question:
+                question["text"] = "题目内容未生成"
+
+    return {
+        "status": "success",
+        "exam_data": result
+    }
 
 
 @app.post("/api/ai/chat-stream")

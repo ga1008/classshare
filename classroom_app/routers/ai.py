@@ -2,13 +2,17 @@ import base64
 import json
 import uuid
 import asyncio
+import time
+import traceback
 from pathlib import Path
-from typing import List, Literal
+from typing import List, Literal, Dict, Any, Optional
+from enum import Enum
+from datetime import datetime
 
 from fastapi.responses import StreamingResponse
 
 import httpx
-from fastapi import APIRouter, Request, HTTPException, Depends, UploadFile, File, Form
+from fastapi import APIRouter, Request, HTTPException, Depends, UploadFile, File, Form, BackgroundTasks
 from fastapi.responses import JSONResponse
 
 from ..config import MAX_UPLOAD_SIZE_MB, MAX_UPLOAD_SIZE_BYTES
@@ -17,6 +21,21 @@ from ..database import get_db_connection
 from ..dependencies import get_current_teacher, get_current_user
 
 router = APIRouter(prefix="/api")
+
+# ============================
+# AI试卷生成任务管理
+# ============================
+
+class ExamGenTaskStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+# 内存存储任务状态 (简单实现，生产环境应使用数据库)
+_exam_gen_tasks: Dict[str, Dict[str, Any]] = {}
+_exam_gen_tasks_lock = asyncio.Lock()
 
 
 @router.post("/ai/generate_assignment", response_class=JSONResponse)
@@ -783,4 +802,649 @@ async def handle_ai_chat(
 
     # 12. [!!! 核心修改: 返回 StreamingResponse !!!]
     return StreamingResponse(stream_and_save_generator(), media_type="text/plain; charset=utf-8")
+
+
+# ============================
+# AI试卷生成API
+# ============================
+
+def get_course_context_for_offering(class_offering_id: int, teacher_id: int) -> Dict[str, Any]:
+    """获取课堂的课程上下文信息（大纲、简介等）"""
+    with get_db_connection() as conn:
+        # 验证教师是否有权访问此课堂 - 先不使用LEFT JOIN
+        offering = conn.execute(
+            """SELECT co.id, co.course_id, c.name as course_name, c.description as course_description,
+                      cl.name as class_name
+               FROM class_offerings co
+               JOIN courses c ON co.course_id = c.id
+               JOIN classes cl ON co.class_id = cl.id
+               WHERE co.id = ? AND co.teacher_id = ?""",
+            (class_offering_id, teacher_id)
+        ).fetchone()
+
+        if not offering:
+            raise HTTPException(status_code=404, detail="课堂不存在或无权访问")
+
+        # 转换为字典
+        offering_dict = dict(offering)
+
+        # 单独获取AI配置（如果存在）
+        syllabus = ""
+        system_prompt = ""
+        ai_config = conn.execute(
+            "SELECT syllabus, system_prompt FROM ai_class_configs WHERE class_offering_id = ?",
+            (class_offering_id,)
+        ).fetchone()
+        if ai_config:
+            ai_dict = dict(ai_config)
+            syllabus = ai_dict.get('syllabus') or ""
+            system_prompt = ai_dict.get('system_prompt') or ""
+
+        # 获取课程文件信息（如果有）
+        materials = conn.execute(
+            """SELECT file_name as title, description, stored_path as file_path
+               FROM course_files
+               WHERE course_id = ?
+               ORDER BY uploaded_at DESC
+               LIMIT 10""",
+            (offering_dict['course_id'],)
+        ).fetchall()
+
+        return {
+            "offering_id": offering_dict['id'],
+            "course_name": offering_dict['course_name'],
+            "course_description": offering_dict.get('course_description') or "",
+            "class_name": offering_dict['class_name'],
+            "syllabus": syllabus,
+            "system_prompt": system_prompt,
+            "materials": [dict(row) for row in materials]
+        }
+
+
+async def generate_exam_questions_async(task_id: str, prompt: str, teacher_id: int, class_offering_id: Optional[int]):
+    """异步生成试卷题目（调用高级模型）"""
+    paper_id = None
+    try:
+        # 首先检查任务是否已被取消
+        async with _exam_gen_tasks_lock:
+            if task_id not in _exam_gen_tasks:
+                print(f"[WARN] 任务 {task_id} 不存在，跳过生成")
+                return
+            if _exam_gen_tasks[task_id]['status'] == ExamGenTaskStatus.CANCELLED:
+                print(f"[INFO] 任务 {task_id} 已被取消，跳过生成")
+                return
+            _exam_gen_tasks[task_id]['status'] = ExamGenTaskStatus.RUNNING
+            _exam_gen_tasks[task_id]['started_at'] = datetime.now().isoformat()
+            paper_id = _exam_gen_tasks[task_id].get('paper_id')
+
+        # 更新数据库中的AI生成状态为running
+        if paper_id:
+            try:
+                with get_db_connection() as conn:
+                    conn.execute(
+                        "UPDATE exam_papers SET ai_gen_status = ?, updated_at = ? WHERE id = ?",
+                        ('running', datetime.now().isoformat(), paper_id)
+                    )
+                    conn.commit()
+            except Exception as e:
+                print(f"[WARN] 更新数据库状态失败: {e}")
+
+        # 准备调用AI助手的payload
+        payload = {
+            "prompt": prompt,
+            "model_type": "thinking",  # 使用高级模型
+            "task_type": "exam_generation",
+            "teacher_id": teacher_id,
+            "class_offering_id": class_offering_id
+        }
+
+        print(f"[AI_GEN] 开始调用AI生成试卷 (Task: {task_id}, Paper: {paper_id})")
+
+        # 调用AI助手服务（设置较长超时）
+        response = await ai_client.post("/api/ai/generate-exam", json=payload, timeout=300.0)
+        response.raise_for_status()
+        result = response.json()
+
+        # 再次检查任务是否已被取消
+        async with _exam_gen_tasks_lock:
+            if task_id not in _exam_gen_tasks:
+                print(f"[WARN] 任务 {task_id} 在生成过程中被移除")
+                return
+            if _exam_gen_tasks[task_id]['status'] == ExamGenTaskStatus.CANCELLED:
+                print(f"[INFO] 任务 {task_id} 在生成过程中被取消")
+                return
+
+        if result.get("status") == "success":
+            exam_data = result.get("exam_data", {})
+            # 验证返回的数据结构
+            if not isinstance(exam_data, dict):
+                raise ValueError("AI返回的数据格式不正确")
+
+            async with _exam_gen_tasks_lock:
+                _exam_gen_tasks[task_id]['status'] = ExamGenTaskStatus.COMPLETED
+                _exam_gen_tasks[task_id]['result'] = exam_data
+                _exam_gen_tasks[task_id]['completed_at'] = datetime.now().isoformat()
+
+            # 更新数据库（保持 status='generating'，让前端轮询能检测到完成状态）
+            if paper_id:
+                try:
+                    questions_json = json.dumps(exam_data, ensure_ascii=False)
+                    description = exam_data.get('description', '') or f"AI生成的试卷"
+                    with get_db_connection() as conn:
+                        conn.execute(
+                            """UPDATE exam_papers
+                               SET questions_json = ?, description = ?,
+                                   ai_gen_status = 'completed', updated_at = ?
+                               WHERE id = ?""",
+                            (questions_json, description, datetime.now().isoformat(), paper_id)
+                        )
+                        conn.commit()
+                except Exception as e:
+                    print(f"[WARN] 更新数据库失败: {e}")
+
+            print(f"[AI_GEN] 试卷生成成功 (Task: {task_id}, Paper: {paper_id})")
+        else:
+            error_msg = result.get("detail", "AI生成失败")
+            async with _exam_gen_tasks_lock:
+                _exam_gen_tasks[task_id]['status'] = ExamGenTaskStatus.FAILED
+                _exam_gen_tasks[task_id]['error'] = error_msg
+                _exam_gen_tasks[task_id]['completed_at'] = datetime.now().isoformat()
+
+            # 更新数据库为失败状态
+            if paper_id:
+                try:
+                    with get_db_connection() as conn:
+                        conn.execute(
+                            """UPDATE exam_papers
+                               SET ai_gen_status = 'failed', ai_gen_error = ?, updated_at = ?
+                               WHERE id = ?""",
+                            (error_msg, datetime.now().isoformat(), paper_id)
+                        )
+                        conn.commit()
+                except Exception as e:
+                    print(f"[WARN] 更新数据库失败状态失败: {e}")
+
+            print(f"[AI_GEN] AI返回失败 (Task: {task_id}): {error_msg}")
+
+    except httpx.TimeoutException:
+        async with _exam_gen_tasks_lock:
+            if task_id in _exam_gen_tasks and _exam_gen_tasks[task_id]['status'] != ExamGenTaskStatus.CANCELLED:
+                _exam_gen_tasks[task_id]['status'] = ExamGenTaskStatus.FAILED
+                _exam_gen_tasks[task_id]['error'] = "AI生成超时（可能模型处理时间过长，请稍后重试）"
+                _exam_gen_tasks[task_id]['completed_at'] = datetime.now().isoformat()
+                paper_id = _exam_gen_tasks[task_id].get('paper_id')
+
+        if paper_id:
+            try:
+                with get_db_connection() as conn:
+                    conn.execute(
+                        """UPDATE exam_papers
+                           SET ai_gen_status = 'failed', ai_gen_error = 'AI生成超时（可能模型处理时间过长，请稍后重试）', updated_at = ?
+                           WHERE id = ?""",
+                        (datetime.now().isoformat(), paper_id)
+                    )
+                    conn.commit()
+            except Exception as e:
+                print(f"[WARN] 更新数据库超时状态失败: {e}")
+
+        print(f"[AI_GEN] 生成超时 (Task: {task_id})")
+    except httpx.ConnectError:
+        async with _exam_gen_tasks_lock:
+            if task_id in _exam_gen_tasks and _exam_gen_tasks[task_id]['status'] != ExamGenTaskStatus.CANCELLED:
+                _exam_gen_tasks[task_id]['status'] = ExamGenTaskStatus.FAILED
+                _exam_gen_tasks[task_id]['error'] = "AI助手服务未运行，请先启动 ai_assistant.py。"
+                _exam_gen_tasks[task_id]['completed_at'] = datetime.now().isoformat()
+                paper_id = _exam_gen_tasks[task_id].get('paper_id')
+
+        if paper_id:
+            try:
+                with get_db_connection() as conn:
+                    conn.execute(
+                        """UPDATE exam_papers
+                           SET ai_gen_status = 'failed', ai_gen_error = 'AI助手服务未运行，请先启动 ai_assistant.py。', updated_at = ?
+                           WHERE id = ?""",
+                        (datetime.now().isoformat(), paper_id)
+                    )
+                    conn.commit()
+            except Exception as e:
+                print(f"[WARN] 更新数据库连接失败状态失败: {e}")
+
+        print(f"[AI_GEN] 连接AI服务失败 (Task: {task_id})")
+    except Exception as e:
+        print(f"[AI_GEN] 生成异常 (Task: {task_id}): {e}")
+        traceback.print_exc()
+        async with _exam_gen_tasks_lock:
+            if task_id in _exam_gen_tasks and _exam_gen_tasks[task_id]['status'] != ExamGenTaskStatus.CANCELLED:
+                _exam_gen_tasks[task_id]['status'] = ExamGenTaskStatus.FAILED
+                _exam_gen_tasks[task_id]['error'] = f"AI生成过程中发生错误: {str(e)}"
+                _exam_gen_tasks[task_id]['completed_at'] = datetime.now().isoformat()
+                paper_id = _exam_gen_tasks[task_id].get('paper_id')
+
+        if paper_id:
+            try:
+                with get_db_connection() as conn:
+                    conn.execute(
+                        """UPDATE exam_papers
+                           SET ai_gen_status = 'failed', ai_gen_error = ?, updated_at = ?
+                           WHERE id = ?""",
+                        (f"AI生成过程中发生错误: {str(e)}", datetime.now().isoformat(), paper_id)
+                    )
+                    conn.commit()
+            except Exception as db_e:
+                print(f"[WARN] 更新数据库异常状态失败: {db_e}")
+
+
+@router.post("/ai/exam/suggest-topics", response_class=JSONResponse)
+async def ai_suggest_exam_topics(request: Request, user: dict = Depends(get_current_teacher)):
+    """获取出题范围推荐（调用普通AI）"""
+    try:
+        data = await request.json()
+        class_offering_id = data.get('class_offering_id')
+
+        if not class_offering_id:
+            raise HTTPException(status_code=400, detail="请指定课堂ID")
+
+        try:
+            class_offering_id = int(class_offering_id)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="无效的课堂ID格式")
+
+        # 获取课程上下文
+        context = get_course_context_for_offering(class_offering_id, user['id'])
+
+        # 构建提示词
+        prompt = f"""
+请根据以下课程信息，推荐适合出题的知识点范围：
+
+课程名称：{context['course_name']}
+课程描述：{context['course_description']}
+班级：{context['class_name']}
+教学大纲：{context['syllabus'][:500]}...
+
+请列出3-5个主要的出题范围，每个范围包含：
+1. 知识点主题
+2. 建议的题目类型（单选、多选、填空、问答）
+3. 难度分布建议
+4. 简要说明为什么这个范围适合出题
+
+请用清晰的结构化格式返回。
+"""
+
+        # 调用AI助手（使用标准模型）
+        response = await ai_client.post("/api/ai/chat", json={
+            "system_prompt": "你是一个教学专家，擅长分析课程内容并推荐合适的出题范围。",
+            "messages": [],
+            "new_message": prompt,
+            "model_capability": "standard"
+        }, timeout=60.0)
+
+        response.raise_for_status()
+        result = response.json()
+
+        if result.get("status") == "success":
+            return {
+                "status": "success",
+                "topics": result.get("response_text", ""),
+                "course_context": {
+                    "course_name": context['course_name'],
+                    "class_name": context['class_name'],
+                    "syllabus_preview": context['syllabus'][:300] + "..." if len(context['syllabus']) > 300 else context['syllabus']
+                }
+            }
+        else:
+            raise HTTPException(status_code=500, detail=f"AI推荐失败: {result.get('detail')}")
+
+    except HTTPException:
+        raise
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503, detail="AI助手服务未运行，请先启动 ai_assistant.py。")
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="AI服务响应超时，请稍后重试。")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="请求数据格式错误")
+    except Exception as e:
+        print(f"[ERROR] 获取出题范围推荐失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取出题范围推荐失败: {str(e)}")
+
+
+@router.post("/ai/exam/generate", response_class=JSONResponse)
+async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, user: dict = Depends(get_current_teacher)):
+    """启动AI生成试卷任务（调用高级模型，异步）"""
+    try:
+        data = await request.json()
+
+        # 验证必填字段
+        required_fields = ['scope', 'title']
+        for field in required_fields:
+            if field not in data or data.get(field) is None:
+                raise HTTPException(status_code=400, detail=f"缺少必填字段: {field}")
+
+        # 验证试卷标题
+        title = data['title'].strip() if isinstance(data['title'], str) else ''
+        if not title:
+            raise HTTPException(status_code=400, detail="试卷标题不能为空")
+        if len(title) > 200:
+            raise HTTPException(status_code=400, detail="试卷标题不能超过200个字符")
+
+        # 出题范围必填
+        scope = data['scope'].strip() if isinstance(data['scope'], str) else ''
+        if not scope:
+            raise HTTPException(status_code=400, detail="出题范围不能为空")
+        if len(scope) < 10:
+            raise HTTPException(status_code=400, detail="出题范围描述太短，请提供更详细的内容（至少10个字符）")
+        if len(scope) > 5000:
+            raise HTTPException(status_code=400, detail="出题范围描述过长，请控制在5000个字符以内")
+
+        # 验证难度
+        difficulty = data.get('difficulty', 'medium')
+        if difficulty not in ['easy', 'medium', 'hard']:
+            raise HTTPException(status_code=400, detail="难度必须是: easy, medium, hard")
+
+        # 验证总题数
+        total_questions = data.get('total_questions', 10)
+        try:
+            total_questions = int(total_questions)
+            if total_questions < 1 or total_questions > 100:
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="总题数必须是1-100之间的整数")
+
+        # 验证题型分布
+        question_types = data.get('question_types', {})
+        valid_types = ['radio', 'checkbox', 'text', 'textarea']
+        for qtype, count in question_types.items():
+            if qtype not in valid_types:
+                raise HTTPException(status_code=400, detail=f"无效的题型: {qtype}")
+            try:
+                count = int(count)
+                if count < 0 or count > 100:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail=f"题型 {qtype} 的数量必须是0-100之间的整数")
+
+        # 验证并处理课堂ID
+        class_offering_id = data.get('class_offering_id')
+        if class_offering_id:
+            try:
+                class_offering_id = int(class_offering_id)
+                # 验证教师是否有权访问此课堂
+                with get_db_connection() as conn:
+                    offering = conn.execute(
+                        "SELECT id FROM class_offerings WHERE id = ? AND teacher_id = ?",
+                        (class_offering_id, user['id'])
+                    ).fetchone()
+                    if not offering:
+                        raise HTTPException(status_code=403, detail="无权访问此课堂或课堂不存在")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="无效的课堂ID")
+
+        # 创建试卷ID和任务ID
+        paper_id = str(uuid.uuid4())
+        task_id = str(uuid.uuid4())
+
+        # 先在数据库中创建试卷记录，状态为generating
+        now = datetime.now().isoformat()
+        empty_questions = json.dumps({"pages": []}, ensure_ascii=False)
+        exam_config = json.dumps({
+            "scope": scope,
+            "difficulty": difficulty,
+            "total_questions": total_questions,
+            "question_types": question_types,
+            "class_offering_id": class_offering_id
+        }, ensure_ascii=False)
+
+        with get_db_connection() as conn:
+            conn.execute(
+                """INSERT INTO exam_papers
+                   (id, teacher_id, title, description, questions_json, exam_config_json, status, ai_gen_task_id, ai_gen_status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (paper_id, user['id'], title, f"AI正在生成中，出题范围：{scope[:100]}...",
+                 empty_questions, exam_config, 'generating', task_id, 'pending', now, now)
+            )
+            conn.commit()
+
+        # 初始化任务状态
+        async with _exam_gen_tasks_lock:
+            _exam_gen_tasks[task_id] = {
+                'id': task_id,
+                'paper_id': paper_id,
+                'teacher_id': user['id'],
+                'status': ExamGenTaskStatus.PENDING,
+                'created_at': now,
+                'title': title,
+                'scope': scope,
+                'class_offering_id': class_offering_id,
+                'question_types': question_types,
+                'difficulty': difficulty,
+                'total_questions': total_questions,
+                'result': None,
+                'error': None,
+                'started_at': None,
+                'completed_at': None
+            }
+
+        # 构建生成提示词
+        prompt_parts = [
+            f"请生成一份试卷，标题：{title}",
+            f"出题范围：{scope}",
+            f"难度：{difficulty}",
+            f"总题数：{total_questions}"
+        ]
+
+        # 添加题型分布
+        if question_types:
+            type_desc = []
+            for qtype, count in question_types.items():
+                if int(count) > 0:
+                    type_labels = {'radio': '单选题', 'checkbox': '多选题', 'text': '填空题', 'textarea': '问答题'}
+                    type_desc.append(f"{type_labels.get(qtype, qtype)}: {count}题")
+            if type_desc:
+                prompt_parts.append(f"题型分布：{', '.join(type_desc)}")
+
+        # 添加课程上下文（如果有课堂）
+        if class_offering_id:
+            try:
+                context = get_course_context_for_offering(int(class_offering_id), user['id'])
+                prompt_parts.append(f"\n课程背景信息：")
+                prompt_parts.append(f"课程名称：{context['course_name']}")
+                if context['course_description']:
+                    prompt_parts.append(f"课程描述：{context['course_description'][:200]}...")
+                if context['syllabus']:
+                    prompt_parts.append(f"教学大纲要点：{context['syllabus'][:300]}...")
+            except Exception as e:
+                print(f"[WARN] 获取课程上下文失败: {e}")
+                pass  # 忽略上下文获取失败
+
+        prompt = "\n".join(prompt_parts)
+        prompt += "\n\n请生成完整的试卷题目，具体要求如下："
+        prompt += "\n1. 题目类型说明：radio=单选题，checkbox=多选题，text=填空题，textarea=问答题"
+        prompt += "\n2. 每道题必须包含：id（唯一标识，如q1,q2）、type（题型）、text（题目内容）"
+        prompt += "\n3. 选择题必须提供options数组（至少2个选项），并指定answer（单选题为单个选项字母如'A'，多选题为数组如['A','B']）"
+        prompt += "\n4. 填空题和问答题可以提供placeholder作为提示文本，answer为字符串答案"
+        prompt += "\n5. 每道题必须包含explanation（解析），说明为什么答案正确或其他选项为什么错误"
+        prompt += "\n6. 试卷可以分多个部分（pages），每个部分有name和questions数组"
+        prompt += "\n7. 根据难度要求调整题目难度：简单=基础知识点，中等=需要一定思考，困难=综合应用或分析"
+        prompt += "\n8. 确保题目覆盖出题范围的所有主要知识点"
+        prompt += "\n9. 返回格式必须为JSON，包含pages数组，每个page对象包含name和questions数组"
+        prompt += "\n10. 不要包含任何额外的解释或代码块标记，只返回JSON数据"
+
+        # 在后台启动生成任务
+        background_tasks.add_task(generate_exam_questions_async, task_id, prompt, user['id'], class_offering_id)
+
+        return {
+            "status": "success",
+            "task_id": task_id,
+            "paper_id": paper_id,
+            "message": "试卷生成任务已启动，这可能需要几分钟时间。",
+            "estimated_time": "约5分钟"
+        }
+
+    except HTTPException:
+        raise
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="请求数据格式错误")
+    except Exception as e:
+        print(f"[ERROR] 启动生成任务失败: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"启动生成任务失败: {str(e)}")
+
+
+@router.get("/ai/exam/task/{task_id}/status", response_class=JSONResponse)
+async def get_exam_gen_task_status(task_id: str, user: dict = Depends(get_current_teacher)):
+    """获取试卷生成任务状态"""
+    # 验证任务ID格式
+    try:
+        # 验证UUID格式
+        uuid.UUID(task_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="无效的任务ID格式")
+
+    async with _exam_gen_tasks_lock:
+        task = _exam_gen_tasks.get(task_id)
+
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    if task['teacher_id'] != user['id']:
+        raise HTTPException(status_code=403, detail="无权访问此任务")
+
+    # 清理返回数据，移除敏感信息
+    result = {
+        'id': task['id'],
+        'status': task['status'],
+        'title': task['title'],
+        'created_at': task['created_at'],
+        'started_at': task.get('started_at'),
+        'completed_at': task.get('completed_at'),
+        'error': task.get('error')
+    }
+
+    # 如果任务完成，包含结果
+    if task['status'] == ExamGenTaskStatus.COMPLETED and task.get('result'):
+        result['exam_data'] = task['result']
+
+    return {"status": "success", "task": result}
+
+
+@router.post("/ai/exam/task/{task_id}/cancel", response_class=JSONResponse)
+async def cancel_exam_gen_task(task_id: str, user: dict = Depends(get_current_teacher)):
+    """取消试卷生成任务"""
+    # 验证任务ID格式
+    try:
+        uuid.UUID(task_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="无效的任务ID格式")
+
+    async with _exam_gen_tasks_lock:
+        task = _exam_gen_tasks.get(task_id)
+
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    if task['teacher_id'] != user['id']:
+        raise HTTPException(status_code=403, detail="无权操作此任务")
+
+    if task['status'] == ExamGenTaskStatus.COMPLETED:
+        return {"status": "success", "message": "任务已完成，无法取消"}
+    if task['status'] == ExamGenTaskStatus.FAILED:
+        return {"status": "success", "message": "任务已失败，无法取消"}
+    if task['status'] == ExamGenTaskStatus.CANCELLED:
+        return {"status": "success", "message": "任务已取消"}
+
+    async with _exam_gen_tasks_lock:
+        _exam_gen_tasks[task_id]['status'] = ExamGenTaskStatus.CANCELLED
+        _exam_gen_tasks[task_id]['completed_at'] = datetime.now().isoformat()
+        _exam_gen_tasks[task_id]['error'] = "任务已被用户取消"
+
+    # 删除数据库中的空试卷（取消后无有用内容）
+    paper_id = task.get('paper_id')
+    if paper_id:
+        try:
+            with get_db_connection() as conn:
+                conn.execute(
+                    "DELETE FROM exam_papers WHERE id = ? AND teacher_id = ?",
+                    (paper_id, user['id'])
+                )
+                conn.commit()
+        except Exception as e:
+            print(f"[WARN] 删除取消的试卷失败: {e}")
+
+    return {"status": "success", "message": "任务已取消", "paper_id": paper_id}
+
+
+@router.get("/ai/exam/paper/{paper_id}/status", response_class=JSONResponse)
+async def get_exam_paper_gen_status(paper_id: str, user: dict = Depends(get_current_teacher)):
+    """获取试卷的AI生成状态（从数据库查询）"""
+    try:
+        uuid.UUID(paper_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="无效的试卷ID格式")
+
+    with get_db_connection() as conn:
+        paper = conn.execute(
+            "SELECT * FROM exam_papers WHERE id = ? AND teacher_id = ?",
+            (paper_id, user['id'])
+        ).fetchone()
+
+        if not paper:
+            raise HTTPException(status_code=404, detail="试卷不存在或无权访问")
+
+        paper_dict = dict(paper)
+
+        # 如果状态是generating/pending/running，同时检查内存中的任务状态
+        ai_gen_status = paper_dict.get('ai_gen_status')
+        task_info = None
+
+        if ai_gen_status in ['pending', 'running'] and paper_dict.get('ai_gen_task_id'):
+            task_id = paper_dict['ai_gen_task_id']
+            async with _exam_gen_tasks_lock:
+                if task_id in _exam_gen_tasks:
+                    task = _exam_gen_tasks[task_id]
+                    task_info = {
+                        'status': task['status'],
+                        'created_at': task['created_at'],
+                        'started_at': task.get('started_at'),
+                        'completed_at': task.get('completed_at'),
+                        'error': task.get('error')
+                    }
+
+        return {
+            "status": "success",
+            "paper": {
+                "id": paper_dict['id'],
+                "title": paper_dict['title'],
+                "status": paper_dict['status'],
+                "ai_gen_status": ai_gen_status,
+                "ai_gen_error": paper_dict.get('ai_gen_error'),
+                "created_at": paper_dict['created_at'],
+                "updated_at": paper_dict['updated_at'],
+                "task_info": task_info
+            }
+        }
+
+
+@router.get("/ai/exam/papers/generating", response_class=JSONResponse)
+async def get_generating_exam_papers(user: dict = Depends(get_current_teacher)):
+    """获取当前教师所有正在生成中的试卷"""
+    with get_db_connection() as conn:
+        papers = conn.execute(
+            """SELECT * FROM exam_papers
+               WHERE teacher_id = ? AND status = 'generating'
+               ORDER BY created_at DESC""",
+            (user['id'],)
+        ).fetchall()
+
+        result = []
+        for paper in papers:
+            paper_dict = dict(paper)
+            result.append({
+                "id": paper_dict['id'],
+                "title": paper_dict['title'],
+                "ai_gen_status": paper_dict.get('ai_gen_status'),
+                "ai_gen_error": paper_dict.get('ai_gen_error'),
+                "created_at": paper_dict['created_at'],
+                "updated_at": paper_dict['updated_at']
+            })
+
+        return {"status": "success", "papers": result}
 
