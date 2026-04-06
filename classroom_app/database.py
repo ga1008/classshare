@@ -698,6 +698,59 @@ def init_database():
             except sqlite3.OperationalError:
                 pass  # 列已存在
 
+            # 15. 课程材料库
+            conn.execute('''
+                        CREATE TABLE IF NOT EXISTS course_materials
+                        (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            teacher_id INTEGER NOT NULL,
+                            parent_id INTEGER,
+                            root_id INTEGER,
+                            material_path TEXT NOT NULL,
+                            name TEXT NOT NULL,
+                            node_type TEXT NOT NULL DEFAULT 'file',
+                            mime_type TEXT,
+                            preview_type TEXT NOT NULL DEFAULT 'binary',
+                            ai_capability TEXT NOT NULL DEFAULT 'none',
+                            file_ext TEXT DEFAULT '',
+                            file_hash TEXT,
+                            file_size INTEGER NOT NULL DEFAULT 0,
+                            ai_parse_status TEXT NOT NULL DEFAULT 'idle',
+                            ai_parse_result_json TEXT,
+                            ai_optimize_status TEXT NOT NULL DEFAULT 'idle',
+                            ai_optimized_markdown TEXT,
+                            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                            FOREIGN KEY (parent_id) REFERENCES course_materials (id) ON DELETE CASCADE
+                        )
+                         ''')
+
+            conn.execute('''
+                        CREATE TABLE IF NOT EXISTS course_material_assignments
+                        (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            material_id INTEGER NOT NULL,
+                            class_offering_id INTEGER NOT NULL,
+                            assigned_by_teacher_id INTEGER NOT NULL,
+                            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (material_id) REFERENCES course_materials (id) ON DELETE CASCADE,
+                            FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                            FOREIGN KEY (assigned_by_teacher_id) REFERENCES teachers (id),
+                            UNIQUE (material_id, class_offering_id)
+                        )
+                         ''')
+
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_course_materials_teacher_parent ON course_materials (teacher_id, parent_id, name)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_course_materials_root_path ON course_materials (root_id, material_path)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_course_material_assignments_offering ON course_material_assignments (class_offering_id, material_id)"
+            )
+
             conn.commit()
         print("[DB] V4.0 数据库架构初始化/验证完成。")
 

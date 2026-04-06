@@ -1,0 +1,142 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}课程材料{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/modals.css">
+<link rel="stylesheet" href="/static/css/materials.css">
+{% endblock %}
+
+{% block header_actions %}
+<div class="materials-toolbar-group">
+    <button type="button" class="btn btn-outline" id="materials-refresh-btn">刷新</button>
+    <button type="button" class="btn btn-outline" id="materials-upload-folder-btn">上传文件夹</button>
+    <button type="button" class="btn btn-primary" id="materials-upload-file-btn">上传文件</button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="materials-stat-grid">
+    <article class="materials-stat-card">
+        <div class="materials-stat-label">材料根节点</div>
+        <div class="materials-stat-value" id="materials-root-count">{{ material_stats.root_count }}</div>
+    </article>
+    <article class="materials-stat-card">
+        <div class="materials-stat-label">已分配课堂</div>
+        <div class="materials-stat-value" id="materials-assignment-count">{{ material_stats.assignment_count }}</div>
+    </article>
+    <article class="materials-stat-card">
+        <div class="materials-stat-label">预埋文档类型</div>
+        <div class="materials-stat-value">{{ type_registry | length }}</div>
+    </article>
+</div>
+
+<section class="materials-upload-hint">
+    <h3>课程材料库支持批量文件与文件夹导入</h3>
+    <p>当前重点完成 Markdown 上传、全屏渲染预览、下载、课堂分配与 AI 解析/优化。PDF、Office、图片等类型已完成库级建模与下载链路，预览能力可继续逐步补齐。</p>
+</section>
+
+<div class="materials-shell">
+    <section class="materials-card">
+        <div class="materials-toolbar">
+            <div class="materials-toolbar-group">
+                <button type="button" class="btn btn-ghost btn-sm" id="materials-back-btn">返回</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="materials-up-btn">上一级</button>
+            </div>
+            <div class="materials-breadcrumbs" id="materials-breadcrumbs">
+                <span class="text-muted">材料库根目录</span>
+            </div>
+        </div>
+
+        <div class="materials-selection-bar" id="materials-selection-bar" hidden>
+            <div>
+                已选择 <strong id="materials-selection-count">0</strong> 项
+            </div>
+            <div class="materials-toolbar-group">
+                <button type="button" class="btn btn-outline btn-sm" id="materials-selection-download-btn">下载选中</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="materials-selection-clear-btn">清空选择</button>
+            </div>
+        </div>
+
+        <div class="materials-list">
+            <div class="materials-list-header">
+                <div>
+                    <input type="checkbox" id="materials-select-all">
+                </div>
+                <div>名称</div>
+                <div>类型</div>
+                <div>更新时间</div>
+                <div>操作</div>
+            </div>
+            <div id="materials-list-body" class="materials-list-body">
+                <div class="materials-empty">正在加载课程材料库...</div>
+            </div>
+        </div>
+    </section>
+
+    <aside class="materials-card">
+        <div class="materials-detail" id="materials-detail">
+            <div class="materials-empty">选择一个材料后，这里会显示详情、AI 摘要和课堂分配状态。</div>
+        </div>
+    </aside>
+</div>
+
+<input type="file" id="materials-file-input" class="hidden" multiple>
+<input type="file" id="materials-folder-input" class="hidden" webkitdirectory directory multiple>
+
+<div id="materials-assign-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">分配课程材料</h3>
+                    <p class="modal-subtitle">将当前材料发布到一个或多个课堂，学生加入对应课堂后即可查看与下载。</p>
+                </div>
+                <button class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="materials-section">
+                    <div class="text-muted text-sm">当前材料</div>
+                    <strong id="materials-assign-name">-</strong>
+                </div>
+                <div class="materials-section">
+                    <div class="materials-section-header">
+                        <h3>选择目标课堂</h3>
+                        <span class="text-muted text-sm">可多选</span>
+                    </div>
+                    <div class="materials-modal-options" id="materials-assign-options">
+                        {% if offerings %}
+                            {% for offering in offerings %}
+                            <label class="materials-modal-option">
+                                <input type="checkbox" value="{{ offering.id }}">
+                                <div>
+                                    <strong>{{ offering.course_name }} / {{ offering.class_name }}</strong>
+                                    <div class="text-muted text-sm">{{ offering.semester if offering.semester else '未填写学期' }}</div>
+                                </div>
+                            </label>
+                            {% endfor %}
+                        {% else %}
+                            <div class="materials-empty">暂无可分配课堂，请先在“开设课堂”中创建课堂。</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="materials-assign-save-btn">保存分配</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.MATERIALS_MANAGE_CONFIG = {
+        offerings: {{ offerings | tojson }},
+        canAssign: {{ 'true' if offerings else 'false' }}
+    };
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/materials_manage.js"></script>
+{% endblock %}

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}{{ material.name }} | 课程材料预览{% endblock %}
+
+{% block css %}
+<link rel="stylesheet" href="/static/css/layout.css">
+<link rel="stylesheet" href="/static/css/buttons.css">
+<link rel="stylesheet" href="/static/css/cards.css">
+<link rel="stylesheet" href="/static/css/toast.css">
+<link rel="stylesheet" href="/static/css/markdown.css">
+<link rel="stylesheet" href="/static/css/materials.css">
+{% endblock %}
+
+{% block head %}
+<script src="/static/js/marked.min.js"></script>
+<script src="/static/vendor/mermaid.min.js"></script>
+<script>
+    window.MATERIAL_VIEWER = {{ material | tojson }};
+</script>
+{% endblock %}
+
+{% block body %}
+<div class="materials-viewer">
+    <aside class="materials-viewer-sidebar">
+        <div class="materials-section">
+            <div class="text-muted text-sm">当前材料</div>
+            <h2 style="margin: 6px 0 8px;">{{ material.name }}</h2>
+            <div class="text-muted text-sm">{{ material.material_path }}</div>
+            <div class="materials-viewer-summary">
+                <div class="text-muted text-sm">预览模式</div>
+                <strong id="viewer-variant-label">{{ '优化稿' if material.preview_variant == 'optimized' else '原稿' }}</strong>
+            </div>
+        </div>
+
+        <div class="materials-section">
+            <div class="materials-section-header">
+                <h3>文档目录</h3>
+                <span class="text-muted text-sm" id="viewer-toc-count">0 节</span>
+            </div>
+            <div id="viewer-toc" class="materials-viewer-toc">
+                <div class="materials-viewer-empty">目录将在 Markdown 渲染后显示。</div>
+            </div>
+        </div>
+
+        <div class="materials-section" id="viewer-ai-summary">
+            <div class="materials-section-header">
+                <h3>AI 解析</h3>
+            </div>
+            {% if material.ai_parse_result %}
+            <div class="text-muted text-sm mb-2">{{ material.ai_parse_result.summary or '暂无摘要。' }}</div>
+            {% if material.ai_parse_result.keywords %}
+            <div class="text-muted text-sm">关键词：{{ material.ai_parse_result.keywords | join('、') }}</div>
+            {% endif %}
+            {% else %}
+            <div class="materials-viewer-empty">当前材料还没有 AI 解析结果。</div>
+            {% endif %}
+        </div>
+    </aside>
+
+    <main class="materials-viewer-main">
+        <div class="materials-viewer-topbar">
+            <div class="materials-toolbar-group">
+                <button type="button" class="btn btn-ghost" onclick="history.length > 1 ? history.back() : (window.location.href='/dashboard')">返回</button>
+                <div>
+                    <div class="text-muted text-sm">课程材料预览</div>
+                    <strong>{{ material.name }}</strong>
+                </div>
+            </div>
+            <div class="materials-viewer-actions">
+                {% if material.optimized_available %}
+                <a href="{{ material.viewer_url }}?variant={{ 'original' if material.preview_variant == 'optimized' else 'optimized' }}" class="btn btn-outline">
+                    {{ '查看原稿' if material.preview_variant == 'optimized' else '查看优化稿' }}
+                </a>
+                {% endif %}
+                <a href="{{ material.download_url }}" class="btn btn-primary">下载材料</a>
+            </div>
+        </div>
+
+        <section class="materials-viewer-article">
+            <div id="viewer-content"></div>
+        </section>
+    </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/material_viewer.js"></script>
+{% endblock %}

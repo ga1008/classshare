@@ -38,17 +38,17 @@ async def root(request: Request, user: Optional[dict] = Depends(get_current_user
 @router.get("/student/login", response_class=HTMLResponse)
 async def student_login_page(request: Request):
     # V4.0 不再需要 class_name 和 course_name
-    return templates.TemplateResponse("student_login_v4.html", {"request": request})
+    return templates.TemplateResponse(request, "student_login_v4.html", {"request": request})
 
 
 @router.get("/teacher/login", response_class=HTMLResponse)
 async def teacher_login_page(request: Request):
-    return templates.TemplateResponse("teacher_login_v4.html", {"request": request})
+    return templates.TemplateResponse(request, "teacher_login_v4.html", {"request": request})
 
 
 @router.get("/teacher/register", response_class=HTMLResponse)
 async def teacher_register_page(request: Request):
-    return templates.TemplateResponse("teacher_register_v4.html", {"request": request})
+    return templates.TemplateResponse(request, "teacher_register_v4.html", {"request": request})
 
 
 @router.post("/student/login")
@@ -68,7 +68,7 @@ async def handle_student_login(request: Request, name: str = Form(), student_id_
         ).fetchone()
 
     if not student:
-        return templates.TemplateResponse("status.html",
+        return templates.TemplateResponse(request, "status.html",
                                           {"request": request, "success": False, "message": "登录失败：姓名或学号错误。",
                                            "back_url": "/student/login"})
 
@@ -105,11 +105,11 @@ async def handle_teacher_register(request: Request, name: str = Form(), email: s
             )
             conn.commit()
     except sqlite3.IntegrityError:  # 邮箱已存在
-        return templates.TemplateResponse("status.html",
+        return templates.TemplateResponse(request, "status.html",
                                           {"request": request, "success": False, "message": "注册失败：该邮箱已被使用。",
                                            "back_url": "/teacher/register"})
 
-    return templates.TemplateResponse("status.html",
+    return templates.TemplateResponse(request, "status.html",
                                       {"request": request, "success": True, "message": "注册成功！请登录。",
                                        "back_url": "/teacher/login"})
 
@@ -125,7 +125,7 @@ async def handle_teacher_login(request: Request, email: str = Form(), password: 
 
     # 修复：使用 verify_password 验证
     if not teacher or not verify_password(password, teacher['hashed_password']):
-        return templates.TemplateResponse("status.html",
+        return templates.TemplateResponse(request, "status.html",
                                           {"request": request, "success": False, "message": "登录失败：邮箱或密码错误。",
                                            "back_url": "/teacher/login"})
 
@@ -199,7 +199,7 @@ async def dashboard(request: Request, user: dict = Depends(get_current_user)):
             )
             offerings = [dict(row) for row in cursor]
 
-    return templates.TemplateResponse("dashboard.html", {
+    return templates.TemplateResponse(request, "dashboard.html", {
         "request": request,
         "user_info": user,
         "class_offerings": offerings
@@ -284,7 +284,7 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
                     assignment['submission_status'] = 'unsubmitted'
             assignments.append(assignment)
 
-    return templates.TemplateResponse("classroom_main_v4.html", {
+    return templates.TemplateResponse(request, "classroom_main_v4.html", {
         "request": request,
         "user_info": user,
         "classroom": offering_data,
@@ -310,12 +310,12 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
         return RedirectResponse(url=f"/exam/take/{assignment_id}")
 
     if user['role'] == 'teacher':
-        return templates.TemplateResponse("assignment_detail_teacher.html", {
+        return templates.TemplateResponse(request, "assignment_detail_teacher.html", {
             "request": request, "user_info": user, "assignment": assignment
         })
     else:
         if assignment['status'] == 'new':
-            return templates.TemplateResponse("status.html",
+            return templates.TemplateResponse(request, "status.html",
                                               {"request": request, "success": False, "message": "该作业尚未发布",
                                                "back_url": "/dashboard"})
 
@@ -330,7 +330,7 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
                                             (submission['id'],))
                 submission_files = [dict(row) for row in files_cursor]
 
-        return templates.TemplateResponse("assignment_detail_student.html", {
+        return templates.TemplateResponse(request, "assignment_detail_student.html", {
             "request": request, "user_info": user, "assignment": assignment,
             "submission": submission, "submission_files": submission_files,
             "max_upload_mb": MAX_UPLOAD_SIZE_MB
@@ -364,7 +364,7 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
         )
         my_classes = my_classes_cursor.fetchall()
 
-    return templates.TemplateResponse("manage/classes.html", {
+    return templates.TemplateResponse(request, "manage/classes.html", {
         "request": request,
         "user_info": user,
         "my_classes": my_classes,
@@ -382,7 +382,7 @@ async def get_manage_courses_page(request: Request, user: dict = Depends(get_cur
         )
         my_courses = my_courses_cursor.fetchall()
 
-    return templates.TemplateResponse("manage/courses.html", {
+    return templates.TemplateResponse(request, "manage/courses.html", {
         "request": request,
         "user_info": user,
         "my_courses": my_courses,
@@ -415,7 +415,7 @@ async def get_manage_offerings_page(request: Request, user: dict = Depends(get_c
     finally:
         conn.close()
 
-    return templates.TemplateResponse("manage/offerings.html", {
+    return templates.TemplateResponse(request, "manage/offerings.html", {
         "request": request,
         "user_info": user,
         "my_classes": my_classes,
@@ -443,7 +443,7 @@ async def get_manage_ai_page(request: Request, user: dict = Depends(get_current_
             """, (user['id'],)
         ).fetchall()
 
-    return templates.TemplateResponse("manage/ai.html", {
+    return templates.TemplateResponse(request, "manage/ai.html", {
         "request": request,
         "user_info": user,
         "my_offerings": my_offerings,
@@ -487,7 +487,7 @@ async def manage_exams_page(request: Request, user: dict = Depends(get_current_t
                     paper['questions_json'] = None
             papers.append(paper)
 
-    return templates.TemplateResponse("manage/exams.html", {
+    return templates.TemplateResponse(request, "manage/exams.html", {
         "request": request,
         "user_info": user,
         "papers": papers,
@@ -518,7 +518,7 @@ async def exam_editor_page(request: Request, exam_id: str, user: dict = Depends(
             (user['id'],)
         ).fetchall()
 
-    return templates.TemplateResponse("exam_editor.html", {
+    return templates.TemplateResponse(request, "exam_editor.html", {
         "request": request,
         "user_info": user,
         "paper": dict(paper),
@@ -540,7 +540,7 @@ async def exam_new_page(request: Request, user: dict = Depends(get_current_teach
             (user['id'],)
         ).fetchall()
 
-    return templates.TemplateResponse("exam_editor.html", {
+    return templates.TemplateResponse(request, "exam_editor.html", {
         "request": request,
         "user_info": user,
         "paper": None,
@@ -574,7 +574,7 @@ async def submission_detail_page(request: Request, submission_id: int, user: dic
             if paper:
                 exam_questions = json.loads(paper['questions_json'])
 
-    return templates.TemplateResponse("submission_detail.html", {
+    return templates.TemplateResponse(request, "submission_detail.html", {
         "request": request,
         "user_info": user,
         "assignment": assignment,
@@ -598,7 +598,7 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
             return RedirectResponse(url=f"/assignment/{assignment_id}")
 
         if user['role'] == 'student' and assignment['status'] == 'new':
-            return templates.TemplateResponse("status.html",
+            return templates.TemplateResponse(request, "status.html",
                 {"request": request, "success": False, "message": "该考试尚未发布", "back_url": "/dashboard"})
 
         paper = conn.execute("SELECT * FROM exam_papers WHERE id = ?", (assignment['exam_paper_id'],)).fetchone()
@@ -614,7 +614,7 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
             ).fetchone()
             submission = dict(submission_row) if submission_row else None
 
-    return templates.TemplateResponse("exam_take.html", {
+    return templates.TemplateResponse(request, "exam_take.html", {
         "request": request,
         "user_info": user,
         "assignment": assignment,

@@ -12,7 +12,7 @@ from .config import BASE_DIR, STATIC_DIR
 from .database import init_database
 
 # 导入所有 V4.0 路由
-from .routers import ui, files, homework, ai
+from .routers import ui, files, homework, ai, materials
 from .routers import manage as manage_router  # 避免命名冲突
 from .routers import session as session_router
 
@@ -54,7 +54,7 @@ async def not_found_exception_handler(request: Request, exc: HTTPException):
     if request.url.path.startswith("/api"):
         return JSONResponse({"detail": "接口不存在"}, status_code=404)
 
-    return templates.TemplateResponse("error.html", {
+    return templates.TemplateResponse(request, "error.html", {
         "request": request,
         "error_code": 404,
         "error_title": "页面未找到",
@@ -76,7 +76,7 @@ async def general_exception_handler(request: Request, exc: Exception):
     if request.url.path.startswith("/api"):
         return JSONResponse({"detail": "服务器内部错误，请稍后重试"}, status_code=500)
 
-    return templates.TemplateResponse("error.html", {
+    return templates.TemplateResponse(request, "error.html", {
         "request": request,
         "error_code": 500,
         "error_title": "服务器内部错误",
@@ -98,6 +98,7 @@ app.include_router(ui.router)
 app.include_router(files.router)
 app.include_router(homework.router)
 app.include_router(ai.router)
+app.include_router(materials.router)
 app.include_router(manage_router.router)
 
 app.include_router(session_router.router)
