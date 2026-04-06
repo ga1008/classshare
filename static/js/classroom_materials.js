@@ -118,6 +118,9 @@ async function downloadSelected(ids) {
         let message = '下载失败';
         try {
             const errorData = await response.json();
+            if (window.handleAuthFailureResponse) {
+                await window.handleAuthFailureResponse(response, errorData);
+            }
             message = errorData.detail || errorData.message || message;
         } catch {
             // ignore

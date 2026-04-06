@@ -404,9 +404,10 @@ class AIChatComponent {
     // (loadOrCreateSession, loadSession, startNewSession 保持不变)
     async loadOrCreateSession() {
         try {
-            const response = await fetch(`/api/ai/chat/sessions/${this.classOfferingId}`);
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.detail || '获取会话失败');
+            const data = window.apiFetch
+                ? await window.apiFetch(`/api/ai/chat/sessions/${this.classOfferingId}`, { silent: true })
+                : null;
+            if (!data) throw new Error('获取会话失败');
             if (data.sessions && data.sessions.length > 0) {
                 await this.loadSession(data.sessions[0].session_uuid);
             } else {
@@ -423,6 +424,9 @@ class AIChatComponent {
         try {
             const response = await fetch(`/api/ai/chat/history/${uuid}`);
             const data = await response.json();
+            if (!response.ok && window.handleAuthFailureResponse) {
+                await window.handleAuthFailureResponse(response, data);
+            }
             if (!response.ok) throw new Error(data.detail || '加载历史失败');
 
             data.messages.forEach(msg => {
@@ -455,6 +459,9 @@ class AIChatComponent {
         try {
             const response = await fetch(`/api/ai/chat/session/new/${this.classOfferingId}`, { method: 'POST' });
             const data = await response.json();
+            if (!response.ok && window.handleAuthFailureResponse) {
+                await window.handleAuthFailureResponse(response, data);
+            }
             if (!response.ok) throw new Error(data.detail || '创建新会话失败');
             this.currentSessionUUID = data.session.session_uuid;
             this.messagesBox.innerHTML = '';
@@ -532,6 +539,9 @@ class AIChatComponent {
                 const errorText = await response.text();
                 try {
                     const errorJson = JSON.parse(errorText);
+                    if (window.handleAuthFailureResponse) {
+                        await window.handleAuthFailureResponse(response, errorJson);
+                    }
                     throw new Error(errorJson.detail || `服务器错误: ${response.status}`);
                 } catch (e) {
                      throw new Error(errorText || `服务器错误: ${response.status}`);

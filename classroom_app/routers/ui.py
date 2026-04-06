@@ -19,8 +19,20 @@ from ..dependencies import (
 # 修复：移除，V4.0 roster_handler 不再有 parse_excel_to_students
 # from ..services.roster_handler import parse_excel_to_students
 from ..database import get_db_connection
+from ..dependencies import build_login_url, sanitize_next_path, get_user_hint_from_request
+from ..dependencies import infer_required_role_from_path, get_role_label
 
 router = APIRouter()
+
+
+def _build_login_page_context(request: Request, next_url: Optional[str]) -> dict:
+    safe_next = sanitize_next_path(next_url, fallback="/dashboard")
+    return {
+        "request": request,
+        "next_url": safe_next,
+        "teacher_entry_url": build_login_url("/teacher/login", safe_next),
+        "student_entry_url": build_login_url("/student/login", safe_next),
+    }
 
 
 # ============================
@@ -36,14 +48,22 @@ async def root(request: Request, user: Optional[dict] = Depends(get_current_user
 
 
 @router.get("/student/login", response_class=HTMLResponse)
-async def student_login_page(request: Request):
+async def student_login_page(request: Request, next: Optional[str] = None):
     # V4.0 不再需要 class_name 和 course_name
-    return templates.TemplateResponse(request, "student_login_v4.html", {"request": request})
+    return templates.TemplateResponse(
+        request,
+        "student_login_v4.html",
+        _build_login_page_context(request, next),
+    )
 
 
 @router.get("/teacher/login", response_class=HTMLResponse)
-async def teacher_login_page(request: Request):
-    return templates.TemplateResponse(request, "teacher_login_v4.html", {"request": request})
+async def teacher_login_page(request: Request, next: Optional[str] = None):
+    return templates.TemplateResponse(
+        request,
+        "teacher_login_v4.html",
+        _build_login_page_context(request, next),
+    )
 
 
 @router.get("/teacher/register", response_class=HTMLResponse)
@@ -51,11 +71,44 @@ async def teacher_register_page(request: Request):
     return templates.TemplateResponse(request, "teacher_register_v4.html", {"request": request})
 
 
+@router.get("/auth/forbidden", response_class=HTMLResponse)
+async def permission_warning_page(
+    request: Request,
+    next: Optional[str] = None,
+    required_role: Optional[str] = None,
+    user: Optional[dict] = Depends(get_current_user_optional),
+):
+    safe_next = sanitize_next_path(next, fallback="/dashboard")
+    user_hint = user or get_user_hint_from_request(request) or {}
+    effective_required_role = required_role or infer_required_role_from_path(safe_next.split("?", 1)[0])
+    current_role = user_hint.get("role")
+
+    return templates.TemplateResponse(request, "permission_denied.html", {
+        "request": request,
+        "next_url": safe_next,
+        "current_user": user_hint,
+        "current_role_label": get_role_label(current_role),
+        "required_role": effective_required_role,
+        "required_role_label": get_role_label(effective_required_role) if effective_required_role else "",
+        "teacher_login_url": build_login_url("/teacher/login", safe_next),
+        "student_login_url": build_login_url("/student/login", safe_next),
+        "dashboard_url": "/dashboard" if user_hint else "/",
+        "show_teacher_login": True,
+        "permission_message": "当前账号已登录，但没有访问该页面或资源的权限。",
+    })
+
+
 @router.post("/student/login")
-async def handle_student_login(request: Request, name: str = Form(), student_id_number: str = Form()):
+async def handle_student_login(
+    request: Request,
+    name: str = Form(),
+    student_id_number: str = Form(),
+    next: Optional[str] = Form(default=None),
+):
     """V4.0: 学生登录 - 验证数据库"""
     sid_c = student_id_number.strip()
     name_c = name.strip()
+    safe_next = sanitize_next_path(next, fallback="/dashboard")
 
     # 获取客户端IP
     from ..dependencies import get_client_ip, invalidate_user_session
@@ -70,7 +123,7 @@ async def handle_student_login(request: Request, name: str = Form(), student_id_
     if not student:
         return templates.TemplateResponse(request, "status.html",
                                           {"request": request, "success": False, "message": "登录失败：姓名或学号错误。",
-                                           "back_url": "/student/login"})
+                                           "back_url": build_login_url("/student/login", safe_next)})
 
     student_data = dict(student)
 
@@ -88,7 +141,10 @@ async def handle_student_login(request: Request, name: str = Form(), student_id_
     from ..dependencies import create_access_token
     access_token = create_access_token(token_data, client_ip)
 
-    response = RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+    response = RedirectResponse(
+        url=safe_next,
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
     response.set_cookie(key="access_token", value=access_token, httponly=True)
     return response
 
@@ -115,10 +171,16 @@ async def handle_teacher_register(request: Request, name: str = Form(), email: s
 
 
 @router.post("/teacher/login")
-async def handle_teacher_login(request: Request, email: str = Form(), password: str = Form()):
+async def handle_teacher_login(
+    request: Request,
+    email: str = Form(),
+    password: str = Form(),
+    next: Optional[str] = Form(default=None),
+):
     """V4.0: 教师登录 - 验证数据库"""
     from ..dependencies import get_client_ip, invalidate_user_session
     client_ip = get_client_ip(request)
+    safe_next = sanitize_next_path(next, fallback="/dashboard")
 
     with get_db_connection() as conn:
         teacher = conn.execute("SELECT * FROM teachers WHERE email = ?", (email,)).fetchone()
@@ -127,7 +189,7 @@ async def handle_teacher_login(request: Request, email: str = Form(), password: 
     if not teacher or not verify_password(password, teacher['hashed_password']):
         return templates.TemplateResponse(request, "status.html",
                                           {"request": request, "success": False, "message": "登录失败：邮箱或密码错误。",
-                                           "back_url": "/teacher/login"})
+                                           "back_url": build_login_url("/teacher/login", safe_next)})
 
     teacher_data = dict(teacher)
 
@@ -145,7 +207,10 @@ async def handle_teacher_login(request: Request, email: str = Form(), password: 
     from ..dependencies import create_access_token
     access_token = create_access_token(token_data, client_ip)
 
-    response = RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+    response = RedirectResponse(
+        url=safe_next,
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
     response.set_cookie(key="access_token", value=access_token, httponly=True)
     return response
 

@@ -15,6 +15,7 @@
     <p class="subtitle">请输入您的真实姓名与学号进入课堂</p>
 
     <form action="/student/login" method="post">
+        <input type="hidden" name="next" value="{{ next_url }}">
         <div class="form-group text-left">
             <label class="form-label" for="name">姓名</label>
             <input type="text" id="name" name="name" class="form-control" placeholder="请输入姓名" required autofocus>
@@ -23,11 +24,11 @@
             <label class="form-label" for="student_id_number">学号</label>
             <input type="text" id="student_id_number" name="student_id_number" class="form-control" placeholder="请输入学号" required>
         </div>
-        <button type="submit" class="btn btn-primary w-full btn-lg">登 录</button>
+        <button type="submit" class="btn btn-primary w-full btn-lg">登录</button>
     </form>
 
-    <div class="footer-links">
-        <a href="/teacher/login" class="text-muted">我是教师，前往教师登录 &rarr;</a>
+    <div class="footer-links footer-links-subtle">
+        <a href="{{ teacher_entry_url }}" class="text-muted">教师入口</a>
     </div>
 </div>
 {% endblock %}

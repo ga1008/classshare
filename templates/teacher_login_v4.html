@@ -15,6 +15,7 @@
     <p class="subtitle">管理您的课堂、资源与作业</p>
 
     <form action="/teacher/login" method="post">
+        <input type="hidden" name="next" value="{{ next_url }}">
         <div class="form-group text-left">
             <label class="form-label" for="email">邮箱</label>
             <input type="email" id="email" name="email" class="form-control" placeholder="请输入教师邮箱" required autofocus>
@@ -23,13 +24,14 @@
             <label class="form-label" for="password">密码</label>
             <input type="password" id="password" name="password" class="form-control" placeholder="请输入密码" required>
         </div>
-        <button type="submit" class="btn btn-success w-full btn-lg">登 录</button>
+        <button type="submit" class="btn btn-success w-full btn-lg">登录</button>
     </form>
 
     <div class="footer-links row-links">
         <a href="/teacher/register">注册账户</a>
-        <span class="text-muted">|</span>
-        <a href="/student/login">返回学生登录</a>
+    </div>
+    <div class="footer-links footer-links-subtle">
+        <a href="{{ student_entry_url }}">学生入口</a>
     </div>
 </div>
 {% endblock %}

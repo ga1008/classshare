@@ -81,6 +81,27 @@
         </section>
     </main>
 </div>
+
+<div id="viewer-image-lightbox" class="materials-lightbox" hidden aria-hidden="true">
+    <div class="materials-lightbox-shell">
+        <div class="materials-lightbox-toolbar">
+            <div class="materials-lightbox-copy">
+                <div class="text-muted text-sm">图片预览</div>
+                <strong id="viewer-image-lightbox-title">大图查看</strong>
+            </div>
+            <div class="materials-lightbox-actions">
+                <span class="materials-lightbox-scale" id="viewer-image-lightbox-scale">100%</span>
+                <button type="button" class="btn btn-ghost btn-sm" id="viewer-image-zoom-out-btn">缩小</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="viewer-image-zoom-in-btn">放大</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="viewer-image-fullscreen-btn">全屏</button>
+                <button type="button" class="btn btn-primary btn-sm" id="viewer-image-close-btn">关闭</button>
+            </div>
+        </div>
+        <div class="materials-lightbox-stage" id="viewer-image-lightbox-stage">
+            <img id="viewer-image-lightbox-img" alt="预览大图">
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}

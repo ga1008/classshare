@@ -1,0 +1,42 @@
+{% extends "base_centered.html" %}
+
+{% block title %}权限受限{% endblock %}
+
+{% block bg_gradient %}background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);{% endblock %}
+
+{% block card_content %}
+<div class="status-card warning">
+    <div class="status-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
+    </div>
+    <div class="status-title">当前账号无权访问</div>
+    <div class="status-message">
+        <p>{{ permission_message }}</p>
+        {% if current_user.name %}
+        <p>当前身份：{{ current_user.name }}（{{ current_role_label }}）</p>
+        {% endif %}
+        {% if required_role %}
+        <p>继续访问通常需要 {{ required_role_label }} 身份。</p>
+        {% endif %}
+    </div>
+    <div class="status-actions" style="display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
+        {% if show_teacher_login %}
+        <a href="{{ teacher_login_url }}" class="btn btn-primary" style="min-width: 160px; justify-content: center;">
+            教师登录
+        </a>
+        {% endif %}
+        <a href="{{ dashboard_url }}" class="btn btn-outline" style="min-width: 160px; justify-content: center;">
+            返回页面
+        </a>
+    </div>
+    {% if required_role == 'student' %}
+    <div class="footer-links footer-links-subtle">
+        <a href="{{ student_login_url }}">学生入口</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

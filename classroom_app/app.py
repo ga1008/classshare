@@ -3,13 +3,15 @@ from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException
 import sys
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 # 修复：导入 templates 以便在错误处理程序中使用
 from .core import app, ai_client, templates
 # 修复：移除 CONFIG_FILE 和 CHAT_LOG_DIR (后者在 V4.0 services/chat_handler.py 中管理)
 from .config import BASE_DIR, STATIC_DIR
 from .database import init_database
+from .dependencies import build_login_redirect_url, build_permission_warning_url
+from .dependencies import get_user_hint_from_request, infer_required_role_from_path
 
 # 导入所有 V4.0 路由
 from .routers import ui, files, homework, ai, materials
@@ -45,6 +47,62 @@ async def shutdown_event():
 # -----------------
 # 新增：全局异常处理器
 # -----------------
+
+def _is_api_request(request: Request) -> bool:
+    return request.url.path.startswith("/api")
+
+
+@app.exception_handler(401)
+async def unauthorized_exception_handler(request: Request, exc: HTTPException):
+    login_url = build_login_redirect_url(request)
+    detail = exc.detail if isinstance(exc.detail, str) else "登录状态已失效，请重新登录。"
+
+    if _is_api_request(request):
+        return JSONResponse({
+            "detail": detail,
+            "code": "login_required",
+            "redirect_to": login_url,
+        }, status_code=401)
+
+    response = RedirectResponse(url=login_url, status_code=303)
+    response.delete_cookie("access_token")
+    return response
+
+
+@app.exception_handler(403)
+async def forbidden_exception_handler(request: Request, exc: HTTPException):
+    user_hint = get_user_hint_from_request(request)
+    required_role = None
+    if exc.headers:
+        required_role = exc.headers.get("X-Required-Role")
+    required_role = required_role or infer_required_role_from_path(request.url.path)
+
+    if not user_hint:
+        login_url = build_login_redirect_url(request)
+        if _is_api_request(request):
+            return JSONResponse({
+                "detail": "登录状态已失效，请重新登录。",
+                "code": "login_required",
+                "redirect_to": login_url,
+            }, status_code=401)
+
+        response = RedirectResponse(url=login_url, status_code=303)
+        response.delete_cookie("access_token")
+        return response
+
+    warning_url = build_permission_warning_url(request, required_role=required_role)
+    detail = exc.detail if isinstance(exc.detail, str) else "当前账号没有访问该页面或资源的权限。"
+
+    if _is_api_request(request):
+        return JSONResponse({
+            "detail": detail,
+            "code": "permission_denied",
+            "required_role": required_role,
+            "redirect_to": warning_url,
+        }, status_code=403)
+
+    return RedirectResponse(url=warning_url, status_code=303)
+
 
 @app.exception_handler(404)
 async def not_found_exception_handler(request: Request, exc: HTTPException):
