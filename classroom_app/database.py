@@ -497,10 +497,22 @@ def init_database():
                 conn.execute("ALTER TABLE chat_logs ADD COLUMN logged_at TEXT")
             except sqlite3.OperationalError:
                 pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE chat_logs ADD COLUMN message_type TEXT DEFAULT 'text'")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE chat_logs ADD COLUMN emoji_payload_json TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
 
             conn.execute(
                 "UPDATE chat_logs SET logged_at = timestamp "
                 "WHERE (logged_at IS NULL OR logged_at = '') AND instr(timestamp, 'T') > 0"
+            )
+            conn.execute(
+                "UPDATE chat_logs SET message_type = 'text' "
+                "WHERE message_type IS NULL OR message_type = ''"
             )
 
             conn.execute('''
@@ -527,6 +539,57 @@ def init_database():
                 "ON chat_logs (class_offering_id, id DESC)"
             )
             conn.execute("DROP INDEX IF EXISTS idx_chat_logs_legacy_dedupe")
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS custom_emojis
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             class_offering_id INTEGER NOT NULL,
+                             owner_user_id INTEGER NOT NULL,
+                             owner_user_role TEXT NOT NULL,
+                             display_name TEXT NOT NULL,
+                             original_filename TEXT NOT NULL,
+                             file_hash TEXT NOT NULL,
+                             mime_type TEXT NOT NULL,
+                             file_size INTEGER NOT NULL,
+                             image_width INTEGER,
+                             image_height INTEGER,
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                             UNIQUE (class_offering_id, owner_user_id, owner_user_role, file_hash)
+                         )
+                         ''')
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS emoji_usage_stats
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             class_offering_id INTEGER NOT NULL,
+                             user_id INTEGER NOT NULL,
+                             user_role TEXT NOT NULL,
+                             emoji_type TEXT NOT NULL,
+                             emoji_key TEXT NOT NULL,
+                             usage_count INTEGER NOT NULL DEFAULT 0,
+                             last_used_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                             UNIQUE (class_offering_id, user_id, user_role, emoji_type, emoji_key)
+                         )
+                         ''')
+
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_custom_emojis_owner "
+                "ON custom_emojis (class_offering_id, owner_user_role, owner_user_id, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_custom_emojis_hash "
+                "ON custom_emojis (file_hash)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_emoji_usage_owner "
+                "ON emoji_usage_stats (class_offering_id, user_role, user_id, usage_count DESC, last_used_at DESC)"
+            )
 
             # 11. 课堂 AI 配置 (新功能)
             conn.execute('''

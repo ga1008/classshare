@@ -22,6 +22,7 @@ from typing import Optional
 from pathlib import Path
 
 from ..database import get_db_connection
+from ..services.emoji_service import increment_emoji_usage, resolve_custom_emoji_payloads
 from ..services.file_handler import delete_file_safely
 from ..services.file_service import save_file_globally, get_file_lock, stream_file
 
@@ -756,7 +757,7 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
             command = None
             try:
                 parsed = json.loads(data)
-                if isinstance(parsed, dict) and parsed.get("action") in {"switch_alias", "load_history"}:
+                if isinstance(parsed, dict) and parsed.get("action") in {"switch_alias", "load_history", "send_message"}:
                     command = parsed
             except json.JSONDecodeError:
                 command = None
@@ -789,16 +790,60 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
                     await manager.broadcast_alias_states(class_offering_id)
                     continue
 
-                before_id = command.get("before_id")
-                if before_id is not None:
-                    try:
-                        before_id = int(before_id)
-                    except (TypeError, ValueError):
-                        before_id = None
+                if command["action"] == "load_history":
+                    before_id = command.get("before_id")
+                    if before_id is not None:
+                        try:
+                            before_id = int(before_id)
+                        except (TypeError, ValueError):
+                            before_id = None
 
-                await websocket.send_text(
-                    json.dumps(get_older_history_payload(class_offering_id, before_id), ensure_ascii=False)
-                )
+                    await websocket.send_text(
+                        json.dumps(get_older_history_payload(class_offering_id, before_id), ensure_ascii=False)
+                    )
+                    continue
+
+                message_text = str(command.get("text") or "").strip()
+                requested_custom_ids = command.get("custom_emoji_ids") or []
+                requested_unicode_emojis = command.get("used_unicode_emojis") or []
+
+                with get_db_connection() as conn:
+                    custom_emoji_payloads = resolve_custom_emoji_payloads(
+                        conn,
+                        class_offering_id,
+                        requested_custom_ids,
+                        user,
+                    )
+
+                if not message_text and not custom_emoji_payloads:
+                    continue
+
+                now = datetime.now()
+                display_time = now.strftime("%H:%M")
+                display_name = manager.get_display_name(class_offering_id, client_id, ws_user['name'])
+                stored_message = await save_chat_message(class_offering_id, {
+                    "type": "chat",
+                    "sender": display_name,
+                    "role": ws_user['role'],
+                    "message": message_text,
+                    "message_type": "rich" if custom_emoji_payloads else "text",
+                    "custom_emojis": custom_emoji_payloads,
+                    "timestamp": display_time,
+                    "class_offering_id": class_offering_id,
+                    "user_id": user_pk,
+                    "logged_at": now.isoformat(),
+                })
+                with get_db_connection() as conn:
+                    increment_emoji_usage(
+                        conn,
+                        class_offering_id,
+                        user,
+                        requested_unicode_emojis,
+                        [item["id"] for item in custom_emoji_payloads],
+                        used_at=now.isoformat(),
+                    )
+                    conn.commit()
+                await manager.broadcast(class_offering_id, json.dumps(stored_message, ensure_ascii=False))
                 continue
 
             now = datetime.now()
@@ -809,6 +854,7 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
                 "sender": display_name,
                 "role": ws_user['role'],
                 "message": data,
+                "message_type": "text",
                 "timestamp": display_time,
                 "class_offering_id": class_offering_id,
                 "user_id": user_pk,

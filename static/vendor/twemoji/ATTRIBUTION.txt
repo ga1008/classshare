@@ -1,0 +1,3 @@
+Twemoji graphics by Twitter/X.
+Source: https://github.com/jdecked/twemoji
+License: CC-BY 4.0

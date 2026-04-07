@@ -249,14 +249,23 @@ def ensure_room_history_migrated(room_id: int) -> None:
 
 def row_to_chat_message(row) -> dict:
     logged_at = row["logged_at"] if "logged_at" in row.keys() else None
-    return {
+    payload = {
         "id": row["id"],
         "type": "chat",
+        "user_id": row["user_id"] if "user_id" in row.keys() else None,
         "sender": row["user_name"],
         "role": row["user_role"],
         "message": row["message"],
         "timestamp": format_display_time(logged_at, row["timestamp"]),
     }
+    if "message_type" in row.keys():
+        payload["message_type"] = row["message_type"] or "text"
+    if "emoji_payload_json" in row.keys() and row["emoji_payload_json"]:
+        try:
+            payload["custom_emojis"] = json.loads(row["emoji_payload_json"])
+        except json.JSONDecodeError:
+            payload["custom_emojis"] = []
+    return payload
 
 
 def get_initial_history_payload(room_id: int) -> dict:
@@ -266,7 +275,7 @@ def get_initial_history_payload(room_id: int) -> dict:
     with get_db_connection() as conn:
         rows = conn.execute(
             """
-            SELECT id, user_name, user_role, message, timestamp, logged_at
+            SELECT id, user_id, user_name, user_role, message, timestamp, logged_at, message_type, emoji_payload_json
             FROM chat_logs
             WHERE class_offering_id = ?
               AND COALESCE(logged_at, timestamp) >= ?
@@ -311,7 +320,7 @@ def get_older_history_payload(room_id: int, before_id: Optional[int]) -> dict:
         if before_id is None:
             rows = conn.execute(
                 """
-                SELECT id, user_name, user_role, message, timestamp, logged_at
+                SELECT id, user_id, user_name, user_role, message, timestamp, logged_at, message_type, emoji_payload_json
                 FROM chat_logs
                 WHERE class_offering_id = ?
                 ORDER BY id DESC
@@ -322,7 +331,7 @@ def get_older_history_payload(room_id: int, before_id: Optional[int]) -> dict:
         else:
             rows = conn.execute(
                 """
-                SELECT id, user_name, user_role, message, timestamp, logged_at
+                SELECT id, user_id, user_name, user_role, message, timestamp, logged_at, message_type, emoji_payload_json
                 FROM chat_logs
                 WHERE class_offering_id = ?
                   AND id < ?
@@ -364,6 +373,9 @@ async def save_chat_message(room_id: int, message: dict) -> dict:
     timestamp = str(message.get("timestamp") or "")
     logged_at = str(message.get("logged_at") or datetime.now().isoformat())
     user_id = str(message.get("user_id") or sender)
+    message_type = str(message.get("message_type") or "text")
+    emoji_payload = message.get("custom_emojis") or []
+    emoji_payload_json = json.dumps(emoji_payload, ensure_ascii=False) if emoji_payload else None
 
     async with chat_log_lock:
         try:
@@ -371,10 +383,10 @@ async def save_chat_message(room_id: int, message: dict) -> dict:
                 cursor = conn.execute(
                     """
                     INSERT INTO chat_logs
-                    (class_offering_id, user_id, user_name, user_role, message, timestamp, logged_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (class_offering_id, user_id, user_name, user_role, message, timestamp, logged_at, message_type, emoji_payload_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (room_id, user_id, sender, role, content, timestamp, logged_at),
+                    (room_id, user_id, sender, role, content, timestamp, logged_at, message_type, emoji_payload_json),
                 )
                 conn.commit()
                 message_id = cursor.lastrowid
@@ -389,15 +401,19 @@ async def save_chat_message(room_id: int, message: dict) -> dict:
         except Exception as exc:
             print(f"[ERROR] 保存课堂聊天记录到文件失败 (课堂: {room_id}): {exc}", file=sys.stderr)
 
-    return {
+    response = {
         "id": message_id,
         "type": "chat",
+        "user_id": user_id,
         "sender": sender,
         "role": role,
         "message": content,
         "timestamp": timestamp,
+        "message_type": message_type,
     }
-
+    if emoji_payload:
+        response["custom_emojis"] = emoji_payload
+    return response
 
 class MultiRoomConnectionManager:
     def __init__(self):

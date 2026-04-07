@@ -15,7 +15,7 @@ from .dependencies import clear_access_token_cookie, get_active_user_from_reques
 from .dependencies import infer_required_role_from_path
 
 # 导入所有 V4.0 路由
-from .routers import ui, files, homework, ai, materials
+from .routers import ui, files, homework, ai, materials, emoji
 from .routers import manage as manage_router  # 避免命名冲突
 from .routers import session as session_router
 
@@ -162,6 +162,7 @@ app.include_router(files.router)
 app.include_router(homework.router)
 app.include_router(ai.router)
 app.include_router(materials.router)
+app.include_router(emoji.router)
 app.include_router(manage_router.router)
 
 app.include_router(session_router.router)
