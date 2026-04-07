@@ -709,6 +709,10 @@ def init_database():
                                  TEXT
                                  NOT
                                      NULL, -- 消息的文本部分
+                             thinking_content
+                                 TEXT,     -- 推理/思考过程（仅后端内部使用）
+                             final_answer
+                                 TEXT,     -- 最终回答正文，便于前端历史消息恢复
                              attachments_json
                                  TEXT,     -- 存储附件信息, e.g., '[{"type": "image", "name": "screenshot.png", ...}]'
                              timestamp
@@ -725,6 +729,102 @@ def init_database():
                                      ) ON DELETE CASCADE
                          )
                          ''')
+
+            # 兼容已有数据库：为 ai_chat_messages 补充流式思考相关字段
+            try:
+                conn.execute("ALTER TABLE ai_chat_messages ADD COLUMN thinking_content TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE ai_chat_messages ADD COLUMN final_answer TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+
+            # 13.5 隐藏心理侧写快照
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS ai_psychology_profiles
+                         (
+                             id
+                                 INTEGER
+                                 PRIMARY
+                                     KEY
+                                 AUTOINCREMENT,
+                             class_offering_id
+                                 INTEGER
+                                 NOT
+                                     NULL,
+                             session_id
+                                 INTEGER
+                                 NOT
+                                     NULL,
+                             user_pk
+                                 INTEGER
+                                 NOT
+                                     NULL,
+                             user_role
+                                 TEXT
+                                 NOT
+                                     NULL,
+                             round_index
+                                 INTEGER
+                                 NOT
+                                     NULL
+                                 DEFAULT 0,
+                             profile_summary
+                                 TEXT,
+                             mental_state_summary
+                                 TEXT,
+                             support_strategy
+                                 TEXT,
+                             hidden_premise_prompt
+                                 TEXT,
+                             confidence
+                                 TEXT,
+                             raw_payload
+                                 TEXT,
+                             created_at
+                                 TEXT
+                                 DEFAULT
+                                     CURRENT_TIMESTAMP,
+                             FOREIGN
+                                 KEY
+                                 (
+                                  class_offering_id
+                                     ) REFERENCES class_offerings
+                                 (
+                                  id
+                                     ) ON DELETE CASCADE,
+                             FOREIGN
+                                 KEY
+                                 (
+                                  session_id
+                                     ) REFERENCES ai_chat_sessions
+                                 (
+                                  id
+                                     ) ON DELETE CASCADE
+                         )
+                         ''')
+
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ai_chat_sessions_owner "
+                "ON ai_chat_sessions (class_offering_id, user_pk, user_role, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ai_chat_messages_session_time "
+                "ON ai_chat_messages (session_id, timestamp ASC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ai_chat_messages_session_role_time "
+                "ON ai_chat_messages (session_id, role, timestamp DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ai_psych_profiles_lookup "
+                "ON ai_psychology_profiles (class_offering_id, user_pk, user_role, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ai_psych_profiles_session_round "
+                "ON ai_psychology_profiles (session_id, round_index DESC)"
+            )
 
             # 14. 试卷库
             conn.execute('''

@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from contextlib import asynccontextmanager # 1. 新增导入
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # --- 加载 .env 配置 ---
 load_dotenv()
@@ -226,16 +226,111 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)  # 2. 在此处注册 lifespan
 
+STREAM_EVENT_MEDIA_TYPE = "application/x-ndjson; charset=utf-8"
+THINK_TAG_OPEN = "<think>"
+THINK_TAG_CLOSE = "</think>"
+
 
 class AIChatRequest(BaseModel):
     system_prompt: str
     messages: List[Dict[str, Any]]  # 历史消息, 格式: {"role": "user", "content": "..."}
     new_message: str  # 用户的最新文本输入
-    base64_urls: List[str] = []  # 新上传的图片 (base64 data URLs)
+    base64_urls: List[str] = Field(default_factory=list)  # 新上传的图片 (base64 data URLs)
     model_capability: Literal["standard", "thinking", "vision"] = "standard"
+    response_format: Literal["text", "json"] = "text"
 
 
 # --- 辅助函数 (保持不变) ---
+def _encode_stream_event(event: str, **payload: Any) -> str:
+    return json.dumps({"event": event, **payload}, ensure_ascii=False) + "\n"
+
+
+def _coerce_stream_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts: List[str] = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text_value = item.get("text") or item.get("content")
+                if isinstance(text_value, str):
+                    parts.append(text_value)
+        return "".join(parts)
+    if isinstance(value, dict):
+        text_value = value.get("text") or value.get("content")
+        if isinstance(text_value, str):
+            return text_value
+    return str(value)
+
+
+def _extract_delta_parts(delta: Any) -> tuple[str, str]:
+    content_text = _coerce_stream_text(getattr(delta, "content", None))
+
+    reasoning_text = ""
+    for attr_name in ("reasoning_content", "reasoning", "thinking"):
+        candidate = _coerce_stream_text(getattr(delta, attr_name, None))
+        if candidate:
+            reasoning_text = candidate
+            break
+
+    if not reasoning_text:
+        model_extra = getattr(delta, "model_extra", None)
+        if isinstance(model_extra, dict):
+            for key in ("reasoning_content", "reasoning", "thinking"):
+                candidate = _coerce_stream_text(model_extra.get(key))
+                if candidate:
+                    reasoning_text = candidate
+                    break
+
+    return reasoning_text, content_text
+
+
+class ThinkTagStreamParser:
+    def __init__(self) -> None:
+        self.buffer = ""
+        self.in_think = False
+
+    def feed(self, text: str) -> list[tuple[str, str]]:
+        if not text:
+            return []
+
+        self.buffer += text
+        segments: list[tuple[str, str]] = []
+
+        while self.buffer:
+            tag = THINK_TAG_CLOSE if self.in_think else THINK_TAG_OPEN
+            tag_index = self.buffer.find(tag)
+            if tag_index == -1:
+                safe_length = len(self.buffer) - (len(tag) - 1)
+                if safe_length <= 0:
+                    break
+                chunk = self.buffer[:safe_length]
+                self.buffer = self.buffer[safe_length:]
+                if chunk:
+                    segments.append(("thinking" if self.in_think else "answer", chunk))
+                break
+
+            chunk = self.buffer[:tag_index]
+            if chunk:
+                segments.append(("thinking" if self.in_think else "answer", chunk))
+            self.buffer = self.buffer[tag_index + len(tag):]
+            self.in_think = not self.in_think
+
+        return segments
+
+    def flush(self) -> list[tuple[str, str]]:
+        if not self.buffer:
+            return []
+
+        remaining = self.buffer
+        self.buffer = ""
+        return [("thinking" if self.in_think else "answer", remaining)]
+
+
 def is_image_file(file_path: Path) -> bool:
     try:
         Image.open(file_path).verify(); return True  # Use verify() for faster check
@@ -539,6 +634,144 @@ async def _call_ai_platform_chat_stream_generator(
             print(f"[AI WORKER] {platform_name} 流式聊天结束。")
 
 
+async def _call_ai_platform_chat_stream_events(
+        system_prompt: str,
+        messages: List[Dict],
+        capability: Literal["standard", "thinking", "vision"] = "standard"
+) -> AsyncGenerator[str, None]:
+    thinking_content = ""
+    final_answer = ""
+
+    final_messages = [
+        {"role": "system", "content": system_prompt},
+        *messages
+    ]
+
+    selected_platform_config = _get_selected_platform_config(capability)
+    if not selected_platform_config:
+        error_msg = f"娌℃湁鎵惧埌鏀寔 '{capability}' 鑳藉姏鐨勫凡鍚敤AI骞冲彴銆?"
+        print(f"[ERROR] {error_msg}")
+        yield _encode_stream_event("error", message=error_msg)
+        yield _encode_stream_event("done", has_thinking=False)
+        return
+
+    platform_name = selected_platform_config["name"]
+    model_name = selected_platform_config["models"][capability]
+    api_key = selected_platform_config["api_key"]
+    platform_type = selected_platform_config["type"]
+    thinking_supported = capability == "thinking"
+    think_tag_parser = ThinkTagStreamParser() if thinking_supported else None
+
+    async with ai_semaphore:
+        print(
+            f"[AI WORKER] 寮€濮嬪鐞嗙粨鏋勫寲娴佸紡鑱婂ぉ (Platform: {platform_name}, Model: {model_name}, Capability: {capability})")
+
+        if not api_key:
+            error_msg = f"鏈厤缃?{platform_name} 鐨?API_KEY"
+            print(f"[ERROR] {error_msg}")
+            yield _encode_stream_event("error", message=error_msg)
+            yield _encode_stream_event("done", has_thinking=False)
+            return
+
+        thinking_end_sent = False
+
+        def forward_segment(segment_type: str, text: str) -> list[str]:
+            nonlocal thinking_content, final_answer, thinking_end_sent
+            events: list[str] = []
+            if not text:
+                return events
+
+            if segment_type == "thinking":
+                thinking_content += text
+                events.append(_encode_stream_event("thinking_delta", delta=text))
+                return events
+
+            if thinking_content and not thinking_end_sent:
+                events.append(_encode_stream_event("thinking_end"))
+                thinking_end_sent = True
+
+            final_answer += text
+            events.append(_encode_stream_event("answer_delta", delta=text))
+            return events
+
+        yield _encode_stream_event(
+            "meta",
+            platform=platform_name,
+            model=model_name,
+            capability=capability,
+            thinking_supported=thinking_supported,
+        )
+
+        try:
+            if platform_type == "volcengine":
+                if not AsyncArk:
+                    raise ImportError("volcenginesdkarkruntime 鏈畨瑁?")
+                client = AsyncArk(api_key=api_key, timeout=180.0)
+                stream = await client.chat.completions.create(
+                    model=model_name,
+                    messages=final_messages,
+                    stream=True
+                )
+            elif platform_type == "openai":
+                if not AsyncOpenAI:
+                    raise ImportError("openai 搴撴湭瀹夎")
+                base_url = selected_platform_config["base_url"]
+                client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=180.0)
+                kwargs = {
+                    "model": model_name,
+                    "messages": final_messages,
+                    "stream": True,
+                }
+                if "DeepSeek-R1" in model_name:
+                    kwargs["extra_body"] = {"thinking_budget": 1024}
+                stream = await client.chat.completions.create(**kwargs)
+            else:
+                raise HTTPException(500, f"涓嶆敮鎸佺殑骞冲彴绫诲瀷: {platform_type}")
+
+            async for chunk in stream:
+                if not chunk.choices or not chunk.choices[0].delta:
+                    continue
+
+                delta = chunk.choices[0].delta
+                reasoning_text, content_text = _extract_delta_parts(delta)
+
+                if reasoning_text:
+                    for event in forward_segment("thinking", reasoning_text):
+                        yield event
+
+                if content_text:
+                    content_segments = (
+                        think_tag_parser.feed(content_text)
+                        if think_tag_parser else [("answer", content_text)]
+                    )
+                    for segment_type, segment_text in content_segments:
+                        for event in forward_segment(segment_type, segment_text):
+                            yield event
+
+        except Exception as e:
+            print(f"[ERROR] {platform_name} 缁撴瀯鍖栨祦寮忚亰澶╄皟鐢ㄥけ璐? {e}")
+            print(traceback.format_exc())
+            yield _encode_stream_event(
+                "error",
+                message=f"AI鍔╂墜鍐呴儴閿欒: {platform_name} 璋冪敤澶辫触: {e}",
+            )
+        finally:
+            if think_tag_parser:
+                for segment_type, segment_text in think_tag_parser.flush():
+                    for event in forward_segment(segment_type, segment_text):
+                        yield event
+
+            if thinking_content and not thinking_end_sent:
+                yield _encode_stream_event("thinking_end")
+
+            yield _encode_stream_event(
+                "done",
+                has_thinking=bool(thinking_content.strip()),
+                answer_chars=len(final_answer),
+                thinking_chars=len(thinking_content),
+            )
+
+
 async def _call_ai_platform_chat(
         system_prompt: str,
         messages: List[Dict],
@@ -692,7 +925,7 @@ async def ai_chat_task_stream(req: AIChatRequest):
     })
 
     # 3. 创建流式生成器
-    stream_generator = _call_ai_platform_chat_stream_generator(
+    stream_generator = _call_ai_platform_chat_stream_events(
         system_prompt=req.system_prompt,
         messages=history,  # 发送包含最新消息的完整历史
         capability=req.model_capability
@@ -700,7 +933,11 @@ async def ai_chat_task_stream(req: AIChatRequest):
 
     # 4. 返回 StreamingResponse
     # (重要: 确保 UTF-8 编码)
-    return StreamingResponse(stream_generator, media_type="text/plain; charset=utf-8")
+    return StreamingResponse(
+        stream_generator,
+        media_type=STREAM_EVENT_MEDIA_TYPE,
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/api/ai/chat")
@@ -734,9 +971,21 @@ async def ai_chat_task(req: AIChatRequest):
         "content": new_user_message_content
     })
 
-    # 5. 调用 AI
-    # (注意：_call_ai_platform_chat 会处理 system_prompt)
     try:
+        if req.response_format == "json":
+            json_messages = [
+                {"role": "system", "content": req.system_prompt},
+                *history,
+            ]
+            ai_response_json = await _call_ai_platform(
+                json_messages,
+                capability=req.model_capability,
+                require_json_output=True
+            )
+            return {"status": "success", "response_json": ai_response_json}
+
+        # 5. 调用 AI
+        # (注意：_call_ai_platform_chat 会处理 system_prompt)
         ai_response_text = await _call_ai_platform_chat(
             system_prompt=req.system_prompt,
             messages=history,

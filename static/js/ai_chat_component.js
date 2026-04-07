@@ -27,9 +27,6 @@ class AIChatComponent {
         this.deepThinkBtn = document.getElementById('ai-deep-think-btn');
 
         // --- 新增: 思考过程状态 ---
-        this.isCollectingThinking = false;
-        this.thinkingContent = '';
-        this.finalAnswer = '';
 
         // --- 窗口交互状态 ---
         this.isResizing = false;
@@ -296,23 +293,12 @@ class AIChatComponent {
         bubble.className = 'bubble';
 
         if (role === 'assistant') {
-            // 如果有思考过程，渲染为可折叠区域
-            if (thinkingContent && thinkingContent.trim()) {
-                // 1. 添加思考过程区域（默认折叠）
-                const thinkingSection = this.createThinkingSection(thinkingContent);
-                bubble.appendChild(thinkingSection);
-
-                // 2. 添加最终回答
-                const answerSection = document.createElement('div');
-                answerSection.className = 'final-answer';
-                answerSection.innerHTML = safeMarkedParse(content, '');
-                bubble.appendChild(answerSection);
-            } else {
-                // 没有思考过程，正常渲染
-                bubble.innerHTML = safeMarkedParse(content, '');
-            }
-
-            // 3. 添加代码块复制按钮
+            this.renderAssistantBubble(bubble, {
+                content,
+                thinkingContent,
+                thinkingState: thinkingContent && thinkingContent.trim() ? 'done' : 'none',
+                showStreamingCursor: false
+            });
             this.addCodeCopyButtons(bubble);
         } else {
             const p = document.createElement('p');
@@ -327,6 +313,11 @@ class AIChatComponent {
                 img.src = att.previewUrl;
                 img.alt = att.name;
                 bubble.appendChild(img);
+            } else if (att && att.name) {
+                const attachmentPill = document.createElement('div');
+                attachmentPill.className = 'ai-chat-attachment-pill';
+                attachmentPill.textContent = `附件: ${att.name}`;
+                bubble.appendChild(attachmentPill);
             }
         });
 
@@ -345,60 +336,207 @@ class AIChatComponent {
         this.scrollToBottom();
     }
 
-    /* *** 新增 (V4): 创建思考过程区域
+    getThinkingStatusMeta(status) {
+        if (status === 'thinking') {
+            return {
+                statusClass: 'thinking-status--thinking',
+                label: '正在思考中',
+                hint: '思考',
+                icon: '<span class="thinking-status-spinner" aria-hidden="true"></span>'
+            };
+        }
+
+        return {
+            statusClass: 'thinking-status--done',
+            label: '思考完成',
+            hint: '展开',
+            icon: `
+                <svg class="thinking-status-check" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M20 6 9 17l-5-5"></path>
+                </svg>
+            `
+        };
+    }
+
+    renderAssistantBubble(bubble, options = {}) {
+        const {
+            content = '',
+            thinkingContent = '',
+            thinkingState = 'none',
+            showStreamingCursor = false
+        } = options;
+
+        bubble.innerHTML = '';
+        const hasThinking = thinkingState !== 'none' && (thinkingContent.trim() || thinkingState === 'thinking');
+        const shouldShowAnswer = thinkingState !== 'thinking' && (Boolean(content) || !hasThinking || showStreamingCursor);
+
+        if (hasThinking) {
+            const thinkingSection = this.createThinkingSection(thinkingContent, { status: thinkingState });
+            bubble.appendChild(thinkingSection);
+        }
+
+        if (shouldShowAnswer) {
+            const answerSection = document.createElement('div');
+            answerSection.className = 'final-answer';
+            answerSection.innerHTML = safeMarkedParse(content, '');
+            if (showStreamingCursor) {
+                answerSection.innerHTML += '<span class="streaming-cursor"></span>';
+            }
+            bubble.appendChild(answerSection);
+        }
+    }
+
+    /* *** 新增 (V5): 创建思考过程区域
      */
-    createThinkingSection(thinkingContent) {
+    createThinkingSection(thinkingContent, options = {}) {
+        const { status = 'done', expanded = false } = options;
+        const statusMeta = this.getThinkingStatusMeta(status);
         const thinkingContainer = document.createElement('div');
         thinkingContainer.className = 'thinking-container';
+        thinkingContainer.classList.toggle('is-thinking', status === 'thinking');
+        thinkingContainer.classList.toggle('is-done', status === 'done');
+        thinkingContainer.classList.toggle('is-expanded', expanded);
 
-        const thinkingHeader = document.createElement('div');
+        const thinkingHeader = document.createElement('button');
+        thinkingHeader.type = 'button';
         thinkingHeader.className = 'thinking-header';
 
-        const toggleBtn = document.createElement('button');
+        const toggleBtn = document.createElement('span');
         toggleBtn.className = 'thinking-toggle';
         toggleBtn.innerHTML = `
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m6 9 6 6 6-6"/>
             </svg>
             <span>思考过程</span>
+            <span class="thinking-toggle-hint"></span>
         `;
 
-        const thinkingIndicator = document.createElement('div');
-        thinkingIndicator.className = 'thinking-indicator';
-        thinkingIndicator.innerHTML = '<span class="thinking-dots"></span> 正在思考中...';
+        const thinkingIndicator = document.createElement('span');
+        thinkingIndicator.className = `thinking-status ${statusMeta.statusClass}`;
+        thinkingIndicator.innerHTML = `${statusMeta.icon}<span>${statusMeta.label}</span>`;
 
         thinkingHeader.appendChild(toggleBtn);
         thinkingHeader.appendChild(thinkingIndicator);
 
         const thinkingContentDiv = document.createElement('div');
         thinkingContentDiv.className = 'thinking-content';
-        thinkingContentDiv.style.display = 'none';
+        thinkingContentDiv.hidden = !expanded;
 
-        // 将思考内容渲染为纯文本（不解析Markdown）
         const thinkingText = document.createElement('div');
         thinkingText.className = 'thinking-text';
-        thinkingText.textContent = thinkingContent;
+        thinkingText.textContent = thinkingContent && thinkingContent.trim()
+            ? thinkingContent
+            : (status === 'thinking' ? '模型正在整理思路...' : '本次没有可展示的思考文本。');
         thinkingContentDiv.appendChild(thinkingText);
 
-        // 点击切换显示/隐藏
-        toggleBtn.addEventListener('click', () => {
-            const isHidden = thinkingContentDiv.style.display === 'none';
-            thinkingContentDiv.style.display = isHidden ? 'block' : 'none';
+        const updateExpandedState = (isExpanded) => {
+            thinkingContainer.classList.toggle('is-expanded', isExpanded);
+            thinkingContentDiv.hidden = !isExpanded;
 
-            // 更新箭头方向
             const arrow = toggleBtn.querySelector('svg');
-            arrow.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
-
-            // 隐藏指示器
-            if (isHidden) {
-                thinkingIndicator.style.display = 'none';
+            if (arrow) {
+                arrow.style.transform = isExpanded ? 'rotate(180deg)' : 'rotate(0deg)';
             }
+
+            const hint = toggleBtn.querySelector('.thinking-toggle-hint');
+            if (hint) {
+                hint.textContent = isExpanded ? '收起' : statusMeta.hint;
+            }
+        };
+
+        updateExpandedState(expanded);
+        thinkingHeader.addEventListener('click', () => {
+            updateExpandedState(thinkingContentDiv.hidden);
         });
 
         thinkingContainer.appendChild(thinkingHeader);
         thinkingContainer.appendChild(thinkingContentDiv);
 
         return thinkingContainer;
+    }
+
+    createStreamState() {
+        return {
+            thinkingSupported: false,
+            thinkingContent: '',
+            finalAnswer: '',
+            thinkingState: 'none',
+            errorMessage: '',
+            meta: null
+        };
+    }
+
+    applyStreamEvent(streamState, event) {
+        if (!event || typeof event !== 'object') {
+            return;
+        }
+
+        switch (event.event) {
+            case 'meta':
+                streamState.meta = event;
+                streamState.thinkingSupported = Boolean(event.thinking_supported);
+                streamState.thinkingState = streamState.thinkingSupported ? 'thinking' : 'none';
+                break;
+            case 'thinking_delta':
+                streamState.thinkingContent += event.delta || '';
+                streamState.thinkingState = 'thinking';
+                break;
+            case 'thinking_end':
+                streamState.thinkingState = streamState.thinkingContent.trim() ? 'done' : 'none';
+                break;
+            case 'answer_delta':
+                if (streamState.thinkingState === 'thinking') {
+                    streamState.thinkingState = streamState.thinkingContent.trim() ? 'done' : 'none';
+                }
+                streamState.finalAnswer += event.delta || '';
+                break;
+            case 'error':
+                streamState.errorMessage = event.message || '请求失败';
+                if (!streamState.finalAnswer) {
+                    streamState.finalAnswer = `抱歉，请求出错了: ${streamState.errorMessage}`;
+                }
+                if (streamState.thinkingState === 'thinking' && !streamState.thinkingContent.trim()) {
+                    streamState.thinkingState = 'none';
+                }
+                break;
+            case 'done':
+                if (streamState.thinkingState === 'thinking') {
+                    streamState.thinkingState = streamState.thinkingContent.trim() ? 'done' : 'none';
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    renderStreamState(bubble, streamState) {
+        bubble.style.color = '';
+        this.renderAssistantBubble(bubble, {
+            content: streamState.finalAnswer,
+            thinkingContent: streamState.thinkingContent,
+            thinkingState: streamState.thinkingState,
+            showStreamingCursor: streamState.thinkingState === 'none' || Boolean(streamState.finalAnswer)
+        });
+    }
+
+    finalizeStreamMessage(messageDiv, streamState) {
+        const bubble = messageDiv.querySelector('.bubble') || document.createElement('div');
+        bubble.className = 'bubble';
+        if (!bubble.parentNode) {
+            messageDiv.appendChild(bubble);
+        }
+
+        this.renderAssistantBubble(bubble, {
+            content: streamState.finalAnswer,
+            thinkingContent: streamState.thinkingContent,
+            thinkingState: streamState.thinkingContent.trim() ? 'done' : 'none',
+            showStreamingCursor: false
+        });
+        bubble.style.color = streamState.errorMessage ? 'var(--danger-color, #f44336)' : '';
+
+        this.addCodeCopyButtons(bubble);
+        this.addMessageActions(messageDiv, streamState.finalAnswer);
+        this.scrollToBottom();
     }
 
     // (loadOrCreateSession, loadSession, startNewSession 保持不变)
@@ -434,22 +572,34 @@ class AIChatComponent {
                 // 假设历史消息存储时已经分离了思考过程和最终回答
                 let thinkingContent = '';
                 let finalContent = msg.message;
+                let thinkingState = 'none';
 
-                // 检查是否是新的消息格式（包含思考过程）
-                if (typeof msg.message === 'object') {
+                if (msg.thinking_content || msg.final_answer) {
+                    thinkingContent = msg.thinking_content || '';
+                    finalContent = msg.final_answer || msg.message;
+                    thinkingState = thinkingContent ? 'done' : 'none';
+                } else if (typeof msg.message === 'object') {
+                    // 检查是否是新的消息格式（包含思考过程）
                     // 新格式：消息是对象，包含 thinking 和 answer
                     thinkingContent = msg.message.thinking || '';
                     finalContent = msg.message.answer || msg.message;
+                    thinkingState = thinkingContent ? 'done' : 'none';
                 } else if (typeof msg.message === 'string') {
                     // 旧格式：纯文本，尝试解析是否有思考过程标记
                     const parsed = this.parseThinkingContent(msg.message);
-                    if (parsed.isThinking) {
+                    if (parsed.hasThinking) {
                         thinkingContent = parsed.thinkingContent;
                         finalContent = parsed.finalAnswer;
+                        thinkingState = parsed.thinkingState;
                     }
                 }
 
-                this.renderMessage(msg.role, finalContent, [], thinkingContent);
+                this.renderMessage(
+                    msg.role,
+                    finalContent,
+                    msg.attachments || [],
+                    thinkingState === 'none' ? '' : thinkingContent
+                );
             });
         } catch (err) {
             showMessage(`加载历史失败: ${err.message}`, 'error');
@@ -521,11 +671,8 @@ class AIChatComponent {
         this.scrollToBottom();
 
         // 重置思考过程状态
-        this.isCollectingThinking = false;
-        this.thinkingContent = '';
-        this.finalAnswer = '';
-
-        let accumulatedText = "";
+        const streamState = this.createStreamState();
+        let streamBuffer = '';
         const decoder = new TextDecoder("utf-8");
 
         try {
@@ -559,60 +706,60 @@ class AIChatComponent {
                 if (done) break;
 
                 const chunk = decoder.decode(value, { stream: true });
-                accumulatedText += chunk;
+                streamBuffer += chunk;
 
                 // *** 新增: 检测思考过程标记并分离内容 ***
-                const { thinkingContent, finalAnswer, isThinking } = this.parseThinkingContent(accumulatedText);
+                const lines = streamBuffer.split('\n');
+                streamBuffer = lines.pop() || '';
 
-                if (isThinking) {
-                    // 正在思考中，显示思考指示器
-                    this.isCollectingThinking = true;
-                    this.thinkingContent = thinkingContent;
-                    this.finalAnswer = finalAnswer;
+                for (const line of lines) {
+                    if (!line.trim()) {
+                        continue;
+                    }
 
-                    // 更新显示：显示思考指示器和已接收的最终回答
-                    const oldCursor = aiBubble.querySelector('.streaming-cursor');
-                    if (oldCursor) oldCursor.remove();
+                    let event = null;
+                    try {
+                        event = JSON.parse(line);
+                    } catch (parseError) {
+                        event = { event: 'answer_delta', delta: line };
+                    }
 
-                    // 重新渲染整个消息
-                    this.renderStreamingMessage(aiBubble, thinkingContent, finalAnswer, true);
-                } else {
-                    // 没有思考过程，正常显示
-                    const oldCursor = aiBubble.querySelector('.streaming-cursor');
-                    if (oldCursor) oldCursor.remove();
-                    aiBubble.innerHTML = safeMarkedParse(accumulatedText, '');
-                    aiBubble.innerHTML += '<span class="streaming-cursor"></span>';
+                    this.applyStreamEvent(streamState, event);
+                    this.renderStreamState(aiBubble, streamState);
                 }
 
                 this.scrollToBottom();
             }
 
             // *** 核心修改 (V4): 流结束后，根据是否有思考过程来渲染最终消息 ***
-            const finalCursor = aiBubble.querySelector('.streaming-cursor');
-            if (finalCursor) finalCursor.remove();
-
-            if (this.isCollectingThinking && this.thinkingContent) {
-                // 有思考过程：创建完整的消息结构
-                this.renderCompleteMessageWithThinking(aiMsgDiv, this.thinkingContent, this.finalAnswer || accumulatedText);
-            } else {
-                // 没有思考过程：正常渲染
-                aiBubble.innerHTML = safeMarkedParse(accumulatedText, '');
-                this.addCodeCopyButtons(aiBubble);
-                this.addMessageActions(aiMsgDiv, accumulatedText);
+            if (streamBuffer.trim()) {
+                let trailingEvent = null;
+                try {
+                    trailingEvent = JSON.parse(streamBuffer);
+                } catch (parseError) {
+                    trailingEvent = { event: 'answer_delta', delta: streamBuffer };
+                }
+                this.applyStreamEvent(streamState, trailingEvent);
             }
+
+            this.finalizeStreamMessage(aiMsgDiv, streamState);
 
         } catch (err) {
             console.error("AI 流式处理失败:", err);
-            const finalCursor = aiBubble.querySelector('.streaming-cursor');
-            if (finalCursor) finalCursor.remove();
 
             // 错误情况下也尝试显示已收集的内容
-            if (this.isCollectingThinking && this.thinkingContent) {
-                this.renderCompleteMessageWithThinking(aiMsgDiv, this.thinkingContent, this.finalAnswer || '抱歉，请求出错了: ' + err.message);
+            /* legacy streaming error handling removed
+                // legacy placeholder
             } else {
                 aiBubble.innerHTML = `抱歉，请求出错了: ${err.message}`;
-                aiBubble.style.color = 'var(--danger-color, #f44336)';
+                message: err.message
             }
+            */
+            this.applyStreamEvent(streamState, {
+                event: 'error',
+                message: err.message
+            });
+            this.finalizeStreamMessage(aiMsgDiv, streamState);
         } finally {
             this.isLoading = false;
             this.sendBtn.disabled = false;
@@ -629,11 +776,39 @@ class AIChatComponent {
             return {
                 thinkingContent: '',
                 finalAnswer: '',
-                isThinking: false
+                hasThinking: false,
+                thinkingState: 'none'
             };
         }
         // 假设后端使用特定标记来分隔思考过程和最终回答
         // 例如: 【思考过程开始】...思考内容...【思考过程结束】最终回答
+        const thinkOpenTag = '<think>';
+        const thinkCloseTag = '</think>';
+        const openTagIndex = text.indexOf(thinkOpenTag);
+        const closeTagIndex = text.indexOf(thinkCloseTag);
+
+        if (openTagIndex !== -1 && closeTagIndex !== -1 && closeTagIndex > openTagIndex) {
+            const thinkingContent = text.substring(openTagIndex + thinkOpenTag.length, closeTagIndex).trim();
+            const finalAnswer = (
+                text.substring(0, openTagIndex) +
+                text.substring(closeTagIndex + thinkCloseTag.length)
+            ).trim();
+            return {
+                thinkingContent,
+                finalAnswer,
+                hasThinking: Boolean(thinkingContent),
+                thinkingState: thinkingContent ? 'done' : 'none'
+            };
+        } else if (openTagIndex !== -1) {
+            const thinkingContent = text.substring(openTagIndex + thinkOpenTag.length).trim();
+            return {
+                thinkingContent,
+                finalAnswer: text.substring(0, openTagIndex).trim(),
+                hasThinking: true,
+                thinkingState: 'thinking'
+            };
+        }
+
         const thinkingStart = '【思考过程开始】';
         const thinkingEnd = '【思考过程结束】';
 
@@ -647,7 +822,8 @@ class AIChatComponent {
             return {
                 thinkingContent,
                 finalAnswer,
-                isThinking: true
+                hasThinking: true,
+                thinkingState: 'done'
             };
         } else if (startIndex !== -1) {
             // 正在接收思考过程，但尚未结束
@@ -655,7 +831,8 @@ class AIChatComponent {
             return {
                 thinkingContent,
                 finalAnswer: '',
-                isThinking: true
+                hasThinking: true,
+                thinkingState: 'thinking'
             };
         }
 
@@ -666,14 +843,16 @@ class AIChatComponent {
                 return {
                     thinkingContent: parsed.thinking,
                     finalAnswer: parsed.answer,
-                    isThinking: true
+                    hasThinking: true,
+                    thinkingState: 'done'
                 };
             } else if (parsed.answer) {
                 // 只有最终回答，没有思考过程
                 return {
                     thinkingContent: '',
                     finalAnswer: parsed.answer,
-                    isThinking: false
+                    hasThinking: false,
+                    thinkingState: 'none'
                 };
             }
         } catch (e) {
@@ -713,7 +892,8 @@ class AIChatComponent {
                     return {
                         thinkingContent: thinkingLines.join('\n').trim(),
                         finalAnswer: answerLines.join('\n').trim(),
-                        isThinking: true
+                        hasThinking: true,
+                        thinkingState: 'done'
                     };
                 }
             }
@@ -723,45 +903,21 @@ class AIChatComponent {
         return {
             thinkingContent: '',
             finalAnswer: text,
-            isThinking: false
+            hasThinking: false,
+            thinkingState: 'none'
         };
     }
 
     /**
      * *** 新增 (V4): 渲染流式消息（带思考过程）
      */
-    renderStreamingMessage(bubble, thinkingContent, finalAnswer, isThinking) {
-        bubble.innerHTML = '';
-
-        if (isThinking) {
-            // 创建思考容器
-            const thinkingContainer = document.createElement('div');
-            thinkingContainer.className = 'thinking-container';
-
-            // 思考头部
-            const thinkingHeader = document.createElement('div');
-            thinkingHeader.className = 'thinking-header';
-
-            const thinkingIndicator = document.createElement('div');
-            thinkingIndicator.className = 'thinking-indicator active';
-            thinkingIndicator.innerHTML = '<span class="thinking-dots"></span> 正在思考中...';
-
-            thinkingHeader.appendChild(thinkingIndicator);
-            thinkingContainer.appendChild(thinkingHeader);
-
-            // 最终回答（流式显示）
-            if (finalAnswer) {
-                const answerSection = document.createElement('div');
-                answerSection.className = 'final-answer';
-                answerSection.innerHTML = safeMarkedParse(finalAnswer, '') + '<span class="streaming-cursor"></span>';
-                thinkingContainer.appendChild(answerSection);
-            }
-
-            bubble.appendChild(thinkingContainer);
-        } else {
-            // 正常流式显示
-            bubble.innerHTML = safeMarkedParse(finalAnswer, '') + '<span class="streaming-cursor"></span>';
-        }
+    renderStreamingMessage(bubble, thinkingContent, finalAnswer, thinkingState) {
+        this.renderAssistantBubble(bubble, {
+            content: finalAnswer,
+            thinkingContent,
+            thinkingState,
+            showStreamingCursor: thinkingState === 'none' || Boolean(finalAnswer)
+        });
     }
 
     /**
@@ -778,15 +934,12 @@ class AIChatComponent {
         const bubble = document.createElement('div');
         bubble.className = 'bubble';
 
-        // 添加思考过程区域
-        const thinkingSection = this.createThinkingSection(thinkingContent);
-        bubble.appendChild(thinkingSection);
-
-        // 添加最终回答
-        const answerSection = document.createElement('div');
-        answerSection.className = 'final-answer';
-        answerSection.innerHTML = safeMarkedParse(finalAnswer, '');
-        bubble.appendChild(answerSection);
+        this.renderAssistantBubble(bubble, {
+            content: finalAnswer,
+            thinkingContent,
+            thinkingState: 'done',
+            showStreamingCursor: false
+        });
 
         // 添加到消息
         messageDiv.appendChild(bubble);
@@ -917,6 +1070,15 @@ class AIChatComponent {
      * @param {string} rawMarkdown - 要复制的原始 Markdown 文本
      */
     addMessageActions(messageDiv, rawMarkdown) {
+        const existingActions = messageDiv.querySelector('.message-actions');
+        if (existingActions) {
+            existingActions.remove();
+        }
+
+        if (!rawMarkdown) {
+            return;
+        }
+
         const actionsDiv = document.createElement('div');
         actionsDiv.className = 'message-actions';
 
@@ -931,3 +1093,5 @@ class AIChatComponent {
         messageDiv.appendChild(actionsDiv);
     }
 }
+
+window.AIChatComponent = AIChatComponent;
