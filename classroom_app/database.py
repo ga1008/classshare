@@ -493,6 +493,41 @@ def init_database():
                              )
                          ''')
 
+            try:
+                conn.execute("ALTER TABLE chat_logs ADD COLUMN logged_at TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+
+            conn.execute(
+                "UPDATE chat_logs SET logged_at = timestamp "
+                "WHERE (logged_at IS NULL OR logged_at = '') AND instr(timestamp, 'T') > 0"
+            )
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS chat_log_migrations
+                         (
+                             class_offering_id INTEGER PRIMARY KEY,
+                             migrated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY
+                         (
+                             class_offering_id
+                         ) REFERENCES class_offerings
+                         (
+                             id
+                         ) ON DELETE CASCADE
+                             )
+                         ''')
+
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chat_logs_room_logged_at "
+                "ON chat_logs (class_offering_id, logged_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chat_logs_room_id "
+                "ON chat_logs (class_offering_id, id DESC)"
+            )
+            conn.execute("DROP INDEX IF EXISTS idx_chat_logs_legacy_dedupe")
+
             # 11. 课堂 AI 配置 (新功能)
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS ai_class_configs

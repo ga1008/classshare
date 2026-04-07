@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from ..config import GLOBAL_FILES_DIR, UPLOAD_CHUNK_SIZE_BYTES, CHUNKED_UPLOADS_DIR
 from ..dependencies import verify_token, get_current_user, get_current_teacher, normalize_ip
 # 导入聊天管理器
-from ..services.chat_handler import manager, save_chat_message
+from ..services.chat_handler import manager, save_chat_message, get_older_history_payload
 
 from typing import Optional
 from pathlib import Path
@@ -743,25 +743,68 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
 
     client_id = f"{user['role']}_{user_pk}"
     ws_user = dict(user)
-    ws_user['id'] = client_id  # 使用唯一的 client_id
+    ws_user['id'] = client_id
 
-    await manager.connect(websocket, ws_user)
+    connection_id = await manager.connect(websocket, ws_user)
     try:
         while True:
-            data = await websocket.receive_text()
+            raw_data = await websocket.receive_text()
+            data = raw_data.strip()
+            if not data:
+                continue
+
+            command = None
+            try:
+                parsed = json.loads(data)
+                if isinstance(parsed, dict) and parsed.get("action") in {"switch_alias", "load_history"}:
+                    command = parsed
+            except json.JSONDecodeError:
+                command = None
+
+            if command:
+                if command["action"] == "switch_alias":
+                    switched = await manager.switch_temporary_name(class_offering_id, client_id)
+                    if not switched:
+                        await websocket.send_text(json.dumps({
+                            "type": "alias_switch_result",
+                            "success": False,
+                            "message": "当前没有可用的新代号。",
+                        }, ensure_ascii=False))
+                        continue
+
+                    previous_name, new_name = switched
+                    await websocket.send_text(json.dumps({
+                        "type": "alias_switch_result",
+                        "success": True,
+                        "message": f"已切换为 {new_name}",
+                    }, ensure_ascii=False))
+                    await manager.broadcast(
+                        class_offering_id,
+                        json.dumps({
+                            "type": "system",
+                            "message": f"{previous_name} 已更换代号为 {new_name}。",
+                        }, ensure_ascii=False),
+                    )
+                    await manager.broadcast_user_list(class_offering_id)
+                    await manager.broadcast_alias_states(class_offering_id)
+                    continue
+
+                before_id = command.get("before_id")
+                if before_id is not None:
+                    try:
+                        before_id = int(before_id)
+                    except (TypeError, ValueError):
+                        before_id = None
+
+                await websocket.send_text(
+                    json.dumps(get_older_history_payload(class_offering_id, before_id), ensure_ascii=False)
+                )
+                continue
+
             now = datetime.now()
             display_time = now.strftime("%H:%M")
-            # 获取用户显示名字（临时名字或真实姓名）
-            display_name = manager.user_info.get(client_id, {}).get('display_name', ws_user['name'])
-            message_obj = {
-                "type": "chat",
-                "sender": display_name,
-                "role": ws_user['role'],
-                "message": data,
-                "timestamp": display_time
-            }
-            # 保存消息
-            db_message = {
+            display_name = manager.get_display_name(class_offering_id, client_id, ws_user['name'])
+            stored_message = await save_chat_message(class_offering_id, {
                 "type": "chat",
                 "sender": display_name,
                 "role": ws_user['role'],
@@ -769,13 +812,11 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
                 "timestamp": display_time,
                 "class_offering_id": class_offering_id,
                 "user_id": user_pk,
-                "logged_at": now.isoformat()
-            }
-            await save_chat_message(class_offering_id, db_message)
-            # 广播消息
-            await manager.broadcast(class_offering_id, json.dumps(message_obj))
+                "logged_at": now.isoformat(),
+            })
+            await manager.broadcast(class_offering_id, json.dumps(stored_message, ensure_ascii=False))
     except WebSocketDisconnect:
-        await manager.disconnect(websocket, client_id)
+        await manager.disconnect(connection_id)
     except Exception as e:
         print(f"[WS ERROR] {e}")
-        await manager.disconnect(websocket, client_id)
+        await manager.disconnect(connection_id)

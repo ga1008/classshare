@@ -338,14 +338,26 @@
                     <h2>即时讨论</h2>
                     <p class="discussion-room-subtitle">发布提问、答疑和课堂通知，消息会实时同步到本课堂成员。</p>
                 </div>
-                <div class="discussion-room-status">
-                    <span class="status-indicator" id="ws-status" title="连接中"></span>
-                    <span id="ws-status-text">连接中</span>
+                <div class="discussion-room-side">
+                    <div class="discussion-room-alias-card">
+                        <span class="discussion-room-alias-label">{% if user_info.role == 'teacher' %}当前身份{% else %}当前代号{% endif %}</span>
+                        <strong id="chat-display-name">{% if user_info.role == 'teacher' %}{{ user_info.name }}{% else %}分配中...{% endif %}</strong>
+                        {% if user_info.role == 'student' %}
+                        <button type="button" class="btn btn-ghost btn-sm discussion-room-alias-btn" id="chat-switch-alias-btn">一键换代号</button>
+                        {% endif %}
+                    </div>
+                    <div class="discussion-room-status">
+                        <span class="status-indicator" id="ws-status" title="连接中"></span>
+                        <span id="ws-status-text">连接中</span>
+                    </div>
                 </div>
             </div>
 
             <div class="discussion-room-body">
                 <div class="chat-messages" id="chat-messages">
+                    <div class="chat-history-loader" id="chat-history-loader" hidden>
+                        <button type="button" class="btn btn-ghost btn-sm" id="chat-history-load-btn">加载历史消息</button>
+                    </div>
                     <div class="chat-empty-state" id="chat-empty-state">
                         <div class="chat-empty-icon">
                             <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -586,6 +598,10 @@
             chatMessagesContainerId: 'chat-messages',
             chatInputId: 'chat-input',
             chatFormId: 'chat-form',
+            displayNameId: 'chat-display-name',
+            switchAliasButtonId: 'chat-switch-alias-btn',
+            historyLoaderId: 'chat-history-loader',
+            historyLoadButtonId: 'chat-history-load-btn',
             statusIndicatorId: 'ws-status',
             statusTextId: 'ws-status-text',
             currentUser: window.APP_CONFIG.userInfo
