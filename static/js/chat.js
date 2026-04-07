@@ -11,6 +11,9 @@ const FALLBACK_EMOJI_SET_NOTE = '标准表情采用 Twemoji';
 const DEFAULT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const DEFAULT_MAX_CUSTOM_EMOJIS = 60;
 const MAX_FREQUENT_ITEMS = 8;
+const DEFAULT_ALIAS_SWITCH_COOLDOWN_SECONDS = 10;
+const DEFAULT_ALIAS_SWITCH_LIMIT = 6;
+const DISCUSSION_ROOM_DESKTOP_BREAKPOINT = 1120;
 
 const KNOWN_EMOJIS = Array.from(UNICODE_EMOJI_MAP.keys()).sort((left, right) => right.length - left.length);
 const KNOWN_EMOJI_REGEX = KNOWN_EMOJIS.length
@@ -26,6 +29,7 @@ export class ClassroomChat {
         this.statusIndicator = document.getElementById(options.statusIndicatorId);
         this.statusText = document.getElementById(options.statusTextId);
         this.displayNameEl = document.getElementById(options.displayNameId);
+        this.aliasMetaEl = document.getElementById(options.aliasMetaId);
         this.switchAliasButton = document.getElementById(options.switchAliasButtonId);
         this.historyLoader = document.getElementById(options.historyLoaderId);
         this.historyLoadButton = document.getElementById(options.historyLoadButtonId);
@@ -44,6 +48,8 @@ export class ClassroomChat {
         this.emojiPreviewRow = document.getElementById(options.emojiPreviewRowId);
         this.emojiSetNote = document.getElementById(options.emojiSetNoteId);
         this.currentUser = options.currentUser || {};
+        this.discussionRoom = document.getElementById(options.discussionRoomId);
+        this.workspaceContent = document.getElementById(options.workspaceContentId);
 
         this.ws = null;
         this.onFileEvent = null;
@@ -52,6 +58,15 @@ export class ClassroomChat {
         this.hasMoreHistory = false;
         this.isLoadingHistory = false;
         this.knownMessageIds = new Set();
+        this.aliasState = {
+            availableAliasCount: 0,
+            switchLimit: DEFAULT_ALIAS_SWITCH_LIMIT,
+            switchesUsed: 0,
+            switchesRemaining: DEFAULT_ALIAS_SWITCH_LIMIT,
+            cooldownSeconds: DEFAULT_ALIAS_SWITCH_COOLDOWN_SECONDS,
+            nextSwitchAvailableAt: null,
+            blockReason: null,
+        };
 
         this.selectedCustomEmojis = [];
         this.emojiPanelLoaded = false;
@@ -63,9 +78,13 @@ export class ClassroomChat {
         };
         this.uploadInFlight = false;
         this.refreshTimer = null;
+        this.aliasCountdownTimer = null;
+        this.roomHeightFrame = null;
+        this.roomHeightObserver = null;
 
         this.handleDocumentPointerDown = this.handleDocumentPointerDown.bind(this);
         this.handleDocumentKeydown = this.handleDocumentKeydown.bind(this);
+        this.scheduleDiscussionRoomResize = this.scheduleDiscussionRoomResize.bind(this);
     }
 
     init() {
@@ -80,12 +99,18 @@ export class ClassroomChat {
         this.renderSelectedCustomEmojis();
         this.updateUploadStatus('未上传', 'idle');
         this.updateEmojiSetNote();
+        this.resizeInput();
+        this.setupDiscussionRoomSizing();
+        this.refreshAliasSwitchUi();
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         this.ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/${this.classOfferingId}`);
 
         this.ws.onmessage = this.handleMessage.bind(this);
-        this.ws.onopen = () => this.updateConnectionState(true);
+        this.ws.onopen = () => {
+            this.updateConnectionState(true);
+            this.refreshAliasSwitchUi();
+        };
         this.ws.onerror = (error) => {
             console.error('WebSocket error:', error);
             this.updateConnectionState(false, '连接异常');
@@ -94,6 +119,7 @@ export class ClassroomChat {
         this.ws.onclose = () => {
             this.updateConnectionState(false, '连接已断开');
             this.appendSystemMessage('连接已断开，请刷新页面后重试。');
+            this.refreshAliasSwitchUi();
         };
 
         this.chatForm.addEventListener('submit', (event) => {
@@ -142,6 +168,240 @@ export class ClassroomChat {
         if (this.statusIndicator) {
             this.statusIndicator.title = text || (isOnline ? '连接正常' : '连接异常');
         }
+        this.refreshAliasSwitchUi();
+    }
+
+    setupDiscussionRoomSizing() {
+        if (!this.discussionRoom || !this.workspaceContent) {
+            return;
+        }
+
+        this.scheduleDiscussionRoomResize();
+        window.addEventListener('resize', this.scheduleDiscussionRoomResize);
+
+        if (window.ResizeObserver && !this.roomHeightObserver) {
+            this.roomHeightObserver = new ResizeObserver(() => this.scheduleDiscussionRoomResize());
+            this.roomHeightObserver.observe(this.workspaceContent);
+        }
+    }
+
+    scheduleDiscussionRoomResize() {
+        if (!this.discussionRoom || !this.workspaceContent || this.roomHeightFrame !== null) {
+            return;
+        }
+
+        this.roomHeightFrame = window.requestAnimationFrame(() => {
+            this.roomHeightFrame = null;
+            this.syncDiscussionRoomHeight();
+        });
+    }
+
+    syncDiscussionRoomHeight() {
+        if (!this.discussionRoom || !this.workspaceContent) {
+            return;
+        }
+
+        if (window.innerWidth <= DISCUSSION_ROOM_DESKTOP_BREAKPOINT) {
+            this.discussionRoom.style.height = '';
+            this.discussionRoom.style.maxHeight = '';
+            this.discussionRoom.style.minHeight = '';
+            return;
+        }
+
+        const visibleSections = Array.from(this.workspaceContent.children).filter((element) => {
+            return element instanceof HTMLElement && !element.hidden;
+        });
+
+        if (!visibleSections.length) {
+            this.discussionRoom.style.height = '';
+            this.discussionRoom.style.maxHeight = '';
+            this.discussionRoom.style.minHeight = '';
+            return;
+        }
+
+        const firstRect = visibleSections[0].getBoundingClientRect();
+        const lastRect = visibleSections[visibleSections.length - 1].getBoundingClientRect();
+        const alignedHeight = Math.round(lastRect.bottom - firstRect.top);
+        if (alignedHeight <= 0) {
+            return;
+        }
+
+        this.discussionRoom.style.height = `${alignedHeight}px`;
+        this.discussionRoom.style.maxHeight = `${alignedHeight}px`;
+        this.discussionRoom.style.minHeight = `${alignedHeight}px`;
+    }
+
+    parseNextSwitchAvailableAt(nextSwitchAt, fallbackRemainingSeconds = 0) {
+        if (nextSwitchAt) {
+            const parsed = Date.parse(nextSwitchAt);
+            if (Number.isFinite(parsed)) {
+                return parsed;
+            }
+        }
+
+        const remainingSeconds = Number(fallbackRemainingSeconds || 0);
+        if (remainingSeconds > 0) {
+            return Date.now() + (remainingSeconds * 1000);
+        }
+
+        return null;
+    }
+
+    getAliasCooldownRemainingSeconds() {
+        const nextSwitchAvailableAt = Number(this.aliasState.nextSwitchAvailableAt || 0);
+        if (!Number.isFinite(nextSwitchAvailableAt) || nextSwitchAvailableAt <= 0) {
+            return 0;
+        }
+
+        const remainingMilliseconds = nextSwitchAvailableAt - Date.now();
+        if (remainingMilliseconds <= 0) {
+            this.aliasState.nextSwitchAvailableAt = null;
+            return 0;
+        }
+
+        return Math.ceil(remainingMilliseconds / 1000);
+    }
+
+    stopAliasCountdown() {
+        if (this.aliasCountdownTimer) {
+            window.clearInterval(this.aliasCountdownTimer);
+            this.aliasCountdownTimer = null;
+        }
+    }
+
+    syncAliasCountdown() {
+        this.stopAliasCountdown();
+        if (this.getAliasCooldownRemainingSeconds() <= 0) {
+            return;
+        }
+
+        this.aliasCountdownTimer = window.setInterval(() => {
+            this.refreshAliasSwitchUi();
+            if (this.getAliasCooldownRemainingSeconds() <= 0) {
+                this.stopAliasCountdown();
+                this.refreshAliasSwitchUi();
+            }
+        }, 250);
+    }
+
+    applyAliasStatePayload(payload = {}) {
+        if (!payload || typeof payload !== 'object') {
+            return;
+        }
+
+        const switchLimit = Number(payload.switch_limit ?? this.aliasState.switchLimit ?? DEFAULT_ALIAS_SWITCH_LIMIT);
+        const switchesUsed = Number(payload.switches_used ?? this.aliasState.switchesUsed ?? 0);
+        const switchesRemaining = Number(
+            payload.switches_remaining ?? Math.max(switchLimit - switchesUsed, 0),
+        );
+        const availableAliasCount = Number(
+            payload.available_alias_count ?? payload.remaining_alias_count ?? this.aliasState.availableAliasCount ?? 0,
+        );
+        const cooldownSeconds = Number(
+            payload.cooldown_seconds ?? this.aliasState.cooldownSeconds ?? DEFAULT_ALIAS_SWITCH_COOLDOWN_SECONDS,
+        );
+
+        this.aliasState = {
+            ...this.aliasState,
+            availableAliasCount: Number.isFinite(availableAliasCount) ? Math.max(availableAliasCount, 0) : 0,
+            switchLimit: Number.isFinite(switchLimit) && switchLimit > 0 ? switchLimit : DEFAULT_ALIAS_SWITCH_LIMIT,
+            switchesUsed: Number.isFinite(switchesUsed) ? Math.max(switchesUsed, 0) : 0,
+            switchesRemaining: Number.isFinite(switchesRemaining) ? Math.max(switchesRemaining, 0) : 0,
+            cooldownSeconds: Number.isFinite(cooldownSeconds) && cooldownSeconds > 0
+                ? cooldownSeconds
+                : DEFAULT_ALIAS_SWITCH_COOLDOWN_SECONDS,
+            nextSwitchAvailableAt: this.parseNextSwitchAvailableAt(
+                payload.next_switch_at,
+                payload.cooldown_remaining_seconds,
+            ),
+            blockReason: payload.switch_block_reason || null,
+        };
+
+        this.syncAliasCountdown();
+    }
+
+    getAliasSwitchBlockMessage() {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            return '课堂研讨室尚未连接成功';
+        }
+
+        const cooldownRemaining = this.getAliasCooldownRemainingSeconds();
+        if (cooldownRemaining > 0) {
+            return `${cooldownRemaining}s 后才能再次切换代号`;
+        }
+
+        if (this.aliasState.switchesRemaining <= 0) {
+            return `本次进入最多只能切换 ${this.aliasState.switchLimit} 次代号`;
+        }
+
+        if (this.aliasState.availableAliasCount <= 0) {
+            return '当前没有可用的新代号';
+        }
+
+        return '';
+    }
+
+    refreshAliasSwitchUi() {
+        const isStudent = this.currentUser?.role === 'student';
+        const cooldownRemaining = this.getAliasCooldownRemainingSeconds();
+        const hasSwitchesRemaining = this.aliasState.switchesRemaining > 0;
+        const hasAvailableAlias = this.aliasState.availableAliasCount > 0;
+        const isConnected = Boolean(this.ws && this.ws.readyState === WebSocket.OPEN);
+
+        if (this.aliasMetaEl) {
+            let metaText = '';
+            let metaState = 'ready';
+
+            if (!isStudent) {
+                metaText = '教师使用实名参与讨论';
+            } else if (!this.displayName) {
+                metaText = '正在同步代号状态...';
+                metaState = 'loading';
+            } else if (!hasSwitchesRemaining) {
+                metaText = `本次进入的 ${this.aliasState.switchLimit} 次切换机会已用完`;
+                metaState = 'limit';
+            } else if (cooldownRemaining > 0) {
+                metaText = `还可切换 ${this.aliasState.switchesRemaining} 次，${cooldownRemaining}s 后可再次切换`;
+                metaState = 'cooldown';
+            } else if (!hasAvailableAlias) {
+                metaText = `还可切换 ${this.aliasState.switchesRemaining} 次，但当前没有可用新代号`;
+                metaState = 'empty';
+            } else {
+                metaText = `还可切换 ${this.aliasState.switchesRemaining} 次`;
+            }
+
+            this.aliasMetaEl.textContent = metaText;
+            this.aliasMetaEl.dataset.state = metaState;
+        }
+
+        if (!this.switchAliasButton) {
+            return;
+        }
+
+        const canSwitch = isStudent
+            && isConnected
+            && hasAvailableAlias
+            && hasSwitchesRemaining
+            && cooldownRemaining <= 0;
+
+        this.switchAliasButton.disabled = !canSwitch;
+
+        if (!isConnected) {
+            this.switchAliasButton.textContent = '连接中...';
+            this.switchAliasButton.title = '连接成功后才能切换代号';
+        } else if (!hasSwitchesRemaining) {
+            this.switchAliasButton.textContent = '次数已用完';
+            this.switchAliasButton.title = `本次进入最多可切换 ${this.aliasState.switchLimit} 次`;
+        } else if (cooldownRemaining > 0) {
+            this.switchAliasButton.textContent = `${cooldownRemaining}s 后可切换`;
+            this.switchAliasButton.title = `冷却中，还剩 ${cooldownRemaining} 秒`;
+        } else if (!hasAvailableAlias) {
+            this.switchAliasButton.textContent = '暂无可用代号';
+            this.switchAliasButton.title = '当前没有可用的新代号';
+        } else {
+            this.switchAliasButton.textContent = '一键换代号';
+            this.switchAliasButton.title = `还可切换 ${this.aliasState.switchesRemaining} 次`;
+        }
     }
 
     handleMessage(event) {
@@ -168,6 +428,9 @@ export class ClassroomChat {
             }
 
             if (data.type === 'alias_switch_result') {
+                if (data.alias_state) {
+                    this.updateDisplayName(data.alias_state);
+                }
                 this.showToast(
                     data.message || (data.success ? '代号已更新' : '代号切换失败'),
                     data.success ? 'success' : 'warning',
@@ -230,23 +493,20 @@ export class ClassroomChat {
 
     updateDisplayName(payload) {
         this.displayName = payload.display_name || payload.displayName || this.displayName;
+        this.applyAliasStatePayload(payload);
 
         if (this.displayNameEl) {
             this.displayNameEl.textContent = this.displayName || '分配中...';
         }
-
-        if (this.switchAliasButton) {
-            const canSwitch = Boolean(payload.can_switch_alias);
-            const remainingCount = Number(payload.remaining_alias_count || 0);
-            this.switchAliasButton.disabled = !canSwitch;
-            this.switchAliasButton.title = canSwitch
-                ? `当前还有 ${remainingCount} 个可选新代号`
-                : '当前没有可用的新代号';
-        }
+        this.refreshAliasSwitchUi();
     }
 
     requestAliasSwitch() {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.switchAliasButton || this.switchAliasButton.disabled) {
+            const message = this.getAliasSwitchBlockMessage();
+            if (message) {
+                this.showToast(message, 'warning');
+            }
             return;
         }
         this.ws.send(JSON.stringify({ action: 'switch_alias' }));
@@ -867,7 +1127,7 @@ export class ClassroomChat {
         }));
 
         this.chatInput.value = '';
-        this.chatInput.style.height = '';
+        this.resizeInput();
         this.selectedCustomEmojis = [];
         this.renderSelectedCustomEmojis();
         this.scheduleEmojiPanelRefresh();

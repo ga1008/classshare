@@ -118,8 +118,8 @@
         </div>
     </section>
 
-    <div class="workspace-columns">
-        <div class="workspace-content">
+    <div class="workspace-columns" id="workspace-columns">
+        <div class="workspace-content" id="workspace-content">
 
         <section class="workspace-panel assignment-panel">
             <div class="section-header">
@@ -331,7 +331,7 @@
     </div>
 
     <aside class="workspace-sidebar">
-        <section class="discussion-room">
+        <section class="discussion-room" id="discussion-room">
             <div class="discussion-room-header">
                 <div>
                     <p class="discussion-room-kicker">课堂研讨室</p>
@@ -343,6 +343,7 @@
                     <div class="discussion-room-alias-card">
                         <span class="discussion-room-alias-label">{% if user_info.role == 'teacher' %}当前身份{% else %}当前代号{% endif %}</span>
                         <strong id="chat-display-name">{% if user_info.role == 'teacher' %}{{ user_info.name }}{% else %}分配中...{% endif %}</strong>
+                        <span class="discussion-room-alias-meta" id="chat-alias-meta" aria-live="polite"></span>
                         {% if user_info.role == 'student' %}
                         <button type="button" class="btn btn-ghost btn-sm discussion-room-alias-btn" id="chat-switch-alias-btn">一键换代号</button>
                         {% endif %}
@@ -664,11 +665,14 @@
             emojiPreviewRowId: 'chat-emoji-preview-row',
             emojiSetNoteId: 'chat-emoji-set-note',
             displayNameId: 'chat-display-name',
+            aliasMetaId: 'chat-alias-meta',
             switchAliasButtonId: 'chat-switch-alias-btn',
             historyLoaderId: 'chat-history-loader',
             historyLoadButtonId: 'chat-history-load-btn',
             statusIndicatorId: 'ws-status',
             statusTextId: 'ws-status-text',
+            discussionRoomId: 'discussion-room',
+            workspaceContentId: 'workspace-content',
             currentUser: window.APP_CONFIG.userInfo
         });
         chatApp.init();

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import random
 import sys
 import uuid
@@ -16,6 +17,8 @@ from ..database import get_db_connection
 REFRESH_DEBOUNCE_SECONDS = 5
 INITIAL_HISTORY_WINDOW_HOURS = 24
 HISTORY_PAGE_SIZE = 20
+ALIAS_SWITCH_COOLDOWN_SECONDS = 10
+ALIAS_SWITCH_LIMIT_PER_ENTRY = 6
 
 TEMPORARY_NAMES = [
     "令狐冲", "杨过", "小龙女", "张无忌", "赵敏", "黄蓉", "郭靖", "周芷若", "乔峰", "段誉",
@@ -422,6 +425,7 @@ class MultiRoomConnectionManager:
         self.room_participants: Dict[int, Dict[str, set[str]]] = {}
         self.room_user_info: Dict[int, Dict[str, dict]] = {}
         self.room_display_names: Dict[int, Dict[str, str]] = {}
+        self.room_alias_sessions: Dict[int, Dict[str, dict]] = {}
         self.disconnect_tasks: Dict[Tuple[int, str], asyncio.Task] = {}
         self.name_pool = TEMPORARY_NAMES.copy()
 
@@ -433,6 +437,7 @@ class MultiRoomConnectionManager:
         self.room_participants.setdefault(room_id, {})
         self.room_user_info.setdefault(room_id, {})
         self.room_display_names.setdefault(room_id, {})
+        self.room_alias_sessions.setdefault(room_id, {})
 
     def get_display_name(self, room_id: int, participant_key: str, fallback: str = "课堂成员") -> str:
         return self.room_display_names.get(room_id, {}).get(participant_key, fallback)
@@ -450,6 +455,68 @@ class MultiRoomConnectionManager:
             if name not in occupied_names and name != current_name
         ]
 
+    def ensure_alias_session(self, room_id: int, participant_key: str) -> dict:
+        self.ensure_room(room_id)
+        session = self.room_alias_sessions[room_id].get(participant_key)
+        if session is None:
+            session = {
+                "switches_used": 0,
+                "last_switched_at": None,
+            }
+            self.room_alias_sessions[room_id][participant_key] = session
+        return session
+
+    def get_alias_next_switch_at(self, last_switched_at: Optional[str]) -> Optional[datetime]:
+        switched_at = parse_iso_datetime(last_switched_at)
+        if switched_at is None:
+            return None
+        return switched_at + timedelta(seconds=ALIAS_SWITCH_COOLDOWN_SECONDS)
+
+    def get_alias_cooldown_remaining_seconds(self, last_switched_at: Optional[str]) -> int:
+        next_switch_at = self.get_alias_next_switch_at(last_switched_at)
+        if next_switch_at is None:
+            return 0
+
+        now = datetime.now(next_switch_at.tzinfo) if next_switch_at.tzinfo else datetime.now()
+        remaining_seconds = (next_switch_at - now).total_seconds()
+        if remaining_seconds <= 0:
+            return 0
+        return math.ceil(remaining_seconds)
+
+    def get_alias_switch_status(self, room_id: int, participant_key: str, user: dict) -> dict:
+        is_student = user.get("role") == "student"
+        session = self.ensure_alias_session(room_id, participant_key) if is_student else {
+            "switches_used": 0,
+            "last_switched_at": None,
+        }
+        available_aliases = self.get_available_aliases(room_id, participant_key) if is_student else []
+        switches_used = int(session.get("switches_used") or 0)
+        switches_remaining = max(ALIAS_SWITCH_LIMIT_PER_ENTRY - switches_used, 0)
+        cooldown_remaining_seconds = self.get_alias_cooldown_remaining_seconds(session.get("last_switched_at"))
+        next_switch_at = self.get_alias_next_switch_at(session.get("last_switched_at"))
+
+        reason = None
+        can_switch = False
+        if is_student:
+            can_switch = bool(available_aliases) and switches_remaining > 0 and cooldown_remaining_seconds <= 0
+            if switches_remaining <= 0:
+                reason = "limit_reached"
+            elif cooldown_remaining_seconds > 0:
+                reason = "cooldown"
+            elif not available_aliases:
+                reason = "no_alias_available"
+
+        return {
+            "can_switch": can_switch,
+            "reason": reason,
+            "available_aliases": available_aliases,
+            "available_alias_count": len(available_aliases),
+            "switches_used": switches_used,
+            "switches_remaining": switches_remaining,
+            "cooldown_remaining_seconds": cooldown_remaining_seconds,
+            "next_switch_at": next_switch_at.isoformat() if next_switch_at is not None else None,
+        }
+
     def build_fallback_alias(self, room_id: int) -> str:
         occupied_names = set(self.room_display_names.get(room_id, {}).values())
         index = 1
@@ -465,6 +532,7 @@ class MultiRoomConnectionManager:
             self.room_display_names[room_id][participant_key] = display_name
             return display_name
 
+        self.ensure_alias_session(room_id, participant_key)
         existing_name = self.room_display_names[room_id].get(participant_key)
         if existing_name:
             return existing_name
@@ -476,12 +544,20 @@ class MultiRoomConnectionManager:
 
     def build_display_name_payload(self, room_id: int, participant_key: str, user: dict) -> dict:
         display_name = self.get_display_name(room_id, participant_key, str(user.get("name") or "课堂成员"))
-        available_aliases = self.get_available_aliases(room_id, participant_key) if user.get("role") == "student" else []
+        alias_status = self.get_alias_switch_status(room_id, participant_key, user)
         return {
             "type": "user_display_name",
             "display_name": display_name,
-            "can_switch_alias": user.get("role") == "student" and bool(available_aliases),
-            "remaining_alias_count": len(available_aliases),
+            "can_switch_alias": alias_status["can_switch"],
+            "remaining_alias_count": alias_status["available_alias_count"],
+            "available_alias_count": alias_status["available_alias_count"],
+            "switch_limit": ALIAS_SWITCH_LIMIT_PER_ENTRY,
+            "switches_used": alias_status["switches_used"],
+            "switches_remaining": alias_status["switches_remaining"],
+            "cooldown_seconds": ALIAS_SWITCH_COOLDOWN_SECONDS,
+            "cooldown_remaining_seconds": alias_status["cooldown_remaining_seconds"],
+            "next_switch_at": alias_status["next_switch_at"],
+            "switch_block_reason": alias_status["reason"],
             "is_temporary_alias": user.get("role") == "student",
         }
 
@@ -580,11 +656,9 @@ class MultiRoomConnectionManager:
             if self.room_participants.get(room_id, {}).get(participant_key):
                 return
 
-            user_info = self.room_user_info.get(room_id, {}).pop(participant_key, {})
-            if user_info.get("role") == "student":
-                self.room_display_names.get(room_id, {}).pop(participant_key, None)
-            else:
-                self.room_display_names.get(room_id, {}).pop(participant_key, None)
+            self.room_user_info.get(room_id, {}).pop(participant_key, None)
+            self.room_display_names.get(room_id, {}).pop(participant_key, None)
+            self.room_alias_sessions.get(room_id, {}).pop(participant_key, None)
 
             await self.broadcast(
                 room_id,
@@ -596,19 +670,46 @@ class MultiRoomConnectionManager:
         finally:
             self.disconnect_tasks.pop((room_id, participant_key), None)
 
-    async def switch_temporary_name(self, room_id: int, participant_key: str) -> Optional[Tuple[str, str]]:
+    async def switch_temporary_name(self, room_id: int, participant_key: str) -> dict:
         user = self.room_user_info.get(room_id, {}).get(participant_key)
         if not user or user.get("role") != "student":
-            return None
+            return {
+                "success": False,
+                "reason": "forbidden",
+                "message": "只有学生可以切换代号。",
+                "alias_state": self.build_display_name_payload(room_id, participant_key, user or {"name": "课堂成员", "role": "student"}),
+            }
 
-        available_aliases = self.get_available_aliases(room_id, participant_key)
-        if not available_aliases:
-            return None
+        alias_status = self.get_alias_switch_status(room_id, participant_key, user)
+        if not alias_status["can_switch"]:
+            if alias_status["reason"] == "cooldown":
+                message = f"{alias_status['cooldown_remaining_seconds']}s 后才能再次切换代号。"
+            elif alias_status["reason"] == "limit_reached":
+                message = f"本次进入研讨室最多只能切换 {ALIAS_SWITCH_LIMIT_PER_ENTRY} 次代号。"
+            else:
+                message = "当前没有可用的新代号。"
+
+            return {
+                "success": False,
+                "reason": alias_status["reason"],
+                "message": message,
+                "alias_state": self.build_display_name_payload(room_id, participant_key, user),
+            }
 
         previous_name = self.get_display_name(room_id, participant_key, "课堂成员")
-        new_name = random.choice(available_aliases)
+        new_name = random.choice(alias_status["available_aliases"])
+        session = self.ensure_alias_session(room_id, participant_key)
+        session["switches_used"] = int(session.get("switches_used") or 0) + 1
+        session["last_switched_at"] = datetime.now().isoformat()
         self.room_display_names[room_id][participant_key] = new_name
-        return previous_name, new_name
+        return {
+            "success": True,
+            "reason": None,
+            "message": f"已切换为 {new_name}",
+            "previous_name": previous_name,
+            "new_name": new_name,
+            "alias_state": self.build_display_name_payload(room_id, participant_key, user),
+        }
 
     async def broadcast(self, room_id: int, message: str) -> None:
         for connection_id, websocket in list(self.rooms.get(room_id, {}).items()):

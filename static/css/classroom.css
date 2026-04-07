@@ -573,6 +573,7 @@
 .workspace-sidebar {
     min-height: 0;
     display: flex;
+    align-self: start;
 }
 
 .discussion-room {
@@ -581,6 +582,7 @@
     grid-template-rows: auto minmax(0, 1fr) auto;
     min-height: 420px;
     height: 100%;
+    max-height: 100%;
     flex: 1;
     align-self: stretch;
     border-radius: calc(var(--radius-xl) + 0.15rem);
@@ -656,6 +658,21 @@
     color: var(--text-primary);
 }
 
+.discussion-room-alias-meta {
+    min-height: 1.1rem;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    text-align: right;
+}
+
+.discussion-room-alias-meta[data-state="cooldown"] {
+    color: var(--primary-color);
+}
+
+.discussion-room-alias-meta[data-state="limit"] {
+    color: #dc2626;
+}
+
 .discussion-room-alias-btn {
     min-width: 110px;
 }
@@ -702,6 +719,7 @@
 }
 
 .discussion-room-body {
+    display: flex;
     min-height: 0;
     overflow: hidden;
     padding: 1rem 1.25rem;
@@ -709,7 +727,9 @@
 }
 
 .classroom-page .chat-messages {
-    height: 100%;
+    flex: 1;
+    min-height: 0;
+    height: auto;
     padding: 0.5rem 0.5rem;
     gap: 1rem;
     overflow-y: auto;
@@ -1423,6 +1443,10 @@
     .discussion-room-alias-card {
         align-items: flex-start;
         width: 100%;
+    }
+
+    .discussion-room-alias-meta {
+        text-align: left;
     }
 
     .discussion-room-composer .chat-composer {

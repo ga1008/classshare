@@ -764,21 +764,20 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
 
             if command:
                 if command["action"] == "switch_alias":
-                    switched = await manager.switch_temporary_name(class_offering_id, client_id)
-                    if not switched:
-                        await websocket.send_text(json.dumps({
-                            "type": "alias_switch_result",
-                            "success": False,
-                            "message": "当前没有可用的新代号。",
-                        }, ensure_ascii=False))
-                        continue
-
-                    previous_name, new_name = switched
+                    switch_result = await manager.switch_temporary_name(class_offering_id, client_id)
                     await websocket.send_text(json.dumps({
                         "type": "alias_switch_result",
-                        "success": True,
-                        "message": f"已切换为 {new_name}",
+                        "success": bool(switch_result.get("success")),
+                        "message": switch_result.get("message"),
+                        "reason": switch_result.get("reason"),
+                        "alias_state": switch_result.get("alias_state"),
                     }, ensure_ascii=False))
+
+                    if not switch_result.get("success"):
+                        continue
+
+                    previous_name = switch_result.get("previous_name")
+                    new_name = switch_result.get("new_name")
                     await manager.broadcast(
                         class_offering_id,
                         json.dumps({
