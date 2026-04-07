@@ -11,7 +11,8 @@ from .core import app, ai_client, templates
 from .config import BASE_DIR, STATIC_DIR
 from .database import init_database
 from .dependencies import build_login_redirect_url, build_permission_warning_url
-from .dependencies import get_user_hint_from_request, infer_required_role_from_path
+from .dependencies import clear_access_token_cookie, get_active_user_from_request
+from .dependencies import infer_required_role_from_path
 
 # 导入所有 V4.0 路由
 from .routers import ui, files, homework, ai, materials
@@ -58,20 +59,22 @@ async def unauthorized_exception_handler(request: Request, exc: HTTPException):
     detail = exc.detail if isinstance(exc.detail, str) else "登录状态已失效，请重新登录。"
 
     if _is_api_request(request):
-        return JSONResponse({
+        response = JSONResponse({
             "detail": detail,
             "code": "login_required",
             "redirect_to": login_url,
         }, status_code=401)
+        clear_access_token_cookie(response)
+        return response
 
     response = RedirectResponse(url=login_url, status_code=303)
-    response.delete_cookie("access_token")
+    clear_access_token_cookie(response)
     return response
 
 
 @app.exception_handler(403)
 async def forbidden_exception_handler(request: Request, exc: HTTPException):
-    user_hint = get_user_hint_from_request(request)
+    user_hint = get_active_user_from_request(request)
     required_role = None
     if exc.headers:
         required_role = exc.headers.get("X-Required-Role")
@@ -80,14 +83,16 @@ async def forbidden_exception_handler(request: Request, exc: HTTPException):
     if not user_hint:
         login_url = build_login_redirect_url(request)
         if _is_api_request(request):
-            return JSONResponse({
+            response = JSONResponse({
                 "detail": "登录状态已失效，请重新登录。",
                 "code": "login_required",
                 "redirect_to": login_url,
             }, status_code=401)
+            clear_access_token_cookie(response)
+            return response
 
         response = RedirectResponse(url=login_url, status_code=303)
-        response.delete_cookie("access_token")
+        clear_access_token_cookie(response)
         return response
 
     warning_url = build_permission_warning_url(request, required_role=required_role)

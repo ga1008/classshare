@@ -4,13 +4,14 @@ import uuid
 import threading
 import ipaddress
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict
 from urllib.parse import urlencode, urlsplit
 from fastapi import Request, HTTPException, Depends, status
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 
-from .config import SECRET_KEY, ALGORITHM
+from .config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 
 # --- 密码加密 ---
 
@@ -34,12 +35,57 @@ _AUTH_PAGE_PATHS = {
 }
 
 _TEACHER_ONLY_PREFIXES = (
-    "/teacher",
     "/manage",
-    "/api/manage",
-    "/api/materials",
     "/materials/manage",
 )
+
+_REFERER_FIRST_PREFIXES = (
+    "/api",
+    "/download/",
+    "/submissions/download/",
+    "/materials/download/",
+    "/materials/raw/",
+)
+
+_TEACHER_ONLY_PATTERNS = (
+    re.compile(r"^/teacher(?:/|$)"),
+    re.compile(r"^/exam/new$"),
+    re.compile(r"^/exam/[^/]+/edit$"),
+    re.compile(r"^/api/manage(?:/|$)"),
+    re.compile(r"^/api/session/(?:active|invalidate)(?:/|$)"),
+    re.compile(r"^/api/files(?:/|$)"),
+    re.compile(r"^/api/courses/[^/]+/assignments$"),
+    re.compile(r"^/api/courses/[^/]+/files/(?:upload|[^/]+)$"),
+    re.compile(r"^/api/assignments/[^/]+(?:/submissions|/export/[^/]+)?$"),
+    re.compile(r"^/api/submissions/(?!download(?:/|$))[^/]+(?:/(?:grade|regrade))?$"),
+    re.compile(r"^/api/exam-papers(?:/|$)"),
+    re.compile(r"^/api/ai/generate_assignment$"),
+    re.compile(r"^/api/ai/exam(?:/|$)"),
+    re.compile(r"^/api/materials/(?:library|upload|[^/]+(?:/(?:assign|ai-parse|ai-optimize))?)$"),
+)
+
+_STUDENT_ONLY_PATTERNS = (
+    re.compile(r"^/api/assignments/[^/]+/(?:submit|withdraw)$"),
+)
+
+ACCESS_TOKEN_MAX_AGE_SECONDS = max(1, ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+
+
+def build_session_user_key(user_id: Optional[str], role: Optional[str] = None) -> Optional[str]:
+    normalized_user_id = str(user_id).strip() if user_id is not None else ""
+    normalized_role = str(role).strip() if role is not None else ""
+    if not normalized_user_id:
+        return None
+    return f"{normalized_role}:{normalized_user_id}" if normalized_role else normalized_user_id
+
+
+def get_session_user_key_from_payload(payload: Optional[dict]) -> Optional[str]:
+    if not payload:
+        return None
+    session_user_key = payload.get("session_user_key")
+    if session_user_key:
+        return str(session_user_key)
+    return build_session_user_key(payload.get("id"), payload.get("role"))
 
 
 def normalize_ip(ip: Optional[str]) -> Optional[str]:
@@ -86,19 +132,29 @@ def create_access_token(data: dict, client_ip: str) -> str:
     """创建 JWT token，包含会话ID和IP信息"""
     session_id = str(uuid.uuid4())
     normalized_ip = normalize_ip(client_ip) or str(client_ip)
+    session_user_key = build_session_user_key(data.get("id"), data.get("role")) or str(data["id"])
+    issued_at = datetime.now(timezone.utc)
+    expire_at = issued_at + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
 
     # 在token中包含会话信息
     token_data = data.copy()
     token_data["session_id"] = session_id
     token_data["ip"] = normalized_ip
+    token_data["session_user_key"] = session_user_key
+    token_data["iat"] = issued_at
+    token_data["exp"] = expire_at
 
     # 更新活跃会话 (线程安全)
     user_id = str(data["id"])  # 使用字符串作为键
     with _sessions_lock:
-        active_sessions[user_id] = {
+        active_sessions[session_user_key] = {
             "session_id": session_id,
             "ip": normalized_ip,
-            "last_login": data.get("login_time", "")
+            "last_login": data.get("login_time", ""),
+            "user_id": user_id,
+            "role": data.get("role"),
+            "name": data.get("name"),
+            "expires_at": expire_at.isoformat(),
         }
 
     print(f"[SESSION] 用户 {data.get('name')} 登录，IP: {normalized_ip}, 会话ID: {session_id}")
@@ -111,6 +167,9 @@ def verify_token(token: Optional[str], client_ip: Optional[str] = None) -> Optio
         return None
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        session_user_key = get_session_user_key_from_payload(payload)
+        if not session_user_key:
+            return None
         user_id = str(payload.get("id"))
         session_id = payload.get("session_id")
         token_ip = normalize_ip(payload.get("ip"))
@@ -118,11 +177,11 @@ def verify_token(token: Optional[str], client_ip: Optional[str] = None) -> Optio
 
         # 检查会话是否存在且匹配
         with _sessions_lock:
-            if user_id not in active_sessions:
+            if session_user_key not in active_sessions:
                 print(f"[SESSION] 用户 {user_id} 没有活跃会话")
                 return None
 
-            current_session = active_sessions[user_id]
+            current_session = active_sessions[session_user_key]
             session_ip = normalize_ip(current_session.get("ip"))
 
             # 如果提供了client_ip，则验证IP；否则只验证会话ID
@@ -159,11 +218,56 @@ def get_user_hint_from_request(request: Request) -> Optional[dict]:
     return decode_token_payload(request.cookies.get("access_token"))
 
 
+def apply_access_token_cookie(response, access_token: str) -> None:
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        samesite="lax",
+        max_age=ACCESS_TOKEN_MAX_AGE_SECONDS,
+        expires=ACCESS_TOKEN_MAX_AGE_SECONDS,
+        path="/",
+    )
+
+
+def clear_access_token_cookie(response) -> None:
+    response.delete_cookie("access_token", path="/")
+
+
 def get_request_path_with_query(request: Request) -> str:
     path = request.url.path or "/"
     if request.url.query:
         return f"{path}?{request.url.query}"
     return path
+
+
+def get_same_origin_referer_path(request: Request) -> Optional[str]:
+    referer = request.headers.get("referer")
+    if not referer:
+        return None
+
+    parsed = urlsplit(referer)
+    if parsed.scheme and parsed.scheme != request.url.scheme:
+        return None
+    if parsed.netloc and parsed.netloc != request.url.netloc:
+        return None
+
+    candidate = parsed.path or "/"
+    if parsed.query:
+        candidate = f"{candidate}?{parsed.query}"
+
+    sanitized = sanitize_next_path(candidate, fallback="")
+    return sanitized or None
+
+
+def get_auth_redirect_target(request: Request) -> str:
+    current_path = get_request_path_with_query(request)
+    if request.url.path.startswith(_REFERER_FIRST_PREFIXES):
+        referer_path = get_same_origin_referer_path(request)
+        if referer_path:
+            return referer_path
+        return "/dashboard"
+    return current_path
 
 
 def is_safe_local_path(target: Optional[str]) -> bool:
@@ -198,6 +302,10 @@ def infer_required_role_from_path(path: Optional[str]) -> Optional[str]:
     normalized_path = (path or "/").strip() or "/"
     if normalized_path.startswith(_TEACHER_ONLY_PREFIXES):
         return "teacher"
+    if any(pattern.match(normalized_path) for pattern in _TEACHER_ONLY_PATTERNS):
+        return "teacher"
+    if any(pattern.match(normalized_path) for pattern in _STUDENT_ONLY_PATTERNS):
+        return "student"
     if normalized_path.startswith("/student"):
         return "student"
     if normalized_path == "/exam/new" or re.fullmatch(r"/exam/[^/]+/edit", normalized_path):
@@ -211,21 +319,24 @@ def build_login_url(login_path: str, next_path: Optional[str] = None) -> str:
 
 
 def get_login_path_for_request(request: Request) -> str:
+    auth_target = get_auth_redirect_target(request)
+    auth_target_path = urlsplit(auth_target).path or "/"
     user_hint = get_user_hint_from_request(request) or {}
-    required_role = infer_required_role_from_path(request.url.path)
+    required_role = infer_required_role_from_path(auth_target_path) or infer_required_role_from_path(request.url.path)
     preferred_role = required_role or user_hint.get("role")
     return "/teacher/login" if preferred_role == "teacher" else "/student/login"
 
 
 def build_login_redirect_url(request: Request) -> str:
-    return build_login_url(get_login_path_for_request(request), get_request_path_with_query(request))
+    return build_login_url(get_login_path_for_request(request), get_auth_redirect_target(request))
 
 
 def build_permission_warning_url(request: Request, required_role: Optional[str] = None) -> str:
+    auth_target = get_auth_redirect_target(request)
     params = {
-        "next": sanitize_next_path(get_request_path_with_query(request), fallback="/dashboard")
+        "next": sanitize_next_path(auth_target, fallback="/dashboard")
     }
-    effective_required_role = required_role or infer_required_role_from_path(request.url.path)
+    effective_required_role = required_role or infer_required_role_from_path(urlsplit(auth_target).path) or infer_required_role_from_path(request.url.path)
     if effective_required_role:
         params["required_role"] = effective_required_role
     return f"/auth/forbidden?{urlencode(params)}"
@@ -239,12 +350,39 @@ def get_role_label(role: Optional[str]) -> str:
     return "访客"
 
 
-def invalidate_user_session(user_id: str):
+def invalidate_user_session(user_id: str, role: Optional[str] = None) -> bool:
     """使用户的所有会话失效"""
+    return invalidate_session_for_user(user_id, role)
+
+
+def invalidate_session_for_user(user_id: str, role: Optional[str] = None) -> bool:
+    raw_user_id = str(user_id).strip()
+    preferred_key = build_session_user_key(raw_user_id, role)
+
     with _sessions_lock:
-        if user_id in active_sessions:
-            del active_sessions[user_id]
-            print(f"[SESSION] 用户 {user_id} 会话已失效")
+        keys_to_remove = []
+        if preferred_key and preferred_key in active_sessions:
+            keys_to_remove.append(preferred_key)
+
+        if raw_user_id in active_sessions:
+            keys_to_remove.append(raw_user_id)
+
+        if role is None:
+            keys_to_remove.extend(
+                key for key in active_sessions.keys()
+                if key.endswith(f":{raw_user_id}") and key not in keys_to_remove
+            )
+
+        removed = False
+        for session_key in keys_to_remove:
+            if session_key in active_sessions:
+                del active_sessions[session_key]
+                removed = True
+
+    if removed:
+        print(f"[SESSION] Cleared session for {preferred_key or raw_user_id}")
+
+    return removed
 
 
 def get_client_ip(request: Request) -> str:
@@ -266,11 +404,15 @@ def get_client_ip(request: Request) -> str:
     return normalize_ip(host_ip) or host_ip
 
 
-async def get_current_user_optional(request: Request) -> Optional[dict]:
-    """获取当前用户（如果已登录），但不强制。"""
+def get_active_user_from_request(request: Request) -> Optional[dict]:
     token = request.cookies.get("access_token")
     client_ip = get_client_ip(request)
     return verify_token(token, client_ip)
+
+
+async def get_current_user_optional(request: Request) -> Optional[dict]:
+    """获取当前用户（如果已登录），但不强制。"""
+    return get_active_user_from_request(request)
 
 async def get_current_user(user: Optional[dict] = Depends(get_current_user_optional)) -> dict:
     """依赖项：强制用户必须登录"""

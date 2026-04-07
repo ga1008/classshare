@@ -19,8 +19,9 @@ from ..dependencies import (
 # 修复：移除，V4.0 roster_handler 不再有 parse_excel_to_students
 # from ..services.roster_handler import parse_excel_to_students
 from ..database import get_db_connection
-from ..dependencies import build_login_url, sanitize_next_path, get_user_hint_from_request
+from ..dependencies import build_login_url, sanitize_next_path
 from ..dependencies import infer_required_role_from_path, get_role_label
+from ..dependencies import apply_access_token_cookie, clear_access_token_cookie, invalidate_session_for_user
 
 router = APIRouter()
 
@@ -79,8 +80,17 @@ async def permission_warning_page(
     user: Optional[dict] = Depends(get_current_user_optional),
 ):
     safe_next = sanitize_next_path(next, fallback="/dashboard")
-    user_hint = user or get_user_hint_from_request(request) or {}
     effective_required_role = required_role or infer_required_role_from_path(safe_next.split("?", 1)[0])
+    if not user:
+        login_path = "/teacher/login" if effective_required_role == "teacher" else "/student/login"
+        response = RedirectResponse(
+            url=build_login_url(login_path, safe_next),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+        clear_access_token_cookie(response)
+        return response
+
+    user_hint = user
     current_role = user_hint.get("role")
 
     return templates.TemplateResponse(request, "permission_denied.html", {
@@ -111,7 +121,7 @@ async def handle_student_login(
     safe_next = sanitize_next_path(next, fallback="/dashboard")
 
     # 获取客户端IP
-    from ..dependencies import get_client_ip, invalidate_user_session
+    from ..dependencies import get_client_ip
     client_ip = get_client_ip(request)
 
     with get_db_connection() as conn:
@@ -128,7 +138,7 @@ async def handle_student_login(
     student_data = dict(student)
 
     # 使该用户之前的会话失效
-    invalidate_user_session(str(student_data['id']))
+    invalidate_session_for_user(str(student_data['id']), "student")
 
     token_data = {
         "id": student_data['id'],  # 使用数据库主键 PK
@@ -138,14 +148,13 @@ async def handle_student_login(
         "login_time": datetime.now().isoformat()
     }
 
-    from ..dependencies import create_access_token
     access_token = create_access_token(token_data, client_ip)
 
     response = RedirectResponse(
         url=safe_next,
         status_code=status.HTTP_303_SEE_OTHER,
     )
-    response.set_cookie(key="access_token", value=access_token, httponly=True)
+    apply_access_token_cookie(response, access_token)
     return response
 
 
@@ -178,7 +187,7 @@ async def handle_teacher_login(
     next: Optional[str] = Form(default=None),
 ):
     """V4.0: 教师登录 - 验证数据库"""
-    from ..dependencies import get_client_ip, invalidate_user_session
+    from ..dependencies import get_client_ip
     client_ip = get_client_ip(request)
     safe_next = sanitize_next_path(next, fallback="/dashboard")
 
@@ -194,7 +203,7 @@ async def handle_teacher_login(
     teacher_data = dict(teacher)
 
     # 使该用户之前的会话失效
-    invalidate_user_session(str(teacher_data['id']))
+    invalidate_session_for_user(str(teacher_data['id']), "teacher")
 
     token_data = {
         "id": teacher_data['id'],  # 数据库主键 PK
@@ -204,29 +213,28 @@ async def handle_teacher_login(
         "login_time": datetime.now().isoformat()
     }
 
-    from ..dependencies import create_access_token
     access_token = create_access_token(token_data, client_ip)
 
     response = RedirectResponse(
         url=safe_next,
         status_code=status.HTTP_303_SEE_OTHER,
     )
-    response.set_cookie(key="access_token", value=access_token, httponly=True)
+    apply_access_token_cookie(response, access_token)
     return response
 
 
 @router.get("/logout")
 async def logout(request: Request):
-    from ..dependencies import get_current_user_optional, invalidate_user_session
+    from ..dependencies import get_current_user_optional
 
     # 获取当前用户并使其会话失效
     user = await get_current_user_optional(request)
     if user and user.get('id'):
-        invalidate_user_session(str(user['id']))
+        invalidate_session_for_user(str(user['id']), user.get('role'))
         print(f"[SESSION] 用户 {user.get('name')} 主动注销")
 
     response = RedirectResponse(url="/student/login", status_code=status.HTTP_303_SEE_OTHER)
-    response.delete_cookie("access_token")
+    clear_access_token_cookie(response)
     return response
 
 
