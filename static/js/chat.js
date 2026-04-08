@@ -31,6 +31,7 @@ export class ClassroomChat {
         this.displayNameEl = document.getElementById(options.displayNameId);
         this.aliasMetaEl = document.getElementById(options.aliasMetaId);
         this.switchAliasButton = document.getElementById(options.switchAliasButtonId);
+        this.mentionAllButton = document.getElementById(options.mentionAllButtonId);
         this.historyLoader = document.getElementById(options.historyLoaderId);
         this.historyLoadButton = document.getElementById(options.historyLoadButtonId);
 
@@ -138,6 +139,7 @@ export class ClassroomChat {
 
         this.messagesBox.addEventListener('scroll', () => this.updateHistoryLoader());
         this.switchAliasButton?.addEventListener('click', () => this.requestAliasSwitch());
+        this.mentionAllButton?.addEventListener('click', () => this.insertMentionAll());
         this.historyLoadButton?.addEventListener('click', () => this.requestOlderHistory());
         this.emojiTriggerButton?.addEventListener('click', () => this.toggleEmojiPopover());
         this.emojiCloseButton?.addEventListener('click', () => this.closeEmojiPopover());
@@ -416,6 +418,13 @@ export class ClassroomChat {
             if (data.type === 'chat') {
                 const shouldStickBottom = this.isNearBottom();
                 this.appendChatMessage(data, { scrollToBottom: shouldStickBottom });
+                if (
+                    !this.isCurrentUserMessage(data)
+                    && String(data.message || '').includes('@')
+                    && typeof window.refreshMessageCenterBell === 'function'
+                ) {
+                    window.refreshMessageCenterBell();
+                }
                 if (this.isCurrentUserMessage(data)) {
                     this.scheduleEmojiPanelRefresh();
                 }
@@ -802,15 +811,26 @@ export class ClassroomChat {
     }
 
     insertEmojiAtCursor(char) {
-        if (!this.chatInput || !char) {
+        this.insertTextAtCursor(char);
+    }
+
+    insertMentionAll() {
+        if (this.currentUser?.role !== 'teacher') {
             return;
         }
+        const prefix = this.chatInput?.value && !this.chatInput.value.endsWith(' ') ? ' ' : '';
+        this.insertTextAtCursor(`${prefix}@所有人 `);
+    }
 
+    insertTextAtCursor(text) {
+        if (!this.chatInput || !text) {
+            return;
+        }
         const start = this.chatInput.selectionStart ?? this.chatInput.value.length;
         const end = this.chatInput.selectionEnd ?? this.chatInput.value.length;
         const currentValue = this.chatInput.value;
-        this.chatInput.value = `${currentValue.slice(0, start)}${char}${currentValue.slice(end)}`;
-        const nextPosition = start + char.length;
+        this.chatInput.value = `${currentValue.slice(0, start)}${text}${currentValue.slice(end)}`;
+        const nextPosition = start + text.length;
         this.chatInput.focus();
         this.chatInput.setSelectionRange(nextPosition, nextPosition);
         this.resizeInput();

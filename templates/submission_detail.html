@@ -229,6 +229,9 @@
         </a>
         <h1 class="text-lg font-bold m-0">{{ submission.student_name }} - {{ assignment.title }}</h1>
     </div>
+    <div class="flex items-center gap-2">
+        {% include "partials/message_center_bell.html" %}
+    </div>
 </header>
 
 <main class="detail-container">

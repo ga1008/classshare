@@ -18,6 +18,11 @@ from ..config import (
 from ..database import get_db_connection
 from ..dependencies import get_current_user, get_current_student, get_current_teacher
 from ..services.behavior_tracking_service import record_behavior_event
+from ..services.message_center_service import (
+    create_assignment_published_notifications,
+    create_student_grading_notification,
+    create_submission_notification,
+)
 from ..services.submission_assets import (
     answers_have_content,
     decode_allowed_file_types_json,
@@ -120,6 +125,7 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
         if assignment['created_by_teacher_id'] != user['id']:
             raise HTTPException(403, "无权修改该作业")
 
+        previous_status = str(assignment['status'] or '')
         allowed_file_types_json = encode_allowed_file_types_json(_get_allowed_file_types(data, assignment))
         conn.execute(
             """
@@ -138,6 +144,11 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
                 assignment_id,
             )
         )
+        if previous_status != 'published' and data.get('status') == 'published':
+            try:
+                create_assignment_published_notifications(conn, assignment_id)
+            except Exception as exc:
+                print(f"[MESSAGE_CENTER] assignment publish notify failed: {exc}")
         conn.commit()
     return {"status": "success", "updated_assignment_id": assignment_id}
 
@@ -260,6 +271,16 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
     with get_db_connection() as conn:
         conn.execute("UPDATE submissions SET status = 'graded', score = ?, feedback_md = ? WHERE id = ?",
                      (data['score'], data['feedback_md'], submission_id))
+        try:
+            create_student_grading_notification(
+                conn,
+                submission_id,
+                actor_role="teacher",
+                actor_user_pk=int(user["id"]),
+                actor_display_name=str(user.get("name") or ""),
+            )
+        except Exception as exc:
+            print(f"[MESSAGE_CENTER] manual grading notify failed: {exc}")
         conn.commit()
     return {"status": "success", "graded_submission_id": submission_id}
 
@@ -427,6 +448,10 @@ async def submit_assignment(assignment_id: str,
                     )
                 )
 
+            try:
+                create_submission_notification(conn, submission_id)
+            except Exception as exc:
+                print(f"[MESSAGE_CENTER] submission notify failed: {exc}")
             conn.commit()
         except sqlite3.IntegrityError:
             conn.rollback()
@@ -674,6 +699,10 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
             )
         )
         new_assignment_id = cursor.lastrowid
+        try:
+            create_assignment_published_notifications(conn, new_assignment_id)
+        except Exception as exc:
+            print(f"[MESSAGE_CENTER] exam assignment publish notify failed: {exc}")
         conn.commit()
         assignment_dir = _build_assignment_storage_dir(offering['course_id'], new_assignment_id)
         assignment_dir.mkdir(parents=True, exist_ok=True)

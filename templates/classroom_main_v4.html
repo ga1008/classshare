@@ -74,6 +74,7 @@
         </div>
     </div>
     <div class="navbar-user">
+        {% include "partials/message_center_bell.html" %}
         <span class="user-name">欢迎，{{ user_info.name }} <span class="badge badge-primary ml-2">{{ user_info.nickname if user_info.nickname else ('教师' if user_info.role == 'teacher' else '学生') }}</span></span>
         {% if user_info.role == 'student' %}
         <button type="button" class="btn btn-outline btn-sm" data-open-student-security>修改密码</button>
@@ -413,6 +414,11 @@
                         <textarea id="chat-input" class="form-control chat-composer-input" placeholder="输入课堂讨论内容，@助教 可召唤 AI，Enter 发送，Shift+Enter 换行" autocomplete="off" rows="1"></textarea>
                     </label>
                     <div class="chat-composer-actions">
+                        {% if user_info.role == 'teacher' %}
+                        <button type="button" class="btn btn-outline btn-sm chat-mention-all-btn" id="chat-mention-all-btn" title="插入 @所有人">
+                            <span>@所有人</span>
+                        </button>
+                        {% endif %}
                         <button type="button" class="btn btn-ghost chat-emoji-trigger-btn" id="chat-emoji-trigger-btn" title="表情与自定义表情">
                             <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
                             <span>表情</span>
@@ -729,6 +735,7 @@
             displayNameId: 'chat-display-name',
             aliasMetaId: 'chat-alias-meta',
             switchAliasButtonId: 'chat-switch-alias-btn',
+            mentionAllButtonId: 'chat-mention-all-btn',
             historyLoaderId: 'chat-history-loader',
             historyLoadButtonId: 'chat-history-load-btn',
             statusIndicatorId: 'ws-status',

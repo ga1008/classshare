@@ -187,7 +187,8 @@
         </a>
         <h1 class="text-lg font-bold m-0">{{ assignment.title }}</h1>
     </div>
-    <div>
+    <div class="flex items-center gap-2">
+        {% include "partials/message_center_bell.html" %}
         {% if assignment.status == 'published' %}
             <span class="badge badge-success text-sm">进行中</span>
         {% elif assignment.status == 'closed' %}

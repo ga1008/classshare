@@ -1,0 +1,147 @@
+import { apiFetch } from './api.js';
+
+const bellShells = Array.from(document.querySelectorAll('[data-message-center-bell-shell]'));
+
+const bellState = {
+    lastUnreadTotal: null,
+    latestUnreadId: 0,
+    hideTimer: null,
+};
+
+function updateBell(summary) {
+    const unreadTotal = Number(summary?.unread_total || 0);
+    const countText = unreadTotal > 99 ? '99+' : String(unreadTotal);
+
+    bellShells.forEach((shell) => {
+        const bellNode = shell.querySelector('[data-message-center-bell]');
+        const countNode = shell.querySelector('[data-message-center-bell-count]');
+        bellNode?.classList.toggle('is-unread', unreadTotal > 0);
+
+        if (countNode) {
+            countNode.hidden = unreadTotal <= 0;
+            countNode.textContent = unreadTotal > 0 ? countText : '0';
+        }
+    });
+}
+
+function hideBellToast(immediate = false) {
+    const toastNode = bellShells[0]?.querySelector('[data-message-center-bell-toast]');
+    if (!toastNode) {
+        return;
+    }
+
+    window.clearTimeout(bellState.hideTimer);
+    bellState.hideTimer = null;
+
+    if (immediate) {
+        toastNode.classList.remove('is-visible');
+        toastNode.hidden = true;
+        return;
+    }
+
+    toastNode.classList.remove('is-visible');
+    window.setTimeout(() => {
+        if (!toastNode.classList.contains('is-visible')) {
+            toastNode.hidden = true;
+        }
+    }, 180);
+}
+
+function showBellToast(notification) {
+    const shell = bellShells[0];
+    if (!shell || !notification) {
+        return;
+    }
+
+    const toastNode = shell.querySelector('[data-message-center-bell-toast]');
+    const bodyNode = shell.querySelector('[data-message-center-bell-toast-body]');
+    const metaNode = shell.querySelector('[data-message-center-bell-toast-meta]');
+    if (!toastNode || !bodyNode || !metaNode) {
+        return;
+    }
+
+    const actorName = String(notification.actor_display_name || '').trim();
+    const categoryLabel = String(notification.category_label || '消息').trim();
+    const title = String(notification.title || '').trim();
+
+    bodyNode.textContent = actorName
+        ? `收到来自 ${actorName} 的新信息`
+        : '收到一条新的系统信息';
+    metaNode.textContent = title || `${categoryLabel} 已更新`;
+
+    toastNode.hidden = false;
+    window.requestAnimationFrame(() => {
+        toastNode.classList.add('is-visible');
+    });
+
+    window.clearTimeout(bellState.hideTimer);
+    bellState.hideTimer = window.setTimeout(() => hideBellToast(), 5000);
+}
+
+function syncBellState(summary, latestUnread, { allowPopup }) {
+    const unreadTotal = Number(summary?.unread_total || 0);
+    const latestUnreadId = Number(latestUnread?.id || 0);
+
+    if (bellState.lastUnreadTotal === null) {
+        bellState.lastUnreadTotal = unreadTotal;
+        bellState.latestUnreadId = latestUnreadId;
+        return;
+    }
+
+    const hasNewUnread = allowPopup
+        && unreadTotal > 0
+        && latestUnreadId > Number(bellState.latestUnreadId || 0);
+
+    bellState.lastUnreadTotal = unreadTotal;
+    bellState.latestUnreadId = Math.max(Number(bellState.latestUnreadId || 0), latestUnreadId);
+
+    if (unreadTotal <= 0) {
+        hideBellToast(true);
+    } else if (hasNewUnread && latestUnread) {
+        showBellToast(latestUnread);
+    }
+}
+
+async function refreshBell({ allowPopup = true } = {}) {
+    if (bellShells.length === 0) {
+        return;
+    }
+
+    try {
+        const response = await apiFetch('/api/message-center/summary', { silent: true });
+        updateBell(response?.summary || {});
+        syncBellState(response?.summary || {}, response?.latest_unread || null, { allowPopup });
+    } catch {
+        // Keep the bell quiet on transient failures.
+    }
+}
+
+if (bellShells.length > 0) {
+    bellShells.forEach((shell) => {
+        shell.querySelector('[data-message-center-bell]')?.addEventListener('click', () => hideBellToast(true));
+    });
+
+    refreshBell({ allowPopup: false });
+    window.setInterval(() => {
+        if (!document.hidden) {
+            refreshBell();
+        }
+    }, 10000);
+
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            refreshBell();
+        }
+    });
+
+    window.addEventListener('message-center:summary-updated', (event) => {
+        const summary = event.detail || {};
+        updateBell(summary);
+        bellState.lastUnreadTotal = Number(summary?.unread_total || 0);
+        if (bellState.lastUnreadTotal <= 0) {
+            hideBellToast(true);
+        }
+    });
+}
+
+window.refreshMessageCenterBell = refreshBell;

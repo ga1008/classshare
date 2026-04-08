@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="/static/css/forms.css">
     <link rel="stylesheet" href="/static/css/modals.css">
     <link rel="stylesheet" href="/static/css/toast.css">
+    <link rel="stylesheet" href="/static/css/message_center.css">
     {% block extra_head %}{% endblock %}
     <style>
         body { background-color: var(--bg-color); }
@@ -286,7 +287,7 @@
                     <h1 class="manage-header-title">{{ page_title }}</h1>
                 </div>
                 <div>
-                    <!-- Header Actions Slot -->
+                    {% include "partials/message_center_bell.html" %}
                     {% block header_actions %}{% endblock %}
                 </div>
             </header>
@@ -302,6 +303,7 @@
     <div id="toast-container" class="toast-container"></div>
 
     <script type="module" src="/static/js/auth.js"></script>
+    <script type="module" src="/static/js/message_center_bell.js"></script>
     <script type="module">
         import { showMessage } from '/static/js/ui.js';
         import { apiFetch } from '/static/js/api.js';

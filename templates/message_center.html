@@ -1,0 +1,107 @@
+{% extends "base_navbar.html" %}
+
+{% block title %}信息中心 | 课堂平台{% endblock %}
+
+{% block css %}
+{{ super() }}
+{% endblock %}
+
+{% block main_content %}
+<section
+    class="message-center-shell"
+    data-message-center-app
+    data-initial-tab="{{ initial_tab }}"
+    data-initial-contact="{{ initial_contact }}"
+    data-initial-scope="{{ initial_scope if initial_scope is not none else '' }}"
+>
+    <section class="message-center-hero">
+        <span class="message-center-hero__eyebrow">Message Center</span>
+        <h1 class="message-center-hero__title">系统信息管理中心</h1>
+        <p class="message-center-hero__text">
+            在这里集中处理私信、作业通知、课堂 @ 提醒、提交动态与 AI 反馈。未读数量会实时同步到右上角铃铛。
+        </p>
+        <div class="message-center-hero__stats">
+            <div class="message-center-stat">
+                <span class="message-center-stat__label">总未读</span>
+                <strong class="message-center-stat__value" id="message-center-unread-total">0</strong>
+            </div>
+            <div class="message-center-stat">
+                <span class="message-center-stat__label">当前分类</span>
+                <strong class="message-center-stat__value" id="message-center-current-tab-label">全部</strong>
+            </div>
+            <div class="message-center-stat">
+                <span class="message-center-stat__label">私信联系人</span>
+                <strong class="message-center-stat__value" id="message-center-contact-total">0</strong>
+            </div>
+        </div>
+    </section>
+
+    <section class="message-center-toolbar">
+        <div class="message-center-tabs" id="message-center-tabs"></div>
+        <div class="message-center-controls">
+            <input
+                id="message-center-search"
+                class="message-center-search"
+                type="search"
+                placeholder="搜索联系人、消息标题、内容关键词"
+            >
+            <select id="message-center-filter" class="message-center-filter"></select>
+            <button type="button" id="message-center-mark-read" class="btn btn-outline">
+                标记当前已读
+            </button>
+        </div>
+    </section>
+
+    <section class="message-center-body">
+        <div id="message-center-feed" class="message-center-feed"></div>
+
+        <div id="message-center-private-panel" class="message-center-private-panel" hidden>
+            <aside class="message-center-sidebar">
+                <div class="message-center-pane-header">
+                    <h2 class="message-center-pane-title">私信会话</h2>
+                    <p class="message-center-conversation__hint">支持联系本班同学、老师与 AI 助教。</p>
+                </div>
+                <div class="message-center-contact-picker">
+                    <label for="message-center-contact-search" class="message-center-conversation__hint">联系人搜索</label>
+                    <input
+                        id="message-center-contact-search"
+                        class="message-center-search message-center-search--compact"
+                        type="search"
+                        placeholder="输入姓名、课程、班级关键词"
+                    >
+                    <label for="message-center-contact-select" class="message-center-conversation__hint">联系人下拉列表</label>
+                    <select id="message-center-contact-select" class="message-center-contact-select"></select>
+                    <div id="message-center-contact-current" class="message-center-contact-current"></div>
+                </div>
+                <div class="message-center-blocks">
+                    <div class="message-center-card__actions">
+                        <h3 class="message-center-pane-title">黑名单</h3>
+                        <span class="message-center-pill" id="message-center-block-count">0</span>
+                    </div>
+                    <div id="message-center-block-list" class="message-center-block-list"></div>
+                </div>
+            </aside>
+
+            <section class="message-center-conversation">
+                <div id="message-center-conversation-header" class="message-center-conversation__header"></div>
+                <div id="message-center-conversation-body" class="message-center-conversation__body"></div>
+                <div class="message-center-composer">
+                    <form id="message-center-compose-form" class="message-center-composer__form">
+                        <textarea
+                            id="message-center-compose-input"
+                            class="message-center-composer__input"
+                            placeholder="输入私信内容"
+                        ></textarea>
+                        <button type="submit" class="btn btn-primary">发送</button>
+                    </form>
+                </div>
+            </section>
+        </div>
+    </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script type="module" src="/static/js/message_center.js"></script>
+{% endblock %}

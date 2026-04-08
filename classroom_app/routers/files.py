@@ -33,6 +33,7 @@ from ..services.discussion_ai_service import (
 from ..services.emoji_service import increment_emoji_usage, resolve_custom_emoji_payloads
 from ..services.file_handler import delete_file_safely
 from ..services.file_service import save_file_globally, get_file_lock, stream_file
+from ..services.message_center_service import create_discussion_mention_notifications
 
 # --- 新增：专门针对 Windows 系统的并发保护限流器 ---
 # 允许同时最多 80 个物理读取流，既能打满内网千兆带宽，又能完美避开 Windows 文件句柄上限崩溃
@@ -129,6 +130,17 @@ async def _process_discussion_chat_message(
             [item["id"] for item in custom_emoji_payloads],
             used_at=now.isoformat(),
         )
+        try:
+            create_discussion_mention_notifications(
+                conn,
+                class_offering_id=class_offering_id,
+                sender_user=user,
+                sender_display_name=display_name,
+                message_text=normalized_text,
+                message_id=int(stored_message["id"]),
+            )
+        except Exception as exc:
+            print(f"[MESSAGE_CENTER] discussion mention notify failed: {exc}")
         conn.commit()
 
     profile_trigger = record_message_activity(

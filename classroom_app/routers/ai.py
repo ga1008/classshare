@@ -20,6 +20,12 @@ from ..core import ai_client
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher, get_current_user
 from ..services.behavior_tracking_service import record_behavior_event
+from ..services.message_center_service import (
+    AI_ASSISTANT_LABEL,
+    AI_ASSISTANT_ROLE,
+    create_student_grading_notification,
+    create_teacher_ai_feedback_notification,
+)
 from ..services.psych_profile_service import (
     compose_classroom_chat_system_prompt as build_classroom_chat_prompt,
     load_ai_class_config as fetch_ai_class_config,
@@ -133,6 +139,17 @@ async def handle_ai_grading_callback(request: Request):
                 "UPDATE submissions SET status = ?, score = ?, feedback_md = ? WHERE id = ?",
                 (data['status'], data.get('score'), data.get('feedback_md'), submission_id)
             )
+            if data.get('status') == 'graded':
+                try:
+                    create_student_grading_notification(
+                        conn,
+                        submission_id,
+                        actor_role=AI_ASSISTANT_ROLE,
+                        actor_display_name=AI_ASSISTANT_LABEL,
+                    )
+                    create_teacher_ai_feedback_notification(conn, submission_id)
+                except Exception as exc:
+                    print(f"[MESSAGE_CENTER] AI grading notify failed: {exc}")
             conn.commit()
         print(f"[CALLBACK] 成功接收并更新 AI 批改结果 (Submission ID: {submission_id})")
         # TODO: 通过 WebSocket 向教师推送更新

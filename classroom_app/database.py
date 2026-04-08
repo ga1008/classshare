@@ -1314,6 +1314,125 @@ def init_database():
                 "ON classroom_behavior_states (profile_generation_pending, last_presence_at, online_accumulated_seconds, next_profile_interval_seconds)"
             )
 
+            # 13.9 绯荤粺淇℃伅涓績閫氱煡
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS message_center_notifications
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             recipient_identity TEXT NOT NULL,
+                             recipient_role TEXT NOT NULL,
+                             recipient_user_pk INTEGER NOT NULL,
+                             category TEXT NOT NULL,
+                             actor_identity TEXT DEFAULT '',
+                             actor_role TEXT DEFAULT '',
+                             actor_user_pk INTEGER,
+                             actor_display_name TEXT DEFAULT '',
+                             title TEXT NOT NULL,
+                             body_preview TEXT DEFAULT '',
+                             link_url TEXT DEFAULT '',
+                             class_offering_id INTEGER,
+                             ref_type TEXT DEFAULT '',
+                             ref_id TEXT DEFAULT '',
+                             metadata_json TEXT DEFAULT '{}',
+                             read_at TEXT,
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL
+                         )
+                         ''')
+
+            # 13.10 绉佷俊浼氳瘽
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS private_messages
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             conversation_key TEXT NOT NULL,
+                             class_offering_id INTEGER,
+                             sender_identity TEXT NOT NULL,
+                             sender_role TEXT NOT NULL,
+                             sender_user_pk INTEGER,
+                             sender_display_name TEXT NOT NULL,
+                             recipient_identity TEXT NOT NULL,
+                             recipient_role TEXT NOT NULL,
+                             recipient_user_pk INTEGER,
+                             recipient_display_name TEXT NOT NULL,
+                             content TEXT NOT NULL,
+                             read_at TEXT,
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL
+                         )
+                         ''')
+
+            # 13.11 绉佷俊榛戝悕鍗?
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS private_message_blocks
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             owner_identity TEXT NOT NULL,
+                             owner_role TEXT NOT NULL,
+                             owner_user_pk INTEGER NOT NULL,
+                             blocked_identity TEXT NOT NULL,
+                             blocked_role TEXT NOT NULL,
+                             blocked_user_pk INTEGER,
+                             blocked_display_name TEXT DEFAULT '',
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             UNIQUE (owner_identity, blocked_identity)
+                         )
+                         ''')
+
+            # 13.12 绉佷俊瀹¤鏃ュ織锛堜笉璁板綍鍐呭锛?
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS private_message_audit_logs
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             message_id INTEGER NOT NULL,
+                             class_offering_id INTEGER,
+                             sender_identity TEXT NOT NULL,
+                             sender_role TEXT NOT NULL,
+                             sender_user_pk INTEGER,
+                             sender_display_name TEXT NOT NULL,
+                             recipient_identity TEXT NOT NULL,
+                             recipient_role TEXT NOT NULL,
+                             recipient_user_pk INTEGER,
+                             recipient_display_name TEXT NOT NULL,
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (message_id) REFERENCES private_messages (id) ON DELETE CASCADE,
+                             FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL
+                         )
+                         ''')
+
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_message_center_notifications_recipient_created "
+                "ON message_center_notifications (recipient_role, recipient_user_pk, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_message_center_notifications_recipient_category_read "
+                "ON message_center_notifications (recipient_role, recipient_user_pk, category, read_at, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_message_center_notifications_ref "
+                "ON message_center_notifications (ref_type, ref_id, recipient_role, recipient_user_pk)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_private_messages_conversation_time "
+                "ON private_messages (conversation_key, created_at ASC, id ASC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_private_messages_recipient_read "
+                "ON private_messages (recipient_identity, read_at, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_private_messages_sender_time "
+                "ON private_messages (sender_identity, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_private_message_blocks_owner "
+                "ON private_message_blocks (owner_identity, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_private_message_audit_lookup "
+                "ON private_message_audit_logs (sender_identity, recipient_identity, created_at DESC, id DESC)"
+            )
+
             # 14. 试卷库
             conn.execute('''
                         CREATE TABLE IF NOT EXISTS exam_papers

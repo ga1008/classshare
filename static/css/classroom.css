@@ -914,6 +914,23 @@
     gap: 0.7rem;
 }
 
+.chat-mention-all-btn {
+    min-width: 88px;
+    min-height: 42px;
+    border-radius: 1rem;
+    border-color: rgba(251, 146, 60, 0.45);
+    background: linear-gradient(135deg, rgba(255, 247, 237, 0.96), rgba(255, 251, 235, 0.96));
+    color: #c2410c;
+    font-weight: 700;
+    box-shadow: 0 8px 20px rgba(249, 115, 22, 0.12);
+}
+
+.chat-mention-all-btn:hover {
+    border-color: rgba(249, 115, 22, 0.7);
+    background: linear-gradient(135deg, rgba(255, 237, 213, 0.98), rgba(255, 247, 237, 0.98));
+    color: #9a3412;
+}
+
 .chat-composer-shell {
     flex: 1;
     display: flex;
