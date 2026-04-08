@@ -1,6 +1,14 @@
 import { apiFetch } from './api.js';
 import { closeModal, formatDate, formatSize, getFileIcon, openModal, showToast, escapeHtml } from './ui.js';
-import { getLearningDocumentUrl, getMaterialPreviewUrl, getMaterialPrimaryAction, getMaterialTypeLabel, hasLearningDocument } from './materials_common.js';
+import {
+    getLearningDocumentUrl,
+    getMaterialPreviewUrl,
+    getMaterialPrimaryAction,
+    getMaterialTypeLabel,
+    getRepositoryVisualMeta,
+    hasLearningDocument,
+    isGitRepository,
+} from './materials_common.js';
 
 const state = {
     currentParentId: null,
@@ -11,6 +19,15 @@ const state = {
     activeDetail: null,
     currentFolder: null,
     currentBreadcrumbs: [],
+    repository: {
+        materialId: null,
+        detail: null,
+        busy: false,
+        pendingAction: null,
+        lastStatus: 'idle',
+        lastOutput: '暂无输出',
+        lastSyncSummary: '等待执行',
+    },
 };
 
 const config = window.MATERIALS_MANAGE_CONFIG || { offerings: [], canAssign: false };
@@ -22,6 +39,7 @@ const refs = {
     backBtn: document.getElementById('materials-back-btn'),
     upBtn: document.getElementById('materials-up-btn'),
     refreshBtn: document.getElementById('materials-refresh-btn'),
+    repositoryBtn: document.getElementById('materials-repository-btn'),
     fileBtn: document.getElementById('materials-upload-file-btn'),
     folderBtn: document.getElementById('materials-upload-folder-btn'),
     fileInput: document.getElementById('materials-file-input'),
@@ -35,6 +53,30 @@ const refs = {
     assignOptions: document.getElementById('materials-assign-options'),
     assignSaveBtn: document.getElementById('materials-assign-save-btn'),
     rootCount: document.getElementById('materials-root-count'),
+    repositoryName: document.getElementById('materials-repository-name'),
+    repositoryPath: document.getElementById('materials-repository-path'),
+    repositoryProvider: document.getElementById('materials-repository-provider'),
+    repositoryRemoteName: document.getElementById('materials-repository-remote-name'),
+    repositoryBranch: document.getElementById('materials-repository-branch'),
+    repositoryProtocol: document.getElementById('materials-repository-protocol'),
+    repositoryCredentialState: document.getElementById('materials-repository-credential-state'),
+    repositoryCredentialUser: document.getElementById('materials-repository-credential-user'),
+    repositoryStatus: document.getElementById('materials-repository-status'),
+    repositorySyncSummary: document.getElementById('materials-repository-sync-summary'),
+    repositoryCommandPreview: document.getElementById('materials-repository-command-preview'),
+    repositoryCommandInput: document.getElementById('materials-repository-command-input'),
+    repositoryOutput: document.getElementById('materials-repository-output'),
+    repositoryUpdateBtn: document.getElementById('materials-repository-update-btn'),
+    repositoryPushBtn: document.getElementById('materials-repository-push-btn'),
+    repositoryAuthBtn: document.getElementById('materials-repository-auth-btn'),
+    repositoryCommandRunBtn: document.getElementById('materials-repository-command-run-btn'),
+    repositoryCredentialRemote: document.getElementById('materials-repository-credential-remote'),
+    repositoryCredentialHost: document.getElementById('materials-repository-credential-host'),
+    repositoryCredentialUsername: document.getElementById('materials-repository-credential-username'),
+    repositoryCredentialSecret: document.getElementById('materials-repository-credential-secret'),
+    repositoryCredentialAuthMode: document.getElementById('materials-repository-credential-auth-mode'),
+    repositoryCredentialHint: document.getElementById('materials-repository-credential-hint'),
+    repositoryCredentialSaveBtn: document.getElementById('materials-repository-credential-save-btn'),
 };
 
 function getMetaText(item) {
@@ -42,6 +84,22 @@ function getMetaText(item) {
         return `${item.child_count || 0} 个子项`;
     }
     return formatSize(item.file_size || 0);
+}
+
+function getVisualMeta(item) {
+    const repositoryMeta = getRepositoryVisualMeta(item);
+    if (repositoryMeta) {
+        return {
+            color: repositoryMeta.color,
+            label: repositoryMeta.icon,
+            badge: repositoryMeta.badge,
+        };
+    }
+    if (item.node_type === 'folder') {
+        return { color: '#0ea5e9', label: 'DIR', badge: '' };
+    }
+    const fileMeta = getFileIcon(item.name || 'file');
+    return { color: fileMeta.color, label: fileMeta.label, badge: '' };
 }
 
 function updateSelectionBar() {
@@ -63,6 +121,12 @@ function renderBreadcrumbs(breadcrumbs) {
     `).join('');
 }
 
+function renderRepositoryToolbar() {
+    if (!refs.repositoryBtn) return;
+    const canOpenRepository = Boolean(state.currentFolder && isGitRepository(state.currentFolder));
+    refs.repositoryBtn.hidden = !canOpenRepository;
+}
+
 function renderList() {
     if (!state.items.length) {
         refs.listBody.innerHTML = '<div class="materials-empty">当前目录暂无材料。</div>';
@@ -71,12 +135,18 @@ function renderList() {
     }
 
     refs.listBody.innerHTML = state.items.map((item) => {
-        const icon = item.node_type === 'folder' ? { color: '#0ea5e9', label: 'DIR' } : getFileIcon(item.name || 'file');
+        const visualMeta = getVisualMeta(item);
         const activeClass = item.id === state.activeMaterialId ? 'is-active' : '';
         const selectedClass = state.selectedIds.has(item.id) ? 'is-selected' : '';
         const primaryAction = getMaterialPrimaryAction(item);
         const documentAction = hasLearningDocument(item)
             ? '<button type="button" class="btn btn-outline btn-sm" data-action="view-doc">查看</button>'
+            : '';
+        const repositoryAction = isGitRepository(item)
+            ? '<button type="button" class="btn btn-outline btn-sm" data-action="repository">仓库</button>'
+            : '';
+        const repositoryBadge = visualMeta.badge
+            ? `<span class="materials-repo-badge" style="--repo-color:${visualMeta.color};">${escapeHtml(visualMeta.badge)}</span>`
             : '';
 
         return `
@@ -85,9 +155,10 @@ function renderList() {
                     <input type="checkbox" data-role="select-item" data-id="${item.id}" ${state.selectedIds.has(item.id) ? 'checked' : ''}>
                 </div>
                 <div class="materials-name-cell">
-                    <div class="materials-type-icon" style="background:${icon.color}16;color:${icon.color};">${icon.label}</div>
+                    <div class="materials-type-icon" style="background:${visualMeta.color}16;color:${visualMeta.color};">${visualMeta.label}</div>
                     <div class="materials-name-copy">
                         <strong title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong>
+                        <div class="materials-name-badges">${repositoryBadge}</div>
                         <span title="${escapeHtml(item.material_path || '')}">${escapeHtml(item.material_path || '')}</span>
                     </div>
                 </div>
@@ -96,6 +167,7 @@ function renderList() {
                 <div class="materials-row-actions">
                     <button type="button" class="btn btn-ghost btn-sm" data-action="${primaryAction.action}">${primaryAction.label}</button>
                     ${documentAction}
+                    ${repositoryAction}
                     ${item.node_type === 'file' ? '<button type="button" class="btn btn-ghost btn-sm" data-action="download">下载</button>' : ''}
                     <button type="button" class="btn btn-ghost btn-sm" data-action="details">详情</button>
                 </div>
@@ -133,6 +205,39 @@ function renderAssignments(assignments = []) {
                     <div class="text-muted text-sm">${escapeHtml(assignment.semester || '未填写学期')}</div>
                 </div>
             `).join('')}
+        </div>
+    `;
+}
+
+function renderRepositorySummary(detail) {
+    if (!isGitRepository(detail)) return '';
+    const repositoryMeta = getRepositoryVisualMeta(detail) || { badge: 'Git', color: '#f97316' };
+    const remoteUrl = detail.git_remote_url || '未识别远程地址';
+    const branchLabel = detail.git_default_branch || detail.git_head_branch || '未识别分支';
+    return `
+        <div class="materials-section">
+            <div class="materials-section-header">
+                <h3>Git 仓库</h3>
+                <span class="materials-repo-badge" style="--repo-color:${repositoryMeta.color};">${escapeHtml(repositoryMeta.badge)}</span>
+            </div>
+            <div class="materials-repo-detail-grid">
+                <div class="materials-repo-detail-item">
+                    <strong>远程地址</strong>
+                    <span title="${escapeHtml(remoteUrl)}">${escapeHtml(remoteUrl)}</span>
+                </div>
+                <div class="materials-repo-detail-item">
+                    <strong>默认分支</strong>
+                    <span>${escapeHtml(branchLabel)}</span>
+                </div>
+                <div class="materials-repo-detail-item">
+                    <strong>远程名称</strong>
+                    <span>${escapeHtml(detail.git_remote_name || 'origin')}</span>
+                </div>
+                <div class="materials-repo-detail-item">
+                    <strong>协议</strong>
+                    <span>${escapeHtml(detail.git_remote_protocol || '未识别')}</span>
+                </div>
+            </div>
         </div>
     `;
 }
@@ -178,11 +283,13 @@ function renderDetail(detail) {
             ${previewUrl ? `<a href="${previewUrl}" class="btn btn-primary" target="_blank" rel="noopener">${previewLabel}</a>` : ''}
             ${optimizedUrl ? `<a href="${optimizedUrl}" class="btn btn-outline" target="_blank" rel="noopener">查看优化稿</a>` : ''}
             ${detail.node_type === 'file' ? `<a href="/materials/download/${detail.id}" class="btn btn-outline">下载</a>` : ''}
+            ${isGitRepository(detail) ? '<button type="button" class="btn btn-outline" id="materials-repository-open-btn">仓库</button>' : ''}
             <button type="button" class="btn btn-outline" id="materials-assign-open-btn">分配课堂</button>
             <button type="button" class="btn btn-outline" id="materials-ai-parse-btn" ${detail.can_ai_parse ? '' : 'disabled'}>AI 解析</button>
             <button type="button" class="btn btn-outline" id="materials-ai-optimize-btn" ${detail.can_ai_optimize ? '' : 'disabled'}>AI 优化</button>
             <button type="button" class="btn btn-danger" id="materials-delete-btn">删除</button>
         </div>
+        ${renderRepositorySummary(detail)}
         <div class="materials-section">
             <div class="materials-section-header">
                 <h3>AI 摘要</h3>
@@ -204,6 +311,7 @@ function renderDetail(detail) {
         </div>
     `;
 
+    document.getElementById('materials-repository-open-btn')?.addEventListener('click', () => openRepositoryModal(detail.id));
     document.getElementById('materials-assign-open-btn')?.addEventListener('click', openAssignModal);
     document.getElementById('materials-ai-parse-btn')?.addEventListener('click', runAiParse);
     document.getElementById('materials-ai-optimize-btn')?.addEventListener('click', runAiOptimize);
@@ -236,6 +344,7 @@ async function loadLibrary(parentId = null, trackHistory = false) {
     }
 
     renderBreadcrumbs(state.currentBreadcrumbs);
+    renderRepositoryToolbar();
     renderList();
     renderDetail(null);
 }
@@ -388,118 +497,97 @@ async function deleteActiveMaterial() {
     await loadLibrary(state.currentParentId);
 }
 
-refs.listBody.addEventListener('click', async (event) => {
-    const row = event.target.closest('.materials-row');
-    if (!row) return;
-    const materialId = Number(row.dataset.id);
+function formatRepositoryCommandPreview(detail) {
+    if (!detail) return '-';
+    const updateCommand = detail.commands?.update || '-';
+    const pushCommand = detail.commands?.commit_push || '-';
+    return `更新：${updateCommand}\n提交 + 推送：${pushCommand}`;
+}
 
-    if (event.target.matches('[data-role="select-item"]')) {
-        toggleSelection(materialId, event.target.checked);
-        return;
-    }
+function formatRepositorySyncSummary(syncSummary) {
+    if (!syncSummary) return '等待执行';
+    return `新增 ${syncSummary.inserted || 0} / 更新 ${syncSummary.updated || 0} / 删除 ${syncSummary.deleted || 0} / 未变化 ${syncSummary.unchanged || 0}`;
+}
 
-    const action = event.target.dataset.action;
-    if (action === 'open') {
-        openFolder(materialId);
-        return;
+function setRepositoryBusy(busy, statusText = '') {
+    state.repository.busy = busy;
+    if (statusText) {
+        refs.repositoryStatus.textContent = statusText;
     }
-    if (action === 'preview') {
-        previewMaterial(materialId);
-        return;
-    }
-    if (action === 'view-doc') {
-        viewLearningDocument(materialId);
-        return;
-    }
-    if (action === 'download') {
-        window.location.href = `/materials/download/${materialId}`;
-        return;
-    }
+    const detail = state.repository.detail;
+    refs.repositoryUpdateBtn.disabled = busy || !detail || !detail.can_update;
+    refs.repositoryPushBtn.disabled = busy || !detail || !detail.can_commit_push;
+    refs.repositoryCommandRunBtn.disabled = busy || !detail;
+    refs.repositoryAuthBtn.disabled = busy || !detail || !detail.credential_supported;
+    refs.repositoryCredentialSaveBtn.disabled = busy;
+}
 
-    state.activeMaterialId = materialId;
-    renderList();
+function renderRepositoryModal() {
+    const detail = state.repository.detail;
+    if (!detail) return;
+
+    refs.repositoryName.textContent = detail.name || '-';
+    refs.repositoryPath.textContent = detail.material_path || '-';
+    refs.repositoryProvider.textContent = detail.provider || 'Git';
+    refs.repositoryRemoteName.textContent = detail.remote_url || '未识别远程地址';
+    refs.repositoryBranch.textContent = detail.default_branch || detail.head_branch || '未识别分支';
+    refs.repositoryProtocol.textContent = detail.remote_protocol || '未识别协议';
+    refs.repositoryCredentialState.textContent = detail.credential_saved ? '已保存' : '未保存';
+    refs.repositoryCredentialUser.textContent = detail.credential_username || '未填写';
+    refs.repositoryCommandPreview.textContent = formatRepositoryCommandPreview(detail);
+    refs.repositoryOutput.textContent = state.repository.lastOutput || '暂无输出';
+    refs.repositoryStatus.textContent = state.repository.lastStatus === 'idle' ? '就绪' : state.repository.lastStatus;
+    refs.repositorySyncSummary.textContent = state.repository.lastSyncSummary || '等待执行';
+    refs.repositoryCommandInput.placeholder = '例如：git status -sb';
+    setRepositoryBusy(state.repository.busy, refs.repositoryStatus.textContent);
+}
+
+async function refreshRepositoryState() {
+    if (!state.repository.materialId) return;
+    const data = await apiFetch(`/api/materials/${state.repository.materialId}/repository`, { silent: true });
+    state.repository.detail = data.repository;
+    renderRepositoryModal();
+}
+
+async function openRepositoryModal(materialId) {
+    const data = await apiFetch(`/api/materials/${materialId}/repository`, { silent: true });
+    state.repository.materialId = materialId;
+    state.repository.detail = data.repository;
+    state.repository.pendingAction = null;
+    state.repository.lastStatus = '就绪';
+    state.repository.lastOutput = '暂无输出';
+    state.repository.lastSyncSummary = '等待执行';
+    renderRepositoryModal();
+    openModal('materials-repository-modal');
+}
+
+function openRepositoryCredentialModal() {
+    const detail = state.repository.detail;
+    if (!detail) return;
+    refs.repositoryCredentialRemote.textContent = detail.remote_url || '未识别远程地址';
+    refs.repositoryCredentialHost.textContent = detail.remote_host || detail.remote_protocol || '-';
+    refs.repositoryCredentialUsername.value = detail.credential_username || '';
+    refs.repositoryCredentialSecret.value = '';
+    refs.repositoryCredentialAuthMode.value = 'password';
+    refs.repositoryCredentialHint.textContent = detail.credential_supported
+        ? '仅支持 HTTP / HTTPS 远程仓库的表单凭据。'
+        : '当前远程仓库不是 HTTP / HTTPS，不能使用表单凭据，请优先配置 SSH Key。';
+    openModal('materials-repository-credential-modal');
+}
+
+async function refreshRepositoryAffectedViews() {
+    const currentParentId = state.currentParentId;
     try {
-        await loadMaterialDetail(materialId);
-    } catch (error) {
-        showToast(error.message || '加载材料详情失败', 'error');
+        await loadLibrary(currentParentId, false);
+    } catch {
+        await loadLibrary(null, false);
     }
-});
 
-refs.listBody.addEventListener('dblclick', (event) => {
-    const row = event.target.closest('.materials-row');
-    if (!row) return;
-    const materialId = Number(row.dataset.id);
-    const item = state.items.find((entry) => entry.id === materialId);
-    if (!item) return;
-    if (item.node_type === 'folder') openFolder(materialId);
-    else if (item.preview_supported) previewMaterial(materialId);
-    else window.location.href = `/materials/download/${materialId}`;
-});
-
-refs.breadcrumbs.addEventListener('click', (event) => {
-    const button = event.target.closest('[data-crumb-id]');
-    if (!button) return;
-    openFolder(Number(button.dataset.crumbId), true);
-});
-
-refs.selectAll.addEventListener('change', (event) => {
-    if (event.target.checked) {
-        state.items.forEach((item) => state.selectedIds.add(item.id));
-    } else {
-        state.selectedIds.clear();
+    if (state.activeMaterialId) {
+        try {
+            await loadMaterialDetail(state.activeMaterialId);
+        } catch {
+            renderDetail(null);
+        }
     }
-    renderList();
-});
-
-refs.refreshBtn.addEventListener('click', () => loadLibrary(state.currentParentId));
-refs.backBtn.addEventListener('click', () => {
-    const previousParentId = state.history.pop();
-    loadLibrary(previousParentId ?? null, false);
-});
-refs.upBtn.addEventListener('click', () => {
-    if (!state.currentParentId || !state.currentBreadcrumbs.length) {
-        loadLibrary(null, false);
-        return;
-    }
-    const parentCrumb = state.currentBreadcrumbs.length >= 2 ? state.currentBreadcrumbs[state.currentBreadcrumbs.length - 2] : null;
-    loadLibrary(parentCrumb ? Number(parentCrumb.id) : null, true);
-});
-refs.fileBtn.addEventListener('click', () => refs.fileInput.click());
-refs.folderBtn.addEventListener('click', () => refs.folderInput.click());
-refs.fileInput.addEventListener('change', async (event) => {
-    try {
-        await uploadFiles(event.target.files);
-    } finally {
-        event.target.value = '';
-    }
-});
-refs.folderInput.addEventListener('change', async (event) => {
-    try {
-        await uploadFiles(event.target.files);
-    } finally {
-        event.target.value = '';
-    }
-});
-refs.selectionDownloadBtn.addEventListener('click', async () => {
-    try {
-        await downloadByIds(getSelectedMaterialIds());
-    } catch (error) {
-        showToast(error.message || '下载失败', 'error');
-    }
-});
-refs.selectionClearBtn.addEventListener('click', () => {
-    state.selectedIds.clear();
-    renderList();
-});
-refs.assignSaveBtn?.addEventListener('click', async () => {
-    try {
-        await saveAssignments();
-    } catch (error) {
-        showToast(error.message || '保存分配失败', 'error');
-    }
-});
-
-loadLibrary().catch((error) => {
-    console.error(error);
-    refs.listBody.innerHTML = `<div class="materials-empty">加载材料库失败：${escapeHtml(error.message || '未知错误')}</div>`;
-});
+}

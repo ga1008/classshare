@@ -31,9 +31,17 @@ from ..services.materials_service import (
     infer_material_profile,
     is_descendant_path,
     is_editable_material,
+    is_git_internal_material_path,
     make_unique_material_name,
     normalize_material_path,
     serialize_material_row,
+)
+from ..services.materials_git_service import (
+    attach_git_repository_metadata,
+    execute_material_repository_action,
+    get_material_repository_detail,
+    refresh_root_git_metadata,
+    save_material_repository_credential,
 )
 
 router = APIRouter()
@@ -50,6 +58,17 @@ class MaterialBatchDownloadRequest(BaseModel):
 class MaterialContentUpdateRequest(BaseModel):
     content: str = ""
     encoding: str | None = None
+
+
+class MaterialRepositoryCommandRequest(BaseModel):
+    action: str = "update"
+    command: str = ""
+
+
+class MaterialRepositoryCredentialRequest(BaseModel):
+    username: str = ""
+    secret: str = ""
+    auth_mode: str = "password"
 
 
 TEXT_CONTENT_ENCODINGS = (
@@ -133,7 +152,8 @@ async def _write_material_file(file_hash: str, payload_bytes: bytes):
 
 def _serialize_material_items(conn, rows) -> list[dict]:
     items = [serialize_material_row(row) for row in rows]
-    return attach_learning_document_metadata(conn, items)
+    items = attach_learning_document_metadata(conn, items)
+    return attach_git_repository_metadata(conn, items)
 
 
 def _decorate_learning_document_item(item: dict) -> dict:
@@ -195,23 +215,25 @@ def _list_material_rows_for_parent(conn, teacher_id: int, parent_id: int | None)
     if parent_id is None:
         query = """
             SELECT m.*,
-                   (SELECT COUNT(*) FROM course_materials child WHERE child.parent_id = m.id) AS child_count,
+                   (SELECT COUNT(*) FROM course_materials child WHERE child.parent_id = m.id AND child.name != '.git') AS child_count,
                    (SELECT COUNT(*) FROM course_material_assignments a WHERE a.material_id = m.id) AS assignment_count
             FROM course_materials m
             WHERE m.teacher_id = ? AND m.parent_id IS NULL
             ORDER BY CASE WHEN m.node_type = 'folder' THEN 0 ELSE 1 END, m.name COLLATE NOCASE
         """
-        return conn.execute(query, (teacher_id,)).fetchall()
+        rows = conn.execute(query, (teacher_id,)).fetchall()
+        return [row for row in rows if not is_git_internal_material_path(row["material_path"])]
 
     query = """
         SELECT m.*,
-               (SELECT COUNT(*) FROM course_materials child WHERE child.parent_id = m.id) AS child_count,
+               (SELECT COUNT(*) FROM course_materials child WHERE child.parent_id = m.id AND child.name != '.git') AS child_count,
                (SELECT COUNT(*) FROM course_material_assignments a WHERE a.material_id = m.id) AS assignment_count
         FROM course_materials m
         WHERE m.teacher_id = ? AND m.parent_id = ?
         ORDER BY CASE WHEN m.node_type = 'folder' THEN 0 ELSE 1 END, m.name COLLATE NOCASE
     """
-    return conn.execute(query, (teacher_id, parent_id)).fetchall()
+    rows = conn.execute(query, (teacher_id, parent_id)).fetchall()
+    return [row for row in rows if not is_git_internal_material_path(row["material_path"])]
 
 
 def _count_global_file_references(conn, file_hash: str) -> int:
@@ -226,8 +248,8 @@ def _count_global_file_references(conn, file_hash: str) -> int:
     return int(material_refs) + int(course_refs)
 
 
-def _collect_subtree_rows(conn, material_row):
-    return conn.execute(
+def _collect_subtree_rows(conn, material_row, include_internal: bool = True):
+    rows = conn.execute(
         """
         SELECT *
         FROM course_materials
@@ -237,6 +259,9 @@ def _collect_subtree_rows(conn, material_row):
         """,
         (material_row["root_id"], material_row["material_path"], f"{material_row['material_path']}/%"),
     ).fetchall()
+    if include_internal:
+        return rows
+    return [row for row in rows if not is_git_internal_material_path(row["material_path"])]
 
 
 def _normalize_archive_name(used_names: set[str], desired_name: str) -> str:
@@ -268,7 +293,7 @@ def _create_material_zip(conn, material_rows: list[dict]) -> str:
     with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for material_row in material_rows:
             base_name = _normalize_archive_name(used_names, material_row["name"])
-            subtree_rows = _collect_subtree_rows(conn, material_row)
+            subtree_rows = _collect_subtree_rows(conn, material_row, include_internal=False)
 
             if material_row["node_type"] == "folder" and not any(row["node_type"] == "file" for row in subtree_rows):
                 archive.writestr(f"{base_name}/", "")
@@ -304,7 +329,7 @@ def _resolve_allowed_scope_rows(conn, material_row, user: dict) -> list[dict]:
             """,
             (material_row["root_id"],),
         ).fetchall()
-        return [dict(row) for row in rows]
+        return [dict(row) for row in rows if not is_git_internal_material_path(row["material_path"])]
 
     offering_rows = conn.execute(
         """
@@ -348,6 +373,8 @@ def _resolve_allowed_scope_rows(conn, material_row, user: dict) -> list[dict]:
     result = []
     for row in rows:
         row_dict = dict(row)
+        if is_git_internal_material_path(row_dict["material_path"]):
+            continue
         if any(is_descendant_path(row_dict["material_path"], allowed_path) for allowed_path in allowed_paths):
             result.append(row_dict)
     return result
@@ -435,10 +462,13 @@ async def get_teacher_material_library(
 
         rows = _list_material_rows_for_parent(conn, user["id"], parent_id)
         items = [_decorate_learning_document_item(item) for item in _serialize_material_items(conn, rows)]
+        current_folder_item = None
+        if current_folder:
+            current_folder_item = attach_git_repository_metadata(conn, [serialize_material_row(current_folder)])[0]
 
     return {
         "status": "success",
-        "current_folder": serialize_material_row(current_folder) if current_folder else None,
+        "current_folder": current_folder_item,
         "breadcrumbs": breadcrumbs,
         "items": items,
     }
@@ -449,7 +479,7 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
     with get_db_connection() as conn:
         material = ensure_teacher_material_owner(conn, material_id, user["id"])
         child_count = conn.execute(
-            "SELECT COUNT(*) FROM course_materials WHERE parent_id = ?",
+            "SELECT COUNT(*) FROM course_materials WHERE parent_id = ? AND name != '.git'",
             (material_id,),
         ).fetchone()[0]
         assignments = conn.execute(
@@ -474,11 +504,56 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
                 "has_optimized_version": bool(material["ai_optimized_markdown"]),
             },
         )
+        detail = attach_git_repository_metadata(conn, [detail])[0]
         if material["node_type"] == "folder":
             detail = attach_learning_document_metadata(conn, [detail])[0]
             detail = _decorate_learning_document_item(detail)
 
     return {"status": "success", "material": detail}
+
+
+@router.get("/api/materials/{material_id}/repository", response_class=JSONResponse)
+async def get_material_repository(material_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        repository = get_material_repository_detail(conn, material_id, user["id"])
+    return {"status": "success", "repository": repository}
+
+
+@router.post("/api/materials/{material_id}/repository/command", response_class=JSONResponse)
+async def run_material_repository_command(
+    material_id: int,
+    payload: MaterialRepositoryCommandRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    return await execute_material_repository_action(
+        get_db_connection,
+        material_id,
+        user,
+        payload.action,
+        payload.command,
+    )
+
+
+@router.post("/api/materials/{material_id}/repository/credentials", response_class=JSONResponse)
+async def save_material_repository_credentials(
+    material_id: int,
+    payload: MaterialRepositoryCredentialRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        credential = save_material_repository_credential(
+            conn,
+            material_id,
+            user["id"],
+            payload.username,
+            payload.secret,
+            payload.auth_mode,
+        )
+    return {
+        "status": "success",
+        "message": "仓库凭据已保存",
+        "credential": credential,
+    }
 
 
 @router.post("/api/materials/upload", response_class=JSONResponse)
@@ -647,6 +722,11 @@ async def upload_materials(
             if parent_path == base_prefix:
                 top_level_created_ids.append(file_id)
 
+        affected_root_ids = {int(base_root_id)} if base_root_id else set()
+        affected_root_ids.update(int(root_id) for root_id in created_roots.values() if root_id)
+        for affected_root_id in sorted(affected_root_ids):
+            refresh_root_git_metadata(conn, affected_root_id)
+
         conn.commit()
 
         created_items = []
@@ -655,7 +735,7 @@ async def upload_materials(
             created_rows = conn.execute(
                 f"""
                 SELECT m.*,
-                       (SELECT COUNT(*) FROM course_materials child WHERE child.parent_id = m.id) AS child_count,
+                       (SELECT COUNT(*) FROM course_materials child WHERE child.parent_id = m.id AND child.name != '.git') AS child_count,
                        0 AS assignment_count
                 FROM course_materials m
                 WHERE m.id IN ({placeholders})
@@ -784,12 +864,13 @@ async def get_classroom_materials(
             items = []
             for row in rows:
                 child_count = conn.execute(
-                    "SELECT COUNT(*) FROM course_materials WHERE parent_id = ?",
+                    "SELECT COUNT(*) FROM course_materials WHERE parent_id = ? AND name != '.git'",
                     (row["id"],),
                 ).fetchone()[0]
                 row_dict = dict(row)
                 row_dict["child_count"] = int(child_count)
                 items.append(serialize_material_row(row_dict))
+            items = attach_git_repository_metadata(conn, items)
             items = [_decorate_learning_document_item(item) for item in attach_learning_document_metadata(conn, items)]
             return {
                 "status": "success",
@@ -809,7 +890,7 @@ async def get_classroom_materials(
         child_rows = conn.execute(
             """
             SELECT m.*,
-                   (SELECT COUNT(*) FROM course_materials child WHERE child.parent_id = m.id) AS child_count,
+                   (SELECT COUNT(*) FROM course_materials child WHERE child.parent_id = m.id AND child.name != '.git') AS child_count,
                    0 AS assignment_count
             FROM course_materials m
             WHERE m.parent_id = ?
@@ -821,14 +902,17 @@ async def get_classroom_materials(
         items = []
         for row in child_rows:
             row_dict = dict(row)
+            if is_git_internal_material_path(row_dict["material_path"]):
+                continue
             if is_descendant_path(row_dict["material_path"], anchor["material_path"]):
                 items.append(serialize_material_row(row_dict))
+        items = attach_git_repository_metadata(conn, items)
         items = [_decorate_learning_document_item(item) for item in attach_learning_document_metadata(conn, items)]
 
         breadcrumbs = _slice_breadcrumbs_from_anchor(get_material_breadcrumbs(conn, parent_id), anchor["id"])
         return {
             "status": "success",
-            "current_folder": serialize_material_row(folder),
+            "current_folder": attach_git_repository_metadata(conn, [serialize_material_row(folder)])[0],
             "breadcrumbs": breadcrumbs,
             "items": items,
         }

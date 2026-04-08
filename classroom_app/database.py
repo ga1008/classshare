@@ -1229,6 +1229,67 @@ def init_database():
                         )
                          ''')
 
+            conn.execute('''
+                        CREATE TABLE IF NOT EXISTS teacher_git_credentials
+                        (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            teacher_id INTEGER NOT NULL,
+                            remote_key TEXT NOT NULL,
+                            remote_host TEXT NOT NULL,
+                            remote_url TEXT NOT NULL,
+                            provider TEXT DEFAULT '',
+                            auth_mode TEXT NOT NULL DEFAULT 'password',
+                            username TEXT DEFAULT '',
+                            secret_encrypted TEXT NOT NULL,
+                            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            last_used_at TEXT,
+                            FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                            UNIQUE (teacher_id, remote_key)
+                        )
+                         ''')
+
+            try:
+                conn.execute("ALTER TABLE course_materials ADD COLUMN git_repo_status TEXT NOT NULL DEFAULT 'unscanned'")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE course_materials ADD COLUMN git_provider TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE course_materials ADD COLUMN git_remote_name TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE course_materials ADD COLUMN git_remote_url TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE course_materials ADD COLUMN git_remote_host TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE course_materials ADD COLUMN git_remote_protocol TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE course_materials ADD COLUMN git_default_branch TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE course_materials ADD COLUMN git_head_branch TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE course_materials ADD COLUMN git_detect_error TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE course_materials ADD COLUMN git_detected_at TEXT")
+            except sqlite3.OperationalError:
+                pass
+
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_materials_teacher_parent ON course_materials (teacher_id, parent_id, name)"
             )
@@ -1237,6 +1298,9 @@ def init_database():
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_material_assignments_offering ON course_material_assignments (class_offering_id, material_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_git_credentials_lookup ON teacher_git_credentials (teacher_id, remote_host, updated_at DESC)"
             )
 
             conn.commit()

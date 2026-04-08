@@ -61,7 +61,7 @@ _TEACHER_ONLY_PATTERNS = (
     re.compile(r"^/api/exam-papers(?:/|$)"),
     re.compile(r"^/api/ai/generate_assignment$"),
     re.compile(r"^/api/ai/exam(?:/|$)"),
-    re.compile(r"^/api/materials/(?:library|upload|[^/]+(?:/(?:assign|ai-parse|ai-optimize|content))?)$"),
+    re.compile(r"^/api/materials/(?:library|upload|[^/]+(?:/(?:assign|ai-parse|ai-optimize|content|repository(?:/(?:command|credentials))?))?)$"),
 )
 
 _STUDENT_ONLY_PATTERNS = (

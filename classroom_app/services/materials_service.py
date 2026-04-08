@@ -202,6 +202,11 @@ def is_descendant_path(path_value: str, ancestor_path: str) -> bool:
     return path_value == ancestor_path or path_value.startswith(f"{ancestor_path}/")
 
 
+def is_git_internal_material_path(path_value: str | None) -> bool:
+    parts = [segment for segment in str(path_value or "").split("/") if segment and segment != "."]
+    return any(segment == ".git" for segment in parts[1:])
+
+
 def is_learning_document_name(name: str | None) -> bool:
     return str(name or "").strip().lower() == LEARNING_DOCUMENT_NAME
 
@@ -298,6 +303,21 @@ def serialize_material_row(row, extra: dict | None = None) -> dict:
     item["editable"] = is_editable_material(item)
     item["can_edit_source"] = item["editable"]
     item["path_depth"] = len([segment for segment in str(item.get("material_path", "")).split("/") if segment])
+    item["git_repo_status"] = str(item.get("git_repo_status") or "plain")
+    item["git_provider"] = str(item.get("git_provider") or "")
+    item["git_remote_name"] = str(item.get("git_remote_name") or "")
+    item["git_remote_url"] = str(item.get("git_remote_url") or "")
+    item["git_remote_host"] = str(item.get("git_remote_host") or "")
+    item["git_remote_protocol"] = str(item.get("git_remote_protocol") or "")
+    item["git_default_branch"] = str(item.get("git_default_branch") or "")
+    item["git_head_branch"] = str(item.get("git_head_branch") or "")
+    item["git_detect_error"] = str(item.get("git_detect_error") or "")
+    item["git_detected_at"] = str(item.get("git_detected_at") or "")
+    item["is_git_repository"] = (
+        item.get("node_type") == "folder"
+        and int(item.get("id") or 0) == int(item.get("root_id") or 0)
+        and item["git_repo_status"] == "repository"
+    )
     if extra:
         item.update(extra)
     return item
@@ -410,6 +430,8 @@ def ensure_teacher_material_owner(conn, material_id: int, teacher_id: int):
     ).fetchone()
     if not row:
         raise HTTPException(404, "材料不存在或无权操作")
+    if is_git_internal_material_path(row["material_path"]):
+        raise HTTPException(404, "材料不存在或无权操作")
     return row
 
 
@@ -432,6 +454,8 @@ def ensure_user_material_access(conn, material_id: int, user: dict):
         (material_id,),
     ).fetchone()
     if not material:
+        raise HTTPException(404, "材料不存在")
+    if is_git_internal_material_path(material["material_path"]):
         raise HTTPException(404, "材料不存在")
 
     if user["role"] == "teacher":
@@ -504,6 +528,8 @@ def get_effective_assignment_nodes(conn, class_offering_id: int) -> list[dict]:
     effective = []
     for row in rows:
         row_dict = dict(row)
+        if is_git_internal_material_path(row_dict["material_path"]):
+            continue
         if any(
             existing["root_id"] == row_dict["root_id"]
             and is_descendant_path(row_dict["material_path"], existing["material_path"])
@@ -530,6 +556,8 @@ def get_nearest_assignment_anchor(conn, class_offering_id: int, material_row) ->
     current_path = material_row["material_path"]
     for row in rows:
         row_dict = dict(row)
+        if is_git_internal_material_path(row_dict["material_path"]):
+            continue
         if is_descendant_path(current_path, row_dict["material_path"]):
             return row_dict
     return None

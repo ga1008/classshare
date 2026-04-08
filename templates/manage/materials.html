@@ -33,6 +33,7 @@
             <div class="materials-toolbar-group">
                 <button type="button" class="btn btn-ghost btn-sm" id="materials-back-btn">返回</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="materials-up-btn">上一级</button>
+                <button type="button" class="btn btn-outline btn-sm" id="materials-repository-btn" hidden>仓库</button>
             </div>
             <div class="materials-breadcrumbs" id="materials-breadcrumbs">
                 <span class="text-muted">材料库根目录</span>
@@ -115,6 +116,122 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
                 <button type="button" class="btn btn-primary" id="materials-assign-save-btn">保存分配</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="materials-repository-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">Git 仓库</h3>
+                    <p class="modal-subtitle">执行常用同步命令，或直接输入 `git ...` 命令处理更复杂的场景。</p>
+                </div>
+                <button class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="materials-repo-summary">
+                    <div class="materials-repo-card">
+                        <div class="materials-repo-card-label">仓库</div>
+                        <strong id="materials-repository-name">-</strong>
+                        <div class="text-muted text-sm" id="materials-repository-path">-</div>
+                    </div>
+                    <div class="materials-repo-card">
+                        <div class="materials-repo-card-label">远程</div>
+                        <strong id="materials-repository-provider">-</strong>
+                        <div class="text-muted text-sm" id="materials-repository-remote-name">-</div>
+                    </div>
+                    <div class="materials-repo-card">
+                        <div class="materials-repo-card-label">默认分支</div>
+                        <strong id="materials-repository-branch">-</strong>
+                        <div class="text-muted text-sm" id="materials-repository-protocol">-</div>
+                    </div>
+                    <div class="materials-repo-card">
+                        <div class="materials-repo-card-label">凭据</div>
+                        <strong id="materials-repository-credential-state">-</strong>
+                        <div class="text-muted text-sm" id="materials-repository-credential-user">-</div>
+                    </div>
+                </div>
+
+                <div class="materials-section">
+                    <div class="materials-section-header">
+                        <h3>快捷操作</h3>
+                        <span class="text-muted text-sm" id="materials-repository-status">就绪</span>
+                    </div>
+                    <div class="materials-repo-actions">
+                        <button type="button" class="btn btn-primary" id="materials-repository-update-btn">更新</button>
+                        <button type="button" class="btn btn-outline" id="materials-repository-push-btn">提交 + 推送</button>
+                        <button type="button" class="btn btn-ghost" id="materials-repository-auth-btn">登录 / 凭据</button>
+                    </div>
+                    <div class="materials-repo-command-preview" id="materials-repository-command-preview">-</div>
+                </div>
+
+                <div class="materials-section">
+                    <div class="materials-section-header">
+                        <h3>命令行</h3>
+                        <span class="text-muted text-sm">只支持 git 命令</span>
+                    </div>
+                    <div class="materials-repo-command-line">
+                        <input type="text" id="materials-repository-command-input" class="form-control" placeholder="例如：git status -sb">
+                        <button type="button" class="btn btn-outline" id="materials-repository-command-run-btn">执行</button>
+                    </div>
+                </div>
+
+                <div class="materials-section">
+                    <div class="materials-section-header">
+                        <h3>执行输出</h3>
+                        <span class="text-muted text-sm" id="materials-repository-sync-summary">等待执行</span>
+                    </div>
+                    <pre class="materials-repo-output" id="materials-repository-output">暂无输出</pre>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="materials-repository-credential-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">仓库登录</h3>
+                    <p class="modal-subtitle">凭据会按当前教师与远程地址持久保存，下次更新、推送时会自动使用。</p>
+                </div>
+                <button class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="materials-section">
+                    <div class="text-muted text-sm">远程地址</div>
+                    <strong id="materials-repository-credential-remote">-</strong>
+                    <div class="text-muted text-sm" id="materials-repository-credential-host">-</div>
+                </div>
+                <div class="materials-section">
+                    <label class="materials-form-field">
+                        <span>用户名</span>
+                        <input type="text" id="materials-repository-credential-username" class="form-control" placeholder="例如：teacher">
+                    </label>
+                    <label class="materials-form-field">
+                        <span>密码 / Token</span>
+                        <input type="password" id="materials-repository-credential-secret" class="form-control" placeholder="HTTPS 仓库可以输入密码或访问令牌">
+                    </label>
+                    <label class="materials-form-field">
+                        <span>凭据类型</span>
+                        <select id="materials-repository-credential-auth-mode" class="form-control">
+                            <option value="password">密码 / Token</option>
+                            <option value="token">Token</option>
+                        </select>
+                    </label>
+                    <div class="text-muted text-sm" id="materials-repository-credential-hint">仅支持 HTTP / HTTPS 远程仓库的表单凭据。</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="materials-repository-credential-save-btn">保存凭据</button>
             </div>
         </div>
     </div>
