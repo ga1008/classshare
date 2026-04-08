@@ -1,23 +1,53 @@
-import os
 import uuid
 import json
 import pandas as pd
-import aiofiles
 import sqlite3
 from datetime import datetime
 from typing import List
-from pathlib import Path
 from fastapi import APIRouter, Request, Form, HTTPException, Depends, UploadFile, File
 from fastapi.responses import JSONResponse, FileResponse
 
 # 修复：移除这个错误的导入，COURSE_INFO 不再是 V4.0 的依赖
 # from ..core import COURSE_INFO
-from ..config import HOMEWORK_SUBMISSIONS_DIR, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOAD_SIZE_MB
+from ..config import (
+    HOMEWORK_SUBMISSIONS_DIR,
+    MAX_SUBMISSION_FILE_COUNT,
+    MAX_UPLOAD_SIZE_BYTES,
+    MAX_UPLOAD_SIZE_MB,
+)
 from ..database import get_db_connection
 from ..dependencies import get_current_user, get_current_student, get_current_teacher
-from ..services.file_handler import save_upload_file
+from ..services.submission_assets import (
+    answers_have_content,
+    decode_allowed_file_types_json,
+    delete_storage_tree,
+    encode_allowed_file_types_json,
+    is_allowed_submission_file,
+    normalize_allowed_file_types,
+    parse_submission_manifest,
+    store_submission_files,
+    summarize_allowed_file_types,
+)
 
 router = APIRouter(prefix="/api")
+
+
+def _build_assignment_storage_dir(course_id: int, assignment_id: int | str):
+    return HOMEWORK_SUBMISSIONS_DIR / str(course_id) / str(assignment_id)
+
+
+def _build_submission_storage_dir(course_id: int, assignment_id: int | str, student_pk_id: int | str):
+    return _build_assignment_storage_dir(course_id, assignment_id) / str(student_pk_id)
+
+
+def _get_allowed_file_types(data: dict, assignment_row=None) -> list[str]:
+    if "allowed_file_types" in data:
+        return normalize_allowed_file_types(data.get("allowed_file_types"))
+    if "allowed_file_types_json" in data:
+        return decode_allowed_file_types_json(data.get("allowed_file_types_json"))
+    if assignment_row is not None:
+        return decode_allowed_file_types_json(assignment_row["allowed_file_types_json"])
+    return []
 
 
 # --- 教师作业 API ---
@@ -27,6 +57,7 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
     data = await request.json()
     created_at = datetime.now().isoformat()
     class_offering_id = data.get('class_offering_id')
+    allowed_file_types_json = encode_allowed_file_types_json(_get_allowed_file_types(data))
 
     with get_db_connection() as conn:
         actual_course_id = course_id
@@ -47,14 +78,27 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
                 raise HTTPException(404, "课程不存在或您无权操作")
 
         cursor = conn.execute(
-            "INSERT INTO assignments (course_id, title, status, requirements_md, rubric_md, grading_mode, class_offering_id, created_at) VALUES (?, ?, 'new', ?, ?, ?, ?, ?)",
-            (actual_course_id, data['title'], data['requirements_md'], data['rubric_md'], data['grading_mode'],
-             int(class_offering_id) if class_offering_id else None, created_at)
+            """
+            INSERT INTO assignments (
+                course_id, title, status, requirements_md, rubric_md, grading_mode,
+                class_offering_id, created_at, allowed_file_types_json
+            ) VALUES (?, ?, 'new', ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                actual_course_id,
+                data['title'],
+                data.get('requirements_md', ''),
+                data.get('rubric_md', ''),
+                data.get('grading_mode', 'manual'),
+                int(class_offering_id) if class_offering_id else None,
+                created_at,
+                allowed_file_types_json,
+            )
         )
         new_id = cursor.lastrowid
         conn.commit()
     # 作业文件夹现在按 Course / Assignment 组织
-    assignment_dir = HOMEWORK_SUBMISSIONS_DIR / str(actual_course_id) / str(new_id)
+    assignment_dir = _build_assignment_storage_dir(actual_course_id, new_id)
     assignment_dir.mkdir(parents=True, exist_ok=True)
     return {"status": "success", "new_assignment_id": new_id}
 
@@ -75,11 +119,24 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
         if assignment['created_by_teacher_id'] != user['id']:
             raise HTTPException(403, "无权修改该作业")
 
+        allowed_file_types_json = encode_allowed_file_types_json(_get_allowed_file_types(data, assignment))
         conn.execute(
-            "UPDATE assignments SET title = ?, requirements_md = ?, rubric_md = ?, grading_mode = ?, status = ? WHERE id = ?",
-            (data['title'], data['requirements_md'], data['rubric_md'], data['grading_mode'],
-             data.get('status', assignment['status']),
-             assignment_id))
+            """
+            UPDATE assignments
+            SET title = ?, requirements_md = ?, rubric_md = ?, grading_mode = ?,
+                status = ?, allowed_file_types_json = ?
+            WHERE id = ?
+            """,
+            (
+                data['title'],
+                data.get('requirements_md', ''),
+                data.get('rubric_md', ''),
+                data.get('grading_mode', assignment['grading_mode']),
+                data.get('status', assignment['status']),
+                allowed_file_types_json,
+                assignment_id,
+            )
+        )
         conn.commit()
     return {"status": "success", "updated_assignment_id": assignment_id}
 
@@ -88,7 +145,7 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
 async def delete_assignment(assignment_id: str, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         assignment = conn.execute(
-            """SELECT a.id, c.created_by_teacher_id
+            """SELECT a.id, a.course_id, c.created_by_teacher_id
                FROM assignments a
                JOIN courses c ON a.course_id = c.id
                WHERE a.id = ?""",
@@ -101,7 +158,7 @@ async def delete_assignment(assignment_id: str, user: dict = Depends(get_current
 
         conn.execute("DELETE FROM assignments WHERE id = ?", (assignment_id,))
         conn.commit()
-    # TODO: 删除磁盘上的文件夹
+    delete_storage_tree(_build_assignment_storage_dir(assignment['course_id'], assignment_id))
     return {"status": "success", "deleted_assignment_id": assignment_id}
 
 
@@ -113,7 +170,16 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
             raise HTTPException(404, "作业不存在")
 
         submissions_cursor = conn.execute(
-            "SELECT * FROM submissions WHERE assignment_id = ? ORDER BY submitted_at DESC", (assignment_id,))
+            """
+            SELECT s.*, COUNT(sf.id) AS file_count
+            FROM submissions s
+            LEFT JOIN submission_files sf ON sf.submission_id = s.id
+            WHERE s.assignment_id = ?
+            GROUP BY s.id
+            ORDER BY s.submitted_at DESC
+            """,
+            (assignment_id,)
+        )
         submissions = [dict(row) for row in submissions_cursor]
 
         # 获取班级花名册以包含未提交学生
@@ -151,6 +217,7 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
                 'feedback_md': None,
                 'submitted_at': None,
                 'answers_json': None,
+                'file_count': 0,
             })
 
     # 如果没有花名册信息，退回只显示已提交学生
@@ -199,9 +266,23 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
 @router.delete("/submissions/{submission_id}", response_class=JSONResponse)
 async def return_submission(submission_id: int, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
+        submission = conn.execute(
+            """
+            SELECT s.id, s.student_pk_id, a.id AS assignment_id, a.course_id
+            FROM submissions s
+            JOIN assignments a ON a.id = s.assignment_id
+            JOIN courses c ON c.id = a.course_id
+            WHERE s.id = ? AND c.created_by_teacher_id = ?
+            """,
+            (submission_id, user['id'])
+        ).fetchone()
+        if not submission:
+            raise HTTPException(404, "提交记录不存在")
         conn.execute("DELETE FROM submissions WHERE id = ?", (submission_id,))
         conn.commit()
-    # TODO: 删除磁盘上的文件
+    delete_storage_tree(
+        _build_submission_storage_dir(submission['course_id'], submission['assignment_id'], submission['student_pk_id'])
+    )
     return {"status": "success", "deleted_submission_id": submission_id}
 
 
@@ -235,7 +316,7 @@ async def export_grades_for_class(assignment_id: str, class_id: int, user: dict 
 
     export_filename = f"成绩_{class_info['name']}_{assignment['title']}.xlsx"
     # 确保作业目录存在
-    assignment_dir = HOMEWORK_SUBMISSIONS_DIR / str(assignment['course_id']) / str(assignment['id'])
+    assignment_dir = _build_assignment_storage_dir(assignment['course_id'], assignment['id'])
     assignment_dir.mkdir(parents=True, exist_ok=True)
     export_path = assignment_dir / export_filename
 
@@ -248,6 +329,7 @@ async def export_grades_for_class(assignment_id: str, class_id: int, user: dict 
 @router.post("/assignments/{assignment_id}/submit", response_class=JSONResponse)
 async def submit_assignment(assignment_id: str,
                             answers_json: str = Form(""),
+                            manifest: str = Form(""),
                             files: List[UploadFile] = File(default=[]),
                             user: dict = Depends(get_current_student)):
     """
@@ -265,25 +347,38 @@ async def submit_assignment(assignment_id: str,
         ).fetchone()
         if submission: raise HTTPException(400, "您已经提交过此作业")
 
-        # 验证附件文件大小
+        prepared_entries = parse_submission_manifest(files, manifest)
+        if len(prepared_entries) > MAX_SUBMISSION_FILE_COUNT:
+            raise HTTPException(413, f"文件数量不能超过 {MAX_SUBMISSION_FILE_COUNT} 个")
+
         total_size = 0
-        for f in files:
-            f.file.seek(0, os.SEEK_END)
-            file_size = f.file.tell()
-            f.file.seek(0, os.SEEK_SET)
-            if file_size > MAX_UPLOAD_SIZE_BYTES:
-                raise HTTPException(413, f"文件 '{f.filename}' 超过 {MAX_UPLOAD_SIZE_MB}MB")
-            total_size += file_size
+        for entry in prepared_entries:
+            if entry.size_bytes > MAX_UPLOAD_SIZE_BYTES:
+                raise HTTPException(413, f"文件 '{entry.relative_path}' 超过 {MAX_UPLOAD_SIZE_MB}MB")
+            total_size += entry.size_bytes
         if total_size > MAX_UPLOAD_SIZE_BYTES:
             raise HTTPException(413, f"总文件大小超过 {MAX_UPLOAD_SIZE_MB}MB")
 
         # 构建完整的提交 JSON (包含学生元信息)
-        import json as _json
         submitted_at = datetime.now().isoformat()
         try:
-            answers_data = _json.loads(answers_json) if answers_json else {}
-        except _json.JSONDecodeError:
+            answers_data = json.loads(answers_json) if answers_json else {}
+        except json.JSONDecodeError:
             answers_data = {"raw_text": answers_json}
+
+        answers_payload = answers_data.get("answers", answers_data) if isinstance(answers_data, dict) else answers_data
+        has_text_answers = answers_have_content(answers_payload)
+        allowed_file_types = decode_allowed_file_types_json(assignment["allowed_file_types_json"])
+        has_allowed_uploads = any(
+            is_allowed_submission_file(entry.relative_path, entry.content_type, allowed_file_types)
+            for entry in prepared_entries
+        )
+
+        if not has_text_answers and not prepared_entries:
+            raise HTTPException(400, "请至少填写答案或上传一个文件")
+        if not has_text_answers and not has_allowed_uploads:
+            expected_types = summarize_allowed_file_types(allowed_file_types)
+            raise HTTPException(400, f"没有符合要求的文件可提交，允许类型: {expected_types}")
 
         # 将学生元信息注入 answers_json
         full_submission = {
@@ -293,10 +388,11 @@ async def submit_assignment(assignment_id: str,
             "submitted_at": submitted_at,
             "assignment_id": assignment_id,
             "course_id": assignment['course_id'],
-            "answers": answers_data.get("answers", answers_data),
+            "answers": answers_payload,
         }
-        full_submission_json = _json.dumps(full_submission, ensure_ascii=False)
+        full_submission_json = json.dumps(full_submission, ensure_ascii=False)
 
+        submission_dir = _build_submission_storage_dir(assignment['course_id'], assignment['id'], user['id'])
         try:
             cursor = conn.cursor()
             cursor.execute(
@@ -305,29 +401,52 @@ async def submit_assignment(assignment_id: str,
             )
             submission_id = cursor.lastrowid
 
-            # V4.0: 路径按 课程ID / 作业ID / 学生PK_ID 存储
-            submission_dir = HOMEWORK_SUBMISSIONS_DIR / str(assignment['course_id']) / str(assignment['id']) / str(
-                user['id'])
+            storage_result = await store_submission_files(submission_dir, prepared_entries, allowed_file_types)
+            if not storage_result.stored_files and not has_text_answers:
+                expected_types = summarize_allowed_file_types(allowed_file_types)
+                raise HTTPException(400, f"没有符合要求的文件可提交，允许类型: {expected_types}")
 
-            for f in files:
-                file_info = await save_upload_file(submission_dir, f)
-                if not file_info: raise HTTPException(500, "文件保存失败")
-
+            for file_info in storage_result.stored_files:
                 cursor.execute(
-                    "INSERT INTO submission_files (submission_id, original_filename, stored_path) VALUES (?, ?, ?)",
-                    (submission_id, file_info['original_filename'], file_info['stored_path'])
+                    """
+                    INSERT INTO submission_files (
+                        submission_id, original_filename, relative_path, stored_path,
+                        mime_type, file_size, file_ext, file_hash
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        submission_id,
+                        file_info.original_filename,
+                        file_info.relative_path,
+                        file_info.stored_path,
+                        file_info.mime_type,
+                        file_info.file_size,
+                        file_info.file_ext,
+                        file_info.file_hash,
+                    )
                 )
 
             conn.commit()
         except sqlite3.IntegrityError:
             conn.rollback()
+            delete_storage_tree(submission_dir)
             raise HTTPException(400, "您已经提交过此作业。")
+        except HTTPException:
+            conn.rollback()
+            delete_storage_tree(submission_dir)
+            raise
         except Exception as e:
             conn.rollback()
+            delete_storage_tree(submission_dir)
             print(f"[ERROR] Submission failed: {e}")
             raise HTTPException(500, f"数据库错误: {e}")
 
-    return {"status": "success", "submission_id": submission_id}
+    return {
+        "status": "success",
+        "submission_id": submission_id,
+        "stored_file_count": len(storage_result.stored_files),
+        "dropped_file_count": len(storage_result.dropped_files),
+    }
 
 
 @router.delete("/assignments/{assignment_id}/withdraw", response_class=JSONResponse)
@@ -335,7 +454,12 @@ async def withdraw_submission(assignment_id: str, user: dict = Depends(get_curre
     """学生撤回已提交的作业（仅限未批改的提交）"""
     with get_db_connection() as conn:
         submission = conn.execute(
-            "SELECT * FROM submissions WHERE assignment_id = ? AND student_pk_id = ?",
+            """
+            SELECT s.*, a.course_id
+            FROM submissions s
+            JOIN assignments a ON a.id = s.assignment_id
+            WHERE s.assignment_id = ? AND s.student_pk_id = ?
+            """,
             (assignment_id, user['id'])
         ).fetchone()
         if not submission:
@@ -345,24 +469,11 @@ async def withdraw_submission(assignment_id: str, user: dict = Depends(get_curre
         if submission['status'] == 'grading':
             raise HTTPException(400, "正在批改中的作业无法撤回")
 
-        # 删除提交的文件记录和磁盘文件
-        files = conn.execute(
-            "SELECT stored_path FROM submission_files WHERE submission_id = ?",
-            (submission['id'],)
-        ).fetchall()
-
-        for f in files:
-            try:
-                file_path = Path(f['stored_path'])
-                if file_path.exists():
-                    file_path.unlink()
-            except Exception as e:
-                print(f"[WARN] 删除提交文件失败: {e}")
-
         conn.execute("DELETE FROM submission_files WHERE submission_id = ?", (submission['id'],))
         conn.execute("DELETE FROM submissions WHERE id = ?", (submission['id'],))
         conn.commit()
 
+    delete_storage_tree(_build_submission_storage_dir(submission['course_id'], assignment_id, user['id']))
     return {"status": "success", "message": "作业已撤回"}
 
 
@@ -502,18 +613,30 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
             raise HTTPException(409, "该试卷已添加到当前课堂，请勿重复发布")
 
         created_at = datetime.now().isoformat()
+        allowed_file_types_json = encode_allowed_file_types_json(_get_allowed_file_types(data))
         cursor = conn.execute(
-            """INSERT INTO assignments (course_id, title, status, requirements_md, rubric_md, grading_mode, exam_paper_id, class_offering_id, created_at)
-               VALUES (?, ?, 'published', ?, ?, ?, ?, ?, ?)""",
-            (int(offering['course_id']),
-             data.get('title', paper['title']),
-             f"**试卷**: {paper['title']}\n\n{paper['description'] or ''}",
-             "按试卷各题评分", 'auto',
-             paper_id, int(class_offering_id), created_at)
+            """
+            INSERT INTO assignments (
+                course_id, title, status, requirements_md, rubric_md, grading_mode,
+                exam_paper_id, class_offering_id, created_at, allowed_file_types_json
+            )
+            VALUES (?, ?, 'published', ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(offering['course_id']),
+                data.get('title', paper['title']),
+                f"**试卷**: {paper['title']}\n\n{paper['description'] or ''}",
+                "按试卷各题评分",
+                'ai',
+                paper_id,
+                int(class_offering_id),
+                created_at,
+                allowed_file_types_json,
+            )
         )
         new_assignment_id = cursor.lastrowid
         conn.commit()
-        assignment_dir = HOMEWORK_SUBMISSIONS_DIR / str(offering['course_id']) / str(new_assignment_id)
+        assignment_dir = _build_assignment_storage_dir(offering['course_id'], new_assignment_id)
         assignment_dir.mkdir(parents=True, exist_ok=True)
     return {
         "status": "success",

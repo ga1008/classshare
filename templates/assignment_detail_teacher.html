@@ -285,6 +285,18 @@
                 </div>
             </div>
             {% endif %}
+
+            <div class="req-section">
+                <h3>附件提交</h3>
+                <p class="text-sm text-muted">学生可在提交时上传一次文件或文件夹，后端会按当前作业配置过滤不符合类型要求的文件。</p>
+                <div class="mt-2">
+                    {% if assignment.allowed_file_types %}
+                    <span class="badge badge-outline">{{ assignment.allowed_file_types_label }}</span>
+                    {% else %}
+                    <span class="badge badge-outline">不限类型</span>
+                    {% endif %}
+                </div>
+            </div>
         </div>
     </div>
 
@@ -356,9 +368,19 @@
                         <label class="form-label">批改模式</label>
                         <select id="edit-grading-mode" class="form-select">
                             <option value="manual" {{ 'selected' if assignment.grading_mode == 'manual' else '' }}>手动批改</option>
-                            <option value="auto" {{ 'selected' if assignment.grading_mode == 'auto' else '' }}>自动批改 (AI)</option>
-                            <option value="mixed" {{ 'selected' if assignment.grading_mode == 'mixed' else '' }}>混合模式</option>
+                            <option value="ai" {{ 'selected' if assignment.grading_mode in ['ai', 'auto', 'mixed'] else '' }}>AI 辅助批改</option>
                         </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">允许附件类型</label>
+                        <input
+                            type="text"
+                            id="edit-allowed-file-types"
+                            class="form-control"
+                            value="{{ assignment.allowed_file_types | join(', ') }}"
+                            placeholder="例如：.pdf,.docx,image/*"
+                        >
+                        <p class="text-xs text-muted mt-1">支持扩展名或 MIME 类型，多个值用逗号分隔；留空表示不限制。</p>
                     </div>
                     <div class="flex justify-end gap-2 mt-4">
                         <button type="button" class="btn btn-outline" onclick="closeEditModal()">取消</button>
@@ -409,6 +431,7 @@
 
     const currentAssignmentId = "{{ assignment.id }}";
     const currentClassOfferingId = {{ assignment.class_offering_id | tojson }};
+    const currentAllowedFileTypes = {{ assignment.allowed_file_types | tojson }};
     let allEntries = [];
     let currentFilter = 'all';
     let autoRefreshTimer = null;
@@ -667,11 +690,12 @@
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    title: "{{ assignment.title | e }}",
+                    title: {{ assignment.title | tojson }},
                     requirements_md: {{ assignment.requirements_md | tojson }},
                     rubric_md: {{ assignment.rubric_md | tojson }},
-                    grading_mode: "{{ assignment.grading_mode }}",
-                    status: newStatus
+                    grading_mode: {{ assignment.grading_mode | tojson }},
+                    status: newStatus,
+                    allowed_file_types: currentAllowedFileTypes,
                 })
             });
             if (response.ok) {
@@ -694,7 +718,8 @@
                     requirements_md: document.getElementById('edit-requirements').value,
                     rubric_md: document.getElementById('edit-rubric').value,
                     grading_mode: document.getElementById('edit-grading-mode').value,
-                    status: "{{ assignment.status }}"
+                    status: {{ assignment.status | tojson }},
+                    allowed_file_types: document.getElementById('edit-allowed-file-types').value,
                 })
             });
             if (response.ok) {

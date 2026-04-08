@@ -385,6 +385,30 @@ def init_database():
                 conn.execute("ALTER TABLE assignments ADD COLUMN class_offering_id INTEGER")
             except sqlite3.OperationalError:
                 pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE assignments ADD COLUMN allowed_file_types_json TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE submission_files ADD COLUMN relative_path TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE submission_files ADD COLUMN mime_type TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE submission_files ADD COLUMN file_size INTEGER")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE submission_files ADD COLUMN file_ext TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE submission_files ADD COLUMN file_hash TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
 
             # 分块上传跟踪表
             conn.execute('''
@@ -447,6 +471,8 @@ def init_database():
                              DEFAULT
                              CURRENT_TIMESTAMP,
                              exam_paper_id
+                             TEXT,
+                             allowed_file_types_json
                              TEXT,
                              FOREIGN
                              KEY
@@ -535,10 +561,20 @@ def init_database():
                              TEXT
                              NOT
                              NULL,
+                             relative_path
+                             TEXT,
                              stored_path
                              TEXT
                              NOT
                              NULL,
+                             mime_type
+                             TEXT,
+                             file_size
+                             INTEGER,
+                             file_ext
+                             TEXT,
+                             file_hash
+                             TEXT,
                              FOREIGN
                              KEY
                          (

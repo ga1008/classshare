@@ -4,6 +4,7 @@
 import asyncio
 import base64
 import json
+import mimetypes
 import os
 import sys
 import traceback
@@ -39,6 +40,16 @@ AI_PORT = int(os.getenv("AI_PORT", 8001))
 GLOBAL_AI_CONCURRENCY = int(os.getenv("GLOBAL_AI_CONCURRENCY", 3))
 MAIN_APP_CALLBACK_URL = os.getenv("MAIN_APP_CALLBACK_URL")
 PLATFORM_PRIORITY = [p.strip() for p in os.getenv("AI_PLATFORM_PRIORITY", "siliconflow,volcengine,deepseek").split(',')]
+VOLCENGINE_OPENAI_BASE_URL = os.getenv("VOLCENGINE_OPENAI_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
+AI_GRADING_MAX_FILE_COUNT = int(os.getenv("AI_GRADING_MAX_FILE_COUNT", 50))
+AI_GRADING_MAX_TOTAL_FILE_MB = float(os.getenv("AI_GRADING_MAX_TOTAL_FILE_MB", 20))
+AI_GRADING_MAX_TOTAL_FILE_BYTES = int(AI_GRADING_MAX_TOTAL_FILE_MB * 1024 * 1024)
+AI_GRADING_MAX_RAW_TEXT_FILE_MB = float(os.getenv("AI_GRADING_MAX_RAW_TEXT_FILE_MB", 2))
+AI_GRADING_MAX_RAW_TEXT_FILE_BYTES = int(AI_GRADING_MAX_RAW_TEXT_FILE_MB * 1024 * 1024)
+VOLCENGINE_DOCUMENT_MAX_MB = float(os.getenv("VOLCENGINE_DOCUMENT_MAX_MB", 5))
+VOLCENGINE_DOCUMENT_MAX_BYTES = int(VOLCENGINE_DOCUMENT_MAX_MB * 1024 * 1024)
+VOLCENGINE_IMAGE_MAX_MB = float(os.getenv("VOLCENGINE_IMAGE_MAX_MB", 10))
+VOLCENGINE_IMAGE_MAX_BYTES = int(VOLCENGINE_IMAGE_MAX_MB * 1024 * 1024)
 
 # --- 平台详细配置 (保持不变) ---
 PLATFORMS_CONFIG = {
@@ -71,6 +82,7 @@ PLATFORMS_CONFIG = {
     "volcengine": {
         "enabled": os.getenv("VOLCENGINE_ENABLED", "True").lower() == "true",
         "api_key": os.getenv("ARK_API_KEY"), "base_url": None,
+        "responses_base_url": VOLCENGINE_OPENAI_BASE_URL,
         "models": {
             "standard": os.getenv("VOLCENGINE_MODEL_STANDARD", "doubao-seed-2-0-pro-260215"),
             "thinking": os.getenv("VOLCENGINE_MODEL_THINKING", "doubao-seed-2-0-pro-260215"),
@@ -103,12 +115,24 @@ class ExamGenerationRequest(BaseModel):
     class_offering_id: Optional[int] = None
 
 
+class GradingFile(BaseModel):
+    stored_path: str
+    original_filename: Optional[str] = None
+    relative_path: Optional[str] = None
+    mime_type: Optional[str] = None
+    file_size: Optional[int] = None
+    file_ext: Optional[str] = None
+    file_hash: Optional[str] = None
+
+
 class GradingJob(BaseModel):
     submission_id: int
     rubric_md: str
     requirements_md: str = ""
-    file_paths: List[str] = []
+    files: List[GradingFile] = Field(default_factory=list)
+    file_paths: List[str] = Field(default_factory=list)
     answers_json: Optional[str] = None
+    allowed_file_types_json: Optional[str] = None
     # model_type 将在 run_grading_job 中动态决定，这里不再需要
 
 
@@ -352,27 +376,352 @@ def file_to_base64_url(file_path: Path) -> str:
         print(f"[ERROR] file_to_base64_url {file_path}: {e}"); return ""
 
 
+def _extract_answers_text(answers_json: str | None) -> str:
+    if not answers_json:
+        return ""
+
+    try:
+        answers_data = json.loads(answers_json) if isinstance(answers_json, str) else answers_json
+        answers = answers_data.get("answers", answers_data) if isinstance(answers_data, dict) else answers_data
+        if isinstance(answers, list):
+            lines = ["【学生文字答案】"]
+            for i, item in enumerate(answers, start=1):
+                if isinstance(item, dict):
+                    question = item.get("question", f"第{i}题")
+                    answer = item.get("answer", item.get("content", item.get("text", "")))
+                else:
+                    question = f"第{i}题"
+                    answer = item
+                lines.append(f"\n### {question}\n{answer}")
+            return "\n".join(lines)
+        if isinstance(answers, dict):
+            lines = ["【学生文字答案】"]
+            for key, value in answers.items():
+                lines.append(f"\n### {key}\n{value}")
+            return "\n".join(lines)
+        return f"【学生文字答案】\n{answers}"
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return f"【学生文字答案】\n{answers_json}"
+
+
+def _human_size(num_bytes: int | None) -> str:
+    size = int(num_bytes or 0)
+    if size < 1024:
+        return f"{size} B"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
+    return f"{size / 1024 / 1024:.1f} MB"
+
+
+def _guess_mime_type(file_path: Path, explicit_mime_type: str | None = None) -> str:
+    if explicit_mime_type:
+        return explicit_mime_type.lower()
+    guessed_mime_type = mimetypes.guess_type(file_path.name)[0]
+    return (guessed_mime_type or "application/octet-stream").lower()
+
+
+def _is_text_like_grading_file(file_path: Path, mime_type: str | None = None) -> bool:
+    text_like_extensions = {
+        ".c", ".cc", ".cpp", ".cs", ".csv", ".go", ".h", ".hpp", ".html", ".ini", ".java", ".js",
+        ".json", ".jsx", ".kt", ".log", ".md", ".php", ".py", ".rb", ".rs", ".sh", ".sql", ".svg",
+        ".tex", ".toml", ".ts", ".tsx", ".txt", ".vue", ".xml", ".yaml", ".yml",
+    }
+    normalized_mime_type = _guess_mime_type(file_path, mime_type)
+    return (
+        file_path.suffix.lower() in text_like_extensions
+        or normalized_mime_type.startswith("text/")
+        or normalized_mime_type in {"application/javascript", "application/json", "application/xml", "image/svg+xml"}
+    )
+
+
+def _normalize_grading_files(job: GradingJob) -> list[dict[str, Any]]:
+    normalized_files: list[dict[str, Any]] = []
+    if job.files:
+        for file in job.files:
+            file_path = Path(file.stored_path)
+            if not file_path.exists():
+                continue
+            try:
+                file_size = int(file.file_size or file_path.stat().st_size)
+            except OSError:
+                file_size = int(file.file_size or 0)
+            display_name = file.relative_path or file.original_filename or file_path.name
+            normalized_files.append(
+                {
+                    "path": file_path,
+                    "display_name": display_name,
+                    "original_filename": file.original_filename or file_path.name,
+                    "relative_path": file.relative_path or display_name,
+                    "mime_type": _guess_mime_type(file_path, file.mime_type),
+                    "size": file_size,
+                    "ext": (file.file_ext or file_path.suffix).lower(),
+                    "hash": file.file_hash,
+                }
+            )
+        return normalized_files
+
+    for raw_path in job.file_paths:
+        file_path = Path(raw_path)
+        if not file_path.exists():
+            continue
+        normalized_files.append(
+            {
+                "path": file_path,
+                "display_name": file_path.name,
+                "original_filename": file_path.name,
+                "relative_path": file_path.name,
+                "mime_type": _guess_mime_type(file_path),
+                "size": int(file_path.stat().st_size),
+                "ext": file_path.suffix.lower(),
+                "hash": None,
+            }
+        )
+    return normalized_files
+
+
+def _categorize_grading_file(file_info: dict[str, Any]) -> str:
+    file_path = file_info["path"]
+    mime_type = file_info["mime_type"]
+    ext = file_info["ext"]
+    if mime_type.startswith("image/") or ext in {".bmp", ".gif", ".jpeg", ".jpg", ".png", ".webp"} or is_image_file(file_path):
+        return "image"
+    if ext in {".pdf", ".doc", ".docx", ".xls", ".xlsx"}:
+        return "document"
+    if _is_text_like_grading_file(file_path, mime_type):
+        return "text"
+    return "binary"
+
+
+def _validate_grading_file_limits(grading_files: list[dict[str, Any]]) -> None:
+    if len(grading_files) > AI_GRADING_MAX_FILE_COUNT:
+        raise ValueError(f"附件数量超过 AI 批改上限 {AI_GRADING_MAX_FILE_COUNT} 个")
+
+    total_bytes = sum(int(file_info.get("size") or 0) for file_info in grading_files)
+    if total_bytes > AI_GRADING_MAX_TOTAL_FILE_BYTES:
+        raise ValueError(f"附件总大小超过 AI 批改上限 {_human_size(AI_GRADING_MAX_TOTAL_FILE_BYTES)}")
+
+    for file_info in grading_files:
+        category = file_info.get("category")
+        file_size = int(file_info.get("size") or 0)
+        display_name = file_info.get("display_name") or file_info["path"].name
+        if category == "document" and file_size > VOLCENGINE_DOCUMENT_MAX_BYTES:
+            raise ValueError(f"文档 '{display_name}' 超过火山方舟文档上限 {_human_size(VOLCENGINE_DOCUMENT_MAX_BYTES)}")
+        if category == "image" and file_size > VOLCENGINE_IMAGE_MAX_BYTES:
+            raise ValueError(f"图片 '{display_name}' 超过火山方舟图片上限 {_human_size(VOLCENGINE_IMAGE_MAX_BYTES)}")
+
+
+def _select_grading_execution(grading_files: list[dict[str, Any]]) -> dict[str, Any]:
+    has_documents = any(file_info["category"] == "document" for file_info in grading_files)
+    has_images = any(file_info["category"] == "image" for file_info in grading_files)
+    has_binary = any(file_info["category"] == "binary" for file_info in grading_files)
+
+    if has_documents:
+        for platform_name in ENABLED_PLATFORMS:
+            if platform_name != "volcengine":
+                continue
+            config = PLATFORMS_CONFIG[platform_name]
+            return {
+                "platform_name": platform_name,
+                "platform_config": {"name": platform_name, **config},
+                "capability": "vision" if has_images else "thinking",
+                "mode": "volcengine_responses",
+            }
+        raise ValueError("当前启用的 AI 平台不支持直接识别 PDF/DOC/XLS 等文档附件，请启用火山方舟。")
+
+    if has_images:
+        for platform_name in ENABLED_PLATFORMS:
+            config = PLATFORMS_CONFIG[platform_name]
+            if platform_name == "volcengine":
+                return {
+                    "platform_name": platform_name,
+                    "platform_config": {"name": platform_name, **config},
+                    "capability": "vision",
+                    "mode": "volcengine_responses",
+                }
+            if config["models"].get("vision"):
+                return {
+                    "platform_name": platform_name,
+                    "platform_config": {"name": platform_name, **config},
+                    "capability": "vision",
+                    "mode": "vision_messages",
+                }
+        raise ValueError("当前启用的 AI 平台不支持图片附件识别，请启用支持视觉能力的模型。")
+
+    for platform_name in ENABLED_PLATFORMS:
+        config = PLATFORMS_CONFIG[platform_name]
+        if config["models"].get("thinking"):
+            return {
+                "platform_name": platform_name,
+                "platform_config": {"name": platform_name, **config},
+                "capability": "thinking",
+                "mode": "text_messages",
+            }
+        if config["models"].get("standard"):
+            return {
+                "platform_name": platform_name,
+                "platform_config": {"name": platform_name, **config},
+                "capability": "standard",
+                "mode": "text_messages",
+            }
+
+    raise ValueError("没有可用于批改的 AI 平台配置")
+
+
+def _read_text_file_excerpt(file_path: Path, max_bytes: int = AI_GRADING_MAX_RAW_TEXT_FILE_BYTES) -> tuple[str, bool]:
+    with open(file_path, "rb") as file:
+        data = file.read(max_bytes + 1)
+    truncated = len(data) > max_bytes
+    text = data[:max_bytes].decode("utf-8", errors="ignore")
+    return text, truncated
+
+
+def _build_text_grading_message(
+    rubric_md: str,
+    grading_files: list[dict[str, Any]],
+    requirements_md: str = "",
+    answers_json: str | None = None,
+) -> list[dict[str, Any]]:
+    answers_text = _extract_answers_text(answers_json)
+
+    text_content = ""
+    if requirements_md:
+        text_content += f"【作业要求】\n{requirements_md}\n\n"
+    text_content += f"【评分标准】\n{rubric_md}\n\n"
+    if answers_text:
+        text_content += answers_text + "\n\n"
+
+    if grading_files:
+        text_content += "【学生提交文件】\n"
+        for file_info in grading_files:
+            display_name = file_info["display_name"]
+            category = file_info["category"]
+            file_size = _human_size(file_info["size"])
+            if category == "text":
+                excerpt, truncated = _read_text_file_excerpt(file_info["path"])
+                text_content += f"\n--- 文件: {display_name} ({file_size}) ---\n```\n{excerpt}\n```\n"
+                if truncated:
+                    text_content += f"[系统说明] 文件 {display_name} 已按 {_human_size(AI_GRADING_MAX_RAW_TEXT_FILE_BYTES)} 截断。\n"
+            elif category == "image":
+                text_content += f"\n--- 图片文件: {display_name} ({file_size}) ---\n该图片将以图像输入方式提交给模型。\n"
+            elif category == "document":
+                text_content += f"\n--- 文档文件: {display_name} ({file_size}) ---\n该文档将以原始文件方式提交给模型。\n"
+            else:
+                text_content += f"\n--- 二进制文件: {display_name} ({file_size}) ---\n当前平台不支持直接解析该类型文件。\n"
+
+    return [{"role": "user", "content": text_content}]
+
+
+def _build_data_url(file_path: Path, mime_type: str) -> str:
+    with open(file_path, "rb") as file:
+        encoded = base64.b64encode(file.read()).decode("utf-8")
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def _build_volcengine_responses_input(
+    rubric_md: str,
+    grading_files: list[dict[str, Any]],
+    requirements_md: str = "",
+    answers_json: str | None = None,
+) -> list[dict[str, Any]]:
+    prompt_lines = []
+    if requirements_md:
+        prompt_lines.append(f"【作业要求】\n{requirements_md}")
+    prompt_lines.append(f"【评分标准】\n{rubric_md}")
+    answers_text = _extract_answers_text(answers_json)
+    if answers_text:
+        prompt_lines.append(answers_text)
+
+    content_items: list[dict[str, Any]] = [
+        {
+            "type": "input_text",
+            "text": "\n\n".join(prompt_lines + ["【学生提交文件】请结合以下原始文件进行批改。"]),
+        }
+    ]
+
+    for file_info in grading_files:
+        category = file_info["category"]
+        if category == "document":
+            content_items.append(
+                {
+                    # Inference: Ark Responses follows the OpenAI-compatible input_file schema.
+                    "type": "input_file",
+                    "filename": file_info["original_filename"],
+                    "file_data": _build_data_url(file_info["path"], file_info["mime_type"]),
+                }
+            )
+            continue
+        if category == "image":
+            content_items.append(
+                {
+                    "type": "input_image",
+                    "image_url": _build_data_url(file_info["path"], file_info["mime_type"]),
+                }
+            )
+            continue
+        if category == "text":
+            excerpt, truncated = _read_text_file_excerpt(file_info["path"])
+            suffix = f"\n[系统说明] 文件已按 {_human_size(AI_GRADING_MAX_RAW_TEXT_FILE_BYTES)} 截断。" if truncated else ""
+            content_items.append(
+                {
+                    "type": "input_text",
+                    "text": f"\n--- 文件: {file_info['display_name']} ---\n```\n{excerpt}\n```\n{suffix}",
+                }
+            )
+
+    return [{"role": "user", "content": content_items}]
+
+
+async def _call_volcengine_responses_api(
+    *,
+    model_name: str,
+    api_key: str,
+    input_payload: list[dict[str, Any]],
+) -> dict[str, Any]:
+    request_payload = {
+        "model": model_name,
+        "instructions": GRADING_SYSTEM_PROMPT,
+        "input": input_payload,
+        "text": {"format": {"type": "json_object"}},
+    }
+
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        response = await client.post(
+            f"{VOLCENGINE_OPENAI_BASE_URL}/responses",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=request_payload,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+    output_text = data.get("output_text")
+    if not output_text:
+        output = data.get("output") or []
+        for item in output:
+            if item.get("type") != "message":
+                continue
+            for content_item in item.get("content", []):
+                if content_item.get("type") == "output_text":
+                    output_text = content_item.get("text")
+                    break
+            if output_text:
+                break
+
+    if not output_text:
+        raise ValueError("火山方舟 Responses API 未返回可解析的文本结果")
+
+    try:
+        return json.loads(output_text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"火山方舟 Responses API 返回的结果不是有效 JSON: {output_text}") from exc
+
+
 def build_vision_messages(rubric: str, files: List[Path], platform_type: str,
                           requirements_md: str = "", answers_json: str = None) -> List[Dict[str, Any]]:
     """构建视觉消息 (支持文件 + JSON 答案混合)"""
-    # 构建 JSON 答案的文本描述
-    answers_text = ""
-    if answers_json:
-        try:
-            answers_data = json.loads(answers_json) if isinstance(answers_json, str) else answers_json
-            answers = answers_data.get("answers", answers_data)
-            if isinstance(answers, list):
-                answers_text = "【学生文字答案】\n"
-                for i, item in enumerate(answers):
-                    q = item.get("question", f"第 {i+1} 题")
-                    a = item.get("answer", item.get("content", item.get("text", "")))
-                    answers_text += f"\n### {q}\n{a}\n"
-            elif isinstance(answers, dict):
-                answers_text = "【学生文字答案】\n"
-                for key, value in answers.items():
-                    answers_text += f"\n### {key}\n{value}\n"
-        except (json.JSONDecodeError, AttributeError):
-            answers_text = f"\n【学生文字答案】\n{answers_json}\n"
+    answers_text = _extract_answers_text(answers_json)
 
     if platform_type == "volcengine":
         content = []
@@ -1012,72 +1361,71 @@ async def submit_grading_task(job: GradingJob):
 # --- 后台任务 (更新: 支持文件 + JSON 答案) ---
 async def run_grading_job(job: GradingJob):
     callback_data = {}
-    selected_capability: Literal["standard", "thinking", "vision"] = "thinking"  # 默认使用 thinking
     try:
-        file_paths = [Path(p) for p in job.file_paths if Path(p).exists()]
-        has_files = bool(file_paths)
+        grading_files = _normalize_grading_files(job)
+        for file_info in grading_files:
+            file_info["category"] = _categorize_grading_file(file_info)
+
+        has_files = bool(grading_files)
         has_answers = bool(job.answers_json)
 
         if not has_files and not has_answers:
             raise ValueError("没有找到可批改的内容（无文件也无答案）")
 
-        # 检查是否有图片文件
-        has_image = has_files and any(is_image_file(fp) for fp in file_paths)
-        if has_image:
-            selected_capability = "vision"
-            print(f"[AI WORKER] 检测到图片文件，将使用 '{selected_capability}' 能力。")
+        unsupported_binary_files = [f["display_name"] for f in grading_files if f["category"] == "binary"]
+        if unsupported_binary_files:
+            raise ValueError(
+                "以下附件类型当前无法直接传给 AI 识别: " + ", ".join(unsupported_binary_files[:10])
+            )
+
+        _validate_grading_file_limits(grading_files)
+        execution = _select_grading_execution(grading_files)
+        selected_capability: Literal["standard", "thinking", "vision"] = execution["capability"]
+        selected_platform = execution["platform_config"]
+        print(
+            f"[AI WORKER] 将使用平台 {execution['platform_name']} / 能力 {selected_capability} / 模式 {execution['mode']}"
+        )
+
+        if execution["mode"] == "volcengine_responses":
+            model_name = selected_platform["models"][selected_capability]
+            api_key = selected_platform["api_key"]
+            if not api_key:
+                raise ValueError("火山方舟 API Key 未配置")
+            result = await _call_volcengine_responses_api(
+                model_name=model_name,
+                api_key=api_key,
+                input_payload=_build_volcengine_responses_input(
+                    job.rubric_md,
+                    grading_files,
+                    job.requirements_md,
+                    job.answers_json,
+                ),
+            )
         else:
-            print(f"[AI WORKER] 将使用 '{selected_capability}' 能力。")
+            messages = [{"role": "system", "content": GRADING_SYSTEM_PROMPT}]
+            if execution["mode"] == "vision_messages" and has_files:
+                file_paths = [file_info["path"] for file_info in grading_files]
+                messages.extend(
+                    build_vision_messages(
+                        job.rubric_md,
+                        file_paths,
+                        selected_platform["type"],
+                        job.requirements_md,
+                        job.answers_json,
+                    )
+                )
+            else:
+                messages.extend(
+                    _build_text_grading_message(
+                        job.rubric_md,
+                        grading_files,
+                        job.requirements_md,
+                        job.answers_json,
+                    )
+                )
 
-        selected_platform = _get_selected_platform_config(selected_capability)
-        if not selected_platform: raise ValueError(f"没有找到支持 {selected_capability} 能力的平台")
-        platform_type = selected_platform["type"]
-
-        messages = [{"role": "system", "content": GRADING_SYSTEM_PROMPT}]
-
-        if selected_capability == "vision" and has_files:
-            # 图片类作业：构建视觉消息
-            messages.extend(build_vision_messages(job.rubric_md, file_paths, platform_type,
-                                                  job.requirements_md, job.answers_json))
-        else:
-            # 文本类作业：构建文本消息
-            text_content = ""
-            if job.requirements_md:
-                text_content += f"【作业要求】\n{job.requirements_md}\n\n"
-            text_content += f"【评分标准】\n{job.rubric_md}\n\n"
-
-            # 添加 JSON 答案内容
-            if has_answers:
-                text_content += "【学生提交答案】\n"
-                try:
-                    answers_data = json.loads(job.answers_json) if isinstance(job.answers_json, str) else job.answers_json
-                    answers = answers_data.get("answers", answers_data)
-                    if isinstance(answers, list):
-                        for i, item in enumerate(answers):
-                            q = item.get("question", f"第 {i+1} 题")
-                            a = item.get("answer", item.get("content", item.get("text", "")))
-                            text_content += f"\n### {q}\n{a}\n"
-                    elif isinstance(answers, dict):
-                        for key, value in answers.items():
-                            text_content += f"\n### {key}\n{value}\n"
-                except (json.JSONDecodeError, AttributeError):
-                    text_content += job.answers_json
-                text_content += "\n"
-
-            # 添加文件内容
-            if has_files:
-                text_content += "【学生提交文件】\n"
-                for file_path in file_paths:
-                    try:
-                        code = file_path.read_text(encoding='utf-8', errors='ignore')
-                        text_content += f"\n--- 文件: {file_path.name} ---\n```\n{code}\n```\n"
-                    except Exception:
-                        text_content += f"\n--- 文件: {file_path.name} (无法读取) ---\n"
-
-            messages.append({"role": "user", "content": text_content})
-
-        # 批改任务总是要求 JSON 输出
-        result = await _call_ai_platform(messages, capability=selected_capability, require_json_output=True)
+            # 批改任务总是要求 JSON 输出
+            result = await _call_ai_platform(messages, capability=selected_capability, require_json_output=True)
 
         callback_data = {
             "submission_id": job.submission_id, "status": "graded",

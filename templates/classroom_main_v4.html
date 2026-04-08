@@ -511,6 +511,12 @@
                     </select>
                     <p class="form-hint">选择 AI 辅助批改时，系统会基于评分标准生成初步建议，但不会影响原有手动复核能力。</p>
                 </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="assignment-allowed-file-types">允许附件类型</label>
+                    <input type="text" id="assignment-allowed-file-types" class="form-control" placeholder="例如：.pdf,.docx,image/*">
+                    <p class="form-hint">支持扩展名或 MIME 类型，多个值用逗号分隔；留空表示不限制，学生上传文件夹时也会按此规则过滤子文件。</p>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" data-dismiss="modal">取消</button>
@@ -535,6 +541,11 @@
                     <strong>当前课堂：</strong> {{ classroom.course_name }} / {{ classroom.class_name }}
                 </div>
                 <div id="exam-assign-feedback" class="inline-feedback hidden" role="status" aria-live="polite"></div>
+                <div class="form-group">
+                    <label class="form-label" for="exam-allowed-file-types">接收附件类型</label>
+                    <input type="text" id="exam-allowed-file-types" class="form-control" placeholder="例如：.zip,.py,.pdf">
+                    <p class="form-hint">留空表示不限制。学生上传的文件和文件夹内容会在服务端按类型过滤，不符合规则的文件会被丢弃。</p>
+                </div>
                 <div id="exam-list-container" class="exam-list-container">
                     <div class="text-center p-4"><div class="spinner"></div></div>
                 </div>

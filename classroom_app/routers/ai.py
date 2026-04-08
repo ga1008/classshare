@@ -65,14 +65,21 @@ async def ai_regrade_submission(submission_id: int, user: dict = Depends(get_cur
         submission = conn.execute("SELECT * FROM submissions WHERE id = ?", (submission_id,)).fetchone()
         if not submission: raise HTTPException(status_code=404, detail="Submission not found")
         if submission['status'] == 'grading': return {"status": "already_grading"}
-        assignment = conn.execute("SELECT requirements_md, rubric_md FROM assignments WHERE id = ?",
+        assignment = conn.execute("SELECT requirements_md, rubric_md, allowed_file_types_json FROM assignments WHERE id = ?",
                                   (submission['assignment_id'],)).fetchone()
-        files_cursor = conn.execute("SELECT stored_path FROM submission_files WHERE submission_id = ?",
-                                    (submission_id,))
-        file_paths = [row['stored_path'] for row in files_cursor]
+        files_cursor = conn.execute(
+            """
+            SELECT stored_path, original_filename, relative_path, mime_type, file_size, file_ext, file_hash
+            FROM submission_files
+            WHERE submission_id = ?
+            ORDER BY COALESCE(relative_path, original_filename), id
+            """,
+            (submission_id,)
+        )
+        submission_files = [dict(row) for row in files_cursor]
 
     # 检查是否有可批改的内容（文件或JSON答案均可）
-    has_files = bool(file_paths)
+    has_files = bool(submission_files)
     has_answers = bool(submission['answers_json'])
     if not has_files and not has_answers:
         raise HTTPException(status_code=400, detail="该提交没有可批改的内容（无文件也无答案）。")
@@ -81,7 +88,20 @@ async def ai_regrade_submission(submission_id: int, user: dict = Depends(get_cur
         "submission_id": submission_id,
         "rubric_md": assignment['rubric_md'],
         "requirements_md": assignment['requirements_md'] or '',
-        "file_paths": [str(Path(p).resolve()) for p in file_paths] if has_files else [],
+        "allowed_file_types_json": assignment["allowed_file_types_json"],
+        "files": [
+            {
+                "stored_path": str(Path(item["stored_path"]).resolve()),
+                "original_filename": item.get("original_filename"),
+                "relative_path": item.get("relative_path") or item.get("original_filename"),
+                "mime_type": item.get("mime_type"),
+                "file_size": item.get("file_size"),
+                "file_ext": item.get("file_ext"),
+                "file_hash": item.get("file_hash"),
+            }
+            for item in submission_files
+        ] if has_files else [],
+        "file_paths": [str(Path(item["stored_path"]).resolve()) for item in submission_files] if has_files else [],
         "answers_json": submission['answers_json'] if has_answers else None,
     }
     try:

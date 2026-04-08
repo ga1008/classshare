@@ -284,7 +284,12 @@
                         <div class="flex items-center justify-between p-sm rounded-md" style="background: var(--bg-color); border: 1px solid var(--border-color);">
                             <div class="flex items-center gap-2">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
-                                <span class="text-sm">{{ file.original_filename }}</span>
+                                <div>
+                                    <div class="text-sm">{{ file.display_name }}</div>
+                                    {% if file.file_size %}
+                                    <div class="text-xs text-muted">{{ '%.1f'|format(file.file_size / 1024 / 1024) }} MB</div>
+                                    {% endif %}
+                                </div>
                             </div>
                             <a href="/submissions/download/{{ file.id }}" class="btn btn-ghost btn-sm">下载</a>
                         </div>
@@ -312,12 +317,23 @@
                         <label class="form-label mb-2 block">
                             附件上传 <span class="text-muted font-normal">(可选)</span>
                         </label>
-                        <div class="upload-dropzone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+                        <div class="flex items-center gap-2 mb-2 flex-wrap">
+                            <button type="button" class="btn btn-outline btn-sm" id="pick-files-btn">选择文件</button>
+                            <button type="button" class="btn btn-outline btn-sm" id="pick-folder-btn">选择文件夹</button>
+                            <span class="text-xs text-muted" id="upload-summary">未选择文件</span>
+                        </div>
+                        <div class="upload-dropzone" id="drop-zone">
                             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-primary mx-auto mb-2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                            <p class="mb-1 text-primary font-medium">点击选择或拖拽文件到此处</p>
-                            <p class="text-xs text-muted">支持多个文件，总大小不超过 {{ max_upload_mb }} MB</p>
+                            <p class="mb-1 text-primary font-medium">拖拽文件或文件夹到此处</p>
+                            <p class="text-xs text-muted">
+                                支持多个文件、文件夹（保留子目录），总大小不超过 {{ max_upload_mb }} MB，最多 {{ max_submission_file_count }} 个文件
+                                {% if assignment.allowed_file_types %}
+                                ，允许类型: {{ assignment.allowed_file_types_label }}
+                                {% endif %}
+                            </p>
                         </div>
                         <input type="file" id="file-input" class="hidden" multiple>
+                        <input type="file" id="folder-input" class="hidden" webkitdirectory directory multiple>
                         <div class="file-chips" id="file-chips"></div>
                     </div>
                     <div class="submit-action-bar">
@@ -369,13 +385,23 @@
                     <div class="text-xs text-muted mb-1">批改模式</div>
                     <div class="font-medium">
                         {% if assignment.grading_mode == 'manual' %}教师手动批改
-                        {% elif assignment.grading_mode == 'ai' %}AI 辅助批改
+                        {% elif assignment.grading_mode in ['ai', 'auto'] %}AI 辅助批改
                         {% else %}混合批改{% endif %}
                     </div>
                 </div>
                 <div class="info-cell">
                     <div class="text-xs text-muted mb-1">创建时间</div>
                     <div class="font-medium format-date">{{ assignment.created_at or '未知' }}</div>
+                </div>
+                <div class="info-cell">
+                    <div class="text-xs text-muted mb-1">允许附件类型</div>
+                    <div class="font-medium">
+                        {% if assignment.allowed_file_types %}
+                        {{ assignment.allowed_file_types_label }}
+                        {% else %}
+                        不限制
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -387,10 +413,13 @@
 <script src="/static/js/marked.min.js"></script>
 <script type="module">
     import { showToast, renderMarkdown, formatDateLocal } from '/static/js/ui.js';
+    import { SubmissionUploadManager } from '/static/js/submission_upload.js';
 
     const MAX_SIZE = {{ max_upload_mb }} * 1024 * 1024;
+    const MAX_FILES = {{ max_submission_file_count }};
     const ASSIGNMENT_ID = "{{ assignment.id }}";
-    let selectedFiles = [];
+    const ALLOWED_FILE_TYPES = {{ assignment.allowed_file_types | tojson }};
+    let uploadManager = null;
 
     document.addEventListener('DOMContentLoaded', () => {
         // Render Markdown
@@ -416,7 +445,7 @@
         renderSubmittedAnswers({{ submission.answers_json | tojson }});
         {% elif not submission and assignment.status == 'published' %}
         initAnswerArea();
-        initFileUpload();
+        initSubmissionUpload();
         {% endif %}
     });
 
@@ -463,93 +492,95 @@
 
     function extractQuestions(md) {
         const questions = [];
-        const lines = md.split('\n');
+        const lines = String(md || '').split('\n');
         let currentQuestion = '';
+
         for (const line of lines) {
             const trimmed = line.trim();
+            if (!trimmed) continue;
+
             const headingMatch = trimmed.match(/^(#{1,4})\s+(.+)/);
             if (headingMatch) {
                 if (currentQuestion) questions.push(currentQuestion);
                 currentQuestion = headingMatch[2].trim();
-            } else if (/^\d+[\.\)、]/.test(trimmed) && trimmed.length < 120) {
+                continue;
+            }
+
+            if (/^\d+[\.\)]\s*/.test(trimmed) && trimmed.length < 120) {
                 if (currentQuestion) questions.push(currentQuestion);
                 currentQuestion = trimmed;
-            } else if (/^题目\d*/.test(trimmed) || /^问题\d*/.test(trimmed) || /^Question/i.test(trimmed)) {
+                continue;
+            }
+
+            if (/^Question/i.test(trimmed)) {
                 if (currentQuestion) questions.push(currentQuestion);
                 currentQuestion = trimmed;
-            } else if (currentQuestion && currentQuestion.length < 80) {
-                currentQuestion += ' ' + trimmed;
+                continue;
+            }
+
+            if (currentQuestion && currentQuestion.length < 80) {
+                currentQuestion += ` ${trimmed}`;
             }
         }
+
         if (currentQuestion) questions.push(currentQuestion);
-        return questions.filter(q => !/^(作业|要求|评分|标准|截止|说明|注意|提示|提交)/i.test(q) && q.length > 1);
+        return questions.filter((question) => !/^(assignment|requirements|rubric|deadline|note|submit)/i.test(question) && question.length > 1);
     }
 
     function renderSubmittedAnswers(jsonStr) {
         const container = document.getElementById('submitted-answers-container');
         if (!container || !jsonStr) return;
+
+        container.innerHTML = '';
         try {
             const data = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
             const answers = data.answers || data;
+
             if (Array.isArray(answers)) {
-                answers.forEach((item, i) => {
-                    const question = item.question || `第 ${i + 1} 题`;
-                    const answer = item.answer || item.content || item.text || '(未作答)';
-                    container.innerHTML += `
+                container.innerHTML = answers.map((item, index) => {
+                    const question = item.question || item.question_id || `Question ${index + 1}`;
+                    const answer = item.answer || item.content || item.text || '(No answer)';
+                    return `
                         <div class="submitted-answer-item">
-                            <div class="font-semibold text-sm mb-2 text-primary">${escapeHtml(question)}</div>
+                            <div class="font-semibold text-sm mb-2 text-primary">${escapeHtml(String(question))}</div>
                             <div class="text-sm whitespace-pre-wrap">${escapeHtml(String(answer))}</div>
-                        </div>`;
-                });
-            } else if (typeof answers === 'object') {
-                Object.entries(answers).forEach(([key, value]) => {
-                    container.innerHTML += `
-                        <div class="submitted-answer-item">
-                            <div class="font-semibold text-sm mb-2 text-primary">${escapeHtml(key)}</div>
-                            <div class="text-sm whitespace-pre-wrap">${escapeHtml(String(value))}</div>
-                        </div>`;
-                });
+                        </div>
+                    `;
+                }).join('');
+                return;
             }
+
+            if (answers && typeof answers === 'object') {
+                container.innerHTML = Object.entries(answers).map(([key, value]) => `
+                    <div class="submitted-answer-item">
+                        <div class="font-semibold text-sm mb-2 text-primary">${escapeHtml(String(key))}</div>
+                        <div class="text-sm whitespace-pre-wrap">${escapeHtml(String(value ?? ''))}</div>
+                    </div>
+                `).join('');
+                return;
+            }
+
+            container.innerHTML = `<div class="submitted-answer-item"><div class="text-sm whitespace-pre-wrap">${escapeHtml(String(jsonStr))}</div></div>`;
         } catch (e) {
-            container.innerHTML = `<div class="submitted-answer-item"><div class="text-sm whitespace-pre-wrap">${escapeHtml(jsonStr)}</div></div>`;
+            container.innerHTML = `<div class="submitted-answer-item"><div class="text-sm whitespace-pre-wrap">${escapeHtml(String(jsonStr))}</div></div>`;
         }
     }
 
-    function initFileUpload() {
-        const dropZone = document.getElementById('drop-zone');
-        const fileInput = document.getElementById('file-input');
-        if (!dropZone || !fileInput) return;
-        fileInput.addEventListener('change', () => addFiles(fileInput.files));
-        ['dragenter', 'dragover'].forEach(e => dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.add('dragover'); }));
-        ['dragleave', 'drop'].forEach(e => dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.remove('dragover'); }));
-        dropZone.addEventListener('drop', e => addFiles(e.dataTransfer.files));
-    }
-
-    function addFiles(fileList) {
-        Array.from(fileList).forEach(f => {
-            if (f.size > MAX_SIZE) { showToast(`文件 "${f.name}" 超过大小限制`, 'error'); return; }
-            if (!selectedFiles.some(sf => sf.name === f.name && sf.size === f.size)) selectedFiles.push(f);
+    function initSubmissionUpload() {
+        uploadManager = new SubmissionUploadManager({
+            dropZoneId: 'drop-zone',
+            fileInputId: 'file-input',
+            folderInputId: 'folder-input',
+            listId: 'file-chips',
+            summaryId: 'upload-summary',
+            allowedFileTypes: ALLOWED_FILE_TYPES,
+            maxBytes: MAX_SIZE,
+            maxFiles: MAX_FILES,
+            notify: showToast,
         });
-        renderFileChips();
-    }
-
-    window.removeFile = function(index) {
-        selectedFiles.splice(index, 1);
-        renderFileChips();
-    }
-
-    function renderFileChips() {
-        const container = document.getElementById('file-chips');
-        container.innerHTML = '';
-        selectedFiles.forEach((f, i) => {
-            const sizeMB = (f.size / 1024 / 1024).toFixed(1);
-            container.innerHTML += `
-                <div class="file-chip">
-                    <span class="truncate" style="max-width: 150px;">${escapeHtml(f.name)}</span>
-                    <span class="text-xs text-muted">${sizeMB} MB</span>
-                    <button type="button" class="btn btn-ghost btn-sm p-1 ml-1 text-danger h-auto" onclick="removeFile(${i})">&times;</button>
-                </div>`;
-        });
+        uploadManager.init();
+        document.getElementById('pick-files-btn')?.addEventListener('click', () => uploadManager.openFilePicker());
+        document.getElementById('pick-folder-btn')?.addEventListener('click', () => uploadManager.openFolderPicker());
     }
 
     window.submitAnswers = async function() {
@@ -557,38 +588,47 @@
         const answers = [];
         let hasContent = false;
         textareas.forEach(ta => {
-            const question = ta.dataset.question || '完整答案';
+            const question = ta.dataset.question || 'Answer';
             const answer = ta.value.trim();
             if (answer) hasContent = true;
             answers.push({ question, answer });
         });
 
-        if (!hasContent) { showToast('请至少填写一个答案', 'warning'); return; }
+        const hasFiles = uploadManager?.hasFiles() ?? false;
+        if (!hasContent && !hasFiles) { showToast('Please enter an answer or upload files.', 'warning'); return; }
 
         const submitBtn = document.getElementById('submit-btn');
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<div class="spinner spinner-sm mr-2"></div> 提交中...';
 
-        const formData = new FormData();
+        const formData = uploadManager ? uploadManager.buildFormData() : new FormData();
         formData.append('answers_json', JSON.stringify({ answers }));
-        selectedFiles.forEach(f => formData.append('files', f));
 
         try {
             const response = await fetch(`/api/assignments/${ASSIGNMENT_ID}/submit`, {
                 method: 'POST',
                 body: formData
             });
-            if (response.ok) {
-                showToast('作业提交成功！', 'success');
-                setTimeout(() => location.reload(), 1200);
-            } else {
-                const err = await response.json();
-                throw new Error(err.detail || '提交失败');
+
+            let payload = {};
+            try {
+                payload = await response.json();
+            } catch {}
+
+            if (!response.ok) {
+                throw new Error(payload.detail || 'Submit failed');
             }
+
+            const droppedCount = Number(payload.dropped_file_count || 0);
+            const successMessage = droppedCount > 0
+                ? `${droppedCount} filtered file(s) were ignored during submission.`
+                : 'Submission completed.';
+            showToast(successMessage, droppedCount > 0 ? 'warning' : 'success');
+            setTimeout(() => location.reload(), 1200);
         } catch (e) {
-            showToast('提交失败: ' + e.message, 'error');
+            showToast('Submit failed: ' + e.message, 'error');
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '确认提交作业';
+            submitBtn.innerHTML = 'Submit';
         }
     }
 

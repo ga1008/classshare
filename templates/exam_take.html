@@ -413,6 +413,74 @@
             margin-top: var(--spacing-4);
         }
 
+        .upload-panel {
+            margin-bottom: var(--spacing-5);
+            padding: var(--spacing-4);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            background: var(--bg-color);
+            text-align: left;
+        }
+
+        .upload-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--spacing-2);
+            align-items: center;
+            margin-bottom: var(--spacing-3);
+        }
+
+        .upload-dropzone {
+            border: 2px dashed var(--border-color);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-5);
+            text-align: center;
+            background: var(--surface-color);
+            transition: all var(--transition-fast);
+        }
+
+        .upload-dropzone.dragover,
+        .upload-dropzone:hover {
+            border-color: var(--primary-color);
+            background: var(--primary-light);
+        }
+
+        .file-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--spacing-2);
+            margin-top: var(--spacing-3);
+        }
+
+        .file-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: var(--radius-sm);
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            font-size: 0.85rem;
+        }
+
+        .submitted-files {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-2);
+            margin-top: var(--spacing-4);
+        }
+
+        .submitted-file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: var(--spacing-3);
+            padding: var(--spacing-3) var(--spacing-4);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-color);
+            background: var(--surface-color);
+        }
+
         /* Result View */
         .result-banner {
             padding: var(--spacing-6);
@@ -622,10 +690,17 @@
 <script type="module">
     import { showMessage } from '/static/js/ui.js';
     import { apiFetch } from '/static/js/api.js';
+    import { SubmissionUploadManager } from '/static/js/submission_upload.js';
 
     // Global configurations injected by Jinja2
     const ASSIGNMENT_ID = "{{ assignment.id }}";
     const USER_ROLE = "{{ user_info.role }}";
+    const MAX_UPLOAD_MB = {{ max_upload_mb }};
+    const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
+    const MAX_FILE_COUNT = {{ max_submission_file_count }};
+    const ALLOWED_FILE_TYPES = {{ assignment.allowed_file_types | tojson }};
+    const ALLOWED_FILE_TYPES_LABEL = {{ assignment.allowed_file_types_label | tojson }};
+    const SUBMISSION_FILES = {{ submission_files | tojson }};
 
     {% if submission %}
     const SUBMISSION_EXISTS = true;
@@ -654,6 +729,7 @@
         activeQuestionId: null,
         totalQuestions: 0
     };
+    let uploadManager = null;
 
     // DOM Elements
     const elements = {
@@ -880,6 +956,23 @@
         if (state.currentPageIdx === state.pages.length - 1) {
             html += `
                 <div class="submit-section">
+                    <div class="upload-panel">
+                        <div class="upload-actions">
+                            <button type="button" class="btn btn-outline btn-sm" id="examPickFilesBtn">选择文件</button>
+                            <button type="button" class="btn btn-outline btn-sm" id="examPickFolderBtn">选择文件夹</button>
+                            <span class="text-sm text-muted" id="examUploadSummary">未选择文件</span>
+                        </div>
+                        <div class="upload-dropzone" id="exam-drop-zone">
+                            <p class="mb-2 font-medium text-primary">拖拽文件或文件夹到此处</p>
+                            <p class="text-sm text-muted">
+                                支持多文件与文件夹上传，总大小不超过 ${MAX_UPLOAD_MB} MB，最多 ${MAX_FILE_COUNT} 个文件
+                                ${ALLOWED_FILE_TYPES.length ? `，允许类型：${esc(ALLOWED_FILE_TYPES_LABEL)}` : ''}
+                            </p>
+                        </div>
+                        <input type="file" id="exam-file-input" class="hidden" multiple>
+                        <input type="file" id="exam-folder-input" class="hidden" webkitdirectory directory multiple>
+                        <div class="file-chips" id="exam-file-chips"></div>
+                    </div>
                     <p class="text-muted mb-3" style="font-size:0.9rem;">请确认所有题目已作答完毕，提交后不可修改。</p>
                     <button class="btn btn-success btn-lg" id="submitExamBtn" style="min-width: 200px;">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
@@ -893,9 +986,31 @@
         updateProgress();
         renderSidebar();
         bindQuestionInputs();
+        if (state.currentPageIdx === state.pages.length - 1) {
+            mountUploadManager();
+        }
 
         // Scroll to top
         window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function mountUploadManager() {
+        const preservedEntries = uploadManager?.entries ? [...uploadManager.entries] : [];
+        uploadManager = new SubmissionUploadManager({
+            dropZoneId: 'exam-drop-zone',
+            fileInputId: 'exam-file-input',
+            folderInputId: 'exam-folder-input',
+            listId: 'exam-file-chips',
+            summaryId: 'examUploadSummary',
+            allowedFileTypes: ALLOWED_FILE_TYPES,
+            maxBytes: MAX_UPLOAD_BYTES,
+            maxFiles: MAX_FILE_COUNT,
+            notify: showMessage,
+        });
+        uploadManager.entries = preservedEntries;
+        uploadManager.init();
+        document.getElementById('examPickFilesBtn')?.addEventListener('click', () => uploadManager.openFilePicker());
+        document.getElementById('examPickFolderBtn')?.addEventListener('click', () => uploadManager.openFolderPicker());
     }
 
     function updateProgress() {
@@ -1031,6 +1146,13 @@
         state.pages.forEach(p => (p.questions || []).forEach(q => allQuestions.push(q)));
 
         const unanswered = allQuestions.filter(q => !state.answers[q.id] || !state.answers[q.id].trim());
+        const hasAnswered = allQuestions.some(q => String(state.answers[q.id] || '').trim());
+        const hasFiles = uploadManager?.hasFiles() ?? false;
+
+        if (!hasAnswered && !hasFiles) {
+            showMessage('请至少作答一道题或上传附件后再提交。', 'warning');
+            return;
+        }
 
         if (unanswered.length > 0) {
             if (!confirm(`还有 ${unanswered.length} 道题未作答，确定要强行交卷吗？`)) return;
@@ -1048,7 +1170,7 @@
             answer: state.answers[q.id] || ''
         }));
 
-        const formData = new FormData();
+        const formData = uploadManager ? uploadManager.buildFormData() : new FormData();
         formData.append('answers_json', JSON.stringify({ answers: answersList }));
 
         try {
@@ -1057,7 +1179,13 @@
                 body: formData
             });
 
-            showMessage('交卷成功！', 'success');
+            const droppedCount = Number(resp?.dropped_file_count || 0);
+            showMessage(
+                droppedCount > 0
+                    ? `交卷成功，${droppedCount} 个不符合要求的文件已被过滤。`
+                    : '交卷成功！',
+                droppedCount > 0 ? 'warning' : 'success'
+            );
             localStorage.removeItem(`exam_${ASSIGNMENT_ID}`);
 
             // Reload to show submitted state
@@ -1146,6 +1274,22 @@
         });
 
         html += `</div>`;
+        if (SUBMISSION_FILES.length) {
+            html += `
+                <div class="page-heading" style="margin-top: 2rem;">提交附件</div>
+                <div class="submitted-files">
+                    ${SUBMISSION_FILES.map((file) => `
+                        <div class="submitted-file-item">
+                            <div>
+                                <div class="font-medium">${esc(file.display_name || file.original_filename || '附件')}</div>
+                                <div class="text-sm text-muted">${file.file_size ? formatFileSize(file.file_size) : ''}</div>
+                            </div>
+                            <a href="/submissions/download/${file.id}" class="btn btn-outline btn-sm">下载</a>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
         elements.dynamicArea.innerHTML = `<div class="paper-content">${html}</div>`;
 
         // Update sidebar
@@ -1227,6 +1371,13 @@
     function truncate(s, n) {
         if (!s) return '';
         return s.length > n ? s.slice(0, n) + '...' : s;
+    }
+
+    function formatFileSize(bytes) {
+        const size = Number(bytes || 0);
+        if (size < 1024) return `${size} B`;
+        if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+        return `${(size / 1024 / 1024).toFixed(1)} MB`;
     }
 
     // Boot

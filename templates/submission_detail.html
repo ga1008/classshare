@@ -133,6 +133,19 @@
         color: var(--primary-color);
         background: var(--surface-color);
     }
+    .file-item-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+    }
+    .file-item-name {
+        word-break: break-all;
+    }
+    .file-item-meta {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
 
     /* Grading form */
     .grading-section {
@@ -292,9 +305,14 @@
         <div class="card-body">
             <div class="file-list">
                 {% for f in submission_files %}
-                <a href="/api/submissions/download/{{ f.id }}" class="file-item">
+                <a href="/submissions/download/{{ f.id }}" class="file-item" title="{{ f.display_name }}">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
-                    {{ f.original_filename }}
+                    <span class="file-item-copy">
+                        <span class="file-item-name">{{ f.display_name }}</span>
+                        {% if f.file_size %}
+                        <span class="file-item-meta">{{ '%.1f'|format(f.file_size / 1024 / 1024) }} MB</span>
+                        {% endif %}
+                    </span>
                 </a>
                 {% endfor %}
             </div>

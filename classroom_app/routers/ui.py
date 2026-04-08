@@ -10,7 +10,7 @@ import pandas as pd
 
 from ..core import templates, COURSE_INFO
 # 修复：移除不再需要的 TEACHER_PASS, SHARE_DIR, ROSTER_DIR
-from ..config import TEACHER_USER, MAX_UPLOAD_SIZE_MB
+from ..config import TEACHER_USER, MAX_SUBMISSION_FILE_COUNT, MAX_UPLOAD_SIZE_MB
 from ..dependencies import (
     get_current_user, get_current_user_optional, get_current_teacher, get_current_student,
     create_access_token, get_password_hash, verify_password,
@@ -22,6 +22,7 @@ from ..database import get_db_connection
 from ..dependencies import build_login_url, sanitize_next_path
 from ..dependencies import infer_required_role_from_path, get_role_label
 from ..dependencies import apply_access_token_cookie, clear_access_token_cookie, invalidate_session_for_user
+from ..services.submission_assets import decode_allowed_file_types_json, summarize_allowed_file_types
 from ..services.student_auth_service import (
     PASSWORD_POLICY_HINT,
     build_password_setup_token,
@@ -49,6 +50,23 @@ def _build_login_page_context(request: Request, next_url: Optional[str]) -> dict
         "student_entry_url": build_login_url("/student/login", safe_next),
         "password_policy_hint": PASSWORD_POLICY_HINT,
     }
+
+
+def _enrich_assignment_upload_config(assignment: dict) -> dict:
+    allowed_file_types = decode_allowed_file_types_json(assignment.get("allowed_file_types_json"))
+    assignment["allowed_file_types"] = allowed_file_types
+    assignment["allowed_file_types_label"] = summarize_allowed_file_types(allowed_file_types)
+    return assignment
+
+
+def _serialize_submission_file_rows(rows) -> list[dict]:
+    files = []
+    for row in rows:
+        item = dict(row)
+        item["relative_path"] = item.get("relative_path") or item.get("original_filename")
+        item["display_name"] = item["relative_path"]
+        files.append(item)
+    return files
 
 
 def _build_student_login_token(student_row, client_ip: str) -> tuple[str, dict]:
@@ -715,7 +733,7 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
         assignment_row = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
     if not assignment_row:
         raise HTTPException(404, "Assignment not found")
-    assignment = dict(assignment_row)
+    assignment = _enrich_assignment_upload_config(dict(assignment_row))
 
     # 如果是试卷型作业且用户是学生 → 重定向到考试页面
     if assignment.get('exam_paper_id') and user['role'] == 'student':
@@ -738,14 +756,17 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
             submission = dict(submission_row) if submission_row else None
             submission_files = []
             if submission:
-                files_cursor = conn.execute("SELECT * FROM submission_files WHERE submission_id = ?",
-                                            (submission['id'],))
-                submission_files = [dict(row) for row in files_cursor]
+                files_cursor = conn.execute(
+                    "SELECT * FROM submission_files WHERE submission_id = ? ORDER BY COALESCE(relative_path, original_filename), id",
+                    (submission['id'],)
+                )
+                submission_files = _serialize_submission_file_rows(files_cursor)
 
         return templates.TemplateResponse(request, "assignment_detail_student.html", {
             "request": request, "user_info": user, "assignment": assignment,
             "submission": submission, "submission_files": submission_files,
-            "max_upload_mb": MAX_UPLOAD_SIZE_MB
+            "max_upload_mb": MAX_UPLOAD_SIZE_MB,
+            "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
         })
 
 
@@ -1046,11 +1067,14 @@ async def submission_detail_page(request: Request, submission_id: int, user: dic
         assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (submission['assignment_id'],)).fetchone()
         if not assignment:
             raise HTTPException(404, "作业不存在")
-        assignment = dict(assignment)
+        assignment = _enrich_assignment_upload_config(dict(assignment))
 
         # 获取提交的附件
-        files_cursor = conn.execute("SELECT * FROM submission_files WHERE submission_id = ?", (submission_id,))
-        submission_files = [dict(row) for row in files_cursor]
+        files_cursor = conn.execute(
+            "SELECT * FROM submission_files WHERE submission_id = ? ORDER BY COALESCE(relative_path, original_filename), id",
+            (submission_id,)
+        )
+        submission_files = _serialize_submission_file_rows(files_cursor)
 
         # 如果是试卷型作业，获取题目信息
         exam_questions = None
@@ -1077,7 +1101,7 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
         assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
         if not assignment:
             raise HTTPException(404, "作业不存在")
-        assignment = dict(assignment)
+        assignment = _enrich_assignment_upload_config(dict(assignment))
 
         if not assignment.get('exam_paper_id'):
             # 不是试卷型作业，跳转到普通作业页
@@ -1093,12 +1117,19 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
 
         # 检查学生是否已提交
         submission = None
+        submission_files = []
         if user['role'] == 'student':
             submission_row = conn.execute(
                 "SELECT * FROM submissions WHERE assignment_id = ? AND student_pk_id = ?",
                 (assignment_id, user['id'])
             ).fetchone()
             submission = dict(submission_row) if submission_row else None
+            if submission:
+                files_cursor = conn.execute(
+                    "SELECT * FROM submission_files WHERE submission_id = ? ORDER BY COALESCE(relative_path, original_filename), id",
+                    (submission['id'],)
+                )
+                submission_files = _serialize_submission_file_rows(files_cursor)
 
     return templates.TemplateResponse(request, "exam_take.html", {
         "request": request,
@@ -1106,6 +1137,8 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
         "assignment": assignment,
         "paper": dict(paper),
         "submission": submission,
-        "max_upload_mb": MAX_UPLOAD_SIZE_MB
+        "submission_files": submission_files,
+        "max_upload_mb": MAX_UPLOAD_SIZE_MB,
+        "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
     })
 

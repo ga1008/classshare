@@ -3,6 +3,11 @@ import { showToast, escapeHtml } from './ui.js';
 
 let config = null;
 
+function getTrimmedInputValue(elementId) {
+    const element = document.getElementById(elementId);
+    return element ? element.value.trim() : '';
+}
+
 function getExamAssignFeedbackEl() {
     return document.getElementById('exam-assign-feedback');
 }
@@ -56,6 +61,11 @@ export function init(appConfig) {
 export async function loadExamPapers() {
     const container = document.getElementById('exam-list-container');
     if (!container) return;
+
+    const allowedTypesEl = document.getElementById('exam-allowed-file-types');
+    if (allowedTypesEl) {
+        allowedTypesEl.value = '';
+    }
 
     setExamAssignFeedback(null, '');
     container.innerHTML = '<div class="text-center p-4"><div class="spinner"></div></div>';
@@ -136,7 +146,8 @@ export async function confirmExamAssign() {
             method: 'POST',
             body: {
                 paper_id: paperId,
-                class_offering_id: config.classOfferingId
+                class_offering_id: config.classOfferingId,
+                allowed_file_types: getTrimmedInputValue('exam-allowed-file-types'),
             },
             silent: true
         });
@@ -187,7 +198,8 @@ export async function saveAssignment() {
         requirements_md: reqEl ? reqEl.value : '',
         rubric_md: rubricEl ? rubricEl.value : '',
         grading_mode: modeEl ? modeEl.value : 'manual',
-        class_offering_id: config.classOfferingId
+        class_offering_id: config.classOfferingId,
+        allowed_file_types: getTrimmedInputValue('assignment-allowed-file-types'),
     };
 
     try {
@@ -220,18 +232,20 @@ export async function saveAssignment() {
     }
 }
 
-export function editAssignment(assignmentId, title, requirements, rubric, gradingMode) {
+export function editAssignment(assignmentId, title, requirements, rubric, gradingMode, allowedFileTypes = '') {
     const idEl = document.getElementById('assignment-id');
     const titleEl = document.getElementById('assignment-title');
     const reqEl = document.getElementById('assignment-requirements');
     const rubricEl = document.getElementById('assignment-rubric');
     const modeEl = document.getElementById('assignment-grading-mode');
+    const allowedTypesEl = document.getElementById('assignment-allowed-file-types');
 
     if (idEl) idEl.value = assignmentId || '';
     if (titleEl) titleEl.value = title || '';
     if (reqEl) reqEl.value = requirements || '';
     if (rubricEl) rubricEl.value = rubric || '';
     if (modeEl) modeEl.value = gradingMode || 'manual';
+    if (allowedTypesEl) allowedTypesEl.value = allowedFileTypes || '';
 
     setExamAssignFeedback(null, '');
     if (window.UI) {
@@ -240,5 +254,5 @@ export function editAssignment(assignmentId, title, requirements, rubric, gradin
 }
 
 export function newAssignment() {
-    editAssignment('', '', '', '', 'manual');
+    editAssignment('', '', '', '', 'manual', '');
 }
