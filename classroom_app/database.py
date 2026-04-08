@@ -672,6 +672,10 @@ def init_database():
                 "ON chat_logs (class_offering_id, logged_at DESC, id DESC)"
             )
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chat_logs_sender_logged_at "
+                "ON chat_logs (user_role, user_id, logged_at DESC, id DESC)"
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_chat_logs_room_id "
                 "ON chat_logs (class_offering_id, id DESC)"
             )

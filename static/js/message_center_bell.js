@@ -3,7 +3,8 @@ import { apiFetch } from './api.js';
 const bellShells = Array.from(document.querySelectorAll('[data-message-center-bell-shell]'));
 
 const bellState = {
-    lastUnreadTotal: null,
+    initialized: false,
+    lastUnreadTotal: 0,
     latestUnreadId: 0,
     hideTimer: null,
 };
@@ -15,8 +16,8 @@ function updateBell(summary) {
     bellShells.forEach((shell) => {
         const bellNode = shell.querySelector('[data-message-center-bell]');
         const countNode = shell.querySelector('[data-message-center-bell-count]');
-        bellNode?.classList.toggle('is-unread', unreadTotal > 0);
 
+        bellNode?.classList.toggle('is-unread', unreadTotal > 0);
         if (countNode) {
             countNode.hidden = unreadTotal <= 0;
             countNode.textContent = unreadTotal > 0 ? countText : '0';
@@ -61,13 +62,13 @@ function showBellToast(notification) {
     }
 
     const actorName = String(notification.actor_display_name || '').trim();
-    const categoryLabel = String(notification.category_label || '消息').trim();
+    const categoryLabel = String(notification.category_label || '\u6d88\u606f').trim();
     const title = String(notification.title || '').trim();
 
     bodyNode.textContent = actorName
-        ? `收到来自 ${actorName} 的新信息`
-        : '收到一条新的系统信息';
-    metaNode.textContent = title || `${categoryLabel} 已更新`;
+        ? `\u6536\u5230\u6765\u81ea ${actorName} \u7684\u65b0\u4fe1\u606f`
+        : '\u6536\u5230\u4e00\u6761\u65b0\u7684\u7cfb\u7edf\u4fe1\u606f';
+    metaNode.textContent = title || `${categoryLabel} \u5df2\u66f4\u65b0`;
 
     toastNode.hidden = false;
     window.requestAnimationFrame(() => {
@@ -82,37 +83,43 @@ function syncBellState(summary, latestUnread, { allowPopup }) {
     const unreadTotal = Number(summary?.unread_total || 0);
     const latestUnreadId = Number(latestUnread?.id || 0);
 
-    if (bellState.lastUnreadTotal === null) {
-        bellState.lastUnreadTotal = unreadTotal;
-        bellState.latestUnreadId = latestUnreadId;
-        return;
-    }
-
-    const hasNewUnread = allowPopup
+    const shouldPopup = Boolean(
+        allowPopup
+        && latestUnread
         && unreadTotal > 0
-        && latestUnreadId > Number(bellState.latestUnreadId || 0);
+        && (
+            !bellState.initialized
+            || latestUnreadId > bellState.latestUnreadId
+            || unreadTotal > bellState.lastUnreadTotal
+        )
+    );
 
+    bellState.initialized = true;
     bellState.lastUnreadTotal = unreadTotal;
-    bellState.latestUnreadId = Math.max(Number(bellState.latestUnreadId || 0), latestUnreadId);
+    bellState.latestUnreadId = Math.max(bellState.latestUnreadId, latestUnreadId);
 
     if (unreadTotal <= 0) {
         hideBellToast(true);
-    } else if (hasNewUnread && latestUnread) {
+        return;
+    }
+
+    if (shouldPopup) {
         showBellToast(latestUnread);
     }
 }
 
-async function refreshBell({ allowPopup = true } = {}) {
+async function refreshBell(options = {}) {
     if (bellShells.length === 0) {
         return;
     }
 
+    const { allowPopup = true } = options;
     try {
         const response = await apiFetch('/api/message-center/summary', { silent: true });
         updateBell(response?.summary || {});
         syncBellState(response?.summary || {}, response?.latest_unread || null, { allowPopup });
     } catch {
-        // Keep the bell quiet on transient failures.
+        // Ignore transient polling failures.
     }
 }
 
@@ -122,23 +129,26 @@ if (bellShells.length > 0) {
     });
 
     refreshBell({ allowPopup: false });
+
     window.setInterval(() => {
         if (!document.hidden) {
-            refreshBell();
+            refreshBell({ allowPopup: true });
         }
     }, 10000);
 
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
-            refreshBell();
+            refreshBell({ allowPopup: true });
         }
     });
 
     window.addEventListener('message-center:summary-updated', (event) => {
         const summary = event.detail || {};
         updateBell(summary);
+        bellState.initialized = true;
         bellState.lastUnreadTotal = Number(summary?.unread_total || 0);
         if (bellState.lastUnreadTotal <= 0) {
+            bellState.latestUnreadId = 0;
             hideBellToast(true);
         }
     });

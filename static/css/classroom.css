@@ -1080,6 +1080,23 @@
     box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
 }
 
+.discussion-room-composer .chat-send-btn.is-rate-limited {
+    background: linear-gradient(135deg, rgba(220, 38, 38, 0.96), rgba(153, 27, 27, 0.96));
+    box-shadow: 0 8px 24px rgba(220, 38, 38, 0.28);
+    color: #fff;
+}
+
+.discussion-room-composer .chat-send-btn.is-rate-limited:hover {
+    transform: translateY(-1px);
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.98), rgba(185, 28, 28, 0.98));
+    box-shadow: 0 10px 26px rgba(220, 38, 38, 0.34);
+}
+
+.discussion-room-composer .chat-send-btn.is-rate-limited:active {
+    transform: translateY(0);
+    box-shadow: 0 4px 14px rgba(220, 38, 38, 0.24);
+}
+
 .chat-emoji-popover {
     position: absolute;
     right: 1.5rem;

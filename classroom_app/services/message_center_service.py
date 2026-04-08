@@ -12,6 +12,11 @@ from .psych_profile_service import (
     load_ai_class_config,
     load_latest_hidden_profile,
 )
+from .rate_limit_service import (
+    RateLimitExceededError,
+    build_rate_limit_window_start,
+    calculate_retry_after_seconds,
+)
 
 MESSAGE_CATEGORY_PRIVATE = "private_message"
 MESSAGE_CATEGORY_ASSIGNMENT = "assignment"
@@ -23,6 +28,9 @@ MESSAGE_CATEGORY_AI_FEEDBACK = "ai_feedback"
 AI_ASSISTANT_ROLE = "assistant"
 AI_ASSISTANT_LABEL = "AI助教"
 AI_REPLY_FALLBACK = "我在。刚才这条私信我已经收到，如果你愿意，我可以继续帮你把问题拆成更清楚的几个步骤。"
+
+PRIVATE_MESSAGE_RATE_LIMIT = 5
+PRIVATE_MESSAGE_RATE_WINDOW_SECONDS = 60
 
 ALL_NOTIFICATION_CATEGORIES = (
     MESSAGE_CATEGORY_PRIVATE,
@@ -111,6 +119,37 @@ def _safe_json_loads(raw_value: Any, fallback: Any) -> Any:
         return json.loads(raw_value)
     except (TypeError, json.JSONDecodeError):
         return fallback
+
+
+def _enforce_private_message_rate_limit(conn, *, sender_identity: str) -> None:
+    now, window_start = build_rate_limit_window_start(window_seconds=PRIVATE_MESSAGE_RATE_WINDOW_SECONDS)
+    rows = conn.execute(
+        """
+        SELECT id, created_at
+        FROM private_messages
+        WHERE sender_identity = ?
+          AND created_at >= ?
+        ORDER BY created_at ASC, id ASC
+        LIMIT ?
+        """,
+        (
+            str(sender_identity),
+            window_start,
+            PRIVATE_MESSAGE_RATE_LIMIT,
+        ),
+    ).fetchall()
+    if len(rows) < PRIVATE_MESSAGE_RATE_LIMIT:
+        return
+
+    retry_after_seconds = calculate_retry_after_seconds(
+        oldest_event_at=rows[0]["created_at"],
+        window_seconds=PRIVATE_MESSAGE_RATE_WINDOW_SECONDS,
+        now=now,
+    )
+    raise RateLimitExceededError(
+        "\u53d1\u4fe1\u592a\u9891\u7e41\u8bf7\u7b49\u4e00\u7b49\u518d\u53d1\u9001",
+        retry_after_seconds=retry_after_seconds,
+    )
 
 
 def build_user_identity(role: str, user_pk: int | str) -> str:
@@ -721,6 +760,15 @@ def _serialize_notification(row) -> dict[str, Any]:
     item["is_unread"] = not bool(item.get("read_at"))
     item["metadata"] = _safe_json_loads(item.get("metadata_json"), {})
     item["category_label"] = CATEGORY_LABELS.get(item["category"], item["category"])
+    if (
+        item["category"] == MESSAGE_CATEGORY_DISCUSSION_MENTION
+        and _contains_broadcast_discussion_mention(item.get("body_preview"))
+    ):
+        actor_display_name = str(item.get("actor_display_name") or "").strip() or "\u8bfe\u5802\u6210\u5458"
+        item["title"] = (
+            f"{actor_display_name} "
+            "\u5728\u8bfe\u5802\u8ba8\u8bba\u4e2d @\u4e86\u6240\u6709\u4eba"
+        )
     item.pop("metadata_json", None)
     return item
 
@@ -1263,6 +1311,7 @@ def create_private_message(
         raise PermissionError("please unblock the contact before sending")
     if _is_blocked(conn, str(contact["identity"]), current_identity):
         raise PermissionError("the recipient is not accepting messages from you")
+    _enforce_private_message_rate_limit(conn, sender_identity=current_identity)
 
     normalized_scope = _safe_int(contact.get("class_offering_id"))
     if normalized_scope is None:

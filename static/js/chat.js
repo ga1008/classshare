@@ -26,6 +26,7 @@ export class ClassroomChat {
         this.messagesBox = document.getElementById(options.chatMessagesContainerId);
         this.chatInput = document.getElementById(options.chatInputId);
         this.chatForm = document.getElementById(options.chatFormId);
+        this.sendButton = this.chatForm?.querySelector('.chat-send-btn') || null;
         this.statusIndicator = document.getElementById(options.statusIndicatorId);
         this.statusText = document.getElementById(options.statusTextId);
         this.displayNameEl = document.getElementById(options.displayNameId);
@@ -80,8 +81,11 @@ export class ClassroomChat {
         this.uploadInFlight = false;
         this.refreshTimer = null;
         this.aliasCountdownTimer = null;
+        this.sendRateLimitTimer = null;
+        this.sendRateLimitUntil = 0;
         this.roomHeightFrame = null;
         this.roomHeightObserver = null;
+        this.defaultSendButtonMarkup = this.sendButton?.innerHTML || '';
 
         this.handleDocumentPointerDown = this.handleDocumentPointerDown.bind(this);
         this.handleDocumentKeydown = this.handleDocumentKeydown.bind(this);
@@ -103,6 +107,7 @@ export class ClassroomChat {
         this.resizeInput();
         this.setupDiscussionRoomSizing();
         this.refreshAliasSwitchUi();
+        this.renderSendButtonState();
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         this.ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/${this.classOfferingId}`);
@@ -447,6 +452,11 @@ export class ClassroomChat {
                 return;
             }
 
+            if (data.type === 'send_rate_limited') {
+                this.activateSendRateLimit(data.retry_after_seconds, data.message);
+                return;
+            }
+
             if (data.type === 'system') {
                 this.appendSystemMessage(data.message, {
                     scrollToBottom: this.isNearBottom(),
@@ -536,6 +546,65 @@ export class ClassroomChat {
             action: 'load_history',
             before_id: this.oldestMessageId,
         }));
+    }
+
+    getSendRateLimitRemainingSeconds() {
+        const remainingMilliseconds = Number(this.sendRateLimitUntil || 0) - Date.now();
+        if (remainingMilliseconds <= 0) {
+            return 0;
+        }
+        return Math.max(Math.ceil(remainingMilliseconds / 1000), 1);
+    }
+
+    isSendRateLimited() {
+        return this.getSendRateLimitRemainingSeconds() > 0;
+    }
+
+    activateSendRateLimit(retryAfterSeconds, message = null) {
+        const safeSeconds = Math.max(Number(retryAfterSeconds || 0), 1);
+        this.sendRateLimitUntil = Date.now() + (safeSeconds * 1000);
+
+        if (this.sendRateLimitTimer) {
+            window.clearTimeout(this.sendRateLimitTimer);
+        }
+
+        this.renderSendButtonState();
+        this.sendRateLimitTimer = window.setTimeout(() => {
+            this.sendRateLimitTimer = null;
+            this.sendRateLimitUntil = 0;
+            this.renderSendButtonState();
+        }, safeSeconds * 1000);
+
+        this.showToast(message || '\u53d1\u4fe1\u592a\u9891\u7e41\u7a0d\u540e\u518d\u53d1', 'warning');
+    }
+
+    renderSendButtonState() {
+        if (!this.sendButton) {
+            return;
+        }
+
+        const limited = this.isSendRateLimited();
+        this.sendButton.classList.toggle('is-rate-limited', limited);
+        this.sendButton.title = limited
+            ? '\u53d1\u4fe1\u592a\u9891\u7e41\u7a0d\u540e\u518d\u53d1'
+            : '\u53d1\u9001';
+        this.sendButton.setAttribute('aria-label', this.sendButton.title);
+
+        if (!limited) {
+            if (this.sendButton.innerHTML !== this.defaultSendButtonMarkup) {
+                this.sendButton.innerHTML = this.defaultSendButtonMarkup;
+            }
+            return;
+        }
+
+        this.sendButton.innerHTML = [
+            '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">',
+            '<circle cx="12" cy="12" r="9"></circle>',
+            '<path d="M8.5 8.5l7 7"></path>',
+            '<path d="M15.5 8.5l-7 7"></path>',
+            '</svg>',
+            '<span>\u7a0d\u540e\u518d\u53d1</span>',
+        ].join('');
     }
 
     async loadEmojiPanelData({ silent = false } = {}) {
@@ -814,14 +883,6 @@ export class ClassroomChat {
         this.insertTextAtCursor(char);
     }
 
-    insertMentionAll() {
-        if (this.currentUser?.role !== 'teacher') {
-            return;
-        }
-        const prefix = this.chatInput?.value && !this.chatInput.value.endsWith(' ') ? ' ' : '';
-        this.insertTextAtCursor(`${prefix}@所有人 `);
-    }
-
     insertTextAtCursor(text) {
         if (!this.chatInput || !text) {
             return;
@@ -834,6 +895,14 @@ export class ClassroomChat {
         this.chatInput.focus();
         this.chatInput.setSelectionRange(nextPosition, nextPosition);
         this.resizeInput();
+    }
+
+    insertMentionAll() {
+        if (this.currentUser?.role !== 'teacher') {
+            return;
+        }
+        const prefix = this.chatInput?.value && !this.chatInput.value.endsWith(' ') ? ' ' : '';
+        this.insertTextAtCursor(`${prefix}@\u6240\u6709\u4eba `);
     }
 
     addCustomEmoji(item) {
@@ -1127,6 +1196,16 @@ export class ClassroomChat {
     }
 
     sendMessage() {
+        if (!this.isSendRateLimited() && this.sendRateLimitUntil) {
+            this.sendRateLimitUntil = 0;
+            this.renderSendButtonState();
+        }
+
+        if (this.isSendRateLimited()) {
+            this.showToast('\u53d1\u4fe1\u592a\u9891\u7e41\u7a0d\u540e\u518d\u53d1', 'warning');
+            return;
+        }
+
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
             this.showToast('课堂研讨室尚未连接成功', 'warning');
             return;

@@ -34,10 +34,50 @@ from ..services.emoji_service import increment_emoji_usage, resolve_custom_emoji
 from ..services.file_handler import delete_file_safely
 from ..services.file_service import save_file_globally, get_file_lock, stream_file
 from ..services.message_center_service import create_discussion_mention_notifications
+from ..services.rate_limit_service import (
+    RateLimitExceededError,
+    build_rate_limit_window_start,
+    calculate_retry_after_seconds,
+)
 
 # --- 新增：专门针对 Windows 系统的并发保护限流器 ---
 # 允许同时最多 80 个物理读取流，既能打满内网千兆带宽，又能完美避开 Windows 文件句柄上限崩溃
 windows_io_semaphore = asyncio.Semaphore(80)
+DISCUSSION_MESSAGE_RATE_LIMIT = 10
+DISCUSSION_MESSAGE_RATE_WINDOW_SECONDS = 60
+
+
+def _enforce_discussion_message_rate_limit(conn, *, user_pk: int, user_role: str) -> None:
+    now, window_start = build_rate_limit_window_start(window_seconds=DISCUSSION_MESSAGE_RATE_WINDOW_SECONDS)
+    rows = conn.execute(
+        """
+        SELECT id, COALESCE(logged_at, timestamp) AS logged_at_value
+        FROM chat_logs
+        WHERE user_id = ?
+          AND user_role = ?
+          AND COALESCE(logged_at, timestamp) >= ?
+        ORDER BY COALESCE(logged_at, timestamp) ASC, id ASC
+        LIMIT ?
+        """,
+        (
+            str(user_pk),
+            str(user_role),
+            window_start,
+            DISCUSSION_MESSAGE_RATE_LIMIT,
+        ),
+    ).fetchall()
+    if len(rows) < DISCUSSION_MESSAGE_RATE_LIMIT:
+        return
+
+    retry_after_seconds = calculate_retry_after_seconds(
+        oldest_event_at=rows[0]["logged_at_value"],
+        window_seconds=DISCUSSION_MESSAGE_RATE_WINDOW_SECONDS,
+        now=now,
+    )
+    raise RateLimitExceededError(
+        "\u53d1\u4fe1\u592a\u9891\u7e41\u7a0d\u540e\u518d\u53d1",
+        retry_after_seconds=retry_after_seconds,
+    )
 
 
 async def _broadcast_discussion_ai_reply(class_offering_id: int, reply_text: str) -> None:
@@ -105,6 +145,13 @@ async def _process_discussion_chat_message(
     if not normalized_text and not custom_emoji_payloads:
         return
 
+    with get_db_connection() as conn:
+        _enforce_discussion_message_rate_limit(
+            conn,
+            user_pk=user_pk,
+            user_role=str(ws_user["role"]),
+        )
+
     now = datetime.now()
     display_time = now.strftime("%H:%M")
     display_name = manager.get_display_name(class_offering_id, client_id, ws_user['name'])
@@ -167,6 +214,14 @@ async def _process_discussion_chat_message(
                 current_message_id=int(stored_message["id"]),
             )
         )
+
+
+async def _send_discussion_rate_limit_message(websocket: WebSocket, exc: RateLimitExceededError) -> None:
+    await websocket.send_text(json.dumps({
+        "type": "send_rate_limited",
+        "message": str(exc),
+        "retry_after_seconds": max(int(getattr(exc, "retry_after_seconds", 1) or 1), 1),
+    }, ensure_ascii=False))
 
 
 def sync_save_chunk(chunk_path: Path, upload_file: UploadFile):
@@ -951,26 +1006,32 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
                     )
                     continue
 
+                try:
+                    await _process_discussion_chat_message(
+                        class_offering_id=class_offering_id,
+                        user=user,
+                        ws_user=ws_user,
+                        user_pk=user_pk,
+                        client_id=client_id,
+                        message_text=str(command.get("text") or ""),
+                        requested_custom_ids=command.get("custom_emoji_ids") or [],
+                        requested_unicode_emojis=command.get("used_unicode_emojis") or [],
+                    )
+                except RateLimitExceededError as exc:
+                    await _send_discussion_rate_limit_message(websocket, exc)
+                continue
+
+            try:
                 await _process_discussion_chat_message(
                     class_offering_id=class_offering_id,
                     user=user,
                     ws_user=ws_user,
                     user_pk=user_pk,
                     client_id=client_id,
-                    message_text=str(command.get("text") or ""),
-                    requested_custom_ids=command.get("custom_emoji_ids") or [],
-                    requested_unicode_emojis=command.get("used_unicode_emojis") or [],
+                    message_text=data,
                 )
-                continue
-
-            await _process_discussion_chat_message(
-                class_offering_id=class_offering_id,
-                user=user,
-                ws_user=ws_user,
-                user_pk=user_pk,
-                client_id=client_id,
-                message_text=data,
-            )
+            except RateLimitExceededError as exc:
+                await _send_discussion_rate_limit_message(websocket, exc)
     except WebSocketDisconnect:
         await manager.disconnect(connection_id)
     except Exception as e:
