@@ -1,0 +1,414 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}系统管理{% endblock %}
+
+{% block extra_head %}
+<style>
+    .system-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: var(--spacing-md);
+    }
+
+    .system-summary-card {
+        padding: var(--spacing-lg);
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border-color);
+        background: linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(255, 255, 255, 0.96));
+        box-shadow: var(--shadow-sm);
+    }
+
+    .system-summary-card span {
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        margin-bottom: 6px;
+    }
+
+    .system-summary-card strong {
+        font-size: 1.35rem;
+        color: var(--text-primary);
+    }
+
+    .system-actions-cell {
+        text-align: right;
+    }
+
+    .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .detail-card {
+        padding: var(--spacing-md);
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border-color);
+        background: var(--bg-color);
+    }
+
+    .detail-card h4 {
+        margin: 0 0 var(--spacing-sm);
+        font-size: 0.95rem;
+    }
+
+    .detail-list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+    }
+
+    .detail-list-row {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        font-size: 0.875rem;
+    }
+
+    .detail-list-row span {
+        color: var(--text-muted);
+        flex-shrink: 0;
+    }
+
+    .detail-list-row strong {
+        text-align: right;
+        color: var(--text-primary);
+        word-break: break-word;
+    }
+
+    .system-history-table {
+        width: 100%;
+    }
+
+    .system-history-empty {
+        padding: var(--spacing-lg);
+        text-align: center;
+        color: var(--text-muted);
+    }
+
+    @media (max-width: 1080px) {
+        .system-summary-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 768px) {
+        .system-summary-grid,
+        .detail-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .system-actions-cell {
+            text-align: left;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="system-summary-grid">
+    <div class="system-summary-card">
+        <span>待审核申请</span>
+        <strong>{{ system_summary.pending_count or 0 }}</strong>
+    </div>
+    <div class="system-summary-card">
+        <span>已通过申请</span>
+        <strong>{{ system_summary.approved_count or 0 }}</strong>
+    </div>
+    <div class="system-summary-card">
+        <span>已完成重置</span>
+        <strong>{{ system_summary.completed_count or 0 }}</strong>
+    </div>
+    <div class="system-summary-card">
+        <span>已拒绝申请</span>
+        <strong>{{ system_summary.rejected_count or 0 }}</strong>
+    </div>
+    <div class="system-summary-card">
+        <span>学生累计登录</span>
+        <strong>{{ login_summary.total_logins or 0 }}</strong>
+    </div>
+    <div class="system-summary-card">
+        <span>今日学生登录</span>
+        <strong>{{ login_summary.today_logins or 0 }}</strong>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <h2>学生找回密码申请</h2>
+    </div>
+    <div class="panel-body">
+        {% if reset_requests %}
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>学生</th>
+                        <th>班级</th>
+                        <th>状态</th>
+                        <th>提交时间</th>
+                        <th>累计登录</th>
+                        <th>最近登录</th>
+                        <th class="system-actions-cell">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in reset_requests %}
+                    <tr>
+                        <td>
+                            <strong>{{ row.student_name }}</strong>
+                            <div class="text-muted text-sm">{{ row.student_id_number }}</div>
+                        </td>
+                        <td>{{ row.class_name }}</td>
+                        <td>
+                            {% if row.status == 'pending' %}
+                            <span class="badge badge-warning">待审核</span>
+                            {% elif row.status == 'approved' %}
+                            <span class="badge badge-primary">已通过</span>
+                            {% elif row.status == 'completed' %}
+                            <span class="badge badge-success">已完成</span>
+                            {% else %}
+                            <span class="badge badge-danger">已拒绝</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ row.submitted_at }}</td>
+                        <td>{{ row.total_logins or 0 }} 次</td>
+                        <td>{{ row.last_login_at or '暂无' }}</td>
+                        <td class="system-actions-cell">
+                            <button
+                                type="button"
+                                class="btn btn-outline btn-sm"
+                                data-open-reset-detail
+                                data-request-id="{{ row.id }}"
+                            >
+                                查看详情
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="card text-center p-xl">
+            <h3 class="text-muted mb-1">暂无找回密码申请</h3>
+            <p class="text-muted">学生提交申请后，这里会显示待审核记录和历史登录信息。</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="modal-backdrop" id="system-reset-detail-modal">
+    <div class="modal modal-lg">
+        <div class="modal-header">
+            <h3 class="modal-title">找回密码申请详情</h3>
+            <button type="button" class="btn-close" data-dismiss="modal" aria-label="关闭"></button>
+        </div>
+        <div class="modal-body">
+            <div id="system-reset-detail-loading" class="system-history-empty">正在加载详情...</div>
+            <div id="system-reset-detail-content" hidden>
+                <div class="detail-grid">
+                    <div class="detail-card">
+                        <h4>申请信息</h4>
+                        <div class="detail-list" id="request-detail-list"></div>
+                    </div>
+                    <div class="detail-card">
+                        <h4>账号与登录概览</h4>
+                        <div class="detail-list" id="security-detail-list"></div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="system-review-note">审核备注（可选）</label>
+                    <textarea id="system-review-note" class="form-control" rows="3" placeholder="可填写审核说明"></textarea>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <h3>历史登录记录</h3>
+                    </div>
+                    <div class="panel-body">
+                        <div class="table-responsive">
+                            <table class="table system-history-table">
+                                <thead>
+                                    <tr>
+                                        <th>第几次</th>
+                                        <th>登录方式</th>
+                                        <th>账号输入</th>
+                                        <th>IP</th>
+                                        <th>设备</th>
+                                        <th>时间</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="system-login-history-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">关闭</button>
+            <button type="button" class="btn btn-danger" id="system-reject-btn">拒绝</button>
+            <button type="button" class="btn btn-primary" id="system-approve-btn">通过</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (() => {
+        const modalId = 'system-reset-detail-modal';
+        const loadingEl = document.getElementById('system-reset-detail-loading');
+        const contentEl = document.getElementById('system-reset-detail-content');
+        const requestDetailList = document.getElementById('request-detail-list');
+        const securityDetailList = document.getElementById('security-detail-list');
+        const loginHistoryBody = document.getElementById('system-login-history-body');
+        const reviewNoteInput = document.getElementById('system-review-note');
+        const approveBtn = document.getElementById('system-approve-btn');
+        const rejectBtn = document.getElementById('system-reject-btn');
+
+        let activeRequestId = null;
+        let activeStatus = null;
+
+        function renderRows(container, rows) {
+            container.innerHTML = rows.map((row) => `
+                <div class="detail-list-row">
+                    <span>${window.UI.escapeHtml(row.label)}</span>
+                    <strong>${window.UI.escapeHtml(row.value || '-')}</strong>
+                </div>
+            `).join('');
+        }
+
+        function getStatusLabel(status) {
+            if (status === 'pending') return '待审核';
+            if (status === 'approved') return '已通过';
+            if (status === 'completed') return '已完成';
+            return '已拒绝';
+        }
+
+        function getLoginMethodLabel(method) {
+            if (method === 'password') return '密码登录';
+            if (method === 'first_time_setup') return '首次设密';
+            if (method === 'password_reset_setup') return '重置设密';
+            return method || '-';
+        }
+
+        function getIdentifierTypeLabel(type) {
+            if (type === 'student_id_number') return '学号';
+            if (type === 'name') return '姓名';
+            if (type === 'name_and_student_id_number') return '姓名 + 学号';
+            return type || '-';
+        }
+
+        function setActionState(disabled) {
+            approveBtn.disabled = disabled;
+            rejectBtn.disabled = disabled;
+            reviewNoteInput.disabled = disabled;
+        }
+
+        async function loadRequestDetail(requestId) {
+            activeRequestId = requestId;
+            activeStatus = null;
+            loadingEl.hidden = false;
+            contentEl.hidden = true;
+            requestDetailList.innerHTML = '';
+            securityDetailList.innerHTML = '';
+            loginHistoryBody.innerHTML = '';
+            reviewNoteInput.value = '';
+            setActionState(true);
+
+            window.UI.openModal(modalId);
+
+            try {
+                const result = await window.apiFetch(`/api/manage/system/password-resets/${requestId}`);
+                const detail = result.request;
+                const securitySummary = result.security_summary || {};
+                const loginHistory = result.login_history || [];
+
+                activeStatus = detail.status;
+
+                renderRows(requestDetailList, [
+                    { label: '学生姓名', value: detail.student_name },
+                    { label: '学号', value: detail.student_id_number },
+                    { label: '班级', value: detail.current_class_name || detail.request_class_name },
+                    { label: '申请状态', value: getStatusLabel(detail.status) },
+                    { label: '提交时间', value: detail.submitted_at },
+                    { label: '申请设备', value: detail.requester_device_label || '-' },
+                    { label: '申请IP', value: detail.requester_ip || '-' },
+                    { label: '审核教师', value: detail.reviewer_name || '-' },
+                    { label: '审核时间', value: detail.reviewed_at || '-' },
+                    { label: '完成时间', value: detail.completed_at || '-' },
+                ]);
+
+                renderRows(securityDetailList, [
+                    { label: '是否已设密码', value: detail.has_password ? '是' : '否' },
+                    { label: '是否允许身份重登', value: detail.password_reset_required ? '是' : '否' },
+                    { label: '密码更新时间', value: detail.password_updated_at || '-' },
+                    { label: '累计登录次数', value: `${securitySummary.total_logins || 0} 次` },
+                    { label: '最近登录时间', value: securitySummary.last_login?.logged_at || '-' },
+                    { label: '最近登录设备', value: securitySummary.last_login?.device_label || '-' },
+                ]);
+
+                if (loginHistory.length) {
+                    loginHistoryBody.innerHTML = loginHistory.map((row) => `
+                        <tr>
+                            <td>${row.login_sequence}</td>
+                            <td>${window.UI.escapeHtml(getLoginMethodLabel(row.login_method))}</td>
+                            <td>${window.UI.escapeHtml(`${getIdentifierTypeLabel(row.identifier_type)} / ${row.identifier_value || '-'}`)}</td>
+                            <td>${window.UI.escapeHtml(row.ip_address || '-')}</td>
+                            <td>${window.UI.escapeHtml(row.device_label || '-')}</td>
+                            <td>${window.UI.escapeHtml(row.logged_at || '-')}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    loginHistoryBody.innerHTML = '<tr><td colspan="6" class="system-history-empty">暂无历史登录记录</td></tr>';
+                }
+
+                const canReview = detail.status === 'pending';
+                setActionState(!canReview);
+                loadingEl.hidden = true;
+                contentEl.hidden = false;
+            } catch (error) {
+                loadingEl.textContent = error.message || '加载详情失败。';
+                showMessage(error.message || '加载详情失败。', 'error');
+            }
+        }
+
+        async function reviewRequest(action) {
+            if (!activeRequestId || activeStatus !== 'pending') {
+                return;
+            }
+
+            const endpoint = action === 'approve'
+                ? `/api/manage/system/password-resets/${activeRequestId}/approve`
+                : `/api/manage/system/password-resets/${activeRequestId}/reject`;
+
+            const formData = new FormData();
+            formData.append('review_note', reviewNoteInput.value || '');
+
+            setActionState(true);
+            try {
+                const result = await window.apiFetch(endpoint, { method: 'POST', body: formData });
+                showMessage(result.message || '操作成功。', 'success');
+                window.UI.closeModal(modalId);
+                window.setTimeout(() => window.location.reload(), 500);
+            } catch (error) {
+                showMessage(error.message || '操作失败。', 'error');
+                setActionState(false);
+            }
+        }
+
+        document.querySelectorAll('[data-open-reset-detail]').forEach((button) => {
+            button.addEventListener('click', () => {
+                loadRequestDetail(button.dataset.requestId);
+            });
+        });
+
+        approveBtn.addEventListener('click', () => reviewRequest('approve'));
+        rejectBtn.addEventListener('click', () => reviewRequest('reject'));
+    })();
+</script>
+{% endblock %}

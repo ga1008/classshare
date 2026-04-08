@@ -835,6 +835,11 @@
     font-weight: 700;
 }
 
+.chat-message .sender.assistant {
+    color: #0f766e;
+    font-weight: 700;
+}
+
 .classroom-page .chat-message .time {
     color: var(--text-muted);
     font-size: 0.75rem;
@@ -861,6 +866,17 @@
     border-color: rgba(59, 130, 246, 0.4);
     border-radius: 1.1rem 1.1rem 0.35rem 1.1rem;
     box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+}
+
+.chat-message.chat-assistant .chat-avatar {
+    background: rgba(16, 185, 129, 0.14);
+    color: #047857;
+    border-color: rgba(16, 185, 129, 0.28);
+}
+
+.chat-message.chat-assistant .message-content {
+    background: rgba(236, 253, 245, 0.95);
+    border-color: rgba(16, 185, 129, 0.2);
 }
 
 .chat-message.system {

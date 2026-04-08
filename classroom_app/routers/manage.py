@@ -1,6 +1,7 @@
 import sqlite3
 import traceback
 import uuid
+from datetime import datetime
 
 import aiofiles
 from fastapi import APIRouter, Request, Form, HTTPException, Depends, UploadFile, File
@@ -8,9 +9,10 @@ from fastapi.responses import JSONResponse
 
 from ..config import ROSTER_DIR, SHARE_DIR
 from ..database import get_db_connection
-from ..dependencies import get_current_teacher
+from ..dependencies import get_current_teacher, invalidate_session_for_user
 from ..services.file_handler import save_upload_file
 from ..services.roster_handler import parse_excel_to_students
+from ..services.student_auth_service import build_student_security_summary, list_student_login_history
 
 router = APIRouter(prefix="/api/manage", dependencies=[Depends(get_current_teacher)])
 
@@ -359,3 +361,124 @@ async def api_list_offerings(user: dict = Depends(get_current_teacher)):
         return {"status": "success", "offerings": offerings}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/system/password-resets/{request_id}", response_class=JSONResponse)
+async def api_get_password_reset_request_detail(
+    request_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    """查看单个找回密码申请详情及学生历史登录信息。"""
+    with get_db_connection() as conn:
+        request_row = conn.execute(
+            """
+            SELECT r.*,
+                   s.name AS student_name,
+                   s.student_id_number,
+                   s.password_reset_required,
+                   s.password_updated_at,
+                   CASE WHEN s.hashed_password IS NULL OR s.hashed_password = '' THEN 0 ELSE 1 END AS has_password,
+                   c.name AS current_class_name,
+                   reviewer.name AS reviewer_name
+            FROM student_password_reset_requests r
+            JOIN students s ON s.id = r.student_id
+            JOIN classes c ON c.id = r.class_id
+            LEFT JOIN teachers reviewer ON reviewer.id = r.reviewed_by_teacher_id
+            WHERE r.id = ? AND r.teacher_id = ?
+            """,
+            (request_id, user["id"]),
+        ).fetchone()
+
+        if not request_row:
+            raise HTTPException(status_code=404, detail="找回密码申请不存在。")
+
+        login_history = list_student_login_history(conn, request_row["student_id"], limit=20)
+        security_summary = build_student_security_summary(conn, request_row["student_id"])
+
+    return {
+        "status": "success",
+        "request": dict(request_row),
+        "login_history": login_history,
+        "security_summary": security_summary,
+    }
+
+
+@router.post("/system/password-resets/{request_id}/approve", response_class=JSONResponse)
+async def api_approve_password_reset_request(
+    request_id: int,
+    review_note: str = Form(default=""),
+    user: dict = Depends(get_current_teacher),
+):
+    """教师通过学生找回密码申请。"""
+    with get_db_connection() as conn:
+        request_row = conn.execute(
+            """
+            SELECT id, student_id, teacher_id, status
+            FROM student_password_reset_requests
+            WHERE id = ? AND teacher_id = ?
+            """,
+            (request_id, user["id"]),
+        ).fetchone()
+        if not request_row:
+            raise HTTPException(status_code=404, detail="找回密码申请不存在。")
+        if request_row["status"] != "pending":
+            raise HTTPException(status_code=400, detail="该申请当前不能再执行通过操作。")
+
+        reviewed_at = datetime.now().isoformat()
+        conn.execute(
+            """
+            UPDATE student_password_reset_requests
+            SET status = 'approved', reviewed_at = ?, reviewed_by_teacher_id = ?, review_note = ?
+            WHERE id = ?
+            """,
+            (reviewed_at, user["id"], review_note.strip(), request_id),
+        )
+        conn.execute(
+            """
+            UPDATE students
+            SET password_reset_required = 1
+            WHERE id = ?
+            """,
+            (request_row["student_id"],),
+        )
+        conn.commit()
+
+    invalidate_session_for_user(str(request_row["student_id"]), "student")
+    return {
+        "status": "success",
+        "message": "已通过该申请，学生可重新使用姓名和学号登录并设置新密码。",
+    }
+
+
+@router.post("/system/password-resets/{request_id}/reject", response_class=JSONResponse)
+async def api_reject_password_reset_request(
+    request_id: int,
+    review_note: str = Form(default=""),
+    user: dict = Depends(get_current_teacher),
+):
+    """教师拒绝学生找回密码申请。"""
+    with get_db_connection() as conn:
+        request_row = conn.execute(
+            """
+            SELECT id, status
+            FROM student_password_reset_requests
+            WHERE id = ? AND teacher_id = ?
+            """,
+            (request_id, user["id"]),
+        ).fetchone()
+        if not request_row:
+            raise HTTPException(status_code=404, detail="找回密码申请不存在。")
+        if request_row["status"] != "pending":
+            raise HTTPException(status_code=400, detail="该申请当前不能再执行拒绝操作。")
+
+        conn.execute(
+            """
+            UPDATE student_password_reset_requests
+            SET status = 'rejected', reviewed_at = ?, reviewed_by_teacher_id = ?, review_note = ?
+            WHERE id = ?
+            """,
+            (datetime.now().isoformat(), user["id"], review_note.strip(), request_id),
+        )
+        conn.commit()
+
+    return {"status": "success", "message": "已拒绝该找回密码申请。"}

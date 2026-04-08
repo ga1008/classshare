@@ -110,6 +110,27 @@
 
 {% block main_content %}
 
+<div class="dashboard-header">
+    <div>
+        <h2 class="mb-1">{% if user_info.role == 'teacher' %}我的教学空间{% else %}我的班级课堂{% endif %}</h2>
+        <p class="dashboard-subtitle">
+            {% if user_info.role == 'teacher' %}
+            统一管理班级、课程、课堂与系统审核事项。
+            {% else %}
+            请从下方进入课堂；如需修改密码，可使用顶部导航中的“修改密码”。
+            {% endif %}
+        </p>
+    </div>
+    {% if user_info.role == 'student' and student_security_summary %}
+    <div>
+        <div class="badge badge-primary mb-1">累计登录 {{ student_security_summary.total_logins }} 次</div>
+        {% if student_security_summary.last_login %}
+        <p class="dashboard-subtitle">最近登录：{{ student_security_summary.last_login.logged_at }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
 <div class="course-list">
     {% for offering in class_offerings %}
     <a href="/classroom/{{ offering.id }}" class="course-list-item">

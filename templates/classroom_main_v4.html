@@ -12,6 +12,33 @@
 <link rel="stylesheet" href="/static/css/ai_chat.css">
 <link rel="stylesheet" href="/static/css/classroom.css">
 <link rel="stylesheet" href="/static/css/materials.css">
+<style>
+    .student-security-summary {
+        display: grid;
+        gap: var(--spacing-sm);
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .student-security-summary-row {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        padding: var(--spacing-sm) var(--spacing-md);
+        border-radius: var(--radius-md);
+        background: var(--bg-color);
+        border: 1px solid var(--border-color);
+    }
+
+    .student-security-summary-row span {
+        color: var(--text-muted);
+        font-size: 0.875rem;
+    }
+
+    .student-security-summary-row strong {
+        color: var(--text-primary);
+        text-align: right;
+    }
+</style>
 {% endblock %}
 
 {% block head %}
@@ -48,9 +75,16 @@
     </div>
     <div class="navbar-user">
         <span class="user-name">欢迎，{{ user_info.name }} <span class="badge badge-primary ml-2">{{ user_info.nickname if user_info.nickname else ('教师' if user_info.role == 'teacher' else '学生') }}</span></span>
+        {% if user_info.role == 'student' %}
+        <button type="button" class="btn btn-outline btn-sm" data-open-student-security>修改密码</button>
+        {% endif %}
         <a href="/logout" class="btn btn-ghost btn-sm text-danger">退出登录</a>
     </div>
 </header>
+
+{% if user_info.role == 'student' %}
+{% include "partials/student_security_modal.html" %}
+{% endif %}
 
 {% set assignment_count = assignments | length %}
 {% set exam_count = assignments | selectattr('exam_paper_id') | list | length %}
@@ -366,7 +400,7 @@
                             <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                         </div>
                         <strong>讨论从这里开始</strong>
-                        <p>发送课堂问题、实验心得或资源提醒，消息会实时同步到本课堂所有成员。</p>
+                        <p>发送课堂问题、实验心得或资源提醒；输入“@助教”还能在讨论流里直接召唤 AI 助教接话。</p>
                     </div>
                 </div>
             </div>
@@ -376,7 +410,7 @@
                     <label class="chat-composer-shell" for="chat-input">
                         <span class="chat-composer-label">输入讨论内容</span>
                         <div class="chat-emoji-preview-row" id="chat-emoji-preview-row" hidden></div>
-                        <textarea id="chat-input" class="form-control chat-composer-input" placeholder="输入课堂讨论内容，Enter 发送，Shift+Enter 换行" autocomplete="off" rows="1"></textarea>
+                        <textarea id="chat-input" class="form-control chat-composer-input" placeholder="输入课堂讨论内容，@助教 可召唤 AI，Enter 发送，Shift+Enter 换行" autocomplete="off" rows="1"></textarea>
                     </label>
                     <div class="chat-composer-actions">
                         <button type="button" class="btn btn-ghost chat-emoji-trigger-btn" id="chat-emoji-trigger-btn" title="表情与自定义表情">
@@ -696,5 +730,8 @@
     });
 </script>
 
+{% if user_info.role == 'student' %}
+<script type="module" src="/static/js/student_security.js"></script>
+{% endif %}
 <script src="/static/js/ai_chat_component.js"></script>
 {% endblock %}

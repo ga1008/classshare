@@ -22,6 +22,15 @@ from typing import Optional
 from pathlib import Path
 
 from ..database import get_db_connection
+from ..services.discussion_ai_service import (
+    DISCUSSION_AI_ASSISTANT_NAME,
+    DISCUSSION_AI_USER_ID,
+    contains_discussion_ai_mention,
+    generate_discussion_ai_reply,
+    record_alias_switch_activity,
+    record_message_activity,
+    schedule_discussion_profile_refresh,
+)
 from ..services.emoji_service import increment_emoji_usage, resolve_custom_emoji_payloads
 from ..services.file_handler import delete_file_safely
 from ..services.file_service import save_file_globally, get_file_lock, stream_file
@@ -29,6 +38,125 @@ from ..services.file_service import save_file_globally, get_file_lock, stream_fi
 # --- 新增：专门针对 Windows 系统的并发保护限流器 ---
 # 允许同时最多 80 个物理读取流，既能打满内网千兆带宽，又能完美避开 Windows 文件句柄上限崩溃
 windows_io_semaphore = asyncio.Semaphore(80)
+
+
+async def _broadcast_discussion_ai_reply(class_offering_id: int, reply_text: str) -> None:
+    now = datetime.now()
+    stored_message = await save_chat_message(class_offering_id, {
+        "type": "chat",
+        "sender": DISCUSSION_AI_ASSISTANT_NAME,
+        "role": "assistant",
+        "message": reply_text,
+        "message_type": "text",
+        "timestamp": now.strftime("%H:%M"),
+        "class_offering_id": class_offering_id,
+        "user_id": DISCUSSION_AI_USER_ID,
+        "logged_at": now.isoformat(),
+    })
+    await manager.broadcast(class_offering_id, json.dumps(stored_message, ensure_ascii=False))
+
+
+async def _handle_discussion_ai_mention(
+    class_offering_id: int,
+    user_pk: int,
+    user_role: str,
+    caller_display_name: str,
+    original_text: str,
+    current_message_id: int,
+) -> None:
+    try:
+        reply_text = await generate_discussion_ai_reply(
+            class_offering_id=class_offering_id,
+            user_pk=user_pk,
+            user_role=user_role,
+            caller_display_name=caller_display_name,
+            original_text=original_text,
+            current_message_id=current_message_id,
+        )
+        if not str(reply_text or "").strip():
+            return
+        await _broadcast_discussion_ai_reply(class_offering_id, reply_text)
+    except Exception as exc:
+        print(f"[DISCUSSION_AI] 课堂助教发送失败: {exc}")
+
+
+async def _process_discussion_chat_message(
+    class_offering_id: int,
+    user: dict,
+    ws_user: dict,
+    user_pk: int,
+    client_id: str,
+    message_text: str,
+    requested_custom_ids: Optional[list] = None,
+    requested_unicode_emojis: Optional[list] = None,
+) -> None:
+    normalized_text = str(message_text or "").strip()
+    requested_custom_ids = requested_custom_ids or []
+    requested_unicode_emojis = requested_unicode_emojis or []
+
+    with get_db_connection() as conn:
+        custom_emoji_payloads = resolve_custom_emoji_payloads(
+            conn,
+            class_offering_id,
+            requested_custom_ids,
+            user,
+        )
+
+    if not normalized_text and not custom_emoji_payloads:
+        return
+
+    now = datetime.now()
+    display_time = now.strftime("%H:%M")
+    display_name = manager.get_display_name(class_offering_id, client_id, ws_user['name'])
+    stored_message = await save_chat_message(class_offering_id, {
+        "type": "chat",
+        "sender": display_name,
+        "role": ws_user['role'],
+        "message": normalized_text,
+        "message_type": "rich" if custom_emoji_payloads else "text",
+        "custom_emojis": custom_emoji_payloads,
+        "timestamp": display_time,
+        "class_offering_id": class_offering_id,
+        "user_id": user_pk,
+        "logged_at": now.isoformat(),
+    })
+
+    with get_db_connection() as conn:
+        increment_emoji_usage(
+            conn,
+            class_offering_id,
+            user,
+            requested_unicode_emojis,
+            [item["id"] for item in custom_emoji_payloads],
+            used_at=now.isoformat(),
+        )
+        conn.commit()
+
+    profile_trigger = record_message_activity(
+        class_offering_id=class_offering_id,
+        user_pk=user_pk,
+        user_role=str(ws_user["role"]),
+        display_name=display_name,
+        message_text=normalized_text,
+        unicode_emojis=[str(item) for item in requested_unicode_emojis if str(item).strip()],
+        custom_emoji_labels=[str(item.get("name") or "自定义表情") for item in custom_emoji_payloads],
+        mentioned_assistant=contains_discussion_ai_mention(normalized_text),
+    )
+    schedule_discussion_profile_refresh(profile_trigger)
+
+    await manager.broadcast(class_offering_id, json.dumps(stored_message, ensure_ascii=False))
+
+    if contains_discussion_ai_mention(normalized_text):
+        asyncio.create_task(
+            _handle_discussion_ai_mention(
+                class_offering_id=class_offering_id,
+                user_pk=user_pk,
+                user_role=str(ws_user["role"]),
+                caller_display_name=display_name,
+                original_text=normalized_text,
+                current_message_id=int(stored_message["id"]),
+            )
+        )
 
 
 def sync_save_chunk(chunk_path: Path, upload_file: UploadFile):
@@ -765,6 +893,18 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
             if command:
                 if command["action"] == "switch_alias":
                     switch_result = await manager.switch_temporary_name(class_offering_id, client_id)
+                    alias_trigger = record_alias_switch_activity(
+                        class_offering_id=class_offering_id,
+                        user_pk=user_pk,
+                        user_role=str(ws_user["role"]),
+                        display_name=manager.get_display_name(class_offering_id, client_id, ws_user['name']),
+                        success=bool(switch_result.get("success")),
+                        previous_name=switch_result.get("previous_name"),
+                        new_name=switch_result.get("new_name"),
+                        reason=switch_result.get("reason"),
+                    )
+                    schedule_discussion_profile_refresh(alias_trigger)
+
                     await websocket.send_text(json.dumps({
                         "type": "alias_switch_result",
                         "success": bool(switch_result.get("success")),
@@ -802,64 +942,26 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
                     )
                     continue
 
-                message_text = str(command.get("text") or "").strip()
-                requested_custom_ids = command.get("custom_emoji_ids") or []
-                requested_unicode_emojis = command.get("used_unicode_emojis") or []
-
-                with get_db_connection() as conn:
-                    custom_emoji_payloads = resolve_custom_emoji_payloads(
-                        conn,
-                        class_offering_id,
-                        requested_custom_ids,
-                        user,
-                    )
-
-                if not message_text and not custom_emoji_payloads:
-                    continue
-
-                now = datetime.now()
-                display_time = now.strftime("%H:%M")
-                display_name = manager.get_display_name(class_offering_id, client_id, ws_user['name'])
-                stored_message = await save_chat_message(class_offering_id, {
-                    "type": "chat",
-                    "sender": display_name,
-                    "role": ws_user['role'],
-                    "message": message_text,
-                    "message_type": "rich" if custom_emoji_payloads else "text",
-                    "custom_emojis": custom_emoji_payloads,
-                    "timestamp": display_time,
-                    "class_offering_id": class_offering_id,
-                    "user_id": user_pk,
-                    "logged_at": now.isoformat(),
-                })
-                with get_db_connection() as conn:
-                    increment_emoji_usage(
-                        conn,
-                        class_offering_id,
-                        user,
-                        requested_unicode_emojis,
-                        [item["id"] for item in custom_emoji_payloads],
-                        used_at=now.isoformat(),
-                    )
-                    conn.commit()
-                await manager.broadcast(class_offering_id, json.dumps(stored_message, ensure_ascii=False))
+                await _process_discussion_chat_message(
+                    class_offering_id=class_offering_id,
+                    user=user,
+                    ws_user=ws_user,
+                    user_pk=user_pk,
+                    client_id=client_id,
+                    message_text=str(command.get("text") or ""),
+                    requested_custom_ids=command.get("custom_emoji_ids") or [],
+                    requested_unicode_emojis=command.get("used_unicode_emojis") or [],
+                )
                 continue
 
-            now = datetime.now()
-            display_time = now.strftime("%H:%M")
-            display_name = manager.get_display_name(class_offering_id, client_id, ws_user['name'])
-            stored_message = await save_chat_message(class_offering_id, {
-                "type": "chat",
-                "sender": display_name,
-                "role": ws_user['role'],
-                "message": data,
-                "message_type": "text",
-                "timestamp": display_time,
-                "class_offering_id": class_offering_id,
-                "user_id": user_pk,
-                "logged_at": now.isoformat(),
-            })
-            await manager.broadcast(class_offering_id, json.dumps(stored_message, ensure_ascii=False))
+            await _process_discussion_chat_message(
+                class_offering_id=class_offering_id,
+                user=user,
+                ws_user=ws_user,
+                user_pk=user_pk,
+                client_id=client_id,
+                message_text=data,
+            )
     except WebSocketDisconnect:
         await manager.disconnect(connection_id)
     except Exception as e:

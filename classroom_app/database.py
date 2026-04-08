@@ -124,6 +124,16 @@ def init_database():
                              TEXT,
                              phone
                              TEXT,
+                             hashed_password
+                             TEXT,
+                             password_reset_required
+                             INTEGER
+                             NOT
+                             NULL
+                             DEFAULT
+                             0,
+                             password_updated_at
+                             TEXT,
                              profile_info
                              TEXT,
                              nickname
@@ -143,6 +153,21 @@ def init_database():
                          )
                              )
                          ''')
+
+            try:
+                conn.execute("ALTER TABLE students ADD COLUMN hashed_password TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute(
+                    "ALTER TABLE students ADD COLUMN password_reset_required INTEGER NOT NULL DEFAULT 0"
+                )
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE students ADD COLUMN password_updated_at TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
 
             # 4. 课程 (模板)
             conn.execute('''
@@ -237,6 +262,82 @@ def init_database():
                          ''')
 
             # 6. 课程资源 (替换旧的 shared_files)
+
+            # 6.1 学生登录审计
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS student_login_audit_logs
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             student_id INTEGER NOT NULL,
+                             class_id INTEGER NOT NULL,
+                             class_name_snapshot TEXT NOT NULL,
+                             login_sequence INTEGER NOT NULL,
+                             login_method TEXT NOT NULL,
+                             identifier_type TEXT NOT NULL,
+                             identifier_value TEXT NOT NULL,
+                             ip_address TEXT,
+                             user_agent TEXT,
+                             device_type TEXT,
+                             os_name TEXT,
+                             browser_name TEXT,
+                             device_label TEXT,
+                             logged_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                             FOREIGN KEY (class_id) REFERENCES classes (id) ON DELETE CASCADE
+                         )
+                         ''')
+
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_student_login_audit_student "
+                "ON student_login_audit_logs (student_id, logged_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_student_login_audit_class "
+                "ON student_login_audit_logs (class_id, logged_at DESC, id DESC)"
+            )
+
+            # 6.2 学生找回密码申请
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS student_password_reset_requests
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             student_id INTEGER NOT NULL,
+                             class_id INTEGER NOT NULL,
+                             teacher_id INTEGER NOT NULL,
+                             status TEXT NOT NULL DEFAULT 'pending',
+                             request_name TEXT NOT NULL,
+                             request_student_id_number TEXT NOT NULL,
+                             request_class_name TEXT NOT NULL,
+                             requester_ip TEXT,
+                             requester_user_agent TEXT,
+                             requester_device_type TEXT,
+                             requester_os_name TEXT,
+                             requester_browser_name TEXT,
+                             requester_device_label TEXT,
+                             submitted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             reviewed_at TEXT,
+                             completed_at TEXT,
+                             reviewed_by_teacher_id INTEGER,
+                             review_note TEXT,
+                             FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                             FOREIGN KEY (class_id) REFERENCES classes (id) ON DELETE CASCADE,
+                             FOREIGN KEY (teacher_id) REFERENCES teachers (id),
+                             FOREIGN KEY (reviewed_by_teacher_id) REFERENCES teachers (id)
+                         )
+                         ''')
+
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_student_password_reset_requests_status "
+                "ON student_password_reset_requests (teacher_id, status, submitted_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_student_password_reset_requests_student "
+                "ON student_password_reset_requests (student_id, submitted_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_student_password_reset_requests_one_pending "
+                "ON student_password_reset_requests (student_id) WHERE status = 'pending'"
+            )
 
 
             # 7. 作业 (关联到课程)
@@ -824,6 +925,195 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_ai_psych_profiles_session_round "
                 "ON ai_psychology_profiles (session_id, round_index DESC)"
+            )
+
+            # 13.6 课堂研讨室行为记录
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS classroom_behavior_events
+                         (
+                             id
+                                 INTEGER
+                                 PRIMARY
+                                     KEY
+                                 AUTOINCREMENT,
+                             class_offering_id
+                                 INTEGER
+                                 NOT
+                                     NULL,
+                             user_pk
+                                 INTEGER
+                                 NOT
+                                     NULL,
+                             user_role
+                                 TEXT
+                                 NOT
+                                     NULL,
+                             display_name
+                                 TEXT,
+                             action_type
+                                 TEXT
+                                 NOT
+                                     NULL,
+                             summary_text
+                                 TEXT
+                                 NOT
+                                     NULL,
+                             payload_json
+                                 TEXT,
+                             created_at
+                                 TEXT
+                                 DEFAULT
+                                     CURRENT_TIMESTAMP,
+                             FOREIGN
+                                 KEY
+                                 (
+                                  class_offering_id
+                                     ) REFERENCES class_offerings
+                                 (
+                                  id
+                                     ) ON DELETE CASCADE
+                         )
+                         ''')
+
+            # 13.7 课堂研讨室行为计数状态
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS classroom_behavior_states
+                         (
+                             class_offering_id
+                                 INTEGER
+                                 NOT
+                                     NULL,
+                             user_pk
+                                 INTEGER
+                                 NOT
+                                     NULL,
+                             user_role
+                                 TEXT
+                                 NOT
+                                     NULL,
+                             total_activity_count
+                                 INTEGER
+                                 NOT
+                                     NULL
+                                 DEFAULT 0,
+                             last_profiled_activity_count
+                                 INTEGER
+                                 NOT
+                                     NULL
+                                 DEFAULT 0,
+                             profile_generation_pending
+                                 INTEGER
+                                 NOT
+                                     NULL
+                                 DEFAULT 0,
+                             last_event_at
+                                 TEXT,
+                             last_profiled_at
+                                 TEXT,
+                             created_at
+                                 TEXT
+                                 DEFAULT
+                                     CURRENT_TIMESTAMP,
+                             updated_at
+                                 TEXT
+                                 DEFAULT
+                                     CURRENT_TIMESTAMP,
+                             PRIMARY KEY
+                                 (
+                                  class_offering_id,
+                                  user_pk,
+                                  user_role
+                                     ),
+                             FOREIGN
+                                 KEY
+                                 (
+                                  class_offering_id
+                                     ) REFERENCES class_offerings
+                                 (
+                                  id
+                                     ) ON DELETE CASCADE
+                         )
+                         ''')
+
+            # 13.8 课堂研讨室隐藏心理侧写快照
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS classroom_behavior_profiles
+                         (
+                             id
+                                 INTEGER
+                                 PRIMARY
+                                     KEY
+                                 AUTOINCREMENT,
+                             class_offering_id
+                                 INTEGER
+                                 NOT
+                                     NULL,
+                             user_pk
+                                 INTEGER
+                                 NOT
+                                     NULL,
+                             user_role
+                                 TEXT
+                                 NOT
+                                     NULL,
+                             trigger_event_id
+                                 INTEGER,
+                             round_index
+                                 INTEGER
+                                 NOT
+                                     NULL
+                                 DEFAULT 0,
+                             activity_count_snapshot
+                                 INTEGER
+                                 NOT
+                                     NULL
+                                 DEFAULT 0,
+                             profile_summary
+                                 TEXT,
+                             mental_state_summary
+                                 TEXT,
+                             support_strategy
+                                 TEXT,
+                             hidden_premise_prompt
+                                 TEXT,
+                             confidence
+                                 TEXT,
+                             raw_payload
+                                 TEXT,
+                             created_at
+                                 TEXT
+                                 DEFAULT
+                                     CURRENT_TIMESTAMP,
+                             FOREIGN
+                                 KEY
+                                 (
+                                  class_offering_id
+                                     ) REFERENCES class_offerings
+                                 (
+                                  id
+                                     ) ON DELETE CASCADE,
+                             FOREIGN
+                                 KEY
+                                 (
+                                  trigger_event_id
+                                     ) REFERENCES classroom_behavior_events
+                                 (
+                                  id
+                                     ) ON DELETE SET NULL
+                         )
+                         ''')
+
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classroom_behavior_events_lookup "
+                "ON classroom_behavior_events (class_offering_id, user_pk, user_role, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classroom_behavior_events_action "
+                "ON classroom_behavior_events (class_offering_id, action_type, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classroom_behavior_profiles_lookup "
+                "ON classroom_behavior_profiles (class_offering_id, user_pk, user_role, created_at DESC)"
             )
 
             # 14. 试卷库

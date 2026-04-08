@@ -66,6 +66,7 @@ _TEACHER_ONLY_PATTERNS = (
 
 _STUDENT_ONLY_PATTERNS = (
     re.compile(r"^/api/assignments/[^/]+/(?:submit|withdraw)$"),
+    re.compile(r"^/api/student/password/change$"),
 )
 
 ACCESS_TOKEN_MAX_AGE_SECONDS = max(1, ACCESS_TOKEN_EXPIRE_MINUTES * 60)

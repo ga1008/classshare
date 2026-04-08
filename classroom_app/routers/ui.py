@@ -3,7 +3,7 @@ import sqlite3
 import json
 
 from fastapi import APIRouter, Request, Form, HTTPException, Depends, status, UploadFile, File
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from typing import Optional, List
 from pathlib import Path
 import pandas as pd
@@ -12,9 +12,9 @@ from ..core import templates, COURSE_INFO
 # 修复：移除不再需要的 TEACHER_PASS, SHARE_DIR, ROSTER_DIR
 from ..config import TEACHER_USER, MAX_UPLOAD_SIZE_MB
 from ..dependencies import (
-    get_current_user, get_current_user_optional, get_current_teacher,
+    get_current_user, get_current_user_optional, get_current_teacher, get_current_student,
     create_access_token, get_password_hash, verify_password,
-    human_readable_size  # human_readable_size 仍被 classroom_main 使用
+    human_readable_size, get_client_ip  # human_readable_size 仍被 classroom_main 使用
 )
 # 修复：移除，V4.0 roster_handler 不再有 parse_excel_to_students
 # from ..services.roster_handler import parse_excel_to_students
@@ -22,6 +22,20 @@ from ..database import get_db_connection
 from ..dependencies import build_login_url, sanitize_next_path
 from ..dependencies import infer_required_role_from_path, get_role_label
 from ..dependencies import apply_access_token_cookie, clear_access_token_cookie, invalidate_session_for_user
+from ..services.student_auth_service import (
+    PASSWORD_POLICY_HINT,
+    build_password_setup_token,
+    build_student_security_summary,
+    can_student_use_identity_login,
+    create_password_reset_request,
+    decode_password_setup_token,
+    get_student_auth_record_by_identity,
+    get_student_auth_record_by_pk,
+    get_student_auth_record_for_password_login,
+    mark_latest_approved_reset_request_completed,
+    record_student_login,
+    validate_student_password,
+)
 
 router = APIRouter()
 
@@ -33,7 +47,81 @@ def _build_login_page_context(request: Request, next_url: Optional[str]) -> dict
         "next_url": safe_next,
         "teacher_entry_url": build_login_url("/teacher/login", safe_next),
         "student_entry_url": build_login_url("/student/login", safe_next),
+        "password_policy_hint": PASSWORD_POLICY_HINT,
     }
+
+
+def _build_student_login_token(student_row, client_ip: str) -> tuple[str, dict]:
+    student_data = dict(student_row)
+    login_time = datetime.now().isoformat()
+    token_data = {
+        "id": student_data["id"],
+        "student_id_number": student_data["student_id_number"],
+        "name": student_data["name"],
+        "role": "student",
+        "login_time": login_time,
+    }
+    access_token = create_access_token(token_data, client_ip)
+    return access_token, token_data
+
+
+def _build_student_login_json_response(
+    *,
+    student_row,
+    client_ip: str,
+    safe_next: str,
+    login_count: int,
+) -> JSONResponse:
+    access_token, _ = _build_student_login_token(student_row, client_ip)
+    response = JSONResponse({
+        "status": "success",
+        "message": "登录成功。",
+        "redirect_to": safe_next,
+        "login_count": login_count,
+    })
+    apply_access_token_cookie(response, access_token)
+    return response
+
+
+def _perform_student_password_login(
+    conn,
+    *,
+    identifier: str,
+    password: str,
+    client_ip: str,
+    user_agent: Optional[str],
+):
+    try:
+        student_row, identifier_type = get_student_auth_record_for_password_login(conn, identifier)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not student_row:
+        raise HTTPException(status_code=400, detail="登录失败：账号或密码错误。")
+    if student_row["password_reset_required"]:
+        raise HTTPException(
+            status_code=409,
+            detail="教师已通过找回密码申请，请使用姓名和学号重新设置密码。",
+        )
+    if not student_row["hashed_password"]:
+        raise HTTPException(
+            status_code=400,
+            detail="该账号尚未设置密码，请使用姓名和学号完成首次登录。",
+        )
+    if not verify_password(password, student_row["hashed_password"]):
+        raise HTTPException(status_code=400, detail="登录失败：账号或密码错误。")
+
+    invalidate_session_for_user(str(student_row["id"]), "student")
+    login_count = record_student_login(
+        conn,
+        student_row=student_row,
+        login_method="password",
+        identifier_type=identifier_type,
+        identifier_value=identifier,
+        client_ip=client_ip,
+        user_agent=user_agent,
+    )
+    return student_row, login_count
 
 
 # ============================
@@ -108,54 +196,299 @@ async def permission_warning_page(
     })
 
 
-@router.post("/student/login")
-async def handle_student_login(
+@router.post("/api/student/login/password", response_class=JSONResponse)
+async def api_student_password_login(
+    request: Request,
+    identifier: str = Form(),
+    password: str = Form(),
+    next: Optional[str] = Form(default=None),
+):
+    """学生密码登录（姓名或学号 + 密码）。"""
+    safe_next = sanitize_next_path(next, fallback="/dashboard")
+    client_ip = get_client_ip(request)
+    user_agent = request.headers.get("user-agent", "")
+
+    with get_db_connection() as conn:
+        student_row, login_count = _perform_student_password_login(
+            conn,
+            identifier=identifier.strip(),
+            password=password,
+            client_ip=client_ip,
+            user_agent=user_agent,
+        )
+        conn.commit()
+
+    return _build_student_login_json_response(
+        student_row=student_row,
+        client_ip=client_ip,
+        safe_next=safe_next,
+        login_count=login_count,
+    )
+
+
+@router.post("/api/student/login/identity", response_class=JSONResponse)
+async def api_student_identity_login(
     request: Request,
     name: str = Form(),
     student_id_number: str = Form(),
     next: Optional[str] = Form(default=None),
 ):
-    """V4.0: 学生登录 - 验证数据库"""
-    sid_c = student_id_number.strip()
-    name_c = name.strip()
+    """学生首次登录/找回密码后重设密码前的身份核验。"""
     safe_next = sanitize_next_path(next, fallback="/dashboard")
 
-    # 获取客户端IP
-    from ..dependencies import get_client_ip
-    client_ip = get_client_ip(request)
-
     with get_db_connection() as conn:
-        student = conn.execute(
-            "SELECT * FROM students WHERE student_id_number = ? AND name = ?",
-            (sid_c, name_c)
-        ).fetchone()
+        student_row = get_student_auth_record_by_identity(conn, name, student_id_number)
+        if not student_row:
+            raise HTTPException(status_code=400, detail="登录失败：姓名或学号错误。")
+        if not can_student_use_identity_login(student_row):
+            raise HTTPException(status_code=409, detail="该账号已设置密码，请使用密码登录。")
 
-    if not student:
-        return templates.TemplateResponse(request, "status.html",
-                                          {"request": request, "success": False, "message": "登录失败：姓名或学号错误。",
-                                           "back_url": build_login_url("/student/login", safe_next)})
+        flow_type = "first_login"
+        approved_request = None
+        if student_row["password_reset_required"]:
+            flow_type = "password_reset"
+            approved_request = conn.execute(
+                """
+                SELECT id
+                FROM student_password_reset_requests
+                WHERE student_id = ? AND status = 'approved'
+                ORDER BY reviewed_at DESC, id DESC
+                LIMIT 1
+                """,
+                (student_row["id"],),
+            ).fetchone()
 
-    student_data = dict(student)
+        setup_token = build_password_setup_token(
+            student_id=student_row["id"],
+            next_path=safe_next,
+            flow_type=flow_type,
+            reset_request_id=approved_request["id"] if approved_request else None,
+        )
 
-    # 使该用户之前的会话失效
-    invalidate_session_for_user(str(student_data['id']), "student")
-
-    token_data = {
-        "id": student_data['id'],  # 使用数据库主键 PK
-        "student_id_number": student_data['student_id_number'],
-        "name": student_data['name'],
-        "role": "student",
-        "login_time": datetime.now().isoformat()
+    return {
+        "status": "success",
+        "message": "身份核验通过，请先设置登录密码。",
+        "setup_token": setup_token,
+        "flow_type": flow_type,
+        "password_policy_hint": PASSWORD_POLICY_HINT,
+        "student": {
+            "name": student_row["name"],
+            "student_id_number": student_row["student_id_number"],
+            "class_name": student_row["class_name"],
+        },
     }
 
-    access_token = create_access_token(token_data, client_ip)
 
-    response = RedirectResponse(
-        url=safe_next,
-        status_code=status.HTTP_303_SEE_OTHER,
+@router.post("/api/student/password/setup", response_class=JSONResponse)
+async def api_student_password_setup(
+    request: Request,
+    setup_token: str = Form(),
+    password: str = Form(),
+    confirm_password: str = Form(),
+    next: Optional[str] = Form(default=None),
+):
+    """完成学生首次设密或重置后设密，并自动登录。"""
+    if password != confirm_password:
+        raise HTTPException(status_code=400, detail="两次输入的密码不一致。")
+
+    password_error = validate_student_password(password)
+    if password_error:
+        raise HTTPException(status_code=400, detail=password_error)
+
+    token_payload = decode_password_setup_token(setup_token)
+    if not token_payload:
+        raise HTTPException(status_code=400, detail="设密凭证已失效，请重新进行身份验证。")
+    if not token_payload.get("student_id"):
+        raise HTTPException(status_code=400, detail="设密凭证无效，请重新进行身份验证。")
+
+    safe_next = sanitize_next_path(next or token_payload.get("next"), fallback="/dashboard")
+    flow_type = str(token_payload.get("flow_type") or "first_login")
+    client_ip = get_client_ip(request)
+    user_agent = request.headers.get("user-agent", "")
+
+    with get_db_connection() as conn:
+        student_row = get_student_auth_record_by_pk(conn, int(token_payload["student_id"]))
+        if not student_row:
+            raise HTTPException(status_code=404, detail="学生账号不存在。")
+
+        if flow_type == "password_reset":
+            if not student_row["password_reset_required"]:
+                raise HTTPException(status_code=400, detail="当前账号无需重置密码，请直接使用密码登录。")
+        elif student_row["hashed_password"] and not student_row["password_reset_required"]:
+            raise HTTPException(status_code=400, detail="该账号已设置密码，请直接使用密码登录。")
+
+        conn.execute(
+            """
+            UPDATE students
+            SET hashed_password = ?, password_reset_required = 0, password_updated_at = ?
+            WHERE id = ?
+            """,
+            (get_password_hash(password), datetime.now().isoformat(), student_row["id"]),
+        )
+
+        if flow_type == "password_reset":
+            mark_latest_approved_reset_request_completed(
+                conn,
+                student_id=student_row["id"],
+                approved_request_id=token_payload.get("reset_request_id"),
+            )
+
+        invalidate_session_for_user(str(student_row["id"]), "student")
+        login_count = record_student_login(
+            conn,
+            student_row=student_row,
+            login_method="password_reset_setup" if flow_type == "password_reset" else "first_time_setup",
+            identifier_type="name_and_student_id_number",
+            identifier_value=f"{student_row['name']} / {student_row['student_id_number']}",
+            client_ip=client_ip,
+            user_agent=user_agent,
+        )
+        conn.commit()
+
+    return _build_student_login_json_response(
+        student_row=student_row,
+        client_ip=client_ip,
+        safe_next=safe_next,
+        login_count=login_count,
     )
-    apply_access_token_cookie(response, access_token)
-    return response
+
+
+@router.post("/api/student/password/forgot", response_class=JSONResponse)
+async def api_student_password_forgot(
+    request: Request,
+    name: str = Form(),
+    student_id_number: str = Form(),
+    class_name: str = Form(),
+):
+    """学生提交忘记密码申请，等待教师审核。"""
+    with get_db_connection() as conn:
+        student_row = conn.execute(
+            """
+            SELECT s.*, c.name AS class_name, c.created_by_teacher_id
+            FROM students s
+            JOIN classes c ON c.id = s.class_id
+            WHERE s.name = ? AND s.student_id_number = ? AND c.name = ?
+            """,
+            (name.strip(), student_id_number.strip(), class_name.strip()),
+        ).fetchone()
+
+        if not student_row:
+            raise HTTPException(status_code=400, detail="提交失败：姓名、学号和班级名称不匹配。")
+        if not student_row["hashed_password"] and not student_row["password_reset_required"]:
+            raise HTTPException(
+                status_code=400,
+                detail="该账号尚未设置密码，无需找回，请直接使用姓名和学号登录。",
+            )
+
+        try:
+            request_id = create_password_reset_request(
+                conn,
+                student_row=student_row,
+                requester_ip=get_client_ip(request),
+                requester_user_agent=request.headers.get("user-agent", ""),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        conn.commit()
+
+    return {
+        "status": "success",
+        "message": "找回密码申请已提交，请等待教师审核。",
+        "request_id": request_id,
+    }
+
+
+@router.post("/api/student/password/change", response_class=JSONResponse)
+async def api_student_password_change(
+    current_password: str = Form(),
+    new_password: str = Form(),
+    confirm_password: str = Form(),
+    user: dict = Depends(get_current_student),
+):
+    """学生登录后主动修改密码。"""
+    if new_password != confirm_password:
+        raise HTTPException(status_code=400, detail="两次输入的新密码不一致。")
+    if current_password == new_password:
+        raise HTTPException(status_code=400, detail="新密码不能与当前密码相同。")
+
+    password_error = validate_student_password(new_password)
+    if password_error:
+        raise HTTPException(status_code=400, detail=password_error)
+
+    with get_db_connection() as conn:
+        student_row = get_student_auth_record_by_pk(conn, int(user["id"]))
+        if not student_row:
+            raise HTTPException(status_code=404, detail="学生账号不存在。")
+        if student_row["password_reset_required"]:
+            raise HTTPException(status_code=400, detail="当前账号正处于重置流程，请重新登录后设置密码。")
+        if not student_row["hashed_password"] or not verify_password(current_password, student_row["hashed_password"]):
+            raise HTTPException(status_code=400, detail="当前密码错误。")
+
+        conn.execute(
+            """
+            UPDATE students
+            SET hashed_password = ?, password_updated_at = ?, password_reset_required = 0
+            WHERE id = ?
+            """,
+            (get_password_hash(new_password), datetime.now().isoformat(), student_row["id"]),
+        )
+        conn.commit()
+
+    return {"status": "success", "message": "密码修改成功。"}
+
+
+@router.post("/student/login")
+async def handle_student_login(
+    request: Request,
+    identifier: Optional[str] = Form(default=None),
+    password: Optional[str] = Form(default=None),
+    name: Optional[str] = Form(default=None),
+    student_id_number: Optional[str] = Form(default=None),
+    next: Optional[str] = Form(default=None),
+):
+    """兼容表单提交流程，优先支持密码登录。"""
+    safe_next = sanitize_next_path(next, fallback="/dashboard")
+
+    if identifier and password:
+        client_ip = get_client_ip(request)
+        with get_db_connection() as conn:
+            student_row, _ = _perform_student_password_login(
+                conn,
+                identifier=identifier.strip(),
+                password=password,
+                client_ip=client_ip,
+                user_agent=request.headers.get("user-agent", ""),
+            )
+            conn.commit()
+
+        access_token, _ = _build_student_login_token(student_row, client_ip)
+        response = RedirectResponse(url=safe_next, status_code=status.HTTP_303_SEE_OTHER)
+        apply_access_token_cookie(response, access_token)
+        return response
+
+    if name and student_id_number:
+        return templates.TemplateResponse(
+            request,
+            "status.html",
+            {
+                "request": request,
+                "success": False,
+                "message": "首次登录需要先完成密码设置，请返回登录页后按页面提示操作。",
+                "back_url": build_login_url("/student/login", safe_next),
+            },
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "status.html",
+        {
+            "request": request,
+            "success": False,
+            "message": "登录失败：请填写完整的登录信息。",
+            "back_url": build_login_url("/student/login", safe_next),
+        },
+    )
 
 
 @router.post("/teacher/register")
@@ -246,6 +579,7 @@ async def logout(request: Request):
 async def dashboard(request: Request, user: dict = Depends(get_current_user)):
     """V4.0: 仪表盘，显示用户所有相关的 "班级课堂" """
     offerings = []
+    student_security_summary = None
     with get_db_connection() as conn:
         if user['role'] == 'teacher':
             cursor = conn.execute(
@@ -271,11 +605,13 @@ async def dashboard(request: Request, user: dict = Depends(get_current_user)):
                 (user['id'],)
             )
             offerings = [dict(row) for row in cursor]
+            student_security_summary = build_student_security_summary(conn, int(user['id']))
 
     return templates.TemplateResponse(request, "dashboard.html", {
         "request": request,
         "user_info": user,
-        "class_offerings": offerings
+        "class_offerings": offerings,
+        "student_security_summary": student_security_summary,
     })
 
 
@@ -286,6 +622,7 @@ async def dashboard(request: Request, user: dict = Depends(get_current_user)):
 @router.get("/classroom/{class_offering_id}", response_class=HTMLResponse)
 async def classroom_main(request: Request, class_offering_id: int, user: dict = Depends(get_current_user)):
     """V4.0: 替换旧的 /app，这是特定班级课堂的主界面"""
+    student_security_summary = None
     with get_db_connection() as conn:
         offering = conn.execute(
             """SELECT o.*,
@@ -313,6 +650,7 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
             student_class = conn.execute("SELECT class_id FROM students WHERE id = ?", (user['id'],)).fetchone()
             if not student_class or student_class['class_id'] != offering_data['class_id']:
                 raise HTTPException(403, "您未加入此课堂")
+            student_security_summary = build_student_security_summary(conn, int(user['id']))
         elif user['role'] == 'teacher':
             if offering_data['teacher_id'] != user['id']:
                 raise HTTPException(403, "您不是此课堂的教师")
@@ -362,7 +700,8 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
         "user_info": user,
         "classroom": offering_data,
         "shared_files": files_info,
-        "assignments": assignments
+        "assignments": assignments,
+        "student_security_summary": student_security_summary,
     })
 
 # ============================
@@ -522,6 +861,80 @@ async def get_manage_ai_page(request: Request, user: dict = Depends(get_current_
         "my_offerings": my_offerings,
         "page_title": "课堂AI配置",
         "active_page": "ai"
+    })
+
+
+@router.get("/manage/system", response_class=HTMLResponse)
+async def get_manage_system_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """显示系统管理页面，用于审核学生找回密码申请。"""
+    with get_db_connection() as conn:
+        system_summary = conn.execute(
+            """
+            SELECT
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+                SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved_count,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_count,
+                SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count
+            FROM student_password_reset_requests
+            WHERE teacher_id = ?
+            """,
+            (user["id"],),
+        ).fetchone()
+
+        login_summary = conn.execute(
+            """
+            SELECT
+                COUNT(*) AS total_logins,
+                SUM(CASE WHEN date(logged_at) = date('now', 'localtime') THEN 1 ELSE 0 END) AS today_logins
+            FROM student_login_audit_logs logs
+            JOIN students s ON s.id = logs.student_id
+            JOIN classes c ON c.id = s.class_id
+            WHERE c.created_by_teacher_id = ?
+            """,
+            (user["id"],),
+        ).fetchone()
+
+        reset_requests = conn.execute(
+            """
+            SELECT r.id, r.status, r.submitted_at, r.reviewed_at, r.completed_at,
+                   s.name AS student_name,
+                   s.student_id_number,
+                   c.name AS class_name,
+                   (
+                       SELECT COUNT(*)
+                       FROM student_login_audit_logs logs
+                       WHERE logs.student_id = s.id
+                   ) AS total_logins,
+                   (
+                       SELECT MAX(logged_at)
+                       FROM student_login_audit_logs logs
+                       WHERE logs.student_id = s.id
+                   ) AS last_login_at
+            FROM student_password_reset_requests r
+            JOIN students s ON s.id = r.student_id
+            JOIN classes c ON c.id = r.class_id
+            WHERE r.teacher_id = ?
+            ORDER BY
+                CASE r.status
+                    WHEN 'pending' THEN 0
+                    WHEN 'approved' THEN 1
+                    WHEN 'completed' THEN 2
+                    ELSE 3
+                END,
+                r.submitted_at DESC,
+                r.id DESC
+            """,
+            (user["id"],),
+        ).fetchall()
+
+    return templates.TemplateResponse(request, "manage/system.html", {
+        "request": request,
+        "user_info": user,
+        "system_summary": dict(system_summary) if system_summary else {},
+        "login_summary": dict(login_summary) if login_summary else {},
+        "reset_requests": reset_requests,
+        "page_title": "系统管理",
+        "active_page": "system",
     })
 
 

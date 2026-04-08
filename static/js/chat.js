@@ -1009,10 +1009,13 @@ export class ClassroomChat {
         const text = String(message.message || '');
         const role = String(message.role || '');
         const isCurrentUser = this.isCurrentUserMessage(message);
-        const initials = sender.trim().slice(0, 1).toUpperCase() || '?';
+        const roleClass = role === 'teacher' ? ' teacher' : (role === 'assistant' ? ' assistant' : '');
+        const initials = role === 'assistant'
+            ? '助'
+            : (sender.trim().slice(0, 1).toUpperCase() || '?');
 
         const wrapper = document.createElement('div');
-        wrapper.className = `chat-message${isCurrentUser ? ' chat-self' : ''}`;
+        wrapper.className = `chat-message${isCurrentUser ? ' chat-self' : ''}${role === 'assistant' ? ' chat-assistant' : ''}`;
 
         const row = document.createElement('div');
         row.className = 'chat-message-row';
@@ -1030,7 +1033,7 @@ export class ClassroomChat {
         header.className = 'chat-message-header';
 
         const senderNode = document.createElement('span');
-        senderNode.className = `sender${role === 'teacher' ? ' teacher' : ''}`;
+        senderNode.className = `sender${roleClass}`;
         senderNode.textContent = sender;
         header.appendChild(senderNode);
 
