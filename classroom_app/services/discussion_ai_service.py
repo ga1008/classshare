@@ -10,12 +10,15 @@ import httpx
 
 from ..core import ai_client
 from ..database import get_db_connection
-from ..routers.ai import (
-    _compose_classroom_chat_system_prompt,
-    _load_ai_class_config,
-    _load_latest_hidden_psych_profile as _load_chat_hidden_psych_profile,
-    _normalize_psych_profile_payload,
-    format_system_prompt,
+from ..routers.ai import format_system_prompt
+from .behavior_tracking_service import record_behavior_event
+from .psych_profile_service import (
+    compose_classroom_chat_system_prompt as build_classroom_chat_prompt,
+    format_classroom_summary as build_classroom_summary,
+    load_ai_class_config as fetch_ai_class_config,
+    load_classroom_snapshot as fetch_classroom_snapshot,
+    load_latest_hidden_profile as load_hidden_profile_snapshot,
+    normalize_psych_profile_payload as normalize_profile_payload,
 )
 
 DISCUSSION_AI_ASSISTANT_NAME = "助教"
@@ -93,60 +96,15 @@ def load_latest_hidden_profile(
     user_pk: int,
     user_role: str,
 ) -> Optional[dict[str, Any]]:
-    candidates = [
-        _load_chat_hidden_psych_profile(conn, class_offering_id, user_pk, user_role),
-        _load_latest_discussion_hidden_profile(conn, class_offering_id, user_pk, user_role),
-    ]
-    available = [item for item in candidates if item]
-    if not available:
-        return None
-    return max(
-        available,
-        key=lambda item: (str(item.get("created_at") or ""), int(item.get("id") or 0)),
-    )
+    return load_hidden_profile_snapshot(conn, class_offering_id, user_pk, user_role)
 
 
 def _load_classroom_snapshot(conn, class_offering_id: int) -> dict[str, Any]:
-    row = conn.execute(
-        """
-        SELECT co.id,
-               co.semester,
-               co.schedule_info,
-               c.name AS course_name,
-               c.description AS course_description,
-               cl.name AS class_name,
-               cl.description AS class_description,
-               t.name AS teacher_name
-        FROM class_offerings co
-        JOIN courses c ON co.course_id = c.id
-        JOIN classes cl ON co.class_id = cl.id
-        JOIN teachers t ON co.teacher_id = t.id
-        WHERE co.id = ?
-        LIMIT 1
-        """,
-        (class_offering_id,),
-    ).fetchone()
-    return dict(row) if row else {}
+    return fetch_classroom_snapshot(conn, class_offering_id)
 
 
 def _format_classroom_summary(snapshot: dict[str, Any]) -> str:
-    if not snapshot:
-        return "（暂无课堂摘要）"
-
-    parts = [
-        f"课程：{snapshot.get('course_name') or '未命名课程'}",
-        f"班级：{snapshot.get('class_name') or '未命名班级'}",
-        f"授课教师：{snapshot.get('teacher_name') or '未知'}",
-    ]
-    if snapshot.get("semester"):
-        parts.append(f"学期：{snapshot['semester']}")
-    if snapshot.get("schedule_info"):
-        parts.append(f"排课：{snapshot['schedule_info']}")
-    if snapshot.get("course_description"):
-        parts.append(f"课程简介：{_truncate_text(snapshot['course_description'], 180)}")
-    if snapshot.get("class_description"):
-        parts.append(f"班级说明：{_truncate_text(snapshot['class_description'], 120)}")
-    return "\n".join(parts)
+    return build_classroom_summary(snapshot)
 
 
 def _format_chat_history_row(row) -> Optional[dict[str, str]]:
@@ -201,7 +159,7 @@ async def generate_discussion_ai_reply(
     try:
         with get_db_connection() as conn:
             class_snapshot = _load_classroom_snapshot(conn, class_offering_id)
-            class_ai_config = _load_ai_class_config(conn, class_offering_id)
+            class_ai_config = fetch_ai_class_config(conn, class_offering_id)
             user_context_prompt = format_system_prompt(user_pk, user_role, class_offering_id)
             hidden_profile = load_latest_hidden_profile(conn, class_offering_id, user_pk, user_role)
             rows = conn.execute(
@@ -228,7 +186,7 @@ async def generate_discussion_ai_reply(
 
         teacher_base_prompt = class_ai_config.get("system_prompt") or "你是一个课堂AI助教。"
         rag_syllabus = class_ai_config.get("syllabus") or "（暂无课程大纲）"
-        base_system_prompt = _compose_classroom_chat_system_prompt(
+        base_system_prompt = build_classroom_chat_prompt(
             teacher_base_prompt=teacher_base_prompt,
             rag_syllabus=rag_syllabus,
             user_context_prompt=user_context_prompt,
@@ -256,6 +214,8 @@ async def generate_discussion_ai_reply(
                 "messages": history_messages,
                 "new_message": f"[{caller_display_name} @助教] {public_request}",
                 "model_capability": "standard",
+                "task_priority": "interactive",
+                "task_label": "discussion_reply",
             },
             timeout=90.0,
         )
@@ -392,7 +352,7 @@ def record_message_activity(
     if mentioned_assistant:
         summary += "，并主动 @助教"
 
-    return _record_activity_event(
+    return record_behavior_event(
         class_offering_id=class_offering_id,
         user_pk=user_pk,
         user_role=user_role,
@@ -405,6 +365,7 @@ def record_message_activity(
             "custom_emoji_labels": emoji_labels,
             "mentioned_assistant": bool(mentioned_assistant),
         },
+        page_key="classroom_discussion",
     )
 
 
@@ -429,7 +390,7 @@ def record_alias_switch_activity(
         }
         summary = f"{display_name} 尝试切换代号，结果未成功（{reason_map.get(reason, '未完成')}）"
 
-    return _record_activity_event(
+    return record_behavior_event(
         class_offering_id=class_offering_id,
         user_pk=user_pk,
         user_role=user_role,
@@ -442,22 +403,12 @@ def record_alias_switch_activity(
             "new_name": new_name,
             "reason": reason,
         },
+        page_key="classroom_discussion",
     )
 
 
 def schedule_discussion_profile_refresh(trigger: Optional[dict[str, int | str]]) -> None:
-    if not trigger:
-        return
-    asyncio.create_task(
-        refresh_discussion_profile_from_activity(
-            class_offering_id=int(trigger["class_offering_id"]),
-            user_pk=int(trigger["user_pk"]),
-            user_role=str(trigger["user_role"]),
-            trigger_event_id=int(trigger["trigger_event_id"]),
-            activity_count_snapshot=int(trigger["activity_count_snapshot"]),
-            round_index=int(trigger["round_index"]),
-        )
-    )
+    return None
 
 
 def _build_recent_activity_transcript(rows: list[Any]) -> str:
@@ -633,7 +584,7 @@ async def refresh_discussion_profile_from_activity(
     try:
         with get_db_connection() as conn:
             class_snapshot = _load_classroom_snapshot(conn, class_offering_id)
-            class_ai_config = _load_ai_class_config(conn, class_offering_id)
+            class_ai_config = fetch_ai_class_config(conn, class_offering_id)
             latest_hidden_profile = load_latest_hidden_profile(conn, class_offering_id, user_pk, user_role)
             user_name, current_desc = _load_user_profile_seed(conn, user_pk, user_role)
             recent_events = conn.execute(
@@ -713,6 +664,8 @@ async def refresh_discussion_profile_from_activity(
                 "new_message": profile_prompt,
                 "model_capability": "thinking",
                 "response_format": "json",
+                "task_priority": "background",
+                "task_label": "legacy_discussion_profile",
             },
             timeout=180.0,
         )
@@ -726,7 +679,7 @@ async def refresh_discussion_profile_from_activity(
         if not isinstance(payload, dict):
             raise RuntimeError(f"AI 未返回有效 JSON: {payload}")
 
-        normalized = _normalize_psych_profile_payload(payload)
+        normalized = normalize_profile_payload(payload)
         if not any(
             normalized[key]
             for key in ("profile_summary", "mental_state_summary", "support_strategy", "hidden_premise_prompt")

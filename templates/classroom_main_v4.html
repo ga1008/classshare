@@ -665,6 +665,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/behavior_tracker.js"></script>
 <script type="module">
     import * as ui from '/static/js/ui.js';
     import { ClassroomChat } from '/static/js/chat.js';
@@ -678,6 +679,13 @@
     window.examApp = examApp;
 
     document.addEventListener('DOMContentLoaded', () => {
+        if (window.BehaviorTracker) {
+            window.behaviorTracker = new window.BehaviorTracker({
+                classOfferingId: window.APP_CONFIG.classOfferingId,
+                pageKey: 'classroom_discussion'
+            }).start();
+        }
+
         // Course info popover
         const popover = document.getElementById('course-info-popover');
         const overlay = document.getElementById('course-popover-overlay');
@@ -691,6 +699,14 @@
         if (overlay) overlay.addEventListener('click', closePopover);
         if (closeBtn) closeBtn.addEventListener('click', closePopover);
         document.addEventListener('keydown', e => { if (e.key === 'Escape' && popover.classList.contains('popover-open')) closePopover(); });
+        document.addEventListener('click', (event) => {
+            const assignmentLink = event.target.closest('a[href^="/assignment/"]');
+            if (assignmentLink) {
+                window.behaviorTracker?.logClick('点击作业入口', {
+                    href: assignmentLink.getAttribute('href')
+                }, 'classroom_discussion');
+            }
+        });
 
         const chatApp = new ClassroomChat({
             classOfferingId: window.APP_CONFIG.classOfferingId,

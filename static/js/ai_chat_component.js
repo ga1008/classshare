@@ -123,6 +123,7 @@ class AIChatComponent {
     openChat() {
         this.modal.style.display = 'block';
         this.fab.style.display = 'none';
+        window.behaviorTracker?.markAiChatOpen(true);
         if (!this.currentSessionUUID) {
             this.loadOrCreateSession();
         }
@@ -131,6 +132,7 @@ class AIChatComponent {
     closeChat() {
         this.modal.style.display = 'none';
         this.fab.style.display = 'block';
+        window.behaviorTracker?.markAiChatOpen(false);
     }
     toggleFullscreen() {
         const isFullscreen = this.modalContainer.classList.toggle('fullscreen');
@@ -636,6 +638,11 @@ class AIChatComponent {
 
         this.isLoading = true;
         this.sendBtn.disabled = true;
+        window.behaviorTracker?.log('ai_send_attempt', '尝试发送 AI 消息', {
+            message_length: message.length,
+            image_count: this.pendingFiles.length,
+            deep_thinking: this.isDeepThinking
+        }, 'ai_chat');
 
         // 1. 渲染用户消息 (无变化)
         const userAttachments = this.pendingFiles.map(file => ({
@@ -960,16 +967,24 @@ class AIChatComponent {
         this.fileInput.click();
     }
     onFileSelected(e) {
+        let acceptedCount = 0;
         for (const file of e.target.files) {
             if (file.type.startsWith('image/')) {
                 if (this.pendingFiles.length < 5) {
                     this.pendingFiles.push(file);
+                    acceptedCount += 1;
                 } else {
                     showMessage('一次最多上传5张图片。', 'error');
                 }
             }
         }
         this.renderPreviews();
+        if (acceptedCount > 0) {
+            window.behaviorTracker?.log('ai_attachment_select', `选择 ${acceptedCount} 张 AI 图片附件`, {
+                accepted_count: acceptedCount,
+                pending_count: this.pendingFiles.length
+            }, 'ai_chat');
+        }
         this.fileInput.value = '';
     }
     renderPreviews() {

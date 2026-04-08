@@ -3,6 +3,7 @@
 # ==============================================================================
 import asyncio
 import base64
+import heapq
 import json
 import mimetypes
 import os
@@ -37,7 +38,7 @@ except ImportError:
 # --- AI 配置 (保持不变) ---
 AI_HOST = os.getenv("AI_HOST", "127.0.0.1")
 AI_PORT = int(os.getenv("AI_PORT", 8001))
-GLOBAL_AI_CONCURRENCY = int(os.getenv("GLOBAL_AI_CONCURRENCY", 3))
+GLOBAL_AI_CONCURRENCY = max(1, min(int(os.getenv("GLOBAL_AI_CONCURRENCY", 3)), 3))
 MAIN_APP_CALLBACK_URL = os.getenv("MAIN_APP_CALLBACK_URL")
 PLATFORM_PRIORITY = [p.strip() for p in os.getenv("AI_PLATFORM_PRIORITY", "siliconflow,volcengine,deepseek").split(',')]
 VOLCENGINE_OPENAI_BASE_URL = os.getenv("VOLCENGINE_OPENAI_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
@@ -96,8 +97,81 @@ PLATFORMS_CONFIG = {
 }
 ENABLED_PLATFORMS = [p for p in PLATFORM_PRIORITY if p in PLATFORMS_CONFIG and PLATFORMS_CONFIG[p]["enabled"]]
 
-# --- 全局信号量和HTTP客户端 (保持不变) ---
-ai_semaphore = asyncio.Semaphore(GLOBAL_AI_CONCURRENCY)
+# --- 全局队列调度和HTTP客户端 ---
+TASK_PRIORITY_ORDER = {
+    "interactive": 0,
+    "default": 1,
+    "background": 2,
+}
+
+
+def _sanitize_task_priority(value: Optional[str]) -> str:
+    normalized = str(value or "default").strip().lower()
+    return normalized if normalized in TASK_PRIORITY_ORDER else "default"
+
+
+class AIPriorityLimiter:
+    def __init__(self, concurrency: int):
+        self.concurrency = concurrency
+        self._running = 0
+        self._waiters: list[tuple[int, int, asyncio.Future[None], str, str]] = []
+        self._counter = 0
+        self._lock = asyncio.Lock()
+
+    async def acquire(self, *, priority: str, label: Optional[str] = None) -> None:
+        normalized_priority = _sanitize_task_priority(priority)
+        normalized_label = str(label or "task")
+
+        async with self._lock:
+            has_higher_waiter = any(
+                waiter_priority < TASK_PRIORITY_ORDER[normalized_priority]
+                for waiter_priority, *_rest in self._waiters
+            )
+            if self._running < self.concurrency and not has_higher_waiter:
+                self._running += 1
+                return
+
+            loop = asyncio.get_running_loop()
+            future: asyncio.Future[None] = loop.create_future()
+            heapq.heappush(
+                self._waiters,
+                (
+                    TASK_PRIORITY_ORDER[normalized_priority],
+                    self._counter,
+                    future,
+                    normalized_priority,
+                    normalized_label,
+                ),
+            )
+            self._counter += 1
+
+        await future
+
+    async def release(self) -> None:
+        async with self._lock:
+            self._running = max(0, self._running - 1)
+            while self._waiters:
+                _priority_value, _counter, future, priority, label = heapq.heappop(self._waiters)
+                if future.cancelled():
+                    continue
+                self._running += 1
+                future.set_result(None)
+                print(f"[AI QUEUE] 出队: priority={priority}, label={label}, running={self._running}/{self.concurrency}")
+                break
+
+    @asynccontextmanager
+    async def slot(self, *, priority: str, label: Optional[str] = None):
+        normalized_priority = _sanitize_task_priority(priority)
+        normalized_label = str(label or "task")
+        await self.acquire(priority=normalized_priority, label=normalized_label)
+        print(f"[AI QUEUE] 入槽: priority={normalized_priority}, label={normalized_label}")
+        try:
+            yield
+        finally:
+            await self.release()
+
+
+ai_limiter = AIPriorityLimiter(GLOBAL_AI_CONCURRENCY)
 callback_client = httpx.AsyncClient()
 
 
@@ -262,6 +336,8 @@ class AIChatRequest(BaseModel):
     base64_urls: List[str] = Field(default_factory=list)  # 新上传的图片 (base64 data URLs)
     model_capability: Literal["standard", "thinking", "vision"] = "standard"
     response_format: Literal["text", "json"] = "text"
+    task_priority: Literal["interactive", "default", "background"] = "default"
+    task_label: Optional[str] = None
 
 
 # --- 辅助函数 (保持不变) ---
@@ -676,6 +752,8 @@ async def _call_volcengine_responses_api(
     model_name: str,
     api_key: str,
     input_payload: list[dict[str, Any]],
+    task_priority: str = "default",
+    task_label: Optional[str] = None,
 ) -> dict[str, Any]:
     request_payload = {
         "model": model_name,
@@ -684,17 +762,18 @@ async def _call_volcengine_responses_api(
         "text": {"format": {"type": "json_object"}},
     }
 
-    async with httpx.AsyncClient(timeout=180.0) as client:
-        response = await client.post(
-            f"{VOLCENGINE_OPENAI_BASE_URL}/responses",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=request_payload,
-        )
-        response.raise_for_status()
-        data = response.json()
+    async with ai_limiter.slot(priority=task_priority, label=task_label or "responses_api"):
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            response = await client.post(
+                f"{VOLCENGINE_OPENAI_BASE_URL}/responses",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=request_payload,
+            )
+            response.raise_for_status()
+            data = response.json()
 
     output_text = data.get("output_text")
     if not output_text:
@@ -780,7 +859,9 @@ def _get_selected_platform_config(capability: Literal["standard", "thinking", "v
 async def _call_ai_platform(
         messages: List[Dict],
         capability: Literal["standard", "thinking", "vision"] = "standard",
-        require_json_output: bool = False
+        require_json_output: bool = False,
+        task_priority: str = "default",
+        task_label: Optional[str] = None,
 ) -> Dict[str, Any]:
     selected_platform_config = _get_selected_platform_config(capability)
     if not selected_platform_config:
@@ -792,7 +873,7 @@ async def _call_ai_platform(
     platform_type = selected_platform_config["type"]
     can_force_json = selected_platform_config.get("can_force_json", {}).get(capability, False)
 
-    async with ai_semaphore:
+    async with ai_limiter.slot(priority=task_priority, label=task_label or f"call:{capability}"):
         print(f"[AI WORKER] 开始处理任务 (Platform: {platform_name}, Model: {model_name}, Capability: {capability})")
         # print(f"[AI WORKER] 发送的 Messages: {json.dumps(messages, ensure_ascii=False, indent=2)}")
 
@@ -861,7 +942,9 @@ async def _call_ai_platform(
 async def _call_ai_platform_chat_stream_generator(
         system_prompt: str,
         messages: List[Dict],
-        capability: Literal["standard", "thinking", "vision"] = "standard"
+        capability: Literal["standard", "thinking", "vision"] = "standard",
+        task_priority: str = "interactive",
+        task_label: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """
     (新) 专用于聊天流式输出的 AI 调用函数。
@@ -891,7 +974,7 @@ async def _call_ai_platform_chat_stream_generator(
     api_key = selected_platform_config["api_key"]
     platform_type = selected_platform_config["type"]
 
-    async with ai_semaphore:
+    async with ai_limiter.slot(priority=task_priority, label=task_label or f"stream:{capability}"):
         print(
             f"[AI WORKER] 开始处理流式聊天 (Platform: {platform_name}, Model: {model_name}, Capability: {capability})")
         if not api_key:
@@ -986,7 +1069,9 @@ async def _call_ai_platform_chat_stream_generator(
 async def _call_ai_platform_chat_stream_events(
         system_prompt: str,
         messages: List[Dict],
-        capability: Literal["standard", "thinking", "vision"] = "standard"
+        capability: Literal["standard", "thinking", "vision"] = "standard",
+        task_priority: str = "interactive",
+        task_label: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     thinking_content = ""
     final_answer = ""
@@ -1011,7 +1096,7 @@ async def _call_ai_platform_chat_stream_events(
     thinking_supported = capability == "thinking"
     think_tag_parser = ThinkTagStreamParser() if thinking_supported else None
 
-    async with ai_semaphore:
+    async with ai_limiter.slot(priority=task_priority, label=task_label or f"stream_events:{capability}"):
         print(
             f"[AI WORKER] 寮€濮嬪鐞嗙粨鏋勫寲娴佸紡鑱婂ぉ (Platform: {platform_name}, Model: {model_name}, Capability: {capability})")
 
@@ -1124,7 +1209,9 @@ async def _call_ai_platform_chat_stream_events(
 async def _call_ai_platform_chat(
         system_prompt: str,
         messages: List[Dict],
-        capability: Literal["standard", "thinking", "vision"] = "standard"
+        capability: Literal["standard", "thinking", "vision"] = "standard",
+        task_priority: str = "interactive",
+        task_label: Optional[str] = None,
 ) -> str:
     """
     (新) 专用于聊天的 AI 调用函数，返回纯文本响应。
@@ -1148,7 +1235,7 @@ async def _call_ai_platform_chat(
     platform_type = selected_platform_config["type"]
     can_force_json = selected_platform_config.get("can_force_json", {}).get(capability, False)
 
-    async with ai_semaphore:
+    async with ai_limiter.slot(priority=task_priority, label=task_label or f"chat:{capability}"):
         print(f"[AI WORKER] 开始处理聊天 (Platform: {platform_name}, Model: {model_name}, Capability: {capability})")
         if not api_key: raise HTTPException(500, f"未配置 {platform_name} 的 API_KEY")
 
@@ -1191,7 +1278,13 @@ async def _call_ai_platform_chat(
 @app.post("/api/ai/generate-assignment")
 async def generate_assignment_task(req: GenerationRequest):
     messages = [{"role": "system", "content": GENERATION_SYSTEM_PROMPT}, {"role": "user", "content": req.prompt}]
-    return await _call_ai_platform(messages, capability=req.model_type, require_json_output=True)
+    return await _call_ai_platform(
+        messages,
+        capability=req.model_type,
+        require_json_output=True,
+        task_priority="default",
+        task_label="generate_assignment",
+    )
 
 
 @app.post("/api/ai/generate-exam")
@@ -1214,7 +1307,9 @@ async def generate_exam_task(req: ExamGenerationRequest):
     result = await _call_ai_platform(
         messages,
         capability=req.model_type,  # 使用thinking模型
-        require_json_output=True
+        require_json_output=True,
+        task_priority="default",
+        task_label="generate_exam",
     )
 
     # 验证返回的数据结构
@@ -1277,7 +1372,9 @@ async def ai_chat_task_stream(req: AIChatRequest):
     stream_generator = _call_ai_platform_chat_stream_events(
         system_prompt=req.system_prompt,
         messages=history,  # 发送包含最新消息的完整历史
-        capability=req.model_capability
+        capability=req.model_capability,
+        task_priority=req.task_priority,
+        task_label=req.task_label or "chat_stream",
     )
 
     # 4. 返回 StreamingResponse
@@ -1329,7 +1426,9 @@ async def ai_chat_task(req: AIChatRequest):
             ai_response_json = await _call_ai_platform(
                 json_messages,
                 capability=req.model_capability,
-                require_json_output=True
+                require_json_output=True,
+                task_priority=req.task_priority,
+                task_label=req.task_label or "chat_json",
             )
             return {"status": "success", "response_json": ai_response_json}
 
@@ -1338,7 +1437,9 @@ async def ai_chat_task(req: AIChatRequest):
         ai_response_text = await _call_ai_platform_chat(
             system_prompt=req.system_prompt,
             messages=history,
-            capability=req.model_capability
+            capability=req.model_capability,
+            task_priority=req.task_priority,
+            task_label=req.task_label or "chat_text",
         )
 
         # 6. 返回纯文本响应
@@ -1400,6 +1501,8 @@ async def run_grading_job(job: GradingJob):
                     job.requirements_md,
                     job.answers_json,
                 ),
+                task_priority="default",
+                task_label=f"grading:{job.submission_id}",
             )
         else:
             messages = [{"role": "system", "content": GRADING_SYSTEM_PROMPT}]
@@ -1425,7 +1528,13 @@ async def run_grading_job(job: GradingJob):
                 )
 
             # 批改任务总是要求 JSON 输出
-            result = await _call_ai_platform(messages, capability=selected_capability, require_json_output=True)
+            result = await _call_ai_platform(
+                messages,
+                capability=selected_capability,
+                require_json_output=True,
+                task_priority="default",
+                task_label=f"grading:{job.submission_id}",
+            )
 
         callback_data = {
             "submission_id": job.submission_id, "status": "graded",

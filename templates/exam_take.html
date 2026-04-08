@@ -687,6 +687,7 @@
 </div>
 
 <script type="module" src="/static/js/auth.js"></script>
+<script src="/static/js/behavior_tracker.js"></script>
 <script type="module">
     import { showMessage } from '/static/js/ui.js';
     import { apiFetch } from '/static/js/api.js';
@@ -701,6 +702,7 @@
     const ALLOWED_FILE_TYPES = {{ assignment.allowed_file_types | tojson }};
     const ALLOWED_FILE_TYPES_LABEL = {{ assignment.allowed_file_types_label | tojson }};
     const SUBMISSION_FILES = {{ submission_files | tojson }};
+    const CLASS_OFFERING_ID = {{ assignment.class_offering_id or 'null' }};
 
     {% if submission %}
     const SUBMISSION_EXISTS = true;
@@ -752,6 +754,13 @@
 
     // Initialize
     function init() {
+        if (window.BehaviorTracker && CLASS_OFFERING_ID) {
+            window.behaviorTracker = new window.BehaviorTracker({
+                classOfferingId: CLASS_OFFERING_ID,
+                pageKey: 'exam_take'
+            }).start();
+        }
+
         // Calculate total questions
         state.totalQuestions = state.pages.reduce((acc, page) => acc + (page.questions ? page.questions.length : 0), 0);
 
@@ -1006,6 +1015,11 @@
             maxBytes: MAX_UPLOAD_BYTES,
             maxFiles: MAX_FILE_COUNT,
             notify: showMessage,
+            onChange: (entries) => {
+                window.behaviorTracker?.log('exam_file_select', `选择 ${entries.length} 个考试附件`, {
+                    file_count: entries.length
+                }, 'exam_take');
+            }
         });
         uploadManager.entries = preservedEntries;
         uploadManager.init();
@@ -1114,6 +1128,10 @@
 
     function goToPage(idx) {
         if (idx === state.currentPageIdx || idx < 0 || idx >= state.pages.length) return;
+        window.behaviorTracker?.log('exam_page_switch', `切换到考试页 ${idx + 1}`, {
+            from_page: state.currentPageIdx + 1,
+            to_page: idx + 1
+        }, 'exam_take');
         state.currentPageIdx = idx;
         renderCurrentPage();
         saveToLocal();
@@ -1148,6 +1166,12 @@
         const unanswered = allQuestions.filter(q => !state.answers[q.id] || !state.answers[q.id].trim());
         const hasAnswered = allQuestions.some(q => String(state.answers[q.id] || '').trim());
         const hasFiles = uploadManager?.hasFiles() ?? false;
+        window.behaviorTracker?.log('exam_submit_attempt', '尝试提交试卷', {
+            total_questions: allQuestions.length,
+            unanswered_count: unanswered.length,
+            has_answered: hasAnswered,
+            has_files: hasFiles
+        }, 'exam_take');
 
         if (!hasAnswered && !hasFiles) {
             showMessage('请至少作答一道题或上传附件后再提交。', 'warning');

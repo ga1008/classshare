@@ -22,6 +22,7 @@ from ..database import get_db_connection
 from ..dependencies import build_login_url, sanitize_next_path
 from ..dependencies import infer_required_role_from_path, get_role_label
 from ..dependencies import apply_access_token_cookie, clear_access_token_cookie, invalidate_session_for_user
+from ..services.behavior_tracking_service import record_behavior_event
 from ..services.submission_assets import decode_allowed_file_types_json, summarize_allowed_file_types
 from ..services.student_auth_service import (
     PASSWORD_POLICY_HINT,
@@ -713,6 +714,24 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
                     assignment['submission_status'] = 'unsubmitted'
             assignments.append(assignment)
 
+    try:
+        record_behavior_event(
+            class_offering_id=class_offering_id,
+            user_pk=int(user["id"]),
+            user_role=str(user["role"]),
+            display_name=str(user.get("name") or user.get("username") or user["id"]),
+            action_type="page_view",
+            summary_text=f"进入课堂页面：{offering_data.get('course_name') or class_offering_id}",
+            payload={
+                "page": "classroom_main",
+                "class_name": offering_data.get("class_name"),
+                "course_name": offering_data.get("course_name"),
+            },
+            page_key="classroom_discussion",
+        )
+    except Exception as exc:
+        print(f"[BEHAVIOR] 记录课堂页面访问失败: {exc}")
+
     return templates.TemplateResponse(request, "classroom_main_v4.html", {
         "request": request,
         "user_info": user,
@@ -740,6 +759,20 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
         return RedirectResponse(url=f"/exam/take/{assignment_id}")
 
     if user['role'] == 'teacher':
+        if assignment.get("class_offering_id"):
+            try:
+                record_behavior_event(
+                    class_offering_id=int(assignment["class_offering_id"]),
+                    user_pk=int(user["id"]),
+                    user_role=str(user["role"]),
+                    display_name=str(user.get("name") or user.get("username") or user["id"]),
+                    action_type="page_view",
+                    summary_text=f"查看作业详情：{assignment.get('title') or assignment_id}",
+                    payload={"page": "assignment_detail", "assignment_id": assignment_id},
+                    page_key="assignment_detail",
+                )
+            except Exception as exc:
+                print(f"[BEHAVIOR] 记录教师作业页访问失败: {exc}")
         return templates.TemplateResponse(request, "assignment_detail_teacher.html", {
             "request": request, "user_info": user, "assignment": assignment
         })
@@ -761,6 +794,25 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
                     (submission['id'],)
                 )
                 submission_files = _serialize_submission_file_rows(files_cursor)
+
+        if assignment.get("class_offering_id"):
+            try:
+                record_behavior_event(
+                    class_offering_id=int(assignment["class_offering_id"]),
+                    user_pk=int(user["id"]),
+                    user_role=str(user["role"]),
+                    display_name=str(user.get("name") or user.get("username") or user["id"]),
+                    action_type="page_view",
+                    summary_text=f"查看作业详情：{assignment.get('title') or assignment_id}",
+                    payload={
+                        "page": "assignment_detail",
+                        "assignment_id": assignment_id,
+                        "has_submission": bool(submission),
+                    },
+                    page_key="assignment_detail",
+                )
+            except Exception as exc:
+                print(f"[BEHAVIOR] 记录学生作业页访问失败: {exc}")
 
         return templates.TemplateResponse(request, "assignment_detail_student.html", {
             "request": request, "user_info": user, "assignment": assignment,
@@ -1130,6 +1182,25 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
                     (submission['id'],)
                 )
                 submission_files = _serialize_submission_file_rows(files_cursor)
+
+    if assignment.get("class_offering_id"):
+        try:
+            record_behavior_event(
+                class_offering_id=int(assignment["class_offering_id"]),
+                user_pk=int(user["id"]),
+                user_role=str(user["role"]),
+                display_name=str(user.get("name") or user.get("username") or user["id"]),
+                action_type="page_view",
+                summary_text=f"进入考试页面：{assignment.get('title') or assignment_id}",
+                payload={
+                    "page": "exam_take",
+                    "assignment_id": assignment_id,
+                    "has_submission": bool(submission),
+                },
+                page_key="exam_take",
+            )
+        except Exception as exc:
+            print(f"[BEHAVIOR] 记录考试页访问失败: {exc}")
 
     return templates.TemplateResponse(request, "exam_take.html", {
         "request": request,

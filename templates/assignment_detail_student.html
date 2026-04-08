@@ -411,6 +411,7 @@
 
 {% block scripts %}
 <script src="/static/js/marked.min.js"></script>
+<script src="/static/js/behavior_tracker.js"></script>
 <script type="module">
     import { showToast, renderMarkdown, formatDateLocal } from '/static/js/ui.js';
     import { SubmissionUploadManager } from '/static/js/submission_upload.js';
@@ -422,6 +423,13 @@
     let uploadManager = null;
 
     document.addEventListener('DOMContentLoaded', () => {
+        if (window.BehaviorTracker && {{ assignment.class_offering_id or 'null' }} ) {
+            window.behaviorTracker = new window.BehaviorTracker({
+                classOfferingId: {{ assignment.class_offering_id or 'null' }},
+                pageKey: 'assignment_detail'
+            }).start();
+        }
+
         // Render Markdown
         renderMarkdown('requirements-content', {{ assignment.requirements_md | tojson }});
         {% if assignment.rubric_md %}
@@ -577,6 +585,11 @@
             maxBytes: MAX_SIZE,
             maxFiles: MAX_FILES,
             notify: showToast,
+            onChange: (entries) => {
+                window.behaviorTracker?.log('assignment_file_select', `选择 ${entries.length} 个作业文件`, {
+                    file_count: entries.length
+                }, 'assignment_detail');
+            }
         });
         uploadManager.init();
         document.getElementById('pick-files-btn')?.addEventListener('click', () => uploadManager.openFilePicker());
@@ -596,6 +609,11 @@
 
         const hasFiles = uploadManager?.hasFiles() ?? false;
         if (!hasContent && !hasFiles) { showToast('Please enter an answer or upload files.', 'warning'); return; }
+        window.behaviorTracker?.log('assignment_submit_attempt', '尝试提交作业', {
+            answer_count: answers.length,
+            has_text_answers: hasContent,
+            has_files: hasFiles
+        }, 'assignment_detail');
 
         const submitBtn = document.getElementById('submit-btn');
         submitBtn.disabled = true;
@@ -634,6 +652,9 @@
 
     window.withdrawSubmission = async function() {
         if (!confirm('确定要撤回此作业吗？撤回后可以重新提交。')) return;
+        window.behaviorTracker?.log('assignment_withdraw_attempt', '尝试撤回作业', {
+            assignment_id: ASSIGNMENT_ID
+        }, 'assignment_detail');
         try {
             const response = await fetch(`/api/assignments/${ASSIGNMENT_ID}/withdraw`, { method: 'DELETE' });
             if (response.ok) {

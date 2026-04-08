@@ -29,7 +29,6 @@ from ..services.discussion_ai_service import (
     generate_discussion_ai_reply,
     record_alias_switch_activity,
     record_message_activity,
-    schedule_discussion_profile_refresh,
 )
 from ..services.emoji_service import increment_emoji_usage, resolve_custom_emoji_payloads
 from ..services.file_handler import delete_file_safely
@@ -142,7 +141,6 @@ async def _process_discussion_chat_message(
         custom_emoji_labels=[str(item.get("name") or "自定义表情") for item in custom_emoji_payloads],
         mentioned_assistant=contains_discussion_ai_mention(normalized_text),
     )
-    schedule_discussion_profile_refresh(profile_trigger)
 
     await manager.broadcast(class_offering_id, json.dumps(stored_message, ensure_ascii=False))
 
@@ -903,7 +901,6 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
                         new_name=switch_result.get("new_name"),
                         reason=switch_result.get("reason"),
                     )
-                    schedule_discussion_profile_refresh(alias_trigger)
 
                     await websocket.send_text(json.dumps({
                         "type": "alias_switch_result",

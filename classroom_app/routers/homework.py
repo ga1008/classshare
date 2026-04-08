@@ -17,6 +17,7 @@ from ..config import (
 )
 from ..database import get_db_connection
 from ..dependencies import get_current_user, get_current_student, get_current_teacher
+from ..services.behavior_tracking_service import record_behavior_event
 from ..services.submission_assets import (
     answers_have_content,
     decode_allowed_file_types_json,
@@ -441,6 +442,27 @@ async def submit_assignment(assignment_id: str,
             print(f"[ERROR] Submission failed: {e}")
             raise HTTPException(500, f"数据库错误: {e}")
 
+    if assignment["class_offering_id"]:
+        try:
+            record_behavior_event(
+                class_offering_id=int(assignment["class_offering_id"]),
+                user_pk=int(user["id"]),
+                user_role="student",
+                display_name=str(user.get("name") or user["id"]),
+                action_type="assignment_submit",
+                summary_text=f"提交作业：{assignment.get('title') or assignment_id}",
+                payload={
+                    "assignment_id": assignment_id,
+                    "submission_id": submission_id,
+                    "stored_file_count": len(storage_result.stored_files),
+                    "dropped_file_count": len(storage_result.dropped_files),
+                    "has_text_answers": bool(has_text_answers),
+                },
+                page_key="assignment_detail",
+            )
+        except Exception as exc:
+            print(f"[BEHAVIOR] 记录作业提交失败: {exc}")
+
     return {
         "status": "success",
         "submission_id": submission_id,
@@ -455,7 +477,7 @@ async def withdraw_submission(assignment_id: str, user: dict = Depends(get_curre
     with get_db_connection() as conn:
         submission = conn.execute(
             """
-            SELECT s.*, a.course_id
+            SELECT s.*, a.course_id, a.class_offering_id, a.title
             FROM submissions s
             JOIN assignments a ON a.id = s.assignment_id
             WHERE s.assignment_id = ? AND s.student_pk_id = ?
@@ -474,6 +496,23 @@ async def withdraw_submission(assignment_id: str, user: dict = Depends(get_curre
         conn.commit()
 
     delete_storage_tree(_build_submission_storage_dir(submission['course_id'], assignment_id, user['id']))
+    if submission["class_offering_id"]:
+        try:
+            record_behavior_event(
+                class_offering_id=int(submission["class_offering_id"]),
+                user_pk=int(user["id"]),
+                user_role="student",
+                display_name=str(user.get("name") or user["id"]),
+                action_type="assignment_withdraw",
+                summary_text=f"撤回作业：{submission.get('title') or assignment_id}",
+                payload={
+                    "assignment_id": assignment_id,
+                    "submission_id": submission["id"],
+                },
+                page_key="assignment_detail",
+            )
+        except Exception as exc:
+            print(f"[BEHAVIOR] 记录作业撤回失败: {exc}")
     return {"status": "success", "message": "作业已撤回"}
 
 

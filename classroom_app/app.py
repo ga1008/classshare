@@ -13,9 +13,13 @@ from .database import init_database
 from .dependencies import build_login_redirect_url, build_permission_warning_url
 from .dependencies import clear_access_token_cookie, get_active_user_from_request
 from .dependencies import infer_required_role_from_path
+from .services.behavior_tracking_service import (
+    start_behavior_profile_scheduler,
+    stop_behavior_profile_scheduler,
+)
 
 # 导入所有 V4.0 路由
-from .routers import ui, files, homework, ai, materials, emoji
+from .routers import ui, files, homework, ai, materials, emoji, behavior
 from .routers import manage as manage_router  # 避免命名冲突
 from .routers import session as session_router
 
@@ -36,11 +40,13 @@ async def startup_event():
     # 确保静态目录存在
     STATIC_DIR.mkdir(exist_ok=True)
     await ai_client.__aenter__()  # 启动 HTTP 客户端
+    start_behavior_profile_scheduler()
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用关闭时执行"""
+    await stop_behavior_profile_scheduler()
     await ai_client.__aexit__(None, None, None)  # 关闭 HTTP 客户端
     print("[SERVER] FastAPI 应用已关闭。")
 
@@ -163,6 +169,7 @@ app.include_router(homework.router)
 app.include_router(ai.router)
 app.include_router(materials.router)
 app.include_router(emoji.router)
+app.include_router(behavior.router)
 app.include_router(manage_router.router)
 
 app.include_router(session_router.router)

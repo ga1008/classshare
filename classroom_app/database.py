@@ -1043,13 +1043,68 @@ def init_database():
                                      NULL
                                  DEFAULT 0,
                              last_event_at
-                                 TEXT,
+                                  TEXT,
                              last_profiled_at
+                                  TEXT,
+                             next_profile_interval_seconds
+                                 INTEGER
+                                 NOT
+                                     NULL
+                                 DEFAULT 0,
+                             online_accumulated_seconds
+                                 INTEGER
+                                 NOT
+                                     NULL
+                                 DEFAULT 0,
+                             current_session_started_at
                                  TEXT,
+                             last_presence_at
+                                 TEXT,
+                             last_page_key
+                                 TEXT,
+                             last_visibility_state
+                                 TEXT,
+                             last_focus_state
+                                 TEXT,
+                             last_idle_seconds
+                                 INTEGER
+                                 NOT
+                                     NULL
+                                 DEFAULT 0,
+                             focus_total_seconds
+                                 INTEGER
+                                 NOT
+                                     NULL
+                                 DEFAULT 0,
+                             blur_total_seconds
+                                 INTEGER
+                                 NOT
+                                     NULL
+                                 DEFAULT 0,
+                             visible_total_seconds
+                                 INTEGER
+                                 NOT
+                                     NULL
+                                 DEFAULT 0,
+                             hidden_total_seconds
+                                 INTEGER
+                                 NOT
+                                     NULL
+                                 DEFAULT 0,
+                             discussion_lurk_total_seconds
+                                 INTEGER
+                                 NOT
+                                     NULL
+                                 DEFAULT 0,
+                             ai_panel_open_total_seconds
+                                 INTEGER
+                                 NOT
+                                     NULL
+                                 DEFAULT 0,
                              created_at
-                                 TEXT
-                                 DEFAULT
-                                     CURRENT_TIMESTAMP,
+                                  TEXT
+                                  DEFAULT
+                                      CURRENT_TIMESTAMP,
                              updated_at
                                  TEXT
                                  DEFAULT
@@ -1070,6 +1125,63 @@ def init_database():
                                      ) ON DELETE CASCADE
                          )
                          ''')
+
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN next_profile_interval_seconds INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN online_accumulated_seconds INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN current_session_started_at TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN last_presence_at TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN last_page_key TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN last_visibility_state TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN last_focus_state TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN last_idle_seconds INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN focus_total_seconds INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN blur_total_seconds INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN visible_total_seconds INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN hidden_total_seconds INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN discussion_lurk_total_seconds INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN ai_panel_open_total_seconds INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
 
             # 13.8 课堂研讨室隐藏心理侧写快照
             conn.execute('''
@@ -1109,13 +1221,30 @@ def init_database():
                              mental_state_summary
                                  TEXT,
                              support_strategy
-                                 TEXT,
+                                  TEXT,
                              hidden_premise_prompt
+                                  TEXT,
+                             personality_traits
                                  TEXT,
+                             preference_summary
+                                 TEXT,
+                             language_habit_summary
+                                 TEXT,
+                             preferred_ai_style
+                                 TEXT,
+                             interest_hypothesis
+                                 TEXT,
+                             evidence_summary
+                                 TEXT,
+                             trigger_mode
+                                 TEXT
+                                 NOT
+                                     NULL
+                                 DEFAULT 'scheduled',
                              confidence
-                                 TEXT,
+                                  TEXT,
                              raw_payload
-                                 TEXT,
+                                  TEXT,
                              created_at
                                  TEXT
                                  DEFAULT
@@ -1139,6 +1268,35 @@ def init_database():
                          )
                          ''')
 
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_profiles ADD COLUMN personality_traits TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_profiles ADD COLUMN preference_summary TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_profiles ADD COLUMN language_habit_summary TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_profiles ADD COLUMN preferred_ai_style TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_profiles ADD COLUMN interest_hypothesis TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_profiles ADD COLUMN evidence_summary TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_profiles ADD COLUMN trigger_mode TEXT NOT NULL DEFAULT 'scheduled'")
+            except sqlite3.OperationalError:
+                pass
+
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_classroom_behavior_events_lookup "
                 "ON classroom_behavior_events (class_offering_id, user_pk, user_role, created_at DESC)"
@@ -1150,6 +1308,10 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_classroom_behavior_profiles_lookup "
                 "ON classroom_behavior_profiles (class_offering_id, user_pk, user_role, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classroom_behavior_states_due "
+                "ON classroom_behavior_states (profile_generation_pending, last_presence_at, online_accumulated_seconds, next_profile_interval_seconds)"
             )
 
             # 14. 试卷库

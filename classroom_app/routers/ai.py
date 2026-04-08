@@ -19,6 +19,12 @@ from ..config import MAX_UPLOAD_SIZE_MB, MAX_UPLOAD_SIZE_BYTES
 from ..core import ai_client
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher, get_current_user
+from ..services.behavior_tracking_service import record_behavior_event
+from ..services.psych_profile_service import (
+    compose_classroom_chat_system_prompt as build_classroom_chat_prompt,
+    load_ai_class_config as fetch_ai_class_config,
+    load_latest_hidden_profile as load_hidden_profile_snapshot,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -36,7 +42,6 @@ class ExamGenTaskStatus(str, Enum):
 # 内存存储任务状态 (简单实现，生产环境应使用数据库)
 _exam_gen_tasks: Dict[str, Dict[str, Any]] = {}
 _exam_gen_tasks_lock = asyncio.Lock()
-PSYCH_PROFILE_TRIGGER_ROUNDS = 3
 PSYCH_PROFILE_HISTORY_LIMIT = 24
 
 
@@ -969,8 +974,8 @@ async def handle_ai_chat(
             """,
             (session_db_id, message, attachments_json)
         )
-        class_ai_config = _load_ai_class_config(conn, class_offering_id)
-        latest_hidden_profile = _load_latest_hidden_psych_profile(conn, class_offering_id, user_pk, user_role)
+        class_ai_config = fetch_ai_class_config(conn, class_offering_id)
+        latest_hidden_profile = load_hidden_profile_snapshot(conn, class_offering_id, user_pk, user_role)
         all_messages = conn.execute(
             """
             SELECT role, message, final_answer
@@ -981,6 +986,26 @@ async def handle_ai_chat(
             (session_db_id,)
         ).fetchall()
         conn.commit()
+
+    try:
+        record_behavior_event(
+            class_offering_id=class_offering_id,
+            user_pk=user_pk,
+            user_role=user_role,
+            display_name=str(user.get("name") or f"{user_role}:{user_pk}"),
+            action_type="ai_question",
+            summary_text=f"向 AI 提问：{message[:120]}",
+            payload={
+                "message_text": message,
+                "session_uuid": session_uuid,
+                "attachments": user_attachments,
+                "model_capability": model_capability,
+                "deep_thinking": bool(deep_thinking),
+            },
+            page_key="ai_chat",
+        )
+    except Exception as exc:
+        print(f"[AI_CHAT] 记录 AI 提问行为失败: {exc}")
 
     # 5. 构建 AI 需要的 messages 列表
     # (V4.3 修改: 我们需要发送给 AI 的是除最后一条外的所有消息,
@@ -997,7 +1022,7 @@ async def handle_ai_chat(
     # 6. 构建最终的 System Prompt (教师配置 + RAG + 用户背景 + 隐藏心理侧写)
     teacher_base_prompt = class_ai_config['system_prompt'] or "你是一个课堂AI助手。"
     rag_syllabus = class_ai_config['syllabus'] or "（无课程大纲信息）"
-    final_system_prompt = _compose_classroom_chat_system_prompt(
+    final_system_prompt = build_classroom_chat_prompt(
         teacher_base_prompt,
         rag_syllabus,
         user_context_prompt,
@@ -1006,12 +1031,13 @@ async def handle_ai_chat(
 
     # 7. 准备发送给 ai_assistant 的数据
     chat_payload = {
-        "system_prompt": final_system_prompt,  # 简短的 (RAG + 教师指令)
-        "messages": ai_history_for_call,  # 历史记录 (不含最新)
-        "new_message": message,  # 用户的最新消息
+        "system_prompt": final_system_prompt,
+        "messages": ai_history_for_call,
+        "new_message": message,
         "base64_urls": base64_urls,
         "model_capability": model_capability,
-        # (user_id 和 user_role 已被移除, V3.3.3 版 ai_assistant 不再需要它们)
+        "task_priority": "interactive",
+        "task_label": "user_chat",
     }
 
     # 8. [!!! 核心修改 2: 创建流式生成器 !!!]
@@ -1113,28 +1139,7 @@ async def handle_ai_chat(
             # (此时流已结束，无法再通知前端)
 
         # 8.4. [!!! 核心修改: 触发隐藏心理侧写 !!!]
-        try:
-            with get_db_connection() as conn:
-                assistant_msg_count = conn.execute(
-                    "SELECT COUNT(*) FROM ai_chat_messages WHERE session_id = ? AND role = 'assistant'",
-                    (session_db_id,)
-                ).fetchone()[0]
-
-            if assistant_msg_count > 0 and assistant_msg_count % PSYCH_PROFILE_TRIGGER_ROUNDS == 0:
-                round_index = assistant_msg_count // PSYCH_PROFILE_TRIGGER_ROUNDS
-                print(f"[CHAT] 触发隐藏心理侧写 (第 {round_index} 轮)")
-                asyncio.create_task(
-                    update_user_profile(
-                        user_pk=user_pk,
-                        user_role=user_role,
-                        class_offering_id=class_offering_id,
-                        session_db_id=session_db_id,
-                        round_index=round_index,
-                    )
-                )
-
-        except Exception as e:
-            print(f"[ERROR] 检查或触发隐藏心理侧写失败: {e}")
+        # 隐藏侧写已改为全局定时调度，这里不再按对话轮次触发。
 
     # 9. [!!! 核心修改: 返回 StreamingResponse !!!]
     async def structured_stream_and_save_generator():
@@ -1222,27 +1227,7 @@ async def handle_ai_chat(
         except Exception as e:
             print(f"[ERROR] 淇濆瓨 AI 娴佸紡鍝嶅簲澶辫触: {e}")
 
-        try:
-            with get_db_connection() as conn:
-                assistant_msg_count = conn.execute(
-                    "SELECT COUNT(*) FROM ai_chat_messages WHERE session_id = ? AND role = 'assistant'",
-                    (session_db_id,)
-                ).fetchone()[0]
-
-            if assistant_msg_count > 0 and assistant_msg_count % PSYCH_PROFILE_TRIGGER_ROUNDS == 0:
-                round_index = assistant_msg_count // PSYCH_PROFILE_TRIGGER_ROUNDS
-                print(f"[CHAT] 瑙﹀彂闅愯棌蹇冪悊渚у啓 (绗?{round_index} 杞?")
-                asyncio.create_task(
-                    update_user_profile(
-                        user_pk=user_pk,
-                        user_role=user_role,
-                        class_offering_id=class_offering_id,
-                        session_db_id=session_db_id,
-                        round_index=round_index,
-                    )
-                )
-        except Exception as e:
-            print(f"[ERROR] 妫€鏌ユ垨瑙﹀彂闅愯棌蹇冪悊渚у啓澶辫触: {e}")
+        # 隐藏侧写已改为全局定时调度，这里不再按对话轮次触发。
 
     return StreamingResponse(
         structured_stream_and_save_generator(),
