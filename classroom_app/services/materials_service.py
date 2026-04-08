@@ -4,6 +4,87 @@ from pathlib import PurePosixPath
 from fastapi import HTTPException
 
 
+TEXT_PREVIEW_TYPES = {"markdown", "text"}
+SUPPORTED_PREVIEW_TYPES = TEXT_PREVIEW_TYPES | {"image"}
+LEARNING_DOCUMENT_NAME = "readme.md"
+TEXTUAL_MIME_PREFIXES = ("text/",)
+TEXTUAL_MIME_TYPES = {
+    "application/json",
+    "application/ld+json",
+    "application/javascript",
+    "application/x-javascript",
+    "application/xml",
+    "application/x-sh",
+    "application/x-yaml",
+    "application/yaml",
+}
+TEXTUAL_EXTENSIONS = {
+    "bat",
+    "c",
+    "cc",
+    "cfg",
+    "conf",
+    "cpp",
+    "cs",
+    "css",
+    "csv",
+    "dockerfile",
+    "env",
+    "gitignore",
+    "go",
+    "gradle",
+    "h",
+    "hpp",
+    "htm",
+    "html",
+    "ini",
+    "java",
+    "js",
+    "json",
+    "jsx",
+    "kt",
+    "kts",
+    "less",
+    "log",
+    "md",
+    "markdown",
+    "mjs",
+    "php",
+    "properties",
+    "ps1",
+    "py",
+    "rb",
+    "rs",
+    "scss",
+    "sh",
+    "sql",
+    "svg",
+    "svelte",
+    "text",
+    "toml",
+    "ts",
+    "tsx",
+    "tsv",
+    "txt",
+    "vue",
+    "xml",
+    "yaml",
+    "yml",
+}
+TEXTUAL_BASENAME_HINTS = {
+    ".dockerignore",
+    ".env",
+    ".gitignore",
+    "cmakelists.txt",
+    "dockerfile",
+    "license",
+    "makefile",
+    "notice",
+    "procfile",
+    "readme",
+    "requirements.txt",
+}
+
 MATERIAL_TYPE_REGISTRY = {
     "md": {
         "mime_type": "text/markdown",
@@ -121,6 +202,60 @@ def is_descendant_path(path_value: str, ancestor_path: str) -> bool:
     return path_value == ancestor_path or path_value.startswith(f"{ancestor_path}/")
 
 
+def is_learning_document_name(name: str | None) -> bool:
+    return str(name or "").strip().lower() == LEARNING_DOCUMENT_NAME
+
+
+def is_text_preview_type(preview_type: str | None) -> bool:
+    return str(preview_type or "").lower() in TEXT_PREVIEW_TYPES
+
+
+def is_preview_supported(preview_type: str | None) -> bool:
+    return str(preview_type or "").lower() in SUPPORTED_PREVIEW_TYPES
+
+
+def is_editable_material(item) -> bool:
+    node_type = ""
+    preview_type = ""
+    if isinstance(item, dict):
+        node_type = str(item.get("node_type") or "")
+        preview_type = str(item.get("preview_type") or "")
+    else:
+        try:
+            node_type = str(item["node_type"] or "")
+            preview_type = str(item["preview_type"] or "")
+        except (KeyError, TypeError):
+            return False
+    return node_type == "file" and is_text_preview_type(preview_type)
+
+
+def _is_textual_material(file_name: str, mime_type: str | None = None) -> bool:
+    normalized_name = str(file_name or "").strip()
+    lower_name = normalized_name.lower()
+    extension = ""
+    if "." in normalized_name:
+        extension = normalized_name.rsplit(".", 1)[-1].lower()
+
+    normalized_mime = str(mime_type or "").strip().lower()
+    if normalized_mime.startswith(TEXTUAL_MIME_PREFIXES) or normalized_mime in TEXTUAL_MIME_TYPES:
+        return True
+    if extension in TEXTUAL_EXTENSIONS:
+        return True
+    return lower_name in TEXTUAL_BASENAME_HINTS
+
+
+def _infer_text_type_label(file_name: str, extension: str) -> str:
+    if extension in {"md", "markdown"}:
+        return "Markdown"
+    if extension == "txt":
+        return "文本"
+    if extension:
+        return extension.upper()
+
+    normalized_name = str(file_name or "").strip()
+    return normalized_name or "文本"
+
+
 def infer_material_profile(file_name: str, content_type: str | None = None) -> dict:
     extension = ""
     if "." in file_name:
@@ -128,6 +263,14 @@ def infer_material_profile(file_name: str, content_type: str | None = None) -> d
 
     profile = MATERIAL_TYPE_REGISTRY.get(extension, {}).copy()
     guessed_mime = content_type or profile.get("mime_type") or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
+    if not profile and _is_textual_material(file_name, guessed_mime):
+        profile = {
+            "mime_type": guessed_mime if guessed_mime != "application/octet-stream" else "text/plain",
+            "preview_type": "text",
+            "type_label": _infer_text_type_label(file_name, extension),
+            "ai_capability": "text",
+        }
+        guessed_mime = profile["mime_type"]
 
     return {
         "file_ext": extension,
@@ -135,21 +278,69 @@ def infer_material_profile(file_name: str, content_type: str | None = None) -> d
         "preview_type": profile.get("preview_type", "binary"),
         "type_label": profile.get("type_label", extension.upper() if extension else "文件"),
         "ai_capability": profile.get("ai_capability", "none"),
-        "preview_supported": profile.get("preview_type") in {"markdown", "image"},
+        "preview_supported": is_preview_supported(profile.get("preview_type")),
         "is_markdown": profile.get("preview_type") == "markdown",
+        "is_text": is_text_preview_type(profile.get("preview_type")),
+        "editable": profile.get("preview_type") in TEXT_PREVIEW_TYPES,
     }
 
 
 def serialize_material_row(row, extra: dict | None = None) -> dict:
     item = dict(row)
+    preview_type = str(item.get("preview_type") or "")
     item["is_folder"] = item.get("node_type") == "folder"
-    item["preview_supported"] = item.get("preview_type") in {"markdown", "image"}
+    item["preview_supported"] = is_preview_supported(preview_type)
     item["can_ai_parse"] = item.get("ai_capability") == "markdown"
     item["can_ai_optimize"] = item.get("ai_capability") == "markdown"
+    item["is_markdown"] = preview_type == "markdown"
+    item["is_text"] = is_text_preview_type(preview_type)
+    item["is_image"] = preview_type == "image"
+    item["editable"] = is_editable_material(item)
+    item["can_edit_source"] = item["editable"]
     item["path_depth"] = len([segment for segment in str(item.get("material_path", "")).split("/") if segment])
     if extra:
         item.update(extra)
     return item
+
+
+def get_learning_document_map(conn, folder_ids: list[int]) -> dict[int, dict]:
+    normalized_ids = [int(folder_id) for folder_id in folder_ids if folder_id]
+    if not normalized_ids:
+        return {}
+
+    placeholders = ",".join("?" for _ in normalized_ids)
+    rows = conn.execute(
+        f"""
+        SELECT id, parent_id, name, material_path, preview_type, node_type
+        FROM course_materials
+        WHERE node_type = 'file'
+          AND parent_id IN ({placeholders})
+          AND LOWER(name) = ?
+        ORDER BY parent_id, name COLLATE NOCASE
+        """,
+        normalized_ids + [LEARNING_DOCUMENT_NAME],
+    ).fetchall()
+
+    result: dict[int, dict] = {}
+    for row in rows:
+        parent_id = row["parent_id"]
+        if parent_id is None:
+            continue
+        result[int(parent_id)] = dict(row)
+    return result
+
+
+def attach_learning_document_metadata(conn, items: list[dict]) -> list[dict]:
+    folder_ids = [int(item["id"]) for item in items if item.get("node_type") == "folder" and item.get("id")]
+    learning_doc_map = get_learning_document_map(conn, folder_ids)
+
+    for item in items:
+        learning_doc = learning_doc_map.get(int(item["id"])) if item.get("node_type") == "folder" and item.get("id") else None
+        item["document_readme_id"] = int(learning_doc["id"]) if learning_doc else None
+        item["document_readme_name"] = learning_doc["name"] if learning_doc else None
+        item["is_learning_document_dir"] = bool(learning_doc)
+        item["has_document_view"] = bool(learning_doc)
+    return items
 
 
 def _query_sibling(conn, teacher_id: int, parent_id: int | None, name: str):

@@ -1,3 +1,6 @@
+import { apiFetch } from './api.js';
+import { showToast } from './ui.js';
+
 const material = window.MATERIAL_VIEWER || {};
 
 const contentEl = document.getElementById('viewer-content');
@@ -12,6 +15,12 @@ const zoomOutBtn = document.getElementById('viewer-image-zoom-out-btn');
 const zoomInBtn = document.getElementById('viewer-image-zoom-in-btn');
 const fullscreenBtn = document.getElementById('viewer-image-fullscreen-btn');
 const closeBtn = document.getElementById('viewer-image-close-btn');
+const editSourceBtn = document.getElementById('viewer-edit-source-btn');
+const editorBackdropEl = document.getElementById('viewer-source-editor');
+const editorEncodingEl = document.getElementById('viewer-editor-encoding');
+const editorTextareaEl = document.getElementById('viewer-editor-textarea');
+const editorSaveBtn = document.getElementById('viewer-editor-save-btn');
+const editorCancelBtn = document.getElementById('viewer-editor-cancel-btn');
 
 const LIGHTBOX_ZOOM_FACTOR = 1.2;
 const LIGHTBOX_EPSILON = 0.01;
@@ -42,6 +51,9 @@ const lightboxState = {
 
 let lightboxSyncFrame = null;
 let stageResizeObserver = null;
+let editorLoadingPromise = null;
+let editorLoaded = false;
+let editorEncoding = material.content_encoding || 'utf-8';
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -551,6 +563,7 @@ function buildToc() {
     if (!headings.length) {
         tocEl.innerHTML = '<div class="materials-viewer-empty">\u5f53\u524d\u6587\u6863\u6ca1\u6709\u53ef\u663e\u793a\u7684\u6807\u9898\u76ee\u5f55\u3002</div>';
         tocCountEl.textContent = '0 \u8282';
+        tocEl.onclick = null;
         return;
     }
 
@@ -576,7 +589,7 @@ function buildToc() {
     `).join('');
     tocCountEl.textContent = `${items.length} \u8282`;
 
-    tocEl.addEventListener('click', (event) => {
+    tocEl.onclick = (event) => {
         const button = event.target.closest('[data-anchor]');
         if (!button) return;
         const target = document.getElementById(button.dataset.anchor);
@@ -584,7 +597,7 @@ function buildToc() {
         target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         tocEl.querySelectorAll('button').forEach((el) => el.classList.remove('is-active'));
         button.classList.add('is-active');
-    });
+    };
 }
 
 function rewriteLinksAndImages() {
@@ -604,7 +617,7 @@ function rewriteLinksAndImages() {
         const target = pathMap.get(resolved.path);
         if (!target) return;
 
-        if (target.preview_type === 'markdown') {
+        if (target.preview_type === 'markdown' || target.preview_type === 'text') {
             anchor.href = `/materials/view/${target.id}${resolved.hash}`;
         } else if (target.preview_type === 'image') {
             anchor.href = `/materials/raw/${target.id}`;
@@ -847,6 +860,9 @@ async function renderMarkdown() {
     const markdown = String(material.content || '').trim();
     if (!markdown) {
         contentEl.innerHTML = '<div class="materials-viewer-empty">\u5f53\u524d\u6750\u6599\u5185\u5bb9\u4e3a\u7a7a\u3002</div>';
+        tocEl.innerHTML = '<div class="materials-viewer-empty">\u5f53\u524d\u6587\u6863\u6ca1\u6709\u53ef\u663e\u793a\u7684\u6807\u9898\u76ee\u5f55\u3002</div>';
+        tocCountEl.textContent = '0 \u8282';
+        tocEl.onclick = null;
         return;
     }
 
@@ -862,6 +878,22 @@ async function renderMarkdown() {
     decorateCodeBlocks();
 }
 
+function renderText() {
+    const text = String(material.content || '');
+    if (!text) {
+        contentEl.innerHTML = '<div class="materials-viewer-empty">\u5f53\u524d\u6750\u6599\u5185\u5bb9\u4e3a\u7a7a\u3002</div>';
+    } else {
+        contentEl.innerHTML = `
+            <article class="materials-text-preview">
+                <pre>${escapeHtml(text)}</pre>
+            </article>
+        `;
+    }
+    tocEl.innerHTML = '<div class="materials-viewer-empty">\u7eaf\u6587\u672c\u6750\u6599\u4e0d\u751f\u6210\u6807\u9898\u76ee\u5f55\u3002</div>';
+    tocCountEl.textContent = '0 \u8282';
+    tocEl.onclick = null;
+}
+
 function renderImage() {
     contentEl.innerHTML = `
         <div class="materials-image-preview">
@@ -870,26 +902,155 @@ function renderImage() {
     `;
     tocEl.innerHTML = '<div class="materials-viewer-empty">\u56fe\u7247\u6750\u6599\u6ca1\u6709\u6807\u9898\u76ee\u5f55\u3002</div>';
     tocCountEl.textContent = '0 \u8282';
+    tocEl.onclick = null;
 }
 
 function renderFallback() {
     contentEl.innerHTML = `
         <div class="materials-file-fallback">
             <h2 style="margin-top:0;">\u5f53\u524d\u7c7b\u578b\u6682\u4e0d\u652f\u6301\u5728\u7ebf\u9884\u89c8</h2>
-            <p class="text-muted">\u5df2\u5b8c\u6210\u6750\u6599\u5e93\u5efa\u6a21\u3001\u4e0a\u4f20\u3001\u5206\u914d\u4e0e\u4e0b\u8f7d\u94fe\u8def\u3002\u5f53\u524d\u4f18\u5148\u5b9e\u73b0 Markdown \u5728\u7ebf\u6e32\u67d3\uff0c\u5176\u4ed6\u6587\u6863\u7c7b\u578b\u53ef\u7ee7\u7eed\u6269\u5c55\u3002</p>
+            <p class="text-muted">\u6750\u6599\u5e93\u5df2\u652f\u6301 Markdown\u3001\u6587\u672c\u4e0e\u56fe\u7247\u5728\u7ebf\u9884\u89c8\uff0c\u5176\u4ed6\u6587\u6863\u7c7b\u578b\u53ef\u7ee7\u7eed\u6269\u5c55\u3002</p>
             <a href="${material.download_url}" class="btn btn-primary">\u4e0b\u8f7d\u539f\u6587\u4ef6</a>
         </div>
     `;
     tocEl.innerHTML = '<div class="materials-viewer-empty">\u6b64\u7c7b\u578b\u6750\u6599\u6682\u65e0\u76ee\u5f55\u3002</div>';
     tocCountEl.textContent = '0 \u8282';
+    tocEl.onclick = null;
+}
+
+function updateEditorEncodingLabel() {
+    if (!editorEncodingEl) return;
+    editorEncodingEl.textContent = `编码 ${editorEncoding}`;
+}
+
+function openSourceEditor() {
+    if (!editorBackdropEl) return;
+    editorBackdropEl.hidden = false;
+    editorBackdropEl.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    window.requestAnimationFrame(() => editorTextareaEl?.focus());
+}
+
+function closeSourceEditor() {
+    if (!editorBackdropEl) return;
+    editorBackdropEl.hidden = true;
+    editorBackdropEl.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+}
+
+async function ensureSourceEditorContent() {
+    if (!material.content_url || !editorTextareaEl) return;
+    if (editorLoaded) {
+        updateEditorEncodingLabel();
+        return;
+    }
+    if (editorLoadingPromise) {
+        await editorLoadingPromise;
+        return;
+    }
+
+    editorLoadingPromise = apiFetch(material.content_url, { silent: true })
+        .then((data) => {
+            editorTextareaEl.value = String(data.content || '');
+            editorEncoding = data.encoding || editorEncoding;
+            editorLoaded = true;
+            updateEditorEncodingLabel();
+        })
+        .finally(() => {
+            editorLoadingPromise = null;
+        });
+
+    await editorLoadingPromise;
+}
+
+async function handleOpenSourceEditor() {
+    if (!editorBackdropEl) return;
+    openSourceEditor();
+    try {
+        await ensureSourceEditorContent();
+    } catch (error) {
+        closeSourceEditor();
+        showToast(error.message || '加载源码失败', 'error');
+    }
+}
+
+async function handleSaveSourceEditor() {
+    if (!editorSaveBtn || !editorTextareaEl || !material.content_url) return;
+
+    editorSaveBtn.disabled = true;
+    const originalLabel = editorSaveBtn.textContent;
+    editorSaveBtn.textContent = '保存中...';
+
+    try {
+        const result = await apiFetch(material.content_url, {
+            method: 'PUT',
+            silent: true,
+            body: {
+                content: editorTextareaEl.value,
+                encoding: editorEncoding,
+            },
+        });
+        if (result.unchanged) {
+            closeSourceEditor();
+            showToast(result.message || '源码没有变化', 'info');
+            return;
+        }
+
+        sessionStorage.setItem('material-viewer-toast', result.message || '材料源码已保存');
+        window.location.href = result.material?.viewer_url || material.viewer_url || window.location.href;
+    } catch (error) {
+        showToast(error.message || '保存源码失败', 'error');
+    } finally {
+        editorSaveBtn.disabled = false;
+        editorSaveBtn.textContent = originalLabel;
+    }
+}
+
+function bindSourceEditor() {
+    if (!editSourceBtn || !editorBackdropEl) return;
+
+    editSourceBtn.addEventListener('click', () => {
+        handleOpenSourceEditor().catch((error) => {
+            showToast(error.message || '加载源码失败', 'error');
+        });
+    });
+    editorCancelBtn?.addEventListener('click', () => closeSourceEditor());
+    editorSaveBtn?.addEventListener('click', () => {
+        handleSaveSourceEditor().catch((error) => {
+            showToast(error.message || '保存源码失败', 'error');
+        });
+    });
+    editorBackdropEl.addEventListener('click', (event) => {
+        if (event.target === editorBackdropEl) {
+            closeSourceEditor();
+        }
+    });
+    document.addEventListener('keydown', (event) => {
+        if (!editorBackdropEl.hidden && event.key === 'Escape') {
+            event.preventDefault();
+            closeSourceEditor();
+        }
+    });
 }
 
 async function init() {
     if (!contentEl) return;
     bindImageLightbox();
+    bindSourceEditor();
+
+    const pendingToast = sessionStorage.getItem('material-viewer-toast');
+    if (pendingToast) {
+        sessionStorage.removeItem('material-viewer-toast');
+        showToast(pendingToast, 'success');
+    }
 
     if (material.is_markdown) {
         await renderMarkdown();
+        return;
+    }
+
+    if (material.preview_type === 'text' || (material.is_text && !material.is_markdown)) {
+        renderText();
         return;
     }
 

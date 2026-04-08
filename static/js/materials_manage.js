@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { closeModal, formatDate, formatSize, getFileIcon, openModal, showToast, escapeHtml } from './ui.js';
+import { getLearningDocumentUrl, getMaterialPreviewUrl, getMaterialPrimaryAction, getMaterialTypeLabel, hasLearningDocument } from './materials_common.js';
 
 const state = {
     currentParentId: null,
@@ -35,14 +36,6 @@ const refs = {
     assignSaveBtn: document.getElementById('materials-assign-save-btn'),
     rootCount: document.getElementById('materials-root-count'),
 };
-
-function getTypeLabel(item) {
-    if (item.node_type === 'folder') return '文件夹';
-    if (item.preview_type === 'markdown') return 'Markdown';
-    if (item.preview_type === 'image') return '图片';
-    if (item.file_ext) return item.file_ext.toUpperCase();
-    return '文件';
-}
 
 function getMetaText(item) {
     if (item.node_type === 'folder') {
@@ -81,9 +74,10 @@ function renderList() {
         const icon = item.node_type === 'folder' ? { color: '#0ea5e9', label: 'DIR' } : getFileIcon(item.name || 'file');
         const activeClass = item.id === state.activeMaterialId ? 'is-active' : '';
         const selectedClass = state.selectedIds.has(item.id) ? 'is-selected' : '';
-        const primaryAction = item.node_type === 'folder'
-            ? '<button type="button" class="btn btn-ghost btn-sm" data-action="open">打开</button>'
-            : `<button type="button" class="btn btn-ghost btn-sm" data-action="${item.preview_supported ? 'preview' : 'download'}">${item.preview_supported ? '预览' : '下载'}</button>`;
+        const primaryAction = getMaterialPrimaryAction(item);
+        const documentAction = hasLearningDocument(item)
+            ? '<button type="button" class="btn btn-outline btn-sm" data-action="view-doc">查看</button>'
+            : '';
 
         return `
             <div class="materials-row ${activeClass} ${selectedClass}" data-id="${item.id}">
@@ -97,10 +91,11 @@ function renderList() {
                         <span title="${escapeHtml(item.material_path || '')}">${escapeHtml(item.material_path || '')}</span>
                     </div>
                 </div>
-                <div>${escapeHtml(getTypeLabel(item))}</div>
+                <div>${escapeHtml(getMaterialTypeLabel(item))}</div>
                 <div>${escapeHtml(formatDate(item.updated_at || item.created_at || ''))}</div>
                 <div class="materials-row-actions">
-                    ${primaryAction}
+                    <button type="button" class="btn btn-ghost btn-sm" data-action="${primaryAction.action}">${primaryAction.label}</button>
+                    ${documentAction}
                     ${item.node_type === 'file' ? '<button type="button" class="btn btn-ghost btn-sm" data-action="download">下载</button>' : ''}
                     <button type="button" class="btn btn-ghost btn-sm" data-action="details">详情</button>
                 </div>
@@ -148,13 +143,16 @@ function renderDetail(detail) {
         return;
     }
 
-    const previewUrl = detail.node_type === 'file' && detail.preview_supported ? `/materials/view/${detail.id}` : '';
+    const previewUrl = getMaterialPreviewUrl(detail);
     const optimizedUrl = detail.has_optimized_version ? `/materials/view/${detail.id}?variant=optimized` : '';
     const aiSummary = detail.ai_parse_result?.summary || '尚未执行 AI 解析。';
+    const previewLabel = detail.node_type === 'folder' && detail.document_readme_id
+        ? '查看文档'
+        : (detail.editable ? '预览 / 编辑' : '全屏预览');
 
     refs.detail.innerHTML = `
         <div>
-            <div class="text-muted text-sm">${escapeHtml(getTypeLabel(detail))}</div>
+            <div class="text-muted text-sm">${escapeHtml(getMaterialTypeLabel(detail))}</div>
             <h3 title="${escapeHtml(detail.name)}">${escapeHtml(detail.name)}</h3>
             <div class="text-muted text-sm">${escapeHtml(detail.material_path || '')}</div>
         </div>
@@ -177,7 +175,7 @@ function renderDetail(detail) {
             </div>
         </div>
         <div class="materials-detail-actions">
-            ${previewUrl ? `<a href="${previewUrl}" class="btn btn-primary" target="_blank" rel="noopener">全屏预览</a>` : ''}
+            ${previewUrl ? `<a href="${previewUrl}" class="btn btn-primary" target="_blank" rel="noopener">${previewLabel}</a>` : ''}
             ${optimizedUrl ? `<a href="${optimizedUrl}" class="btn btn-outline" target="_blank" rel="noopener">查看优化稿</a>` : ''}
             ${detail.node_type === 'file' ? `<a href="/materials/download/${detail.id}" class="btn btn-outline">下载</a>` : ''}
             <button type="button" class="btn btn-outline" id="materials-assign-open-btn">分配课堂</button>
@@ -252,6 +250,16 @@ function openFolder(materialId, trackHistory = true) {
 
 function previewMaterial(materialId) {
     window.open(`/materials/view/${materialId}`, '_blank', 'noopener');
+}
+
+function viewLearningDocument(materialId) {
+    const item = getCurrentItem(materialId);
+    const viewerUrl = getLearningDocumentUrl(item);
+    if (!viewerUrl) {
+        showToast('当前目录没有可查看的 README.md', 'warning');
+        return;
+    }
+    window.open(viewerUrl, '_blank', 'noopener');
 }
 
 async function downloadByIds(materialIds) {
@@ -397,6 +405,10 @@ refs.listBody.addEventListener('click', async (event) => {
     }
     if (action === 'preview') {
         previewMaterial(materialId);
+        return;
+    }
+    if (action === 'view-doc') {
+        viewLearningDocument(materialId);
         return;
     }
     if (action === 'download') {

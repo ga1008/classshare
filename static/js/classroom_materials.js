@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
-import { escapeHtml, formatDate, formatSize, getFileIcon, showToast } from './ui.js';
+import { escapeHtml, formatSize, getFileIcon, showToast } from './ui.js';
+import { getLearningDocumentUrl, getMaterialPrimaryAction, getMaterialTypeLabel, hasLearningDocument } from './materials_common.js';
 
 let config = null;
 
@@ -22,14 +23,6 @@ function refs() {
         selectionCount: document.getElementById('classroom-materials-selection-count'),
         selectionDownloadBtn: document.getElementById('classroom-materials-download-btn'),
     };
-}
-
-function getTypeLabel(item) {
-    if (item.node_type === 'folder') return '文件夹';
-    if (item.preview_type === 'markdown') return 'Markdown';
-    if (item.preview_type === 'image') return '图片';
-    if (item.file_ext) return item.file_ext.toUpperCase();
-    return '文件';
 }
 
 function updateSelectionBar() {
@@ -64,6 +57,10 @@ function renderList() {
 
     container.innerHTML = state.items.map((item) => {
         const icon = item.node_type === 'folder' ? { color: '#0ea5e9', label: 'DIR' } : getFileIcon(item.name || 'file');
+        const primaryAction = getMaterialPrimaryAction(item);
+        const documentAction = hasLearningDocument(item)
+            ? '<button type="button" class="btn btn-outline btn-sm" data-action="view-doc">查看</button>'
+            : '';
         return `
             <div class="materials-row" data-id="${item.id}">
                 <div>
@@ -76,12 +73,13 @@ function renderList() {
                         <span>${escapeHtml(item.material_path || '')}</span>
                     </div>
                 </div>
-                <div>${escapeHtml(getTypeLabel(item))}</div>
+                <div>${escapeHtml(getMaterialTypeLabel(item))}</div>
                 <div>${escapeHtml(item.node_type === 'folder' ? `${item.child_count || 0} 个子项` : formatSize(item.file_size || 0))}</div>
                 <div class="materials-row-actions">
-                    <button type="button" class="btn btn-ghost btn-sm" data-action="${item.node_type === 'folder' ? 'open' : (item.preview_supported ? 'preview' : 'download')}">
-                        ${item.node_type === 'folder' ? '打开' : (item.preview_supported ? '预览' : '下载')}
+                    <button type="button" class="btn btn-ghost btn-sm" data-action="${primaryAction.action}">
+                        ${primaryAction.label}
                     </button>
+                    ${documentAction}
                     ${item.node_type === 'file' ? '<button type="button" class="btn btn-ghost btn-sm" data-action="download">下载</button>' : ''}
                 </div>
             </div>
@@ -187,6 +185,13 @@ export function init(appConfig) {
             loadMaterials(materialId, true);
         } else if (action === 'preview') {
             window.open(`/materials/view/${materialId}`, '_blank', 'noopener');
+        } else if (action === 'view-doc') {
+            const viewerUrl = getLearningDocumentUrl(item);
+            if (!viewerUrl) {
+                showToast('当前目录没有可查看的 README.md', 'warning');
+                return;
+            }
+            window.open(viewerUrl, '_blank', 'noopener');
         } else if (action === 'download') {
             window.location.href = `/materials/download/${materialId}`;
         }

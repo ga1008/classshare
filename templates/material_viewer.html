@@ -67,6 +67,9 @@
                 </div>
             </div>
             <div class="materials-viewer-actions">
+                {% if material.can_edit_source %}
+                <button type="button" class="btn btn-outline" id="viewer-edit-source-btn">编辑源码</button>
+                {% endif %}
                 {% if material.optimized_available %}
                 <a href="{{ material.viewer_url }}?variant={{ 'original' if material.preview_variant == 'optimized' else 'optimized' }}" class="btn btn-outline">
                     {{ '查看原稿' if material.preview_variant == 'optimized' else '查看优化稿' }}
@@ -81,6 +84,28 @@
         </section>
     </main>
 </div>
+
+{% if material.can_edit_source %}
+<div id="viewer-source-editor" class="materials-editor-backdrop" hidden aria-hidden="true">
+    <div class="materials-editor-shell" role="dialog" aria-modal="true" aria-labelledby="viewer-editor-title">
+        <div class="materials-editor-toolbar">
+            <div class="materials-editor-copy">
+                <div class="text-muted text-sm">文本源码编辑</div>
+                <strong id="viewer-editor-title">{{ material.name }}</strong>
+                <div class="text-muted text-sm">{{ material.material_path }}</div>
+            </div>
+            <div class="materials-toolbar-group">
+                <div class="materials-editor-encoding" id="viewer-editor-encoding">编码检测中</div>
+                <button type="button" class="btn btn-ghost" id="viewer-editor-cancel-btn">取消</button>
+                <button type="button" class="btn btn-primary" id="viewer-editor-save-btn">保存</button>
+            </div>
+        </div>
+        <div class="materials-editor-body">
+            <textarea id="viewer-editor-textarea" class="materials-editor-textarea" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div id="viewer-image-lightbox" class="materials-lightbox" hidden aria-hidden="true">
     <div class="materials-lightbox-shell">

@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import tempfile
 import zipfile
@@ -20,6 +21,7 @@ from ..services.file_handler import delete_file_safely
 from ..services.file_service import save_file_globally
 from ..services.materials_service import (
     MATERIAL_TYPE_REGISTRY,
+    attach_learning_document_metadata,
     ensure_classroom_access,
     ensure_teacher_material_owner,
     ensure_user_material_access,
@@ -28,6 +30,7 @@ from ..services.materials_service import (
     get_nearest_assignment_anchor,
     infer_material_profile,
     is_descendant_path,
+    is_editable_material,
     make_unique_material_name,
     normalize_material_path,
     serialize_material_row,
@@ -42,6 +45,22 @@ class MaterialAssignRequest(BaseModel):
 
 class MaterialBatchDownloadRequest(BaseModel):
     material_ids: list[int]
+
+
+class MaterialContentUpdateRequest(BaseModel):
+    content: str = ""
+    encoding: str | None = None
+
+
+TEXT_CONTENT_ENCODINGS = (
+    "utf-8-sig",
+    "utf-8",
+    "utf-16",
+    "utf-16-le",
+    "utf-16-be",
+    "gb18030",
+    "gbk",
+)
 
 
 def _row_value(row, key: str, default=None):
@@ -73,13 +92,56 @@ def _load_material_storage_path(material_row) -> Path:
 
 
 async def _load_material_markdown(material_row, prefer_optimized: bool = False) -> str:
+    content, _encoding = await _load_material_text_content(material_row, prefer_optimized=prefer_optimized)
+    return content
+
+
+def _decode_text_bytes(raw_bytes: bytes) -> tuple[str, str]:
+    if b"\x00" in raw_bytes:
+        raise HTTPException(400, "当前材料不是可编辑的文本文件")
+
+    for encoding in TEXT_CONTENT_ENCODINGS:
+        try:
+            return raw_bytes.decode(encoding), encoding
+        except UnicodeDecodeError:
+            continue
+
+    raise HTTPException(400, "当前文本材料编码暂不支持在线编辑")
+
+
+async def _load_material_text_content(material_row, prefer_optimized: bool = False) -> tuple[str, str]:
     optimized_content = _row_value(material_row, "ai_optimized_markdown")
     if prefer_optimized and optimized_content:
-        return optimized_content
+        return optimized_content, "utf-8"
 
     file_path = _load_material_storage_path(material_row)
-    async with aiofiles.open(file_path, "r", encoding="utf-8") as handle:
-        return await handle.read()
+    async with aiofiles.open(file_path, "rb") as handle:
+        raw_bytes = await handle.read()
+    return _decode_text_bytes(raw_bytes)
+
+
+async def _write_material_file(file_hash: str, payload_bytes: bytes):
+    GLOBAL_FILES_DIR.mkdir(parents=True, exist_ok=True)
+    target_path = Path(GLOBAL_FILES_DIR) / file_hash
+    if target_path.exists():
+        return target_path
+
+    async with aiofiles.open(target_path, "wb") as handle:
+        await handle.write(payload_bytes)
+    return target_path
+
+
+def _serialize_material_items(conn, rows) -> list[dict]:
+    items = [serialize_material_row(row) for row in rows]
+    return attach_learning_document_metadata(conn, items)
+
+
+def _decorate_learning_document_item(item: dict) -> dict:
+    if item.get("document_readme_id"):
+        item["document_viewer_url"] = f"/materials/view/{item['document_readme_id']}"
+    else:
+        item["document_viewer_url"] = ""
+    return item
 
 
 def _strip_code_fence(raw_text: str) -> str:
@@ -372,7 +434,7 @@ async def get_teacher_material_library(
             breadcrumbs = get_material_breadcrumbs(conn, parent_id)
 
         rows = _list_material_rows_for_parent(conn, user["id"], parent_id)
-        items = [serialize_material_row(row) for row in rows]
+        items = [_decorate_learning_document_item(item) for item in _serialize_material_items(conn, rows)]
 
     return {
         "status": "success",
@@ -412,6 +474,9 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
                 "has_optimized_version": bool(material["ai_optimized_markdown"]),
             },
         )
+        if material["node_type"] == "folder":
+            detail = attach_learning_document_metadata(conn, [detail])[0]
+            detail = _decorate_learning_document_item(detail)
 
     return {"status": "success", "material": detail}
 
@@ -598,7 +663,7 @@ async def upload_materials(
                 """,
                 top_level_created_ids,
             ).fetchall()
-            created_items = [serialize_material_row(row) for row in created_rows]
+            created_items = [_decorate_learning_document_item(item) for item in _serialize_material_items(conn, created_rows)]
 
     return {
         "status": "success",
@@ -725,6 +790,7 @@ async def get_classroom_materials(
                 row_dict = dict(row)
                 row_dict["child_count"] = int(child_count)
                 items.append(serialize_material_row(row_dict))
+            items = [_decorate_learning_document_item(item) for item in attach_learning_document_metadata(conn, items)]
             return {
                 "status": "success",
                 "current_folder": None,
@@ -757,6 +823,7 @@ async def get_classroom_materials(
             row_dict = dict(row)
             if is_descendant_path(row_dict["material_path"], anchor["material_path"]):
                 items.append(serialize_material_row(row_dict))
+        items = [_decorate_learning_document_item(item) for item in attach_learning_document_metadata(conn, items)]
 
         breadcrumbs = _slice_breadcrumbs_from_anchor(get_material_breadcrumbs(conn, parent_id), anchor["id"])
         return {
@@ -778,6 +845,7 @@ async def material_viewer_page(
         material = ensure_user_material_access(conn, material_id, user)
         allowed_rows = _resolve_allowed_scope_rows(conn, material, user)
         preview_variant = "optimized" if variant == "optimized" and material["ai_optimized_markdown"] else "original"
+        can_edit_source = user["role"] == "teacher" and is_editable_material(material)
 
         preview_payload = serialize_material_row(
             material,
@@ -785,19 +853,26 @@ async def material_viewer_page(
                 "download_url": f"/materials/download/{material_id}",
                 "raw_url": f"/materials/raw/{material_id}",
                 "viewer_url": f"/materials/view/{material_id}",
+                "content_url": f"/api/materials/{material_id}/content" if can_edit_source else "",
                 "preview_variant": preview_variant,
                 "path_index": allowed_rows,
                 "is_image": material["preview_type"] == "image",
                 "is_markdown": material["preview_type"] == "markdown",
+                "is_text": material["preview_type"] in {"markdown", "text"},
+                "can_edit_source": can_edit_source,
                 "optimized_available": bool(material["ai_optimized_markdown"]),
                 "ai_parse_result": json.loads(material["ai_parse_result_json"]) if material["ai_parse_result_json"] else None,
             },
         )
 
-    if material["preview_type"] == "markdown":
-        preview_payload["content"] = await _load_material_markdown(material, prefer_optimized=preview_variant == "optimized")
+    if material["preview_type"] in {"markdown", "text"}:
+        preview_payload["content"], preview_payload["content_encoding"] = await _load_material_text_content(
+            material,
+            prefer_optimized=preview_variant == "optimized",
+        )
     else:
         preview_payload["content"] = None
+        preview_payload["content_encoding"] = None
 
     return templates.TemplateResponse(
         request,
@@ -861,6 +936,94 @@ async def batch_download_materials(payload: MaterialBatchDownloadRequest, user: 
         filename=archive_title,
         background=BackgroundTask(_cleanup_temp_file, temp_path),
     )
+
+
+@router.get("/api/materials/{material_id}/content", response_class=JSONResponse)
+async def get_material_content(material_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        if not is_editable_material(material):
+            raise HTTPException(400, "当前仅支持编辑文本类材料")
+
+    content, encoding = await _load_material_text_content(material, prefer_optimized=False)
+    return {
+        "status": "success",
+        "material": {
+            "id": material["id"],
+            "name": material["name"],
+            "preview_type": material["preview_type"],
+            "updated_at": material["updated_at"],
+        },
+        "content": content,
+        "encoding": encoding,
+    }
+
+
+@router.put("/api/materials/{material_id}/content", response_class=JSONResponse)
+async def update_material_content(
+    material_id: int,
+    payload: MaterialContentUpdateRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    normalized_encoding = str(payload.encoding or "utf-8").strip().lower()
+    if normalized_encoding not in TEXT_CONTENT_ENCODINGS:
+        raise HTTPException(400, "当前文本编码暂不支持保存")
+
+    with get_db_connection() as conn:
+        material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        if not is_editable_material(material):
+            raise HTTPException(400, "当前仅支持编辑文本类材料")
+
+        payload_bytes = payload.content.encode(normalized_encoding)
+        old_hash = material["file_hash"]
+        new_hash = hashlib.sha256(payload_bytes).hexdigest()
+        if old_hash == new_hash and int(material["file_size"] or 0) == len(payload_bytes):
+            return {
+                "status": "success",
+                "message": "源码没有变化",
+                "unchanged": True,
+                "material": {
+                    "id": material["id"],
+                    "name": material["name"],
+                    "updated_at": material["updated_at"],
+                },
+            }
+
+        await _write_material_file(new_hash, payload_bytes)
+
+        updated_at = datetime.now().isoformat()
+        conn.execute(
+            """
+            UPDATE course_materials
+            SET file_hash = ?,
+                file_size = ?,
+                ai_parse_status = 'idle',
+                ai_parse_result_json = NULL,
+                ai_optimize_status = 'idle',
+                ai_optimized_markdown = NULL,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (new_hash, len(payload_bytes), updated_at, material_id),
+        )
+        conn.commit()
+
+        should_remove_old_file = bool(old_hash and old_hash != new_hash and _count_global_file_references(conn, old_hash) <= 0)
+
+    if should_remove_old_file:
+        await delete_file_safely(Path(GLOBAL_FILES_DIR) / old_hash)
+
+    return {
+        "status": "success",
+        "message": "材料源码已保存",
+        "unchanged": False,
+        "material": {
+            "id": material_id,
+            "name": material["name"],
+            "updated_at": updated_at,
+            "viewer_url": f"/materials/view/{material_id}",
+        },
+    }
 
 
 @router.post("/api/materials/{material_id}/ai-parse", response_class=JSONResponse)
