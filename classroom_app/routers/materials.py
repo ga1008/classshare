@@ -81,6 +81,15 @@ TEXT_CONTENT_ENCODINGS = (
     "gbk",
 )
 
+MATERIAL_LIBRARY_SORT_LABELS = {
+    "name": "名称",
+    "created_at": "创建时间",
+    "updated_at": "更新时间",
+}
+MATERIAL_LIBRARY_DEFAULT_SORT_BY = "name"
+MATERIAL_LIBRARY_DEFAULT_SORT_ORDER = "asc"
+MATERIAL_LIBRARY_ALLOWED_SORT_ORDERS = {"asc", "desc"}
+
 
 def _row_value(row, key: str, default=None):
     if row is None:
@@ -211,29 +220,149 @@ def _parse_ai_json(raw_text: str) -> dict:
         raise
 
 
-def _list_material_rows_for_parent(conn, teacher_id: int, parent_id: int | None):
-    if parent_id is None:
-        query = """
-            SELECT m.*,
-                   (SELECT COUNT(*) FROM course_materials child WHERE child.parent_id = m.id AND child.name != '.git') AS child_count,
-                   (SELECT COUNT(*) FROM course_material_assignments a WHERE a.material_id = m.id) AS assignment_count
-            FROM course_materials m
-            WHERE m.teacher_id = ? AND m.parent_id IS NULL
-            ORDER BY CASE WHEN m.node_type = 'folder' THEN 0 ELSE 1 END, m.name COLLATE NOCASE
-        """
-        rows = conn.execute(query, (teacher_id,)).fetchall()
-        return [row for row in rows if not is_git_internal_material_path(row["material_path"])]
+def _normalize_material_keyword(raw_keyword: str | None) -> str:
+    return " ".join(str(raw_keyword or "").split())[:100]
 
-    query = """
+
+def _normalize_material_sort(sort_by: str | None, sort_order: str | None) -> tuple[str, str]:
+    normalized_sort_by = str(sort_by or MATERIAL_LIBRARY_DEFAULT_SORT_BY).strip().lower()
+    if normalized_sort_by not in MATERIAL_LIBRARY_SORT_LABELS:
+        normalized_sort_by = MATERIAL_LIBRARY_DEFAULT_SORT_BY
+
+    default_sort_order = "asc" if normalized_sort_by == "name" else "desc"
+    normalized_sort_order = str(sort_order or default_sort_order).strip().lower()
+    if normalized_sort_order not in MATERIAL_LIBRARY_ALLOWED_SORT_ORDERS:
+        normalized_sort_order = default_sort_order
+
+    return normalized_sort_by, normalized_sort_order
+
+
+def _build_material_order_clause(sort_by: str, sort_order: str) -> str:
+    direction = "ASC" if sort_order == "asc" else "DESC"
+    name_fallback = "m.name COLLATE NOCASE ASC, m.id DESC"
+
+    if sort_by == "created_at":
+        return (
+            "CASE WHEN m.node_type = 'folder' THEN 0 ELSE 1 END, "
+            f"m.created_at {direction}, {name_fallback}"
+        )
+    if sort_by == "updated_at":
+        return (
+            "CASE WHEN m.node_type = 'folder' THEN 0 ELSE 1 END, "
+            f"m.updated_at {direction}, {name_fallback}"
+        )
+    return (
+        "CASE WHEN m.node_type = 'folder' THEN 0 ELSE 1 END, "
+        f"m.name COLLATE NOCASE {direction}, m.updated_at DESC, m.id DESC"
+    )
+
+
+def _list_material_rows_for_parent(
+    conn,
+    teacher_id: int,
+    parent_row,
+    keyword: str = "",
+    sort_by: str = MATERIAL_LIBRARY_DEFAULT_SORT_BY,
+    sort_order: str = MATERIAL_LIBRARY_DEFAULT_SORT_ORDER,
+):
+    keyword = _normalize_material_keyword(keyword)
+    sort_by, sort_order = _normalize_material_sort(sort_by, sort_order)
+
+    conditions = ["m.teacher_id = ?"]
+    params: list[object] = [teacher_id]
+
+    if parent_row is None:
+        if keyword:
+            keyword_pattern = f"%{keyword}%"
+            conditions.append("(m.name LIKE ? COLLATE NOCASE OR m.material_path LIKE ? COLLATE NOCASE)")
+            params.extend([keyword_pattern, keyword_pattern])
+        else:
+            conditions.append("m.parent_id IS NULL")
+    else:
+        if keyword:
+            subtree_pattern = f"{parent_row['material_path']}/%"
+            keyword_pattern = f"%{keyword}%"
+            conditions.append("m.material_path LIKE ?")
+            params.append(subtree_pattern)
+            conditions.append("m.id != ?")
+            params.append(parent_row["id"])
+            conditions.append("(m.name LIKE ? COLLATE NOCASE OR m.material_path LIKE ? COLLATE NOCASE)")
+            params.extend([keyword_pattern, keyword_pattern])
+        else:
+            conditions.append("m.parent_id = ?")
+            params.append(parent_row["id"])
+
+    order_clause = _build_material_order_clause(sort_by, sort_order)
+    query = f"""
         SELECT m.*,
                (SELECT COUNT(*) FROM course_materials child WHERE child.parent_id = m.id AND child.name != '.git') AS child_count,
                (SELECT COUNT(*) FROM course_material_assignments a WHERE a.material_id = m.id) AS assignment_count
         FROM course_materials m
-        WHERE m.teacher_id = ? AND m.parent_id = ?
-        ORDER BY CASE WHEN m.node_type = 'folder' THEN 0 ELSE 1 END, m.name COLLATE NOCASE
+        WHERE {' AND '.join(conditions)}
+        ORDER BY {order_clause}
     """
-    rows = conn.execute(query, (teacher_id, parent_id)).fetchall()
+    rows = conn.execute(query, params).fetchall()
     return [row for row in rows if not is_git_internal_material_path(row["material_path"])]
+
+
+def _get_teacher_material_stats(conn, teacher_id: int) -> dict:
+    material_rows = conn.execute(
+        """
+        SELECT id, parent_id, material_path, node_type, file_size, updated_at
+        FROM course_materials
+        WHERE teacher_id = ?
+        """,
+        (teacher_id,),
+    ).fetchall()
+    visible_rows = [dict(row) for row in material_rows if not is_git_internal_material_path(row["material_path"])]
+
+    assignment_rows = conn.execute(
+        """
+        SELECT a.material_id, a.class_offering_id, m.material_path
+        FROM course_material_assignments a
+        JOIN course_materials m ON m.id = a.material_id
+        WHERE m.teacher_id = ?
+        """,
+        (teacher_id,),
+    ).fetchall()
+    visible_assignments = [dict(row) for row in assignment_rows if not is_git_internal_material_path(row["material_path"])]
+
+    return {
+        "root_count": sum(1 for row in visible_rows if row["parent_id"] is None),
+        "total_count": len(visible_rows),
+        "folder_count": sum(1 for row in visible_rows if row["node_type"] == "folder"),
+        "file_count": sum(1 for row in visible_rows if row["node_type"] == "file"),
+        "total_size": sum(int(row["file_size"] or 0) for row in visible_rows if row["node_type"] == "file"),
+        "latest_updated_at": max((row["updated_at"] for row in visible_rows if row["updated_at"]), default=None),
+        "assigned_material_count": len({int(row["material_id"]) for row in visible_assignments}),
+        "classroom_count": len({int(row["class_offering_id"]) for row in visible_assignments}),
+        "assignment_count": len(visible_assignments),
+    }
+
+
+def _build_teacher_library_overview(parent_row, keyword: str, sort_by: str, sort_order: str, result_count: int) -> dict:
+    normalized_keyword = _normalize_material_keyword(keyword)
+    normalized_sort_by, normalized_sort_order = _normalize_material_sort(sort_by, sort_order)
+    scope_name = parent_row["name"] if parent_row else "材料库根目录"
+    scope_path = parent_row["material_path"] if parent_row else ""
+    search_scope_label = f"{scope_name}及其子级" if parent_row else "全部材料"
+    if normalized_keyword:
+        description = f"在{search_scope_label}中匹配到 {result_count} 项"
+    else:
+        description = f"当前目录显示 {result_count} 项"
+
+    return {
+        "scope_name": scope_name,
+        "scope_path": scope_path,
+        "description": description,
+        "result_count": int(result_count),
+        "search_active": bool(normalized_keyword),
+        "search_keyword": normalized_keyword,
+        "search_scope_label": search_scope_label,
+        "sort_by": normalized_sort_by,
+        "sort_order": normalized_sort_order,
+        "sort_label": MATERIAL_LIBRARY_SORT_LABELS[normalized_sort_by],
+    }
 
 
 def _count_global_file_references(conn, file_hash: str) -> int:
@@ -403,17 +532,7 @@ async def manage_materials_page(request: Request, user: dict = Depends(get_curre
             """,
             (user["id"],),
         ).fetchall()
-        stats = conn.execute(
-            """
-            SELECT
-                (SELECT COUNT(*) FROM course_materials WHERE teacher_id = ? AND parent_id IS NULL) AS root_count,
-                (SELECT COUNT(*)
-                    FROM course_material_assignments a
-                    JOIN course_materials m ON m.id = a.material_id
-                    WHERE m.teacher_id = ?) AS assignment_count
-            """,
-            (user["id"], user["id"]),
-        ).fetchone()
+        stats = _get_teacher_material_stats(conn, user["id"])
 
     type_registry = []
     seen_labels = set()
@@ -440,7 +559,7 @@ async def manage_materials_page(request: Request, user: dict = Depends(get_curre
             "page_title": "课程材料",
             "active_page": "materials",
             "offerings": [dict(row) for row in offerings],
-            "material_stats": dict(stats) if stats else {"root_count": 0, "assignment_count": 0},
+            "material_stats": stats,
             "type_registry": type_registry,
         },
     )
@@ -449,8 +568,14 @@ async def manage_materials_page(request: Request, user: dict = Depends(get_curre
 @router.get("/api/materials/library", response_class=JSONResponse)
 async def get_teacher_material_library(
     parent_id: int | None = Query(default=None),
+    keyword: str = Query(default=""),
+    sort_by: str = Query(default=MATERIAL_LIBRARY_DEFAULT_SORT_BY),
+    sort_order: str = Query(default=MATERIAL_LIBRARY_DEFAULT_SORT_ORDER),
     user: dict = Depends(get_current_teacher),
 ):
+    normalized_keyword = _normalize_material_keyword(keyword)
+    normalized_sort_by, normalized_sort_order = _normalize_material_sort(sort_by, sort_order)
+
     with get_db_connection() as conn:
         current_folder = None
         breadcrumbs = []
@@ -460,17 +585,39 @@ async def get_teacher_material_library(
                 raise HTTPException(400, "只能打开文件夹")
             breadcrumbs = get_material_breadcrumbs(conn, parent_id)
 
-        rows = _list_material_rows_for_parent(conn, user["id"], parent_id)
+        rows = _list_material_rows_for_parent(
+            conn,
+            user["id"],
+            current_folder,
+            keyword=normalized_keyword,
+            sort_by=normalized_sort_by,
+            sort_order=normalized_sort_order,
+        )
         items = [_decorate_learning_document_item(item) for item in _serialize_material_items(conn, rows)]
         current_folder_item = None
         if current_folder:
             current_folder_item = attach_git_repository_metadata(conn, [serialize_material_row(current_folder)])[0]
+        stats = _get_teacher_material_stats(conn, user["id"])
+        overview = _build_teacher_library_overview(
+            current_folder,
+            normalized_keyword,
+            normalized_sort_by,
+            normalized_sort_order,
+            len(items),
+        )
 
     return {
         "status": "success",
         "current_folder": current_folder_item,
         "breadcrumbs": breadcrumbs,
         "items": items,
+        "stats": stats,
+        "filters": {
+            "keyword": normalized_keyword,
+            "sort_by": normalized_sort_by,
+            "sort_order": normalized_sort_order,
+        },
+        "overview": overview,
     }
 
 

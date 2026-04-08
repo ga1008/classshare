@@ -8,7 +8,7 @@
 {% endblock %}
 
 {% block header_actions %}
-<div class="materials-toolbar-group">
+<div class="materials-toolbar-group materials-header-actions">
     <button type="button" class="btn btn-outline" id="materials-refresh-btn">刷新</button>
     <button type="button" class="btn btn-outline" id="materials-upload-folder-btn">上传文件夹</button>
     <button type="button" class="btn btn-primary" id="materials-upload-file-btn">上传文件</button>
@@ -16,20 +16,56 @@
 {% endblock %}
 
 {% block content %}
-<div class="materials-stat-grid">
-    <article class="materials-stat-card">
-        <div class="materials-stat-label">材料根节点</div>
-        <div class="materials-stat-value" id="materials-root-count">{{ material_stats.root_count }}</div>
-    </article>
-    <article class="materials-stat-card">
-        <div class="materials-stat-label">已分配课堂</div>
-        <div class="materials-stat-value" id="materials-assignment-count">{{ material_stats.assignment_count }}</div>
-    </article>
-</div>
+<section class="materials-overview">
+    <div class="materials-overview-copy">
+        <div class="materials-overview-eyebrow">教师管理中心 / 课程材料</div>
+        <h2>统一管理课程资料、文档目录与 Git 教学仓库</h2>
+        <p>
+            支持批量上传、目录化浏览、模糊搜索、按名称/创建时间/更新时间排序，
+            并保留课堂分配、AI 解析、源文件编辑、仓库同步等现有能力。
+        </p>
+        <div class="materials-overview-pills">
+            <span class="materials-overview-pill">README 文档视图</span>
+            <span class="materials-overview-pill">AI 解析与优化</span>
+            <span class="materials-overview-pill">Git 仓库同步</span>
+        </div>
+        <div class="materials-overview-updated">
+            最近更新：
+            <strong id="materials-latest-updated">{{ material_stats.latest_updated_at or '暂无记录' }}</strong>
+        </div>
+    </div>
+
+    <div class="materials-stat-grid materials-stat-grid--overview">
+        <article class="materials-stat-card">
+            <div class="materials-stat-label">根目录</div>
+            <div class="materials-stat-value" id="materials-root-count">{{ material_stats.root_count }}</div>
+            <div class="materials-stat-help">顶层材料入口数</div>
+        </article>
+        <article class="materials-stat-card">
+            <div class="materials-stat-label">材料总数</div>
+            <div class="materials-stat-value" id="materials-total-count">{{ material_stats.total_count }}</div>
+            <div class="materials-stat-help" id="materials-folder-file-summary">
+                文件夹 {{ material_stats.folder_count }} / 文件 {{ material_stats.file_count }}
+            </div>
+        </article>
+        <article class="materials-stat-card">
+            <div class="materials-stat-label">已分配材料</div>
+            <div class="materials-stat-value" id="materials-assignment-count">{{ material_stats.assigned_material_count }}</div>
+            <div class="materials-stat-help" id="materials-classroom-count">
+                覆盖 {{ material_stats.classroom_count }} 个课堂
+            </div>
+        </article>
+        <article class="materials-stat-card">
+            <div class="materials-stat-label">总容量</div>
+            <div class="materials-stat-value" id="materials-total-size">{{ material_stats.total_size or 0 }} B</div>
+            <div class="materials-stat-help">自动汇总全部文件体积</div>
+        </article>
+    </div>
+</section>
 
 <div class="materials-shell">
-    <section class="materials-card">
-        <div class="materials-toolbar">
+    <section class="materials-card materials-library-card">
+        <div class="materials-toolbar materials-library-nav">
             <div class="materials-toolbar-group">
                 <button type="button" class="btn btn-ghost btn-sm" id="materials-back-btn">返回</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="materials-up-btn">上一级</button>
@@ -40,35 +76,83 @@
             </div>
         </div>
 
-        <div class="materials-selection-bar" id="materials-selection-bar" hidden>
-            <div>
-                已选择 <strong id="materials-selection-count">0</strong> 项
+        <div class="materials-library-controls">
+            <label class="materials-search-box" for="materials-search-input">
+                <span class="materials-search-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="7"></circle>
+                        <path d="m20 20-3.5-3.5"></path>
+                    </svg>
+                </span>
+                <input
+                    type="search"
+                    id="materials-search-input"
+                    class="form-control"
+                    placeholder="按名称或路径模糊搜索当前范围内的材料"
+                    autocomplete="off"
+                >
+                <button type="button" class="btn btn-ghost btn-sm" id="materials-search-clear-btn" hidden>清空</button>
+            </label>
+
+            <div class="materials-sort-controls">
+                <label class="materials-inline-field">
+                    <span>排序字段</span>
+                    <select id="materials-sort-by" class="form-control">
+                        <option value="name">名称</option>
+                        <option value="created_at">创建时间</option>
+                        <option value="updated_at">更新时间</option>
+                    </select>
+                </label>
+                <label class="materials-inline-field">
+                    <span>排序方向</span>
+                    <select id="materials-sort-order" class="form-control">
+                        <option value="asc">升序</option>
+                        <option value="desc">降序</option>
+                    </select>
+                </label>
             </div>
+        </div>
+
+        <div class="materials-library-summary" id="materials-library-summary">
+            <div class="materials-library-summary-main">
+                <div class="materials-library-summary-label">当前范围</div>
+                <strong id="materials-scope-name">材料库根目录</strong>
+                <div class="text-muted text-sm" id="materials-scope-path">/</div>
+                <div class="text-muted text-sm" id="materials-scope-description">正在加载材料列表...</div>
+            </div>
+            <div class="materials-library-summary-chips">
+                <span class="materials-summary-chip" id="materials-result-count">0 项</span>
+                <span class="materials-summary-chip" id="materials-sort-summary">按名称升序</span>
+                <span class="materials-summary-chip" id="materials-search-summary" hidden>未启用搜索</span>
+            </div>
+        </div>
+
+        <div class="materials-selection-bar" id="materials-selection-bar" hidden>
+            <div>已选择 <strong id="materials-selection-count">0</strong> 项</div>
             <div class="materials-toolbar-group">
                 <button type="button" class="btn btn-outline btn-sm" id="materials-selection-download-btn">下载选中</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="materials-selection-clear-btn">清空选择</button>
             </div>
         </div>
 
-        <div class="materials-list">
-            <div class="materials-list-header">
+        <div class="materials-list materials-manage-list">
+            <div class="materials-list-header materials-manage-list-header">
                 <div>
                     <input type="checkbox" id="materials-select-all">
                 </div>
-                <div>名称</div>
-                <div>类型</div>
-                <div>更新时间</div>
+                <div>材料信息</div>
+                <div>时间信息</div>
                 <div>操作</div>
             </div>
             <div id="materials-list-body" class="materials-list-body">
-                <div class="materials-empty">正在加载课程材料库...</div>
+                <div class="materials-empty">正在加载课程材料...</div>
             </div>
         </div>
     </section>
 
-    <aside class="materials-card">
+    <aside class="materials-card materials-detail-card">
         <div class="materials-detail" id="materials-detail">
-            <div class="materials-empty">选择一个材料后，这里会显示详情、AI 摘要和课堂分配状态。</div>
+            <div class="materials-empty">选择一项材料后，这里会显示详情、AI 摘要与课堂分配状态。</div>
         </div>
     </aside>
 </div>
@@ -127,7 +211,7 @@
             <div class="modal-header">
                 <div>
                     <h3 class="modal-title">Git 仓库</h3>
-                    <p class="modal-subtitle">执行常用同步命令，或直接输入 `git ...` 命令处理更复杂的场景。</p>
+                    <p class="modal-subtitle">执行常用同步操作，或直接输入 `git ...` 命令处理更复杂的场景。</p>
                 </div>
                 <button class="modal-close" data-dismiss="modal">&times;</button>
             </div>
@@ -171,7 +255,7 @@
                 <div class="materials-section">
                     <div class="materials-section-header">
                         <h3>命令行</h3>
-                        <span class="text-muted text-sm">只支持 git 命令</span>
+                        <span class="text-muted text-sm">仅支持 git 命令</span>
                     </div>
                     <div class="materials-repo-command-line">
                         <input type="text" id="materials-repository-command-input" class="form-control" placeholder="例如：git status -sb">
@@ -217,7 +301,7 @@
                     </label>
                     <label class="materials-form-field">
                         <span>密码 / Token</span>
-                        <input type="password" id="materials-repository-credential-secret" class="form-control" placeholder="HTTPS 仓库可以输入密码或访问令牌">
+                        <input type="password" id="materials-repository-credential-secret" class="form-control" placeholder="HTTPS 仓库可输入密码或访问令牌">
                     </label>
                     <label class="materials-form-field">
                         <span>凭据类型</span>

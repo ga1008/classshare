@@ -1,5 +1,5 @@
 import { apiFetch } from './api.js';
-import { closeModal, formatDate, formatSize, getFileIcon, openModal, showToast, escapeHtml } from './ui.js';
+import { closeModal, escapeHtml, formatDate, formatSize, getFileIcon, openModal, showToast } from './ui.js';
 import {
     getLearningDocumentUrl,
     getMaterialPreviewUrl,
@@ -10,15 +10,98 @@ import {
     isGitRepository,
 } from './materials_common.js';
 
+const SORT_FIELD_LABELS = {
+    name: '名称',
+    created_at: '创建时间',
+    updated_at: '更新时间',
+};
+
+const DEFAULT_SORT_ORDERS = {
+    name: 'asc',
+    created_at: 'desc',
+    updated_at: 'desc',
+};
+
+const SEARCH_DEBOUNCE_MS = 280;
+
+function normalizeKeyword(value) {
+    return String(value || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 100);
+}
+
+function normalizeSortBy(value) {
+    const sortBy = String(value || 'name').trim().toLowerCase();
+    return Object.prototype.hasOwnProperty.call(SORT_FIELD_LABELS, sortBy) ? sortBy : 'name';
+}
+
+function normalizeSortOrder(value, sortBy = 'name') {
+    const fallback = DEFAULT_SORT_ORDERS[sortBy] || 'asc';
+    return String(value || fallback).trim().toLowerCase() === 'desc' ? 'desc' : 'asc';
+}
+
+function parsePositiveInt(value) {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getInitialLibraryState() {
+    const params = new URLSearchParams(window.location.search);
+    const sortBy = normalizeSortBy(params.get('sort_by'));
+    return {
+        parentId: parsePositiveInt(params.get('parent_id')),
+        keyword: normalizeKeyword(params.get('keyword')),
+        sortBy,
+        sortOrder: normalizeSortOrder(params.get('sort_order'), sortBy),
+    };
+}
+
+function escapeRegex(value) {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function highlightText(text, keyword) {
+    const source = String(text || '');
+    const normalizedKeyword = normalizeKeyword(keyword);
+    if (!normalizedKeyword) {
+        return escapeHtml(source);
+    }
+
+    const matcher = new RegExp(`(${escapeRegex(normalizedKeyword)})`, 'ig');
+    return source
+        .split(matcher)
+        .map((segment, index) => (index % 2 === 1 ? `<mark>${escapeHtml(segment)}</mark>` : escapeHtml(segment)))
+        .join('');
+}
+
+function formatDateLabel(value) {
+    return formatDate(value || '') || '暂无';
+}
+
+function getSortSummary(sortBy, sortOrder) {
+    return `按${SORT_FIELD_LABELS[sortBy] || '名称'}${sortOrder === 'desc' ? '降序' : '升序'}`;
+}
+
+const initialLibraryState = getInitialLibraryState();
+
 const state = {
-    currentParentId: null,
+    currentParentId: initialLibraryState.parentId,
     history: [],
     items: [],
     activeMaterialId: null,
-    selectedIds: new Set(),
     activeDetail: null,
+    selectedIds: new Set(),
     currentFolder: null,
     currentBreadcrumbs: [],
+    filters: {
+        keyword: initialLibraryState.keyword,
+        sortBy: initialLibraryState.sortBy,
+        sortOrder: initialLibraryState.sortOrder,
+    },
+    overview: null,
+    stats: null,
+    searchTimer: null,
     repository: {
         materialId: null,
         detail: null,
@@ -44,6 +127,16 @@ const refs = {
     folderBtn: document.getElementById('materials-upload-folder-btn'),
     fileInput: document.getElementById('materials-file-input'),
     folderInput: document.getElementById('materials-folder-input'),
+    searchInput: document.getElementById('materials-search-input'),
+    searchClearBtn: document.getElementById('materials-search-clear-btn'),
+    sortBy: document.getElementById('materials-sort-by'),
+    sortOrder: document.getElementById('materials-sort-order'),
+    scopeName: document.getElementById('materials-scope-name'),
+    scopePath: document.getElementById('materials-scope-path'),
+    scopeDescription: document.getElementById('materials-scope-description'),
+    resultCount: document.getElementById('materials-result-count'),
+    sortSummary: document.getElementById('materials-sort-summary'),
+    searchSummary: document.getElementById('materials-search-summary'),
     selectAll: document.getElementById('materials-select-all'),
     selectionBar: document.getElementById('materials-selection-bar'),
     selectionCount: document.getElementById('materials-selection-count'),
@@ -53,6 +146,12 @@ const refs = {
     assignOptions: document.getElementById('materials-assign-options'),
     assignSaveBtn: document.getElementById('materials-assign-save-btn'),
     rootCount: document.getElementById('materials-root-count'),
+    totalCount: document.getElementById('materials-total-count'),
+    folderFileSummary: document.getElementById('materials-folder-file-summary'),
+    assignmentCount: document.getElementById('materials-assignment-count'),
+    classroomCount: document.getElementById('materials-classroom-count'),
+    totalSize: document.getElementById('materials-total-size'),
+    latestUpdated: document.getElementById('materials-latest-updated'),
     repositoryName: document.getElementById('materials-repository-name'),
     repositoryPath: document.getElementById('materials-repository-path'),
     repositoryProvider: document.getElementById('materials-repository-provider'),
@@ -80,6 +179,7 @@ const refs = {
 };
 
 function getMetaText(item) {
+    if (!item) return '--';
     if (item.node_type === 'folder') {
         return `${item.child_count || 0} 个子项`;
     }
@@ -102,11 +202,55 @@ function getVisualMeta(item) {
     return { color: fileMeta.color, label: fileMeta.label, badge: '' };
 }
 
+function updateFilterControls() {
+    refs.searchInput.value = state.filters.keyword;
+    refs.searchClearBtn.hidden = !state.filters.keyword;
+    refs.sortBy.value = state.filters.sortBy;
+    refs.sortOrder.value = state.filters.sortOrder;
+}
+
+function renderStats() {
+    if (!state.stats) return;
+    refs.rootCount.textContent = String(state.stats.root_count || 0);
+    refs.totalCount.textContent = String(state.stats.total_count || 0);
+    refs.folderFileSummary.textContent = `文件夹 ${state.stats.folder_count || 0} / 文件 ${state.stats.file_count || 0}`;
+    refs.assignmentCount.textContent = String(state.stats.assigned_material_count || 0);
+    refs.classroomCount.textContent = `覆盖 ${state.stats.classroom_count || 0} 个课堂`;
+    refs.totalSize.textContent = formatSize(state.stats.total_size || 0);
+    refs.latestUpdated.textContent = formatDateLabel(state.stats.latest_updated_at);
+}
+
+function renderLibraryOverview() {
+    const overview = state.overview || {
+        scope_name: '材料库根目录',
+        scope_path: '/',
+        description: '当前目录显示 0 项',
+        result_count: 0,
+        search_active: false,
+        sort_by: state.filters.sortBy,
+        sort_order: state.filters.sortOrder,
+    };
+
+    refs.scopeName.textContent = overview.scope_name || '材料库根目录';
+    refs.scopePath.textContent = overview.scope_path || '/';
+    refs.scopeDescription.textContent = overview.description || '当前目录显示 0 项';
+    refs.resultCount.textContent = `${overview.result_count || 0} 项`;
+    refs.sortSummary.textContent = getSortSummary(overview.sort_by || state.filters.sortBy, overview.sort_order || state.filters.sortOrder);
+
+    if (overview.search_active) {
+        refs.searchSummary.hidden = false;
+        refs.searchSummary.textContent = `搜索：${overview.search_keyword || state.filters.keyword}`;
+    } else {
+        refs.searchSummary.hidden = true;
+        refs.searchSummary.textContent = '';
+    }
+}
+
 function updateSelectionBar() {
     const count = state.selectedIds.size;
     refs.selectionBar.hidden = count === 0;
     refs.selectionCount.textContent = String(count);
-    refs.selectAll.checked = state.items.length > 0 && state.items.every((item) => state.selectedIds.has(item.id));
+    refs.selectAll.checked = state.items.length > 0 && state.items.every((item) => state.selectedIds.has(Number(item.id)));
 }
 
 function renderBreadcrumbs(breadcrumbs) {
@@ -122,25 +266,26 @@ function renderBreadcrumbs(breadcrumbs) {
 }
 
 function renderRepositoryToolbar() {
-    if (!refs.repositoryBtn) return;
-    const canOpenRepository = Boolean(state.currentFolder && isGitRepository(state.currentFolder));
-    refs.repositoryBtn.hidden = !canOpenRepository;
+    refs.repositoryBtn.hidden = !(state.currentFolder && isGitRepository(state.currentFolder));
 }
 
 function renderList() {
     if (!state.items.length) {
-        refs.listBody.innerHTML = '<div class="materials-empty">当前目录暂无材料。</div>';
+        const emptyText = state.filters.keyword
+            ? `未找到与“${escapeHtml(state.filters.keyword)}”匹配的材料，请尝试简化关键词或清空搜索。`
+            : '当前目录暂无材料。';
+        refs.listBody.innerHTML = `<div class="materials-empty">${emptyText}</div>`;
         updateSelectionBar();
         return;
     }
 
     refs.listBody.innerHTML = state.items.map((item) => {
         const visualMeta = getVisualMeta(item);
-        const activeClass = item.id === state.activeMaterialId ? 'is-active' : '';
-        const selectedClass = state.selectedIds.has(item.id) ? 'is-selected' : '';
+        const activeClass = Number(item.id) === Number(state.activeMaterialId) ? 'is-active' : '';
+        const selectedClass = state.selectedIds.has(Number(item.id)) ? 'is-selected' : '';
         const primaryAction = getMaterialPrimaryAction(item);
         const documentAction = hasLearningDocument(item)
-            ? '<button type="button" class="btn btn-outline btn-sm" data-action="view-doc">查看</button>'
+            ? '<button type="button" class="btn btn-outline btn-sm" data-action="view-doc">文档</button>'
             : '';
         const repositoryAction = isGitRepository(item)
             ? '<button type="button" class="btn btn-outline btn-sm" data-action="repository">仓库</button>'
@@ -150,20 +295,29 @@ function renderList() {
             : '';
 
         return `
-            <div class="materials-row ${activeClass} ${selectedClass}" data-id="${item.id}">
-                <div>
-                    <input type="checkbox" data-role="select-item" data-id="${item.id}" ${state.selectedIds.has(item.id) ? 'checked' : ''}>
+            <div class="materials-row materials-manage-row ${activeClass} ${selectedClass}" data-id="${item.id}">
+                <div class="materials-row-check">
+                    <input type="checkbox" data-role="select-item" data-id="${item.id}" ${state.selectedIds.has(Number(item.id)) ? 'checked' : ''}>
                 </div>
-                <div class="materials-name-cell">
-                    <div class="materials-type-icon" style="background:${visualMeta.color}16;color:${visualMeta.color};">${visualMeta.label}</div>
-                    <div class="materials-name-copy">
-                        <strong title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong>
-                        <div class="materials-name-badges">${repositoryBadge}</div>
-                        <span title="${escapeHtml(item.material_path || '')}">${escapeHtml(item.material_path || '')}</span>
+                <div class="materials-row-main">
+                    <div class="materials-name-cell">
+                        <div class="materials-type-icon" style="background:${visualMeta.color}16;color:${visualMeta.color};">${escapeHtml(visualMeta.label)}</div>
+                        <div class="materials-name-copy">
+                            <strong title="${escapeHtml(item.name)}">${highlightText(item.name, state.filters.keyword)}</strong>
+                            <div class="materials-name-badges">${repositoryBadge}</div>
+                            <span title="${escapeHtml(item.material_path || '')}">${highlightText(item.material_path || '', state.filters.keyword)}</span>
+                        </div>
+                    </div>
+                    <div class="materials-row-meta">
+                        <span class="materials-type-pill">${escapeHtml(getMaterialTypeLabel(item))}</span>
+                        <span class="materials-meta-item">${escapeHtml(getMetaText(item))}</span>
+                        ${item.assignment_count ? `<span class="materials-meta-item">已分配 ${escapeHtml(String(item.assignment_count))} 次</span>` : ''}
                     </div>
                 </div>
-                <div>${escapeHtml(getMaterialTypeLabel(item))}</div>
-                <div>${escapeHtml(formatDate(item.updated_at || item.created_at || ''))}</div>
+                <div class="materials-row-time">
+                    <span><strong>创建</strong>${escapeHtml(formatDateLabel(item.created_at))}</span>
+                    <span><strong>更新</strong>${escapeHtml(formatDateLabel(item.updated_at || item.created_at))}</span>
+                </div>
                 <div class="materials-row-actions">
                     <button type="button" class="btn btn-ghost btn-sm" data-action="${primaryAction.action}">${primaryAction.label}</button>
                     ${documentAction}
@@ -244,13 +398,14 @@ function renderRepositorySummary(detail) {
 
 function renderDetail(detail) {
     if (!detail) {
-        refs.detail.innerHTML = '<div class="materials-empty">选择一个材料后，这里会显示详情、AI 摘要和课堂分配状态。</div>';
+        refs.detail.innerHTML = '<div class="materials-empty">选择一项材料后，这里会显示详情、AI 摘要与课堂分配状态。</div>';
         return;
     }
 
     const previewUrl = getMaterialPreviewUrl(detail);
     const optimizedUrl = detail.has_optimized_version ? `/materials/view/${detail.id}?variant=optimized` : '';
     const aiSummary = detail.ai_parse_result?.summary || '尚未执行 AI 解析。';
+    const assignmentCount = Array.isArray(detail.assignments) ? detail.assignments.length : 0;
     const previewLabel = detail.node_type === 'folder' && detail.document_readme_id
         ? '查看文档'
         : (detail.editable ? '预览 / 编辑' : '全屏预览');
@@ -267,8 +422,16 @@ function renderDetail(detail) {
                 <span>${escapeHtml(getMetaText(detail))}</span>
             </div>
             <div class="meta-chip">
+                <strong>创建时间</strong>
+                <span>${escapeHtml(formatDateLabel(detail.created_at))}</span>
+            </div>
+            <div class="meta-chip">
                 <strong>更新时间</strong>
-                <span>${escapeHtml(formatDate(detail.updated_at || detail.created_at || ''))}</span>
+                <span>${escapeHtml(formatDateLabel(detail.updated_at || detail.created_at))}</span>
+            </div>
+            <div class="meta-chip">
+                <strong>已分配课堂</strong>
+                <span>${escapeHtml(String(assignmentCount))}</span>
             </div>
             <div class="meta-chip">
                 <strong>AI 解析状态</strong>
@@ -284,7 +447,7 @@ function renderDetail(detail) {
             ${optimizedUrl ? `<a href="${optimizedUrl}" class="btn btn-outline" target="_blank" rel="noopener">查看优化稿</a>` : ''}
             ${detail.node_type === 'file' ? `<a href="/materials/download/${detail.id}" class="btn btn-outline">下载</a>` : ''}
             ${isGitRepository(detail) ? '<button type="button" class="btn btn-outline" id="materials-repository-open-btn">仓库</button>' : ''}
-            <button type="button" class="btn btn-outline" id="materials-assign-open-btn">分配课堂</button>
+            <button type="button" class="btn btn-outline" id="materials-assign-open-btn" ${config.canAssign ? '' : 'disabled'}>分配课堂</button>
             <button type="button" class="btn btn-outline" id="materials-ai-parse-btn" ${detail.can_ai_parse ? '' : 'disabled'}>AI 解析</button>
             <button type="button" class="btn btn-outline" id="materials-ai-optimize-btn" ${detail.can_ai_optimize ? '' : 'disabled'}>AI 优化</button>
             <button type="button" class="btn btn-danger" id="materials-delete-btn">删除</button>
@@ -319,42 +482,76 @@ function renderDetail(detail) {
 }
 
 async function loadMaterialDetail(materialId) {
+    state.activeMaterialId = Number(materialId);
+    renderList();
     state.activeDetail = await apiFetch(`/api/materials/${materialId}`, { silent: true }).then((data) => data.material);
     renderDetail(state.activeDetail);
 }
 
-async function loadLibrary(parentId = null, trackHistory = false) {
-    const query = parentId ? `?parent_id=${parentId}` : '';
-    const data = await apiFetch(`/api/materials/library${query}`, { silent: true });
+function buildLibraryQuery(parentId) {
+    const params = new URLSearchParams();
+    if (parentId) {
+        params.set('parent_id', String(parentId));
+    }
+    if (state.filters.keyword) {
+        params.set('keyword', state.filters.keyword);
+    }
+    params.set('sort_by', state.filters.sortBy);
+    params.set('sort_order', state.filters.sortOrder);
+    return params.toString();
+}
 
-    if (trackHistory) {
+function syncLibraryUrl() {
+    const query = buildLibraryQuery(state.currentParentId);
+    const url = `${window.location.pathname}${query ? `?${query}` : ''}`;
+    window.history.replaceState({}, '', url);
+}
+
+async function loadLibrary(parentId = null, trackHistory = false) {
+    const targetParentId = parentId ?? null;
+    const query = buildLibraryQuery(targetParentId);
+    const data = await apiFetch(`/api/materials/library${query ? `?${query}` : ''}`, { silent: true });
+
+    if (trackHistory && state.currentParentId !== targetParentId) {
         state.history.push(state.currentParentId);
     }
 
-    state.currentParentId = parentId;
+    const previousActiveId = state.activeMaterialId;
+    state.currentParentId = targetParentId;
     state.items = data.items || [];
     state.selectedIds.clear();
-    state.activeMaterialId = null;
-    state.activeDetail = null;
     state.currentFolder = data.current_folder || null;
     state.currentBreadcrumbs = data.breadcrumbs || [];
+    state.filters.keyword = normalizeKeyword(data.filters?.keyword ?? state.filters.keyword);
+    state.filters.sortBy = normalizeSortBy(data.filters?.sort_by ?? state.filters.sortBy);
+    state.filters.sortOrder = normalizeSortOrder(data.filters?.sort_order ?? state.filters.sortOrder, state.filters.sortBy);
+    state.overview = data.overview || null;
+    state.stats = data.stats || null;
 
-    if (refs.rootCount && parentId === null) {
-        refs.rootCount.textContent = String(state.items.length);
+    const activeStillVisible = state.items.some((item) => Number(item.id) === Number(previousActiveId));
+    state.activeMaterialId = activeStillVisible ? previousActiveId : null;
+    if (!activeStillVisible) {
+        state.activeDetail = null;
     }
 
+    updateFilterControls();
+    renderStats();
+    renderLibraryOverview();
     renderBreadcrumbs(state.currentBreadcrumbs);
     renderRepositoryToolbar();
     renderList();
-    renderDetail(null);
+    renderDetail(state.activeDetail);
+    syncLibraryUrl();
 }
 
 function getCurrentItem(materialId) {
-    return state.items.find((item) => item.id === materialId) || state.activeDetail;
+    return state.items.find((item) => Number(item.id) === Number(materialId)) || state.activeDetail;
 }
 
 function openFolder(materialId, trackHistory = true) {
-    loadLibrary(materialId, trackHistory).catch((error) => showToast(error.message || '打开文件夹失败', 'error'));
+    loadLibrary(materialId, trackHistory).catch((error) => {
+        showToast(error.message || '打开文件夹失败', 'error');
+    });
 }
 
 function previewMaterial(materialId) {
@@ -369,6 +566,15 @@ function viewLearningDocument(materialId) {
         return;
     }
     window.open(viewerUrl, '_blank', 'noopener');
+}
+
+function triggerSearch() {
+    clearTimeout(state.searchTimer);
+    state.searchTimer = window.setTimeout(() => {
+        loadLibrary(state.currentParentId, false).catch((error) => {
+            showToast(error.message || '搜索材料失败', 'error');
+        });
+    }, SEARCH_DEBOUNCE_MS);
 }
 
 async function downloadByIds(materialIds) {
@@ -441,8 +647,12 @@ async function uploadFiles(fileList) {
 }
 
 function toggleSelection(materialId, checked) {
-    if (checked) state.selectedIds.add(materialId);
-    else state.selectedIds.delete(materialId);
+    const normalizedId = Number(materialId);
+    if (checked) {
+        state.selectedIds.add(normalizedId);
+    } else {
+        state.selectedIds.delete(normalizedId);
+    }
     renderList();
 }
 
@@ -451,39 +661,50 @@ function getSelectedMaterialIds() {
 }
 
 async function openAssignModal() {
-    if (!state.activeDetail) return;
+    if (!state.activeDetail || !config.canAssign) return;
     refs.assignName.textContent = state.activeDetail.name;
 
     refs.assignOptions?.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
-        checkbox.checked = (state.activeDetail.assignments || []).some((item) => Number(item.class_offering_id) === Number(checkbox.value));
+        checkbox.checked = (state.activeDetail.assignments || []).some(
+            (item) => Number(item.class_offering_id) === Number(checkbox.value),
+        );
     });
     openModal('materials-assign-modal');
 }
 
 async function saveAssignments() {
     if (!state.activeDetail) return;
-    const ids = Array.from(refs.assignOptions.querySelectorAll('input[type="checkbox"]:checked')).map((checkbox) => Number(checkbox.value));
-    const result = await apiFetch(`/api/materials/${state.activeDetail.id}/assign`, {
+    const materialId = state.activeDetail.id;
+    const selectedOfferingIds = Array.from(
+        refs.assignOptions.querySelectorAll('input[type="checkbox"]:checked'),
+    ).map((checkbox) => Number(checkbox.value));
+
+    const result = await apiFetch(`/api/materials/${materialId}/assign`, {
         method: 'POST',
-        body: { class_offering_ids: ids },
+        body: { class_offering_ids: selectedOfferingIds },
     });
     showToast(result.message || '课堂分配已更新', 'success');
     closeModal('materials-assign-modal');
-    await loadMaterialDetail(state.activeDetail.id);
+    await loadLibrary(state.currentParentId);
+    await loadMaterialDetail(materialId);
 }
 
 async function runAiParse() {
     if (!state.activeDetail) return;
-    const result = await apiFetch(`/api/materials/${state.activeDetail.id}/ai-parse`, { method: 'POST' });
+    const materialId = state.activeDetail.id;
+    const result = await apiFetch(`/api/materials/${materialId}/ai-parse`, { method: 'POST' });
     showToast(result.message || 'AI 解析完成', 'success');
-    await loadMaterialDetail(state.activeDetail.id);
+    await loadLibrary(state.currentParentId);
+    await loadMaterialDetail(materialId);
 }
 
 async function runAiOptimize() {
     if (!state.activeDetail) return;
-    const result = await apiFetch(`/api/materials/${state.activeDetail.id}/ai-optimize`, { method: 'POST' });
+    const materialId = state.activeDetail.id;
+    const result = await apiFetch(`/api/materials/${materialId}/ai-optimize`, { method: 'POST' });
     showToast(result.message || 'AI 优化完成', 'success');
-    await loadMaterialDetail(state.activeDetail.id);
+    await loadLibrary(state.currentParentId);
+    await loadMaterialDetail(materialId);
     if (result.viewer_url) {
         window.open(result.viewer_url, '_blank', 'noopener');
     }
@@ -491,7 +712,7 @@ async function runAiOptimize() {
 
 async function deleteActiveMaterial() {
     if (!state.activeDetail) return;
-    if (!window.confirm(`确定删除材料 "${state.activeDetail.name}" 吗？`)) return;
+    if (!window.confirm(`确定删除材料“${state.activeDetail.name}”吗？`)) return;
     const result = await apiFetch(`/api/materials/${state.activeDetail.id}`, { method: 'DELETE' });
     showToast(result.message || '材料已删除', 'success');
     await loadLibrary(state.currentParentId);
@@ -519,7 +740,8 @@ function setRepositoryBusy(busy, statusText = '') {
     refs.repositoryPushBtn.disabled = busy || !detail || !detail.can_commit_push;
     refs.repositoryCommandRunBtn.disabled = busy || !detail;
     refs.repositoryAuthBtn.disabled = busy || !detail || !detail.credential_supported;
-    refs.repositoryCredentialSaveBtn.disabled = busy;
+    refs.repositoryCredentialSaveBtn.disabled = busy || !detail || !detail.credential_supported;
+    refs.repositoryCommandInput.disabled = busy || !detail;
 }
 
 function renderRepositoryModal() {
@@ -571,23 +793,382 @@ function openRepositoryCredentialModal() {
     refs.repositoryCredentialAuthMode.value = 'password';
     refs.repositoryCredentialHint.textContent = detail.credential_supported
         ? '仅支持 HTTP / HTTPS 远程仓库的表单凭据。'
-        : '当前远程仓库不是 HTTP / HTTPS，不能使用表单凭据，请优先配置 SSH Key。';
+        : '当前远程仓库不是 HTTP / HTTPS，请优先配置 SSH Key。';
     openModal('materials-repository-credential-modal');
 }
 
 async function refreshRepositoryAffectedViews() {
     const currentParentId = state.currentParentId;
+    const activeMaterialId = state.activeMaterialId;
     try {
         await loadLibrary(currentParentId, false);
     } catch {
         await loadLibrary(null, false);
     }
 
-    if (state.activeMaterialId) {
+    if (activeMaterialId) {
         try {
-            await loadMaterialDetail(state.activeMaterialId);
+            await loadMaterialDetail(activeMaterialId);
         } catch {
+            state.activeMaterialId = null;
+            state.activeDetail = null;
+            renderList();
             renderDetail(null);
         }
     }
 }
+
+async function executeRepositoryAction(action, command = '') {
+    if (!state.repository.materialId || !state.repository.detail) return;
+    if (action === 'custom' && !String(command || '').trim()) {
+        showToast('请输入 Git 命令', 'warning');
+        refs.repositoryCommandInput.focus();
+        return;
+    }
+
+    const busyText = action === 'update'
+        ? '更新中'
+        : (action === 'commit_push' ? '提交并推送中' : '执行命令中');
+    setRepositoryBusy(true, busyText);
+
+    try {
+        const result = await apiFetch(`/api/materials/${state.repository.materialId}/repository/command`, {
+            method: 'POST',
+            body: { action, command },
+            silent: true,
+        });
+
+        state.repository.detail = result.repository || state.repository.detail;
+        state.repository.lastStatus = result.status === 'success'
+            ? '执行成功'
+            : (result.status === 'auth_required' ? '需要登录' : '执行失败');
+        state.repository.lastOutput = result.combined_output || '暂无输出';
+        state.repository.lastSyncSummary = formatRepositorySyncSummary(result.sync_summary);
+        renderRepositoryModal();
+
+        await refreshRepositoryAffectedViews();
+
+        if (result.status === 'auth_required') {
+            state.repository.pendingAction = { action, command };
+            showToast(result.message || '远程仓库需要认证后才能继续', 'warning');
+            if (result.credential_supported) {
+                openRepositoryCredentialModal();
+            }
+            return;
+        }
+
+        state.repository.pendingAction = null;
+        showToast(
+            result.message || (result.status === 'success' ? '仓库操作完成' : '仓库操作失败'),
+            result.status === 'success' ? 'success' : 'error',
+        );
+    } catch (error) {
+        state.repository.lastStatus = '执行失败';
+        state.repository.lastOutput = error.message || '暂无输出';
+        renderRepositoryModal();
+        showToast(error.message || '仓库操作失败', 'error');
+    } finally {
+        setRepositoryBusy(false, state.repository.lastStatus);
+    }
+}
+
+async function saveRepositoryCredential() {
+    const detail = state.repository.detail;
+    if (!detail) return;
+    if (!detail.credential_supported) {
+        showToast('当前仓库不支持表单凭据，请改用 SSH Key', 'warning');
+        return;
+    }
+
+    const username = refs.repositoryCredentialUsername.value.trim();
+    const secret = refs.repositoryCredentialSecret.value.trim();
+    const authMode = refs.repositoryCredentialAuthMode.value;
+    if (!secret) {
+        showToast('请输入密码或访问令牌', 'warning');
+        refs.repositoryCredentialSecret.focus();
+        return;
+    }
+
+    setRepositoryBusy(true, '保存凭据中');
+
+    try {
+        const result = await apiFetch(`/api/materials/${state.repository.materialId}/repository/credentials`, {
+            method: 'POST',
+            body: {
+                username,
+                secret,
+                auth_mode: authMode,
+            },
+            silent: true,
+        });
+
+        closeModal('materials-repository-credential-modal');
+        await refreshRepositoryState();
+        showToast(result.message || '仓库凭据已保存', 'success');
+
+        const pendingAction = state.repository.pendingAction;
+        if (pendingAction) {
+            state.repository.pendingAction = null;
+            await executeRepositoryAction(pendingAction.action, pendingAction.command);
+            return;
+        }
+
+        state.repository.lastStatus = '凭据已保存';
+        renderRepositoryModal();
+    } catch (error) {
+        showToast(error.message || '保存凭据失败', 'error');
+    } finally {
+        setRepositoryBusy(false, state.repository.lastStatus);
+    }
+}
+
+function bindEvents() {
+    refs.refreshBtn?.addEventListener('click', () => {
+        loadLibrary(state.currentParentId, false).catch((error) => {
+            showToast(error.message || '刷新材料失败', 'error');
+        });
+    });
+
+    refs.backBtn?.addEventListener('click', () => {
+        const previousParentId = state.history.pop();
+        loadLibrary(previousParentId ?? null, false).catch((error) => {
+            showToast(error.message || '返回失败', 'error');
+        });
+    });
+
+    refs.upBtn?.addEventListener('click', () => {
+        const parentCrumb = state.currentBreadcrumbs.length >= 2
+            ? state.currentBreadcrumbs[state.currentBreadcrumbs.length - 2]
+            : null;
+        loadLibrary(parentCrumb ? Number(parentCrumb.id) : null, true).catch((error) => {
+            showToast(error.message || '返回上一级失败', 'error');
+        });
+    });
+
+    refs.repositoryBtn?.addEventListener('click', () => {
+        if (!state.currentFolder) return;
+        openRepositoryModal(state.currentFolder.id).catch((error) => {
+            showToast(error.message || '加载仓库信息失败', 'error');
+        });
+    });
+
+    refs.fileBtn?.addEventListener('click', () => refs.fileInput?.click());
+    refs.folderBtn?.addEventListener('click', () => refs.folderInput?.click());
+
+    refs.fileInput?.addEventListener('change', async () => {
+        try {
+            await uploadFiles(refs.fileInput.files);
+        } catch (error) {
+            showToast(error.message || '文件上传失败', 'error');
+        } finally {
+            refs.fileInput.value = '';
+        }
+    });
+
+    refs.folderInput?.addEventListener('change', async () => {
+        try {
+            await uploadFiles(refs.folderInput.files);
+        } catch (error) {
+            showToast(error.message || '文件夹上传失败', 'error');
+        } finally {
+            refs.folderInput.value = '';
+        }
+    });
+
+    refs.searchInput?.addEventListener('input', (event) => {
+        state.filters.keyword = normalizeKeyword(event.target.value);
+        refs.searchClearBtn.hidden = !state.filters.keyword;
+        triggerSearch();
+    });
+
+    refs.searchInput?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        clearTimeout(state.searchTimer);
+        state.filters.keyword = normalizeKeyword(refs.searchInput.value);
+        loadLibrary(state.currentParentId, false).catch((error) => {
+            showToast(error.message || '搜索材料失败', 'error');
+        });
+    });
+
+    refs.searchClearBtn?.addEventListener('click', () => {
+        clearTimeout(state.searchTimer);
+        state.filters.keyword = '';
+        updateFilterControls();
+        loadLibrary(state.currentParentId, false).catch((error) => {
+            showToast(error.message || '刷新搜索失败', 'error');
+        });
+    });
+
+    refs.sortBy?.addEventListener('change', () => {
+        state.filters.sortBy = normalizeSortBy(refs.sortBy.value);
+        state.filters.sortOrder = normalizeSortOrder(DEFAULT_SORT_ORDERS[state.filters.sortBy], state.filters.sortBy);
+        updateFilterControls();
+        loadLibrary(state.currentParentId, false).catch((error) => {
+            showToast(error.message || '排序材料失败', 'error');
+        });
+    });
+
+    refs.sortOrder?.addEventListener('change', () => {
+        state.filters.sortOrder = normalizeSortOrder(refs.sortOrder.value, state.filters.sortBy);
+        loadLibrary(state.currentParentId, false).catch((error) => {
+            showToast(error.message || '排序材料失败', 'error');
+        });
+    });
+
+    refs.selectAll?.addEventListener('change', () => {
+        if (refs.selectAll.checked) {
+            state.items.forEach((item) => state.selectedIds.add(Number(item.id)));
+        } else {
+            state.selectedIds.clear();
+        }
+        renderList();
+    });
+
+    refs.selectionDownloadBtn?.addEventListener('click', async () => {
+        try {
+            await downloadByIds(getSelectedMaterialIds());
+        } catch (error) {
+            showToast(error.message || '下载失败', 'error');
+        }
+    });
+
+    refs.selectionClearBtn?.addEventListener('click', () => {
+        state.selectedIds.clear();
+        renderList();
+    });
+
+    refs.assignSaveBtn?.addEventListener('click', () => {
+        saveAssignments().catch((error) => {
+            showToast(error.message || '保存课堂分配失败', 'error');
+        });
+    });
+
+    refs.breadcrumbs?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-crumb-id]');
+        if (!button) return;
+        loadLibrary(Number(button.dataset.crumbId), true).catch((error) => {
+            showToast(error.message || '打开目录失败', 'error');
+        });
+    });
+
+    refs.listBody?.addEventListener('click', (event) => {
+        const row = event.target.closest('.materials-row');
+        if (!row) return;
+
+        const materialId = Number(row.dataset.id);
+        const item = state.items.find((entry) => Number(entry.id) === materialId);
+        if (!item) return;
+
+        const checkbox = event.target.closest('[data-role="select-item"]');
+        if (checkbox) {
+            toggleSelection(materialId, checkbox.checked);
+            return;
+        }
+
+        const action = event.target.closest('[data-action]')?.dataset.action;
+        if (action === 'open') {
+            openFolder(materialId, true);
+            return;
+        }
+        if (action === 'preview') {
+            previewMaterial(materialId);
+            return;
+        }
+        if (action === 'view-doc') {
+            viewLearningDocument(materialId);
+            return;
+        }
+        if (action === 'download') {
+            downloadByIds([materialId]).catch((error) => {
+                showToast(error.message || '下载失败', 'error');
+            });
+            return;
+        }
+        if (action === 'details') {
+            loadMaterialDetail(materialId).catch((error) => {
+                showToast(error.message || '加载详情失败', 'error');
+            });
+            return;
+        }
+        if (action === 'repository') {
+            state.activeMaterialId = materialId;
+            renderList();
+            openRepositoryModal(materialId).catch((error) => {
+                showToast(error.message || '加载仓库信息失败', 'error');
+            });
+            return;
+        }
+
+        loadMaterialDetail(materialId).catch((error) => {
+            showToast(error.message || '加载详情失败', 'error');
+        });
+    });
+
+    refs.listBody?.addEventListener('dblclick', (event) => {
+        const row = event.target.closest('.materials-row');
+        if (!row) return;
+
+        const materialId = Number(row.dataset.id);
+        const item = state.items.find((entry) => Number(entry.id) === materialId);
+        if (!item) return;
+
+        if (item.node_type === 'folder') {
+            openFolder(materialId, true);
+        } else if (item.preview_supported) {
+            previewMaterial(materialId);
+        }
+    });
+
+    refs.repositoryUpdateBtn?.addEventListener('click', () => {
+        executeRepositoryAction('update').catch((error) => {
+            showToast(error.message || '仓库更新失败', 'error');
+        });
+    });
+
+    refs.repositoryPushBtn?.addEventListener('click', () => {
+        executeRepositoryAction('commit_push').catch((error) => {
+            showToast(error.message || '提交并推送失败', 'error');
+        });
+    });
+
+    refs.repositoryAuthBtn?.addEventListener('click', () => {
+        openRepositoryCredentialModal();
+    });
+
+    refs.repositoryCommandRunBtn?.addEventListener('click', () => {
+        executeRepositoryAction('custom', refs.repositoryCommandInput?.value || '').catch((error) => {
+            showToast(error.message || 'Git 命令执行失败', 'error');
+        });
+    });
+
+    refs.repositoryCommandInput?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        executeRepositoryAction('custom', refs.repositoryCommandInput.value || '').catch((error) => {
+            showToast(error.message || 'Git 命令执行失败', 'error');
+        });
+    });
+
+    refs.repositoryCredentialSaveBtn?.addEventListener('click', () => {
+        saveRepositoryCredential().catch((error) => {
+            showToast(error.message || '保存凭据失败', 'error');
+        });
+    });
+}
+
+bindEvents();
+updateFilterControls();
+
+loadLibrary(state.currentParentId, false).catch(async (error) => {
+    if (state.currentParentId) {
+        try {
+            state.currentParentId = null;
+            await loadLibrary(null, false);
+            return;
+        } catch {
+            // fallback to original error below
+        }
+    }
+    console.error(error);
+    refs.listBody.innerHTML = `<div class="materials-empty">加载材料失败：${escapeHtml(error.message || '未知错误')}</div>`;
+});

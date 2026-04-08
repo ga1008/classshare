@@ -1,6 +1,13 @@
 import { apiFetch } from './api.js';
 import { escapeHtml, formatSize, getFileIcon, showToast } from './ui.js';
-import { getLearningDocumentUrl, getMaterialPrimaryAction, getMaterialTypeLabel, hasLearningDocument } from './materials_common.js';
+import {
+    getLearningDocumentUrl,
+    getMaterialPrimaryAction,
+    getMaterialTypeLabel,
+    getRepositoryVisualMeta,
+    hasLearningDocument,
+    isGitRepository,
+} from './materials_common.js';
 
 let config = null;
 
@@ -23,6 +30,30 @@ function refs() {
         selectionCount: document.getElementById('classroom-materials-selection-count'),
         selectionDownloadBtn: document.getElementById('classroom-materials-download-btn'),
     };
+}
+
+function getMetaText(item) {
+    if (!item) return '--';
+    if (item.node_type === 'folder') {
+        return `${item.child_count || 0} 个子项`;
+    }
+    return formatSize(item.file_size || 0);
+}
+
+function getVisualMeta(item) {
+    const repositoryMeta = getRepositoryVisualMeta(item);
+    if (repositoryMeta) {
+        return {
+            color: repositoryMeta.color,
+            label: repositoryMeta.icon,
+            badge: repositoryMeta.badge,
+        };
+    }
+    if (item.node_type === 'folder') {
+        return { color: '#0ea5e9', label: 'DIR', badge: '' };
+    }
+    const fileMeta = getFileIcon(item.name || 'file');
+    return { color: fileMeta.color, label: fileMeta.label, badge: '' };
 }
 
 function updateSelectionBar() {
@@ -56,25 +87,30 @@ function renderList() {
     }
 
     container.innerHTML = state.items.map((item) => {
-        const icon = item.node_type === 'folder' ? { color: '#0ea5e9', label: 'DIR' } : getFileIcon(item.name || 'file');
+        const visualMeta = getVisualMeta(item);
         const primaryAction = getMaterialPrimaryAction(item);
         const documentAction = hasLearningDocument(item)
-            ? '<button type="button" class="btn btn-outline btn-sm" data-action="view-doc">查看</button>'
+            ? '<button type="button" class="btn btn-outline btn-sm" data-action="view-doc">文档</button>'
             : '';
+        const repositoryBadge = isGitRepository(item)
+            ? `<span class="materials-repo-badge" style="--repo-color:${visualMeta.color};">${escapeHtml(visualMeta.badge)}</span>`
+            : '';
+
         return `
             <div class="materials-row" data-id="${item.id}">
                 <div>
                     <input type="checkbox" data-role="select-item" data-id="${item.id}" ${state.selectedIds.has(item.id) ? 'checked' : ''}>
                 </div>
                 <div class="materials-name-cell">
-                    <div class="materials-type-icon" style="background:${icon.color}16;color:${icon.color};">${icon.label}</div>
+                    <div class="materials-type-icon" style="background:${visualMeta.color}16;color:${visualMeta.color};">${escapeHtml(visualMeta.label)}</div>
                     <div class="materials-name-copy">
                         <strong>${escapeHtml(item.name)}</strong>
+                        <div class="materials-name-badges">${repositoryBadge}</div>
                         <span>${escapeHtml(item.material_path || '')}</span>
                     </div>
                 </div>
                 <div>${escapeHtml(getMaterialTypeLabel(item))}</div>
-                <div>${escapeHtml(item.node_type === 'folder' ? `${item.child_count || 0} 个子项` : formatSize(item.file_size || 0))}</div>
+                <div>${escapeHtml(getMetaText(item))}</div>
                 <div class="materials-row-actions">
                     <button type="button" class="btn btn-ghost btn-sm" data-action="${primaryAction.action}">
                         ${primaryAction.label}
@@ -92,7 +128,7 @@ function renderList() {
 async function loadMaterials(parentId = null, trackHistory = false) {
     const query = parentId ? `?parent_id=${parentId}` : '';
     const data = await apiFetch(`/api/classrooms/${config.classOfferingId}/materials${query}`, { silent: true });
-    if (trackHistory) {
+    if (trackHistory && state.currentParentId !== parentId) {
         state.history.push(state.currentParentId);
     }
     state.currentParentId = parentId;
@@ -145,15 +181,26 @@ export function init(appConfig) {
     const dom = refs();
     if (!dom.list) return;
 
-    dom.refreshBtn?.addEventListener('click', () => loadMaterials(state.currentParentId));
+    dom.refreshBtn?.addEventListener('click', () => {
+        loadMaterials(state.currentParentId).catch((error) => {
+            showToast(error.message || '刷新材料失败', 'error');
+        });
+    });
+
     dom.backBtn?.addEventListener('click', () => {
         const previousParentId = state.history.pop();
-        loadMaterials(previousParentId ?? null, false);
+        loadMaterials(previousParentId ?? null, false).catch((error) => {
+            showToast(error.message || '返回失败', 'error');
+        });
     });
+
     dom.upBtn?.addEventListener('click', () => {
         const parentCrumb = state.breadcrumbs.length >= 2 ? state.breadcrumbs[state.breadcrumbs.length - 2] : null;
-        loadMaterials(parentCrumb ? Number(parentCrumb.id) : null, true);
+        loadMaterials(parentCrumb ? Number(parentCrumb.id) : null, true).catch((error) => {
+            showToast(error.message || '返回上一级失败', 'error');
+        });
     });
+
     dom.selectionDownloadBtn?.addEventListener('click', async () => {
         try {
             await downloadSelected(Array.from(state.selectedIds));
@@ -161,28 +208,35 @@ export function init(appConfig) {
             showToast(error.message || '下载失败', 'error');
         }
     });
+
     dom.breadcrumbs?.addEventListener('click', (event) => {
         const button = event.target.closest('[data-crumb-id]');
         if (!button) return;
-        loadMaterials(Number(button.dataset.crumbId), true);
+        loadMaterials(Number(button.dataset.crumbId), true).catch((error) => {
+            showToast(error.message || '打开目录失败', 'error');
+        });
     });
+
     dom.list.addEventListener('click', (event) => {
         const row = event.target.closest('.materials-row');
         if (!row) return;
         const materialId = Number(row.dataset.id);
-        const item = state.items.find((entry) => entry.id === materialId);
+        const item = state.items.find((entry) => Number(entry.id) === materialId);
         if (!item) return;
 
-        if (event.target.matches('[data-role="select-item"]')) {
-            if (event.target.checked) state.selectedIds.add(materialId);
+        const checkbox = event.target.closest('[data-role="select-item"]');
+        if (checkbox) {
+            if (checkbox.checked) state.selectedIds.add(materialId);
             else state.selectedIds.delete(materialId);
             updateSelectionBar();
             return;
         }
 
-        const action = event.target.dataset.action;
+        const action = event.target.closest('[data-action]')?.dataset.action;
         if (action === 'open') {
-            loadMaterials(materialId, true);
+            loadMaterials(materialId, true).catch((error) => {
+                showToast(error.message || '打开目录失败', 'error');
+            });
         } else if (action === 'preview') {
             window.open(`/materials/view/${materialId}`, '_blank', 'noopener');
         } else if (action === 'view-doc') {
@@ -196,14 +250,20 @@ export function init(appConfig) {
             window.location.href = `/materials/download/${materialId}`;
         }
     });
+
     dom.list.addEventListener('dblclick', (event) => {
         const row = event.target.closest('.materials-row');
         if (!row) return;
         const materialId = Number(row.dataset.id);
-        const item = state.items.find((entry) => entry.id === materialId);
+        const item = state.items.find((entry) => Number(entry.id) === materialId);
         if (!item) return;
-        if (item.node_type === 'folder') loadMaterials(materialId, true);
-        else if (item.preview_supported) window.open(`/materials/view/${materialId}`, '_blank', 'noopener');
+        if (item.node_type === 'folder') {
+            loadMaterials(materialId, true).catch((error) => {
+                showToast(error.message || '打开目录失败', 'error');
+            });
+        } else if (item.preview_supported) {
+            window.open(`/materials/view/${materialId}`, '_blank', 'noopener');
+        }
     });
 
     loadMaterials().catch((error) => {

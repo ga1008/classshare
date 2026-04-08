@@ -1297,6 +1297,15 @@ def init_database():
                 "CREATE INDEX IF NOT EXISTS idx_course_materials_root_path ON course_materials (root_id, material_path)"
             )
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_course_materials_teacher_path ON course_materials (teacher_id, material_path)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_course_materials_teacher_parent_created ON course_materials (teacher_id, parent_id, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_course_materials_teacher_parent_updated ON course_materials (teacher_id, parent_id, updated_at DESC)"
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_material_assignments_offering ON course_material_assignments (class_offering_id, material_id)"
             )
             conn.execute(
