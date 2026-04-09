@@ -334,6 +334,7 @@ class AIChatRequest(BaseModel):
     messages: List[Dict[str, Any]]  # 历史消息, 格式: {"role": "user", "content": "..."}
     new_message: str  # 用户的最新文本输入
     base64_urls: List[str] = Field(default_factory=list)  # 新上传的图片 (base64 data URLs)
+    image_inputs: List[Dict[str, Any]] = Field(default_factory=list)
     model_capability: Literal["standard", "thinking", "vision"] = "standard"
     response_format: Literal["text", "json"] = "text"
     task_priority: Literal["interactive", "default", "background"] = "default"
@@ -387,6 +388,169 @@ def _extract_delta_parts(delta: Any) -> tuple[str, str]:
                     break
 
     return reasoning_text, content_text
+
+
+def _extract_image_url_from_content_item(item: dict[str, Any]) -> str:
+    image_url = item.get("image_url")
+    if isinstance(image_url, dict):
+        return str(image_url.get("url") or "").strip()
+    return str(image_url or item.get("url") or "").strip()
+
+
+def _normalize_request_image_inputs(req: AIChatRequest) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+
+    for index, item in enumerate(req.image_inputs or [], start=1):
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or "").strip()
+        if not url:
+            continue
+        label = str(item.get("label") or "").strip()
+        if not label:
+            name = str(item.get("name") or "").strip()
+            source = str(item.get("source") or "").strip()
+            label_parts = [part for part in [source, name] if part]
+            if label_parts:
+                label = f"[图片 {index}] {' | '.join(label_parts)}"
+        normalized.append({
+            "url": url,
+            "label": label,
+        })
+
+    if normalized:
+        return normalized
+
+    for url in req.base64_urls:
+        normalized_url = str(url or "").strip()
+        if normalized_url:
+            normalized.append({"url": normalized_url, "label": ""})
+    return normalized
+
+
+def _build_user_message_content(new_message: str, image_inputs: list[dict[str, str]]) -> str | list[dict[str, Any]]:
+    text_content = str(new_message or "")
+    if not image_inputs:
+        return text_content
+
+    content: list[dict[str, Any]] = [{"type": "text", "text": text_content}]
+    for item in image_inputs:
+        label = str(item.get("label") or "").strip()
+        if label:
+            content.append({"type": "text", "text": label})
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": item["url"]},
+        })
+    return content
+
+
+def _normalize_chat_content_for_platform(
+    content: Any,
+    *,
+    allow_multimodal: bool,
+) -> str | list[dict[str, Any]]:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, dict):
+        item_type = str(content.get("type") or "").strip().lower()
+        if item_type in {"text", "input_text"}:
+            return str(content.get("text") or content.get("content") or "")
+        if item_type in {"image_url", "input_image"}:
+            image_url = _extract_image_url_from_content_item(content)
+            if allow_multimodal and image_url:
+                return [{"type": "image_url", "image_url": {"url": image_url}}]
+            label = str(content.get("label") or content.get("name") or "图片").strip()
+            return f"[{label}]"
+        return _coerce_stream_text(content)
+
+    if not isinstance(content, list):
+        return str(content)
+
+    text_fragments: list[str] = []
+    multimodal_parts: list[dict[str, Any]] = []
+    pending_text: list[str] = []
+    has_images = False
+
+    def flush_pending_text() -> None:
+        if not pending_text:
+            return
+        text_value = "\n".join(part for part in pending_text if part).strip()
+        pending_text.clear()
+        if not text_value:
+            return
+        if allow_multimodal and has_images:
+            multimodal_parts.append({"type": "text", "text": text_value})
+        else:
+            text_fragments.append(text_value)
+
+    for item in content:
+        if isinstance(item, str):
+            pending_text.append(item)
+            continue
+        if not isinstance(item, dict):
+            pending_text.append(str(item))
+            continue
+
+        item_type = str(item.get("type") or "").strip().lower()
+        if item_type in {"text", "input_text"}:
+            text_value = str(item.get("text") or item.get("content") or "")
+            if text_value:
+                pending_text.append(text_value)
+            continue
+
+        if item_type in {"image_url", "input_image"}:
+            image_url = _extract_image_url_from_content_item(item)
+            if not image_url:
+                continue
+            has_images = True
+            flush_pending_text()
+            if allow_multimodal:
+                multimodal_parts.append({"type": "image_url", "image_url": {"url": image_url}})
+            else:
+                label = str(item.get("label") or item.get("name") or "图片").strip()
+                text_fragments.append(f"[{label}]")
+            continue
+
+        if item_type in {"input_file", "file"}:
+            flush_pending_text()
+            label = str(item.get("filename") or item.get("name") or "附件").strip()
+            text_fragments.append(f"[附件: {label}]")
+            continue
+
+        fallback_text = _coerce_stream_text(item)
+        if fallback_text:
+            pending_text.append(fallback_text)
+
+    flush_pending_text()
+
+    if allow_multimodal and has_images:
+        return multimodal_parts
+    return "\n".join(part for part in text_fragments if part).strip()
+
+
+def _prepare_chat_messages_for_platform(
+    messages: List[Dict[str, Any]],
+    *,
+    capability: Literal["standard", "thinking", "vision"],
+) -> list[dict[str, Any]]:
+    allow_multimodal = capability == "vision"
+    prepared_messages: list[dict[str, Any]] = []
+
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        prepared_message = dict(message)
+        prepared_message["content"] = _normalize_chat_content_for_platform(
+            prepared_message.get("content"),
+            allow_multimodal=allow_multimodal,
+        )
+        prepared_messages.append(prepared_message)
+
+    return prepared_messages
 
 
 class ThinkTagStreamParser:
@@ -872,6 +1036,7 @@ async def _call_ai_platform(
     api_key = selected_platform_config["api_key"]
     platform_type = selected_platform_config["type"]
     can_force_json = selected_platform_config.get("can_force_json", {}).get(capability, False)
+    prepared_messages = _prepare_chat_messages_for_platform(messages, capability=capability)
 
     async with ai_limiter.slot(priority=task_priority, label=task_label or f"call:{capability}"):
         print(f"[AI WORKER] 开始处理任务 (Platform: {platform_name}, Model: {model_name}, Capability: {capability})")
@@ -884,7 +1049,7 @@ async def _call_ai_platform(
             if platform_type == "volcengine":
                 if not AsyncArk: raise ImportError("volcenginesdkarkruntime 未安装")
                 client = AsyncArk(api_key=api_key)
-                completion = await client.chat.completions.create(model=model_name, messages=messages)
+                completion = await client.chat.completions.create(model=model_name, messages=prepared_messages)
                 response_content = completion.choices[0].message.content
 
             elif platform_type == "openai":
@@ -892,7 +1057,7 @@ async def _call_ai_platform(
                 base_url = selected_platform_config["base_url"]
                 # 设置超时时间，防止长时间等待
                 client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=180.0)
-                kwargs = {"model": model_name, "messages": messages}
+                kwargs = {"model": model_name, "messages": prepared_messages}
 
                 if require_json_output and can_force_json:
                     print(f"[AI WORKER] 平台 {platform_name} 模型 {model_name} 支持强制JSON，正在启用。")
@@ -973,6 +1138,7 @@ async def _call_ai_platform_chat_stream_generator(
     model_name = selected_platform_config["models"][capability]
     api_key = selected_platform_config["api_key"]
     platform_type = selected_platform_config["type"]
+    prepared_messages = _prepare_chat_messages_for_platform(final_messages, capability=capability)
 
     async with ai_limiter.slot(priority=task_priority, label=task_label or f"stream:{capability}"):
         print(
@@ -992,7 +1158,7 @@ async def _call_ai_platform_chat_stream_generator(
 
                 stream = await client.chat.completions.create(
                     model=model_name,
-                    messages=final_messages,
+                    messages=prepared_messages,
                     stream=True
                 )
                 async for chunk in stream:
@@ -1023,7 +1189,7 @@ async def _call_ai_platform_chat_stream_generator(
 
                 kwargs = {
                     "model": model_name,
-                    "messages": final_messages,
+                    "messages": prepared_messages,
                     "stream": True
                 }
 
@@ -1095,6 +1261,7 @@ async def _call_ai_platform_chat_stream_events(
     platform_type = selected_platform_config["type"]
     thinking_supported = capability == "thinking"
     think_tag_parser = ThinkTagStreamParser() if thinking_supported else None
+    prepared_messages = _prepare_chat_messages_for_platform(final_messages, capability=capability)
 
     async with ai_limiter.slot(priority=task_priority, label=task_label or f"stream_events:{capability}"):
         print(
@@ -1143,7 +1310,7 @@ async def _call_ai_platform_chat_stream_events(
                 client = AsyncArk(api_key=api_key, timeout=180.0)
                 stream = await client.chat.completions.create(
                     model=model_name,
-                    messages=final_messages,
+                    messages=prepared_messages,
                     stream=True
                 )
             elif platform_type == "openai":
@@ -1153,7 +1320,7 @@ async def _call_ai_platform_chat_stream_events(
                 client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=180.0)
                 kwargs = {
                     "model": model_name,
-                    "messages": final_messages,
+                    "messages": prepared_messages,
                     "stream": True,
                 }
                 if "DeepSeek-R1" in model_name:
@@ -1234,6 +1401,7 @@ async def _call_ai_platform_chat(
     api_key = selected_platform_config["api_key"]
     platform_type = selected_platform_config["type"]
     can_force_json = selected_platform_config.get("can_force_json", {}).get(capability, False)
+    prepared_messages = _prepare_chat_messages_for_platform(final_messages, capability=capability)
 
     async with ai_limiter.slot(priority=task_priority, label=task_label or f"chat:{capability}"):
         print(f"[AI WORKER] 开始处理聊天 (Platform: {platform_name}, Model: {model_name}, Capability: {capability})")
@@ -1246,7 +1414,7 @@ async def _call_ai_platform_chat(
                 client = AsyncArk(api_key=api_key)
 
                 # 火山方舟/豆包，system prompt 作为第一条消息
-                completion = await client.chat.completions.create(model=model_name, messages=final_messages)
+                completion = await client.chat.completions.create(model=model_name, messages=prepared_messages)
                 response_content = completion.choices[0].message.content
 
             elif platform_type == "openai":
@@ -1258,7 +1426,7 @@ async def _call_ai_platform_chat(
                 # 这样可以兼容更多平台（如SiliconFlow）
                 completion = await client.chat.completions.create(
                     model=model_name,
-                    messages=final_messages  # 直接使用包含system消息的完整消息列表
+                    messages=prepared_messages  # 直接使用包含system消息的完整消息列表
                 )
                 response_content = completion.choices[0].message.content
 
@@ -1350,19 +1518,11 @@ async def ai_chat_task_stream(req: AIChatRequest):
     (新 V4.3) 处理通用的课堂 AI 聊天请求 (流式)
     """
     # 1. 构建新的用户消息 (可能包含图片)
-    # (注意: VolcEngine 和 OpenAI 都能处理这种多部分 "content" 列表)
-    new_user_message_content = []
-    new_user_message_content.append({"type": "text", "text": req.new_message})
-
-    for b64_url in req.base64_urls:
-        if "base64," in b64_url:
-            new_user_message_content.append({
-                "type": "image_url",
-                "image_url": {"url": b64_url}
-            })
+    image_inputs = _normalize_request_image_inputs(req)
+    new_user_message_content = _build_user_message_content(req.new_message, image_inputs)
 
     # 2. 将新消息添加到历史记录中
-    history = req.messages
+    history = list(req.messages or [])
     history.append({
         "role": "user",
         "content": new_user_message_content
@@ -1393,25 +1553,12 @@ async def ai_chat_task(req: AIChatRequest):
     """
 
     # 1. 构建新的用户消息 (可能包含图片)
-    new_user_message_content = []
-
-    # 2. 添加文本
-    new_user_message_content.append({
-        "type": "text",
-        "text": req.new_message
-    })
-
-    # 3. 添加图片
-    for b64_url in req.base64_urls:
-        if "base64," in b64_url:
-            new_user_message_content.append({
-                "type": "image_url",
-                "image_url": {"url": b64_url}
-            })
+    image_inputs = _normalize_request_image_inputs(req)
+    new_user_message_content = _build_user_message_content(req.new_message, image_inputs)
 
     # 4. 将新消息添加到历史记录中
     # (注意: VolcEngine 和 OpenAI 都能处理这种多部分 "content" 列表)
-    history = req.messages
+    history = list(req.messages or [])
     history.append({
         "role": "user",
         "content": new_user_message_content

@@ -1052,6 +1052,15 @@ async def handle_ai_chat(
         "messages": ai_history_for_call,
         "new_message": message,
         "base64_urls": base64_urls,
+        "image_inputs": [
+            {
+                "url": b64_url,
+                "name": str(attachment.get("name") or ""),
+                "source": "current_upload",
+            }
+            for b64_url, attachment in zip(base64_urls, user_attachments)
+            if str(b64_url or "").strip()
+        ],
         "model_capability": model_capability,
         "task_priority": "interactive",
         "task_label": "user_chat",

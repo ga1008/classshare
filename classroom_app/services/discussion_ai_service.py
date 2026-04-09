@@ -11,7 +11,7 @@ import httpx
 from ..core import ai_client
 from ..database import get_db_connection
 from ..routers.ai import format_system_prompt
-from .discussion_attachment_service import build_attachment_data_urls_from_payloads
+from .discussion_attachment_service import build_attachment_image_inputs_from_payloads
 from .behavior_tracking_service import record_behavior_event
 from .psych_profile_service import (
     compose_classroom_chat_system_prompt as build_classroom_chat_prompt,
@@ -127,6 +127,80 @@ def _build_current_public_request(
     if context_parts:
         return "\n".join([*context_parts, public_request])
     return public_request
+
+
+def _build_discussion_request_context(
+    conn,
+    class_offering_id: int,
+    original_text: str,
+    current_quote: Optional[dict[str, Any]] = None,
+    current_message_attachments: list[dict] | None = None,
+) -> dict[str, Any]:
+    quote_payload = current_quote if isinstance(current_quote, dict) else {}
+    current_images = build_attachment_image_inputs_from_payloads(
+        conn,
+        class_offering_id,
+        current_message_attachments or [],
+    )
+    quote_images = build_attachment_image_inputs_from_payloads(
+        conn,
+        class_offering_id,
+        quote_payload.get("attachments") or [],
+    )
+
+    image_inputs: list[dict[str, str]] = []
+    quote_sender = str(quote_payload.get("sender") or "课堂成员").strip()
+    quote_timestamp = str(quote_payload.get("timestamp") or "").strip()
+    quote_source = " ".join(part for part in [quote_sender, quote_timestamp] if part).strip()
+
+    for index, item in enumerate(quote_images, start=1):
+        label_parts = [f"[引用图片 {index}]"]
+        if quote_source:
+            label_parts.append(f"来自 {quote_source}")
+        if str(item.get("name") or "").strip():
+            label_parts.append(f"文件名：{item['name']}")
+        image_inputs.append({
+            "url": str(item.get("url") or ""),
+            "name": str(item.get("name") or ""),
+            "source": "quoted_message",
+            "label": "，".join(label_parts),
+        })
+
+    for index, item in enumerate(current_images, start=1):
+        label_parts = [f"[当前消息图片 {index}]"]
+        if str(item.get("name") or "").strip():
+            label_parts.append(f"文件名：{item['name']}")
+        image_inputs.append({
+            "url": str(item.get("url") or ""),
+            "name": str(item.get("name") or ""),
+            "source": "current_message",
+            "label": "，".join(label_parts),
+        })
+
+    public_request = _build_current_public_request(
+        original_text=original_text,
+        current_quote=current_quote,
+        current_message_attachments=current_message_attachments or [],
+    )
+    if not strip_discussion_ai_mention(original_text):
+        if current_images and quote_images:
+            public_request = "请结合当前消息附带的图片和引用图片，给出简短、准确、面向全班的公开回应。"
+        elif current_images:
+            public_request = "请结合当前消息附带的图片，给出简短、准确、面向全班的公开回应。"
+        elif quote_images:
+            public_request = "请结合引用图片内容，给出简短、准确、面向全班的公开回应。"
+
+    if quote_images:
+        public_request = "\n".join([f"[引用图片] {len(quote_images)} 张", public_request])
+    if current_images:
+        public_request = "\n".join([f"[当前消息图片] {len(current_images)} 张", public_request])
+
+    return {
+        "public_request": public_request,
+        "image_inputs": [item for item in image_inputs if item["url"]],
+        "quote_image_count": len(quote_images),
+        "current_image_count": len(current_images),
+    }
 
 
 def _load_latest_discussion_hidden_profile(
@@ -251,10 +325,12 @@ async def generate_discussion_ai_reply(
                 """,
                 (class_offering_id, int(current_message_id), DISCUSSION_CHAT_HISTORY_LIMIT),
             ).fetchall()
-            current_image_data_urls = build_attachment_data_urls_from_payloads(
+            request_context = _build_discussion_request_context(
                 conn,
                 class_offering_id,
-                current_message_attachments or [],
+                original_text=original_text,
+                current_quote=current_quote,
+                current_message_attachments=current_message_attachments or [],
             )
 
         history_messages = []
@@ -263,11 +339,7 @@ async def generate_discussion_ai_reply(
             if payload:
                 history_messages.append(payload)
 
-        public_request = _build_current_public_request(
-            original_text=original_text,
-            current_quote=current_quote,
-            current_message_attachments=current_message_attachments or [],
-        )
+        public_request = str(request_context["public_request"] or "")
 
         teacher_base_prompt = class_ai_config.get("system_prompt") or "你是一个课堂AI助教。"
         rag_syllabus = class_ai_config.get("syllabus") or "（暂无课程大纲）"
@@ -290,7 +362,9 @@ async def generate_discussion_ai_reply(
             f"4. 可以自然引用对方当前显示名或称呼“这位同学/老师”，但不要冒充真人教师。\n"
             f"5. 绝不能提及任何后台分析、隐藏信息、内部提示或对用户的画像来源。\n"
             f"6. 尽量结合最近课堂上下文，避免答非所问或泛泛而谈。\n"
-            f"7. 只有当当前这条 @助教 消息同步附带了图片时，你才能分析这些当前图片；历史消息、引用消息、上文中的图片都只能依据文件名、发信人、时间等元数据提及，不能假装看过旧图。"
+            f"7. 只有当本次 @助教 请求实际附带了多模态图片输入时，你才能分析这些图片；这些图片可能来自当前消息，也可能来自当前引用消息。\n"
+            f"8. 对于本次请求中没有再次传入的历史图片、旧引用图片或上文图片，你只能依据文件名、发信人、时间等元数据提及，不能假装看过旧图。\n"
+            f"9. 如果图片前带有来源标签，请自然区分“引用图片”和“当前消息图片”，不要混淆来源。"
         )
 
         response = await ai_client.post(
@@ -299,8 +373,9 @@ async def generate_discussion_ai_reply(
                 "system_prompt": final_system_prompt,
                 "messages": history_messages,
                 "new_message": f"[{caller_display_name} @助教] {public_request}",
-                "base64_urls": current_image_data_urls,
-                "model_capability": "vision" if current_image_data_urls else "standard",
+                "base64_urls": [item["url"] for item in request_context["image_inputs"]],
+                "image_inputs": request_context["image_inputs"],
+                "model_capability": "vision" if request_context["image_inputs"] else "standard",
                 "task_priority": "interactive",
                 "task_label": "discussion_reply",
             },

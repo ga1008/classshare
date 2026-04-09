@@ -100,6 +100,63 @@ def build_discussion_attachment_payload(row, class_offering_id: int) -> dict:
     }
 
 
+def build_attachment_image_inputs_from_payloads(
+    conn,
+    class_offering_id: int,
+    attachments: Iterable[dict] | None,
+) -> list[dict]:
+    ensure_discussion_attachment_schema(conn)
+    attachment_ids = _coerce_attachment_ids(
+        item.get("attachment_id")
+        for item in (attachments or [])
+        if isinstance(item, dict)
+    )
+    if not attachment_ids:
+        return []
+
+    placeholders = ", ".join(["?"] * len(attachment_ids))
+    rows = conn.execute(
+        f"""
+        SELECT id, file_hash, mime_type, original_filename
+        FROM discussion_attachments
+        WHERE class_offering_id = ?
+          AND id IN ({placeholders})
+        """,
+        (int(class_offering_id), *attachment_ids),
+    ).fetchall()
+    row_map = {int(row["id"]): row for row in rows}
+
+    image_inputs: list[dict] = []
+    for attachment_id in attachment_ids:
+        row = row_map.get(attachment_id)
+        if row is None:
+            continue
+
+        file_path = GLOBAL_FILES_DIR / str(row["file_hash"])
+        if not file_path.exists():
+            continue
+
+        mime_type = str(row["mime_type"] or "").strip().lower()
+        if mime_type not in ALLOWED_DISCUSSION_IMAGE_TYPES:
+            guessed_type = mimetypes.guess_type(str(row["original_filename"] or ""))[0]
+            mime_type = guessed_type or "application/octet-stream"
+
+        try:
+            binary = file_path.read_bytes()
+        except OSError:
+            continue
+
+        encoded = base64.b64encode(binary).decode("utf-8")
+        image_inputs.append({
+            "attachment_id": attachment_id,
+            "name": str(row["original_filename"] or ""),
+            "mime_type": mime_type,
+            "url": f"data:{mime_type};base64,{encoded}",
+        })
+
+    return image_inputs
+
+
 async def create_discussion_attachment(conn, class_offering_id: int, user: dict, file: UploadFile) -> dict:
     ensure_discussion_attachment_schema(conn)
 
@@ -225,48 +282,8 @@ def resolve_discussion_attachment_payloads(
 
 
 def build_attachment_data_urls_from_payloads(conn, class_offering_id: int, attachments: Iterable[dict] | None) -> list[str]:
-    ensure_discussion_attachment_schema(conn)
-    attachment_ids = _coerce_attachment_ids(
-        item.get("attachment_id")
-        for item in (attachments or [])
-        if isinstance(item, dict)
-    )
-    if not attachment_ids:
-        return []
-
-    placeholders = ", ".join(["?"] * len(attachment_ids))
-    rows = conn.execute(
-        f"""
-        SELECT id, file_hash, mime_type, original_filename
-        FROM discussion_attachments
-        WHERE class_offering_id = ?
-          AND id IN ({placeholders})
-        """,
-        (int(class_offering_id), *attachment_ids),
-    ).fetchall()
-    row_map = {int(row["id"]): row for row in rows}
-
-    data_urls: list[str] = []
-    for attachment_id in attachment_ids:
-        row = row_map.get(attachment_id)
-        if row is None:
-            continue
-
-        file_path = GLOBAL_FILES_DIR / str(row["file_hash"])
-        if not file_path.exists():
-            continue
-
-        mime_type = str(row["mime_type"] or "").strip().lower()
-        if mime_type not in ALLOWED_DISCUSSION_IMAGE_TYPES:
-            guessed_type = mimetypes.guess_type(str(row["original_filename"] or ""))[0]
-            mime_type = guessed_type or "application/octet-stream"
-
-        try:
-            binary = file_path.read_bytes()
-        except OSError:
-            continue
-
-        encoded = base64.b64encode(binary).decode("utf-8")
-        data_urls.append(f"data:{mime_type};base64,{encoded}")
-
-    return data_urls
+    return [
+        str(item.get("url") or "")
+        for item in build_attachment_image_inputs_from_payloads(conn, class_offering_id, attachments)
+        if str(item.get("url") or "").strip()
+    ]
