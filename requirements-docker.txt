@@ -1,16 +1,2 @@
-fastapi
-uvicorn[standard]
-jinja2
-python-multipart
-qrcode
-pandas
-openpyxl
-xlrd
-python-jose[cryptography]
-python-dotenv
-aiofiles
-httpx
-openai
-volcengine-python-sdk[ark]
-pillow
-passlib
+# Keep Docker and local runtime on the same locked dependency set.
+-r requirements.lock.txt

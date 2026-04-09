@@ -35,10 +35,26 @@ try:
 except ImportError:
     Ark, AsyncArk = None, None
 
+
+def _read_int_env(*names: str, default: int) -> int:
+    for name in names:
+        raw_value = os.getenv(name)
+        if raw_value in (None, ""):
+            continue
+        try:
+            return int(raw_value)
+        except ValueError:
+            print(f"[WARNING] Invalid integer for {name}: {raw_value!r}. Using {default}.")
+            return default
+    return default
+
 # --- AI 配置 (保持不变) ---
 AI_HOST = os.getenv("AI_HOST", "127.0.0.1")
 AI_PORT = int(os.getenv("AI_PORT", 8001))
-GLOBAL_AI_CONCURRENCY = max(1, min(int(os.getenv("GLOBAL_AI_CONCURRENCY", 3)), 3))
+GLOBAL_AI_CONCURRENCY = max(
+    1,
+    min(_read_int_env("GLOBAL_AI_CONCURRENCY", "AI_WORKER_CONCURRENCY", default=3), 3),
+)
 MAIN_APP_CALLBACK_URL = os.getenv("MAIN_APP_CALLBACK_URL")
 PLATFORM_PRIORITY = [p.strip() for p in os.getenv("AI_PLATFORM_PRIORITY", "siliconflow,volcengine,deepseek").split(',')]
 VOLCENGINE_OPENAI_BASE_URL = os.getenv("VOLCENGINE_OPENAI_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")

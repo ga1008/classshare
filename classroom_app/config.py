@@ -7,6 +7,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _read_url_env(name: str) -> str | None:
+    value = os.getenv(name)
+    if not value:
+        return None
+
+    normalized = value.strip()
+    if not normalized:
+        return None
+    return normalized.rstrip("/")
+
+
 # --- Paths ---
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -27,8 +38,8 @@ FILE_CHUNK_SIZE = 8192
 # --- Service ---
 HOST = os.getenv("MAIN_HOST", "0.0.0.0")
 PORT = int(os.getenv("MAIN_PORT", 8000))
-AI_ASSISTANT_URL = f"http://{os.getenv('AI_HOST', '127.0.0.1')}:{os.getenv('AI_PORT', 8001)}"
-MAIN_APP_CALLBACK_URL = os.getenv("MAIN_APP_CALLBACK_URL", f"http://localhost:{PORT}/api/internal/grading-complete")
+AI_ASSISTANT_URL = _read_url_env("AI_ASSISTANT_URL") or f"http://{os.getenv('AI_HOST', '127.0.0.1')}:{os.getenv('AI_PORT', 8001)}"
+MAIN_APP_CALLBACK_URL = _read_url_env("MAIN_APP_CALLBACK_URL") or f"http://127.0.0.1:{PORT}/api/internal/grading-complete"
 
 # --- Teacher auth ---
 TEACHER_USER = os.getenv("TEACHER_NAME", "teacher")
