@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 # 修复：导入 templates 以便在错误处理程序中使用
 from .core import app, ai_client, templates
 # 修复：移除 CONFIG_FILE 和 CHAT_LOG_DIR (后者在 V4.0 services/chat_handler.py 中管理)
-from .config import BASE_DIR, STATIC_DIR
+from .config import AI_ASSISTANT_URL, BASE_DIR, DB_PATH, STATIC_DIR
 from .database import init_database
 from .dependencies import build_login_redirect_url, build_permission_warning_url
 from .dependencies import clear_access_token_cookie, get_active_user_from_request
@@ -54,6 +54,16 @@ async def shutdown_event():
 # -----------------
 # 新增：全局异常处理器
 # -----------------
+
+@app.get("/api/internal/health")
+async def internal_health():
+    return {
+        "status": "ok",
+        "service": "main",
+        "ai_assistant_url": AI_ASSISTANT_URL,
+        "database_path": str(DB_PATH),
+    }
+
 
 def _is_api_request(request: Request) -> bool:
     return request.url.path.startswith("/api")

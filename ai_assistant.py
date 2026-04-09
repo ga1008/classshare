@@ -329,6 +329,16 @@ THINK_TAG_OPEN = "<think>"
 THINK_TAG_CLOSE = "</think>"
 
 
+@app.get("/api/internal/health")
+async def internal_health():
+    return {
+        "status": "ok",
+        "service": "ai",
+        "enabled_platforms": ENABLED_PLATFORMS,
+        "port": AI_PORT,
+    }
+
+
 class AIChatRequest(BaseModel):
     system_prompt: str
     messages: List[Dict[str, Any]]  # 历史消息, 格式: {"role": "user", "content": "..."}
