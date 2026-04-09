@@ -410,15 +410,22 @@
                 <form id="chat-form" class="chat-composer">
                     <label class="chat-composer-shell" for="chat-input">
                         <span class="chat-composer-label">输入讨论内容</span>
+                        <div class="chat-quote-preview" id="chat-quote-preview" hidden></div>
+                        <div class="chat-attachment-preview-row" id="chat-attachment-preview-row" hidden></div>
                         <div class="chat-emoji-preview-row" id="chat-emoji-preview-row" hidden></div>
-                        <textarea id="chat-input" class="form-control chat-composer-input" placeholder="输入课堂讨论内容，@助教 可召唤 AI，Enter 发送，Shift+Enter 换行" autocomplete="off" rows="1"></textarea>
+                        <textarea id="chat-input" class="form-control chat-composer-input" placeholder="输入课堂讨论内容，@助教 + 图片 可触发识图，Enter 发送，Shift+Enter 换行" autocomplete="off" rows="1"></textarea>
                     </label>
+                    <input type="file" id="chat-attachment-file-input" accept=".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp" multiple hidden>
                     <div class="chat-composer-actions">
                         {% if user_info.role == 'teacher' %}
                         <button type="button" class="btn btn-outline btn-sm chat-mention-all-btn" id="chat-mention-all-btn" title="插入 @所有人">
                             <span>@所有人</span>
                         </button>
                         {% endif %}
+                        <button type="button" class="btn btn-ghost chat-attachment-trigger-btn" id="chat-attachment-trigger-btn" title="发送图片">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2.4"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-4.6-4.6a1 1 0 0 0-1.4 0L6 19"></path></svg>
+                            <span>图片</span>
+                        </button>
                         <button type="button" class="btn btn-ghost chat-emoji-trigger-btn" id="chat-emoji-trigger-btn" title="表情与自定义表情">
                             <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
                             <span>表情</span>
@@ -473,6 +480,10 @@
                         </section>
                     </div>
                     <div class="chat-emoji-popover-footer">Twemoji graphics licensed under CC-BY 4.0.</div>
+                </div>
+                <div class="chat-message-menu" id="chat-message-menu" hidden>
+                    <button type="button" class="chat-message-menu-item" data-message-action="quote">引用</button>
+                    <button type="button" class="chat-message-menu-item" data-message-action="copy">复制</button>
                 </div>
             </div>
         </section>
@@ -732,6 +743,11 @@
             customEmojiProgressBarId: 'chat-custom-emoji-progress-bar',
             emojiPreviewRowId: 'chat-emoji-preview-row',
             emojiSetNoteId: 'chat-emoji-set-note',
+            attachmentTriggerButtonId: 'chat-attachment-trigger-btn',
+            attachmentFileInputId: 'chat-attachment-file-input',
+            attachmentPreviewRowId: 'chat-attachment-preview-row',
+            quotePreviewId: 'chat-quote-preview',
+            messageMenuId: 'chat-message-menu',
             displayNameId: 'chat-display-name',
             aliasMetaId: 'chat-alias-meta',
             switchAliasButtonId: 'chat-switch-alias-btn',

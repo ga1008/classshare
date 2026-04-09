@@ -47,10 +47,34 @@ def ensure_chat_log_schema() -> None:
             conn.execute("ALTER TABLE chat_logs ADD COLUMN logged_at TEXT")
         except Exception:
             pass
+        try:
+            conn.execute("ALTER TABLE chat_logs ADD COLUMN message_type TEXT DEFAULT 'text'")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE chat_logs ADD COLUMN emoji_payload_json TEXT")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE chat_logs ADD COLUMN attachments_json TEXT")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE chat_logs ADD COLUMN quote_message_id INTEGER")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE chat_logs ADD COLUMN quote_payload_json TEXT")
+        except Exception:
+            pass
 
         conn.execute(
             "UPDATE chat_logs SET logged_at = timestamp "
             "WHERE (logged_at IS NULL OR logged_at = '') AND instr(timestamp, 'T') > 0"
+        )
+        conn.execute(
+            "UPDATE chat_logs SET message_type = 'text' "
+            "WHERE message_type IS NULL OR message_type = ''"
         )
 
         conn.execute(
@@ -122,6 +146,9 @@ def normalize_history_message(raw_message: dict) -> Optional[dict]:
         logged_at = timestamp
 
     display_time = format_display_time(logged_at, str(timestamp or ""))
+    custom_emojis = raw_message.get("custom_emojis")
+    attachments = raw_message.get("attachments")
+    quote = raw_message.get("quote")
     return {
         "type": "chat",
         "sender": str(sender),
@@ -130,6 +157,11 @@ def normalize_history_message(raw_message: dict) -> Optional[dict]:
         "timestamp": display_time,
         "logged_at": logged_at,
         "user_id": raw_message.get("user_id"),
+        "message_type": str(raw_message.get("message_type") or "text"),
+        "custom_emojis": custom_emojis if isinstance(custom_emojis, list) else [],
+        "attachments": attachments if isinstance(attachments, list) else [],
+        "quote_message_id": raw_message.get("quote_message_id"),
+        "quote": quote if isinstance(quote, dict) else None,
     }
 
 
@@ -164,6 +196,17 @@ def normalize_legacy_message_for_db(room_id: int, log_file: Path, raw_message: d
         normalized["message"],
         normalized["timestamp"],
         logged_at,
+        str(normalized.get("message_type") or "text"),
+        json.dumps(normalized.get("custom_emojis") or [], ensure_ascii=False)
+        if normalized.get("custom_emojis")
+        else None,
+        json.dumps(normalized.get("attachments") or [], ensure_ascii=False)
+        if normalized.get("attachments")
+        else None,
+        normalized.get("quote_message_id"),
+        json.dumps(normalized.get("quote") or {}, ensure_ascii=False)
+        if normalized.get("quote")
+        else None,
     )
 
 
@@ -230,8 +273,21 @@ def ensure_room_history_migrated(room_id: int) -> None:
                         conn.execute(
                             """
                             INSERT INTO chat_logs
-                            (class_offering_id, user_id, user_name, user_role, message, timestamp, logged_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                            (
+                                class_offering_id,
+                                user_id,
+                                user_name,
+                                user_role,
+                                message,
+                                timestamp,
+                                logged_at,
+                                message_type,
+                                emoji_payload_json,
+                                attachments_json,
+                                quote_message_id,
+                                quote_payload_json
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                             row,
                         )
@@ -264,6 +320,7 @@ def row_to_chat_message(row) -> dict:
         "role": row["user_role"],
         "message": row["message"],
         "timestamp": format_display_time(logged_at, row["timestamp"]),
+        "logged_at": logged_at,
     }
     if "message_type" in row.keys():
         payload["message_type"] = row["message_type"] or "text"
@@ -272,6 +329,18 @@ def row_to_chat_message(row) -> dict:
             payload["custom_emojis"] = json.loads(row["emoji_payload_json"])
         except json.JSONDecodeError:
             payload["custom_emojis"] = []
+    if "attachments_json" in row.keys() and row["attachments_json"]:
+        try:
+            payload["attachments"] = json.loads(row["attachments_json"])
+        except json.JSONDecodeError:
+            payload["attachments"] = []
+    if "quote_message_id" in row.keys() and row["quote_message_id"] is not None:
+        payload["quote_message_id"] = row["quote_message_id"]
+    if "quote_payload_json" in row.keys() and row["quote_payload_json"]:
+        try:
+            payload["quote"] = json.loads(row["quote_payload_json"])
+        except json.JSONDecodeError:
+            payload["quote"] = None
     return payload
 
 
@@ -282,7 +351,19 @@ def get_initial_history_payload(room_id: int) -> dict:
     with get_db_connection() as conn:
         rows = conn.execute(
             """
-            SELECT id, user_id, user_name, user_role, message, timestamp, logged_at, message_type, emoji_payload_json
+            SELECT
+                id,
+                user_id,
+                user_name,
+                user_role,
+                message,
+                timestamp,
+                logged_at,
+                message_type,
+                emoji_payload_json,
+                attachments_json,
+                quote_message_id,
+                quote_payload_json
             FROM chat_logs
             WHERE class_offering_id = ?
               AND COALESCE(logged_at, timestamp) >= ?
@@ -327,7 +408,19 @@ def get_older_history_payload(room_id: int, before_id: Optional[int]) -> dict:
         if before_id is None:
             rows = conn.execute(
                 """
-                SELECT id, user_id, user_name, user_role, message, timestamp, logged_at, message_type, emoji_payload_json
+                SELECT
+                    id,
+                    user_id,
+                    user_name,
+                    user_role,
+                    message,
+                    timestamp,
+                    logged_at,
+                    message_type,
+                    emoji_payload_json,
+                    attachments_json,
+                    quote_message_id,
+                    quote_payload_json
                 FROM chat_logs
                 WHERE class_offering_id = ?
                 ORDER BY id DESC
@@ -338,7 +431,19 @@ def get_older_history_payload(room_id: int, before_id: Optional[int]) -> dict:
         else:
             rows = conn.execute(
                 """
-                SELECT id, user_id, user_name, user_role, message, timestamp, logged_at, message_type, emoji_payload_json
+                SELECT
+                    id,
+                    user_id,
+                    user_name,
+                    user_role,
+                    message,
+                    timestamp,
+                    logged_at,
+                    message_type,
+                    emoji_payload_json,
+                    attachments_json,
+                    quote_message_id,
+                    quote_payload_json
                 FROM chat_logs
                 WHERE class_offering_id = ?
                   AND id < ?
@@ -383,6 +488,11 @@ async def save_chat_message(room_id: int, message: dict) -> dict:
     message_type = str(message.get("message_type") or "text")
     emoji_payload = message.get("custom_emojis") or []
     emoji_payload_json = json.dumps(emoji_payload, ensure_ascii=False) if emoji_payload else None
+    attachments = message.get("attachments") or []
+    attachments_json = json.dumps(attachments, ensure_ascii=False) if attachments else None
+    quote = message.get("quote") or None
+    quote_message_id = message.get("quote_message_id")
+    quote_payload_json = json.dumps(quote, ensure_ascii=False) if isinstance(quote, dict) and quote else None
 
     async with chat_log_lock:
         try:
@@ -390,10 +500,36 @@ async def save_chat_message(room_id: int, message: dict) -> dict:
                 cursor = conn.execute(
                     """
                     INSERT INTO chat_logs
-                    (class_offering_id, user_id, user_name, user_role, message, timestamp, logged_at, message_type, emoji_payload_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (
+                        class_offering_id,
+                        user_id,
+                        user_name,
+                        user_role,
+                        message,
+                        timestamp,
+                        logged_at,
+                        message_type,
+                        emoji_payload_json,
+                        attachments_json,
+                        quote_message_id,
+                        quote_payload_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (room_id, user_id, sender, role, content, timestamp, logged_at, message_type, emoji_payload_json),
+                    (
+                        room_id,
+                        user_id,
+                        sender,
+                        role,
+                        content,
+                        timestamp,
+                        logged_at,
+                        message_type,
+                        emoji_payload_json,
+                        attachments_json,
+                        quote_message_id,
+                        quote_payload_json,
+                    ),
                 )
                 conn.commit()
                 message_id = cursor.lastrowid
@@ -416,10 +552,17 @@ async def save_chat_message(room_id: int, message: dict) -> dict:
         "role": role,
         "message": content,
         "timestamp": timestamp,
+        "logged_at": logged_at,
         "message_type": message_type,
     }
     if emoji_payload:
         response["custom_emojis"] = emoji_payload
+    if attachments:
+        response["attachments"] = attachments
+    if quote_message_id is not None:
+        response["quote_message_id"] = quote_message_id
+    if quote_payload_json:
+        response["quote"] = quote
     return response
 
 class MultiRoomConnectionManager:

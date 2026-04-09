@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from ..config import GLOBAL_FILES_DIR, UPLOAD_CHUNK_SIZE_BYTES, CHUNKED_UPLOADS_DIR
 from ..dependencies import verify_token, get_current_user, get_current_teacher, normalize_ip
 # 导入聊天管理器
-from ..services.chat_handler import manager, save_chat_message, get_older_history_payload
+from ..services.chat_handler import manager, save_chat_message, get_older_history_payload, row_to_chat_message
 
 from typing import Optional
 from pathlib import Path
@@ -29,6 +29,13 @@ from ..services.discussion_ai_service import (
     generate_discussion_ai_reply,
     record_alias_switch_activity,
     record_message_activity,
+)
+from ..services.discussion_attachment_service import (
+    DISCUSSION_ATTACHMENT_MAX_BYTES,
+    MAX_DISCUSSION_ATTACHMENTS_PER_MESSAGE,
+    create_discussion_attachment,
+    load_discussion_attachment_row,
+    resolve_discussion_attachment_payloads,
 )
 from ..services.emoji_service import increment_emoji_usage, resolve_custom_emoji_payloads
 from ..services.file_handler import delete_file_safely
@@ -45,6 +52,94 @@ from ..services.rate_limit_service import (
 windows_io_semaphore = asyncio.Semaphore(80)
 DISCUSSION_MESSAGE_RATE_LIMIT = 10
 DISCUSSION_MESSAGE_RATE_WINDOW_SECONDS = 60
+
+
+def _ensure_classroom_access_for_user(conn, class_offering_id: int, user: Optional[dict]):
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    try:
+        user_pk = int(user.get("id"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=403, detail="Invalid user")
+
+    offering = conn.execute(
+        "SELECT id, class_id, teacher_id FROM class_offerings WHERE id = ?",
+        (class_offering_id,),
+    ).fetchone()
+    if not offering:
+        raise HTTPException(status_code=404, detail="Classroom not found")
+
+    if user.get("role") == "teacher":
+        if int(offering["teacher_id"]) != user_pk:
+            raise HTTPException(status_code=403, detail="Permission denied")
+    elif user.get("role") == "student":
+        student_class = conn.execute(
+            "SELECT class_id FROM students WHERE id = ?",
+            (user_pk,),
+        ).fetchone()
+        if not student_class or int(student_class["class_id"]) != int(offering["class_id"]):
+            raise HTTPException(status_code=403, detail="Permission denied")
+    else:
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    return offering
+
+
+def _build_discussion_quote_payload(message_payload: dict | None) -> Optional[dict]:
+    if not isinstance(message_payload, dict):
+        return None
+
+    quote_payload = {
+        "id": message_payload.get("id"),
+        "sender": message_payload.get("sender") or "课堂成员",
+        "role": message_payload.get("role") or "student",
+        "message": message_payload.get("message") or "",
+        "timestamp": message_payload.get("timestamp") or "",
+        "logged_at": message_payload.get("logged_at"),
+        "message_type": message_payload.get("message_type") or "text",
+    }
+    if message_payload.get("custom_emojis"):
+        quote_payload["custom_emojis"] = message_payload.get("custom_emojis")
+    if message_payload.get("attachments"):
+        quote_payload["attachments"] = message_payload.get("attachments")
+    return quote_payload
+
+
+def _load_discussion_quote_payload(conn, class_offering_id: int, quote_message_id: object) -> Optional[dict]:
+    try:
+        normalized_id = int(quote_message_id)
+    except (TypeError, ValueError):
+        return None
+    if normalized_id <= 0:
+        return None
+
+    row = conn.execute(
+        """
+        SELECT
+            id,
+            user_id,
+            user_name,
+            user_role,
+            message,
+            timestamp,
+            logged_at,
+            message_type,
+            emoji_payload_json,
+            attachments_json,
+            quote_message_id,
+            quote_payload_json
+        FROM chat_logs
+        WHERE class_offering_id = ?
+          AND id = ?
+        LIMIT 1
+        """,
+        (class_offering_id, normalized_id),
+    ).fetchone()
+    if row is None:
+        return None
+
+    return _build_discussion_quote_payload(row_to_chat_message(row))
 
 
 def _enforce_discussion_message_rate_limit(conn, *, user_pk: int, user_role: str) -> None:
@@ -103,6 +198,8 @@ async def _handle_discussion_ai_mention(
     caller_display_name: str,
     original_text: str,
     current_message_id: int,
+    current_message_attachments: Optional[list[dict]] = None,
+    current_quote: Optional[dict] = None,
 ) -> None:
     try:
         reply_text = await generate_discussion_ai_reply(
@@ -112,6 +209,8 @@ async def _handle_discussion_ai_mention(
             caller_display_name=caller_display_name,
             original_text=original_text,
             current_message_id=current_message_id,
+            current_message_attachments=current_message_attachments or [],
+            current_quote=current_quote,
         )
         if not str(reply_text or "").strip():
             return
@@ -129,10 +228,13 @@ async def _process_discussion_chat_message(
     message_text: str,
     requested_custom_ids: Optional[list] = None,
     requested_unicode_emojis: Optional[list] = None,
+    requested_attachment_ids: Optional[list] = None,
+    quote_message_id: Optional[object] = None,
 ) -> None:
     normalized_text = str(message_text or "").strip()
     requested_custom_ids = requested_custom_ids or []
     requested_unicode_emojis = requested_unicode_emojis or []
+    requested_attachment_ids = requested_attachment_ids or []
 
     with get_db_connection() as conn:
         custom_emoji_payloads = resolve_custom_emoji_payloads(
@@ -141,8 +243,15 @@ async def _process_discussion_chat_message(
             requested_custom_ids,
             user,
         )
+        attachment_payloads = resolve_discussion_attachment_payloads(
+            conn,
+            class_offering_id,
+            requested_attachment_ids,
+            user,
+        )
+        quote_payload = _load_discussion_quote_payload(conn, class_offering_id, quote_message_id)
 
-    if not normalized_text and not custom_emoji_payloads:
+    if not normalized_text and not custom_emoji_payloads and not attachment_payloads and not quote_payload:
         return
 
     with get_db_connection() as conn:
@@ -160,8 +269,11 @@ async def _process_discussion_chat_message(
         "sender": display_name,
         "role": ws_user['role'],
         "message": normalized_text,
-        "message_type": "rich" if custom_emoji_payloads else "text",
+        "message_type": "rich" if (custom_emoji_payloads or attachment_payloads or quote_payload) else "text",
         "custom_emojis": custom_emoji_payloads,
+        "attachments": attachment_payloads,
+        "quote_message_id": quote_payload.get("id") if isinstance(quote_payload, dict) else None,
+        "quote": quote_payload,
         "timestamp": display_time,
         "class_offering_id": class_offering_id,
         "user_id": user_pk,
@@ -198,6 +310,8 @@ async def _process_discussion_chat_message(
         message_text=normalized_text,
         unicode_emojis=[str(item) for item in requested_unicode_emojis if str(item).strip()],
         custom_emoji_labels=[str(item.get("name") or "自定义表情") for item in custom_emoji_payloads],
+        attachment_names=[str(item.get("name") or "图片") for item in attachment_payloads],
+        quoted_message_id=int(quote_payload["id"]) if isinstance(quote_payload, dict) and quote_payload.get("id") else None,
         mentioned_assistant=contains_discussion_ai_mention(normalized_text),
     )
 
@@ -212,6 +326,8 @@ async def _process_discussion_chat_message(
                 caller_display_name=display_name,
                 original_text=normalized_text,
                 current_message_id=int(stored_message["id"]),
+                current_message_attachments=stored_message.get("attachments") or [],
+                current_quote=stored_message.get("quote"),
             )
         )
 
@@ -833,6 +949,74 @@ async def get_classroom_files(
     return {"files": [dict(f) for f in files], "is_teacher": is_teacher}
 
 
+@router.post("/api/classrooms/{class_offering_id}/discussion-attachments")
+async def upload_discussion_attachments(
+        class_offering_id: int,
+        files: list[UploadFile] = File(...),
+        user: dict = Depends(get_current_user)
+):
+    if not files:
+        raise HTTPException(status_code=400, detail="请选择至少一张图片")
+    if len(files) > MAX_DISCUSSION_ATTACHMENTS_PER_MESSAGE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"单条讨论消息最多只能发送 {MAX_DISCUSSION_ATTACHMENTS_PER_MESSAGE} 张图片",
+        )
+
+    with get_db_connection() as conn:
+        _ensure_classroom_access_for_user(conn, class_offering_id, user)
+        attachment_payloads = []
+        for file in files:
+            try:
+                attachment_payloads.append(
+                    await create_discussion_attachment(conn, class_offering_id, user, file)
+                )
+            finally:
+                await file.close()
+        conn.commit()
+
+    return {
+        "attachments": attachment_payloads,
+        "limits": {
+            "max_attachment_count": MAX_DISCUSSION_ATTACHMENTS_PER_MESSAGE,
+            "max_upload_bytes": DISCUSSION_ATTACHMENT_MAX_BYTES,
+        },
+    }
+
+
+@router.get("/api/classrooms/{class_offering_id}/discussion-attachments/{attachment_id}")
+async def download_discussion_attachment(
+        class_offering_id: int,
+        attachment_id: int,
+        user: dict = Depends(get_current_user)
+):
+    with get_db_connection() as conn:
+        _ensure_classroom_access_for_user(conn, class_offering_id, user)
+        attachment_row = load_discussion_attachment_row(conn, class_offering_id, attachment_id)
+
+    if attachment_row is None:
+        raise HTTPException(status_code=404, detail="讨论区图片不存在")
+
+    file_path = Path(GLOBAL_FILES_DIR) / str(attachment_row["file_hash"])
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="讨论区图片不存在")
+
+    async def streamed_file():
+        async with windows_io_semaphore:
+            async for chunk in stream_file(file_path):
+                yield chunk
+
+    safe_filename = quote(str(attachment_row["original_filename"] or "image"))
+    return StreamingResponse(
+        streamed_file(),
+        media_type=str(attachment_row["mime_type"] or "application/octet-stream"),
+        headers={
+            "Content-Disposition": f"inline; filename*=utf-8''{safe_filename}",
+            "Content-Length": str(int(attachment_row["file_size"] or 0)),
+        },
+    )
+
+
 # (原有的 download_submission_file V4.0)
 
 @router.get("/submissions/download/{file_id}", response_class=FileResponse)
@@ -1016,6 +1200,8 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
                         message_text=str(command.get("text") or ""),
                         requested_custom_ids=command.get("custom_emoji_ids") or [],
                         requested_unicode_emojis=command.get("used_unicode_emojis") or [],
+                        requested_attachment_ids=command.get("attachment_ids") or [],
+                        quote_message_id=command.get("quote_message_id"),
                     )
                 except RateLimitExceededError as exc:
                     await _send_discussion_rate_limit_message(websocket, exc)

@@ -642,6 +642,18 @@ def init_database():
                 conn.execute("ALTER TABLE chat_logs ADD COLUMN emoji_payload_json TEXT")
             except sqlite3.OperationalError:
                 pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE chat_logs ADD COLUMN attachments_json TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE chat_logs ADD COLUMN quote_message_id INTEGER")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE chat_logs ADD COLUMN quote_payload_json TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
 
             conn.execute(
                 "UPDATE chat_logs SET logged_at = timestamp "
@@ -680,6 +692,32 @@ def init_database():
                 "ON chat_logs (class_offering_id, id DESC)"
             )
             conn.execute("DROP INDEX IF EXISTS idx_chat_logs_legacy_dedupe")
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS discussion_attachments
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             class_offering_id INTEGER NOT NULL,
+                             uploaded_by_user_id TEXT NOT NULL,
+                             uploaded_by_role TEXT NOT NULL,
+                             file_hash TEXT NOT NULL,
+                             original_filename TEXT NOT NULL,
+                             mime_type TEXT NOT NULL,
+                             file_size INTEGER NOT NULL,
+                             image_width INTEGER,
+                             image_height INTEGER,
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE
+                         )
+                         ''')
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_discussion_attachments_room_created "
+                "ON discussion_attachments (class_offering_id, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_discussion_attachments_owner "
+                "ON discussion_attachments (class_offering_id, uploaded_by_role, uploaded_by_user_id, created_at DESC, id DESC)"
+            )
 
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS custom_emojis
