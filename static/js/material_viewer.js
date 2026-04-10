@@ -64,6 +64,18 @@ function escapeHtml(value) {
         .replace(/'/g, '&#039;');
 }
 
+function parseMarkdownHtml(value) {
+    const runtime = window.MarkdownRuntime;
+    if (runtime && typeof runtime.parse === 'function') {
+        return runtime.parse(value, {
+            fallbackMode: 'pre',
+            silent: true,
+        });
+    }
+
+    return `<pre>${escapeHtml(String(value ?? ''))}</pre>`;
+}
+
 function isExternalLink(href) {
     return /^(?:[a-z]+:)?\/\//i.test(href) || href.startsWith('mailto:');
 }
@@ -866,11 +878,7 @@ async function renderMarkdown() {
         return;
     }
 
-    if (typeof marked !== 'undefined' && marked.parse) {
-        contentEl.innerHTML = `<article class="md-content">${marked.parse(markdown)}</article>`;
-    } else {
-        contentEl.innerHTML = `<article class="md-content"><pre>${escapeHtml(markdown)}</pre></article>`;
-    }
+    contentEl.innerHTML = `<article class="md-content">${parseMarkdownHtml(markdown)}</article>`;
 
     rewriteLinksAndImages();
     buildToc();

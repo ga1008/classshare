@@ -411,11 +411,11 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/marked.min.js"></script>
+{% include "partials/markdown_assets.html" %}
 <script src="/static/js/behavior_tracker.js"></script>
 <script type="module">
-    import { showToast, renderMarkdown, formatDateLocal } from '/static/js/ui.js';
-    import { SubmissionUploadManager } from '/static/js/submission_upload.js';
+    import { showToast, renderMarkdown, formatDateLocal } from '{{ asset_url("js/ui.js") }}';
+    import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
 
     const MAX_SIZE = {{ max_upload_mb }} * 1024 * 1024;
     const MAX_FILES = {{ max_submission_file_count }};

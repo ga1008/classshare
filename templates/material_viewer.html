@@ -12,8 +12,8 @@
 {% endblock %}
 
 {% block head %}
-<script src="/static/js/marked.min.js"></script>
-<script src="/static/vendor/mermaid.min.js"></script>
+{% set include_mermaid = true %}
+{% include "partials/markdown_assets.html" %}
 <script>
     window.MATERIAL_VIEWER = {{ material | tojson }};
 </script>
@@ -130,5 +130,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/material_viewer.js"></script>
+<script type="module" src="{{ asset_url('js/material_viewer.js') }}"></script>
 {% endblock %}

@@ -368,12 +368,12 @@
     {% endif %}
 </main>
 
-<script src="/static/js/marked.min.js"></script>
+{% include "partials/markdown_assets.html" %}
 {% endblock %}
 
 {% block scripts %}
 <script type="module">
-    import { showToast, openModal, closeModal, renderMarkdown, escapeHtml } from '/static/js/ui.js';
+    import { showToast, openModal, closeModal, renderMarkdown, escapeHtml } from '{{ asset_url("js/ui.js") }}';
 
     const submissionId = {{ submission.id }};
     const assignmentId = "{{ assignment.id }}";

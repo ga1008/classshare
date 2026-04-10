@@ -1,0 +1,6 @@
+<script src="{{ asset_url('es2022_polyfills') }}"></script>
+<script src="{{ asset_url('marked') }}"></script>
+{% if include_mermaid | default(false) %}
+<script src="{{ asset_url('mermaid') }}"></script>
+{% endif %}
+<script src="{{ asset_url('markdown_runtime') }}"></script>

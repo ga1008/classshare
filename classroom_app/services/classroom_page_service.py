@@ -56,9 +56,7 @@ def build_classroom_page_context(
             else "围绕任务难点、实验进展和资料阅读随时交流。"
         ),
         "detail": (
-            "教师实名发言，学生以课堂代号参与，互动记录会实时同步。"
-            if role == "teacher"
-            else "你的公开身份会以课堂代号展示，更方便聚焦内容本身。"
+            "说点啥"
         ),
     }
 

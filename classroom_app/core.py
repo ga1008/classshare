@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
 
 from .config import TEMPLATES_DIR, MAX_HISTORY_IN_MEMORY, AI_ASSISTANT_URL
+from .frontend_assets import asset_url
 
 # FastAPI 应用实例
 app = FastAPI()
@@ -31,6 +32,7 @@ def datetime_format(value, format="%Y-%m-%d %H:%M"):
 # 在模板环境中注册过滤器
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 templates.env.filters["datetime_format"] = datetime_format
+templates.env.globals["asset_url"] = asset_url
 
 # AI 服务的 HTTP 客户端
 ai_client = httpx.AsyncClient(base_url=AI_ASSISTANT_URL, timeout=120.0)
