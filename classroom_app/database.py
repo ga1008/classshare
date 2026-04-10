@@ -1356,6 +1356,26 @@ def init_database():
                 "ON classroom_behavior_states (profile_generation_pending, last_presence_at, online_accumulated_seconds, next_profile_interval_seconds)"
             )
 
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS ui_copy_snapshots
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    snapshot_date TEXT NOT NULL UNIQUE,
+                    schema_version TEXT NOT NULL DEFAULT 'v1',
+                    source TEXT NOT NULL DEFAULT 'fallback',
+                    generation_reason TEXT DEFAULT '',
+                    payload_json TEXT NOT NULL,
+                    generated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                '''
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ui_copy_snapshots_lookup "
+                "ON ui_copy_snapshots (snapshot_date DESC, generated_at DESC, id DESC)"
+            )
+
             # 13.9 绯荤粺淇℃伅涓績閫氱煡
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS message_center_notifications

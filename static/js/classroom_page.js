@@ -71,7 +71,48 @@ function initWorkspaceNav() {
     setActiveLink(navItems[0].targetId);
 }
 
+function resolveCopyTokens(overrides = {}) {
+    const userInfo = window.APP_CONFIG?.userInfo || {};
+    const classroom = window.APP_CONFIG?.classroom || {};
+    const displayName = String(
+        overrides.displayName
+        || overrides.display_name
+        || document.getElementById('chat-display-name')?.textContent
+        || '',
+    ).trim();
+    const userName = String(userInfo.name || '').trim();
+    const aliasOrName = displayName && displayName !== '分配中...' ? displayName : userName;
+
+    return {
+        name: userName,
+        class_name: String(classroom.class_name || '').trim(),
+        course_name: String(classroom.course_name || '').trim(),
+        alias_or_name: aliasOrName,
+    };
+}
+
+function applyCopyTokens(template, tokens) {
+    return Object.entries(tokens).reduce((current, [key, value]) => {
+        return current.split(`{{${key}}}`).join(String(value || ''));
+    }, String(template || ''));
+}
+
+function personalizeClassroomCopy(overrides = {}) {
+    const tokens = resolveCopyTokens(overrides);
+    document.querySelectorAll('[data-copy-template]').forEach((node) => {
+        const template = node.getAttribute('data-copy-template');
+        if (!template) {
+            return;
+        }
+        node.textContent = applyCopyTokens(template, tokens);
+    });
+}
+
 export function initClassroomPage() {
     initCoursePopover();
     initWorkspaceNav();
+    personalizeClassroomCopy();
+    document.addEventListener('classroom:alias-change', (event) => {
+        personalizeClassroomCopy(event.detail || {});
+    });
 }

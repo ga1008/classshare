@@ -5,6 +5,7 @@ from typing import Any
 
 from .message_center_service import CATEGORY_LABELS, get_message_center_summary
 from .student_auth_service import build_student_security_summary
+from .ui_copy_service import get_ui_copy_block, render_ui_copy_block
 
 RECENT_ACTIVITY_DAYS = 14
 
@@ -173,61 +174,70 @@ def _build_teacher_dashboard_context(conn, user: dict) -> dict[str, Any]:
 
     distinct_class_count = len({int(item["class_id"]) for item in offerings})
     distinct_course_count = len({int(item["course_id"]) for item in offerings})
+    ui_copy = render_ui_copy_block(
+        get_ui_copy_block(conn, scene="dashboard", role="teacher"),
+        {
+            "name": user.get("name") or "",
+            "unread_total": unread_total,
+            "pending_reset_count": pending_reset_count,
+            "today_login_count": today_login_count,
+        },
+    )
 
     spotlight = {
-        "label": "待办焦点",
+        "label": ui_copy["spotlight_pending_label"],
         "value": pending_review_total,
         "suffix": "份",
-        "note": "优先处理学生提交，课堂节奏会更顺畅。",
+        "note": ui_copy["spotlight_pending_note"],
     }
     if pending_review_total <= 0 and pending_reset_count > 0:
         spotlight = {
-            "label": "系统审核",
+            "label": ui_copy["spotlight_reset_label"],
             "value": pending_reset_count,
             "suffix": "条",
-            "note": "有学生找回密码申请待审核。",
+            "note": ui_copy["spotlight_reset_note"],
         }
     elif pending_review_total <= 0 and unread_total > 0:
         spotlight = {
-            "label": "未读提醒",
+            "label": ui_copy["spotlight_unread_label"],
             "value": unread_total,
             "suffix": "条",
-            "note": "消息中心里有新的互动提醒需要查看。",
+            "note": ui_copy["spotlight_unread_note"],
         }
     elif pending_review_total <= 0:
         spotlight = {
-            "label": "今日登录",
+            "label": ui_copy["spotlight_login_label"],
             "value": today_login_count,
             "suffix": "次",
-            "note": "今天学生登录记录会在这里汇总。",
+            "note": ui_copy["spotlight_login_note"],
         }
 
     quick_actions = [
         {
             "mode": "link",
-            "label": "开设课堂",
-            "description": "关联班级与课程，生成新的教学空间。",
+            "label": ui_copy["action_offering_label"],
+            "description": ui_copy["action_offering_description"],
             "href": "/manage/offerings",
             "badge": None,
         },
         {
             "mode": "link",
-            "label": "课程材料",
-            "description": "统一分配资料库内容与课内资源。",
+            "label": ui_copy["action_materials_label"],
+            "description": ui_copy["action_materials_description"],
             "href": "/manage/materials",
             "badge": None,
         },
         {
             "mode": "link",
-            "label": "考试题库",
-            "description": "维护试卷与发布考试任务。",
+            "label": ui_copy["action_exams_label"],
+            "description": ui_copy["action_exams_description"],
             "href": "/manage/exams",
             "badge": None,
         },
         {
             "mode": "link",
-            "label": "系统审核",
-            "description": "查看学生找回密码与安全审计。",
+            "label": ui_copy["action_system_label"],
+            "description": ui_copy["action_system_description"],
             "href": "/manage/system",
             "badge": pending_reset_count or None,
         },
@@ -276,8 +286,8 @@ def _build_teacher_dashboard_context(conn, user: dict) -> dict[str, Any]:
 
     if not focus_items:
         focus_items.append({
-            "title": "当前节奏稳定",
-            "description": "暂无紧急待办，可以继续完善资料、试卷和课堂内容。",
+            "title": ui_copy["focus_empty_title"],
+            "description": ui_copy["focus_empty_description"],
             "href": "/manage/materials" if offerings else "/manage/offerings",
             "tone": "neutral",
         })
@@ -285,9 +295,9 @@ def _build_teacher_dashboard_context(conn, user: dict) -> dict[str, Any]:
     return {
         "dashboard_theme": "teacher",
         "dashboard_hero": {
-            "eyebrow": "Teaching Command Center",
-            "title": "教学控制台",
-            "subtitle": "把课堂推进、任务流转、学生活跃与系统审核集中到一个更清晰的首页。",
+            "eyebrow": ui_copy["hero_eyebrow"],
+            "title": ui_copy["hero_title"],
+            "subtitle": ui_copy["hero_subtitle"],
             "chips": [
                 f"{distinct_course_count} 门课程模板",
                 f"{distinct_class_count} 个班级",
@@ -302,14 +312,20 @@ def _build_teacher_dashboard_context(conn, user: dict) -> dict[str, Any]:
             {"label": "未读提醒", "value": unread_total, "note": f"待审核 {pending_reset_count} 条"},
         ],
         "dashboard_quick_actions": quick_actions,
+        "dashboard_sections": {
+            "quick_actions": {
+                "title": ui_copy["quick_actions_title"],
+                "subtitle": ui_copy["quick_actions_subtitle"],
+            },
+        },
         "dashboard_focus": {
-            "title": "优先处理",
-            "subtitle": "把最影响课堂节奏的事项放在前面。",
+            "title": ui_copy["focus_title"],
+            "subtitle": ui_copy["focus_subtitle"],
             "items": focus_items,
         },
         "dashboard_activity": {
-            "title": "近期动态",
-            "subtitle": "来自消息中心的最新互动提醒。",
+            "title": ui_copy["activity_title"],
+            "subtitle": ui_copy["activity_subtitle"],
             "items": recent_activity,
         },
         "dashboard_filters": [
@@ -319,9 +335,9 @@ def _build_teacher_dashboard_context(conn, user: dict) -> dict[str, Any]:
         ],
         "dashboard_search_placeholder": "搜索课程、班级或学期",
         "dashboard_empty_state": {
-            "title": "先创建一个课堂空间",
-            "description": "当前还没有任何开设中的课堂。建议先关联班级与课程，再补充资料和任务。",
-            "action_label": "开设新课堂",
+            "title": ui_copy["empty_title"],
+            "description": ui_copy["empty_description"],
+            "action_label": ui_copy["empty_action_label"],
             "action_href": "/manage/offerings",
         },
         "class_offerings": enriched_offerings,
@@ -343,6 +359,8 @@ def _build_student_dashboard_context(conn, user: dict) -> dict[str, Any]:
         """,
         (student_id,),
     ).fetchone()
+    class_name = str(student_profile["class_name"] or "") if student_profile else ""
+    classmate_count = int(student_profile["classmate_count"] or 0) if student_profile else 0
 
     offerings = _load_student_offerings(conn, student_id)
     offering_ids = [int(item["id"]) for item in offerings]
@@ -353,6 +371,14 @@ def _build_student_dashboard_context(conn, user: dict) -> dict[str, Any]:
     recent_activity = _load_recent_activity(conn, user)
     message_summary = get_message_center_summary(conn, user)
     unread_total = int(message_summary.get("unread_total") or 0)
+    ui_copy = render_ui_copy_block(
+        get_ui_copy_block(conn, scene="dashboard", role="student"),
+        {
+            "name": user.get("name") or "",
+            "class_name": class_name or "当前班级",
+            "unread_total": unread_total,
+        },
+    )
 
     enriched_offerings: list[dict[str, Any]] = []
     pending_total = 0
@@ -451,16 +477,16 @@ def _build_student_dashboard_context(conn, user: dict) -> dict[str, Any]:
     priority_items = _load_student_priority_items(conn, student_id)
     if unread_total > 0:
         priority_items.append({
-            "title": "消息中心提醒",
-            "description": f"你还有 {unread_total} 条未读通知。",
+            "title": ui_copy["priority_unread_title"],
+            "description": ui_copy["priority_unread_description"],
             "href": "/message-center",
             "tone": "primary",
         })
     if not priority_items:
         fallback_href = f"/classroom/{offerings[0]['id']}" if offerings else "/message-center"
         priority_items.append({
-            "title": "继续进入课堂",
-            "description": "当前没有紧急待办，可以继续查看资料或课堂讨论。",
+            "title": ui_copy["priority_empty_title"],
+            "description": ui_copy["priority_empty_description"],
             "href": fallback_href,
             "tone": "neutral",
         })
@@ -469,63 +495,60 @@ def _build_student_dashboard_context(conn, user: dict) -> dict[str, Any]:
 
     total_logins = int(student_security_summary.get("total_logins") or 0) if student_security_summary else 0
     spotlight = {
-        "label": "待完成任务",
+        "label": ui_copy["spotlight_pending_label"],
         "value": pending_total,
         "suffix": "项",
-        "note": "优先处理已发布的作业和考试，会更清晰。",
+        "note": ui_copy["spotlight_pending_note"],
     }
     if pending_total <= 0 and unread_total > 0:
         spotlight = {
-            "label": "未读提醒",
+            "label": ui_copy["spotlight_unread_label"],
             "value": unread_total,
             "suffix": "条",
-            "note": "消息中心里有新的互动或反馈。",
+            "note": ui_copy["spotlight_unread_note"],
         }
     elif pending_total <= 0:
         last_device = ""
         if student_security_summary and student_security_summary.get("last_login"):
             last_device = str(student_security_summary["last_login"].get("device_label") or "")
         spotlight = {
-            "label": "累计登录",
+            "label": ui_copy["spotlight_login_label"],
             "value": total_logins,
             "suffix": "次",
-            "note": last_device or "保持稳定登录，课堂数据会持续积累。",
+            "note": last_device or ui_copy["spotlight_login_note"],
         }
 
     quick_actions = [
         {
             "mode": "link",
-            "label": "优先任务",
-            "description": "优先查看当前最值得先处理的课堂内容。",
+            "label": ui_copy["action_priority_label"],
+            "description": ui_copy["action_priority_description"],
             "href": first_pending_href,
             "badge": pending_total or None,
         },
         {
             "mode": "link",
-            "label": "消息中心",
-            "description": "查看私信、提醒与批改结果。",
+            "label": ui_copy["action_message_label"],
+            "description": ui_copy["action_message_description"],
             "href": "/message-center",
             "badge": unread_total or None,
         },
         {
             "mode": "button",
-            "label": "修改密码",
-            "description": "更新你的登录密码与安全信息。",
+            "label": ui_copy["action_security_label"],
+            "description": ui_copy["action_security_description"],
             "button_attrs": {"data-open-student-security": "true"},
             "badge": None,
         },
     ]
-
-    class_name = str(student_profile["class_name"] or "") if student_profile else ""
-    classmate_count = int(student_profile["classmate_count"] or 0) if student_profile else 0
     recent_count = sum(1 for item in enriched_offerings if item["has_recent_activity"])
 
     return {
         "dashboard_theme": "student",
         "dashboard_hero": {
-            "eyebrow": "Learning Overview",
-            "title": "学习总览",
-            "subtitle": "把正在进行的课堂、待完成任务、互动提醒和安全信息放到同一个更清楚的首页。",
+            "eyebrow": ui_copy["hero_eyebrow"],
+            "title": ui_copy["hero_title"],
+            "subtitle": ui_copy["hero_subtitle"],
             "chips": [
                 class_name or "当前班级",
                 f"累计登录 {total_logins} 次",
@@ -540,14 +563,20 @@ def _build_student_dashboard_context(conn, user: dict) -> dict[str, Any]:
             {"label": "未读提醒", "value": unread_total, "note": f"累计登录 {total_logins} 次"},
         ],
         "dashboard_quick_actions": quick_actions,
+        "dashboard_sections": {
+            "quick_actions": {
+                "title": ui_copy["quick_actions_title"],
+                "subtitle": ui_copy["quick_actions_subtitle"],
+            },
+        },
         "dashboard_focus": {
-            "title": "学习提醒",
-            "subtitle": "先处理最值得优先推进的任务。",
+            "title": ui_copy["focus_title"],
+            "subtitle": ui_copy["focus_subtitle"],
             "items": priority_items[:4],
         },
         "dashboard_activity": {
-            "title": "近期动态",
-            "subtitle": "消息中心里的最新课堂提醒。",
+            "title": ui_copy["activity_title"],
+            "subtitle": ui_copy["activity_subtitle"],
             "items": recent_activity,
         },
         "dashboard_filters": [
@@ -558,9 +587,9 @@ def _build_student_dashboard_context(conn, user: dict) -> dict[str, Any]:
         ],
         "dashboard_search_placeholder": "搜索课程、教师或学期",
         "dashboard_empty_state": {
-            "title": "暂时还没有可进入的课堂",
-            "description": "当教师为你的班级开设课程后，这里会展示对应的课堂入口。",
-            "action_label": "查看消息中心",
+            "title": ui_copy["empty_title"],
+            "description": ui_copy["empty_description"],
+            "action_label": ui_copy["empty_action_label"],
             "action_href": "/message-center",
         },
         "class_offerings": enriched_offerings,

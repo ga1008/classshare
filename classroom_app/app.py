@@ -17,6 +17,11 @@ from .services.behavior_tracking_service import (
     start_behavior_profile_scheduler,
     stop_behavior_profile_scheduler,
 )
+from .services.ui_copy_service import (
+    ensure_ui_copy_snapshot,
+    start_ui_copy_refresh_scheduler,
+    stop_ui_copy_refresh_scheduler,
+)
 
 # 导入所有 V4.0 路由
 from .routers import ui, files, homework, ai, materials, emoji, behavior, message_center
@@ -40,12 +45,18 @@ async def startup_event():
     # 确保静态目录存在
     STATIC_DIR.mkdir(exist_ok=True)
     await ai_client.__aenter__()  # 启动 HTTP 客户端
+    try:
+        await ensure_ui_copy_snapshot(reason="startup")
+    except Exception as exc:
+        print(f"[UI_COPY] 启动时刷新界面文案失败: {exc}")
     start_behavior_profile_scheduler()
+    start_ui_copy_refresh_scheduler()
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用关闭时执行"""
+    await stop_ui_copy_refresh_scheduler()
     await stop_behavior_profile_scheduler()
     await ai_client.__aexit__(None, None, None)  # 关闭 HTTP 客户端
     print("[SERVER] FastAPI 应用已关闭。")

@@ -627,6 +627,11 @@ export class ClassroomChat {
         if (this.displayNameEl) {
             this.displayNameEl.textContent = this.displayName || '分配中...';
         }
+        document.dispatchEvent(new CustomEvent('classroom:alias-change', {
+            detail: {
+                displayName: this.displayName || '',
+            },
+        }));
         this.refreshAliasSwitchUi();
     }
 

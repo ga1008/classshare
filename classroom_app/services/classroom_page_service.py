@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from .ui_copy_service import get_ui_copy_block, render_ui_copy_block
+
 
 def build_classroom_page_context(
     *,
+    conn,
     user: dict[str, Any],
     classroom: dict[str, Any],
     assignments: list[dict[str, Any]],
@@ -15,6 +18,16 @@ def build_classroom_page_context(
     resource_count = len(shared_files)
     class_size = classroom.get("class_student_count")
     class_size_text = str(class_size) if class_size not in (None, "") else "--"
+    raw_ui_copy = get_ui_copy_block(conn, scene="classroom", role=role)
+    ui_copy = render_ui_copy_block(
+        raw_ui_copy,
+        {
+            "name": user.get("name") or "",
+            "class_name": classroom.get("class_name") or "",
+            "course_name": classroom.get("course_name") or "",
+            "alias_or_name": user.get("name") or "",
+        },
+    )
 
     stats = _build_stat_cards(
         role=role,
@@ -26,16 +39,13 @@ def build_classroom_page_context(
         assignment_stats=assignment_stats,
         resource_count=resource_count,
         class_size_text=class_size_text,
+        ui_copy=ui_copy,
     )
 
     hero = {
-        "eyebrow": "Teaching Studio" if role == "teacher" else "Learning Space",
+        "eyebrow": ui_copy["hero_eyebrow"],
         "role_label": "教师视角" if role == "teacher" else "学生视角",
-        "lead": (
-            "把任务发布、资源分发和课堂讨论放进同一个工作台里，便于持续推进课堂节奏。"
-            if role == "teacher"
-            else "在一个更清晰的课堂工作台中完成任务查看、材料浏览、资源下载和实时讨论。"
-        ),
+        "lead": ui_copy["hero_lead"],
         "feature_chips": (
             ["任务发布", "材料库同步", "课堂共享", "AI 助手"]
             if role == "teacher"
@@ -49,15 +59,39 @@ def build_classroom_page_context(
         ],
     }
 
+    sections = {
+        "assignment": {
+            "eyebrow": "Learning Flow",
+            "title": ui_copy["assignment_title"],
+            "subtitle": ui_copy["assignment_subtitle"],
+            "empty_title": ui_copy["assignment_empty_title"],
+            "empty_description": ui_copy["assignment_empty_description"],
+        },
+        "materials": {
+            "eyebrow": "Course Library",
+            "title": ui_copy["materials_title"],
+            "subtitle": ui_copy["materials_subtitle"],
+        },
+        "resources": {
+            "eyebrow": "Shared Resources",
+            "title": ui_copy["resources_title"],
+            "subtitle": ui_copy["resources_subtitle"],
+        },
+        "discussion": {
+            "eyebrow": "课堂研讨室",
+            "title": ui_copy["discussion_title"],
+            "subtitle": ui_copy["discussion_subtitle"],
+            "subtitle_template": str(raw_ui_copy.get("discussion_subtitle") or ui_copy["discussion_subtitle"]),
+            "detail": ui_copy["discussion_detail_template"],
+            "detail_template": str(raw_ui_copy.get("discussion_detail_template") or ui_copy["discussion_detail_template"]),
+        },
+    }
+
     discussion = {
-        "subtitle": (
-            "围绕作业安排、资料提醒和课堂反馈保持同步。"
-            if role == "teacher"
-            else "围绕任务难点、实验进展和资料阅读随时交流。"
-        ),
-        "detail": (
-            "说点啥"
-        ),
+        "subtitle": sections["discussion"]["subtitle"],
+        "subtitle_template": sections["discussion"]["subtitle_template"],
+        "detail": sections["discussion"]["detail"],
+        "detail_template": sections["discussion"]["detail_template"],
     }
 
     return {
@@ -65,6 +99,7 @@ def build_classroom_page_context(
         "hero": hero,
         "spotlight": spotlight,
         "stats": stats,
+        "sections": sections,
         "assignment_stats": assignment_stats,
         "assignment_metrics": _build_assignment_metrics(role=role, assignment_stats=assignment_stats),
         "materials_tags": ["目录浏览", "README 预览", "批量下载"],
@@ -146,16 +181,17 @@ def _build_spotlight(
     assignment_stats: dict[str, int],
     resource_count: int,
     class_size_text: str,
+    ui_copy: dict[str, Any],
 ) -> dict[str, Any]:
     if role == "teacher":
         if assignment_stats["draft_count"] > 0:
-            label = "待发布任务"
+            label = ui_copy["spotlight_draft_label"]
             value = assignment_stats["draft_count"]
-            note = "还有课堂任务停留在草稿状态，整理后即可直接发布给学生。"
+            note = ui_copy["spotlight_draft_note"]
         else:
-            label = "已运行任务"
+            label = ui_copy["spotlight_active_label"]
             value = assignment_stats["active_count"]
-            note = "当前课堂任务已经进入稳定运行，可以继续补充材料与共享资源。"
+            note = ui_copy["spotlight_active_note"]
         return {
             "label": label,
             "value": value,
@@ -169,17 +205,17 @@ def _build_spotlight(
         }
 
     if assignment_stats["pending_count"] > 0:
-        label = "待完成任务"
+        label = ui_copy["spotlight_pending_label"]
         value = assignment_stats["pending_count"]
-        note = "先处理仍未提交的任务，课堂进度会更清晰。"
+        note = ui_copy["spotlight_pending_note"]
     elif assignment_stats["assignment_count"] > 0:
-        label = "已提交任务"
+        label = ui_copy["spotlight_submitted_label"]
         value = assignment_stats["submitted_count"]
-        note = "你已经有任务进入提交流程，可以继续跟进批改结果。"
+        note = ui_copy["spotlight_submitted_note"]
     else:
-        label = "当前任务"
+        label = ui_copy["spotlight_empty_label"]
         value = 0
-        note = "教师发布新任务后，这里会第一时间更新。"
+        note = ui_copy["spotlight_empty_note"]
 
     return {
         "label": label,

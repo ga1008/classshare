@@ -621,6 +621,7 @@ async def dashboard(request: Request, user: dict = Depends(get_current_user)):
 async def classroom_main(request: Request, class_offering_id: int, user: dict = Depends(get_current_user)):
     """V4.0: 替换旧的 /app，这是特定班级课堂的主界面"""
     student_security_summary = None
+    classroom_page = None
     with get_db_connection() as conn:
         offering = conn.execute(
             """SELECT o.*,
@@ -693,6 +694,14 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
                     assignment['submission_status'] = 'unsubmitted'
             assignments.append(assignment)
 
+        classroom_page = build_classroom_page_context(
+            conn=conn,
+            user=user,
+            classroom=offering_data,
+            assignments=assignments,
+            shared_files=files_info,
+        )
+
     try:
         record_behavior_event(
             class_offering_id=class_offering_id,
@@ -710,13 +719,6 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
         )
     except Exception as exc:
         print(f"[BEHAVIOR] 记录课堂页面访问失败: {exc}")
-
-    classroom_page = build_classroom_page_context(
-        user=user,
-        classroom=offering_data,
-        assignments=assignments,
-        shared_files=files_info,
-    )
 
     return templates.TemplateResponse(request, "classroom_main_v4.html", {
         "request": request,
