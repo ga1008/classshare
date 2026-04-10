@@ -6,6 +6,7 @@ from typing import Any
 from .message_center_service import CATEGORY_LABELS, get_message_center_summary
 from .student_auth_service import build_student_security_summary
 from .ui_copy_service import get_ui_copy_block, render_ui_copy_block
+from .prompt_utils import polite_address
 
 RECENT_ACTIVITY_DAYS = 14
 
@@ -177,7 +178,7 @@ def _build_teacher_dashboard_context(conn, user: dict) -> dict[str, Any]:
     ui_copy = render_ui_copy_block(
         get_ui_copy_block(conn, scene="dashboard", role="teacher"),
         {
-            "name": user.get("name") or "",
+            "name": polite_address(user.get("name") or "", "teacher"),
             "unread_total": unread_total,
             "pending_reset_count": pending_reset_count,
             "today_login_count": today_login_count,
@@ -374,7 +375,7 @@ def _build_student_dashboard_context(conn, user: dict) -> dict[str, Any]:
     ui_copy = render_ui_copy_block(
         get_ui_copy_block(conn, scene="dashboard", role="student"),
         {
-            "name": user.get("name") or "",
+            "name": polite_address(user.get("name") or "", "student"),
             "class_name": class_name or "当前班级",
             "unread_total": unread_total,
         },

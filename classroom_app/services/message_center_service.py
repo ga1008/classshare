@@ -1494,6 +1494,7 @@ async def _generate_ai_private_reply_text(
                 "model_capability": "standard",
                 "task_priority": "interactive",
                 "task_label": "private_message_reply",
+                "web_search_enabled": False,
             },
             timeout=90.0,
         )

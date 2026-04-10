@@ -378,6 +378,7 @@ async def generate_discussion_ai_reply(
                 "model_capability": "vision" if request_context["image_inputs"] else "standard",
                 "task_priority": "interactive",
                 "task_label": "discussion_reply",
+                "web_search_enabled": False,
             },
             timeout=90.0,
         )
@@ -839,6 +840,7 @@ async def refresh_discussion_profile_from_activity(
                 "response_format": "json",
                 "task_priority": "background",
                 "task_label": "legacy_discussion_profile",
+                "web_search_enabled": False,
             },
             timeout=180.0,
         )

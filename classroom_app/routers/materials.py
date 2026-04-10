@@ -192,6 +192,7 @@ async def _call_ai_chat(system_prompt: str, new_message: str, capability: str = 
         "new_message": new_message,
         "base64_urls": [],
         "model_capability": capability,
+        "web_search_enabled": False,
     }
     try:
         response = await ai_client.post("/api/ai/chat", json=payload, timeout=180.0)

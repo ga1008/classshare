@@ -31,6 +31,12 @@ from ..services.psych_profile_service import (
     load_ai_class_config as fetch_ai_class_config,
     load_latest_hidden_profile as load_hidden_profile_snapshot,
 )
+from ..services.prompt_utils import (
+    polite_address,
+    build_time_context_text,
+    build_system_info_text,
+    should_enable_web_search,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -319,6 +325,7 @@ def format_system_prompt_teacher(user_id: int, class_offering_id: int) -> str:
         if teacher_info:
             prompt_parts.append(f"- 身份: 教师")
             prompt_parts.append(f"- 姓名: {teacher_info['name']}")
+            prompt_parts.append(f"- 礼貌称呼: {polite_address(teacher_info['name'], 'teacher')}")
             prompt_parts.append(f"- 邮箱: {teacher_info['email']}")
 
             # --- [核心修改] ---
@@ -326,10 +333,10 @@ def format_system_prompt_teacher(user_id: int, class_offering_id: int) -> str:
             if teacher_info['description']:
                 teacher_description = teacher_info['description']
             else:
-                # 如果为空，动态生成一个“基础画像”
+                # 如果为空，动态生成一个"基础画像"
                 teacher_description = f"该用户是教师 {teacher_info['name']}。目前暂无个性化画像，请在交流中逐步了解。"
 
-                # [智能方案] 立即将这个基础画像写回数据库，解决“冷启动”
+                # [智能方案] 立即将这个基础画像写回数据库，解决"冷启动"
                 try:
                     conn.execute("UPDATE teachers SET description = ? WHERE id = ?", (teacher_description, user_id))
                     conn.commit()
@@ -372,7 +379,13 @@ def format_system_prompt_teacher(user_id: int, class_offering_id: int) -> str:
             course_names = ", ".join([row['name'] for row in courses_taught])
             prompt_parts.append(f"- 教授的课程(示例): {course_names}")
 
+    # 添加时间上下文
+    prompt_parts.append(f"\n--- 当前环境信息 ---")
+    prompt_parts.append(build_time_context_text())
+    prompt_parts.append(build_system_info_text())
+
     prompt_parts.append("\n请根据以上信息，辅助教师进行教学管理、课程答疑或内容生成。")
+    prompt_parts.append('称呼用户时请使用"X老师"的格式（X为姓氏），不要直呼全名。语气可以自然轻松、偶尔幽默。')
     return "\n".join(prompt_parts)
 
 
@@ -418,23 +431,22 @@ def format_system_prompt_student(user_id: int, class_offering_id: int) -> str:
         if student_info:
             prompt_parts.append(f"- 身份: 学生")
             prompt_parts.append(f"- 姓名: {student_info['name']}")
+            prompt_parts.append(f"- 礼貌称呼: {polite_address(student_info['name'], 'student')}")
             prompt_parts.append(f"- 学号: {student_info['student_id_number']}")
             if student_info['gender']:
                 prompt_parts.append(f"- 性别: {student_info['gender']}")
             if student_info['email']:
                 prompt_parts.append(f"- 邮箱: {student_info['email']}")
-            if student_info['phone']:
-                prompt_parts.append(f"- 手机: {student_info['phone']}")
 
             # --- [核心修改] ---
             # 优先使用数据库中的画像
             if student_info['description']:
                 student_description = student_info['description']
             else:
-                # 如果为空，动态生成一个“基础画像”
+                # 如果为空，动态生成一个"基础画像"
                 student_description = f"该用户是 {student_info['class_name']} 的学生 {student_info['name']} (学号: {student_info['student_id_number']})。目前暂无个性化画像，请在交流中逐步了解。"
 
-                # [智能方案] 立即将这个基础画像写回数据库，解决“冷启动”
+                # [智能方案] 立即将这个基础画像写回数据库，解决"冷启动"
                 try:
                     conn.execute("UPDATE students SET description = ? WHERE id = ?", (student_description, user_id))
                     conn.commit()
@@ -460,7 +472,13 @@ def format_system_prompt_student(user_id: int, class_offering_id: int) -> str:
 
         prompt_parts.append(f"- 所在课堂 ID: {class_offering_id}")
 
+    # 添加时间上下文
+    prompt_parts.append(f"\n--- 当前环境信息 ---")
+    prompt_parts.append(build_time_context_text())
+    prompt_parts.append(build_system_info_text())
+
     prompt_parts.append("\n请根据以上信息，并结合你掌握的课程大纲和知识点（RAG材料）来回答问题。")
+    prompt_parts.append('称呼用户时请使用"X同学"的格式（X为姓氏），不要直呼全名。语气可以自然轻松、偶尔幽默，让学生感到亲切。')
     return "\n".join(prompt_parts)
 
 
@@ -715,6 +733,7 @@ System Prompt:
                 "new_message": profile_prompt,
                 "model_capability": "thinking",
                 "response_format": "json",
+                "web_search_enabled": False,
             },
             timeout=180.0,
         )
@@ -1064,6 +1083,7 @@ async def handle_ai_chat(
         "model_capability": model_capability,
         "task_priority": "interactive",
         "task_label": "user_chat",
+        "web_search_enabled": should_enable_web_search(model_capability),
     }
 
     # 8. [!!! 核心修改 2: 创建流式生成器 !!!]
@@ -1533,7 +1553,8 @@ async def ai_suggest_exam_topics(request: Request, user: dict = Depends(get_curr
             "system_prompt": "你是一个教学专家，擅长分析课程内容并推荐合适的出题范围。",
             "messages": [],
             "new_message": prompt,
-            "model_capability": "standard"
+            "model_capability": "standard",
+            "web_search_enabled": False,
         }, timeout=60.0)
 
         response.raise_for_status()

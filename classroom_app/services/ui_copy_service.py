@@ -9,6 +9,7 @@ from typing import Any
 from ..config import UI_COPY_GENERATION_ENABLED, UI_COPY_REFRESH_POLL_SECONDS
 from ..core import ai_client
 from ..database import get_db_connection
+from .prompt_utils import build_time_context_text, build_system_info_text
 
 UI_COPY_SCHEMA_VERSION = "v1"
 UI_COPY_AI_TIMEOUT_SECONDS = 90.0
@@ -315,6 +316,7 @@ async def _generate_snapshot_with_ai() -> dict[str, Any]:
             "response_format": "json",
             "task_priority": "background",
             "task_label": "ui_copy_daily",
+            "web_search_enabled": False,
         },
         timeout=UI_COPY_AI_TIMEOUT_SECONDS,
     )
@@ -337,18 +339,23 @@ async def _generate_snapshot_with_ai() -> dict[str, Any]:
 
 def _build_generation_prompt() -> str:
     skeleton = json.dumps(DEFAULT_UI_COPY_SNAPSHOT, ensure_ascii=False, indent=2)
+    time_ctx = build_time_context_text()
+    system_info = build_system_info_text()
     return (
-        "请基于下面这份课堂平台文案骨架，生成一版新的 JSON 文案。\n"
-        "严格要求：\n"
-        "1. 只允许返回合法 JSON，对象结构和键名必须与骨架完全一致。\n"
-        "2. 你只能改写字符串内容，不能增加或删除任何键。\n"
-        "3. 文案面向大学生，语气自然、真诚、轻一点，但不要油腻、不要官话、不要开发备注口吻。\n"
-        "4. 不要虚构新功能，不要出现“模块”“面板逻辑”“入口切换”等偏开发表达。\n"
-        "5. 标题尽量短；说明文案尽量控制在 18-36 个汉字内；较长引导也不要超过 60 个汉字。\n"
-        "6. 允许按自然语境使用占位符 {{name}}、{{class_name}}、{{course_name}}、{{alias_or_name}}，但不要滥用。\n"
-        "7. 所有文案都必须适合直接展示在页面上。\n\n"
-        "文案骨架如下：\n"
-        f"{skeleton}"
+        '请基于下面这份课堂平台文案骨架，生成一版新的 JSON 文案。\n'
+        '严格要求：\n'
+        '1. 只允许返回合法 JSON，对象结构和键名必须与骨架完全一致。\n'
+        '2. 你只能改写字符串内容，不能增加或删除任何键。\n'
+        '3. 文案面向大学生，语气自然、真诚、轻一点，但不要油腻、不要官话、不要开发备注口吻。\n'
+        '4. 不要虚构新功能，不要出现”模块””面板逻辑””入口切换”等偏开发表达。\n'
+        '5. 标题尽量短；说明文案尽量控制在 18-36 个汉字内；较长引导也不要超过 60 个汉字。\n'
+        '6. 允许按自然语境使用占位符 {{name}}、{{class_name}}、{{course_name}}、{{alias_or_name}}，但不要滥用。\n'
+        '7. 所有文案都必须适合直接展示在页面上。\n'
+        '8. 称呼用户时，教师用”X老师”（X为姓氏），学生用”X同学”，不要直呼全名。\n'
+        '9. 可以偶尔使用幽默风、可爱风、带”梗”的表达，让文案更亲切。但避免过度，保持专业感。\n\n'
+        f'{time_ctx}\n{system_info}\n\n'
+        '文案骨架如下：\n'
+        f'{skeleton}'
     )
 
 

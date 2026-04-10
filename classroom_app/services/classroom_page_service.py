@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .ui_copy_service import get_ui_copy_block, render_ui_copy_block
+from .prompt_utils import polite_address
 
 
 def build_classroom_page_context(
@@ -22,10 +23,10 @@ def build_classroom_page_context(
     ui_copy = render_ui_copy_block(
         raw_ui_copy,
         {
-            "name": user.get("name") or "",
+            "name": polite_address(user.get("name") or "", role),
             "class_name": classroom.get("class_name") or "",
             "course_name": classroom.get("course_name") or "",
-            "alias_or_name": user.get("name") or "",
+            "alias_or_name": polite_address(user.get("name") or "", role),
         },
     )
 

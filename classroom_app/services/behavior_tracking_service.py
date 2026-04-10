@@ -16,6 +16,10 @@ from .psych_profile_service import (
     load_latest_hidden_profile,
     normalize_psych_profile_payload,
 )
+from .prompt_utils import (
+    build_time_context_text,
+    polite_address,
+)
 
 PROFILE_INTERVAL_MIN_SECONDS = 30 * 60
 PROFILE_INTERVAL_MAX_SECONDS = 60 * 60
@@ -423,13 +427,14 @@ def _build_login_audit_summary(rows: list[Any]) -> str:
 
     lines: list[str] = []
     for row in rows:
-        parts = [format_short_timestamp(row["login_time"]) or str(row["login_time"] or "")]
-        if row["session_status"]:
-            parts.append(f"状态:{row['session_status']}")
-        if row["login_ip"]:
-            parts.append(f"IP:{row['login_ip']}")
-        if row["user_agent"]:
-            parts.append(_truncate_text(f"UA:{row['user_agent']}", 96))
+        parts = [format_short_timestamp(row["logged_at"]) or str(row["logged_at"] or "")]
+        if row["ip_address"]:
+            parts.append(f"IP:{row['ip_address']}")
+        device_parts = [str(row[k] or "").strip() for k in ("device_type", "os_name", "browser_name") if str(row.get(k) or "").strip()]
+        if device_parts:
+            parts.append("/".join(device_parts))
+        if row["device_label"]:
+            parts.append(row["device_label"])
         lines.append(" | ".join(part for part in parts if part))
     return "\n".join(lines)
 
@@ -526,10 +531,11 @@ def _load_recent_login_audits(conn, *, user_pk: int, user_role: str) -> list[Any
         return []
     return conn.execute(
         """
-        SELECT login_time, logout_time, login_ip, user_agent, session_status
+        SELECT logged_at, ip_address, user_agent,
+               device_type, os_name, browser_name, device_label
         FROM student_login_audit_logs
         WHERE student_id = ?
-        ORDER BY login_time DESC, id DESC
+        ORDER BY logged_at DESC, id DESC
         LIMIT ?
         """,
         (user_pk, LOGIN_AUDIT_HISTORY_LIMIT),
@@ -585,6 +591,7 @@ def _build_behavior_profile_prompt(
         "3. hidden_premise_prompt 必须强调：不暴露侧写，不说后台分析，先共情再引导，优先帮助学习。",
         "4. 需要同时覆盖情绪、性格、喜好、语言习惯、偏好的AI风格等维度。",
         "5. 只返回合法 JSON，不要返回 Markdown，不要补充解释。",
+        '6. 在 hidden_premise_prompt 中，教师称呼用"X老师"（X为姓氏），学生用"X同学"，不要直呼全名。',
         "",
         "输出 JSON 结构：",
         "\n".join(json_schema_lines),
@@ -599,8 +606,12 @@ def _build_behavior_profile_prompt(
         "Syllabus / RAG:",
         class_ai_config.get("syllabus") or "（无）",
         "",
+        "【当前环境】",
+        build_time_context_text(),
+        "",
         "【当前用户】",
         "姓名: " + (user_name or "未知"),
+        "礼貌称呼: " + polite_address(user_name or "未知", user_role),
         "角色: " + ("教师" if user_role == "teacher" else "学生"),
         "现有长期描述: " + (current_description or "暂无，请结合行为谨慎生成"),
         "",
@@ -758,6 +769,7 @@ async def generate_behavior_profile_for_user(
                 "response_format": "json",
                 "task_priority": "background",
                 "task_label": "behavior_profile",
+                "web_search_enabled": False,
             },
             timeout=180.0,
         )
