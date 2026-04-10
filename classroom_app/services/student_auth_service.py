@@ -323,7 +323,7 @@ def build_student_security_summary(conn: sqlite3.Connection, student_id: int) ->
     ).fetchone()
     last_login_row = conn.execute(
         """
-        SELECT login_sequence, ip_address, device_label, logged_at
+        SELECT login_sequence, login_method, ip_address, device_label, logged_at
         FROM student_login_audit_logs
         WHERE student_id = ?
         ORDER BY logged_at DESC, id DESC

@@ -24,6 +24,7 @@ from ..dependencies import infer_required_role_from_path, get_role_label
 from ..dependencies import apply_access_token_cookie, clear_access_token_cookie, invalidate_session_for_user
 from ..services.behavior_tracking_service import record_behavior_event
 from ..services.submission_assets import decode_allowed_file_types_json, summarize_allowed_file_types
+from ..services.dashboard_service import build_dashboard_context
 from ..services.student_auth_service import (
     PASSWORD_POLICY_HINT,
     build_password_setup_token,
@@ -597,41 +598,18 @@ async def logout(request: Request):
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, user: dict = Depends(get_current_user)):
     """V4.0: 仪表盘，显示用户所有相关的 "班级课堂" """
-    offerings = []
-    student_security_summary = None
     with get_db_connection() as conn:
-        if user['role'] == 'teacher':
-            cursor = conn.execute(
-                """SELECT o.*, c.name as course_name, cl.name as class_name
-                   FROM class_offerings o
-                            JOIN courses c ON o.course_id = c.id
-                            JOIN classes cl ON o.class_id = cl.id
-                   WHERE o.teacher_id = ?
-                   ORDER BY o.id DESC""",
-                (user['id'],)
-            )
-            offerings = [dict(row) for row in cursor]
+        dashboard_context = build_dashboard_context(conn, user)
 
-        elif user['role'] == 'student':
-            cursor = conn.execute(
-                """SELECT o.*, c.name as course_name, cl.name as class_name, t.name as teacher_name
-                   FROM class_offerings o
-                            JOIN courses c ON o.course_id = c.id
-                            JOIN classes cl ON o.class_id = cl.id
-                            JOIN teachers t ON o.teacher_id = t.id
-                   WHERE o.class_id = (SELECT class_id FROM students WHERE id = ?)
-                   ORDER BY o.id DESC""",
-                (user['id'],)
-            )
-            offerings = [dict(row) for row in cursor]
-            student_security_summary = build_student_security_summary(conn, int(user['id']))
-
-    return templates.TemplateResponse(request, "dashboard.html", {
-        "request": request,
-        "user_info": user,
-        "class_offerings": offerings,
-        "student_security_summary": student_security_summary,
-    })
+    return templates.TemplateResponse(
+        request,
+        "dashboard.html",
+        {
+            "request": request,
+            "user_info": user,
+            **dashboard_context,
+        },
+    )
 
 
 # ============================

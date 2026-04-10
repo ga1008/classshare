@@ -1,106 +1,17 @@
 {% extends "base_navbar.html" %}
 
-{% block title %}我的班级课堂 - 课堂平台{% endblock %}
+{% block title %}{{ dashboard_hero.title }} - 课堂平台{% endblock %}
+
+{% block body_class %}page-wrapper dashboard-page role-{{ dashboard_theme }}{% endblock %}
 
 {% block css %}
 {{ super() }}
-<style>
-    .dashboard-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: var(--spacing-md);
-        margin-bottom: var(--spacing-lg);
-        padding: var(--spacing-lg);
-        border-radius: var(--radius-xl);
-        border: 1px solid var(--border-color);
-        background: linear-gradient(135deg, rgba(79, 70, 229, 0.12), rgba(255, 255, 255, 0.85));
-        box-shadow: var(--shadow-sm);
-    }
-
-    .dashboard-subtitle {
-        margin: 0;
-        color: var(--text-secondary);
-        font-size: 0.92rem;
-    }
-
-    .course-list {
-        display: flex;
-        flex-direction: column;
-        gap: var(--spacing-md);
-    }
-
-    .course-list-item {
-        display: grid;
-        grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto;
-        align-items: center;
-        gap: var(--spacing-md);
-        padding: var(--spacing-lg);
-        border: 1px solid var(--border-color);
-        border-radius: var(--radius-xl);
-        background: linear-gradient(135deg, rgba(79, 70, 229, 0.06), rgba(255, 255, 255, 0.95));
-        text-decoration: none;
-        color: inherit;
-        box-shadow: var(--shadow-sm);
-        transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
-    }
-
-    .course-list-item:hover {
-        transform: translateY(-2px);
-        border-color: var(--primary-color);
-        box-shadow: var(--shadow-md);
-        text-decoration: none;
-        color: inherit;
-    }
-
-    .course-list-main h3 {
-        margin: 0;
-        font-size: 1.1rem;
-    }
-
-    .course-list-main p {
-        margin: 4px 0 0;
-        color: var(--text-secondary);
-        font-size: 0.9rem;
-    }
-
-    .course-list-meta {
-        display: flex;
-        align-items: center;
-        gap: var(--spacing-xs);
-        color: var(--text-muted);
-        font-size: 0.86rem;
-    }
-
-    .course-list-enter {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        color: var(--primary-color);
-        font-weight: 600;
-        font-size: 0.9rem;
-    }
-
-    @media (max-width: 768px) {
-        .dashboard-header {
-            flex-direction: column;
-            align-items: flex-start;
-        }
-
-        .course-list-item {
-            grid-template-columns: 1fr;
-        }
-
-        .course-list-enter {
-            justify-content: flex-start;
-        }
-    }
-</style>
+<link rel="stylesheet" href="/static/css/dashboard.css">
 {% endblock %}
 
 {% block navbar_actions %}
+{{ super() }}
 {% if user_info.role == 'teacher' %}
-<a href="/manage" class="btn btn-outline btn-sm">管理中心</a>
 <a href="/manage/offerings" class="btn btn-primary btn-sm">
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
     开设新课堂
@@ -109,60 +20,268 @@
 {% endblock %}
 
 {% block main_content %}
+<section class="dashboard-shell" data-dashboard-root>
+    <section class="dashboard-hero">
+        <div class="dashboard-hero__content">
+            <span class="dashboard-hero__eyebrow">{{ dashboard_hero.eyebrow }}</span>
+            <h1 class="dashboard-hero__title">{{ dashboard_hero.title }}</h1>
+            <p class="dashboard-hero__subtitle">{{ dashboard_hero.subtitle }}</p>
+            <div class="dashboard-hero__chips">
+                {% for chip in dashboard_hero.chips %}
+                <span class="dashboard-chip">{{ chip }}</span>
+                {% endfor %}
+            </div>
+        </div>
 
-<div class="dashboard-header">
-    <div>
-        <h2 class="mb-1">{% if user_info.role == 'teacher' %}我的教学空间{% else %}我的班级课堂{% endif %}</h2>
-        <p class="dashboard-subtitle">
-            {% if user_info.role == 'teacher' %}
-            统一管理班级、课程、课堂与系统审核事项。
-            {% else %}
-            请从下方进入课堂；如需修改密码，可使用顶部导航中的“修改密码”。
-            {% endif %}
-        </p>
-    </div>
-    {% if user_info.role == 'student' and student_security_summary %}
-    <div>
-        <div class="badge badge-primary mb-1">累计登录 {{ student_security_summary.total_logins }} 次</div>
-        {% if student_security_summary.last_login %}
-        <p class="dashboard-subtitle">最近登录：{{ student_security_summary.last_login.logged_at }}</p>
-        {% endif %}
-    </div>
-    {% endif %}
-</div>
+        <div class="dashboard-hero__spotlight">
+            <span class="dashboard-spotlight__label">{{ dashboard_hero.spotlight.label }}</span>
+            <div class="dashboard-spotlight__value-wrap">
+                <strong class="dashboard-spotlight__value">{{ dashboard_hero.spotlight.value }}</strong>
+                <span class="dashboard-spotlight__suffix">{{ dashboard_hero.spotlight.suffix }}</span>
+            </div>
+            <p class="dashboard-spotlight__note">{{ dashboard_hero.spotlight.note }}</p>
+        </div>
+    </section>
 
-<div class="course-list">
-    {% for offering in class_offerings %}
-    <a href="/classroom/{{ offering.id }}" class="course-list-item">
-        <div class="course-list-main">
-            <h3>{{ offering.course_name }}</h3>
-            <p>{{ offering.class_name }}</p>
-        </div>
-        <div class="course-list-meta">
-            {% if user_info.role == 'student' %}
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-            教师：{{ offering.teacher_name }}
+    <section class="dashboard-stats">
+        {% for stat in dashboard_stats %}
+        <article class="dashboard-stat-card dashboard-reveal">
+            <span class="dashboard-stat-card__label">{{ stat.label }}</span>
+            <strong class="dashboard-stat-card__value">{{ stat.value }}</strong>
+            <p class="dashboard-stat-card__note">{{ stat.note }}</p>
+        </article>
+        {% endfor %}
+    </section>
+
+    <section class="dashboard-main">
+        <div class="dashboard-main__primary">
+            {% if class_offerings %}
+            <div class="dashboard-toolbar">
+                <div class="dashboard-toolbar__filters" role="tablist" aria-label="首页筛选">
+                    {% for filter in dashboard_filters %}
+                    <button
+                        type="button"
+                        class="dashboard-filter-btn{% if loop.first %} is-active{% endif %}"
+                        data-filter-value="{{ filter.value }}"
+                    >
+                        {{ filter.label }}
+                        <span>{{ filter.count }}</span>
+                    </button>
+                    {% endfor %}
+                </div>
+
+                <div class="dashboard-toolbar__search">
+                    <label class="sr-only" for="dashboard-search">搜索课堂</label>
+                    <input
+                        id="dashboard-search"
+                        type="search"
+                        class="dashboard-search-input"
+                        placeholder="{{ dashboard_search_placeholder }}"
+                        data-dashboard-search
+                    >
+                </div>
+            </div>
+
+            <div class="dashboard-results-bar">
+                <span>当前显示 <strong data-visible-count>{{ class_offerings|length }}</strong> 个课堂</span>
+                <button type="button" class="dashboard-reset-link" data-reset-search hidden>清除筛选</button>
+            </div>
+
+            <div class="dashboard-offering-grid" data-offering-list>
+                {% for offering in class_offerings %}
+                <article
+                    class="dashboard-offering-card dashboard-reveal"
+                    data-offering-card
+                    data-attention="{{ 'true' if offering.needs_attention else 'false' }}"
+                    data-recent="{{ 'true' if offering.has_recent_activity else 'false' }}"
+                    data-progress="{{ 'true' if offering.has_progress else 'false' }}"
+                    data-search-text="{{ (offering.course_name ~ ' ' ~ offering.class_name ~ ' ' ~ (offering.teacher_name or '') ~ ' ' ~ (offering.semester or ''))|lower }}"
+                >
+                    <div class="dashboard-offering-card__top">
+                        <div class="dashboard-offering-card__copy">
+                            <span class="dashboard-offering-card__eyebrow">{{ offering.class_name }}</span>
+                            <h2 class="dashboard-offering-card__title">{{ offering.course_name }}</h2>
+                            <p class="dashboard-offering-card__description">{{ offering.description }}</p>
+                        </div>
+
+                        {% if offering.badges %}
+                        <div class="dashboard-offering-card__badges">
+                            {% for badge in offering.badges %}
+                            <span class="dashboard-badge dashboard-badge--{{ badge.tone }}">{{ badge.label }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <p class="dashboard-offering-card__summary">{{ offering.summary }}</p>
+
+                    {% if offering.meta %}
+                    <div class="dashboard-offering-card__meta">
+                        {% for item in offering.meta %}
+                        <span>{{ item }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    <div class="dashboard-offering-card__metrics">
+                        {% for metric in offering.metrics %}
+                        <div class="dashboard-mini-stat">
+                            <span class="dashboard-mini-stat__label">{{ metric.label }}</span>
+                            <strong class="dashboard-mini-stat__value">{{ metric.value }}</strong>
+                            <span class="dashboard-mini-stat__note">{{ metric.note }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="dashboard-offering-card__footer">
+                        <div class="dashboard-offering-card__activity">
+                            <span>最近活动</span>
+                            {% if offering.last_activity_at %}
+                            <strong data-datetime="{{ offering.last_activity_at }}">{{ offering.last_activity_at }}</strong>
+                            {% else %}
+                            <strong>暂无更新</strong>
+                            {% endif %}
+                        </div>
+                        <a href="/classroom/{{ offering.id }}" class="btn btn-primary">
+                            进入课堂
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                        </a>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+
+            <div class="dashboard-empty-search" data-empty-search hidden>
+                <h3>没有匹配的课堂</h3>
+                <p>可以清空搜索词，或切换筛选查看其他课堂。</p>
+            </div>
             {% else %}
-            <span class="badge badge-success">教师身份</span>
+            <div class="dashboard-empty-state dashboard-reveal">
+                <div class="dashboard-empty-state__icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                </div>
+                <h3>{{ dashboard_empty_state.title }}</h3>
+                <p>{{ dashboard_empty_state.description }}</p>
+                <a href="{{ dashboard_empty_state.action_href }}" class="btn btn-primary">{{ dashboard_empty_state.action_label }}</a>
+            </div>
             {% endif %}
         </div>
-        <div class="course-list-enter">
-            进入课堂
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-        </div>
-    </a>
-    {% else %}
-    <div class="col-span-full">
-        <div class="card text-center p-xl">
-            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="text-muted mx-auto mb-2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
-            <h3 class="text-muted mb-1">暂无课堂</h3>
-            {% if user_info.role == 'teacher' %}
-            <p class="text-muted mb-3">您目前没有开设任何班级课堂。请使用顶部导航中的“开设新课堂”按钮创建。</p>
-            {% else %}
-            <p class="text-muted">您目前没有加入任何班级课堂，请联系您的教师。</p>
+
+        <aside class="dashboard-main__rail">
+            <section class="dashboard-panel dashboard-reveal">
+                <div class="dashboard-panel__header">
+                    <h2>快捷入口</h2>
+                    <p>把常用动作放在首页，不用再层层切换。</p>
+                </div>
+                <div class="dashboard-quick-actions">
+                    {% for action in dashboard_quick_actions %}
+                    {% if action.mode == 'link' %}
+                    <a href="{{ action.href }}" class="dashboard-quick-action">
+                        <div>
+                            <strong>{{ action.label }}</strong>
+                            <p>{{ action.description }}</p>
+                        </div>
+                        {% if action.badge %}
+                        <span class="dashboard-quick-action__badge">{{ action.badge }}</span>
+                        {% endif %}
+                    </a>
+                    {% else %}
+                    <button type="button" class="dashboard-quick-action dashboard-quick-action--button"{% for attr, value in action.button_attrs.items() %} {{ attr }}="{{ value }}"{% endfor %}>
+                        <div>
+                            <strong>{{ action.label }}</strong>
+                            <p>{{ action.description }}</p>
+                        </div>
+                        {% if action.badge %}
+                        <span class="dashboard-quick-action__badge">{{ action.badge }}</span>
+                        {% endif %}
+                    </button>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="dashboard-panel dashboard-reveal">
+                <div class="dashboard-panel__header">
+                    <h2>{{ dashboard_focus.title }}</h2>
+                    <p>{{ dashboard_focus.subtitle }}</p>
+                </div>
+                <div class="dashboard-list">
+                    {% for item in dashboard_focus["items"] %}
+                    <a href="{{ item.href }}" class="dashboard-list-item">
+                        <span class="dashboard-list-item__tone dashboard-list-item__tone--{{ item.tone }}"></span>
+                        <div class="dashboard-list-item__content">
+                            <strong>{{ item.title }}</strong>
+                            <p>{{ item.description }}</p>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="dashboard-panel dashboard-reveal">
+                <div class="dashboard-panel__header">
+                    <h2>{{ dashboard_activity.title }}</h2>
+                    <p>{{ dashboard_activity.subtitle }}</p>
+                </div>
+                {% if dashboard_activity["items"] %}
+                <div class="dashboard-activity-list">
+                    {% for item in dashboard_activity["items"] %}
+                    <a href="{{ item.href }}" class="dashboard-activity-item">
+                        <div class="dashboard-activity-item__top">
+                            <span class="dashboard-badge dashboard-badge--{{ item.tone }}">{{ item.label }}</span>
+                            {% if item.is_unread %}
+                            <span class="dashboard-activity-item__unread">未读</span>
+                            {% endif %}
+                        </div>
+                        <strong>{{ item.title }}</strong>
+                        <p>{{ item.description }}</p>
+                        <span class="dashboard-activity-item__time" data-datetime="{{ item.created_at }}">{{ item.created_at }}</span>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="dashboard-panel__placeholder">最近没有新的动态提醒。</div>
+                {% endif %}
+            </section>
+
+            {% if student_security_summary %}
+            <section class="dashboard-panel dashboard-reveal">
+                <div class="dashboard-panel__header">
+                    <h2>登录安全</h2>
+                    <p>帮助你确认最近一次登录设备与时间。</p>
+                </div>
+                <div class="dashboard-security-card">
+                    <div class="dashboard-security-card__row">
+                        <span>累计登录</span>
+                        <strong>{{ student_security_summary.total_logins }} 次</strong>
+                    </div>
+                    {% if student_security_summary.last_login %}
+                    <div class="dashboard-security-card__row">
+                        <span>最近登录</span>
+                        <strong data-datetime="{{ student_security_summary.last_login.logged_at }}">{{ student_security_summary.last_login.logged_at }}</strong>
+                    </div>
+                    <div class="dashboard-security-card__row">
+                        <span>登录方式</span>
+                        <strong>{{ '密码登录' if student_security_summary.last_login.login_method == 'password' else '首次设置/身份验证' }}</strong>
+                    </div>
+                    <div class="dashboard-security-card__row">
+                        <span>最近设备</span>
+                        <strong>{{ student_security_summary.last_login.device_label or '未记录' }}</strong>
+                    </div>
+                    <div class="dashboard-security-card__row">
+                        <span>最近 IP</span>
+                        <strong>{{ student_security_summary.last_login.ip_address or '未记录' }}</strong>
+                    </div>
+                    {% endif %}
+                </div>
+            </section>
             {% endif %}
-        </div>
-    </div>
-    {% endfor %}
-</div>
+        </aside>
+    </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script type="module" src="/static/js/dashboard.js"></script>
 {% endblock %}
