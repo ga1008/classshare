@@ -126,11 +126,13 @@ export class ClassroomChat {
         this.sendRateLimitUntil = 0;
         this.roomHeightFrame = null;
         this.roomHeightObserver = null;
+        this.lastDiscussionRoomHeight = 0;
         this.defaultSendButtonMarkup = this.sendButton?.innerHTML || '';
 
         this.handleDocumentPointerDown = this.handleDocumentPointerDown.bind(this);
         this.handleDocumentKeydown = this.handleDocumentKeydown.bind(this);
         this.scheduleDiscussionRoomResize = this.scheduleDiscussionRoomResize.bind(this);
+        this.handleMessagesWheel = this.handleMessagesWheel.bind(this);
         this.handleMessageMouseOver = this.handleMessageMouseOver.bind(this);
         this.handleMessageMouseOut = this.handleMessageMouseOut.bind(this);
         this.handleMessageContextMenu = this.handleMessageContextMenu.bind(this);
@@ -199,6 +201,7 @@ export class ClassroomChat {
             this.cancelMessageMenuClose();
             this.closeMessageActionMenu();
         });
+        this.messagesBox.addEventListener('wheel', this.handleMessagesWheel, { passive: false });
         this.messagesBox.addEventListener('contextmenu', this.handleMessageContextMenu);
         this.messagesBox.addEventListener('click', this.handleMessageClick);
         this.messagesBox.addEventListener('keydown', this.handleMessageKeydown);
@@ -287,6 +290,7 @@ export class ClassroomChat {
             this.discussionRoom.style.height = '';
             this.discussionRoom.style.maxHeight = '';
             this.discussionRoom.style.minHeight = '';
+            this.lastDiscussionRoomHeight = 0;
             return;
         }
 
@@ -298,6 +302,7 @@ export class ClassroomChat {
             this.discussionRoom.style.height = '';
             this.discussionRoom.style.maxHeight = '';
             this.discussionRoom.style.minHeight = '';
+            this.lastDiscussionRoomHeight = 0;
             return;
         }
 
@@ -308,9 +313,39 @@ export class ClassroomChat {
             return;
         }
 
+        if (alignedHeight === this.lastDiscussionRoomHeight) {
+            return;
+        }
+
         this.discussionRoom.style.height = `${alignedHeight}px`;
         this.discussionRoom.style.maxHeight = `${alignedHeight}px`;
         this.discussionRoom.style.minHeight = `${alignedHeight}px`;
+        this.lastDiscussionRoomHeight = alignedHeight;
+    }
+
+    handleMessagesWheel(event) {
+        if (!this.messagesBox || window.innerWidth <= DISCUSSION_ROOM_DESKTOP_BREAKPOINT) {
+            return;
+        }
+
+        const scrollableDistance = this.messagesBox.scrollHeight - this.messagesBox.clientHeight;
+        if (scrollableDistance <= 1) {
+            event.preventDefault();
+            window.scrollBy({ top: event.deltaY, left: 0, behavior: 'auto' });
+            return;
+        }
+
+        const nextScrollTop = this.messagesBox.scrollTop + event.deltaY;
+        const willOverflowTop = event.deltaY < 0 && nextScrollTop <= 0;
+        const willOverflowBottom = event.deltaY > 0 && nextScrollTop >= scrollableDistance;
+
+        if (!willOverflowTop && !willOverflowBottom) {
+            return;
+        }
+
+        event.preventDefault();
+        this.messagesBox.scrollTop = willOverflowTop ? 0 : scrollableDistance;
+        window.scrollBy({ top: event.deltaY, left: 0, behavior: 'auto' });
     }
 
     parseNextSwitchAvailableAt(nextSwitchAt, fallbackRemainingSeconds = 0) {

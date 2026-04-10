@@ -8,6 +8,14 @@
  * - safeMarkedParse() (来自 tools.js)
  * - showMessage() (来自 classroom_main_v4.html 或 tools.js)
  */
+const AI_CHAT_DEFAULT_WIDTH = 420;
+const AI_CHAT_DEFAULT_HEIGHT = 620;
+const AI_CHAT_MIN_WIDTH = 320;
+const AI_CHAT_MIN_HEIGHT = 380;
+const AI_CHAT_DESKTOP_MARGIN = 24;
+const AI_CHAT_MOBILE_MARGIN = 12;
+const AI_CHAT_MOBILE_BREAKPOINT = 768;
+
 class AIChatComponent {
     constructor(options) {
         this.classOfferingId = options.classOfferingId;
@@ -31,6 +39,7 @@ class AIChatComponent {
         // --- 窗口交互状态 ---
         this.isResizing = false;
         this.resizeInfo = {};
+        this.lastWindowRect = null;
 
         // --- DOM 元素 ---
         this.fab = document.getElementById('ai-chat-fab');
@@ -64,6 +73,7 @@ class AIChatComponent {
         // 绑定 resize 拖拽事件处理器
         this.doResizeHandler = this.doResize.bind(this);
         this.stopResizeHandler = this.stopResize.bind(this);
+        this.handleViewportResize = this.handleViewportResize.bind(this);
     }
 
     /**
@@ -83,6 +93,7 @@ class AIChatComponent {
         this.bindWindowEvents();
         this.bindChatEvents();
         this.bindResizeEvents();
+        this.resetWindowLayout();
     }
 
     /**
@@ -114,13 +125,129 @@ class AIChatComponent {
     // 1. 窗口控制 (打开/关闭/全屏)
     // ==========================================================
 
-    // (bindWindowEvents, openChat, closeChat, toggleFullscreen 保持不变)
+    getViewportMargin() {
+        return window.innerWidth <= AI_CHAT_MOBILE_BREAKPOINT ? AI_CHAT_MOBILE_MARGIN : AI_CHAT_DESKTOP_MARGIN;
+    }
+
+    getDefaultWindowRect() {
+        const margin = this.getViewportMargin();
+        const maxWidth = Math.max(280, window.innerWidth - margin * 2);
+        const maxHeight = Math.max(320, window.innerHeight - margin * 2);
+        const widthTarget = window.innerWidth <= AI_CHAT_MOBILE_BREAKPOINT
+            ? maxWidth
+            : Math.min(AI_CHAT_DEFAULT_WIDTH, maxWidth);
+        const heightTarget = window.innerWidth <= AI_CHAT_MOBILE_BREAKPOINT
+            ? Math.min(Math.max(480, Math.round(window.innerHeight * 0.78)), maxHeight)
+            : Math.min(AI_CHAT_DEFAULT_HEIGHT, maxHeight);
+
+        return {
+            width: Math.max(Math.min(widthTarget, maxWidth), Math.min(AI_CHAT_MIN_WIDTH, maxWidth)),
+            height: Math.max(Math.min(heightTarget, maxHeight), Math.min(AI_CHAT_MIN_HEIGHT, maxHeight)),
+            right: margin,
+            bottom: margin,
+        };
+    }
+
+    getCurrentWindowRect() {
+        const rect = this.modalContainer.getBoundingClientRect();
+        return {
+            width: rect.width,
+            height: rect.height,
+            top: rect.top,
+            left: rect.left,
+        };
+    }
+
+    applyWindowRect(rect) {
+        this.modalContainer.style.width = `${Math.round(rect.width)}px`;
+        this.modalContainer.style.height = `${Math.round(rect.height)}px`;
+
+        if (typeof rect.top === 'number' && typeof rect.left === 'number') {
+            this.modalContainer.style.top = `${Math.round(rect.top)}px`;
+            this.modalContainer.style.left = `${Math.round(rect.left)}px`;
+            this.modalContainer.style.bottom = 'auto';
+            this.modalContainer.style.right = 'auto';
+            return;
+        }
+
+        this.modalContainer.style.top = '';
+        this.modalContainer.style.left = '';
+        this.modalContainer.style.bottom = `${Math.round(rect.bottom)}px`;
+        this.modalContainer.style.right = `${Math.round(rect.right)}px`;
+    }
+
+    resetWindowLayout() {
+        if (this.modalContainer.classList.contains('fullscreen')) {
+            return;
+        }
+        this.applyWindowRect(this.getDefaultWindowRect());
+    }
+
+    restoreWindowLayout() {
+        if (this.modalContainer.classList.contains('fullscreen')) {
+            return;
+        }
+
+        if (!this.lastWindowRect) {
+            this.resetWindowLayout();
+            return;
+        }
+
+        const margin = this.getViewportMargin();
+        const maxWidth = Math.max(280, window.innerWidth - margin * 2);
+        const maxHeight = Math.max(320, window.innerHeight - margin * 2);
+        const width = Math.max(Math.min(this.lastWindowRect.width, maxWidth), Math.min(AI_CHAT_MIN_WIDTH, maxWidth));
+        const height = Math.max(Math.min(this.lastWindowRect.height, maxHeight), Math.min(AI_CHAT_MIN_HEIGHT, maxHeight));
+        const top = Math.min(Math.max(this.lastWindowRect.top, margin), window.innerHeight - height - margin);
+        const left = Math.min(Math.max(this.lastWindowRect.left, margin), window.innerWidth - width - margin);
+        this.applyWindowRect({ width, height, top, left });
+    }
+
+    ensureWindowInViewport() {
+        if (this.modalContainer.classList.contains('fullscreen')) {
+            return;
+        }
+
+        const hasManualPosition = Boolean(this.modalContainer.style.top || this.modalContainer.style.left);
+        if (!hasManualPosition) {
+            this.resetWindowLayout();
+            return;
+        }
+
+        const margin = this.getViewportMargin();
+        const rect = this.getCurrentWindowRect();
+        const maxWidth = Math.max(280, window.innerWidth - margin * 2);
+        const maxHeight = Math.max(320, window.innerHeight - margin * 2);
+        const width = Math.max(Math.min(rect.width, maxWidth), Math.min(AI_CHAT_MIN_WIDTH, maxWidth));
+        const height = Math.max(Math.min(rect.height, maxHeight), Math.min(AI_CHAT_MIN_HEIGHT, maxHeight));
+        const top = Math.min(Math.max(rect.top, margin), window.innerHeight - height - margin);
+        const left = Math.min(Math.max(rect.left, margin), window.innerWidth - width - margin);
+        this.applyWindowRect({ width, height, top, left });
+    }
+
+    handleViewportResize() {
+        if (this.modalContainer.classList.contains('fullscreen')) {
+            return;
+        }
+        if (this.lastWindowRect) {
+            this.restoreWindowLayout();
+            return;
+        }
+        this.resetWindowLayout();
+    }
+
     bindWindowEvents() {
         this.fab.addEventListener('click', this.openChat.bind(this));
         this.closeBtn.addEventListener('click', this.closeChat.bind(this));
         this.fullscreenBtn.addEventListener('click', this.toggleFullscreen.bind(this));
+        window.addEventListener('resize', this.handleViewportResize);
     }
     openChat() {
+        if (this.lastWindowRect) {
+            this.restoreWindowLayout();
+        } else {
+            this.resetWindowLayout();
+        }
         this.modal.style.display = 'block';
         this.fab.style.display = 'none';
         window.behaviorTracker?.markAiChatOpen(true);
@@ -135,6 +262,10 @@ class AIChatComponent {
         window.behaviorTracker?.markAiChatOpen(false);
     }
     toggleFullscreen() {
+        const willEnterFullscreen = !this.modalContainer.classList.contains('fullscreen');
+        if (willEnterFullscreen) {
+            this.lastWindowRect = this.getCurrentWindowRect();
+        }
         const isFullscreen = this.modalContainer.classList.toggle('fullscreen');
         if (isFullscreen) {
             this.fullscreenBtn.innerHTML = this.iconMinimize;
@@ -148,12 +279,7 @@ class AIChatComponent {
         } else {
             this.fullscreenBtn.innerHTML = this.iconMaximize;
             this.fullscreenBtn.title = '全屏';
-            this.modalContainer.style.width = '400px';
-            this.modalContainer.style.height = '600px';
-            this.modalContainer.style.top = '';
-            this.modalContainer.style.bottom = '30px';
-            this.modalContainer.style.left = '';
-            this.modalContainer.style.right = '30px';
+            this.restoreWindowLayout();
         }
     }
 
@@ -210,8 +336,11 @@ class AIChatComponent {
         const dir = this.resizeInfo.direction;
         if (dir.includes('left')) { newWidth -= dx; } else if (dir.includes('right')) { newWidth += dx; }
         if (dir.includes('top')) { newHeight -= dy; } else if (dir.includes('bottom')) { newHeight += dy; }
-        const minWidth = 350; const minHeight = 400;
-        const maxWidth = window.innerWidth - newLeft; const maxHeight = window.innerHeight - newTop;
+        const margin = this.getViewportMargin();
+        const minWidth = Math.min(AI_CHAT_MIN_WIDTH, Math.max(280, window.innerWidth - margin * 2));
+        const minHeight = Math.min(AI_CHAT_MIN_HEIGHT, Math.max(320, window.innerHeight - margin * 2));
+        const maxWidth = window.innerWidth - newLeft - margin;
+        const maxHeight = window.innerHeight - newTop - margin;
         if (newWidth < minWidth) newWidth = minWidth;
         if (newHeight < minHeight) newHeight = minHeight;
         if (newWidth > maxWidth) newWidth = maxWidth;
@@ -226,6 +355,7 @@ class AIChatComponent {
     stopResize() {
         if (!this.isResizing) return;
         this.isResizing = false;
+        this.lastWindowRect = this.getCurrentWindowRect();
         document.removeEventListener('mousemove', this.doResizeHandler);
         document.removeEventListener('mouseup', this.stopResizeHandler);
     }

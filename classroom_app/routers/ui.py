@@ -25,6 +25,7 @@ from ..dependencies import apply_access_token_cookie, clear_access_token_cookie,
 from ..services.behavior_tracking_service import record_behavior_event
 from ..services.submission_assets import decode_allowed_file_types_json, summarize_allowed_file_types
 from ..services.dashboard_service import build_dashboard_context
+from ..services.classroom_page_service import build_classroom_page_context
 from ..services.student_auth_service import (
     PASSWORD_POLICY_HINT,
     build_password_setup_token,
@@ -710,10 +711,18 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
     except Exception as exc:
         print(f"[BEHAVIOR] 记录课堂页面访问失败: {exc}")
 
+    classroom_page = build_classroom_page_context(
+        user=user,
+        classroom=offering_data,
+        assignments=assignments,
+        shared_files=files_info,
+    )
+
     return templates.TemplateResponse(request, "classroom_main_v4.html", {
         "request": request,
         "user_info": user,
         "classroom": offering_data,
+        "classroom_page": classroom_page,
         "shared_files": files_info,
         "assignments": assignments,
         "student_security_summary": student_security_summary,
