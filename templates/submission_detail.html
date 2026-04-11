@@ -437,7 +437,6 @@
             const matchedIds = new Set();
             examQuestions.pages.forEach(p => p.questions.forEach(q => {
                 matchedIds.add(q.id);
-                matchedIds.add(String(qIndex));
             }));
             const extraAnswers = getExtraAnswers(answers, matchedIds);
             if (extraAnswers.length > 0) {
@@ -446,7 +445,7 @@
                     html += `<div class="question-card">
                         <div class="q-title">${escapeHtml(String(key))}</div>
                         <div class="q-answer-label">学生答案</div>
-                        <div class="q-content">${formatAnswer(String(val))}</div>
+                        <div class="q-content">${val ? formatAnswer(val) : '<span class="empty-answer">(未作答)</span>'}</div>
                     </div>`;
                 });
             }
@@ -454,12 +453,12 @@
             // No exam questions, render raw answers
             if (Array.isArray(answers)) {
                 answers.forEach((item, i) => {
-                    const q = item.question || `第 ${i + 1} 题`;
-                    const a = item.answer || item.content || item.text || null;
+                    const q = item.question || item.question_id || `第 ${i + 1} 题`;
+                    const a = extractAnswerText(item);
                     html += `<div class="question-card">
                         <div class="q-title">${escapeHtml(String(q))}</div>
                         <div class="q-answer-label">学生答案</div>
-                        <div class="q-content">${a ? formatAnswer(String(a)) : '<span class="empty-answer">(未作答)</span>'}</div>
+                        <div class="q-content">${a ? formatAnswer(a) : '<span class="empty-answer">(未作答)</span>'}</div>
                     </div>`;
                 });
             } else if (typeof answers === 'object') {
@@ -467,7 +466,7 @@
                     html += `<div class="question-card">
                         <div class="q-title">${escapeHtml(String(key))}</div>
                         <div class="q-answer-label">学生答案</div>
-                        <div class="q-content">${formatAnswer(String(value))}</div>
+                        <div class="q-content">${formatAnswer(value)}</div>
                     </div>`;
                 });
             }
@@ -476,19 +475,40 @@
         container.innerHTML = html || '<p class="text-muted text-center p-xl">暂无答题内容</p>';
     }
 
+    /** Extract a scalar answer value from any storage format */
+    function extractAnswerText(value) {
+        if (value == null || value === '') return null;
+        if (typeof value !== 'object') return String(value);
+        // Array-format items: {question_id, question, answer}
+        return String(value.answer ?? value.content ?? value.text ?? JSON.stringify(value));
+    }
+
     function getAnswer(answers, qId, qIndex) {
         if (!answers) return null;
-        // Try by question ID first
-        if (qId && answers[qId] !== undefined) return answers[qId];
-        // Try by index
-        if (answers[qIndex] !== undefined) return answers[qIndex];
-        // Try array access
-        if (Array.isArray(answers) && qIndex <= answers.length) return answers[qIndex - 1];
+        // Array format: [{question_id: "q1", question: "...", answer: "..."}]
+        if (Array.isArray(answers)) {
+            const item = answers.find(a => a && (a.question_id === qId || a.question === qId));
+            if (item) return extractAnswerText(item);
+            // Fallback: by 1-based index
+            if (qIndex > 0 && qIndex <= answers.length) {
+                return extractAnswerText(answers[qIndex - 1]);
+            }
+            return null;
+        }
+        // Object/map format: {qId: "answer", ...}
+        if (qId && answers[qId] !== undefined) return extractAnswerText(answers[qId]);
+        if (answers[qIndex] !== undefined) return extractAnswerText(answers[qIndex]);
         return null;
     }
 
     function getExtraAnswers(answers, matchedIds) {
         if (!answers || typeof answers !== 'object') return [];
+        if (Array.isArray(answers)) {
+            // For array answers, return entries whose question_id isn't matched
+            return answers
+                .filter(a => a && !matchedIds.has(a.question_id) && !matchedIds.has(a.question))
+                .map(a => [a.question_id || a.question || '?', extractAnswerText(a) || '']);
+        }
         return Object.entries(answers).filter(([key]) => !matchedIds.has(key) && !matchedIds.has(String(key)));
     }
 
@@ -511,7 +531,7 @@
         html += `<div class="q-answer-label">学生答案</div>`;
 
         if (studentAnswer != null && studentAnswer !== '') {
-            html += `<div class="q-content">${formatAnswer(String(studentAnswer))}</div>`;
+            html += `<div class="q-content">${formatAnswer(studentAnswer)}</div>`;
         } else {
             html += `<div class="q-content"><span class="empty-answer">(未作答)</span></div>`;
         }
@@ -520,7 +540,8 @@
         return html;
     }
 
-    function formatAnswer(text) {
+    function formatAnswer(value) {
+        const text = extractAnswerText(value);
         if (!text) return '<span class="empty-answer">(未作答)</span>';
         const isCode = text.includes('\n') && (text.includes('def ') || text.includes('import ') ||
             text.includes('function ') || text.includes('class ') || text.includes('```'));

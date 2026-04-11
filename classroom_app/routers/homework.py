@@ -308,15 +308,24 @@ async def return_submission(submission_id: int, user: dict = Depends(get_current
     return {"status": "success", "deleted_submission_id": submission_id}
 
 
-@router.get("/assignments/{assignment_id}/export/{class_id}", response_class=FileResponse)
-async def export_grades_for_class(assignment_id: str, class_id: int, user: dict = Depends(get_current_teacher)):
-    """V4.0: 导出此作业在指定班级的成绩"""
+@router.get("/assignments/{assignment_id}/export/{class_offering_id}", response_class=FileResponse)
+async def export_grades_for_class(assignment_id: str, class_offering_id: int, user: dict = Depends(get_current_teacher)):
+    """V4.0: 导出此作业在指定班级课堂的成绩"""
     with get_db_connection() as conn:
         assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
-        class_info = conn.execute("SELECT * FROM classes WHERE id = ?", (class_id,)).fetchone()
-        if not assignment or not class_info: raise HTTPException(404, "未找到作业或班级")
+        if not assignment:
+            raise HTTPException(404, "未找到作业")
 
-        # 修复：此函数不依赖 COURSE_INFO，而是直接从数据库查询
+        # 通过 class_offering_id 解析出实际的 class_id
+        offering = conn.execute("SELECT * FROM class_offerings WHERE id = ?", (class_offering_id,)).fetchone()
+        if not offering:
+            raise HTTPException(404, "未找到班级课堂")
+        class_id = offering['class_id']
+
+        class_info = conn.execute("SELECT * FROM classes WHERE id = ?", (class_id,)).fetchone()
+        if not class_info:
+            raise HTTPException(404, "未找到班级")
+
         # 1. 获取班级所有学生
         roster_cursor = conn.execute("SELECT id, student_id_number, name FROM students WHERE class_id = ?", (class_id,))
         roster_df = pd.DataFrame(roster_cursor, columns=['student_pk_id', '学号', '姓名'])
@@ -475,6 +484,7 @@ async def submit_assignment(assignment_id: str,
                 user_role="student",
                 display_name=str(user.get("name") or user["id"]),
                 action_type="assignment_submit",
+                session_started_at=str(user.get("login_time") or "").strip() or None,
                 summary_text=f"提交作业：{assignment.get('title') or assignment_id}",
                 payload={
                     "assignment_id": assignment_id,
@@ -529,6 +539,7 @@ async def withdraw_submission(assignment_id: str, user: dict = Depends(get_curre
                 user_role="student",
                 display_name=str(user.get("name") or user["id"]),
                 action_type="assignment_withdraw",
+                session_started_at=str(user.get("login_time") or "").strip() or None,
                 summary_text=f"撤回作业：{submission.get('title') or assignment_id}",
                 payload={
                     "assignment_id": assignment_id,
@@ -711,4 +722,3 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
         "assignment_id": new_assignment_id,
         "message": "试卷已成功发布到当前课堂"
     }
-

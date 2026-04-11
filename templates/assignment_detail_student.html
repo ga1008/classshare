@@ -545,14 +545,21 @@
             const data = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
             const answers = data.answers || data;
 
+            /** Extract a scalar string from any answer value */
+            function toText(v) {
+                if (v == null || v === '') return '(No answer)';
+                if (typeof v !== 'object') return String(v);
+                return String(v.answer ?? v.content ?? v.text ?? JSON.stringify(v));
+            }
+
             if (Array.isArray(answers)) {
                 container.innerHTML = answers.map((item, index) => {
                     const question = item.question || item.question_id || `Question ${index + 1}`;
-                    const answer = item.answer || item.content || item.text || '(No answer)';
+                    const answer = toText(item);
                     return `
                         <div class="submitted-answer-item">
                             <div class="font-semibold text-sm mb-2 text-primary">${escapeHtml(String(question))}</div>
-                            <div class="text-sm whitespace-pre-wrap">${escapeHtml(String(answer))}</div>
+                            <div class="text-sm whitespace-pre-wrap">${escapeHtml(answer)}</div>
                         </div>
                     `;
                 }).join('');
@@ -563,7 +570,7 @@
                 container.innerHTML = Object.entries(answers).map(([key, value]) => `
                     <div class="submitted-answer-item">
                         <div class="font-semibold text-sm mb-2 text-primary">${escapeHtml(String(key))}</div>
-                        <div class="text-sm whitespace-pre-wrap">${escapeHtml(String(value ?? ''))}</div>
+                        <div class="text-sm whitespace-pre-wrap">${escapeHtml(toText(value))}</div>
                     </div>
                 `).join('');
                 return;

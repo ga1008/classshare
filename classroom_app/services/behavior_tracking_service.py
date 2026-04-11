@@ -22,12 +22,12 @@ from .prompt_utils import (
 )
 
 PROFILE_INTERVAL_MIN_SECONDS = 30 * 60
-PROFILE_INTERVAL_MAX_SECONDS = 60 * 60
+PROFILE_INTERVAL_MAX_SECONDS = 70 * 60
 PROFILE_RETRY_BACKOFF_SECONDS = 5 * 60
 HEARTBEAT_MAX_DELTA_SECONDS = 90
 ACTIVE_PRESENCE_WINDOW_SECONDS = 150
 PROFILE_SCHEDULER_POLL_SECONDS = 45
-PROFILE_SCHEDULER_BATCH_SIZE = 4
+PROFILE_SCHEDULER_MAX_CONCURRENT = 1
 BEHAVIOR_HISTORY_LIMIT = 48
 LOGIN_AUDIT_HISTORY_LIMIT = 8
 
@@ -66,6 +66,61 @@ def _safe_json_loads(raw_value: Any) -> Optional[dict[str, Any]]:
     return parsed if isinstance(parsed, dict) else None
 
 
+def _parse_iso_datetime(value: Any) -> Optional[datetime]:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None
+    try:
+        return datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _safe_row_value(row: Any, key: str, default: Any = "") -> Any:
+    if row is None:
+        return default
+    if isinstance(row, dict):
+        return row.get(key, default)
+    try:
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+
+
+def _latest_timestamp_text(*values: Any, fallback: str) -> str:
+    latest_dt: Optional[datetime] = None
+    for value in values:
+        parsed = _parse_iso_datetime(value)
+        if parsed is None:
+            continue
+        if latest_dt is None or parsed > latest_dt:
+            latest_dt = parsed
+    return latest_dt.isoformat() if latest_dt else fallback
+
+
+def _build_next_profile_due_at(anchor_text: Optional[str], interval_seconds: int, *, fallback: str) -> str:
+    anchor_dt = _parse_iso_datetime(anchor_text) or _parse_iso_datetime(fallback) or datetime.now()
+    return (anchor_dt + timedelta(seconds=max(0, int(interval_seconds or 0)))).isoformat()
+
+
+def _seconds_until_due_timestamp(value: Any) -> int:
+    due_dt = _parse_iso_datetime(value)
+    if due_dt is None:
+        return 0
+    now_dt = datetime.now(due_dt.tzinfo) if due_dt.tzinfo else datetime.now()
+    return max(0, int((due_dt - now_dt).total_seconds()))
+
+
+def _should_start_new_behavior_session(current_anchor_text: Any, session_started_at_text: Optional[str]) -> bool:
+    next_anchor = _parse_iso_datetime(session_started_at_text)
+    if next_anchor is None:
+        return False
+    current_anchor = _parse_iso_datetime(current_anchor_text)
+    if current_anchor is None:
+        return True
+    return next_anchor > current_anchor + timedelta(seconds=1)
+
+
 def _ensure_behavior_state_row(
     conn,
     *,
@@ -73,31 +128,134 @@ def _ensure_behavior_state_row(
     user_pk: int,
     user_role: str,
     now: str,
+    session_started_at: Optional[str] = None,
+    last_presence_at: Optional[str] = None,
+    page_key: Optional[str] = None,
 ) -> None:
-    next_interval = build_random_profile_interval_seconds()
+    state = conn.execute(
+        """
+        SELECT current_session_started_at, last_profiled_at,
+               next_profile_interval_seconds, next_profile_due_at
+        FROM classroom_behavior_states
+        WHERE class_offering_id = ?
+          AND user_pk = ?
+          AND user_role = ?
+        LIMIT 1
+        """,
+        (class_offering_id, user_pk, user_role),
+    ).fetchone()
+
+    if not state:
+        next_interval = build_random_profile_interval_seconds()
+        anchor_text = str(session_started_at or now)
+        next_due_at = _build_next_profile_due_at(anchor_text, next_interval, fallback=now)
+        conn.execute(
+            """
+            INSERT INTO classroom_behavior_states (
+                class_offering_id, user_pk, user_role, total_activity_count,
+                last_profiled_activity_count, profile_generation_pending,
+                last_event_at, next_profile_interval_seconds, next_profile_due_at,
+                current_session_started_at, last_presence_at, last_page_key,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, 0, 0, 0, NULL, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                class_offering_id,
+                user_pk,
+                user_role,
+                next_interval,
+                next_due_at,
+                anchor_text,
+                last_presence_at,
+                page_key,
+                now,
+                now,
+            ),
+        )
+        return
+
+    if _should_start_new_behavior_session(
+        _safe_row_value(state, "current_session_started_at"),
+        session_started_at,
+    ):
+        next_interval = build_random_profile_interval_seconds()
+        next_due_at = _build_next_profile_due_at(session_started_at, next_interval, fallback=now)
+        conn.execute(
+            """
+            UPDATE classroom_behavior_states
+            SET current_session_started_at = ?,
+                last_presence_at = COALESCE(?, last_presence_at),
+                last_page_key = COALESCE(?, last_page_key),
+                profile_generation_pending = 0,
+                next_profile_interval_seconds = ?,
+                next_profile_due_at = ?,
+                online_accumulated_seconds = 0,
+                focus_total_seconds = 0,
+                blur_total_seconds = 0,
+                visible_total_seconds = 0,
+                hidden_total_seconds = 0,
+                discussion_lurk_total_seconds = 0,
+                ai_panel_open_total_seconds = 0,
+                last_visibility_state = NULL,
+                last_focus_state = NULL,
+                last_idle_seconds = 0,
+                updated_at = ?
+            WHERE class_offering_id = ?
+              AND user_pk = ?
+              AND user_role = ?
+            """,
+            (
+                session_started_at,
+                last_presence_at,
+                page_key,
+                next_interval,
+                next_due_at,
+                now,
+                class_offering_id,
+                user_pk,
+                user_role,
+            ),
+        )
+        return
+
+    current_interval = int(_safe_row_value(state, "next_profile_interval_seconds") or 0)
+    if current_interval <= 0:
+        current_interval = build_random_profile_interval_seconds()
+
+    current_anchor = str(_safe_row_value(state, "current_session_started_at") or session_started_at or now)
+    current_due_at = str(_safe_row_value(state, "next_profile_due_at") or "").strip()
+    if not current_due_at:
+        due_anchor_text = _latest_timestamp_text(
+            _safe_row_value(state, "last_profiled_at"),
+            current_anchor,
+            fallback=current_anchor,
+        )
+        current_due_at = _build_next_profile_due_at(due_anchor_text, current_interval, fallback=now)
+
     conn.execute(
         """
-        INSERT INTO classroom_behavior_states (
-            class_offering_id, user_pk, user_role, total_activity_count,
-            last_profiled_activity_count, profile_generation_pending,
-            last_event_at, next_profile_interval_seconds, created_at, updated_at
-        )
-        VALUES (?, ?, ?, 0, 0, 0, NULL, ?, ?, ?)
-        ON CONFLICT (class_offering_id, user_pk, user_role)
-        DO UPDATE SET
-            next_profile_interval_seconds = CASE
-                WHEN classroom_behavior_states.next_profile_interval_seconds <= 0 THEN excluded.next_profile_interval_seconds
-                ELSE classroom_behavior_states.next_profile_interval_seconds
-            END,
-            updated_at = excluded.updated_at
+        UPDATE classroom_behavior_states
+        SET current_session_started_at = COALESCE(current_session_started_at, ?),
+            last_presence_at = COALESCE(?, last_presence_at),
+            last_page_key = COALESCE(?, last_page_key),
+            next_profile_interval_seconds = ?,
+            next_profile_due_at = ?,
+            updated_at = ?
+        WHERE class_offering_id = ?
+          AND user_pk = ?
+          AND user_role = ?
         """,
         (
+            current_anchor,
+            last_presence_at,
+            page_key,
+            current_interval,
+            current_due_at,
+            now,
             class_offering_id,
             user_pk,
             user_role,
-            next_interval,
-            now,
-            now,
         ),
     )
 
@@ -121,7 +279,9 @@ def _load_behavior_state_snapshot(
         (class_offering_id, user_pk, user_role),
     ).fetchone()
     snapshot = dict(row) if row else {}
-    remaining = int(snapshot.get("next_profile_interval_seconds") or 0) - int(snapshot.get("online_accumulated_seconds") or 0)
+    remaining = _seconds_until_due_timestamp(snapshot.get("next_profile_due_at"))
+    if remaining <= 0 and not snapshot.get("next_profile_due_at"):
+        remaining = int(snapshot.get("next_profile_interval_seconds") or 0) - int(snapshot.get("online_accumulated_seconds") or 0)
     snapshot["seconds_until_next_profile"] = max(0, remaining)
     return snapshot
 
@@ -136,6 +296,7 @@ def record_behavior_event(
     summary_text: str,
     payload: Optional[dict[str, Any]] = None,
     page_key: Optional[str] = None,
+    session_started_at: Optional[str] = None,
 ) -> dict[str, Any]:
     now = datetime.now().isoformat()
     payload_json = _dump_payload(payload or {})
@@ -149,6 +310,9 @@ def record_behavior_event(
             user_pk=user_pk,
             user_role=user_role,
             now=now,
+            session_started_at=session_started_at,
+            last_presence_at=now,
+            page_key=page_key,
         )
         cursor = conn.execute(
             """
@@ -241,7 +405,7 @@ def _apply_presence_heartbeat(
         delta_seconds = int(max(0, min(raw_delta_seconds, HEARTBEAT_MAX_DELTA_SECONDS)))
 
     is_new_session = (not previous_presence_at) or raw_delta_seconds > ACTIVE_PRESENCE_WINDOW_SECONDS
-    session_started_at = now_text if is_new_session else (previous_session_started_at or now_text)
+    session_started_at = previous_session_started_at or now_text
     effective_delta = 0 if is_new_session else delta_seconds
     capped_idle_seconds = max(0, min(int(idle_seconds or 0), HEARTBEAT_MAX_DELTA_SECONDS))
     is_active = effective_delta > 0 and capped_idle_seconds < ACTIVE_PRESENCE_WINDOW_SECONDS
@@ -307,6 +471,7 @@ def record_behavior_batch(
     display_name: str,
     page_key: Optional[str],
     events: list[dict[str, Any]],
+    session_started_at: Optional[str] = None,
 ) -> dict[str, Any]:
     now = datetime.now()
     now_text = now.isoformat()
@@ -319,6 +484,9 @@ def record_behavior_batch(
             user_pk=user_pk,
             user_role=user_role,
             now=now_text,
+            session_started_at=session_started_at,
+            last_presence_at=now_text,
+            page_key=page_key,
         )
 
         for item in events:
@@ -427,14 +595,21 @@ def _build_login_audit_summary(rows: list[Any]) -> str:
 
     lines: list[str] = []
     for row in rows:
-        parts = [format_short_timestamp(row["logged_at"]) or str(row["logged_at"] or "")]
-        if row["ip_address"]:
-            parts.append(f"IP:{row['ip_address']}")
-        device_parts = [str(row[k] or "").strip() for k in ("device_type", "os_name", "browser_name") if str(row.get(k) or "").strip()]
+        logged_at = _safe_row_value(row, "logged_at")
+        parts = [format_short_timestamp(logged_at) or str(logged_at or "")]
+        ip_address = _safe_row_value(row, "ip_address")
+        if ip_address:
+            parts.append(f"IP:{ip_address}")
+        device_parts = [
+            str(_safe_row_value(row, key) or "").strip()
+            for key in ("device_type", "os_name", "browser_name")
+            if str(_safe_row_value(row, key) or "").strip()
+        ]
         if device_parts:
             parts.append("/".join(device_parts))
-        if row["device_label"]:
-            parts.append(row["device_label"])
+        device_label = _safe_row_value(row, "device_label")
+        if device_label:
+            parts.append(str(device_label))
         lines.append(" | ".join(part for part in parts if part))
     return "\n".join(lines)
 
@@ -529,17 +704,20 @@ def _next_profile_round_index(
 def _load_recent_login_audits(conn, *, user_pk: int, user_role: str) -> list[Any]:
     if user_role != "student":
         return []
-    return conn.execute(
-        """
-        SELECT logged_at, ip_address, user_agent,
-               device_type, os_name, browser_name, device_label
-        FROM student_login_audit_logs
-        WHERE student_id = ?
-        ORDER BY logged_at DESC, id DESC
-        LIMIT ?
-        """,
-        (user_pk, LOGIN_AUDIT_HISTORY_LIMIT),
-    ).fetchall()
+    return [
+        dict(row)
+        for row in conn.execute(
+            """
+            SELECT logged_at, ip_address, user_agent,
+                   device_type, os_name, browser_name, device_label
+            FROM student_login_audit_logs
+            WHERE student_id = ?
+            ORDER BY logged_at DESC, id DESC
+            LIMIT ?
+            """,
+            (user_pk, LOGIN_AUDIT_HISTORY_LIMIT),
+        ).fetchall()
+    ]
 
 
 def _build_behavior_profile_prompt(
@@ -641,7 +819,7 @@ def _finalize_profile_generation(
     with get_db_connection() as conn:
         state = conn.execute(
             """
-            SELECT total_activity_count, online_accumulated_seconds
+            SELECT total_activity_count
             FROM classroom_behavior_states
             WHERE class_offering_id = ?
               AND user_pk = ?
@@ -651,10 +829,10 @@ def _finalize_profile_generation(
             (class_offering_id, user_pk, user_role),
         ).fetchone()
         total_activity_count = int(state["total_activity_count"] or 0) if state else 0
-        accumulated_seconds = int(state["online_accumulated_seconds"] or 0) if state else 0
 
         if success:
             next_interval = build_random_profile_interval_seconds()
+            next_due_at = _build_next_profile_due_at(now_text, next_interval, fallback=now_text)
             conn.execute(
                 """
                 UPDATE classroom_behavior_states
@@ -662,7 +840,15 @@ def _finalize_profile_generation(
                     last_profiled_at = ?,
                     profile_generation_pending = 0,
                     online_accumulated_seconds = 0,
+                    focus_total_seconds = 0,
+                    blur_total_seconds = 0,
+                    visible_total_seconds = 0,
+                    hidden_total_seconds = 0,
+                    discussion_lurk_total_seconds = 0,
+                    ai_panel_open_total_seconds = 0,
+                    last_idle_seconds = 0,
                     next_profile_interval_seconds = ?,
+                    next_profile_due_at = ?,
                     updated_at = ?
                 WHERE class_offering_id = ?
                   AND user_pk = ?
@@ -672,6 +858,7 @@ def _finalize_profile_generation(
                     total_activity_count,
                     now_text,
                     next_interval,
+                    next_due_at,
                     now_text,
                     class_offering_id,
                     user_pk,
@@ -679,18 +866,21 @@ def _finalize_profile_generation(
                 ),
             )
         else:
+            retry_due_at = _build_next_profile_due_at(now_text, PROFILE_RETRY_BACKOFF_SECONDS, fallback=now_text)
             conn.execute(
                 """
                 UPDATE classroom_behavior_states
                 SET profile_generation_pending = 0,
                     next_profile_interval_seconds = ?,
+                    next_profile_due_at = ?,
                     updated_at = ?
                 WHERE class_offering_id = ?
                   AND user_pk = ?
                   AND user_role = ?
                 """,
                 (
-                    accumulated_seconds + PROFILE_RETRY_BACKOFF_SECONDS,
+                    PROFILE_RETRY_BACKOFF_SECONDS,
+                    retry_due_at,
                     now_text,
                     class_offering_id,
                     user_pk,
@@ -880,7 +1070,7 @@ async def generate_behavior_profile_for_user(
         )
 
 
-def _claim_due_profile_candidates(limit: int = PROFILE_SCHEDULER_BATCH_SIZE) -> list[dict[str, Any]]:
+def _claim_due_profile_candidates(limit: int = PROFILE_SCHEDULER_MAX_CONCURRENT) -> list[dict[str, Any]]:
     now = datetime.now()
     now_text = now.isoformat()
     active_cutoff = (now - timedelta(seconds=ACTIVE_PRESENCE_WINDOW_SECONDS)).isoformat()
@@ -888,17 +1078,19 @@ def _claim_due_profile_candidates(limit: int = PROFILE_SCHEDULER_BATCH_SIZE) -> 
         rows = conn.execute(
             """
             SELECT class_offering_id, user_pk, user_role, total_activity_count,
-                   online_accumulated_seconds, next_profile_interval_seconds, last_event_at
+                   next_profile_due_at, last_event_at
             FROM classroom_behavior_states
             WHERE profile_generation_pending = 0
               AND total_activity_count > 0
               AND last_presence_at IS NOT NULL
               AND last_presence_at >= ?
-              AND online_accumulated_seconds >= next_profile_interval_seconds
-            ORDER BY last_event_at DESC, updated_at DESC
+              AND next_profile_due_at IS NOT NULL
+              AND next_profile_due_at != ''
+              AND next_profile_due_at <= ?
+            ORDER BY next_profile_due_at ASC, last_event_at DESC, updated_at DESC
             LIMIT ?
             """,
-            (active_cutoff, limit),
+            (active_cutoff, now_text, limit),
         ).fetchall()
 
         claimed: list[dict[str, Any]] = []
@@ -947,7 +1139,7 @@ def _track_background_profile_task(task: asyncio.Task) -> None:
 async def _profile_scheduler_loop(stop_event: asyncio.Event) -> None:
     while not stop_event.is_set():
         try:
-            available_slots = max(0, 2 - len(_profile_tasks))
+            available_slots = max(0, PROFILE_SCHEDULER_MAX_CONCURRENT - len(_profile_tasks))
             if available_slots > 0:
                 for candidate in _claim_due_profile_candidates(available_slots):
                     task = asyncio.create_task(_run_profile_candidate(candidate))

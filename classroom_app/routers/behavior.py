@@ -74,5 +74,6 @@ async def ingest_behavior_batch(
         display_name=str(user.get("name") or user.get("username") or f"{user_role}:{user_pk}"),
         page_key=body.page_key,
         events=[item.model_dump() for item in body.events],
+        session_started_at=str(user.get("login_time") or "").strip() or None,
     )
     return {"status": "success", **snapshot}

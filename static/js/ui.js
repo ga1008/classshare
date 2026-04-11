@@ -43,7 +43,7 @@ export function showToast(message, type = 'success', duration = 3000) {
     toast.innerHTML = `
         <div class="toast-icon">${icons[type] || icons.info}</div>
         <div class="toast-content">
-            <div class="toast-message">${escapeHtml(normalizedMessage || '鎿嶄綔宸插畬鎴?)}</div>
+            <div class="toast-message">${escapeHtml(normalizedMessage || '操作已完成')}</div>
         </div>
         <button class="toast-close" aria-label="Close" onclick="this.parentElement.remove()">
             <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -190,7 +190,7 @@ export function renderMarkdown(elementId, content) {
     const el = document.getElementById(elementId);
     if (!el) return;
     if (content == null || content === '') {
-        el.innerHTML = '<p class="text-muted">鏆傛棤鍐呭</p>';
+        el.innerHTML = '<p class="text-muted">暂无内容</p>';
         return;
     }
     try {
@@ -198,7 +198,7 @@ export function renderMarkdown(elementId, content) {
         const runtime = getMarkdownRuntime();
         if (runtime && typeof runtime.renderIntoElement === 'function') {
             runtime.renderIntoElement(el, text, {
-                emptyHtml: '<p class="text-muted">鏆傛棤鍐呭</p>',
+                emptyHtml: '<p class="text-muted">暂无内容</p>',
                 fallbackMode: 'lines',
                 silent: true,
             });

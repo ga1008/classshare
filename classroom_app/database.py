@@ -1093,6 +1093,8 @@ def init_database():
                                  NOT
                                      NULL
                                  DEFAULT 0,
+                             next_profile_due_at
+                                  TEXT,
                              online_accumulated_seconds
                                  INTEGER
                                  NOT
@@ -1170,6 +1172,10 @@ def init_database():
 
             try:
                 conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN next_profile_interval_seconds INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN next_profile_due_at TEXT")
             except sqlite3.OperationalError:
                 pass
             try:
@@ -1354,6 +1360,10 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_classroom_behavior_states_due "
                 "ON classroom_behavior_states (profile_generation_pending, last_presence_at, online_accumulated_seconds, next_profile_interval_seconds)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classroom_behavior_states_due_at "
+                "ON classroom_behavior_states (profile_generation_pending, last_presence_at, next_profile_due_at)"
             )
 
             conn.execute(

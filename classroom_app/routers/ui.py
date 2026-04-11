@@ -709,6 +709,7 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
             user_role=str(user["role"]),
             display_name=str(user.get("name") or user.get("username") or user["id"]),
             action_type="page_view",
+            session_started_at=str(user.get("login_time") or "").strip() or None,
             summary_text=f"进入课堂页面：{offering_data.get('course_name') or class_offering_id}",
             payload={
                 "page": "classroom_main",
@@ -756,6 +757,7 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
                     user_role=str(user["role"]),
                     display_name=str(user.get("name") or user.get("username") or user["id"]),
                     action_type="page_view",
+                    session_started_at=str(user.get("login_time") or "").strip() or None,
                     summary_text=f"查看作业详情：{assignment.get('title') or assignment_id}",
                     payload={"page": "assignment_detail", "assignment_id": assignment_id},
                     page_key="assignment_detail",
@@ -792,6 +794,7 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
                     user_role=str(user["role"]),
                     display_name=str(user.get("name") or user.get("username") or user["id"]),
                     action_type="page_view",
+                    session_started_at=str(user.get("login_time") or "").strip() or None,
                     summary_text=f"查看作业详情：{assignment.get('title') or assignment_id}",
                     payload={
                         "page": "assignment_detail",
@@ -1180,6 +1183,7 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
                 user_role=str(user["role"]),
                 display_name=str(user.get("name") or user.get("username") or user["id"]),
                 action_type="page_view",
+                session_started_at=str(user.get("login_time") or "").strip() or None,
                 summary_text=f"进入考试页面：{assignment.get('title') or assignment_id}",
                 payload={
                     "page": "exam_take",

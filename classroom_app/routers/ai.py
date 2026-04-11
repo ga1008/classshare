@@ -1030,6 +1030,7 @@ async def handle_ai_chat(
             user_role=user_role,
             display_name=str(user.get("name") or f"{user_role}:{user_pk}"),
             action_type="ai_question",
+            session_started_at=str(user.get("login_time") or "").strip() or None,
             summary_text=f"向 AI 提问：{message[:120]}",
             payload={
                 "message_text": message,
