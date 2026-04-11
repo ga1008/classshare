@@ -9,6 +9,8 @@ from typing import List, Literal, Dict, Any, Optional
 from enum import Enum
 from datetime import datetime
 
+import sqlite3
+
 from fastapi.responses import StreamingResponse
 
 import httpx
