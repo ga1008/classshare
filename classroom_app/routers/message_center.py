@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from ..core import templates
@@ -13,11 +13,13 @@ from ..services.message_center_service import (
     get_message_center_bootstrap,
     get_latest_unread_notification,
     get_message_center_summary,
+    get_private_ai_reply_job,
     get_private_message_conversation,
     list_message_center_items,
     list_private_message_blocks,
     list_private_message_contacts,
     mark_message_center_items_read,
+    process_private_ai_reply_job,
     remove_private_message_block,
     send_private_message_and_maybe_reply,
 )
@@ -154,7 +156,11 @@ async def api_private_message_conversation(
 
 
 @router.post("/api/message-center/private/messages", response_class=JSONResponse)
-async def api_send_private_message(request: Request, user: dict = Depends(get_current_user)):
+async def api_send_private_message(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+):
     data = await request.json()
     try:
         result = await send_private_message_and_maybe_reply(
@@ -176,6 +182,10 @@ async def api_send_private_message(request: Request, user: dict = Depends(get_cu
             },
         ) from exc
 
+    ai_reply_job = result.get("ai_reply_job")
+    if ai_reply_job and ai_reply_job.get("id") is not None:
+        background_tasks.add_task(process_private_ai_reply_job, int(ai_reply_job["id"]))
+
     with get_db_connection() as conn:
         summary = get_message_center_summary(conn, user)
         contacts = list_private_message_contacts(conn, user)
@@ -185,6 +195,19 @@ async def api_send_private_message(request: Request, user: dict = Depends(get_cu
         **result,
         "summary": summary,
         "contacts": contacts,
+    }
+
+
+@router.get("/api/message-center/private/ai-jobs/{job_id}", response_class=JSONResponse)
+async def api_private_ai_reply_job(job_id: int, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        try:
+            job = get_private_ai_reply_job(conn, user, job_id=job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "status": "success",
+        "job": job,
     }
 
 

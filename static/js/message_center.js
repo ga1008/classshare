@@ -1,4 +1,4 @@
-﻿import { apiFetch } from './api.js';
+import { apiFetch } from './api.js';
 import { escapeHtml, formatDate, showToast } from './ui.js';
 import { createEmojiPicker } from './emoji_picker.js';
 
@@ -6,6 +6,9 @@ const app = document.querySelector('[data-message-center-app]');
 
 if (app) {
     const PRIVATE_TAB = 'private_message';
+    const AI_JOB_POLL_INTERVAL_MS = 2200;
+    const ACTIVE_AI_JOB_STATUSES = new Set(['pending', 'running']);
+
     const tabsEl = document.getElementById('message-center-tabs');
     const searchEl = document.getElementById('message-center-search');
     const filterEl = document.getElementById('message-center-filter');
@@ -20,6 +23,9 @@ if (app) {
     const conversationBodyEl = document.getElementById('message-center-conversation-body');
     const composeFormEl = document.getElementById('message-center-compose-form');
     const composeInputEl = document.getElementById('message-center-compose-input');
+    const emojiTriggerEl = document.getElementById('message-center-emoji-trigger');
+    const composeSubmitButtonEl = composeFormEl?.querySelector('[data-send-button]');
+    const composeSubmitLabelEl = composeSubmitButtonEl?.querySelector('.message-center-compose-submit__label');
     const unreadTotalEl = document.getElementById('message-center-unread-total');
     const currentTabLabelEl = document.getElementById('message-center-current-tab-label');
     const contactTotalEl = document.getElementById('message-center-contact-total');
@@ -31,6 +37,7 @@ if (app) {
         blocks: [],
         items: [],
         conversation: null,
+        aiReplyJob: null,
         currentTab: app.dataset.initialTab || 'all',
         currentContact: app.dataset.initialContact || '',
         currentScope: normalizeScope(app.dataset.initialScope),
@@ -41,135 +48,12 @@ if (app) {
         lastSendAt: 0,
         sendCooldownMs: 12000,
         sendRateLimitTimer: null,
+        aiReplyPollTimer: null,
+        aiReplyPollInFlight: false,
+        isSendingMessage: false,
     };
 
-    // --- Emoji picker for private messages ---
     let emojiPicker = null;
-
-    function initEmojiPicker() {
-        const emojiTriggerBtn = document.getElementById('message-center-emoji-trigger');
-        const emojiAnchor = document.getElementById('message-center-emoji-anchor');
-        if (!emojiTriggerBtn || !composeInputEl) {
-            return;
-        }
-
-        emojiPicker = createEmojiPicker({ targetInput: composeInputEl });
-        if (emojiAnchor) {
-            emojiAnchor.appendChild(emojiPicker.element);
-        } else {
-            composeFormEl.appendChild(emojiPicker.element);
-        }
-
-        emojiTriggerBtn.addEventListener('click', () => {
-            emojiPicker.toggle();
-        });
-
-        document.addEventListener('pointerdown', (event) => {
-            if (emojiPicker.isOpen() && !emojiPicker.element.contains(event.target) && !emojiTriggerBtn.contains(event.target)) {
-                emojiPicker.close();
-            }
-        });
-
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && emojiPicker.isOpen()) {
-                emojiPicker.close();
-            }
-        });
-    }
-
-    // --- Markdown editor toolbar ---
-    function initEditorToolbar() {
-        const toolbar = document.getElementById('message-center-editor-toolbar');
-        if (!toolbar || !composeInputEl) {
-            return;
-        }
-
-        toolbar.addEventListener('click', (event) => {
-            const button = event.target.closest('[data-md-insert]');
-            if (!button) {
-                return;
-            }
-            event.preventDefault();
-            const mdInsert = button.dataset.mdInsert;
-            insertMarkdownSyntax(mdInsert);
-        });
-    }
-
-    function insertMarkdownSyntax(type) {
-        if (!composeInputEl) {
-            return;
-        }
-        const start = composeInputEl.selectionStart ?? composeInputEl.value.length;
-        const end = composeInputEl.selectionEnd ?? composeInputEl.value.length;
-        const value = composeInputEl.value;
-        const selected = value.slice(start, end);
-
-        const syntaxMap = {
-            bold: { before: '**', after: '**', placeholder: '加粗文字' },
-            italic: { before: '*', after: '*', placeholder: '斜体文字' },
-            heading: { before: '## ', after: '', placeholder: '标题' },
-            code: { before: '`', after: '`', placeholder: '代码' },
-            codeblock: { before: '```\n', after: '\n```', placeholder: '代码块' },
-            ul: { before: '- ', after: '', placeholder: '列表项' },
-            ol: { before: '1. ', after: '', placeholder: '列表项' },
-            quote: { before: '> ', after: '', placeholder: '引用文字' },
-            link: { before: '[', after: '](url)', placeholder: '链接文字' },
-        };
-
-        const syntax = syntaxMap[type];
-        if (!syntax) {
-            return;
-        }
-
-        const text = selected || syntax.placeholder;
-        const inserted = `${syntax.before}${text}${syntax.after}`;
-        composeInputEl.value = `${value.slice(0, start)}${inserted}${value.slice(end)}`;
-
-        const nextPos = start + syntax.before.length + text.length + syntax.after.length;
-        composeInputEl.focus();
-        composeInputEl.setSelectionRange(nextPos, nextPos);
-    }
-
-    // --- Rate limit helpers ---
-    function getSendCooldownRemainingMs() {
-        return Math.max(0, state.lastSendAt + state.sendCooldownMs - Date.now());
-    }
-
-    function isSendCooldownActive() {
-        return getSendCooldownRemainingMs() > 0;
-    }
-
-    function updateSendButtonState() {
-        const submitButton = composeFormEl?.querySelector('button[type="submit"]');
-        if (!submitButton) {
-            return;
-        }
-        const cooldown = isSendCooldownActive();
-        submitButton.disabled = cooldown;
-        if (cooldown) {
-            const remaining = Math.ceil(getSendCooldownRemainingMs() / 1000);
-            submitButton.textContent = `${remaining}s 后可发送`;
-        } else {
-            submitButton.textContent = '发送';
-        }
-    }
-
-    function activateSendCooldown(retryAfterSeconds) {
-        const safeSeconds = Math.max(Number(retryAfterSeconds || 12), 1);
-        state.sendCooldownMs = safeSeconds * 1000;
-        state.lastSendAt = Date.now();
-
-        if (state.sendRateLimitTimer) {
-            window.clearTimeout(state.sendRateLimitTimer);
-        }
-
-        updateSendButtonState();
-        state.sendRateLimitTimer = window.setTimeout(() => {
-            state.sendRateLimitTimer = null;
-            state.sendCooldownMs = 12000;
-            updateSendButtonState();
-        }, safeSeconds * 1000);
-    }
 
     function normalizeScope(value) {
         if (value === '' || value == null) {
@@ -179,14 +63,14 @@ if (app) {
         return Number.isFinite(numericValue) ? numericValue : null;
     }
 
+    function buildContactKey(identity, scope) {
+        return `${identity}|scope:${Number(scope || 0)}`;
+    }
+
     function emitSummaryUpdate() {
         window.dispatchEvent(new CustomEvent('message-center:summary-updated', {
             detail: state.summary,
         }));
-    }
-
-    function buildContactKey(identity, scope) {
-        return `${identity}|scope:${Number(scope || 0)}`;
     }
 
     function localTodayKey() {
@@ -216,6 +100,13 @@ if (app) {
             label: '全部',
             unread_count: 0,
         };
+    }
+
+    function sortContactsInPlace() {
+        state.contacts.sort((left, right) => String(left.display_name || '').localeCompare(String(right.display_name || ''), 'zh-Hans-CN'));
+        state.contacts.sort((left, right) => String(right.last_message_at || '').localeCompare(String(left.last_message_at || '')));
+        state.contacts.sort((left, right) => (left.last_message_at ? 0 : 1) - (right.last_message_at ? 0 : 1));
+        state.contacts.sort((left, right) => (Number(left.unread_count || 0) > 0 ? 0 : 1) - (Number(right.unread_count || 0) > 0 ? 0 : 1));
     }
 
     function updateHeroStats() {
@@ -252,6 +143,234 @@ if (app) {
         updateHeroStats();
         emitSummaryUpdate();
         updateUrl();
+    }
+
+    function getSendCooldownRemainingMs() {
+        return Math.max(0, state.lastSendAt + state.sendCooldownMs - Date.now());
+    }
+
+    function isSendCooldownActive() {
+        return getSendCooldownRemainingMs() > 0;
+    }
+
+    function isActiveAiReplyJob(job = state.aiReplyJob) {
+        return Boolean(job && ACTIVE_AI_JOB_STATUSES.has(String(job.status || '')));
+    }
+
+    function isCurrentConversationAiPending() {
+        return Boolean(
+            state.conversation?.contact?.role === 'assistant'
+            && state.aiReplyJob
+            && state.aiReplyJob.conversation_key === state.conversation?.conversation_key
+            && isActiveAiReplyJob(state.aiReplyJob)
+        );
+    }
+
+    function setSubmitButtonVisualState({ label = '发送', disabled = false, busy = false, title = '' } = {}) {
+        if (!composeSubmitButtonEl) {
+            return;
+        }
+        composeSubmitButtonEl.disabled = Boolean(disabled);
+        composeSubmitButtonEl.classList.toggle('is-busy', Boolean(busy));
+        composeSubmitButtonEl.setAttribute('aria-busy', String(Boolean(busy)));
+        if (title) {
+            composeSubmitButtonEl.title = title;
+        } else {
+            composeSubmitButtonEl.removeAttribute('title');
+        }
+        if (composeSubmitLabelEl) {
+            composeSubmitLabelEl.textContent = label;
+        }
+    }
+
+    function updateSendButtonState() {
+        const contact = state.conversation?.contact;
+        const canSend = Boolean(contact?.can_send);
+
+        if (!contact || !canSend) {
+            setSubmitButtonVisualState({ label: '发送', disabled: true });
+            return;
+        }
+
+        if (state.isSendingMessage) {
+            setSubmitButtonVisualState({ label: '发送中', disabled: true, busy: true, title: '正在发送私信' });
+            return;
+        }
+
+        if (isCurrentConversationAiPending()) {
+            setSubmitButtonVisualState({ label: 'AI 回复中', disabled: true, busy: true, title: 'AI 助教正在回复上一条消息' });
+            return;
+        }
+
+        if (isSendCooldownActive()) {
+            const remaining = Math.ceil(getSendCooldownRemainingMs() / 1000);
+            setSubmitButtonVisualState({ label: `${remaining}s 后可发送`, disabled: true });
+            return;
+        }
+
+        setSubmitButtonVisualState({ label: '发送' });
+    }
+
+    function activateSendCooldown(retryAfterSeconds) {
+        const safeSeconds = Math.max(Number(retryAfterSeconds || 12), 1);
+        state.sendCooldownMs = safeSeconds * 1000;
+        state.lastSendAt = Date.now();
+
+        if (state.sendRateLimitTimer) {
+            window.clearTimeout(state.sendRateLimitTimer);
+        }
+
+        updateSendButtonState();
+        state.sendRateLimitTimer = window.setTimeout(() => {
+            state.sendRateLimitTimer = null;
+            state.sendCooldownMs = 12000;
+            updateSendButtonState();
+        }, safeSeconds * 1000);
+    }
+
+    function clearAiReplyPolling() {
+        if (state.aiReplyPollTimer) {
+            window.clearTimeout(state.aiReplyPollTimer);
+            state.aiReplyPollTimer = null;
+        }
+        state.aiReplyPollInFlight = false;
+    }
+
+    function syncAiReplyJob(job) {
+        state.aiReplyJob = job || null;
+        clearAiReplyPolling();
+        if (state.currentTab === PRIVATE_TAB && isActiveAiReplyJob(job)) {
+            state.aiReplyPollTimer = window.setTimeout(() => {
+                void pollAiReplyJobStatus();
+            }, AI_JOB_POLL_INTERVAL_MS);
+        }
+        updateSendButtonState();
+    }
+
+    async function pollAiReplyJobStatus() {
+        if (state.aiReplyPollInFlight || state.currentTab !== PRIVATE_TAB || !state.aiReplyJob?.id || !isActiveAiReplyJob(state.aiReplyJob)) {
+            return;
+        }
+
+        state.aiReplyPollInFlight = true;
+        const jobId = Number(state.aiReplyJob.id);
+        const contactIdentity = state.currentContact;
+        const scope = state.currentScope;
+
+        try {
+            const response = await apiFetch(`/api/message-center/private/ai-jobs/${jobId}`, { silent: true });
+            const job = response.job || null;
+            if (!job || Number(job.id) !== jobId) {
+                state.aiReplyJob = null;
+                renderConversation();
+                return;
+            }
+
+            state.aiReplyJob = job;
+            if (job.status === 'completed') {
+                state.aiReplyJob = null;
+                updateSendButtonState();
+                if (state.currentTab === PRIVATE_TAB && state.currentContact === contactIdentity && normalizeScope(state.currentScope) === normalizeScope(scope)) {
+                    await loadConversation(contactIdentity, scope, { showLoading: false, scrollToBottom: true });
+                    showToast('AI 助教已回复', 'success');
+                }
+                return;
+            }
+
+            renderConversation();
+            if (job.status === 'failed') {
+                showToast('AI 助教这次没有成功回复，你可以稍后再试。', 'warning');
+                return;
+            }
+
+            syncAiReplyJob(job);
+        } catch (error) {
+            if (isActiveAiReplyJob(state.aiReplyJob)) {
+                syncAiReplyJob(state.aiReplyJob);
+            }
+        } finally {
+            state.aiReplyPollInFlight = false;
+        }
+    }
+
+    function initEmojiPicker() {
+        const emojiAnchor = document.getElementById('message-center-emoji-anchor');
+        if (!emojiTriggerEl || !composeInputEl) {
+            return;
+        }
+
+        emojiPicker = createEmojiPicker({ targetInput: composeInputEl });
+        if (emojiAnchor) {
+            emojiAnchor.appendChild(emojiPicker.element);
+        } else {
+            composeFormEl.appendChild(emojiPicker.element);
+        }
+
+        emojiTriggerEl.addEventListener('click', () => {
+            if (!emojiTriggerEl.disabled) {
+                emojiPicker.toggle();
+            }
+        });
+
+        document.addEventListener('pointerdown', (event) => {
+            if (emojiPicker.isOpen() && !emojiPicker.element.contains(event.target) && !emojiTriggerEl.contains(event.target)) {
+                emojiPicker.close();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && emojiPicker.isOpen()) {
+                emojiPicker.close();
+            }
+        });
+    }
+
+    function initEditorToolbar() {
+        const toolbar = document.getElementById('message-center-editor-toolbar');
+        if (!toolbar || !composeInputEl) {
+            return;
+        }
+
+        toolbar.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-md-insert]');
+            if (!button) {
+                return;
+            }
+            event.preventDefault();
+            insertMarkdownSyntax(button.dataset.mdInsert);
+        });
+    }
+
+    function insertMarkdownSyntax(type) {
+        const start = composeInputEl.selectionStart ?? composeInputEl.value.length;
+        const end = composeInputEl.selectionEnd ?? composeInputEl.value.length;
+        const value = composeInputEl.value;
+        const selected = value.slice(start, end);
+
+        const syntaxMap = {
+            bold: { before: '**', after: '**', placeholder: '加粗文字' },
+            italic: { before: '*', after: '*', placeholder: '斜体文字' },
+            heading: { before: '## ', after: '', placeholder: '标题' },
+            code: { before: '`', after: '`', placeholder: '代码' },
+            codeblock: { before: '```\n', after: '\n```', placeholder: '代码块' },
+            ul: { before: '- ', after: '', placeholder: '列表项' },
+            ol: { before: '1. ', after: '', placeholder: '列表项' },
+            quote: { before: '> ', after: '', placeholder: '引用文字' },
+            link: { before: '[', after: '](url)', placeholder: '链接文字' },
+        };
+
+        const syntax = syntaxMap[type];
+        if (!syntax) {
+            return;
+        }
+
+        const text = selected || syntax.placeholder;
+        const inserted = `${syntax.before}${text}${syntax.after}`;
+        composeInputEl.value = `${value.slice(0, start)}${inserted}${value.slice(end)}`;
+
+        const nextPos = start + syntax.before.length + text.length + syntax.after.length;
+        composeInputEl.focus();
+        composeInputEl.setSelectionRange(nextPos, nextPos);
     }
 
     function renderTabs() {
@@ -468,12 +587,53 @@ if (app) {
                 ...contact,
                 unread_count: 0,
             };
+        } else {
+            state.contacts.unshift({
+                ...contact,
+                unread_count: 0,
+            });
+        }
+        sortContactsInPlace();
+    }
+
+    function scrollConversationToBottom() {
+        window.requestAnimationFrame(() => {
+            conversationBodyEl.scrollTop = conversationBodyEl.scrollHeight;
+        });
+    }
+
+    function updateContactPreviewFromMessage(message) {
+        const contactKey = buildContactKey(state.currentContact, state.currentScope);
+        const existingIndex = state.contacts.findIndex((contact) => buildContactKey(contact.identity, contact.class_offering_id) === contactKey);
+        if (existingIndex < 0) {
             return;
         }
-        state.contacts.unshift({
-            ...contact,
+        state.contacts[existingIndex] = {
+            ...state.contacts[existingIndex],
             unread_count: 0,
-        });
+            last_message_preview: String(message.content || ''),
+            last_message_at: String(message.created_at || ''),
+            last_message_is_outgoing: Boolean(message.is_outgoing),
+        };
+        sortContactsInPlace();
+    }
+
+    function appendMessageToConversation(message, { shouldRender = true } = {}) {
+        if (!state.conversation) {
+            return;
+        }
+        const messages = Array.isArray(state.conversation.messages) ? [...state.conversation.messages] : [];
+        messages.push(message);
+        state.conversation = {
+            ...state.conversation,
+            messages,
+        };
+        updateContactPreviewFromMessage(message);
+        if (shouldRender) {
+            renderContacts();
+            renderConversation();
+            scrollConversationToBottom();
+        }
     }
 
     function filteredMessages() {
@@ -490,10 +650,47 @@ if (app) {
         ));
     }
 
+    function buildRenderableMessages() {
+        const messages = [...filteredMessages()];
+        if (!state.aiReplyJob || state.aiReplyJob.conversation_key !== state.conversation?.conversation_key || state.conversation?.contact?.role !== 'assistant') {
+            return messages;
+        }
+
+        if (state.aiReplyJob.status === 'failed') {
+            messages.push({
+                id: `ai-reply-job-${state.aiReplyJob.id}`,
+                sender_role: 'assistant',
+                sender_display_name: state.conversation.contact.display_name || 'AI 助教',
+                created_at: state.aiReplyJob.finished_at || state.aiReplyJob.updated_at || state.aiReplyJob.created_at,
+                content: 'AI 助教这次没有成功生成回复。',
+                status_copy: '稍后可以再发一条消息继续对话。',
+                is_outgoing: false,
+                is_virtual: true,
+                virtual_status: 'failed',
+            });
+            return messages;
+        }
+
+        if (isActiveAiReplyJob(state.aiReplyJob)) {
+            messages.push({
+                id: `ai-reply-job-${state.aiReplyJob.id}`,
+                sender_role: 'assistant',
+                sender_display_name: state.conversation.contact.display_name || 'AI 助教',
+                created_at: state.aiReplyJob.started_at || state.aiReplyJob.created_at,
+                content: 'AI 助教正在整理回复...',
+                status_copy: '你现在可以继续浏览其他区域，回复完成后会自动出现在这里。',
+                is_outgoing: false,
+                is_virtual: true,
+                virtual_status: 'pending',
+            });
+        }
+
+        return messages;
+    }
+
     function renderConversation() {
         const conversation = state.conversation;
         const contact = conversation?.contact;
-
         if (!contact) {
             conversationHeaderEl.innerHTML = `
                 <div>
@@ -504,6 +701,10 @@ if (app) {
             renderEmpty(conversationBodyEl, '还没有打开私信会话', '请先从左侧联系人选择器中选择一个联系人。');
             composeInputEl.disabled = true;
             composeInputEl.placeholder = '请先选择联系人';
+            if (emojiTriggerEl) {
+                emojiTriggerEl.disabled = true;
+            }
+            updateSendButtonState();
             return;
         }
 
@@ -531,14 +732,15 @@ if (app) {
             </div>
         `;
 
-        const messages = filteredMessages();
+        const messages = buildRenderableMessages();
         if (messages.length === 0) {
             renderEmpty(conversationBodyEl, '没有匹配的私信内容', '可以调整搜索关键词，或直接发送一条新消息。');
         } else {
             conversationBodyEl.innerHTML = `
                 <div class="message-center-messages">
                     ${messages.map((message) => {
-                        const isAiReply = message.sender_role === 'assistant';
+                        const isVirtual = Boolean(message.is_virtual);
+                        const isAiReply = !isVirtual && message.sender_role === 'assistant';
                         const rawContent = message.content || '';
                         const contentHtml = isAiReply && typeof globalThis.MarkdownRuntime?.parse === 'function'
                             ? globalThis.MarkdownRuntime.parse(rawContent)
@@ -546,35 +748,48 @@ if (app) {
                         const contentClass = isAiReply
                             ? 'message-center-message__content md-content'
                             : 'message-center-message__content';
+                        const articleClass = [
+                            'message-center-message',
+                            message.is_outgoing ? 'is-outgoing' : '',
+                            isVirtual ? 'is-status-note' : '',
+                            message.virtual_status === 'failed' ? 'is-failed' : '',
+                        ].filter(Boolean).join(' ');
                         return `
-                        <article class="message-center-message ${message.is_outgoing ? 'is-outgoing' : ''}">
-                            <div class="message-center-message__meta">
-                                <strong>${escapeHtml(message.sender_display_name || '')}</strong>
-                                <span>${escapeHtml(formatDate(message.created_at || ''))}</span>
-                            </div>
-                            <div class="${contentClass}">${contentHtml}</div>
-                            ${message.can_block_sender && !message.is_sender_blocked ? `
-                                <div class="message-center-message__actions">
-                                    <button
-                                        type="button"
-                                        class="btn btn-ghost btn-sm"
-                                        data-block-sender="${escapeHtml(message.sender_identity)}"
-                                    >
-                                        拉黑发信人
-                                    </button>
+                            <article class="${articleClass}">
+                                <div class="message-center-message__meta">
+                                    <strong>${escapeHtml(message.sender_display_name || '')}</strong>
+                                    <span>${escapeHtml(formatDate(message.created_at || ''))}</span>
                                 </div>
-                            ` : ''}
-                        </article>
-                    `;}).join('')}
+                                <div class="${contentClass}">${contentHtml}</div>
+                                ${message.status_copy ? `<div class="message-center-message__status">${escapeHtml(message.status_copy)}</div>` : ''}
+                                ${!isVirtual && message.can_block_sender && !message.is_sender_blocked ? `
+                                    <div class="message-center-message__actions">
+                                        <button
+                                            type="button"
+                                            class="btn btn-ghost btn-sm"
+                                            data-block-sender="${escapeHtml(message.sender_identity)}"
+                                        >
+                                            拉黑发信人
+                                        </button>
+                                    </div>
+                                ` : ''}
+                            </article>
+                        `;
+                    }).join('')}
                 </div>
             `;
         }
 
         const canSend = Boolean(contact.can_send);
         composeInputEl.disabled = !canSend;
+        if (emojiTriggerEl) {
+            emojiTriggerEl.disabled = !canSend;
+        }
         composeInputEl.placeholder = canSend
-            ? `发送给 ${contact.display_name || '联系人'}`
+            ? (isCurrentConversationAiPending() ? 'AI 助教正在回复上一条消息，你可以先整理下一条内容' : `发送给 ${contact.display_name || '联系人'}`)
             : (contact.is_blocked ? '对方已在黑名单中，解除后才能发送' : '当前无法向该联系人发送消息');
+
+        updateSendButtonState();
     }
 
     async function markRead(payload) {
@@ -587,6 +802,7 @@ if (app) {
     }
 
     async function loadItems() {
+        clearAiReplyPolling();
         privatePanelEl.hidden = true;
         feedEl.hidden = false;
         setLoading(feedEl, '正在加载消息列表...');
@@ -600,10 +816,14 @@ if (app) {
         renderItems();
     }
 
-    async function loadConversation(contactIdentity, scope) {
+    async function loadConversation(contactIdentity, scope, options = {}) {
+        const { showLoading = true, scrollToBottom = true } = options;
+        clearAiReplyPolling();
         state.currentContact = contactIdentity;
         state.currentScope = normalizeScope(scope);
-        setLoading(conversationBodyEl, '正在加载私信会话...');
+        if (showLoading) {
+            setLoading(conversationBodyEl, '正在加载私信会话...');
+        }
         const params = new URLSearchParams({
             contact: contactIdentity,
             limit: '150',
@@ -613,12 +833,16 @@ if (app) {
         }
         const response = await apiFetch(`/api/message-center/private/conversation?${params.toString()}`, { silent: true });
         state.conversation = response.conversation || null;
+        syncAiReplyJob(state.conversation?.ai_reply_job || null);
         applySummary(response.summary || state.summary);
         if (state.conversation?.contact) {
             syncContact(state.conversation.contact);
         }
         renderContacts();
         renderConversation();
+        if (scrollToBottom && !state.keyword.trim()) {
+            scrollConversationToBottom();
+        }
         updateHeroStats();
         updateUrl();
     }
@@ -647,13 +871,16 @@ if (app) {
             }
 
             state.conversation = null;
+            state.aiReplyJob = null;
             renderConversation();
             return;
         }
 
+        clearAiReplyPolling();
         state.currentContact = '';
         state.currentScope = null;
         state.conversation = null;
+        state.aiReplyJob = null;
         await loadItems();
     }
 
@@ -663,10 +890,7 @@ if (app) {
         }
 
         const requestConfig = isBlocked
-            ? {
-                method: 'DELETE',
-                silent: true,
-            }
+            ? { method: 'DELETE', silent: true }
             : {
                 method: 'POST',
                 body: {
@@ -683,10 +907,11 @@ if (app) {
         const response = await apiFetch(url, requestConfig);
         state.blocks = response.blocks || [];
         state.contacts = response.contacts || [];
+        sortContactsInPlace();
         applySummary(response.summary || state.summary);
 
         if (state.conversation?.contact?.identity === identity) {
-            await loadConversation(identity, scope);
+            await loadConversation(identity, scope, { showLoading: false, scrollToBottom: false });
         } else {
             renderContacts();
             renderBlocks();
@@ -697,6 +922,11 @@ if (app) {
 
     async function sendMessage(event) {
         event.preventDefault();
+
+        if (state.isSendingMessage || isCurrentConversationAiPending()) {
+            showToast('AI 助教正在回复上一条消息，请稍候', 'warning');
+            return;
+        }
 
         if (isSendCooldownActive()) {
             const remaining = Math.ceil(getSendCooldownRemainingMs() / 1000);
@@ -715,8 +945,8 @@ if (app) {
             return;
         }
 
-        const submitButton = composeFormEl.querySelector('button[type="submit"]');
-        submitButton.disabled = true;
+        state.isSendingMessage = true;
+        updateSendButtonState();
 
         try {
             const response = await apiFetch('/api/message-center/private/messages', {
@@ -730,12 +960,46 @@ if (app) {
             });
 
             composeInputEl.value = '';
+            if (emojiPicker?.isOpen()) {
+                emojiPicker.close();
+            }
+
             activateSendCooldown(12);
             state.contacts = response.contacts || state.contacts;
+            sortContactsInPlace();
             applySummary(response.summary || state.summary);
+
+            if (response.contact) {
+                if (state.conversation) {
+                    state.conversation = {
+                        ...state.conversation,
+                        contact: {
+                            ...state.conversation.contact,
+                            ...response.contact,
+                        },
+                    };
+                }
+                syncContact(response.contact);
+            }
+
+            if (!state.conversation) {
+                state.conversation = {
+                    contact: response.contact || getActiveContact(),
+                    conversation_key: response.conversation_key || state.aiReplyJob?.conversation_key || '',
+                    class_offering_id: state.currentScope,
+                    messages: [],
+                };
+            }
+
+            if (response.sent_message) {
+                appendMessageToConversation(response.sent_message, { shouldRender: false });
+            }
+
+            syncAiReplyJob(response.ai_reply_job || null);
             renderContacts();
-            await loadConversation(state.currentContact, state.currentScope);
-            showToast(response.assistant_reply ? '私信已发送，AI 助教已自动回复' : '私信已发送', 'success');
+            renderConversation();
+            scrollConversationToBottom();
+            showToast(response.ai_reply_job ? '私信已发送，AI 助教正在回复' : '私信已发送', 'success');
         } catch (error) {
             if (error.status === 429 && error.data?.retry_after_seconds) {
                 activateSendCooldown(error.data.retry_after_seconds);
@@ -744,6 +1008,7 @@ if (app) {
                 showToast(error.message || '发送失败', 'error');
             }
         } finally {
+            state.isSendingMessage = false;
             updateSendButtonState();
         }
     }
@@ -769,6 +1034,7 @@ if (app) {
         try {
             const response = await apiFetch('/api/message-center/bootstrap', { silent: true });
             state.contacts = response.private_contacts || [];
+            sortContactsInPlace();
             state.blocks = response.private_blocks || [];
             applySummary(response.summary || state.summary);
             renderBlocks();
@@ -788,6 +1054,7 @@ if (app) {
                     await loadConversation(nextContact.identity, nextContact.class_offering_id);
                 } else {
                     state.conversation = null;
+                    state.aiReplyJob = null;
                     renderConversation();
                 }
                 return;
@@ -826,7 +1093,7 @@ if (app) {
                 showToast('当前没有打开私信会话', 'warning');
                 return;
             }
-            await loadConversation(state.currentContact, state.currentScope);
+            await loadConversation(state.currentContact, state.currentScope, { showLoading: false, scrollToBottom: false });
             showToast('当前私信会话已更新为已读', 'success');
             return;
         }
@@ -891,9 +1158,10 @@ if (app) {
     });
 
     composeFormEl.addEventListener('submit', sendMessage);
+    window.addEventListener('beforeunload', clearAiReplyPolling);
 
     initEmojiPicker();
     initEditorToolbar();
-
+    updateSendButtonState();
     bootstrap();
 }

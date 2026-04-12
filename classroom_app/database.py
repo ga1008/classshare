@@ -1472,6 +1472,30 @@ def init_database():
                          )
                          ''')
 
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS private_message_ai_jobs
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             conversation_key TEXT NOT NULL,
+                             class_offering_id INTEGER NOT NULL,
+                             request_message_id INTEGER NOT NULL UNIQUE,
+                             requester_identity TEXT NOT NULL,
+                             requester_role TEXT NOT NULL,
+                             requester_user_pk INTEGER NOT NULL,
+                             status TEXT NOT NULL DEFAULT 'pending',
+                             error_message TEXT DEFAULT '',
+                             reply_message_id INTEGER,
+                             attempt_count INTEGER NOT NULL DEFAULT 0,
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             started_at TEXT,
+                             finished_at TEXT,
+                             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                             FOREIGN KEY (request_message_id) REFERENCES private_messages (id) ON DELETE CASCADE,
+                             FOREIGN KEY (reply_message_id) REFERENCES private_messages (id) ON DELETE SET NULL
+                         )
+                         ''')
+
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_message_center_notifications_recipient_created "
                 "ON message_center_notifications (recipient_role, recipient_user_pk, created_at DESC, id DESC)"
@@ -1503,6 +1527,14 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_private_message_audit_lookup "
                 "ON private_message_audit_logs (sender_identity, recipient_identity, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_private_message_ai_jobs_lookup "
+                "ON private_message_ai_jobs (requester_identity, conversation_key, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_private_message_ai_jobs_status "
+                "ON private_message_ai_jobs (status, created_at ASC, id ASC)"
             )
 
             # 14. 试卷库

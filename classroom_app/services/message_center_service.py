@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime
 from typing import Any, Optional
@@ -29,6 +30,14 @@ MESSAGE_CATEGORY_AI_FEEDBACK = "ai_feedback"
 AI_ASSISTANT_ROLE = "assistant"
 AI_ASSISTANT_LABEL = "AI助教"
 AI_REPLY_FALLBACK = "我在。刚才这条私信我已经收到，如果你愿意，我可以继续帮你把问题拆成更清楚的几个步骤。"
+AI_REPLY_JOB_STATUS_PENDING = "pending"
+AI_REPLY_JOB_STATUS_RUNNING = "running"
+AI_REPLY_JOB_STATUS_COMPLETED = "completed"
+AI_REPLY_JOB_STATUS_FAILED = "failed"
+ACTIVE_AI_REPLY_JOB_STATUSES = {
+    AI_REPLY_JOB_STATUS_PENDING,
+    AI_REPLY_JOB_STATUS_RUNNING,
+}
 
 PRIVATE_MESSAGE_RATE_LIMIT = 5
 PRIVATE_MESSAGE_RATE_WINDOW_SECONDS = 60
@@ -813,6 +822,27 @@ def _serialize_private_message(row, *, current_identity: str, blocked_identities
     }
 
 
+def _serialize_private_ai_reply_job(row) -> dict[str, Any]:
+    return {
+        "id": int(row["id"]),
+        "conversation_key": str(row["conversation_key"] or ""),
+        "class_offering_id": _safe_int(row["class_offering_id"]),
+        "request_message_id": _safe_int(row["request_message_id"]),
+        "requester_identity": str(row["requester_identity"] or ""),
+        "requester_role": str(row["requester_role"] or ""),
+        "requester_user_pk": _safe_int(row["requester_user_pk"]),
+        "status": str(row["status"] or AI_REPLY_JOB_STATUS_PENDING),
+        "error_message": _truncate_text(row["error_message"], 180),
+        "reply_message_id": _safe_int(row["reply_message_id"]),
+        "attempt_count": int(row["attempt_count"] or 0),
+        "created_at": str(row["created_at"] or ""),
+        "started_at": str(row["started_at"] or ""),
+        "finished_at": str(row["finished_at"] or ""),
+        "updated_at": str(row["updated_at"] or ""),
+        "is_active": str(row["status"] or "") in ACTIVE_AI_REPLY_JOB_STATUSES,
+    }
+
+
 def get_message_center_summary(conn, user: dict) -> dict[str, Any]:
     user_pk, role, _ = _ensure_user_identity(user)
     rows = conn.execute(
@@ -1170,6 +1200,104 @@ def remove_private_message_block(conn, user: dict, *, contact_identity: str) -> 
     return int(cursor.rowcount or 0)
 
 
+def _load_latest_private_ai_reply_job_row(
+    conn,
+    *,
+    requester_identity: str,
+    conversation_key: str,
+):
+    return conn.execute(
+        """
+        SELECT *
+        FROM private_message_ai_jobs
+        WHERE requester_identity = ?
+          AND conversation_key = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (requester_identity, conversation_key),
+    ).fetchone()
+
+
+def _load_visible_private_ai_reply_job(
+    conn,
+    *,
+    requester_identity: str,
+    conversation_key: str,
+) -> Optional[dict[str, Any]]:
+    row = _load_latest_private_ai_reply_job_row(
+        conn,
+        requester_identity=requester_identity,
+        conversation_key=conversation_key,
+    )
+    if row is None:
+        return None
+    job = _serialize_private_ai_reply_job(row)
+    if job["status"] == AI_REPLY_JOB_STATUS_COMPLETED:
+        return None
+    return job
+
+
+def create_private_ai_reply_job(
+    conn,
+    user: dict,
+    *,
+    conversation_key: str,
+    class_offering_id: int,
+    request_message_id: int,
+) -> dict[str, Any]:
+    current_user_pk, current_role, current_identity = _ensure_user_identity(user)
+    timestamp = _now_iso()
+    cursor = conn.execute(
+        """
+        INSERT INTO private_message_ai_jobs (
+            conversation_key, class_offering_id, request_message_id,
+            requester_identity, requester_role, requester_user_pk,
+            status, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            conversation_key,
+            class_offering_id,
+            request_message_id,
+            current_identity,
+            current_role,
+            current_user_pk,
+            AI_REPLY_JOB_STATUS_PENDING,
+            timestamp,
+            timestamp,
+        ),
+    )
+    row = conn.execute(
+        """
+        SELECT *
+        FROM private_message_ai_jobs
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(cursor.lastrowid),),
+    ).fetchone()
+    return _serialize_private_ai_reply_job(row)
+
+
+def get_private_ai_reply_job(conn, user: dict, *, job_id: int | str) -> dict[str, Any]:
+    _, _, current_identity = _ensure_user_identity(user)
+    row = conn.execute(
+        """
+        SELECT *
+        FROM private_message_ai_jobs
+        WHERE id = ?
+          AND requester_identity = ?
+        LIMIT 1
+        """,
+        (int(job_id), current_identity),
+    ).fetchone()
+    if row is None:
+        raise ValueError("AI reply job not found")
+    return _serialize_private_ai_reply_job(row)
+
+
 def get_private_message_conversation(
     conn,
     user: dict,
@@ -1240,6 +1368,11 @@ def get_private_message_conversation(
         "contact": contact_payload,
         "conversation_key": conversation_key,
         "class_offering_id": normalized_scope,
+        "ai_reply_job": _load_visible_private_ai_reply_job(
+            conn,
+            requester_identity=current_identity,
+            conversation_key=conversation_key,
+        ),
         "messages": [
             _serialize_private_message(item, current_identity=current_identity, blocked_identities=blocked_identities)
             for item in patched_rows
@@ -1318,6 +1451,17 @@ def create_private_message(
     if normalized_scope is None:
         normalized_scope = _safe_int(class_offering_id)
     conversation_key = build_conversation_key(current_identity, str(contact["identity"]), normalized_scope)
+    latest_ai_reply_job = _load_latest_private_ai_reply_job_row(
+        conn,
+        requester_identity=current_identity,
+        conversation_key=conversation_key,
+    )
+    if (
+        str(contact["role"]) == AI_ASSISTANT_ROLE
+        and latest_ai_reply_job is not None
+        and str(latest_ai_reply_job["status"] or "") in ACTIVE_AI_REPLY_JOB_STATUSES
+    ):
+        raise ValueError("AI 助教正在回复上一条消息，请稍候")
     sender_display_name = build_actor_display_name(str(user.get("name") or user.get("username") or ""), current_role)
 
     message_row = _insert_private_message(
@@ -1568,6 +1712,169 @@ async def generate_ai_private_reply(
     return serialized
 
 
+def _build_private_ai_job_user_snapshot(conn, *, requester_identity: str) -> dict[str, Any]:
+    parsed = parse_identity(requester_identity)
+    role = str(parsed["role"] or "")
+    user_pk = _safe_int(parsed["user_pk"])
+    if role not in {"student", "teacher"} or user_pk is None:
+        raise ValueError("invalid AI reply requester")
+
+    table_name = "students" if role == "student" else "teachers"
+    row = conn.execute(
+        f"SELECT id, name FROM {table_name} WHERE id = ? LIMIT 1",
+        (user_pk,),
+    ).fetchone()
+    if row is None:
+        raise ValueError("AI reply requester not found")
+    return {
+        "id": int(row["id"]),
+        "role": role,
+        "name": str(row["name"] or ""),
+    }
+
+
+def _claim_private_ai_reply_job(conn, job_id: int | str) -> Optional[dict[str, Any]]:
+    timestamp = _now_iso()
+    cursor = conn.execute(
+        """
+        UPDATE private_message_ai_jobs
+        SET status = ?,
+            started_at = COALESCE(started_at, ?),
+            finished_at = NULL,
+            updated_at = ?,
+            error_message = '',
+            attempt_count = attempt_count + 1
+        WHERE id = ?
+          AND status = ?
+        """,
+        (
+            AI_REPLY_JOB_STATUS_RUNNING,
+            timestamp,
+            timestamp,
+            int(job_id),
+            AI_REPLY_JOB_STATUS_PENDING,
+        ),
+    )
+    if int(cursor.rowcount or 0) <= 0:
+        return None
+    row = conn.execute(
+        """
+        SELECT *
+        FROM private_message_ai_jobs
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(job_id),),
+    ).fetchone()
+    conn.commit()
+    return dict(row) if row is not None else None
+
+
+def _finish_private_ai_reply_job(
+    conn,
+    job_id: int | str,
+    *,
+    status: str,
+    reply_message_id: Optional[int] = None,
+    error_message: str = "",
+) -> None:
+    timestamp = _now_iso()
+    conn.execute(
+        """
+        UPDATE private_message_ai_jobs
+        SET status = ?,
+            reply_message_id = ?,
+            error_message = ?,
+            finished_at = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            str(status or AI_REPLY_JOB_STATUS_FAILED),
+            _safe_int(reply_message_id),
+            _truncate_text(error_message, 240),
+            timestamp,
+            timestamp,
+            int(job_id),
+        ),
+    )
+
+
+async def process_private_ai_reply_job(job_id: int | str) -> Optional[dict[str, Any]]:
+    with get_db_connection() as conn:
+        job_row = _claim_private_ai_reply_job(conn, job_id)
+    if job_row is None:
+        return None
+
+    try:
+        with get_db_connection() as conn:
+            user = _build_private_ai_job_user_snapshot(
+                conn,
+                requester_identity=str(job_row["requester_identity"] or ""),
+            )
+        reply = await generate_ai_private_reply(
+            user,
+            class_offering_id=int(job_row["class_offering_id"]),
+            conversation_key=str(job_row["conversation_key"] or ""),
+        )
+        with get_db_connection() as conn:
+            _finish_private_ai_reply_job(
+                conn,
+                job_row["id"],
+                status=AI_REPLY_JOB_STATUS_COMPLETED if reply else AI_REPLY_JOB_STATUS_FAILED,
+                reply_message_id=reply.get("id") if reply else None,
+                error_message="" if reply else "AI 助教暂时没有成功生成回复",
+            )
+            conn.commit()
+        return reply
+    except Exception as exc:
+        with get_db_connection() as conn:
+            _finish_private_ai_reply_job(
+                conn,
+                job_row["id"],
+                status=AI_REPLY_JOB_STATUS_FAILED,
+                error_message=str(exc) or "AI 助教回复失败",
+            )
+            conn.commit()
+        return None
+
+
+def schedule_pending_private_ai_reply_jobs(limit: int = 64) -> int:
+    timestamp = _now_iso()
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            UPDATE private_message_ai_jobs
+            SET status = ?,
+                updated_at = ?
+            WHERE status = ?
+            """,
+            (
+                AI_REPLY_JOB_STATUS_PENDING,
+                timestamp,
+                AI_REPLY_JOB_STATUS_RUNNING,
+            ),
+        )
+        rows = conn.execute(
+            """
+            SELECT id
+            FROM private_message_ai_jobs
+            WHERE status = ?
+            ORDER BY created_at ASC, id ASC
+            LIMIT ?
+            """,
+            (
+                AI_REPLY_JOB_STATUS_PENDING,
+                max(1, min(int(limit), 256)),
+            ),
+        ).fetchall()
+        conn.commit()
+
+    for row in rows:
+        asyncio.create_task(process_private_ai_reply_job(int(row["id"])))
+    return len(rows)
+
+
 async def send_private_message_and_maybe_reply(
     user: dict,
     *,
@@ -1583,6 +1890,15 @@ async def send_private_message_and_maybe_reply(
             class_offering_id=class_offering_id,
             content=content,
         )
+        ai_reply_job = None
+        if result["requires_ai_reply"] and result["class_offering_id"] is not None:
+            ai_reply_job = create_private_ai_reply_job(
+                conn,
+                user,
+                conversation_key=str(result["conversation_key"]),
+                class_offering_id=int(result["class_offering_id"]),
+                request_message_id=int(result["message"]["id"]),
+            )
         conn.commit()
 
     payload = {
@@ -1591,13 +1907,8 @@ async def send_private_message_and_maybe_reply(
         "conversation_key": result["conversation_key"],
         "sent_message": result["message_serialized"],
         "assistant_reply": None,
+        "ai_reply_job": ai_reply_job,
     }
-    if result["requires_ai_reply"] and result["class_offering_id"] is not None:
-        payload["assistant_reply"] = await generate_ai_private_reply(
-            user,
-            class_offering_id=int(result["class_offering_id"]),
-            conversation_key=str(result["conversation_key"]),
-        )
     return payload
 
 

@@ -17,6 +17,7 @@ from .services.behavior_tracking_service import (
     start_behavior_profile_scheduler,
     stop_behavior_profile_scheduler,
 )
+from .services.message_center_service import schedule_pending_private_ai_reply_jobs
 from .services.ui_copy_service import (
     ensure_ui_copy_snapshot,
     start_ui_copy_refresh_scheduler,
@@ -45,6 +46,9 @@ async def startup_event():
     # 确保静态目录存在
     STATIC_DIR.mkdir(exist_ok=True)
     await ai_client.__aenter__()  # 启动 HTTP 客户端
+    resumed_private_ai_jobs = schedule_pending_private_ai_reply_jobs()
+    if resumed_private_ai_jobs:
+        print(f"[MESSAGE_CENTER] 恢复 {resumed_private_ai_jobs} 个待处理的 AI 私信任务")
     try:
         await ensure_ui_copy_snapshot(reason="startup")
     except Exception as exc:

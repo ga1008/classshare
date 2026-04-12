@@ -88,28 +88,46 @@
                 <div id="message-center-conversation-body" class="message-center-conversation__body"></div>
                 <div class="message-center-composer">
                     <form id="message-center-compose-form" class="message-center-composer__form">
-                        <div class="message-center-composer__top">
-                            <div id="message-center-editor-toolbar" class="message-center-editor-toolbar">
-                                <button type="button" data-md-insert="heading" title="标题">H</button>
-                                <button type="button" data-md-insert="bold" title="加粗"><b>B</b></button>
-                                <button type="button" data-md-insert="italic" title="斜体"><i>I</i></button>
-                                <button type="button" data-md-insert="code" title="行内代码">&lt;/&gt;</button>
-                                <button type="button" data-md-insert="codeblock" title="代码块">{ }</button>
-                                <button type="button" data-md-insert="ul" title="无序列表">&#8226;</button>
-                                <button type="button" data-md-insert="ol" title="有序列表">1.</button>
-                                <button type="button" data-md-insert="quote" title="引用">&ldquo;</button>
-                                <button type="button" data-md-insert="link" title="链接">&#128279;</button>
+                        <div class="message-center-composer__editor">
+                            <div class="message-center-composer__main">
+                                <div id="message-center-editor-toolbar" class="message-center-editor-toolbar">
+                                    <button type="button" data-md-insert="heading" title="标题">H</button>
+                                    <button type="button" data-md-insert="bold" title="加粗"><b>B</b></button>
+                                    <button type="button" data-md-insert="italic" title="斜体"><i>I</i></button>
+                                    <button type="button" data-md-insert="code" title="行内代码">&lt;/&gt;</button>
+                                    <button type="button" data-md-insert="codeblock" title="代码块">{ }</button>
+                                    <button type="button" data-md-insert="ul" title="无序列表">&#8226;</button>
+                                    <button type="button" data-md-insert="ol" title="有序列表">1.</button>
+                                    <button type="button" data-md-insert="quote" title="引用">&ldquo;</button>
+                                    <button type="button" data-md-insert="link" title="链接">&#128279;</button>
+                                </div>
+                                <textarea
+                                    id="message-center-compose-input"
+                                    class="message-center-composer__input"
+                                    placeholder="输入私信内容（支持 Markdown 语法）"
+                                ></textarea>
                             </div>
-                            <button type="button" id="message-center-emoji-trigger" class="message-center-emoji-trigger" title="表情">&#128522;</button>
-                        </div>
-                        <div id="message-center-emoji-anchor" class="message-center-emoji-anchor"></div>
-                        <div class="message-center-composer__input-row">
-                            <textarea
-                                id="message-center-compose-input"
-                                class="message-center-composer__input"
-                                placeholder="输入私信内容（支持 Markdown 语法）"
-                            ></textarea>
-                            <button type="submit" class="btn btn-primary">发送</button>
+                            <div class="message-center-composer__actions">
+                                <div id="message-center-emoji-anchor" class="message-center-emoji-anchor">
+                                    <button
+                                        type="button"
+                                        id="message-center-emoji-trigger"
+                                        class="message-center-composer__action-button message-center-emoji-trigger"
+                                        title="表情"
+                                    >
+                                        <span class="message-center-composer__action-icon" aria-hidden="true">&#128522;</span>
+                                        <span>表情</span>
+                                    </button>
+                                </div>
+                                <button
+                                    type="submit"
+                                    class="btn btn-primary message-center-compose-submit"
+                                    data-send-button
+                                >
+                                    <span class="message-center-compose-submit__spinner" aria-hidden="true"></span>
+                                    <span class="message-center-compose-submit__label">发送</span>
+                                </button>
+                            </div>
                         </div>
                     </form>
                 </div>
