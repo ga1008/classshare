@@ -21,6 +21,7 @@ from ..services.message_center_service import (
     remove_private_message_block,
     send_private_message_and_maybe_reply,
 )
+from ..services.rate_limit_service import RateLimitExceededError
 
 router = APIRouter()
 
@@ -166,6 +167,14 @@ async def api_send_private_message(request: Request, user: dict = Depends(get_cu
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RateLimitExceededError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "message": str(exc),
+                "retry_after_seconds": exc.retry_after_seconds,
+            },
+        ) from exc
 
     with get_db_connection() as conn:
         summary = get_message_center_summary(conn, user)

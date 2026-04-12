@@ -1740,7 +1740,12 @@ export class ClassroomChat {
         if (text) {
             const content = document.createElement('div');
             content.className = 'message-content';
-            content.innerHTML = this.escape(text).replace(/\n/g, '<br>');
+            if (role === 'assistant' && typeof globalThis.MarkdownRuntime?.parse === 'function') {
+                content.classList.add('md-content');
+                content.innerHTML = globalThis.MarkdownRuntime.parse(text);
+            } else {
+                content.innerHTML = this.escape(text).replace(/\n/g, '<br>');
+            }
             main.appendChild(content);
         }
 

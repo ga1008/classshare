@@ -1,5 +1,6 @@
-import { apiFetch } from './api.js';
+﻿import { apiFetch } from './api.js';
 import { escapeHtml, formatDate, showToast } from './ui.js';
+import { createEmojiPicker } from './emoji_picker.js';
 
 const app = document.querySelector('[data-message-center-app]');
 
@@ -37,7 +38,138 @@ if (app) {
         contactKeyword: '',
         filterKey: 'all',
         searchTimer: null,
+        lastSendAt: 0,
+        sendCooldownMs: 12000,
+        sendRateLimitTimer: null,
     };
+
+    // --- Emoji picker for private messages ---
+    let emojiPicker = null;
+
+    function initEmojiPicker() {
+        const emojiTriggerBtn = document.getElementById('message-center-emoji-trigger');
+        const emojiAnchor = document.getElementById('message-center-emoji-anchor');
+        if (!emojiTriggerBtn || !composeInputEl) {
+            return;
+        }
+
+        emojiPicker = createEmojiPicker({ targetInput: composeInputEl });
+        if (emojiAnchor) {
+            emojiAnchor.appendChild(emojiPicker.element);
+        } else {
+            composeFormEl.appendChild(emojiPicker.element);
+        }
+
+        emojiTriggerBtn.addEventListener('click', () => {
+            emojiPicker.toggle();
+        });
+
+        document.addEventListener('pointerdown', (event) => {
+            if (emojiPicker.isOpen() && !emojiPicker.element.contains(event.target) && !emojiTriggerBtn.contains(event.target)) {
+                emojiPicker.close();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && emojiPicker.isOpen()) {
+                emojiPicker.close();
+            }
+        });
+    }
+
+    // --- Markdown editor toolbar ---
+    function initEditorToolbar() {
+        const toolbar = document.getElementById('message-center-editor-toolbar');
+        if (!toolbar || !composeInputEl) {
+            return;
+        }
+
+        toolbar.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-md-insert]');
+            if (!button) {
+                return;
+            }
+            event.preventDefault();
+            const mdInsert = button.dataset.mdInsert;
+            insertMarkdownSyntax(mdInsert);
+        });
+    }
+
+    function insertMarkdownSyntax(type) {
+        if (!composeInputEl) {
+            return;
+        }
+        const start = composeInputEl.selectionStart ?? composeInputEl.value.length;
+        const end = composeInputEl.selectionEnd ?? composeInputEl.value.length;
+        const value = composeInputEl.value;
+        const selected = value.slice(start, end);
+
+        const syntaxMap = {
+            bold: { before: '**', after: '**', placeholder: '加粗文字' },
+            italic: { before: '*', after: '*', placeholder: '斜体文字' },
+            heading: { before: '## ', after: '', placeholder: '标题' },
+            code: { before: '`', after: '`', placeholder: '代码' },
+            codeblock: { before: '```\n', after: '\n```', placeholder: '代码块' },
+            ul: { before: '- ', after: '', placeholder: '列表项' },
+            ol: { before: '1. ', after: '', placeholder: '列表项' },
+            quote: { before: '> ', after: '', placeholder: '引用文字' },
+            link: { before: '[', after: '](url)', placeholder: '链接文字' },
+        };
+
+        const syntax = syntaxMap[type];
+        if (!syntax) {
+            return;
+        }
+
+        const text = selected || syntax.placeholder;
+        const inserted = `${syntax.before}${text}${syntax.after}`;
+        composeInputEl.value = `${value.slice(0, start)}${inserted}${value.slice(end)}`;
+
+        const nextPos = start + syntax.before.length + text.length + syntax.after.length;
+        composeInputEl.focus();
+        composeInputEl.setSelectionRange(nextPos, nextPos);
+    }
+
+    // --- Rate limit helpers ---
+    function getSendCooldownRemainingMs() {
+        return Math.max(0, state.lastSendAt + state.sendCooldownMs - Date.now());
+    }
+
+    function isSendCooldownActive() {
+        return getSendCooldownRemainingMs() > 0;
+    }
+
+    function updateSendButtonState() {
+        const submitButton = composeFormEl?.querySelector('button[type="submit"]');
+        if (!submitButton) {
+            return;
+        }
+        const cooldown = isSendCooldownActive();
+        submitButton.disabled = cooldown;
+        if (cooldown) {
+            const remaining = Math.ceil(getSendCooldownRemainingMs() / 1000);
+            submitButton.textContent = `${remaining}s 后可发送`;
+        } else {
+            submitButton.textContent = '发送';
+        }
+    }
+
+    function activateSendCooldown(retryAfterSeconds) {
+        const safeSeconds = Math.max(Number(retryAfterSeconds || 12), 1);
+        state.sendCooldownMs = safeSeconds * 1000;
+        state.lastSendAt = Date.now();
+
+        if (state.sendRateLimitTimer) {
+            window.clearTimeout(state.sendRateLimitTimer);
+        }
+
+        updateSendButtonState();
+        state.sendRateLimitTimer = window.setTimeout(() => {
+            state.sendRateLimitTimer = null;
+            state.sendCooldownMs = 12000;
+            updateSendButtonState();
+        }, safeSeconds * 1000);
+    }
 
     function normalizeScope(value) {
         if (value === '' || value == null) {
@@ -405,13 +537,22 @@ if (app) {
         } else {
             conversationBodyEl.innerHTML = `
                 <div class="message-center-messages">
-                    ${messages.map((message) => `
+                    ${messages.map((message) => {
+                        const isAiReply = message.sender_role === 'assistant';
+                        const rawContent = message.content || '';
+                        const contentHtml = isAiReply && typeof globalThis.MarkdownRuntime?.parse === 'function'
+                            ? globalThis.MarkdownRuntime.parse(rawContent)
+                            : escapeHtml(rawContent);
+                        const contentClass = isAiReply
+                            ? 'message-center-message__content md-content'
+                            : 'message-center-message__content';
+                        return `
                         <article class="message-center-message ${message.is_outgoing ? 'is-outgoing' : ''}">
                             <div class="message-center-message__meta">
                                 <strong>${escapeHtml(message.sender_display_name || '')}</strong>
                                 <span>${escapeHtml(formatDate(message.created_at || ''))}</span>
                             </div>
-                            <div class="message-center-message__content">${escapeHtml(message.content || '')}</div>
+                            <div class="${contentClass}">${contentHtml}</div>
                             ${message.can_block_sender && !message.is_sender_blocked ? `
                                 <div class="message-center-message__actions">
                                     <button
@@ -424,7 +565,7 @@ if (app) {
                                 </div>
                             ` : ''}
                         </article>
-                    `).join('')}
+                    `;}).join('')}
                 </div>
             `;
         }
@@ -557,6 +698,12 @@ if (app) {
     async function sendMessage(event) {
         event.preventDefault();
 
+        if (isSendCooldownActive()) {
+            const remaining = Math.ceil(getSendCooldownRemainingMs() / 1000);
+            showToast(`发送太频繁，请 ${remaining} 秒后再发`, 'warning');
+            return;
+        }
+
         if (!state.currentContact) {
             showToast('请先选择联系人', 'warning');
             return;
@@ -583,15 +730,21 @@ if (app) {
             });
 
             composeInputEl.value = '';
+            activateSendCooldown(12);
             state.contacts = response.contacts || state.contacts;
             applySummary(response.summary || state.summary);
             renderContacts();
             await loadConversation(state.currentContact, state.currentScope);
             showToast(response.assistant_reply ? '私信已发送，AI 助教已自动回复' : '私信已发送', 'success');
         } catch (error) {
-            showToast(error.message || '发送失败', 'error');
+            if (error.status === 429 && error.data?.retry_after_seconds) {
+                activateSendCooldown(error.data.retry_after_seconds);
+                showToast(`发送太频繁，请 ${error.data.retry_after_seconds} 秒后再发`, 'warning');
+            } else {
+                showToast(error.message || '发送失败', 'error');
+            }
         } finally {
-            submitButton.disabled = false;
+            updateSendButtonState();
         }
     }
 
@@ -738,6 +891,9 @@ if (app) {
     });
 
     composeFormEl.addEventListener('submit', sendMessage);
+
+    initEmojiPicker();
+    initEditorToolbar();
 
     bootstrap();
 }

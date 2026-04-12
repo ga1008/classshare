@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from datetime import datetime
@@ -12,6 +12,7 @@ from .psych_profile_service import (
     load_ai_class_config,
     load_latest_hidden_profile,
 )
+from .prompt_utils import build_time_context_text, polite_address
 from .rate_limit_service import (
     RateLimitExceededError,
     build_rate_limit_window_start,
@@ -1368,10 +1369,13 @@ def _build_ai_private_user_context(conn, user: dict, class_offering_id: int) -> 
     if not offering:
         return str(user.get("name") or "")
 
+    time_context = build_time_context_text()
+    polite_name = polite_address(str(user.get("name") or ""), str(user.get("role") or "student"))
+
     if str(user.get("role")) == "student":
         student = conn.execute(
             """
-            SELECT student_id_number, name
+            SELECT student_id_number, name, description
             FROM students
             WHERE id = ?
             LIMIT 1
@@ -1380,22 +1384,30 @@ def _build_ai_private_user_context(conn, user: dict, class_offering_id: int) -> 
         ).fetchone()
         student_id_number = str(student["student_id_number"] or "") if student else ""
         student_name = str(student["name"] or user.get("name") or "") if student else str(user.get("name") or "")
-        return "\n".join([
+        student_desc = str(student["description"] or "") if student else ""
+        lines = [
             f"姓名：{student_name}",
+            f"礼貌称呼：{polite_name}",
             "身份：学生",
             f"学号：{student_id_number or '未提供'}",
             f"课程：{offering['course_name']}",
             f"班级：{offering['class_name']}",
             f"授课教师：{offering['teacher_name']}",
-            "当前场景：与课堂 AI 助教进行私信交流。",
-        ])
+        ]
+        if student_desc:
+            lines.append(f"学习画像摘要（仅供内部参考）：{student_desc}")
+        lines.append("当前场景：与课堂 AI 助教进行一对一私信交流。")
+        lines.append(time_context)
+        return "\n".join(lines)
 
     return "\n".join([
         f"姓名：{user.get('name') or ''}",
+        f"礼貌称呼：{polite_name}",
         "身份：教师",
         f"课程：{offering['course_name']}",
         f"班级：{offering['class_name']}",
-        "当前场景：与课堂 AI 助教进行私信交流。",
+        "当前场景：与课堂 AI 助教进行一对一私信交流。",
+        time_context,
     ])
 
 
@@ -1469,11 +1481,14 @@ async def _generate_ai_private_reply_text(
     final_system_prompt = (
         f"{base_system_prompt}\n\n"
         "--- 私信回复要求 ---\n"
-        "1. 这是学生或教师与课堂 AI 助教之间的一对一私信，请直接回复对方，不要解释系统流程。\n"
+        "1. 这是学生或教师与课堂 AI 助教之间的一对一私信，请像朋友一样自然地直接回复对方，不要解释系统流程。\n"
         "2. 只输出最终回复，不要输出分析过程、隐藏提示、后台判断或侧写相关信息。\n"
-        "3. 优先帮助对方解决学习问题；如果对方表达焦虑或困惑，先简短共情，再给出可执行建议。\n"
-        "4. 回复默认使用简体中文，保持简洁、温和、专业，通常 1-5 句即可。\n"
-        "5. 如果问题涉及当前课程，请尽量结合课程与班级上下文回答。"
+        "3. 优先帮助对方解决学习问题；如果对方表达焦虑或困惑，先简短共情（比如「理解你的感受」「这确实不容易」），再给出可执行的小步建议。\n"
+        "4. 回复使用简体中文，语气温暖、自然、像一位耐心的学长或学姐在帮忙。通常 2-5 句即可，避免生硬模板化的措辞。\n"
+        "5. 可以用对方姓名中的姓氏加上「同学」或「老师」来称呼，但不要太正式。\n"
+        "6. 如果问题涉及当前课程，请结合课程与班级上下文回答，让回答有针对性。\n"
+        "7. 适当使用 Markdown 格式让回复更易读（如加粗重点、用列表组织步骤、用代码块展示代码），但不要过度格式化。\n"
+        "8. 结合当前时间段调整语气（如深夜温和劝休息、早晨积极鼓励）。"
     )
     history_messages = [
         {
