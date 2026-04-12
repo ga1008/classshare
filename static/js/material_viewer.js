@@ -64,6 +64,26 @@ function escapeHtml(value) {
         .replace(/'/g, '&#039;');
 }
 
+function buildBlockedDownloadButton() {
+    const title = escapeHtml(material.download_blocked_reason || '当前材料已限制下载');
+    return `
+        <button type="button" class="btn btn-danger resource-download-blocked-btn" data-download-blocked="true" title="${title}" aria-label="${title}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"></circle>
+                <path d="M5 5l14 14"></path>
+            </svg>
+            已限制下载
+        </button>
+    `;
+}
+
+function buildMaterialDownloadAction(label = '\u4e0b\u8f7d\u539f\u6587\u4ef6') {
+    if (material.download_allowed === false) {
+        return buildBlockedDownloadButton();
+    }
+    return `<a href="${material.download_url}" class="btn btn-primary">${label}</a>`;
+}
+
 function parseMarkdownHtml(value) {
     const runtime = window.MarkdownRuntime;
     if (runtime && typeof runtime.parse === 'function') {
@@ -918,12 +938,37 @@ function renderFallback() {
         <div class="materials-file-fallback">
             <h2 style="margin-top:0;">\u5f53\u524d\u7c7b\u578b\u6682\u4e0d\u652f\u6301\u5728\u7ebf\u9884\u89c8</h2>
             <p class="text-muted">\u6750\u6599\u5e93\u5df2\u652f\u6301 Markdown\u3001\u6587\u672c\u4e0e\u56fe\u7247\u5728\u7ebf\u9884\u89c8\uff0c\u5176\u4ed6\u6587\u6863\u7c7b\u578b\u53ef\u7ee7\u7eed\u6269\u5c55\u3002</p>
-            <a href="${material.download_url}" class="btn btn-primary">\u4e0b\u8f7d\u539f\u6587\u4ef6</a>
+            ${buildMaterialDownloadAction('\u4e0b\u8f7d\u539f\u6587\u4ef6')}
         </div>
     `;
     tocEl.innerHTML = '<div class="materials-viewer-empty">\u6b64\u7c7b\u578b\u6750\u6599\u6682\u65e0\u76ee\u5f55\u3002</div>';
     tocCountEl.textContent = '0 \u8282';
     tocEl.onclick = null;
+}
+
+function decorateViewerDownloadActions() {
+    if (!material.download_url || material.download_allowed !== false) {
+        return;
+    }
+
+    document.querySelectorAll('.materials-viewer-actions a').forEach((anchor) => {
+        if (anchor.getAttribute('href') !== material.download_url) {
+            return;
+        }
+        anchor.outerHTML = buildBlockedDownloadButton();
+    });
+}
+
+function bindBlockedDownloadTips() {
+    document.querySelectorAll('[data-download-blocked="true"]').forEach((button) => {
+        if (button.dataset.blockedDownloadBound === 'true') {
+            return;
+        }
+        button.dataset.blockedDownloadBound = 'true';
+        button.addEventListener('click', () => {
+            showToast(material.download_blocked_reason || '当前材料已限制下载', 'warning');
+        });
+    });
 }
 
 function updateEditorEncodingLabel() {
@@ -1045,6 +1090,8 @@ async function init() {
     if (!contentEl) return;
     bindImageLightbox();
     bindSourceEditor();
+    decorateViewerDownloadActions();
+    bindBlockedDownloadTips();
 
     const pendingToast = sessionStorage.getItem('material-viewer-toast');
     if (pendingToast) {
@@ -1054,20 +1101,24 @@ async function init() {
 
     if (material.is_markdown) {
         await renderMarkdown();
+        bindBlockedDownloadTips();
         return;
     }
 
     if (material.preview_type === 'text' || (material.is_text && !material.is_markdown)) {
         renderText();
+        bindBlockedDownloadTips();
         return;
     }
 
     if (material.is_image) {
         renderImage();
+        bindBlockedDownloadTips();
         return;
     }
 
     renderFallback();
+    bindBlockedDownloadTips();
 }
 
 init().catch((error) => {

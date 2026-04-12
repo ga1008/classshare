@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -16,6 +17,71 @@ def _read_url_env(name: str) -> str | None:
     if not normalized:
         return None
     return normalized.rstrip("/")
+
+
+def _read_bool_env(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_size_limit_env(name: str, default: str = "") -> int | None:
+    raw_value = str(os.getenv(name, default) or "").strip()
+    if not raw_value:
+        return None
+
+    normalized = raw_value.replace(" ", "").lower()
+    if normalized in {"0", "off", "false", "none", "unlimited", "no"}:
+        return None
+
+    match = re.fullmatch(r"(?P<value>\d+(?:\.\d+)?)(?P<unit>[kmgt]?i?b|[kmgt])?", normalized)
+    if not match:
+        raise ValueError(
+            f"Invalid value for {name}: '{raw_value}'. Use values like 512MB, 1GB, 0, or off."
+        )
+
+    numeric_value = float(match.group("value"))
+    unit = (match.group("unit") or "b").lower()
+    multiplier_map = {
+        "b": 1,
+        "k": 1024,
+        "kb": 1024,
+        "kib": 1024,
+        "m": 1024 ** 2,
+        "mb": 1024 ** 2,
+        "mib": 1024 ** 2,
+        "g": 1024 ** 3,
+        "gb": 1024 ** 3,
+        "gib": 1024 ** 3,
+        "t": 1024 ** 4,
+        "tb": 1024 ** 4,
+        "tib": 1024 ** 4,
+    }
+    multiplier = multiplier_map.get(unit)
+    if multiplier is None:
+        raise ValueError(
+            f"Unsupported size unit for {name}: '{raw_value}'. Use KB, MB, GB, or TB."
+        )
+
+    parsed_bytes = int(numeric_value * multiplier)
+    return parsed_bytes if parsed_bytes > 0 else None
+
+
+def _format_size_label(size_bytes: int | None) -> str:
+    normalized_size = int(size_bytes or 0)
+    if normalized_size <= 0:
+        return ""
+
+    units = ("B", "KB", "MB", "GB", "TB")
+    value = float(normalized_size)
+    unit_index = 0
+    while value >= 1024 and unit_index < len(units) - 1:
+        value /= 1024.0
+        unit_index += 1
+
+    precision = 0 if value >= 100 or unit_index == 0 else 2
+    return f"{value:.{precision}f} {units[unit_index]}"
 
 
 # --- Paths ---
@@ -62,6 +128,14 @@ STUDENT_HISTORY_COUNT = int(os.getenv("STUDENT_HISTORY_COUNT", 200))
 TEACHER_HISTORY_COUNT = int(os.getenv("TEACHER_HISTORY_COUNT", 500))
 UI_COPY_GENERATION_ENABLED = os.getenv("UI_COPY_GENERATION_ENABLED", "True").lower() == "true"
 UI_COPY_REFRESH_POLL_SECONDS = int(os.getenv("UI_COPY_REFRESH_POLL_SECONDS", 30 * 60))
+
+# --- Classroom download policy ---
+CLASSROOM_DOWNLOAD_LIMIT_ENABLED = _read_bool_env("CLASSROOM_DOWNLOAD_LIMIT_ENABLED", False)
+CLASSROOM_DOWNLOAD_MAX_SIZE_BYTES = _parse_size_limit_env("CLASSROOM_DOWNLOAD_MAX_SIZE", "0")
+CLASSROOM_DOWNLOAD_MAX_SIZE_LABEL = _format_size_label(CLASSROOM_DOWNLOAD_MAX_SIZE_BYTES)
+CLASSROOM_DOWNLOAD_LIMIT_ACTIVE = bool(
+    CLASSROOM_DOWNLOAD_LIMIT_ENABLED and CLASSROOM_DOWNLOAD_MAX_SIZE_BYTES
+)
 
 # --- Security ---
 SECRET_KEY = os.getenv("SECRET_KEY", "DEFAULT_WEAK_SECRET_KEY_REPLACE_ME")

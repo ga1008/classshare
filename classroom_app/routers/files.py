@@ -6,7 +6,7 @@ import hashlib
 import shutil
 import aiofiles
 from datetime import datetime
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 # 导入聊天管理器和 json
 from fastapi import WebSocket, status, WebSocketDisconnect, UploadFile, File, Form, APIRouter, HTTPException, Depends
@@ -40,6 +40,7 @@ from ..services.discussion_attachment_service import (
 from ..services.emoji_service import increment_emoji_usage, resolve_custom_emoji_payloads
 from ..services.file_handler import delete_file_safely
 from ..services.file_service import save_file_globally, get_file_lock, stream_file
+from ..services.download_policy import apply_download_policy, ensure_download_allowed
 from ..services.message_center_service import create_discussion_mention_notifications
 from ..services.rate_limit_service import (
     RateLimitExceededError,
@@ -84,6 +85,106 @@ def _ensure_classroom_access_for_user(conn, class_offering_id: int, user: Option
         raise HTTPException(status_code=403, detail="Permission denied")
 
     return offering
+
+
+def _ensure_course_file_access(conn, file_row, user: Optional[dict]):
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    try:
+        user_pk = int(user.get("id"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=403, detail="Invalid user")
+
+    if user.get("role") == "teacher":
+        if int(file_row["created_by_teacher_id"]) != user_pk:
+            raise HTTPException(status_code=403, detail="Permission denied")
+        return
+
+    if user.get("role") != "student":
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    if int(file_row["is_teacher_resource"] or 0):
+        raise HTTPException(status_code=403, detail="无权访问教师资源")
+    if not int(file_row["is_public"] or 0):
+        raise HTTPException(status_code=403, detail="当前文件未对学生开放")
+
+    classroom = conn.execute(
+        """
+        SELECT o.id
+        FROM class_offerings o
+        JOIN students s ON s.class_id = o.class_id
+        WHERE o.course_id = ?
+          AND s.id = ?
+        LIMIT 1
+        """,
+        (file_row["course_id"], user_pk),
+    ).fetchone()
+    if classroom is None:
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+
+def _normalize_shared_file_description(raw_description: object) -> str:
+    description = str(raw_description or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    return description[:5000]
+
+
+def _normalize_shared_file_original_link(raw_link: object) -> str:
+    normalized = str(raw_link or "").strip()
+    if not normalized:
+        return ""
+    if len(normalized) > 2048:
+        raise HTTPException(status_code=400, detail="原始链接长度不能超过 2048 个字符")
+
+    parsed = urlsplit(normalized)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="原始链接仅支持 http 或 https 地址")
+
+    return normalized
+
+
+def _update_course_file_metadata(
+    conn,
+    *,
+    file_id: int,
+    teacher_id: int,
+    description: str | None = None,
+    original_link: str | None = None,
+):
+    file_row = conn.execute(
+        """
+        SELECT cf.id, cf.file_name, cf.course_id, cf.description, cf.original_link
+        FROM course_files cf
+        JOIN courses c ON cf.course_id = c.id
+        WHERE cf.id = ? AND c.created_by_teacher_id = ?
+        """,
+        (file_id, teacher_id),
+    ).fetchone()
+    if not file_row:
+        raise HTTPException(status_code=404, detail="文件不存在或无操作权限")
+
+    normalized_description = (
+        _normalize_shared_file_description(description)
+        if description is not None
+        else str(file_row["description"] or "")
+    )
+    normalized_original_link = (
+        _normalize_shared_file_original_link(original_link)
+        if original_link is not None
+        else str(file_row["original_link"] or "")
+    )
+
+    conn.execute(
+        "UPDATE course_files SET description = ?, original_link = ? WHERE id = ?",
+        (normalized_description, normalized_original_link, file_id),
+    )
+    return {
+        "id": int(file_row["id"]),
+        "course_id": int(file_row["course_id"]),
+        "file_name": str(file_row["file_name"] or ""),
+        "description": normalized_description,
+        "original_link": normalized_original_link,
+    }
 
 
 def _build_discussion_quote_payload(message_payload: dict | None) -> Optional[dict]:
@@ -237,6 +338,7 @@ async def _process_discussion_chat_message(
     requested_attachment_ids = requested_attachment_ids or []
 
     with get_db_connection() as conn:
+        _ensure_classroom_access_for_user(conn, class_offering_id, user)
         custom_emoji_payloads = resolve_custom_emoji_payloads(
             conn,
             class_offering_id,
@@ -391,8 +493,13 @@ class UploadInitRequest(BaseModel):
 class UploadCompleteRequest(BaseModel):
     upload_id: str
 
+class FileMetadataUpdateRequest(BaseModel):
+    description: str = ""
+    original_link: str = ""
+
+
 class DescriptionUpdateRequest(BaseModel):
-    description: str
+    description: str = ""
 
 
 # ==================== 辅助函数 ====================
@@ -446,7 +553,7 @@ async def check_file_exists(
     with get_db_connection() as conn:
         # 全局查找：不限 course_id
         existing = conn.execute(
-            """SELECT id, file_name, file_size, file_hash, description, uploaded_at
+            """SELECT id, file_name, file_size, file_hash, description, original_link, uploaded_at
                FROM course_files
                WHERE file_name = ? AND file_size = ?
                LIMIT 1""",
@@ -465,8 +572,13 @@ async def check_file_exists(
                 return {
                     "exists": True,
                     "in_current_course": True,
-                    "file": dict(in_course) | {"file_name": existing["file_name"], "file_size": existing["file_size"],
-                                                "description": existing["description"], "uploaded_at": existing["uploaded_at"]}
+                    "file": dict(in_course) | {
+                        "file_name": existing["file_name"],
+                        "file_size": existing["file_size"],
+                        "description": existing["description"],
+                        "original_link": existing["original_link"],
+                        "uploaded_at": existing["uploaded_at"],
+                    }
                 }
             else:
                 # 其他课程有此文件 — 自动关联到当前课程
@@ -474,11 +586,11 @@ async def check_file_exists(
                     conn.execute("""
                                  INSERT INTO course_files
                                  (course_id, file_name, file_hash, file_size, is_public, is_teacher_resource,
-                                  description, uploaded_by_teacher_id)
-                                 VALUES (?, ?, ?, ?, 1, 0, ?, ?)
+                                  description, original_link, uploaded_by_teacher_id)
+                                 VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?)
                                  """, (req.course_id, existing["file_name"], existing["file_hash"],
                                        existing["file_size"], existing["description"],
-                                       user['id']))  # 使用 existing["description"]
+                                       existing["original_link"], user['id']))
                     conn.commit()
                     new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
                 except Exception as e:
@@ -492,7 +604,8 @@ async def check_file_exists(
                         "id": new_id,
                         "file_name": existing["file_name"],
                         "file_size": existing["file_size"],
-                        "description": "",
+                        "description": existing["description"],
+                        "original_link": existing["original_link"],
                         "uploaded_at": existing["uploaded_at"]
                     }
                 }
@@ -628,64 +741,22 @@ async def complete_chunked_upload(
     temp_dir = Path(upload['temp_dir'])
     total_chunks = upload['total_chunks']
 
-    # 阶段 1：重组文件 + 同时计算 SHA256（内存高效，流式处理）
-    global_dir = Path(GLOBAL_FILES_DIR)
-    global_dir.mkdir(parents=True, exist_ok=True)
-    sha256_hash = hashlib.sha256()
-    temp_assembled = temp_dir / "assembled"
-    total_size = 0
-
     try:
-        async with aiofiles.open(temp_assembled, 'wb') as out_file:
-            for i in range(total_chunks):
-                chunk_path = temp_dir / f"chunk_{i:06d}"
-                if not chunk_path.exists():
-                    raise HTTPException(500, f"分块文件丢失: chunk_{i:06d}")
-                async with aiofiles.open(chunk_path, 'rb') as chunk_file:
-                    # 使用较大的缓冲区提高合并 1Gb 以上大文件的速度
-                    while data := await chunk_file.read(1024 * 1024 * 5):
-                        sha256_hash.update(data)
-                        await out_file.write(data)
-                        total_size += len(data)
-
-        file_hash = sha256_hash.hexdigest()
-        final_path = global_dir / file_hash
-
-        # 内容哈希去重：如果全局存储已有此内容，跳过复制
-        if not final_path.exists():
-            shutil.move(str(temp_assembled), str(final_path))
-        else:
-            temp_assembled.unlink(missing_ok=True)
-
-        # 核心优化：异步调用线程池，后端瞬间丝滑
-        try:
-            file_hash, total_size = await asyncio.to_thread(
-                sync_assemble_file, temp_dir, total_chunks, GLOBAL_FILES_DIR
-            )
-        except Exception as e:
-            # 失败处理...
-            raise HTTPException(500, f"上传完成失败: {e}")
-
-        file_hash = sha256_hash.hexdigest()
-        final_path = GLOBAL_FILES_DIR / file_hash
-
-        # 内容哈希去重：如果全局存储已有此内容，跳过复制
-        if not final_path.exists():
-            shutil.move(str(temp_assembled), str(final_path))
-        else:
-            temp_assembled.unlink(missing_ok=True)
+        file_hash, total_size = await asyncio.to_thread(
+            sync_assemble_file, temp_dir, total_chunks, GLOBAL_FILES_DIR
+        )
 
         # 阶段 2：写入数据库
         with get_db_connection() as conn:
             conn.execute("""
                 INSERT INTO course_files
                 (course_id, file_name, file_hash, file_size,
-                 is_public, is_teacher_resource, description, uploaded_by_teacher_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 is_public, is_teacher_resource, description, original_link, uploaded_by_teacher_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 upload['course_id'], upload['file_name'], file_hash, total_size,
                 upload['is_public'], upload['is_teacher_resource'],
-                upload['description'], upload['teacher_id']
+                upload['description'], '', upload['teacher_id']
             ))
             conn.execute(
                 "UPDATE chunked_uploads SET status = 'completed' WHERE upload_id = ?",
@@ -724,28 +795,50 @@ async def complete_chunked_upload(
         raise HTTPException(500, f"上传完成失败: {e}")
 
 
+@router.put("/api/files/{file_id}/metadata")
+async def update_file_metadata(
+    file_id: int,
+    req: FileMetadataUpdateRequest,
+    user: dict = Depends(get_current_teacher)
+):
+    """更新共享文件详情（仅教师）"""
+    with get_db_connection() as conn:
+        metadata = _update_course_file_metadata(
+            conn,
+            file_id=file_id,
+            teacher_id=int(user["id"]),
+            description=req.description,
+            original_link=req.original_link,
+        )
+        conn.commit()
+    return {
+        "status": "success",
+        "message": "文件详情已更新",
+        "file": metadata,
+    }
+
+
 @router.put("/api/files/{file_id}/description")
 async def update_file_description(
     file_id: int,
     req: DescriptionUpdateRequest,
     user: dict = Depends(get_current_teacher)
 ):
-    """更新文件简介（仅教师）"""
+    """兼容旧版，仅更新文件简介。"""
     with get_db_connection() as conn:
-        file_row = conn.execute("""
-            SELECT cf.id, cf.course_id FROM course_files cf
-            JOIN courses c ON cf.course_id = c.id
-            WHERE cf.id = ? AND c.created_by_teacher_id = ?
-        """, (file_id, user['id'])).fetchone()
-        if not file_row:
-            raise HTTPException(404, "文件不存在或无操作权限")
-
-        conn.execute(
-            "UPDATE course_files SET description = ? WHERE id = ?",
-            (req.description, file_id)
+        metadata = _update_course_file_metadata(
+            conn,
+            file_id=file_id,
+            teacher_id=int(user["id"]),
+            description=req.description,
+            original_link=None,
         )
         conn.commit()
-    return {"status": "success", "message": "文件简介已更新"}
+    return {
+        "status": "success",
+        "message": "文件简介已更新",
+        "file": metadata,
+    }
 
 
 # ==================== 原有端点 (保留) ====================
@@ -884,9 +977,10 @@ async def download_course_file(
     if not file_info:
         raise HTTPException(404, "文件不存在")
 
-    # 权限检查
-    if file_info['is_teacher_resource'] and user['role'] != 'teacher':
-        raise HTTPException(403, "无权访问教师资源")
+    with get_db_connection() as conn:
+        _ensure_course_file_access(conn, file_info, user)
+
+    ensure_download_allowed(file_info["file_size"], resource_label="共享文件")
 
     file_path = Path(GLOBAL_FILES_DIR) / file_info['file_hash']
     if not file_path.exists():
@@ -918,9 +1012,12 @@ async def get_classroom_files(
         class_offering_id: int,
         user: dict = Depends(get_current_user)
 ):
+    """获取指定课堂(课程)的文件列表。"""
     """获取指定课堂(课程)的文件列表"""
     with get_db_connection() as conn:
         # 1. 根据课堂ID找到课程ID
+        _ensure_classroom_access_for_user(conn, class_offering_id, user)
+
         offering = conn.execute(
             "SELECT course_id FROM class_offerings WHERE id = ?",
             (class_offering_id,)
@@ -931,13 +1028,13 @@ async def get_classroom_files(
         course_id = offering['course_id']
 
         # 2. 根据用户角色获取文件列表（含新字段）
-        query = """SELECT id, file_name, file_size, description, uploaded_at, uploaded_by_teacher_id
+        query = """SELECT id, file_name, file_size, description, original_link, uploaded_at, uploaded_by_teacher_id
                    FROM course_files WHERE course_id = ?"""
         params = [course_id]
 
         # 学生看不到教师资源
         if user['role'] != 'teacher':
-            query += " AND is_teacher_resource = 0"
+            query += " AND is_public = 1 AND is_teacher_resource = 0"
 
         query += " ORDER BY uploaded_at DESC"
         files = conn.execute(query, params).fetchall()
@@ -945,8 +1042,16 @@ async def get_classroom_files(
         # 3. 告知前端当前是否是教师 (用于显示操作按钮)
         is_teacher = (user['role'] == 'teacher')
 
+    payload_files = []
+
     # 将 sqlite3.Row 转换为字典列表
-    return {"files": [dict(f) for f in files], "is_teacher": is_teacher}
+    payload_files = []
+    for row in files:
+        item = dict(row)
+        item["download_url"] = f"/download/course_file/{item['id']}"
+        payload_files.append(apply_download_policy(item, resource_label="共享文件"))
+
+    return {"files": payload_files, "is_teacher": is_teacher}
 
 
 @router.post("/api/classrooms/{class_offering_id}/discussion-attachments")

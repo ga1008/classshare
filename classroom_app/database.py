@@ -351,6 +351,7 @@ def init_database():
                             is_public BOOLEAN DEFAULT TRUE,
                             is_teacher_resource BOOLEAN DEFAULT FALSE,
                             description TEXT DEFAULT '',  -- 文件简介
+                            original_link TEXT DEFAULT '',
                             uploaded_by_teacher_id INTEGER,  -- 上传者教师ID
                             uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP,
                             FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE,
@@ -361,6 +362,10 @@ def init_database():
             # 兼容已有数据库：为 course_files 添加新列
             try:
                 conn.execute("ALTER TABLE course_files ADD COLUMN description TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE course_files ADD COLUMN original_link TEXT DEFAULT ''")
             except sqlite3.OperationalError:
                 pass  # 列已存在
             try:

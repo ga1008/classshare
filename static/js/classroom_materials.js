@@ -56,6 +56,32 @@ function getVisualMeta(item) {
     return { color: fileMeta.color, label: fileMeta.label, badge: '' };
 }
 
+function getDownloadAction(item) {
+    if (item.node_type !== 'file') {
+        return '';
+    }
+
+    if (item.download_allowed !== false) {
+        return '<button type="button" class="btn btn-ghost btn-sm" data-action="download">下载</button>';
+    }
+
+    const title = escapeHtml(item.download_blocked_reason || '已限制下载');
+    return `
+        <button
+            type="button"
+            class="btn btn-ghost btn-sm resource-download-blocked"
+            data-action="download-blocked"
+            title="${title}"
+            aria-label="${title}"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"></circle>
+                <path d="M5 5l14 14"></path>
+            </svg>
+        </button>
+    `;
+}
+
 function updateSelectionBar() {
     const el = refs().selectionBar;
     if (!el) return;
@@ -116,7 +142,7 @@ function renderList() {
                         ${primaryAction.label}
                     </button>
                     ${documentAction}
-                    ${item.node_type === 'file' ? '<button type="button" class="btn btn-ghost btn-sm" data-action="download">下载</button>' : ''}
+                    ${getDownloadAction(item)}
                 </div>
             </div>
         `;
@@ -139,8 +165,18 @@ async function loadMaterials(parentId = null, trackHistory = false) {
     renderList();
 }
 
+function getBlockedSelectedItems(ids) {
+    return ids
+        .map((id) => state.items.find((item) => Number(item.id) === Number(id)))
+        .filter((item) => item && item.node_type === 'file' && item.download_allowed === false);
+}
+
 async function downloadSelected(ids) {
     if (!ids.length) return;
+    const blockedItems = getBlockedSelectedItems(ids);
+    if (blockedItems.length) {
+        throw new Error(blockedItems[0].download_blocked_reason || '所选材料中包含已限制下载的文件');
+    }
     const response = await fetch('/api/materials/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -246,6 +282,8 @@ export function init(appConfig) {
                 return;
             }
             window.open(viewerUrl, '_blank', 'noopener');
+        } else if (action === 'download-blocked') {
+            showToast(item.download_blocked_reason || '当前材料已限制下载', 'warning');
         } else if (action === 'download') {
             window.location.href = `/materials/download/${materialId}`;
         }

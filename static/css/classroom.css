@@ -2597,6 +2597,207 @@
     box-shadow: none;
 }
 
+.resource-file-card {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: var(--spacing-md);
+    cursor: pointer;
+}
+
+.resource-file-main {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.9rem;
+    min-width: 0;
+    flex: 1;
+}
+
+.resource-file-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 0.95rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.resource-file-copy {
+    min-width: 0;
+    flex: 1;
+}
+
+.resource-file-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.resource-file-title {
+    display: block;
+    min-width: 0;
+    font-size: 0.98rem;
+    line-height: 1.4;
+    color: var(--text-primary);
+}
+
+.resource-file-badges {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.4rem;
+    flex-shrink: 0;
+}
+
+.resource-file-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.18rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #155e75;
+    background: rgba(8, 145, 178, 0.12);
+}
+
+.resource-file-badge.is-danger {
+    color: #b91c1c;
+    background: rgba(239, 68, 68, 0.12);
+}
+
+.resource-file-meta {
+    margin-top: 0.25rem;
+    font-size: 0.84rem;
+    color: var(--text-muted);
+}
+
+.resource-file-summary {
+    margin: 0.55rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+    line-height: 1.55;
+}
+
+.resource-file-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+}
+
+.resource-download-blocked,
+.resource-download-blocked-btn {
+    color: #dc2626;
+}
+
+.resource-download-blocked:hover,
+.resource-download-blocked:focus-visible {
+    color: #b91c1c;
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.resource-download-blocked-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.shared-file-modal-meta {
+    margin: 0.25rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.86rem;
+}
+
+.shared-file-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.shared-file-modal-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 1rem;
+    background: rgba(248, 250, 252, 0.72);
+}
+
+.shared-file-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.shared-file-section-header h4 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.shared-file-description-view {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    color: var(--text-secondary);
+    line-height: 1.7;
+}
+
+.shared-file-description-view p {
+    margin: 0;
+}
+
+.shared-file-download-status {
+    padding: 0.95rem 1rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(239, 68, 68, 0.18);
+    background: rgba(254, 242, 242, 0.96);
+    color: #991b1b;
+}
+
+.shared-file-download-status strong {
+    display: inline-block;
+    margin-bottom: 0.3rem;
+}
+
+.shared-file-download-status p,
+.shared-file-download-hint {
+    margin: 0;
+    line-height: 1.65;
+}
+
+.shared-file-link-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.shared-file-textarea {
+    min-height: 8.25rem;
+    resize: vertical;
+}
+
+.shared-file-modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.shared-file-footer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.65rem;
+}
+
 .upload-dropzone-rich {
     border: 1px dashed rgba(148, 163, 184, 0.3);
     background:
@@ -2834,6 +3035,30 @@
     .header-actions {
         width: 100%;
         flex-wrap: wrap;
+    }
+
+    .resource-file-card {
+        flex-direction: column;
+    }
+
+    .resource-file-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .shared-file-modal-footer {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .shared-file-footer-actions {
+        justify-content: stretch;
+    }
+
+    .shared-file-footer-actions .btn,
+    #shared-file-download-slot .btn {
+        width: 100%;
+        justify-content: center;
     }
 
     .classroom-page .modal-dialog-wide {

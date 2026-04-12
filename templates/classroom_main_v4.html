@@ -390,6 +390,68 @@
         </section>
     </div>
 
+    <div id="shared-file-modal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog modal-dialog-scrollable">
+            <div class="modal-content shared-file-modal">
+                <div class="modal-header">
+                    <div>
+                        <p class="modal-subtitle">课堂共享文件</p>
+                        <h3 class="modal-title" id="shared-file-modal-title">文件详情</h3>
+                        <p class="shared-file-modal-meta" id="shared-file-modal-meta"></p>
+                    </div>
+                    <button class="modal-close" data-dismiss="modal" aria-label="关闭">&times;</button>
+                </div>
+                <div class="modal-body shared-file-modal-body">
+                    <div class="shared-file-download-status" id="shared-file-download-status" hidden>
+                        <strong>下载已限制</strong>
+                        <p id="shared-file-download-status-text">当前文件超出下载上限。</p>
+                    </div>
+
+                    <section class="shared-file-modal-section">
+                        <div class="shared-file-section-header">
+                            <h4>文件详情</h4>
+                        </div>
+                        <div class="shared-file-description-view" id="shared-file-description-view">
+                            <p class="text-muted">教师暂未补充文件详情。</p>
+                        </div>
+                    </section>
+
+                    <section class="shared-file-modal-section">
+                        <div class="shared-file-section-header">
+                            <h4>原始链接</h4>
+                        </div>
+                        <p class="shared-file-download-hint" id="shared-file-download-hint">教师未提供原始链接。</p>
+                        <div class="shared-file-link-actions" id="shared-file-link-actions" hidden>
+                            <button type="button" class="btn btn-outline btn-sm" id="shared-file-copy-link-btn">复制原始链接</button>
+                            <button type="button" class="btn btn-outline btn-sm" id="shared-file-open-link-btn">打开原始链接</button>
+                        </div>
+                    </section>
+
+                    <section class="shared-file-modal-section" id="shared-file-teacher-form" {% if user_info.role != 'teacher' %}hidden{% endif %}>
+                        <div class="shared-file-section-header">
+                            <h4>教师设置</h4>
+                            <span class="text-muted text-sm">为学生补充辨析说明和原始来源。</span>
+                        </div>
+                        <label class="form-label" for="shared-file-description-input">详情描述</label>
+                        <textarea id="shared-file-description-input" class="form-control shared-file-textarea" rows="6" placeholder="例如：安装前注意事项、适用系统版本、课堂使用建议、常见报错说明等。"></textarea>
+                        <label class="form-label" for="shared-file-original-link-input" style="margin-top: var(--spacing-md);">原始链接</label>
+                        <input id="shared-file-original-link-input" type="url" class="form-control" placeholder="https://example.com/download">
+                    </section>
+                </div>
+                <div class="modal-footer shared-file-modal-footer">
+                    <div id="shared-file-download-slot"></div>
+                    <div class="shared-file-footer-actions">
+                        {% if user_info.role == 'teacher' %}
+                        <button type="button" class="btn btn-ghost text-danger" id="shared-file-delete-btn">删除文件</button>
+                        <button type="button" class="btn btn-primary" id="shared-file-save-btn">保存详情</button>
+                        {% endif %}
+                        <button type="button" class="btn btn-outline" data-dismiss="modal">关闭</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <aside class="workspace-sidebar">
         <section class="discussion-room" id="discussion-room">
             <div class="discussion-room-header">

@@ -19,6 +19,7 @@ from ..database import get_db_connection
 from ..dependencies import get_current_teacher, get_current_user
 from ..services.file_handler import delete_file_safely
 from ..services.file_service import save_file_globally
+from ..services.download_policy import apply_download_policy, ensure_download_allowed
 from ..services.materials_service import (
     MATERIAL_TYPE_REGISTRY,
     attach_learning_document_metadata,
@@ -162,7 +163,8 @@ async def _write_material_file(file_hash: str, payload_bytes: bytes):
 def _serialize_material_items(conn, rows) -> list[dict]:
     items = [serialize_material_row(row) for row in rows]
     items = attach_learning_document_metadata(conn, items)
-    return attach_git_repository_metadata(conn, items)
+    items = attach_git_repository_metadata(conn, items)
+    return [_decorate_material_download_policy(item) for item in items]
 
 
 def _decorate_learning_document_item(item: dict) -> dict:
@@ -171,6 +173,11 @@ def _decorate_learning_document_item(item: dict) -> dict:
     else:
         item["document_viewer_url"] = ""
     return item
+
+
+def _decorate_material_download_policy(item: dict) -> dict:
+    resource_label = "课堂材料" if item.get("node_type") == "file" else "材料压缩包"
+    return apply_download_policy(item, resource_label=resource_label)
 
 
 def _strip_code_fence(raw_text: str) -> str:
@@ -376,6 +383,25 @@ def _count_global_file_references(conn, file_hash: str) -> int:
         (file_hash,),
     ).fetchone()[0]
     return int(material_refs) + int(course_refs)
+
+
+def _estimate_material_archive_size(conn, material_rows: list[dict]) -> int:
+    selected_row_ids: set[int] = set()
+    total_size = 0
+
+    for material_row in material_rows:
+        subtree_rows = _collect_subtree_rows(conn, material_row, include_internal=False)
+        for row in subtree_rows:
+            row_dict = dict(row)
+            row_id = int(row_dict["id"])
+            if row_id in selected_row_ids:
+                continue
+            selected_row_ids.add(row_id)
+            if row_dict["node_type"] != "file":
+                continue
+            total_size += int(row_dict.get("file_size") or 0)
+
+    return total_size
 
 
 def _collect_subtree_rows(conn, material_row, include_internal: bool = True):
@@ -656,6 +682,7 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
         if material["node_type"] == "folder":
             detail = attach_learning_document_metadata(conn, [detail])[0]
             detail = _decorate_learning_document_item(detail)
+        detail = _decorate_material_download_policy(detail)
 
     return {"status": "success", "material": detail}
 
@@ -1017,7 +1044,7 @@ async def get_classroom_materials(
                 ).fetchone()[0]
                 row_dict = dict(row)
                 row_dict["child_count"] = int(child_count)
-                items.append(serialize_material_row(row_dict))
+                items.append(_decorate_material_download_policy(serialize_material_row(row_dict)))
             items = attach_git_repository_metadata(conn, items)
             items = [_decorate_learning_document_item(item) for item in attach_learning_document_metadata(conn, items)]
             return {
@@ -1053,14 +1080,16 @@ async def get_classroom_materials(
             if is_git_internal_material_path(row_dict["material_path"]):
                 continue
             if is_descendant_path(row_dict["material_path"], anchor["material_path"]):
-                items.append(serialize_material_row(row_dict))
+                items.append(_decorate_material_download_policy(serialize_material_row(row_dict)))
         items = attach_git_repository_metadata(conn, items)
         items = [_decorate_learning_document_item(item) for item in attach_learning_document_metadata(conn, items)]
 
         breadcrumbs = _slice_breadcrumbs_from_anchor(get_material_breadcrumbs(conn, parent_id), anchor["id"])
         return {
             "status": "success",
-            "current_folder": attach_git_repository_metadata(conn, [serialize_material_row(folder)])[0],
+            "current_folder": _decorate_material_download_policy(
+                attach_git_repository_metadata(conn, [serialize_material_row(folder)])[0]
+            ),
             "breadcrumbs": breadcrumbs,
             "items": items,
         }
@@ -1096,6 +1125,7 @@ async def material_viewer_page(
                 "ai_parse_result": json.loads(material["ai_parse_result_json"]) if material["ai_parse_result_json"] else None,
             },
         )
+        preview_payload = _decorate_material_download_policy(preview_payload)
 
     if material["preview_type"] in {"markdown", "text"}:
         preview_payload["content"], preview_payload["content_encoding"] = await _load_material_text_content(
@@ -1119,10 +1149,14 @@ async def material_viewer_page(
 
 @router.get("/materials/raw/{material_id}", response_class=FileResponse)
 async def get_material_raw(material_id: int, user: dict = Depends(get_current_user)):
+    raw_preview_only = False
     with get_db_connection() as conn:
         material = ensure_user_material_access(conn, material_id, user)
+    raw_preview_only = material["preview_type"] == "image"
     if material["node_type"] != "file":
         raise HTTPException(400, "文件夹不能直接预览")
+    if not raw_preview_only:
+        raise HTTPException(400, "仅图片材料支持原始内容访问")
     file_path = _load_material_storage_path(material)
     return FileResponse(file_path, media_type=material["mime_type"] or "application/octet-stream")
 
@@ -1131,6 +1165,7 @@ async def get_material_raw(material_id: int, user: dict = Depends(get_current_us
 async def download_material(material_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         material = ensure_user_material_access(conn, material_id, user)
+    ensure_download_allowed(material["file_size"], resource_label="课堂材料")
     if material["node_type"] != "file":
         raise HTTPException(400, "文件夹请使用批量下载")
     file_path = _load_material_storage_path(material)
@@ -1159,6 +1194,8 @@ async def batch_download_materials(payload: MaterialBatchDownloadRequest, user: 
         for material_id in unique_ids:
             selected_rows.append(dict(ensure_user_material_access(conn, int(material_id), user)))
 
+        archive_source_size = _estimate_material_archive_size(conn, selected_rows)
+        ensure_download_allowed(archive_source_size, resource_label="所选课堂材料压缩包")
         temp_path = _create_material_zip(conn, selected_rows)
 
     archive_title = f"course-materials-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
