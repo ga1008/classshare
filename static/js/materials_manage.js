@@ -46,12 +46,29 @@ function parsePositiveInt(value) {
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+function normalizeIdentityHint(value) {
+    return normalizeKeyword(value).toLowerCase();
+}
+
+function shouldIgnoreInitialKeyword(keyword) {
+    const normalizedKeyword = normalizeIdentityHint(keyword);
+    if (!normalizedKeyword) {
+        return false;
+    }
+
+    const hints = Array.isArray(window.MATERIALS_MANAGE_CONFIG?.userIdentityHints)
+        ? window.MATERIALS_MANAGE_CONFIG.userIdentityHints
+        : [];
+    return hints.some((hint) => normalizeIdentityHint(hint) === normalizedKeyword);
+}
+
 function getInitialLibraryState() {
     const params = new URLSearchParams(window.location.search);
     const sortBy = normalizeSortBy(params.get('sort_by'));
+    const initialKeyword = normalizeKeyword(params.get('keyword'));
     return {
         parentId: parsePositiveInt(params.get('parent_id')),
-        keyword: normalizeKeyword(params.get('keyword')),
+        keyword: shouldIgnoreInitialKeyword(initialKeyword) ? '' : initialKeyword,
         sortBy,
         sortOrder: normalizeSortOrder(params.get('sort_order'), sortBy),
     };
@@ -91,6 +108,7 @@ const state = {
     items: [],
     activeMaterialId: null,
     activeDetail: null,
+    detailRequestId: 0,
     selectedIds: new Set(),
     currentFolder: null,
     currentBreadcrumbs: [],
@@ -119,6 +137,12 @@ const refs = {
     listBody: document.getElementById('materials-list-body'),
     breadcrumbs: document.getElementById('materials-breadcrumbs'),
     detail: document.getElementById('materials-detail'),
+    detailModal: document.getElementById('materials-detail-modal'),
+    detailModalBody: document.getElementById('materials-detail-modal-body'),
+    detailModalCloseBtn: document.getElementById('materials-detail-modal-close-btn'),
+    detailModalLabel: document.getElementById('materials-detail-modal-label'),
+    detailModalTitle: document.getElementById('materials-detail-modal-title'),
+    detailModalPath: document.getElementById('materials-detail-modal-path'),
     backBtn: document.getElementById('materials-back-btn'),
     upBtn: document.getElementById('materials-up-btn'),
     refreshBtn: document.getElementById('materials-refresh-btn'),
@@ -177,6 +201,10 @@ const refs = {
     repositoryCredentialHint: document.getElementById('materials-repository-credential-hint'),
     repositoryCredentialSaveBtn: document.getElementById('materials-repository-credential-save-btn'),
 };
+
+if (refs.detail && refs.detailModalBody && refs.detail.parentElement !== refs.detailModalBody) {
+    refs.detailModalBody.appendChild(refs.detail);
+}
 
 function getMetaText(item) {
     if (!item) return '--';
@@ -269,6 +297,33 @@ function renderRepositoryToolbar() {
     refs.repositoryBtn.hidden = !(state.currentFolder && isGitRepository(state.currentFolder));
 }
 
+function renderNavigationState() {
+    refs.backBtn.disabled = state.history.length === 0;
+    refs.upBtn.disabled = state.currentBreadcrumbs.length === 0;
+}
+
+function updateDetailModalHeader(detail) {
+    refs.detailModalLabel.textContent = detail ? getMaterialTypeLabel(detail) : '材料详情';
+    refs.detailModalTitle.textContent = detail?.name || '课程材料详情';
+    refs.detailModalPath.textContent = detail?.material_path || '/';
+}
+
+function isDetailModalOpen() {
+    return Boolean(refs.detailModal && refs.detailModal.style.display !== 'none');
+}
+
+function openDetailModal() {
+    if (!refs.detailModal) return;
+    refs.detailModal.setAttribute('aria-hidden', 'false');
+    openModal('materials-detail-modal');
+}
+
+function closeDetailModal() {
+    if (!refs.detailModal) return;
+    refs.detailModal.setAttribute('aria-hidden', 'true');
+    closeModal('materials-detail-modal');
+}
+
 function renderList() {
     if (!state.items.length) {
         const emptyText = state.filters.keyword
@@ -284,6 +339,8 @@ function renderList() {
         const activeClass = Number(item.id) === Number(state.activeMaterialId) ? 'is-active' : '';
         const selectedClass = state.selectedIds.has(Number(item.id)) ? 'is-selected' : '';
         const primaryAction = getMaterialPrimaryAction(item);
+        const aiStatus = item.can_ai_parse ? `<span class="materials-meta-item">AI ${escapeHtml(item.ai_parse_status || 'idle')}</span>` : '';
+        const readmeStatus = hasLearningDocument(item) ? '<span class="materials-meta-item">README</span>' : '';
         const documentAction = hasLearningDocument(item)
             ? '<button type="button" class="btn btn-outline btn-sm" data-action="view-doc">文档</button>'
             : '';
@@ -312,6 +369,8 @@ function renderList() {
                         <span class="materials-type-pill">${escapeHtml(getMaterialTypeLabel(item))}</span>
                         <span class="materials-meta-item">${escapeHtml(getMetaText(item))}</span>
                         ${item.assignment_count ? `<span class="materials-meta-item">已分配 ${escapeHtml(String(item.assignment_count))} 次</span>` : ''}
+                        ${aiStatus}
+                        ${readmeStatus}
                     </div>
                 </div>
                 <div class="materials-row-time">
@@ -397,6 +456,8 @@ function renderRepositorySummary(detail) {
 }
 
 function renderDetail(detail) {
+    updateDetailModalHeader(detail);
+
     if (!detail) {
         refs.detail.innerHTML = '<div class="materials-empty">选择一项材料后，这里会显示详情、AI 摘要与课堂分配状态。</div>';
         return;
@@ -406,86 +467,126 @@ function renderDetail(detail) {
     const optimizedUrl = detail.has_optimized_version ? `/materials/view/${detail.id}?variant=optimized` : '';
     const aiSummary = detail.ai_parse_result?.summary || '尚未执行 AI 解析。';
     const assignmentCount = Array.isArray(detail.assignments) ? detail.assignments.length : 0;
+    const repositoryMeta = getRepositoryVisualMeta(detail);
     const previewLabel = detail.node_type === 'folder' && detail.document_readme_id
         ? '查看文档'
         : (detail.editable ? '预览 / 编辑' : '全屏预览');
+    const repositoryBadge = repositoryMeta
+        ? `<span class="materials-repo-badge" style="--repo-color:${repositoryMeta.color};">${escapeHtml(repositoryMeta.badge)}</span>`
+        : '';
+    const keywords = detail.ai_parse_result?.keywords?.length
+        ? `<div class="text-muted text-sm mt-2">关键词：${escapeHtml(detail.ai_parse_result.keywords.join('、'))}</div>`
+        : '';
+    const teachingValue = detail.ai_parse_result?.teaching_value
+        ? `
+            <div class="materials-detail-note">
+                <strong>教学价值</strong>
+                <div>${escapeHtml(detail.ai_parse_result.teaching_value)}</div>
+            </div>
+        `
+        : '';
+    const cautions = detail.ai_parse_result?.cautions
+        ? `
+            <div class="materials-detail-note">
+                <strong>使用提醒</strong>
+                <div>${escapeHtml(detail.ai_parse_result.cautions)}</div>
+            </div>
+        `
+        : '';
 
     refs.detail.innerHTML = `
-        <div>
-            <div class="text-muted text-sm">${escapeHtml(getMaterialTypeLabel(detail))}</div>
-            <h3 title="${escapeHtml(detail.name)}">${escapeHtml(detail.name)}</h3>
-            <div class="text-muted text-sm">${escapeHtml(detail.material_path || '')}</div>
-        </div>
-        <div class="materials-detail-meta">
-            <div class="meta-chip">
-                <strong>大小 / 子项</strong>
-                <span>${escapeHtml(getMetaText(detail))}</span>
+        <div class="materials-detail-shell">
+            <section class="materials-detail-hero">
+                <div class="materials-detail-hero-main">
+                    <div class="materials-detail-badges">
+                        <span class="materials-type-pill">${escapeHtml(getMaterialTypeLabel(detail))}</span>
+                        ${repositoryBadge}
+                        ${hasLearningDocument(detail) ? '<span class="materials-meta-item">README</span>' : ''}
+                    </div>
+                    <h3 title="${escapeHtml(detail.name)}">${escapeHtml(detail.name)}</h3>
+                    <div class="text-muted text-sm">${escapeHtml(detail.material_path || '')}</div>
+                    <div class="materials-detail-actions">
+                        ${previewUrl ? `<a href="${previewUrl}" class="btn btn-primary" target="_blank" rel="noopener">${previewLabel}</a>` : ''}
+                        ${optimizedUrl ? `<a href="${optimizedUrl}" class="btn btn-outline" target="_blank" rel="noopener">查看优化稿</a>` : ''}
+                        ${detail.node_type === 'file' ? `<a href="/materials/download/${detail.id}" class="btn btn-outline">下载</a>` : ''}
+                        ${isGitRepository(detail) ? '<button type="button" class="btn btn-outline" data-detail-action="repository">仓库</button>' : ''}
+                        <button type="button" class="btn btn-outline" data-detail-action="assign" ${config.canAssign ? '' : 'disabled'}>分配课堂</button>
+                        <button type="button" class="btn btn-outline" data-detail-action="ai-parse" ${detail.can_ai_parse ? '' : 'disabled'}>AI 解析</button>
+                        <button type="button" class="btn btn-outline" data-detail-action="ai-optimize" ${detail.can_ai_optimize ? '' : 'disabled'}>AI 优化</button>
+                        <button type="button" class="btn btn-danger" data-detail-action="delete">删除</button>
+                    </div>
+                </div>
+                <div class="materials-detail-meta">
+                    <div class="meta-chip">
+                        <strong>大小 / 子项</strong>
+                        <span>${escapeHtml(getMetaText(detail))}</span>
+                    </div>
+                    <div class="meta-chip">
+                        <strong>创建时间</strong>
+                        <span>${escapeHtml(formatDateLabel(detail.created_at))}</span>
+                    </div>
+                    <div class="meta-chip">
+                        <strong>更新时间</strong>
+                        <span>${escapeHtml(formatDateLabel(detail.updated_at || detail.created_at))}</span>
+                    </div>
+                    <div class="meta-chip">
+                        <strong>已分配课堂</strong>
+                        <span>${escapeHtml(String(assignmentCount))}</span>
+                    </div>
+                    <div class="meta-chip">
+                        <strong>AI 解析状态</strong>
+                        <span>${escapeHtml(detail.ai_parse_status || 'idle')}</span>
+                    </div>
+                    <div class="meta-chip">
+                        <strong>AI 优化状态</strong>
+                        <span>${escapeHtml(detail.ai_optimize_status || 'idle')}</span>
+                    </div>
+                </div>
+            </section>
+            ${renderRepositorySummary(detail)}
+            <div class="materials-detail-section-grid">
+                <div class="materials-section">
+                    <div class="materials-section-header">
+                        <h3>AI 摘要</h3>
+                    </div>
+                    <div class="text-muted text-sm">${escapeHtml(aiSummary)}</div>
+                    ${keywords}
+                    ${teachingValue}
+                    ${cautions}
+                </div>
+                <div class="materials-section">
+                    <div class="materials-section-header">
+                        <h3>已分配课堂</h3>
+                    </div>
+                    ${renderAssignments(detail.assignments || [])}
+                </div>
+                <div class="materials-section materials-section--wide">
+                    <div class="materials-section-header">
+                        <h3>解析目录</h3>
+                    </div>
+                    ${renderOutline(detail.ai_parse_result?.outline)}
+                </div>
             </div>
-            <div class="meta-chip">
-                <strong>创建时间</strong>
-                <span>${escapeHtml(formatDateLabel(detail.created_at))}</span>
-            </div>
-            <div class="meta-chip">
-                <strong>更新时间</strong>
-                <span>${escapeHtml(formatDateLabel(detail.updated_at || detail.created_at))}</span>
-            </div>
-            <div class="meta-chip">
-                <strong>已分配课堂</strong>
-                <span>${escapeHtml(String(assignmentCount))}</span>
-            </div>
-            <div class="meta-chip">
-                <strong>AI 解析状态</strong>
-                <span>${escapeHtml(detail.ai_parse_status || 'idle')}</span>
-            </div>
-            <div class="meta-chip">
-                <strong>AI 优化状态</strong>
-                <span>${escapeHtml(detail.ai_optimize_status || 'idle')}</span>
-            </div>
-        </div>
-        <div class="materials-detail-actions">
-            ${previewUrl ? `<a href="${previewUrl}" class="btn btn-primary" target="_blank" rel="noopener">${previewLabel}</a>` : ''}
-            ${optimizedUrl ? `<a href="${optimizedUrl}" class="btn btn-outline" target="_blank" rel="noopener">查看优化稿</a>` : ''}
-            ${detail.node_type === 'file' ? `<a href="/materials/download/${detail.id}" class="btn btn-outline">下载</a>` : ''}
-            ${isGitRepository(detail) ? '<button type="button" class="btn btn-outline" id="materials-repository-open-btn">仓库</button>' : ''}
-            <button type="button" class="btn btn-outline" id="materials-assign-open-btn" ${config.canAssign ? '' : 'disabled'}>分配课堂</button>
-            <button type="button" class="btn btn-outline" id="materials-ai-parse-btn" ${detail.can_ai_parse ? '' : 'disabled'}>AI 解析</button>
-            <button type="button" class="btn btn-outline" id="materials-ai-optimize-btn" ${detail.can_ai_optimize ? '' : 'disabled'}>AI 优化</button>
-            <button type="button" class="btn btn-danger" id="materials-delete-btn">删除</button>
-        </div>
-        ${renderRepositorySummary(detail)}
-        <div class="materials-section">
-            <div class="materials-section-header">
-                <h3>AI 摘要</h3>
-            </div>
-            <div class="text-muted text-sm">${escapeHtml(aiSummary)}</div>
-            ${detail.ai_parse_result?.keywords?.length ? `<div class="text-muted text-sm mt-2">关键词：${escapeHtml(detail.ai_parse_result.keywords.join('、'))}</div>` : ''}
-        </div>
-        <div class="materials-section">
-            <div class="materials-section-header">
-                <h3>解析目录</h3>
-            </div>
-            ${renderOutline(detail.ai_parse_result?.outline)}
-        </div>
-        <div class="materials-section">
-            <div class="materials-section-header">
-                <h3>已分配课堂</h3>
-            </div>
-            ${renderAssignments(detail.assignments || [])}
         </div>
     `;
-
-    document.getElementById('materials-repository-open-btn')?.addEventListener('click', () => openRepositoryModal(detail.id));
-    document.getElementById('materials-assign-open-btn')?.addEventListener('click', openAssignModal);
-    document.getElementById('materials-ai-parse-btn')?.addEventListener('click', runAiParse);
-    document.getElementById('materials-ai-optimize-btn')?.addEventListener('click', runAiOptimize);
-    document.getElementById('materials-delete-btn')?.addEventListener('click', deleteActiveMaterial);
 }
 
 async function loadMaterialDetail(materialId) {
+    const requestId = ++state.detailRequestId;
     state.activeMaterialId = Number(materialId);
     renderList();
-    state.activeDetail = await apiFetch(`/api/materials/${materialId}`, { silent: true }).then((data) => data.material);
+    const detail = await apiFetch(`/api/materials/${materialId}`, { silent: true }).then((data) => data.material);
+    if (requestId !== state.detailRequestId) {
+        return state.activeDetail;
+    }
+    state.activeDetail = detail;
     renderDetail(state.activeDetail);
+    return state.activeDetail;
+}
+
+async function openMaterialDetail(materialId) {
+    await loadMaterialDetail(materialId);
+    openDetailModal();
 }
 
 function buildLibraryQuery(parentId) {
@@ -531,13 +632,18 @@ async function loadLibrary(parentId = null, trackHistory = false) {
     const activeStillVisible = state.items.some((item) => Number(item.id) === Number(previousActiveId));
     state.activeMaterialId = activeStillVisible ? previousActiveId : null;
     if (!activeStillVisible) {
+        state.detailRequestId += 1;
         state.activeDetail = null;
+        if (isDetailModalOpen()) {
+            closeDetailModal();
+        }
     }
 
     updateFilterControls();
     renderStats();
     renderLibraryOverview();
     renderBreadcrumbs(state.currentBreadcrumbs);
+    renderNavigationState();
     renderRepositoryToolbar();
     renderList();
     renderDetail(state.activeDetail);
@@ -715,6 +821,11 @@ async function deleteActiveMaterial() {
     if (!window.confirm(`确定删除材料“${state.activeDetail.name}”吗？`)) return;
     const result = await apiFetch(`/api/materials/${state.activeDetail.id}`, { method: 'DELETE' });
     showToast(result.message || '材料已删除', 'success');
+    state.detailRequestId += 1;
+    state.activeMaterialId = null;
+    state.activeDetail = null;
+    renderDetail(null);
+    closeDetailModal();
     await loadLibrary(state.currentParentId);
 }
 
@@ -1043,6 +1154,51 @@ function bindEvents() {
         });
     });
 
+    refs.detailModalCloseBtn?.addEventListener('click', () => {
+        closeDetailModal();
+    });
+
+    refs.detailModal?.addEventListener('click', (event) => {
+        if (event.target === refs.detailModal) {
+            closeDetailModal();
+        }
+    });
+
+    refs.detail?.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-detail-action]')?.dataset.detailAction;
+        if (!action || !state.activeDetail) return;
+
+        if (action === 'repository') {
+            openRepositoryModal(state.activeDetail.id).catch((error) => {
+                showToast(error.message || '加载仓库信息失败', 'error');
+            });
+            return;
+        }
+        if (action === 'assign') {
+            openAssignModal().catch((error) => {
+                showToast(error.message || '加载课堂分配失败', 'error');
+            });
+            return;
+        }
+        if (action === 'ai-parse') {
+            runAiParse().catch((error) => {
+                showToast(error.message || 'AI 解析失败', 'error');
+            });
+            return;
+        }
+        if (action === 'ai-optimize') {
+            runAiOptimize().catch((error) => {
+                showToast(error.message || 'AI 优化失败', 'error');
+            });
+            return;
+        }
+        if (action === 'delete') {
+            deleteActiveMaterial().catch((error) => {
+                showToast(error.message || '删除材料失败', 'error');
+            });
+        }
+    });
+
     refs.breadcrumbs?.addEventListener('click', (event) => {
         const button = event.target.closest('[data-crumb-id]');
         if (!button) return;
@@ -1085,7 +1241,7 @@ function bindEvents() {
             return;
         }
         if (action === 'details') {
-            loadMaterialDetail(materialId).catch((error) => {
+            openMaterialDetail(materialId).catch((error) => {
                 showToast(error.message || '加载详情失败', 'error');
             });
             return;
@@ -1099,7 +1255,7 @@ function bindEvents() {
             return;
         }
 
-        loadMaterialDetail(materialId).catch((error) => {
+        openMaterialDetail(materialId).catch((error) => {
             showToast(error.message || '加载详情失败', 'error');
         });
     });
@@ -1153,6 +1309,12 @@ function bindEvents() {
         saveRepositoryCredential().catch((error) => {
             showToast(error.message || '保存凭据失败', 'error');
         });
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && isDetailModalOpen()) {
+            closeDetailModal();
+        }
     });
 }
 

@@ -63,8 +63,8 @@
     </div>
 </section>
 
-<div class="materials-shell">
-    <section class="materials-card materials-library-card">
+<div class="materials-shell materials-shell--single">
+    <section class="materials-card materials-library-card materials-library-card--expanded">
         <div class="materials-toolbar materials-library-nav">
             <div class="materials-toolbar-group">
                 <button type="button" class="btn btn-ghost btn-sm" id="materials-back-btn">返回</button>
@@ -321,10 +321,27 @@
     </div>
 </div>
 
+<div id="materials-detail-modal" class="modal-backdrop materials-detail-modal" style="display:none;" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable modal-xl materials-detail-dialog">
+        <div class="modal-content materials-detail-modal-content">
+            <div class="modal-header materials-detail-modal-header">
+                <div class="materials-detail-modal-copy">
+                    <div class="materials-detail-modal-label" id="materials-detail-modal-label">&#26448;&#26009;&#35814;&#24773;</div>
+                    <h3 class="modal-title" id="materials-detail-modal-title">&#26448;&#26009;&#35814;&#24773;</h3>
+                    <div class="text-muted text-sm" id="materials-detail-modal-path">/</div>
+                </div>
+                <button class="modal-close" id="materials-detail-modal-close-btn" aria-label="&#20851;&#38381;">&times;</button>
+            </div>
+            <div class="modal-body materials-detail-modal-body" id="materials-detail-modal-body"></div>
+        </div>
+    </div>
+</div>
+
 <script>
     window.MATERIALS_MANAGE_CONFIG = {
         offerings: {{ offerings | tojson }},
-        canAssign: {{ 'true' if offerings else 'false' }}
+        canAssign: {{ 'true' if offerings else 'false' }},
+        userIdentityHints: {{ [user_info.name, user_info.email] | tojson }}
     };
 </script>
 {% endblock %}
