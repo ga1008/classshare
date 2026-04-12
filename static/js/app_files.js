@@ -108,7 +108,7 @@ function buildCardBadges(file) {
     const badges = [];
     if (file.description) badges.push('<span class="resource-file-badge">详情</span>');
     if (file.original_link) badges.push('<span class="resource-file-badge">原始链接</span>');
-    if (!file.download_allowed) badges.push('<span class="resource-file-badge is-danger">已限下</span>');
+    if (!file.download_allowed) badges.push('<span class="resource-file-badge is-danger">大小超限，请使用原始链接下载</span>');
     return badges.join('');
 }
 
