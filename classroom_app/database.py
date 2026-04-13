@@ -3,16 +3,32 @@ import sys
 import json
 import uuid
 from datetime import datetime
-from .config import DB_PATH
+
+from .config import (
+    DB_PATH,
+    SQLITE_BUSY_TIMEOUT_MS,
+    SQLITE_CACHE_SIZE_KB,
+    SQLITE_WAL_AUTOCHECKPOINT_PAGES,
+)
+
+
+def _apply_sqlite_pragmas(conn: sqlite3.Connection) -> None:
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA temp_store=MEMORY;")
+    conn.execute(f"PRAGMA busy_timeout = {int(max(0, SQLITE_BUSY_TIMEOUT_MS))};")
+    conn.execute(f"PRAGMA wal_autocheckpoint = {int(max(1, SQLITE_WAL_AUTOCHECKPOINT_PAGES))};")
+    if SQLITE_CACHE_SIZE_KB:
+        conn.execute(f"PRAGMA cache_size = {-int(abs(SQLITE_CACHE_SIZE_KB))};")
+    conn.execute("PRAGMA foreign_keys = ON;")
 
 
 def get_db_connection():
     """获取 SQLite 数据库连接"""
     try:
-        # 增加 timeout 避免高并发时的瞬间锁死报错
-        conn = sqlite3.connect(DB_PATH, timeout=20.0)
-        conn.execute("PRAGMA journal_mode=WAL;")  # 核心优化：开启 WAL 模式支持高并发读写
-        conn.execute("PRAGMA foreign_keys = ON;")
+        timeout_seconds = max(float(SQLITE_BUSY_TIMEOUT_MS) / 1000.0, 1.0)
+        conn = sqlite3.connect(DB_PATH, timeout=timeout_seconds)
+        _apply_sqlite_pragmas(conn)
         conn.row_factory = sqlite3.Row
         return conn
     except sqlite3.Error as e:

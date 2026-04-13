@@ -3,9 +3,24 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+import threading
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from functools import wraps
+from queue import Empty, Full, Queue
 from typing import Any, Optional
 
+import sqlite3
+import time
+
+from ..config import (
+    BEHAVIOR_WRITE_BATCH_SIZE,
+    BEHAVIOR_WRITE_ENQUEUE_TIMEOUT_MS,
+    BEHAVIOR_WRITE_FLUSH_INTERVAL_MS,
+    BEHAVIOR_WRITE_QUEUE_SIZE,
+    BEHAVIOR_WRITE_SYNC_TIMEOUT_MS,
+)
 from ..core import ai_client
 from ..database import get_db_connection
 from .psych_profile_service import (
@@ -34,6 +49,342 @@ LOGIN_AUDIT_HISTORY_LIMIT = 8
 _scheduler_task: Optional[asyncio.Task] = None
 _scheduler_stop_event: Optional[asyncio.Event] = None
 _profile_tasks: set[asyncio.Task] = set()
+_behavior_write_pipeline: Optional["_BehaviorWritePipeline"] = None
+_behavior_write_pipeline_lock = threading.Lock()
+
+BEHAVIOR_WRITE_MAX_RETRIES = 6
+BEHAVIOR_WRITE_RETRY_BASE_DELAY_SECONDS = 0.05
+
+
+@dataclass(slots=True)
+class _BehaviorWriteRequest:
+    class_offering_id: int = 0
+    user_pk: int = 0
+    user_role: str = ""
+    display_name: str = ""
+    page_key: Optional[str] = None
+    events: list[dict[str, Any]] | None = None
+    session_started_at: Optional[str] = None
+    future: Optional[Future] = None
+    is_barrier: bool = False
+
+
+class _BehaviorWritePipeline:
+    def __init__(self) -> None:
+        self._queue: Queue[_BehaviorWriteRequest] = Queue(maxsize=max(1, BEHAVIOR_WRITE_QUEUE_SIZE))
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="behavior-write-worker",
+            daemon=True,
+        )
+        self._started = False
+        self._lock = threading.Lock()
+
+    def start(self) -> None:
+        with self._lock:
+            if self._started:
+                return
+            self._thread.start()
+            self._started = True
+
+    def stop(self, timeout: float = 10.0) -> None:
+        self._stop_event.set()
+        if self._started and self._thread.is_alive():
+            self._thread.join(timeout=max(timeout, 0.1))
+
+    def submit(
+        self,
+        request: _BehaviorWriteRequest,
+        *,
+        wait: bool = False,
+        timeout_ms: Optional[int] = None,
+    ) -> Optional[dict[str, Any]]:
+        request.future = Future() if wait else None
+        enqueue_timeout_seconds = max(
+            float(timeout_ms if timeout_ms is not None else BEHAVIOR_WRITE_ENQUEUE_TIMEOUT_MS) / 1000.0,
+            0.01,
+        )
+        self._queue.put(request, timeout=enqueue_timeout_seconds)
+        if not wait or request.future is None:
+            return None
+        return request.future.result(timeout=max(float(BEHAVIOR_WRITE_SYNC_TIMEOUT_MS) / 1000.0, 0.1))
+
+    def flush(self, timeout: float = 10.0) -> None:
+        barrier = _BehaviorWriteRequest(is_barrier=True, future=Future())
+        self._queue.put(barrier, timeout=max(timeout, 0.1))
+        barrier.future.result(timeout=max(timeout, 0.1))
+
+    def stats(self) -> dict[str, Any]:
+        return {
+            "alive": bool(self._thread.is_alive()),
+            "queue_depth": int(self._queue.qsize()),
+            "queue_capacity": int(BEHAVIOR_WRITE_QUEUE_SIZE),
+        }
+
+    def _run(self) -> None:
+        flush_window_seconds = max(float(BEHAVIOR_WRITE_FLUSH_INTERVAL_MS) / 1000.0, 0.01)
+        max_batch_size = max(1, int(BEHAVIOR_WRITE_BATCH_SIZE))
+
+        while True:
+            if self._stop_event.is_set() and self._queue.empty():
+                return
+
+            try:
+                first_item = self._queue.get(timeout=0.5)
+            except Empty:
+                continue
+
+            batch = [first_item]
+            deadline = time.monotonic() + flush_window_seconds
+            while len(batch) < max_batch_size:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                try:
+                    batch.append(self._queue.get(timeout=remaining))
+                except Empty:
+                    break
+
+            while len(batch) < max_batch_size:
+                try:
+                    batch.append(self._queue.get_nowait())
+                except Empty:
+                    break
+
+            self._flush_batch(batch)
+
+    def _flush_batch(self, batch: list[_BehaviorWriteRequest]) -> None:
+        pending = list(batch)
+        try:
+            for attempt in range(BEHAVIOR_WRITE_MAX_RETRIES):
+                try:
+                    outcomes: list[tuple[_BehaviorWriteRequest, Optional[dict[str, Any]], Optional[Exception]]] = []
+                    with get_db_connection() as conn:
+                        conn.execute("BEGIN IMMEDIATE")
+                        for index, request in enumerate(pending):
+                            if request.is_barrier:
+                                outcomes.append((request, {"flushed": True}, None))
+                                continue
+
+                            savepoint_name = f"behavior_req_{index}"
+                            conn.execute(f"SAVEPOINT {savepoint_name}")
+                            try:
+                                result = _record_behavior_batch_in_connection(
+                                    conn,
+                                    class_offering_id=request.class_offering_id,
+                                    user_pk=request.user_pk,
+                                    user_role=request.user_role,
+                                    display_name=request.display_name,
+                                    page_key=request.page_key,
+                                    events=request.events or [],
+                                    session_started_at=request.session_started_at,
+                                )
+                            except Exception as exc:
+                                conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint_name}")
+                                conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+                                outcomes.append((request, None, exc))
+                            else:
+                                conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+                                outcomes.append((request, result, None))
+                        conn.commit()
+
+                    for request, result, exc in outcomes:
+                        if request.future is not None and not request.future.done():
+                            if exc is not None:
+                                request.future.set_exception(exc)
+                            else:
+                                request.future.set_result(result or {})
+                        elif exc is not None and not request.is_barrier:
+                            print(f"[BEHAVIOR] 异步写入失败: {exc}")
+                    return
+                except sqlite3.OperationalError as exc:
+                    if "database is locked" not in str(exc).lower() or attempt >= BEHAVIOR_WRITE_MAX_RETRIES - 1:
+                        for request in pending:
+                            if request.future is not None and not request.future.done():
+                                request.future.set_exception(exc)
+                            elif not request.is_barrier:
+                                print(f"[BEHAVIOR] 批量写入失败: {exc}")
+                        return
+                    delay = (
+                        BEHAVIOR_WRITE_RETRY_BASE_DELAY_SECONDS * (2 ** attempt)
+                        + random.uniform(0.0, BEHAVIOR_WRITE_RETRY_BASE_DELAY_SECONDS)
+                    )
+                    time.sleep(delay)
+        finally:
+            for _ in pending:
+                self._queue.task_done()
+
+def retry_on_locked(max_retries=5, base_delay=0.1):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except sqlite3.OperationalError as e:
+                    if "database is locked" in str(e) and attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
+                        time.sleep(delay)
+                    else:
+                        raise
+            return None
+        return wrapper
+    return decorator
+
+
+def _get_behavior_write_pipeline() -> _BehaviorWritePipeline:
+    global _behavior_write_pipeline
+    with _behavior_write_pipeline_lock:
+        if _behavior_write_pipeline is None:
+            _behavior_write_pipeline = _BehaviorWritePipeline()
+            _behavior_write_pipeline.start()
+        return _behavior_write_pipeline
+
+
+def start_behavior_write_pipeline() -> None:
+    pipeline = _get_behavior_write_pipeline()
+    stats = pipeline.stats()
+    print(
+        "[BEHAVIOR] 异步写入管线已启动 "
+        f"(queue_capacity={stats['queue_capacity']}, batch_size={int(BEHAVIOR_WRITE_BATCH_SIZE)})"
+    )
+
+
+def stop_behavior_write_pipeline(timeout: float = 10.0) -> None:
+    global _behavior_write_pipeline
+    with _behavior_write_pipeline_lock:
+        pipeline = _behavior_write_pipeline
+        _behavior_write_pipeline = None
+
+    if pipeline is None:
+        return
+
+    try:
+        pipeline.flush(timeout=max(timeout, 0.1))
+    except Exception as exc:
+        print(f"[BEHAVIOR] 停止前刷新写入管线失败: {exc}")
+    pipeline.stop(timeout=timeout)
+    print("[BEHAVIOR] 异步写入管线已停止")
+
+
+def get_behavior_write_pipeline_stats() -> dict[str, Any]:
+    pipeline = _behavior_write_pipeline
+    if pipeline is None:
+        return {
+            "alive": False,
+            "queue_depth": 0,
+            "queue_capacity": int(BEHAVIOR_WRITE_QUEUE_SIZE),
+        }
+    return pipeline.stats()
+
+
+def flush_behavior_write_pipeline(timeout: float = 10.0) -> None:
+    pipeline = _behavior_write_pipeline
+    if pipeline is None:
+        return
+    pipeline.flush(timeout=max(timeout, 0.1))
+
+
+def _estimate_logged_event_count(events: list[dict[str, Any]]) -> int:
+    accepted = 0
+    for item in events:
+        if not isinstance(item, dict):
+            continue
+        event_type = _normalize_action_type(str(item.get("action_type") or "page_action"))
+        summary_text = _truncate_text(item.get("summary_text") or "", 300)
+        if event_type in {"presence_heartbeat", "page_presence", "heartbeat"} and not summary_text:
+            continue
+        accepted += 1
+    return accepted
+
+
+def _build_queued_snapshot(events: list[dict[str, Any]]) -> dict[str, Any]:
+    accepted_count = _estimate_logged_event_count(events)
+    snapshot = {
+        "accepted_event_count": accepted_count,
+        "logged_event_ids": [],
+        "queued_event_count": accepted_count,
+        "seconds_until_next_profile": None,
+        "write_mode": "queued",
+        "degraded": False,
+    }
+    if accepted_count == 1:
+        snapshot["event_id"] = None
+    return snapshot
+
+
+def _build_degraded_snapshot(events: list[dict[str, Any]], exc: Exception) -> dict[str, Any]:
+    snapshot = _build_queued_snapshot(events)
+    snapshot.update(
+        {
+            "accepted_event_count": 0,
+            "logged_event_ids": [],
+            "queued_event_count": 0,
+            "write_mode": "degraded",
+            "degraded": True,
+            "degraded_reason": str(exc),
+        }
+    )
+    if "event_id" in snapshot:
+        snapshot["event_id"] = None
+    return snapshot
+
+
+def _submit_behavior_write(
+    *,
+    class_offering_id: int,
+    user_pk: int,
+    user_role: str,
+    display_name: str,
+    page_key: Optional[str],
+    events: list[dict[str, Any]],
+    session_started_at: Optional[str],
+    wait: bool = False,
+) -> dict[str, Any]:
+    normalized_events = [item for item in events if isinstance(item, dict)]
+    if not normalized_events:
+        empty_snapshot = {
+            "accepted_event_count": 0,
+            "logged_event_ids": [],
+            "queued_event_count": 0,
+            "seconds_until_next_profile": None,
+            "write_mode": "noop",
+            "degraded": False,
+        }
+        return empty_snapshot
+
+    request = _BehaviorWriteRequest(
+        class_offering_id=class_offering_id,
+        user_pk=user_pk,
+        user_role=user_role,
+        display_name=display_name,
+        page_key=page_key,
+        events=normalized_events,
+        session_started_at=session_started_at,
+    )
+    try:
+        result = _get_behavior_write_pipeline().submit(request, wait=wait)
+        if result is None:
+            return _build_queued_snapshot(normalized_events)
+        result.setdefault("write_mode", "synced")
+        result.setdefault("degraded", False)
+        return result
+    except Full as exc:
+        print(f"[BEHAVIOR] 写入队列已满，放弃本次行为记录: {exc}")
+        if wait:
+            raise
+        return _build_degraded_snapshot(normalized_events, exc)
+    except FutureTimeoutError as exc:
+        print(f"[BEHAVIOR] 等待行为写入结果超时: {exc}")
+        if wait:
+            raise
+        return _build_queued_snapshot(normalized_events)
+    except Exception as exc:
+        print(f"[BEHAVIOR] 提交行为写入失败: {exc}")
+        if wait:
+            raise
+        return _build_degraded_snapshot(normalized_events, exc)
 
 
 def build_random_profile_interval_seconds() -> int:
@@ -121,6 +472,7 @@ def _should_start_new_behavior_session(current_anchor_text: Any, session_started
     return next_anchor > current_anchor + timedelta(seconds=1)
 
 
+@retry_on_locked()
 def _ensure_behavior_state_row(
     conn,
     *,
@@ -286,34 +638,59 @@ def _load_behavior_state_snapshot(
     return snapshot
 
 
-def record_behavior_event(
+def _record_behavior_batch_in_connection(
+    conn,
     *,
     class_offering_id: int,
     user_pk: int,
     user_role: str,
     display_name: str,
-    action_type: str,
-    summary_text: str,
-    payload: Optional[dict[str, Any]] = None,
-    page_key: Optional[str] = None,
+    page_key: Optional[str],
+    events: list[dict[str, Any]],
     session_started_at: Optional[str] = None,
 ) -> dict[str, Any]:
-    now = datetime.now().isoformat()
-    payload_json = _dump_payload(payload or {})
-    normalized_action = _normalize_action_type(action_type)
-    normalized_summary = _truncate_text(summary_text, 300)
+    now = datetime.now()
+    now_text = now.isoformat()
+    logged_event_ids: list[int] = []
 
-    with get_db_connection() as conn:
-        _ensure_behavior_state_row(
-            conn,
-            class_offering_id=class_offering_id,
-            user_pk=user_pk,
-            user_role=user_role,
-            now=now,
-            session_started_at=session_started_at,
-            last_presence_at=now,
-            page_key=page_key,
-        )
+    _ensure_behavior_state_row(
+        conn,
+        class_offering_id=class_offering_id,
+        user_pk=user_pk,
+        user_role=user_role,
+        now=now_text,
+        session_started_at=session_started_at,
+        last_presence_at=now_text,
+        page_key=page_key,
+    )
+
+    for item in events:
+        if not isinstance(item, dict):
+            continue
+
+        event_type = _normalize_action_type(str(item.get("action_type") or "page_action"))
+        payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+        summary_text = _truncate_text(item.get("summary_text") or "", 300)
+        item_page_key = str(item.get("page_key") or page_key or "").strip() or None
+
+        if event_type in {"presence_heartbeat", "page_presence", "heartbeat"}:
+            visibility_state = "visible" if str(payload.get("visibility_state") or "visible") == "visible" else "hidden"
+            focus_state = "focused" if bool(payload.get("focused", True)) else "blurred"
+            _apply_presence_heartbeat(
+                conn,
+                class_offering_id=class_offering_id,
+                user_pk=user_pk,
+                user_role=user_role,
+                now=now,
+                page_key=item_page_key,
+                visibility_state=visibility_state,
+                focus_state=focus_state,
+                idle_seconds=int(payload.get("idle_seconds") or 0),
+                ai_panel_open=bool(payload.get("ai_panel_open")),
+            )
+            if not summary_text:
+                continue
+
         cursor = conn.execute(
             """
             INSERT INTO classroom_behavior_events (
@@ -327,12 +704,13 @@ def record_behavior_event(
                 user_pk,
                 user_role,
                 display_name,
-                normalized_action,
-                normalized_summary,
-                payload_json,
-                now,
+                event_type,
+                summary_text or event_type,
+                _dump_payload(payload),
+                now_text,
             ),
         )
+        logged_event_ids.append(int(cursor.lastrowid))
         conn.execute(
             """
             UPDATE classroom_behavior_states
@@ -345,23 +723,60 @@ def record_behavior_event(
               AND user_role = ?
             """,
             (
-                now,
-                page_key,
-                now,
+                now_text,
+                item_page_key,
+                now_text,
                 class_offering_id,
                 user_pk,
                 user_role,
             ),
         )
-        snapshot = _load_behavior_state_snapshot(
-            conn,
-            class_offering_id=class_offering_id,
-            user_pk=user_pk,
-            user_role=user_role,
-        )
-        conn.commit()
 
-    snapshot["event_id"] = int(cursor.lastrowid)
+    snapshot = _load_behavior_state_snapshot(
+        conn,
+        class_offering_id=class_offering_id,
+        user_pk=user_pk,
+        user_role=user_role,
+    )
+    snapshot["logged_event_ids"] = logged_event_ids
+    snapshot["accepted_event_count"] = len(logged_event_ids)
+    return snapshot
+
+
+def record_behavior_event(
+    *,
+    class_offering_id: int,
+    user_pk: int,
+    user_role: str,
+    display_name: str,
+    action_type: str,
+    summary_text: str,
+    payload: Optional[dict[str, Any]] = None,
+    page_key: Optional[str] = None,
+    session_started_at: Optional[str] = None,
+    wait: bool = False,
+) -> dict[str, Any]:
+    snapshot = _submit_behavior_write(
+        class_offering_id=class_offering_id,
+        user_pk=user_pk,
+        user_role=user_role,
+        display_name=display_name,
+        page_key=page_key,
+        events=[
+            {
+                "action_type": action_type,
+                "summary_text": summary_text,
+                "payload": payload or {},
+                "page_key": page_key,
+            }
+        ],
+        session_started_at=session_started_at,
+        wait=wait,
+    )
+    if snapshot.get("event_id") is None and snapshot.get("logged_event_ids"):
+        snapshot["event_id"] = int(snapshot["logged_event_ids"][0])
+    else:
+        snapshot.setdefault("event_id", None)
     return snapshot
 
 
@@ -472,102 +887,18 @@ def record_behavior_batch(
     page_key: Optional[str],
     events: list[dict[str, Any]],
     session_started_at: Optional[str] = None,
+    wait: bool = False,
 ) -> dict[str, Any]:
-    now = datetime.now()
-    now_text = now.isoformat()
-    logged_event_ids: list[int] = []
-
-    with get_db_connection() as conn:
-        _ensure_behavior_state_row(
-            conn,
-            class_offering_id=class_offering_id,
-            user_pk=user_pk,
-            user_role=user_role,
-            now=now_text,
-            session_started_at=session_started_at,
-            last_presence_at=now_text,
-            page_key=page_key,
-        )
-
-        for item in events:
-            if not isinstance(item, dict):
-                continue
-
-            event_type = _normalize_action_type(str(item.get("action_type") or "page_action"))
-            payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
-            summary_text = _truncate_text(item.get("summary_text") or "", 300)
-            item_page_key = str(item.get("page_key") or page_key or "").strip() or None
-
-            if event_type in {"presence_heartbeat", "page_presence", "heartbeat"}:
-                visibility_state = "visible" if str(payload.get("visibility_state") or "visible") == "visible" else "hidden"
-                focus_state = "focused" if bool(payload.get("focused", True)) else "blurred"
-                _apply_presence_heartbeat(
-                    conn,
-                    class_offering_id=class_offering_id,
-                    user_pk=user_pk,
-                    user_role=user_role,
-                    now=now,
-                    page_key=item_page_key,
-                    visibility_state=visibility_state,
-                    focus_state=focus_state,
-                    idle_seconds=int(payload.get("idle_seconds") or 0),
-                    ai_panel_open=bool(payload.get("ai_panel_open")),
-                )
-                if not summary_text:
-                    continue
-
-            cursor = conn.execute(
-                """
-                INSERT INTO classroom_behavior_events (
-                    class_offering_id, user_pk, user_role, display_name,
-                    action_type, summary_text, payload_json, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    class_offering_id,
-                    user_pk,
-                    user_role,
-                    display_name,
-                    event_type,
-                    summary_text or event_type,
-                    _dump_payload(payload),
-                    now_text,
-                ),
-            )
-            logged_event_ids.append(int(cursor.lastrowid))
-            conn.execute(
-                """
-                UPDATE classroom_behavior_states
-                SET total_activity_count = total_activity_count + 1,
-                    last_event_at = ?,
-                    last_page_key = COALESCE(?, last_page_key),
-                    updated_at = ?
-                WHERE class_offering_id = ?
-                  AND user_pk = ?
-                  AND user_role = ?
-                """,
-                (
-                    now_text,
-                    item_page_key,
-                    now_text,
-                    class_offering_id,
-                    user_pk,
-                    user_role,
-                ),
-            )
-
-        snapshot = _load_behavior_state_snapshot(
-            conn,
-            class_offering_id=class_offering_id,
-            user_pk=user_pk,
-            user_role=user_role,
-        )
-        conn.commit()
-
-    snapshot["logged_event_ids"] = logged_event_ids
-    snapshot["accepted_event_count"] = len(logged_event_ids)
-    return snapshot
+    return _submit_behavior_write(
+        class_offering_id=class_offering_id,
+        user_pk=user_pk,
+        user_role=user_role,
+        display_name=display_name,
+        page_key=page_key,
+        events=events,
+        session_started_at=session_started_at,
+        wait=wait,
+    )
 
 
 def _format_duration_minutes(total_seconds: Any) -> str:

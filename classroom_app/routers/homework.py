@@ -478,13 +478,14 @@ async def submit_assignment(assignment_id: str,
 
     if assignment["class_offering_id"]:
         try:
+            user_dict = dict(user)
             record_behavior_event(
                 class_offering_id=int(assignment["class_offering_id"]),
-                user_pk=int(user["id"]),
+                user_pk=int(user_dict["id"]),
                 user_role="student",
-                display_name=str(user.get("name") or user["id"]),
+                display_name=str(user_dict.get("name") or user_dict["id"]),
                 action_type="assignment_submit",
-                session_started_at=str(user.get("login_time") or "").strip() or None,
+                session_started_at=str(user_dict.get("login_time") or "").strip() or None,
                 summary_text=f"提交作业：{assignment.get('title') or assignment_id}",
                 payload={
                     "assignment_id": assignment_id,
@@ -530,16 +531,17 @@ async def withdraw_submission(assignment_id: str, user: dict = Depends(get_curre
         conn.execute("DELETE FROM submissions WHERE id = ?", (submission['id'],))
         conn.commit()
 
-    delete_storage_tree(_build_submission_storage_dir(submission['course_id'], assignment_id, user['id']))
+    user_dict = dict(user)  # 转换
+    delete_storage_tree(_build_submission_storage_dir(submission['course_id'], assignment_id, user_dict.get('id')))
     if submission["class_offering_id"]:
         try:
             record_behavior_event(
                 class_offering_id=int(submission["class_offering_id"]),
-                user_pk=int(user["id"]),
+                user_pk=int(user_dict["id"]),
                 user_role="student",
-                display_name=str(user.get("name") or user["id"]),
+                display_name=str(user_dict.get("name") or user_dict["id"]),
                 action_type="assignment_withdraw",
-                session_started_at=str(user.get("login_time") or "").strip() or None,
+                session_started_at=str(user_dict.get("login_time") or "").strip() or None,
                 summary_text=f"撤回作业：{submission.get('title') or assignment_id}",
                 payload={
                     "assignment_id": assignment_id,

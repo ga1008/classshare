@@ -14,8 +14,11 @@ from .dependencies import build_login_redirect_url, build_permission_warning_url
 from .dependencies import clear_access_token_cookie, get_active_user_from_request
 from .dependencies import infer_required_role_from_path
 from .services.behavior_tracking_service import (
+    get_behavior_write_pipeline_stats,
     start_behavior_profile_scheduler,
+    start_behavior_write_pipeline,
     stop_behavior_profile_scheduler,
+    stop_behavior_write_pipeline,
 )
 from .services.message_center_service import schedule_pending_private_ai_reply_jobs
 from .services.ui_copy_service import (
@@ -53,6 +56,7 @@ async def startup_event():
         await ensure_ui_copy_snapshot(reason="startup")
     except Exception as exc:
         print(f"[UI_COPY] 启动时刷新界面文案失败: {exc}")
+    start_behavior_write_pipeline()
     start_behavior_profile_scheduler()
     start_ui_copy_refresh_scheduler()
 
@@ -62,6 +66,7 @@ async def shutdown_event():
     """应用关闭时执行"""
     await stop_ui_copy_refresh_scheduler()
     await stop_behavior_profile_scheduler()
+    stop_behavior_write_pipeline()
     await ai_client.__aexit__(None, None, None)  # 关闭 HTTP 客户端
     print("[SERVER] FastAPI 应用已关闭。")
 
@@ -72,11 +77,15 @@ async def shutdown_event():
 
 @app.get("/api/internal/health")
 async def internal_health():
+    behavior_stats = get_behavior_write_pipeline_stats()
     return {
         "status": "ok",
         "service": "main",
         "ai_assistant_url": AI_ASSISTANT_URL,
         "database_path": str(DB_PATH),
+        "behavior_write_worker_alive": behavior_stats["alive"],
+        "behavior_write_queue_depth": behavior_stats["queue_depth"],
+        "behavior_write_queue_capacity": behavior_stats["queue_capacity"],
     }
 
 

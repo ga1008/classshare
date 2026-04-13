@@ -75,5 +75,7 @@ async def ingest_behavior_batch(
         page_key=body.page_key,
         events=[item.model_dump() for item in body.events],
         session_started_at=str(user.get("login_time") or "").strip() or None,
+        wait=False,
     )
-    return {"status": "success", **snapshot}
+    response_status = "degraded" if snapshot.get("degraded") else "success"
+    return {"status": response_status, **snapshot}
