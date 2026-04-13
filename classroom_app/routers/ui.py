@@ -23,6 +23,7 @@ from ..dependencies import build_login_url, sanitize_next_path
 from ..dependencies import infer_required_role_from_path, get_role_label
 from ..dependencies import apply_access_token_cookie, clear_access_token_cookie, invalidate_session_for_user
 from ..services.behavior_tracking_service import record_behavior_event
+from ..services.discussion_mood_service import maybe_schedule_discussion_mood_refresh
 from ..services.submission_assets import decode_allowed_file_types_json, summarize_allowed_file_types
 from ..services.dashboard_service import build_dashboard_context
 from ..services.classroom_page_service import build_classroom_page_context
@@ -720,6 +721,14 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
         )
     except Exception as exc:
         print(f"[BEHAVIOR] 记录课堂页面访问失败: {exc}")
+
+    try:
+        await maybe_schedule_discussion_mood_refresh(
+            class_offering_id,
+            reason="page_view",
+        )
+    except Exception as exc:
+        print(f"[DISCUSSION_MOOD] 课堂页面预热失败: {exc}")
 
     return templates.TemplateResponse(request, "classroom_main_v4.html", {
         "request": request,

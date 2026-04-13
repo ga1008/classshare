@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .discussion_mood_service import get_discussion_mood_payload
 from .ui_copy_service import get_ui_copy_block, render_ui_copy_block
 from .prompt_utils import polite_address
 
@@ -28,6 +29,10 @@ def build_classroom_page_context(
             "course_name": classroom.get("course_name") or "",
             "alias_or_name": polite_address(user.get("name") or "", role),
         },
+    )
+    discussion_mood = get_discussion_mood_payload(
+        conn,
+        int(classroom.get("id") or 0),
     )
 
     stats = _build_stat_cards(
@@ -81,18 +86,15 @@ def build_classroom_page_context(
         "discussion": {
             "eyebrow": "课堂研讨室",
             "title": ui_copy["discussion_title"],
-            "subtitle": ui_copy["discussion_subtitle"],
-            "subtitle_template": str(raw_ui_copy.get("discussion_subtitle") or ui_copy["discussion_subtitle"]),
-            "detail": ui_copy["discussion_detail_template"],
-            "detail_template": str(raw_ui_copy.get("discussion_detail_template") or ui_copy["discussion_detail_template"]),
+            "subtitle": discussion_mood["headline"],
+            "detail": discussion_mood["detail"],
         },
     }
 
     discussion = {
         "subtitle": sections["discussion"]["subtitle"],
-        "subtitle_template": sections["discussion"]["subtitle_template"],
         "detail": sections["discussion"]["detail"],
-        "detail_template": sections["discussion"]["detail_template"],
+        "mood": discussion_mood,
     }
 
     return {

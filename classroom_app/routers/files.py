@@ -30,6 +30,10 @@ from ..services.discussion_ai_service import (
     record_alias_switch_activity,
     record_message_activity,
 )
+from ..services.discussion_mood_service import (
+    get_discussion_mood_payload,
+    maybe_schedule_discussion_mood_refresh,
+)
 from ..services.discussion_attachment_service import (
     DISCUSSION_ATTACHMENT_MAX_BYTES,
     MAX_DISCUSSION_ATTACHMENTS_PER_MESSAGE,
@@ -418,6 +422,11 @@ async def _process_discussion_chat_message(
     )
 
     await manager.broadcast(class_offering_id, json.dumps(stored_message, ensure_ascii=False))
+    await maybe_schedule_discussion_mood_refresh(
+        class_offering_id,
+        reason="message",
+        latest_message_id=int(stored_message["id"]),
+    )
 
     if contains_discussion_ai_mention(normalized_text):
         asyncio.create_task(
@@ -1087,6 +1096,22 @@ async def upload_discussion_attachments(
             "max_upload_bytes": DISCUSSION_ATTACHMENT_MAX_BYTES,
         },
     }
+
+
+@router.get("/api/classrooms/{class_offering_id}/discussion-mood")
+async def get_discussion_mood(
+        class_offering_id: int,
+        user: dict = Depends(get_current_user)
+):
+    with get_db_connection() as conn:
+        _ensure_classroom_access_for_user(conn, class_offering_id, user)
+        payload = get_discussion_mood_payload(conn, class_offering_id)
+
+    await maybe_schedule_discussion_mood_refresh(
+        class_offering_id,
+        reason="poll",
+    )
+    return payload
 
 
 @router.get("/api/classrooms/{class_offering_id}/discussion-attachments/{attachment_id}")

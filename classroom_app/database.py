@@ -1406,6 +1406,29 @@ def init_database():
                 "CREATE INDEX IF NOT EXISTS idx_ui_copy_snapshots_lookup "
                 "ON ui_copy_snapshots (snapshot_date DESC, generated_at DESC, id DESC)"
             )
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS discussion_mood_snapshots
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    class_offering_id INTEGER NOT NULL UNIQUE,
+                    schema_version TEXT NOT NULL DEFAULT 'v1',
+                    source TEXT NOT NULL DEFAULT 'fallback',
+                    mood_label TEXT NOT NULL DEFAULT 'warm',
+                    headline TEXT NOT NULL,
+                    detail TEXT NOT NULL,
+                    latest_message_id INTEGER NOT NULL DEFAULT 0,
+                    raw_payload_json TEXT DEFAULT '',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE
+                )
+                '''
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_discussion_mood_snapshots_updated "
+                "ON discussion_mood_snapshots (updated_at DESC, id DESC)"
+            )
 
             # 13.9 绯荤粺淇℃伅涓績閫氱煡
             conn.execute('''
