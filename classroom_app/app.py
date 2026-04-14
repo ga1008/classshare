@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import anyio.to_thread
 from fastapi import FastAPI, Request, HTTPException
 import sys
 from fastapi.staticfiles import StaticFiles
@@ -8,7 +9,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 # 修复：导入 templates 以便在错误处理程序中使用
 from .core import app, ai_client, templates
 # 修复：移除 CONFIG_FILE 和 CHAT_LOG_DIR (后者在 V4.0 services/chat_handler.py 中管理)
-from .config import AI_ASSISTANT_URL, BASE_DIR, DB_PATH, STATIC_DIR
+from .config import AI_ASSISTANT_URL, BASE_DIR, DB_PATH, MAIN_THREADPOOL_TOKENS, STATIC_DIR
 from .database import init_database
 from .dependencies import build_login_redirect_url, build_permission_warning_url
 from .dependencies import clear_access_token_cookie, get_active_user_from_request
@@ -44,6 +45,10 @@ async def startup_event():
 
     # 确保静态目录存在
     STATIC_DIR.mkdir(exist_ok=True)
+    thread_limiter = anyio.to_thread.current_default_thread_limiter()
+    if thread_limiter.total_tokens < MAIN_THREADPOOL_TOKENS:
+        thread_limiter.total_tokens = MAIN_THREADPOOL_TOKENS
+    print(f"[SERVER] 默认线程池容量: {thread_limiter.total_tokens}")
     await ai_client.__aenter__()  # 启动 HTTP 客户端
     resumed_private_ai_jobs = schedule_pending_private_ai_reply_jobs()
     if resumed_private_ai_jobs:
@@ -69,11 +74,13 @@ async def shutdown_event():
 @app.get("/api/internal/health")
 async def internal_health():
     behavior_stats = get_behavior_write_pipeline_stats()
+    thread_limiter = anyio.to_thread.current_default_thread_limiter()
     return {
         "status": "ok",
         "service": "main",
         "ai_assistant_url": AI_ASSISTANT_URL,
         "database_path": str(DB_PATH),
+        "threadpool_tokens": int(thread_limiter.total_tokens),
         "behavior_write_worker_alive": behavior_stats["alive"],
         "behavior_write_queue_depth": behavior_stats["queue_depth"],
         "behavior_write_queue_capacity": behavior_stats["queue_capacity"],

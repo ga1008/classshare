@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
@@ -57,7 +58,7 @@ async def message_center_page(
 
 
 @router.get("/api/message-center/bootstrap", response_class=JSONResponse)
-async def api_message_center_bootstrap(user: dict = Depends(get_current_user)):
+def api_message_center_bootstrap(user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         return {
             "status": "success",
@@ -66,7 +67,7 @@ async def api_message_center_bootstrap(user: dict = Depends(get_current_user)):
 
 
 @router.get("/api/message-center/summary", response_class=JSONResponse)
-async def api_message_center_summary(user: dict = Depends(get_current_user)):
+def api_message_center_summary(user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         return {
             "status": "success",
@@ -76,7 +77,7 @@ async def api_message_center_summary(user: dict = Depends(get_current_user)):
 
 
 @router.get("/api/message-center/items", response_class=JSONResponse)
-async def api_message_center_items(
+def api_message_center_items(
     category: str = Query(default="all"),
     keyword: str = Query(default=""),
     filter_key: str = Query(default="all", alias="filter"),
@@ -120,7 +121,7 @@ async def api_message_center_mark_read(request: Request, user: dict = Depends(ge
 
 
 @router.get("/api/message-center/private/contacts", response_class=JSONResponse)
-async def api_private_message_contacts(user: dict = Depends(get_current_user)):
+def api_private_message_contacts(user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         return {
             "status": "success",
@@ -129,7 +130,7 @@ async def api_private_message_contacts(user: dict = Depends(get_current_user)):
 
 
 @router.get("/api/message-center/private/conversation", response_class=JSONResponse)
-async def api_private_message_conversation(
+def api_private_message_conversation(
     contact: str = Query(..., min_length=3),
     scope: Optional[int] = Query(default=None),
     limit: int = Query(default=120, ge=1, le=300),
@@ -186,9 +187,11 @@ async def api_send_private_message(
     if ai_reply_job and ai_reply_job.get("id") is not None:
         background_tasks.add_task(process_private_ai_reply_job, int(ai_reply_job["id"]))
 
-    with get_db_connection() as conn:
-        summary = get_message_center_summary(conn, user)
-        contacts = list_private_message_contacts(conn, user)
+    def _load_summary_and_contacts() -> tuple[dict, list[dict]]:
+        with get_db_connection() as conn:
+            return get_message_center_summary(conn, user), list_private_message_contacts(conn, user)
+
+    summary, contacts = await asyncio.to_thread(_load_summary_and_contacts)
 
     return {
         "status": "success",
@@ -199,7 +202,7 @@ async def api_send_private_message(
 
 
 @router.get("/api/message-center/private/ai-jobs/{job_id}", response_class=JSONResponse)
-async def api_private_ai_reply_job(job_id: int, user: dict = Depends(get_current_user)):
+def api_private_ai_reply_job(job_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         try:
             job = get_private_ai_reply_job(conn, user, job_id=job_id)
@@ -212,7 +215,7 @@ async def api_private_ai_reply_job(job_id: int, user: dict = Depends(get_current
 
 
 @router.get("/api/message-center/private/blocks", response_class=JSONResponse)
-async def api_private_message_blocks(user: dict = Depends(get_current_user)):
+def api_private_message_blocks(user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         return {
             "status": "success",

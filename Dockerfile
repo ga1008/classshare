@@ -8,6 +8,8 @@ LABEL org.opencontainers.image.title="LanShare" \
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PYTHONUTF8=1 \
+    PYTHONIOENCODING=utf-8 \
     PIP_NO_CACHE_DIR=1
 
 WORKDIR /app

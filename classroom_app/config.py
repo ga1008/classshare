@@ -106,6 +106,13 @@ HOST = os.getenv("MAIN_HOST", "0.0.0.0")
 PORT = int(os.getenv("MAIN_PORT", 8000))
 AI_ASSISTANT_URL = _read_url_env("AI_ASSISTANT_URL") or f"http://{os.getenv('AI_HOST', '127.0.0.1')}:{os.getenv('AI_PORT', 8001)}"
 MAIN_APP_CALLBACK_URL = _read_url_env("MAIN_APP_CALLBACK_URL") or f"http://127.0.0.1:{PORT}/api/internal/grading-complete"
+MAIN_WORKERS = max(1, int(os.getenv("MAIN_WORKERS", 1)))
+MAIN_THREADPOOL_TOKENS = max(32, int(os.getenv("MAIN_THREADPOOL_TOKENS", 64)))
+MAIN_BACKLOG = max(128, int(os.getenv("MAIN_BACKLOG", 2048)))
+MAIN_LIMIT_CONCURRENCY = max(0, int(os.getenv("MAIN_LIMIT_CONCURRENCY", 0)))
+MAIN_TIMEOUT_KEEP_ALIVE = max(5, int(os.getenv("MAIN_TIMEOUT_KEEP_ALIVE", 30)))
+MAIN_WS_PING_INTERVAL = max(5.0, float(os.getenv("MAIN_WS_PING_INTERVAL", 20.0)))
+MAIN_WS_PING_TIMEOUT = max(5.0, float(os.getenv("MAIN_WS_PING_TIMEOUT", 20.0)))
 
 # --- Teacher auth ---
 TEACHER_USER = os.getenv("TEACHER_NAME", "teacher")

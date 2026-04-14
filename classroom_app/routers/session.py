@@ -2,26 +2,33 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from ..dependencies import active_sessions, get_current_user, invalidate_session_for_user
+from ..dependencies import (
+    get_current_user,
+    invalidate_session_for_user,
+    list_active_session_roles_for_user,
+    list_active_sessions,
+)
 
 router = APIRouter()
 
 
 @router.get("/api/session/active")
-async def get_active_sessions(user: dict = Depends(get_current_user)):
+def get_active_sessions(user: dict = Depends(get_current_user)):
     """获取当前活跃会话，仅教师可访问。"""
     if user.get("role") != "teacher":
         raise HTTPException(status_code=403, detail="仅教师可查看活跃会话")
 
+    sessions = list_active_sessions()
+
     return {
         "status": "success",
-        "active_sessions": active_sessions,
-        "total_sessions": len(active_sessions),
+        "active_sessions": sessions,
+        "total_sessions": len(sessions),
     }
 
 
 @router.post("/api/session/invalidate/{user_id}")
-async def invalidate_session(
+def invalidate_session(
     user_id: str,
     role: Optional[str] = None,
     user: dict = Depends(get_current_user),
@@ -35,11 +42,7 @@ async def invalidate_session(
         raise HTTPException(status_code=400, detail="role 仅支持 student 或 teacher")
 
     if not normalized_role:
-        matching_roles = {
-            str(session.get("role")).strip().lower()
-            for session in active_sessions.values()
-            if str(session.get("user_id")) == str(user_id) and session.get("role")
-        }
+        matching_roles = list_active_session_roles_for_user(user_id)
         if len(matching_roles) > 1:
             raise HTTPException(status_code=409, detail="该 user_id 同时存在学生和教师会话，请指定 role")
         normalized_role = next(iter(matching_roles), None)
@@ -51,7 +54,7 @@ async def invalidate_session(
 
 
 @router.get("/api/session/my-info")
-async def get_my_session_info(request: Request, user: dict = Depends(get_current_user)):
+def get_my_session_info(request: Request, user: dict = Depends(get_current_user)):
     """获取当前用户的会话信息。"""
     from ..dependencies import get_client_ip
 

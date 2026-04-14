@@ -580,10 +580,10 @@ async def handle_teacher_login(
 
 @router.get("/logout")
 async def logout(request: Request):
-    from ..dependencies import get_current_user_optional
+    from ..dependencies import get_active_user_from_request
 
     # 获取当前用户并使其会话失效
-    user = await get_current_user_optional(request)
+    user = get_active_user_from_request(request)
     if user and user.get('id'):
         invalidate_session_for_user(str(user['id']), user.get('role'))
         print(f"[SESSION] 用户 {user.get('name')} 主动注销")

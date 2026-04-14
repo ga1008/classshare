@@ -3,6 +3,7 @@ import json
 import math
 import random
 import sys
+import threading
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -10,7 +11,6 @@ from typing import Dict, List, Optional, Tuple
 
 from fastapi import WebSocket
 
-from ..core import chat_log_lock
 from ..config import CHAT_LOG_DIR
 from ..database import get_db_connection
 
@@ -35,6 +35,10 @@ TEMPORARY_NAMES = [
 
 _chat_log_schema_ready = False
 _migrated_rooms: set[int] = set()
+_chat_log_state_lock = threading.Lock()
+_chat_log_migration_lock = threading.Lock()
+_room_log_locks: Dict[int, asyncio.Lock] = {}
+_room_log_locks_guard = asyncio.Lock()
 
 
 def ensure_chat_log_schema() -> None:
@@ -42,72 +46,85 @@ def ensure_chat_log_schema() -> None:
     if _chat_log_schema_ready:
         return
 
-    with get_db_connection() as conn:
-        try:
-            conn.execute("ALTER TABLE chat_logs ADD COLUMN logged_at TEXT")
-        except Exception:
-            pass
-        try:
-            conn.execute("ALTER TABLE chat_logs ADD COLUMN message_type TEXT DEFAULT 'text'")
-        except Exception:
-            pass
-        try:
-            conn.execute("ALTER TABLE chat_logs ADD COLUMN emoji_payload_json TEXT")
-        except Exception:
-            pass
-        try:
-            conn.execute("ALTER TABLE chat_logs ADD COLUMN attachments_json TEXT")
-        except Exception:
-            pass
-        try:
-            conn.execute("ALTER TABLE chat_logs ADD COLUMN quote_message_id INTEGER")
-        except Exception:
-            pass
-        try:
-            conn.execute("ALTER TABLE chat_logs ADD COLUMN quote_payload_json TEXT")
-        except Exception:
-            pass
+    with _chat_log_state_lock:
+        if _chat_log_schema_ready:
+            return
 
-        conn.execute(
-            "UPDATE chat_logs SET logged_at = timestamp "
-            "WHERE (logged_at IS NULL OR logged_at = '') AND instr(timestamp, 'T') > 0"
-        )
-        conn.execute(
-            "UPDATE chat_logs SET message_type = 'text' "
-            "WHERE message_type IS NULL OR message_type = ''"
-        )
+        with get_db_connection() as conn:
+            try:
+                conn.execute("ALTER TABLE chat_logs ADD COLUMN logged_at TEXT")
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE chat_logs ADD COLUMN message_type TEXT DEFAULT 'text'")
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE chat_logs ADD COLUMN emoji_payload_json TEXT")
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE chat_logs ADD COLUMN attachments_json TEXT")
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE chat_logs ADD COLUMN quote_message_id INTEGER")
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE chat_logs ADD COLUMN quote_payload_json TEXT")
+            except Exception:
+                pass
 
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS chat_log_migrations
-            (
-                class_offering_id INTEGER PRIMARY KEY,
-                migrated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE
+            conn.execute(
+                "UPDATE chat_logs SET logged_at = timestamp "
+                "WHERE (logged_at IS NULL OR logged_at = '') AND instr(timestamp, 'T') > 0"
             )
-            """
-        )
+            conn.execute(
+                "UPDATE chat_logs SET message_type = 'text' "
+                "WHERE message_type IS NULL OR message_type = ''"
+            )
 
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_chat_logs_room_logged_at "
-            "ON chat_logs (class_offering_id, logged_at DESC, id DESC)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_chat_logs_sender_logged_at "
-            "ON chat_logs (user_role, user_id, logged_at DESC, id DESC)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_chat_logs_room_id "
-            "ON chat_logs (class_offering_id, id DESC)"
-        )
-        conn.execute("DROP INDEX IF EXISTS idx_chat_logs_legacy_dedupe")
-        conn.commit()
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS chat_log_migrations
+                (
+                    class_offering_id INTEGER PRIMARY KEY,
+                    migrated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE
+                )
+                """
+            )
 
-    _chat_log_schema_ready = True
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chat_logs_room_logged_at "
+                "ON chat_logs (class_offering_id, logged_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chat_logs_sender_logged_at "
+                "ON chat_logs (user_role, user_id, logged_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chat_logs_room_id "
+                "ON chat_logs (class_offering_id, id DESC)"
+            )
+            conn.execute("DROP INDEX IF EXISTS idx_chat_logs_legacy_dedupe")
+            conn.commit()
+
+        _chat_log_schema_ready = True
 
 
 def get_log_path_for_room(room_id: int) -> Path:
     return CHAT_LOG_DIR / f"classroom_{room_id}.log"
+
+
+async def get_chat_room_lock(room_id: int) -> asyncio.Lock:
+    async with _room_log_locks_guard:
+        lock = _room_log_locks.get(room_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _room_log_locks[room_id] = lock
+        return lock
 
 
 def parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
@@ -215,99 +232,103 @@ def ensure_room_history_migrated(room_id: int) -> None:
     if room_id in _migrated_rooms:
         return
 
-    with get_db_connection() as conn:
-        already_migrated = conn.execute(
-            "SELECT 1 FROM chat_log_migrations WHERE class_offering_id = ? LIMIT 1",
-            (room_id,),
-        ).fetchone()
-        if already_migrated is not None:
-            _migrated_rooms.add(room_id)
+    with _chat_log_migration_lock:
+        if room_id in _migrated_rooms:
             return
 
-    log_file = get_log_path_for_room(room_id)
-    if not log_file.exists():
         with get_db_connection() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO chat_log_migrations (class_offering_id, migrated_at) VALUES (?, ?)",
-                (room_id, datetime.now().isoformat()),
-            )
-            conn.commit()
-        _migrated_rooms.add(room_id)
-        return
+            already_migrated = conn.execute(
+                "SELECT 1 FROM chat_log_migrations WHERE class_offering_id = ? LIMIT 1",
+                (room_id,),
+            ).fetchone()
+            if already_migrated is not None:
+                _migrated_rooms.add(room_id)
+                return
 
-    rows_to_insert: List[tuple] = []
-    try:
-        with open(log_file, "r", encoding="utf-8") as handle:
-            for line in handle:
-                try:
-                    parsed = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-                db_row = normalize_legacy_message_for_db(room_id, log_file, parsed)
-                if db_row:
-                    rows_to_insert.append(db_row)
-    except Exception as exc:
-        print(f"[ERROR] 加载课堂聊天日志失败 (课堂: {room_id}): {exc}", file=sys.stderr)
-        _migrated_rooms.add(room_id)
-        return
-
-    if rows_to_insert:
-        try:
+        log_file = get_log_path_for_room(room_id)
+        if not log_file.exists():
             with get_db_connection() as conn:
-                for row in rows_to_insert:
-                    exists = conn.execute(
-                        """
-                        SELECT 1
-                        FROM chat_logs
-                        WHERE class_offering_id = ?
-                          AND user_id = ?
-                          AND user_name = ?
-                          AND message = ?
-                          AND logged_at = ?
-                        LIMIT 1
-                        """,
-                        (row[0], row[1], row[2], row[4], row[6]),
-                    ).fetchone()
-                    if exists is None:
-                        conn.execute(
-                            """
-                            INSERT INTO chat_logs
-                            (
-                                class_offering_id,
-                                user_id,
-                                user_name,
-                                user_role,
-                                message,
-                                timestamp,
-                                logged_at,
-                                message_type,
-                                emoji_payload_json,
-                                attachments_json,
-                                quote_message_id,
-                                quote_payload_json
-                            )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            row,
-                        )
                 conn.execute(
                     "INSERT OR REPLACE INTO chat_log_migrations (class_offering_id, migrated_at) VALUES (?, ?)",
                     (room_id, datetime.now().isoformat()),
                 )
                 conn.commit()
-        except Exception as exc:
-            print(f"[ERROR] 迁移课堂聊天日志失败 (课堂: {room_id}): {exc}", file=sys.stderr)
+            _migrated_rooms.add(room_id)
             return
-    else:
-        with get_db_connection() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO chat_log_migrations (class_offering_id, migrated_at) VALUES (?, ?)",
-                (room_id, datetime.now().isoformat()),
-            )
-            conn.commit()
 
-    _migrated_rooms.add(room_id)
+        rows_to_insert: List[tuple] = []
+        try:
+            with open(log_file, "r", encoding="utf-8") as handle:
+                for line in handle:
+                    try:
+                        parsed = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    db_row = normalize_legacy_message_for_db(room_id, log_file, parsed)
+                    if db_row:
+                        rows_to_insert.append(db_row)
+        except Exception as exc:
+            print(f"[ERROR] 加载课堂聊天日志失败 (课堂: {room_id}): {exc}", file=sys.stderr)
+            _migrated_rooms.add(room_id)
+            return
+
+        if rows_to_insert:
+            try:
+                with get_db_connection() as conn:
+                    for row in rows_to_insert:
+                        exists = conn.execute(
+                            """
+                            SELECT 1
+                            FROM chat_logs
+                            WHERE class_offering_id = ?
+                              AND user_id = ?
+                              AND user_name = ?
+                              AND message = ?
+                              AND logged_at = ?
+                            LIMIT 1
+                            """,
+                            (row[0], row[1], row[2], row[4], row[6]),
+                        ).fetchone()
+                        if exists is None:
+                            conn.execute(
+                                """
+                                INSERT INTO chat_logs
+                                (
+                                    class_offering_id,
+                                    user_id,
+                                    user_name,
+                                    user_role,
+                                    message,
+                                    timestamp,
+                                    logged_at,
+                                    message_type,
+                                    emoji_payload_json,
+                                    attachments_json,
+                                    quote_message_id,
+                                    quote_payload_json
+                                )
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                row,
+                            )
+                    conn.execute(
+                        "INSERT OR REPLACE INTO chat_log_migrations (class_offering_id, migrated_at) VALUES (?, ?)",
+                        (room_id, datetime.now().isoformat()),
+                    )
+                    conn.commit()
+            except Exception as exc:
+                print(f"[ERROR] 迁移课堂聊天日志失败 (课堂: {room_id}): {exc}", file=sys.stderr)
+                return
+        else:
+            with get_db_connection() as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO chat_log_migrations (class_offering_id, migrated_at) VALUES (?, ?)",
+                    (room_id, datetime.now().isoformat()),
+                )
+                conn.commit()
+
+        _migrated_rooms.add(room_id)
 
 
 def row_to_chat_message(row) -> dict:
@@ -476,7 +497,15 @@ def get_older_history_payload(room_id: int, before_id: Optional[int]) -> dict:
     }
 
 
-async def save_chat_message(room_id: int, message: dict) -> dict:
+async def load_initial_history_payload(room_id: int) -> dict:
+    return await asyncio.to_thread(get_initial_history_payload, room_id)
+
+
+async def load_older_history_payload(room_id: int, before_id: Optional[int]) -> dict:
+    return await asyncio.to_thread(get_older_history_payload, room_id, before_id)
+
+
+def _save_chat_message_sync(room_id: int, message: dict) -> dict:
     ensure_room_history_migrated(room_id)
 
     sender = str(message.get("sender") or "课堂成员")
@@ -494,55 +523,55 @@ async def save_chat_message(room_id: int, message: dict) -> dict:
     quote_message_id = message.get("quote_message_id")
     quote_payload_json = json.dumps(quote, ensure_ascii=False) if isinstance(quote, dict) and quote else None
 
-    async with chat_log_lock:
-        try:
-            with get_db_connection() as conn:
-                cursor = conn.execute(
-                    """
-                    INSERT INTO chat_logs
-                    (
-                        class_offering_id,
-                        user_id,
-                        user_name,
-                        user_role,
-                        message,
-                        timestamp,
-                        logged_at,
-                        message_type,
-                        emoji_payload_json,
-                        attachments_json,
-                        quote_message_id,
-                        quote_payload_json
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        room_id,
-                        user_id,
-                        sender,
-                        role,
-                        content,
-                        timestamp,
-                        logged_at,
-                        message_type,
-                        emoji_payload_json,
-                        attachments_json,
-                        quote_message_id,
-                        quote_payload_json,
-                    ),
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO chat_logs
+                (
+                    class_offering_id,
+                    user_id,
+                    user_name,
+                    user_role,
+                    message,
+                    timestamp,
+                    logged_at,
+                    message_type,
+                    emoji_payload_json,
+                    attachments_json,
+                    quote_message_id,
+                    quote_payload_json
                 )
-                conn.commit()
-                message_id = cursor.lastrowid
-        except Exception as exc:
-            print(f"[ERROR] 保存课堂聊天记录到数据库失败 (课堂: {room_id}): {exc}", file=sys.stderr)
-            raise
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    room_id,
+                    user_id,
+                    sender,
+                    role,
+                    content,
+                    timestamp,
+                    logged_at,
+                    message_type,
+                    emoji_payload_json,
+                    attachments_json,
+                    quote_message_id,
+                    quote_payload_json,
+                ),
+            )
+            conn.commit()
+            message_id = cursor.lastrowid
+    except Exception as exc:
+        print(f"[ERROR] 保存课堂聊天记录到数据库失败 (课堂: {room_id}): {exc}", file=sys.stderr)
+        raise
 
-        log_file = get_log_path_for_room(room_id)
-        try:
-            with open(log_file, "a", encoding="utf-8") as handle:
-                handle.write(json.dumps(message, ensure_ascii=False) + "\n")
-        except Exception as exc:
-            print(f"[ERROR] 保存课堂聊天记录到文件失败 (课堂: {room_id}): {exc}", file=sys.stderr)
+    CHAT_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = get_log_path_for_room(room_id)
+    try:
+        with open(log_file, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(message, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        print(f"[ERROR] 保存课堂聊天记录到文件失败 (课堂: {room_id}): {exc}", file=sys.stderr)
 
     response = {
         "id": message_id,
@@ -564,6 +593,12 @@ async def save_chat_message(room_id: int, message: dict) -> dict:
     if quote_payload_json:
         response["quote"] = quote
     return response
+
+
+async def save_chat_message(room_id: int, message: dict) -> dict:
+    room_lock = await get_chat_room_lock(room_id)
+    async with room_lock:
+        return await asyncio.to_thread(_save_chat_message_sync, room_id, dict(message))
 
 class MultiRoomConnectionManager:
     def __init__(self):
@@ -757,7 +792,7 @@ class MultiRoomConnectionManager:
         }
 
         await self.send_display_name_payload(room_id, connection_id)
-        await websocket.send_text(json.dumps(get_initial_history_payload(room_id), ensure_ascii=False))
+        await websocket.send_text(json.dumps(await load_initial_history_payload(room_id), ensure_ascii=False))
         await self.broadcast_user_list(room_id)
         await self.broadcast_alias_states(room_id)
 

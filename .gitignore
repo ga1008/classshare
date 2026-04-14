@@ -166,6 +166,7 @@ cython_debug/
 *.xlsx
 
 .idea
+data/
 shared_files/
 
 homework_submissions/

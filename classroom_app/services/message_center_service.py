@@ -1801,41 +1801,53 @@ def _finish_private_ai_reply_job(
 
 
 async def process_private_ai_reply_job(job_id: int | str) -> Optional[dict[str, Any]]:
-    with get_db_connection() as conn:
-        job_row = _claim_private_ai_reply_job(conn, job_id)
+    def _claim_job_sync() -> Optional[dict[str, Any]]:
+        with get_db_connection() as conn:
+            return _claim_private_ai_reply_job(conn, job_id)
+
+    job_row = await asyncio.to_thread(_claim_job_sync)
     if job_row is None:
         return None
 
     try:
-        with get_db_connection() as conn:
-            user = _build_private_ai_job_user_snapshot(
-                conn,
-                requester_identity=str(job_row["requester_identity"] or ""),
-            )
+        def _load_user_sync() -> dict[str, Any]:
+            with get_db_connection() as conn:
+                return _build_private_ai_job_user_snapshot(
+                    conn,
+                    requester_identity=str(job_row["requester_identity"] or ""),
+                )
+
+        user = await asyncio.to_thread(_load_user_sync)
         reply = await generate_ai_private_reply(
             user,
             class_offering_id=int(job_row["class_offering_id"]),
             conversation_key=str(job_row["conversation_key"] or ""),
         )
-        with get_db_connection() as conn:
-            _finish_private_ai_reply_job(
-                conn,
-                job_row["id"],
-                status=AI_REPLY_JOB_STATUS_COMPLETED if reply else AI_REPLY_JOB_STATUS_FAILED,
-                reply_message_id=reply.get("id") if reply else None,
-                error_message="" if reply else "AI 助教暂时没有成功生成回复",
-            )
-            conn.commit()
+        def _finish_job_sync() -> None:
+            with get_db_connection() as conn:
+                _finish_private_ai_reply_job(
+                    conn,
+                    job_row["id"],
+                    status=AI_REPLY_JOB_STATUS_COMPLETED if reply else AI_REPLY_JOB_STATUS_FAILED,
+                    reply_message_id=reply.get("id") if reply else None,
+                    error_message="" if reply else "AI 助教暂时没有成功生成回复",
+                )
+                conn.commit()
+
+        await asyncio.to_thread(_finish_job_sync)
         return reply
     except Exception as exc:
-        with get_db_connection() as conn:
-            _finish_private_ai_reply_job(
-                conn,
-                job_row["id"],
-                status=AI_REPLY_JOB_STATUS_FAILED,
-                error_message=str(exc) or "AI 助教回复失败",
-            )
-            conn.commit()
+        def _fail_job_sync() -> None:
+            with get_db_connection() as conn:
+                _finish_private_ai_reply_job(
+                    conn,
+                    job_row["id"],
+                    status=AI_REPLY_JOB_STATUS_FAILED,
+                    error_message=str(exc) or "AI 助教回复失败",
+                )
+                conn.commit()
+
+        await asyncio.to_thread(_fail_job_sync)
         return None
 
 
@@ -1882,24 +1894,28 @@ async def send_private_message_and_maybe_reply(
     class_offering_id: Optional[int] = None,
     content: str,
 ) -> dict[str, Any]:
-    with get_db_connection() as conn:
-        result = create_private_message(
-            conn,
-            user,
-            contact_identity=contact_identity,
-            class_offering_id=class_offering_id,
-            content=content,
-        )
-        ai_reply_job = None
-        if result["requires_ai_reply"] and result["class_offering_id"] is not None:
-            ai_reply_job = create_private_ai_reply_job(
+    def _send_message_sync() -> tuple[dict[str, Any], Optional[dict[str, Any]]]:
+        with get_db_connection() as conn:
+            result = create_private_message(
                 conn,
                 user,
-                conversation_key=str(result["conversation_key"]),
-                class_offering_id=int(result["class_offering_id"]),
-                request_message_id=int(result["message"]["id"]),
+                contact_identity=contact_identity,
+                class_offering_id=class_offering_id,
+                content=content,
             )
-        conn.commit()
+            ai_reply_job = None
+            if result["requires_ai_reply"] and result["class_offering_id"] is not None:
+                ai_reply_job = create_private_ai_reply_job(
+                    conn,
+                    user,
+                    conversation_key=str(result["conversation_key"]),
+                    class_offering_id=int(result["class_offering_id"]),
+                    request_message_id=int(result["message"]["id"]),
+                )
+            conn.commit()
+            return result, ai_reply_job
+
+    result, ai_reply_job = await asyncio.to_thread(_send_message_sync)
 
     payload = {
         "contact": result["contact"],

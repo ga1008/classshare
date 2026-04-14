@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -764,16 +765,35 @@ def _load_offering_material_stats(conn, offering_ids: list[int]) -> dict[int, di
 def _load_recent_activity(conn, user: dict, limit: int = 6) -> list[dict[str, Any]]:
     role = str(user.get("role") or "").strip().lower()
     user_pk = int(user["id"])
-    rows = conn.execute(
-        """
+    primary_sql = """
         SELECT id, category, title, body_preview, link_url, read_at, created_at
         FROM message_center_notifications
         WHERE recipient_role = ? AND recipient_user_pk = ?
         ORDER BY created_at DESC, id DESC
         LIMIT ?
-        """,
-        (role, user_pk, limit),
-    ).fetchall()
+        """
+    fallback_sql = """
+        SELECT id, category, title, body_preview, link_url, read_at, created_at
+        FROM message_center_notifications NOT INDEXED
+        WHERE recipient_role = ? AND recipient_user_pk = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+        """
+    try:
+        rows = conn.execute(
+            primary_sql,
+            (role, user_pk, limit),
+        ).fetchall()
+    except sqlite3.DatabaseError as exc:
+        print(f"[DB WARN] Failed to load recent activity with index: {exc}")
+        try:
+            rows = conn.execute(
+                fallback_sql,
+                (role, user_pk, limit),
+            ).fetchall()
+        except sqlite3.DatabaseError as fallback_exc:
+            print(f"[DB WARN] Failed to load recent activity without index: {fallback_exc}")
+            return []
     items = []
     for row in rows:
         category = str(row["category"] or "")

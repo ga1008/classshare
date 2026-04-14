@@ -16,7 +16,12 @@ from pydantic import BaseModel
 from ..config import GLOBAL_FILES_DIR, UPLOAD_CHUNK_SIZE_BYTES, CHUNKED_UPLOADS_DIR
 from ..dependencies import verify_token, get_current_user, get_current_teacher, normalize_ip
 # 导入聊天管理器
-from ..services.chat_handler import manager, save_chat_message, get_older_history_payload, row_to_chat_message
+from ..services.chat_handler import (
+    load_older_history_payload,
+    manager,
+    row_to_chat_message,
+    save_chat_message,
+)
 
 from typing import Optional
 from pathlib import Path
@@ -280,6 +285,107 @@ def _enforce_discussion_message_rate_limit(conn, *, user_pk: int, user_role: str
     )
 
 
+def _prepare_discussion_message_context_sync(
+    *,
+    class_offering_id: int,
+    user: dict,
+    user_pk: int,
+    user_role: str,
+    normalized_text: str,
+    requested_custom_ids: list,
+    requested_attachment_ids: list,
+    quote_message_id: Optional[object],
+) -> dict:
+    with get_db_connection() as conn:
+        _ensure_classroom_access_for_user(conn, class_offering_id, user)
+        custom_emoji_payloads = resolve_custom_emoji_payloads(
+            conn,
+            class_offering_id,
+            requested_custom_ids,
+            user,
+        )
+        attachment_payloads = resolve_discussion_attachment_payloads(
+            conn,
+            class_offering_id,
+            requested_attachment_ids,
+            user,
+        )
+        quote_payload = _load_discussion_quote_payload(conn, class_offering_id, quote_message_id)
+
+        if normalized_text or custom_emoji_payloads or attachment_payloads or quote_payload:
+            _enforce_discussion_message_rate_limit(
+                conn,
+                user_pk=user_pk,
+                user_role=user_role,
+            )
+
+    return {
+        "custom_emoji_payloads": custom_emoji_payloads,
+        "attachment_payloads": attachment_payloads,
+        "quote_payload": quote_payload,
+    }
+
+
+def _finalize_discussion_message_sync(
+    *,
+    class_offering_id: int,
+    user: dict,
+    requested_unicode_emojis: list,
+    custom_emoji_payloads: list[dict],
+    normalized_text: str,
+    display_name: str,
+    stored_message_id: int,
+    used_at: str,
+) -> None:
+    with get_db_connection() as conn:
+        increment_emoji_usage(
+            conn,
+            class_offering_id,
+            user,
+            requested_unicode_emojis,
+            [item["id"] for item in custom_emoji_payloads],
+            used_at=used_at,
+        )
+        try:
+            create_discussion_mention_notifications(
+                conn,
+                class_offering_id=class_offering_id,
+                sender_user=user,
+                sender_display_name=display_name,
+                message_text=normalized_text,
+                message_id=stored_message_id,
+            )
+        except Exception as exc:
+            print(f"[MESSAGE_CENTER] discussion mention notify failed: {exc}")
+        conn.commit()
+
+
+def _ensure_websocket_room_access_sync(class_offering_id: int, user: dict, user_pk: int) -> None:
+    with get_db_connection() as conn:
+        offering = conn.execute(
+            "SELECT id, class_id, teacher_id FROM class_offerings WHERE id = ?",
+            (class_offering_id,),
+        ).fetchone()
+
+        if not offering:
+            raise HTTPException(status_code=403, detail="Classroom not found")
+
+        if user.get("role") == "teacher":
+            if int(offering["teacher_id"]) != user_pk:
+                raise HTTPException(status_code=403, detail="Permission denied")
+            return
+
+        if user.get("role") != "student":
+            raise HTTPException(status_code=403, detail="Permission denied")
+
+        student_class = conn.execute(
+            "SELECT class_id FROM students WHERE id = ?",
+            (user_pk,),
+        ).fetchone()
+        if not student_class or int(student_class["class_id"]) != int(offering["class_id"]):
+            raise HTTPException(status_code=403, detail="Permission denied")
+
+
 async def _broadcast_discussion_ai_reply(class_offering_id: int, reply_text: str) -> None:
     now = datetime.now()
     stored_message = await save_chat_message(class_offering_id, {
@@ -341,31 +447,23 @@ async def _process_discussion_chat_message(
     requested_unicode_emojis = requested_unicode_emojis or []
     requested_attachment_ids = requested_attachment_ids or []
 
-    with get_db_connection() as conn:
-        _ensure_classroom_access_for_user(conn, class_offering_id, user)
-        custom_emoji_payloads = resolve_custom_emoji_payloads(
-            conn,
-            class_offering_id,
-            requested_custom_ids,
-            user,
-        )
-        attachment_payloads = resolve_discussion_attachment_payloads(
-            conn,
-            class_offering_id,
-            requested_attachment_ids,
-            user,
-        )
-        quote_payload = _load_discussion_quote_payload(conn, class_offering_id, quote_message_id)
+    prepared_context = await asyncio.to_thread(
+        _prepare_discussion_message_context_sync,
+        class_offering_id=class_offering_id,
+        user=user,
+        user_pk=user_pk,
+        user_role=str(ws_user["role"]),
+        normalized_text=normalized_text,
+        requested_custom_ids=list(requested_custom_ids),
+        requested_attachment_ids=list(requested_attachment_ids),
+        quote_message_id=quote_message_id,
+    )
+    custom_emoji_payloads = prepared_context["custom_emoji_payloads"]
+    attachment_payloads = prepared_context["attachment_payloads"]
+    quote_payload = prepared_context["quote_payload"]
 
     if not normalized_text and not custom_emoji_payloads and not attachment_payloads and not quote_payload:
         return
-
-    with get_db_connection() as conn:
-        _enforce_discussion_message_rate_limit(
-            conn,
-            user_pk=user_pk,
-            user_role=str(ws_user["role"]),
-        )
 
     now = datetime.now()
     display_time = now.strftime("%H:%M")
@@ -386,27 +484,17 @@ async def _process_discussion_chat_message(
         "logged_at": now.isoformat(),
     })
 
-    with get_db_connection() as conn:
-        increment_emoji_usage(
-            conn,
-            class_offering_id,
-            user,
-            requested_unicode_emojis,
-            [item["id"] for item in custom_emoji_payloads],
-            used_at=now.isoformat(),
-        )
-        try:
-            create_discussion_mention_notifications(
-                conn,
-                class_offering_id=class_offering_id,
-                sender_user=user,
-                sender_display_name=display_name,
-                message_text=normalized_text,
-                message_id=int(stored_message["id"]),
-            )
-        except Exception as exc:
-            print(f"[MESSAGE_CENTER] discussion mention notify failed: {exc}")
-        conn.commit()
+    await asyncio.to_thread(
+        _finalize_discussion_message_sync,
+        class_offering_id=class_offering_id,
+        user=user,
+        requested_unicode_emojis=list(requested_unicode_emojis),
+        custom_emoji_payloads=list(custom_emoji_payloads),
+        normalized_text=normalized_text,
+        display_name=display_name,
+        stored_message_id=int(stored_message["id"]),
+        used_at=now.isoformat(),
+    )
 
     profile_trigger = record_message_activity(
         class_offering_id=class_offering_id,
@@ -1199,10 +1287,10 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
     token = websocket.cookies.get("access_token")
 
     # 使用新的verify_token函数，传入client_ip
-    user = verify_token(token, client_ip)
+    user = await asyncio.to_thread(verify_token, token, client_ip)
     # 兼容代理环境中 WebSocket IP 与 HTTP 登录 IP 不一致的情况
     if user is None and token is not None:
-        user = verify_token(token, None)
+        user = await asyncio.to_thread(verify_token, token, None)
         if user is not None:
             print(f"[WS WARN] 回退到会话级验证通过 - IP: {client_ip}")
 
@@ -1218,36 +1306,12 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    # 验证用户是否有权进入当前课堂房间
-    with get_db_connection() as conn:
-        offering = conn.execute(
-            "SELECT id, class_id, teacher_id FROM class_offerings WHERE id = ?",
-            (class_offering_id,)
-        ).fetchone()
-
-        if not offering:
-            print(f"[WS ERROR] 课堂不存在 - class_offering_id: {class_offering_id}")
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-
-        if user.get("role") == "teacher":
-            if int(offering["teacher_id"]) != user_pk:
-                print(f"[WS ERROR] 教师越权访问课堂 - teacher_id: {user_pk}, classroom: {class_offering_id}")
-                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-                return
-        elif user.get("role") == "student":
-            student_class = conn.execute(
-                "SELECT class_id FROM students WHERE id = ?",
-                (user_pk,)
-            ).fetchone()
-            if not student_class or int(student_class["class_id"]) != int(offering["class_id"]):
-                print(f"[WS ERROR] 学生越权访问课堂 - student_id: {user_pk}, classroom: {class_offering_id}")
-                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-                return
-        else:
-            print(f"[WS ERROR] 非法用户角色: {user.get('role')}")
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
+    try:
+        await asyncio.to_thread(_ensure_websocket_room_access_sync, class_offering_id, user, user_pk)
+    except HTTPException as exc:
+        print(f"[WS ERROR] WebSocket 房间鉴权失败 - user_id: {user_pk}, classroom: {class_offering_id}, detail: {exc.detail}")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
 
     client_id = f"{user['role']}_{user_pk}"
     ws_user = dict(user)
@@ -1316,7 +1380,7 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
                             before_id = None
 
                     await websocket.send_text(
-                        json.dumps(get_older_history_payload(class_offering_id, before_id), ensure_ascii=False)
+                        json.dumps(await load_older_history_payload(class_offering_id, before_id), ensure_ascii=False)
                     )
                     continue
 

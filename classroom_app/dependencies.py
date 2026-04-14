@@ -12,6 +12,13 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 
 from .config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+from .database import (
+    delete_user_sessions,
+    get_user_session,
+    list_user_session_roles,
+    list_user_sessions,
+    save_user_session,
+)
 
 # --- 密码加密 ---
 
@@ -70,6 +77,70 @@ _STUDENT_ONLY_PATTERNS = (
 )
 
 ACCESS_TOKEN_MAX_AGE_SECONDS = max(1, ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+
+
+def _build_session_snapshot(
+    *,
+    session_id: str,
+    ip: str,
+    last_login: Optional[str],
+    user_id: str,
+    role: Optional[str],
+    name: Optional[str],
+    expires_at: str,
+    updated_at: str = "",
+) -> dict:
+    return {
+        "session_id": str(session_id or ""),
+        "ip": str(ip or ""),
+        "last_login": str(last_login or ""),
+        "user_id": str(user_id or ""),
+        "role": str(role or ""),
+        "name": str(name or ""),
+        "expires_at": str(expires_at or ""),
+        "updated_at": str(updated_at or ""),
+    }
+
+
+def _cache_session_snapshot(session_user_key: str, session_snapshot: dict) -> None:
+    normalized_user_key = str(session_user_key or "").strip()
+    if not normalized_user_key:
+        return
+    with _sessions_lock:
+        active_sessions[normalized_user_key] = dict(session_snapshot)
+
+
+def _drop_cached_sessions_for_user(user_id: str, role: Optional[str] = None) -> int:
+    raw_user_id = str(user_id or "").strip()
+    normalized_role = str(role or "").strip().lower()
+    if not raw_user_id:
+        return 0
+
+    removed_count = 0
+    with _sessions_lock:
+        keys_to_remove = [
+            key
+            for key, session in active_sessions.items()
+            if str(session.get("user_id") or "") == raw_user_id
+            and (not normalized_role or str(session.get("role") or "").strip().lower() == normalized_role)
+        ]
+        for session_key in keys_to_remove:
+            if session_key in active_sessions:
+                del active_sessions[session_key]
+                removed_count += 1
+    return removed_count
+
+
+def list_active_sessions() -> dict[str, dict]:
+    sessions = list_user_sessions()
+    with _sessions_lock:
+        active_sessions.clear()
+        active_sessions.update({key: dict(value) for key, value in sessions.items()})
+    return sessions
+
+
+def list_active_session_roles_for_user(user_id: str) -> set[str]:
+    return set(list_user_session_roles(user_id))
 
 
 def build_session_user_key(user_id: Optional[str], role: Optional[str] = None) -> Optional[str]:
@@ -145,18 +216,18 @@ def create_access_token(data: dict, client_ip: str) -> str:
     token_data["iat"] = issued_at
     token_data["exp"] = expire_at
 
-    # 更新活跃会话 (线程安全)
-    user_id = str(data["id"])  # 使用字符串作为键
-    with _sessions_lock:
-        active_sessions[session_user_key] = {
-            "session_id": session_id,
-            "ip": normalized_ip,
-            "last_login": data.get("login_time", ""),
-            "user_id": user_id,
-            "role": data.get("role"),
-            "name": data.get("name"),
-            "expires_at": expire_at.isoformat(),
-        }
+    user_id = str(data["id"])
+    session_snapshot = save_user_session(
+        session_user_key=session_user_key,
+        session_id=session_id,
+        user_id=user_id,
+        role=str(data.get("role") or ""),
+        name=str(data.get("name") or ""),
+        ip=normalized_ip,
+        last_login=str(data.get("login_time") or ""),
+        expires_at=expire_at.isoformat(),
+    )
+    _cache_session_snapshot(session_user_key, session_snapshot)
 
     print(f"[SESSION] 用户 {data.get('name')} 登录，IP: {normalized_ip}, 会话ID: {session_id}")
     return jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
@@ -176,28 +247,27 @@ def verify_token(token: Optional[str], client_ip: Optional[str] = None) -> Optio
         token_ip = normalize_ip(payload.get("ip"))
         normalized_client_ip = normalize_ip(client_ip)
 
-        # 检查会话是否存在且匹配
-        with _sessions_lock:
-            if session_user_key not in active_sessions:
-                print(f"[SESSION] 用户 {user_id} 没有活跃会话")
+        current_session = get_user_session(session_user_key)
+        if current_session is None:
+            _drop_cached_sessions_for_user(user_id, str(payload.get("role") or ""))
+            print(f"[SESSION] 用户 {user_id} 没有活跃会话")
+            return None
+
+        _cache_session_snapshot(session_user_key, current_session)
+        session_ip = normalize_ip(current_session.get("ip"))
+
+        if normalized_client_ip is not None:
+            if (
+                current_session["session_id"] != session_id
+                or session_ip != token_ip
+                or token_ip != normalized_client_ip
+            ):
+                print(f"[SESSION] 会话验证失败 - 用户: {user_id}, 期望IP: {session_ip}, 实际IP: {normalized_client_ip}")
                 return None
-
-            current_session = active_sessions[session_user_key]
-            session_ip = normalize_ip(current_session.get("ip"))
-
-            # 如果提供了client_ip，则验证IP；否则只验证会话ID
-            if normalized_client_ip is not None:
-                # 完整验证：会话ID、IP地址
-                if (current_session["session_id"] != session_id or
-                        session_ip != token_ip or
-                        token_ip != normalized_client_ip):
-                    print(f"[SESSION] 会话验证失败 - 用户: {user_id}, 期望IP: {session_ip}, 实际IP: {normalized_client_ip}")
-                    return None
-            else:
-                # 简化验证：只验证会话ID
-                if current_session["session_id"] != session_id:
-                    print(f"[SESSION] 会话ID不匹配 - 用户: {user_id}")
-                    return None
+        else:
+            if current_session["session_id"] != session_id:
+                print(f"[SESSION] 会话ID不匹配 - 用户: {user_id}")
+                return None
 
         return payload
     except JWTError:
@@ -358,32 +428,15 @@ def invalidate_user_session(user_id: str, role: Optional[str] = None) -> bool:
 
 def invalidate_session_for_user(user_id: str, role: Optional[str] = None) -> bool:
     raw_user_id = str(user_id).strip()
-    preferred_key = build_session_user_key(raw_user_id, role)
+    normalized_role = role.strip().lower() if role else None
+    removed_count = delete_user_sessions(raw_user_id, normalized_role)
+    removed_cache_count = _drop_cached_sessions_for_user(raw_user_id, normalized_role)
 
-    with _sessions_lock:
-        keys_to_remove = []
-        if preferred_key and preferred_key in active_sessions:
-            keys_to_remove.append(preferred_key)
+    if removed_count > 0 or removed_cache_count > 0:
+        print(f"[SESSION] Cleared session for {build_session_user_key(raw_user_id, normalized_role) or raw_user_id}")
+        return True
 
-        if raw_user_id in active_sessions:
-            keys_to_remove.append(raw_user_id)
-
-        if role is None:
-            keys_to_remove.extend(
-                key for key in active_sessions.keys()
-                if key.endswith(f":{raw_user_id}") and key not in keys_to_remove
-            )
-
-        removed = False
-        for session_key in keys_to_remove:
-            if session_key in active_sessions:
-                del active_sessions[session_key]
-                removed = True
-
-    if removed:
-        print(f"[SESSION] Cleared session for {preferred_key or raw_user_id}")
-
-    return removed
+    return False
 
 
 def get_client_ip(request: Request) -> str:
@@ -411,11 +464,11 @@ def get_active_user_from_request(request: Request) -> Optional[dict]:
     return verify_token(token, client_ip)
 
 
-async def get_current_user_optional(request: Request) -> Optional[dict]:
+def get_current_user_optional(request: Request) -> Optional[dict]:
     """获取当前用户（如果已登录），但不强制。"""
     return get_active_user_from_request(request)
 
-async def get_current_user(user: Optional[dict] = Depends(get_current_user_optional)) -> dict:
+def get_current_user(user: Optional[dict] = Depends(get_current_user_optional)) -> dict:
     """依赖项：强制用户必须登录"""
     if user is None:
         raise HTTPException(
@@ -428,7 +481,7 @@ async def get_current_user(user: Optional[dict] = Depends(get_current_user_optio
         )
     return user
 
-async def get_current_teacher(user: dict = Depends(get_current_user)) -> dict:
+def get_current_teacher(user: dict = Depends(get_current_user)) -> dict:
     """依赖项：强制用户必须是教师"""
     if user.get("role") != "teacher":
         raise HTTPException(
@@ -441,7 +494,7 @@ async def get_current_teacher(user: dict = Depends(get_current_user)) -> dict:
         )
     return user
 
-async def get_current_student(user: dict = Depends(get_current_user)) -> dict:
+def get_current_student(user: dict = Depends(get_current_user)) -> dict:
     """依赖项：强制用户必须是学生"""
     if user.get("role") != "student":
         raise HTTPException(

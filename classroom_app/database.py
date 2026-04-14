@@ -2,7 +2,7 @@ import sqlite3
 import sys
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .config import (
     DB_PATH,
@@ -34,6 +34,202 @@ def get_db_connection():
     except sqlite3.Error as e:
         print(f"[DB ERROR] 无法连接到数据库: {e}")
         sys.exit(1)
+
+
+def _normalize_session_row(row: sqlite3.Row | None) -> dict | None:
+    if row is None:
+        return None
+    return {
+        "session_user_key": str(row["session_user_key"] or ""),
+        "session_id": str(row["session_id"] or ""),
+        "ip": str(row["ip"] or ""),
+        "last_login": str(row["last_login"] or ""),
+        "user_id": str(row["user_id"] or ""),
+        "role": str(row["role"] or ""),
+        "name": str(row["name"] or ""),
+        "expires_at": str(row["expires_at"] or ""),
+        "updated_at": str(row["updated_at"] or ""),
+    }
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def save_user_session(
+    *,
+    session_user_key: str,
+    session_id: str,
+    user_id: str,
+    role: str | None = None,
+    name: str | None = None,
+    ip: str | None = None,
+    last_login: str | None = None,
+    expires_at: str,
+) -> dict:
+    normalized_user_key = str(session_user_key or "").strip()
+    if not normalized_user_key:
+        raise ValueError("session_user_key is required")
+
+    timestamp = _utcnow_iso()
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO user_sessions (
+                session_user_key,
+                session_id,
+                user_id,
+                role,
+                name,
+                ip,
+                last_login,
+                expires_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_user_key) DO UPDATE SET
+                session_id = excluded.session_id,
+                user_id = excluded.user_id,
+                role = excluded.role,
+                name = excluded.name,
+                ip = excluded.ip,
+                last_login = excluded.last_login,
+                expires_at = excluded.expires_at,
+                updated_at = excluded.updated_at
+            """,
+            (
+                normalized_user_key,
+                str(session_id or "").strip(),
+                str(user_id or "").strip(),
+                str(role or "").strip(),
+                str(name or "").strip(),
+                str(ip or "").strip(),
+                str(last_login or "").strip(),
+                str(expires_at or "").strip(),
+                timestamp,
+            ),
+        )
+        row = conn.execute(
+            """
+            SELECT session_user_key, session_id, user_id, role, name, ip, last_login, expires_at, updated_at
+            FROM user_sessions
+            WHERE session_user_key = ?
+            LIMIT 1
+            """,
+            (normalized_user_key,),
+        ).fetchone()
+        conn.commit()
+    return _normalize_session_row(row) or {}
+
+
+def get_user_session(session_user_key: str) -> dict | None:
+    normalized_user_key = str(session_user_key or "").strip()
+    if not normalized_user_key:
+        return None
+
+    now_iso = _utcnow_iso()
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT session_user_key, session_id, user_id, role, name, ip, last_login, expires_at, updated_at
+            FROM user_sessions
+            WHERE session_user_key = ?
+            LIMIT 1
+            """,
+            (normalized_user_key,),
+        ).fetchone()
+        if row is None:
+            return None
+
+        expires_at = str(row["expires_at"] or "")
+        if expires_at and expires_at <= now_iso:
+            conn.execute(
+                "DELETE FROM user_sessions WHERE session_user_key = ?",
+                (normalized_user_key,),
+            )
+            conn.commit()
+            return None
+
+    return _normalize_session_row(row)
+
+
+def list_user_sessions() -> dict[str, dict]:
+    now_iso = _utcnow_iso()
+    sessions: dict[str, dict] = {}
+    with get_db_connection() as conn:
+        conn.execute(
+            "DELETE FROM user_sessions WHERE expires_at <= ?",
+            (now_iso,),
+        )
+        rows = conn.execute(
+            """
+            SELECT session_user_key, session_id, user_id, role, name, ip, last_login, expires_at, updated_at
+            FROM user_sessions
+            ORDER BY updated_at DESC, session_user_key ASC
+            """
+        ).fetchall()
+        conn.commit()
+
+    for row in rows:
+        normalized_row = _normalize_session_row(row)
+        if not normalized_row:
+            continue
+        sessions[normalized_row["session_user_key"]] = {
+            "session_id": normalized_row["session_id"],
+            "ip": normalized_row["ip"],
+            "last_login": normalized_row["last_login"],
+            "user_id": normalized_row["user_id"],
+            "role": normalized_row["role"],
+            "name": normalized_row["name"],
+            "expires_at": normalized_row["expires_at"],
+            "updated_at": normalized_row["updated_at"],
+        }
+    return sessions
+
+
+def list_user_session_roles(user_id: str) -> list[str]:
+    normalized_user_id = str(user_id or "").strip()
+    if not normalized_user_id:
+        return []
+
+    now_iso = _utcnow_iso()
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT role
+            FROM user_sessions
+            WHERE user_id = ?
+              AND expires_at > ?
+            ORDER BY role ASC
+            """,
+            (normalized_user_id, now_iso),
+        ).fetchall()
+    return [
+        str(row["role"] or "").strip().lower()
+        for row in rows
+        if str(row["role"] or "").strip()
+    ]
+
+
+def delete_user_sessions(user_id: str, role: str | None = None) -> int:
+    normalized_user_id = str(user_id or "").strip()
+    normalized_role = str(role or "").strip().lower()
+    if not normalized_user_id:
+        return 0
+
+    with get_db_connection() as conn:
+        if normalized_role:
+            cursor = conn.execute(
+                "DELETE FROM user_sessions WHERE user_id = ? AND role = ?",
+                (normalized_user_id, normalized_role),
+            )
+        else:
+            cursor = conn.execute(
+                "DELETE FROM user_sessions WHERE user_id = ?",
+                (normalized_user_id,),
+            )
+        conn.commit()
+        return int(cursor.rowcount or 0)
 
 
 def init_database():
@@ -77,6 +273,32 @@ def init_database():
                              CURRENT_TIMESTAMP
                          )
                          ''')
+
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS user_sessions
+                (
+                    session_user_key TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT '',
+                    name TEXT DEFAULT '',
+                    ip TEXT DEFAULT '',
+                    last_login TEXT DEFAULT '',
+                    expires_at TEXT NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                '''
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_user_sessions_user_role "
+                "ON user_sessions (user_id, role, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at "
+                "ON user_sessions (expires_at)"
+            )
 
             # 2. 班级
             conn.execute('''
@@ -493,6 +715,8 @@ def init_database():
                              CURRENT_TIMESTAMP,
                              exam_paper_id
                              TEXT,
+                             class_offering_id
+                             INTEGER,
                              allowed_file_types_json
                              TEXT,
                              FOREIGN
@@ -536,6 +760,8 @@ def init_database():
                              score
                              INTEGER,
                              feedback_md
+                             TEXT,
+                             answers_json
                              TEXT,
                              submitted_at
                              TEXT

@@ -48,6 +48,17 @@ def _read_int_env(*names: str, default: int) -> int:
             return default
     return default
 
+
+def _configure_stdio_encoding() -> None:
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None or not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+        except Exception:
+            pass
+
 # --- AI 配置 (保持不变) ---
 AI_HOST = os.getenv("AI_HOST", "127.0.0.1")
 AI_PORT = int(os.getenv("AI_PORT", 8001))
@@ -1739,6 +1750,7 @@ async def run_grading_job(job: GradingJob):
 
 # --- 主程序入口 (保持不变) ---
 if __name__ == "__main__":
+    _configure_stdio_encoding()
     if not ENABLED_PLATFORMS: print("[ERROR] 没有在 .env 文件中启用任何 AI 平台，AI 助手无法工作。"); sys.exit(1)
     missing_libs = []
     if any(p['type'] == 'openai' for p in PLATFORMS_CONFIG.values() if
