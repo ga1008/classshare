@@ -16,6 +16,8 @@ const MAX_FREQUENT_ITEMS = 8;
 const DEFAULT_ALIAS_SWITCH_COOLDOWN_SECONDS = 10;
 const DEFAULT_ALIAS_SWITCH_LIMIT = 6;
 const DISCUSSION_ROOM_DESKTOP_BREAKPOINT = 1120;
+const DISCUSSION_MOOD_POLL_MS = 25000;
+const DISCUSSION_MOOD_REFRESH_DELAY_MS = 6000;
 const MESSAGE_MENU_HOVER_DELAY_MS = 260;
 const MESSAGE_MENU_CLOSE_DELAY_MS = 120;
 const MESSAGE_SOURCE_HIGHLIGHT_MS = 1800;
@@ -53,6 +55,8 @@ export class ClassroomChat {
         this.statusText = document.getElementById(options.statusTextId);
         this.displayNameEl = document.getElementById(options.displayNameId);
         this.aliasMetaEl = document.getElementById(options.aliasMetaId);
+        this.discussionMoodHeadlineEl = document.getElementById(options.discussionMoodHeadlineId);
+        this.discussionMoodDetailEl = document.getElementById(options.discussionMoodDetailId);
         this.switchAliasButton = document.getElementById(options.switchAliasButtonId);
         this.mentionAllButton = document.getElementById(options.mentionAllButtonId);
         this.historyLoader = document.getElementById(options.historyLoaderId);
@@ -121,6 +125,9 @@ export class ClassroomChat {
         };
         this.uploadInFlight = false;
         this.refreshTimer = null;
+        this.discussionMoodRefreshTimer = null;
+        this.discussionMoodPollTimer = null;
+        this.discussionMoodVersion = '';
         this.aliasCountdownTimer = null;
         this.sendRateLimitTimer = null;
         this.sendRateLimitUntil = 0;
@@ -161,6 +168,9 @@ export class ClassroomChat {
         this.refreshAliasSwitchUi();
         this.renderSendButtonState();
         this.updateAttachmentTriggerState();
+        this.loadDiscussionMood({ silent: true }).catch(() => {});
+        this.scheduleDiscussionMoodRefresh(8000);
+        this.startDiscussionMoodPolling();
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         this.ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/${this.classOfferingId}`);
@@ -533,6 +543,7 @@ export class ClassroomChat {
             if (data.type === 'chat') {
                 const shouldStickBottom = this.isNearBottom();
                 this.appendChatMessage(data, { scrollToBottom: shouldStickBottom });
+                this.scheduleDiscussionMoodRefresh();
                 if (
                     !this.isCurrentUserMessage(data)
                     && String(data.message || '').includes('@')
@@ -754,6 +765,61 @@ export class ClassroomChat {
         this.updateEmojiSetNote();
         this.renderFrequentRow();
         this.renderCustomEmojiGrid();
+        return data;
+    }
+
+    startDiscussionMoodPolling() {
+        if (!this.discussionMoodHeadlineEl && !this.discussionMoodDetailEl) {
+            return;
+        }
+
+        if (this.discussionMoodPollTimer) {
+            window.clearInterval(this.discussionMoodPollTimer);
+        }
+
+        this.discussionMoodPollTimer = window.setInterval(() => {
+            this.loadDiscussionMood({ silent: true }).catch(() => {});
+        }, DISCUSSION_MOOD_POLL_MS);
+    }
+
+    scheduleDiscussionMoodRefresh(delayMs = DISCUSSION_MOOD_REFRESH_DELAY_MS) {
+        if (!this.discussionMoodHeadlineEl && !this.discussionMoodDetailEl) {
+            return;
+        }
+
+        if (this.discussionMoodRefreshTimer) {
+            window.clearTimeout(this.discussionMoodRefreshTimer);
+        }
+
+        this.discussionMoodRefreshTimer = window.setTimeout(() => {
+            this.discussionMoodRefreshTimer = null;
+            this.loadDiscussionMood({ silent: true }).catch(() => {});
+        }, delayMs);
+    }
+
+    async loadDiscussionMood({ silent = false } = {}) {
+        if (!this.discussionMoodHeadlineEl && !this.discussionMoodDetailEl) {
+            return null;
+        }
+
+        const data = await apiFetch(`/api/classrooms/${this.classOfferingId}/discussion-mood`, { silent });
+        const headline = String(data?.headline || '').trim();
+        const detail = String(data?.detail || '').trim();
+        const version = String(data?.version || data?.updated_at || '').trim();
+
+        if (version && version === this.discussionMoodVersion) {
+            return data;
+        }
+
+        if (headline && this.discussionMoodHeadlineEl) {
+            this.discussionMoodHeadlineEl.textContent = headline;
+        }
+        if (detail && this.discussionMoodDetailEl) {
+            this.discussionMoodDetailEl.textContent = detail;
+        }
+        if (version) {
+            this.discussionMoodVersion = version;
+        }
         return data;
     }
 

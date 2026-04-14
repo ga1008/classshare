@@ -458,8 +458,8 @@
                 <div>
                     <p class="discussion-room-kicker">{{ sections.discussion.eyebrow }}</p>
                     <h2>{{ sections.discussion.title }}</h2>
-                    <p class="discussion-room-subtitle" data-copy-template="{{ classroom_page.discussion.subtitle_template | e }}">{{ classroom_page.discussion.subtitle }}</p>
-                    <p class="discussion-room-subtitle discussion-room-subtitle-detail" data-copy-template="{{ classroom_page.discussion.detail_template | e }}">{{ classroom_page.discussion.detail }}</p>
+                    <p class="discussion-room-subtitle" id="discussion-mood-headline">{{ classroom_page.discussion.subtitle }}</p>
+                    <p class="discussion-room-subtitle discussion-room-subtitle-detail" id="discussion-mood-detail">{{ classroom_page.discussion.detail }}</p>
                 </div>
                 <div class="discussion-room-side">
                     <div class="discussion-room-alias-card">
@@ -826,6 +826,8 @@
             messageMenuId: 'chat-message-menu',
             displayNameId: 'chat-display-name',
             aliasMetaId: 'chat-alias-meta',
+            discussionMoodHeadlineId: 'discussion-mood-headline',
+            discussionMoodDetailId: 'discussion-mood-detail',
             switchAliasButtonId: 'chat-switch-alias-btn',
             mentionAllButtonId: 'chat-mention-all-btn',
             historyLoaderId: 'chat-history-loader',
