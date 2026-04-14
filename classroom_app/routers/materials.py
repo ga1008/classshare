@@ -20,6 +20,7 @@ from ..dependencies import get_current_teacher, get_current_user
 from ..services.file_handler import delete_file_safely
 from ..services.file_service import save_file_globally
 from ..services.download_policy import apply_download_policy, ensure_download_allowed
+from ..services.file_preview_service import TEXT_CONTENT_ENCODINGS
 from ..services.materials_service import (
     MATERIAL_TYPE_REGISTRY,
     attach_learning_document_metadata,
@@ -71,16 +72,6 @@ class MaterialRepositoryCredentialRequest(BaseModel):
     secret: str = ""
     auth_mode: str = "password"
 
-
-TEXT_CONTENT_ENCODINGS = (
-    "utf-8-sig",
-    "utf-8",
-    "utf-16",
-    "utf-16-le",
-    "utf-16-be",
-    "gb18030",
-    "gbk",
-)
 
 MATERIAL_LIBRARY_SORT_LABELS = {
     "name": "名称",

@@ -1,89 +1,22 @@
 import mimetypes
+
 from pathlib import PurePosixPath
 
 from fastapi import HTTPException
 
+from .file_preview_service import (
+    TEXT_PREVIEW_TYPES,
+    TEXTUAL_BASENAME_HINTS,
+    TEXTUAL_EXTENSIONS,
+    TEXTUAL_MIME_PREFIXES,
+    TEXTUAL_MIME_TYPES,
+    is_editable_preview_type as _is_editable_preview_type,
+    is_preview_supported as _is_preview_supported,
+    is_text_preview_type as _is_text_preview_type,
+)
 
-TEXT_PREVIEW_TYPES = {"markdown", "text"}
-SUPPORTED_PREVIEW_TYPES = TEXT_PREVIEW_TYPES | {"image"}
+
 LEARNING_DOCUMENT_NAME = "readme.md"
-TEXTUAL_MIME_PREFIXES = ("text/",)
-TEXTUAL_MIME_TYPES = {
-    "application/json",
-    "application/ld+json",
-    "application/javascript",
-    "application/x-javascript",
-    "application/xml",
-    "application/x-sh",
-    "application/x-yaml",
-    "application/yaml",
-}
-TEXTUAL_EXTENSIONS = {
-    "bat",
-    "c",
-    "cc",
-    "cfg",
-    "conf",
-    "cpp",
-    "cs",
-    "css",
-    "csv",
-    "dockerfile",
-    "env",
-    "gitignore",
-    "go",
-    "gradle",
-    "h",
-    "hpp",
-    "htm",
-    "html",
-    "ini",
-    "java",
-    "js",
-    "json",
-    "jsx",
-    "kt",
-    "kts",
-    "less",
-    "log",
-    "md",
-    "markdown",
-    "mjs",
-    "php",
-    "properties",
-    "ps1",
-    "py",
-    "rb",
-    "rs",
-    "scss",
-    "sh",
-    "sql",
-    "svg",
-    "svelte",
-    "text",
-    "toml",
-    "ts",
-    "tsx",
-    "tsv",
-    "txt",
-    "vue",
-    "xml",
-    "yaml",
-    "yml",
-}
-TEXTUAL_BASENAME_HINTS = {
-    ".dockerignore",
-    ".env",
-    ".gitignore",
-    "cmakelists.txt",
-    "dockerfile",
-    "license",
-    "makefile",
-    "notice",
-    "procfile",
-    "readme",
-    "requirements.txt",
-}
 
 MATERIAL_TYPE_REGISTRY = {
     "md": {
@@ -212,11 +145,11 @@ def is_learning_document_name(name: str | None) -> bool:
 
 
 def is_text_preview_type(preview_type: str | None) -> bool:
-    return str(preview_type or "").lower() in TEXT_PREVIEW_TYPES
+    return _is_text_preview_type(preview_type)
 
 
 def is_preview_supported(preview_type: str | None) -> bool:
-    return str(preview_type or "").lower() in SUPPORTED_PREVIEW_TYPES
+    return _is_preview_supported(preview_type)
 
 
 def is_editable_material(item) -> bool:
@@ -231,7 +164,7 @@ def is_editable_material(item) -> bool:
             preview_type = str(item["preview_type"] or "")
         except (KeyError, TypeError):
             return False
-    return node_type == "file" and is_text_preview_type(preview_type)
+    return node_type == "file" and _is_editable_preview_type(preview_type)
 
 
 def _is_textual_material(file_name: str, mime_type: str | None = None) -> bool:

@@ -41,6 +41,7 @@ from ..services.student_auth_service import (
     record_student_login,
     validate_student_password,
 )
+from ..services.submission_preview_service import ensure_submission_access, serialize_submission_file_row
 
 router = APIRouter()
 
@@ -66,9 +67,8 @@ def _enrich_assignment_upload_config(assignment: dict) -> dict:
 def _serialize_submission_file_rows(rows) -> list[dict]:
     files = []
     for row in rows:
-        item = dict(row)
+        item = serialize_submission_file_row(row)
         item["relative_path"] = item.get("relative_path") or item.get("original_filename")
-        item["display_name"] = item["relative_path"]
         files.append(item)
     return files
 
@@ -1112,8 +1112,8 @@ async def exam_new_page(request: Request, user: dict = Depends(get_current_teach
 async def submission_detail_page(request: Request, submission_id: int, user: dict = Depends(get_current_user)):
     """查看/批改提交详情页（教师+学生均可访问）"""
     with get_db_connection() as conn:
-        submission = conn.execute("SELECT * FROM submissions WHERE id = ?", (submission_id,)).fetchone()
-        if not submission:
+        submission = ensure_submission_access(conn, submission_id, user)
+        if submission is None:
             raise HTTPException(404, "提交记录不存在")
         submission = dict(submission)
 

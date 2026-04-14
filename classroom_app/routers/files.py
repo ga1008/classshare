@@ -10,7 +10,7 @@ from urllib.parse import quote, urlsplit
 
 # 导入聊天管理器和 json
 from fastapi import WebSocket, status, WebSocketDisconnect, UploadFile, File, Form, APIRouter, HTTPException, Depends
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from ..config import GLOBAL_FILES_DIR, UPLOAD_CHUNK_SIZE_BYTES, CHUNKED_UPLOADS_DIR
@@ -51,6 +51,11 @@ from ..services.file_handler import delete_file_safely
 from ..services.file_service import save_file_globally, get_file_lock, stream_file
 from ..services.download_policy import apply_download_policy, ensure_download_allowed
 from ..services.message_center_service import create_discussion_mention_notifications
+from ..services.submission_preview_service import (
+    build_submission_file_preview_payload,
+    ensure_submission_file_access,
+    serialize_submission_file_row,
+)
 from ..services.rate_limit_service import (
     RateLimitExceededError,
     build_rate_limit_window_start,
@@ -1237,29 +1242,51 @@ async def download_discussion_attachment(
 
 # (原有的 download_submission_file V4.0)
 
+@router.get("/api/submission-files/{file_id}/preview", response_class=JSONResponse)
+async def get_submission_file_preview(file_id: int, user: Optional[dict] = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        file_info = ensure_submission_file_access(conn, file_id, user)
+
+    preview_payload = await build_submission_file_preview_payload(file_info)
+    return {"status": "success", "file": preview_payload}
+
+
+@router.get("/submission-files/raw/{file_id}", response_class=FileResponse)
+async def get_submission_file_raw(file_id: int, user: Optional[dict] = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        file_info = ensure_submission_file_access(conn, file_id, user)
+
+    preview_type = str(serialize_submission_file_row(file_info).get("preview_type") or "").lower()
+    if preview_type != "image":
+        raise HTTPException(400, "Only image files support raw preview")
+
+    file_path = Path(str(file_info["stored_path"]))
+    if not file_path.exists():
+        raise HTTPException(404, "File not found on disk")
+
+    return FileResponse(file_path, media_type=file_info.get("mime_type") or "application/octet-stream")
+
+
 @router.get("/submissions/download/{file_id}", response_class=FileResponse)
 async def download_submission_file(file_id: int, user: Optional[dict] = Depends(get_current_user)):
     """V4.0: 下载学生提交的文件"""
     if not user: raise HTTPException(401, "Not authenticated")
 
     with get_db_connection() as conn:
-        file_info = conn.execute(
-            """SELECT sf.*, s.student_pk_id
-               FROM submission_files sf
-                        JOIN submissions s ON sf.submission_id = s.id
-               WHERE sf.id = ?""", (file_id,)
-        ).fetchone()
+        file_info = ensure_submission_file_access(conn, file_id, user)
 
-    if not file_info: raise HTTPException(404, "File not found")
 
     # 安全检查：只允许教师 或 文件所有者学生 下载
-    if user['role'] != 'teacher' and file_info['student_pk_id'] != user['id']:
-        raise HTTPException(403, "Permission denied")
 
-    file_path = Path(file_info['stored_path'])
-    if not file_path.exists(): raise HTTPException(404, "File not found on disk")
+    file_path = Path(str(file_info['stored_path']))
+    if not file_path.exists():
+        raise HTTPException(404, "File not found on disk")
 
-    return FileResponse(file_path, filename=file_info['original_filename'])
+    return FileResponse(
+        file_path,
+        media_type=file_info.get('mime_type') or 'application/octet-stream',
+        filename=file_info['original_filename'],
+    )
 
 
 @router.websocket("/ws/{class_offering_id}")

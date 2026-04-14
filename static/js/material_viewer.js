@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { showToast } from './ui.js';
+import { renderFilePreview } from './file_preview.js';
 
 const material = window.MATERIAL_VIEWER || {};
 
@@ -1099,25 +1100,42 @@ async function init() {
         showToast(pendingToast, 'success');
     }
 
-    if (material.is_markdown) {
-        await renderMarkdown();
-        bindBlockedDownloadTips();
-        return;
-    }
+    const pathMap = new Map((material.path_index || []).map((item) => [item.material_path, item]));
+    await renderFilePreview({
+        file: material,
+        contentEl,
+        tocEl,
+        tocCountEl,
+        resolveLinkTarget: ({ href }) => {
+            const resolved = resolveRelativeTarget(material.material_path, href);
+            if (!resolved) return null;
+            const target = pathMap.get(resolved.path);
+            if (!target) return null;
 
-    if (material.preview_type === 'text' || (material.is_text && !material.is_markdown)) {
-        renderText();
-        bindBlockedDownloadTips();
-        return;
-    }
-
-    if (material.is_image) {
-        renderImage();
-        bindBlockedDownloadTips();
-        return;
-    }
-
-    renderFallback();
+            if (target.preview_type === 'markdown' || target.preview_type === 'text') {
+                return { href: `/materials/view/${target.id}${resolved.hash}` };
+            }
+            if (target.preview_type === 'image') {
+                return {
+                    href: `/materials/raw/${target.id}`,
+                    lightboxImage: true,
+                    title: target.name || '',
+                };
+            }
+            return { href: `/materials/download/${target.id}` };
+        },
+        resolveImageTarget: ({ image, src }) => {
+            const resolved = resolveRelativeTarget(material.material_path, src);
+            if (!resolved) return null;
+            const target = pathMap.get(resolved.path);
+            if (!target) return null;
+            return {
+                src: `/materials/raw/${target.id}`,
+                title: target.name || image.alt || '',
+            };
+        },
+        buildFallbackActionHtml: () => buildMaterialDownloadAction('下载原文件'),
+    });
     bindBlockedDownloadTips();
 }
 
