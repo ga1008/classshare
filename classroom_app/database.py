@@ -26,6 +26,7 @@ def _apply_sqlite_pragmas(conn: sqlite3.Connection) -> None:
 def get_db_connection():
     """获取 SQLite 数据库连接"""
     try:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         timeout_seconds = max(float(SQLITE_BUSY_TIMEOUT_MS) / 1000.0, 1.0)
         conn = sqlite3.connect(DB_PATH, timeout=timeout_seconds)
         _apply_sqlite_pragmas(conn)
@@ -211,25 +212,43 @@ def list_user_session_roles(user_id: str) -> list[str]:
     ]
 
 
-def delete_user_sessions(user_id: str, role: str | None = None) -> int:
+def delete_user_sessions(
+    user_id: str,
+    role: str | None = None,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> int:
     normalized_user_id = str(user_id or "").strip()
     normalized_role = str(role or "").strip().lower()
     if not normalized_user_id:
         return 0
 
-    with get_db_connection() as conn:
+    owns_connection = conn is None
+    active_conn = conn or get_db_connection()
+    try:
         if normalized_role:
-            cursor = conn.execute(
+            cursor = active_conn.execute(
                 "DELETE FROM user_sessions WHERE user_id = ? AND role = ?",
                 (normalized_user_id, normalized_role),
             )
         else:
-            cursor = conn.execute(
+            cursor = active_conn.execute(
                 "DELETE FROM user_sessions WHERE user_id = ?",
                 (normalized_user_id,),
             )
-        conn.commit()
+        if owns_connection:
+            active_conn.commit()
         return int(cursor.rowcount or 0)
+    except Exception:
+        if owns_connection:
+            try:
+                active_conn.rollback()
+            except Exception:
+                pass
+        raise
+    finally:
+        if owns_connection:
+            active_conn.close()
 
 
 def init_database():
@@ -533,6 +552,14 @@ def init_database():
                 "CREATE INDEX IF NOT EXISTS idx_student_login_audit_class "
                 "ON student_login_audit_logs (class_id, logged_at DESC, id DESC)"
             )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_students_name_lookup "
+                "ON students (name, id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_students_class_lookup "
+                "ON students (class_id, student_id_number, id)"
+            )
 
             # 6.2 学生找回密码申请
             conn.execute('''
@@ -618,6 +645,12 @@ def init_database():
                 pass  # 列已存在
 
             # 兼容已有数据库：为 assignments 添加 exam_paper_id 列
+            assignments_table_exists = (
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'assignments' LIMIT 1"
+                ).fetchone()
+                is not None
+            )
             try:
                 conn.execute("ALTER TABLE assignments ADD COLUMN exam_paper_id TEXT")
             except sqlite3.OperationalError:
@@ -632,6 +665,45 @@ def init_database():
                 conn.execute("ALTER TABLE assignments ADD COLUMN allowed_file_types_json TEXT")
             except sqlite3.OperationalError:
                 pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE assignments ADD COLUMN availability_mode TEXT NOT NULL DEFAULT 'permanent'")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE assignments ADD COLUMN starts_at TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE assignments ADD COLUMN due_at TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE assignments ADD COLUMN duration_minutes INTEGER")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE assignments ADD COLUMN auto_close INTEGER NOT NULL DEFAULT 1")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE assignments ADD COLUMN closed_at TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            if assignments_table_exists:
+                conn.execute(
+                    """
+                    UPDATE assignments
+                    SET availability_mode = 'permanent'
+                    WHERE availability_mode IS NULL OR availability_mode = ''
+                    """
+                )
+                conn.execute(
+                    """
+                    UPDATE assignments
+                    SET auto_close = 1
+                    WHERE auto_close IS NULL
+                    """
+                )
             try:
                 conn.execute("ALTER TABLE submission_files ADD COLUMN relative_path TEXT")
             except sqlite3.OperationalError:
@@ -718,6 +790,26 @@ def init_database():
                              class_offering_id
                              INTEGER,
                              allowed_file_types_json
+                             TEXT,
+                             availability_mode
+                             TEXT
+                             NOT
+                             NULL
+                             DEFAULT
+                             'permanent',
+                             starts_at
+                             TEXT,
+                             due_at
+                             TEXT,
+                             duration_minutes
+                             INTEGER,
+                             auto_close
+                             INTEGER
+                             NOT
+                             NULL
+                             DEFAULT
+                             1,
+                             closed_at
                              TEXT,
                              FOREIGN
                              KEY
@@ -1779,6 +1871,10 @@ def init_database():
                 "ON message_center_notifications (ref_type, ref_id, recipient_role, recipient_user_pk)"
             )
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_message_center_notifications_unread "
+                "ON message_center_notifications (recipient_role, recipient_user_pk, read_at, created_at DESC, id DESC)"
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_private_messages_conversation_time "
                 "ON private_messages (conversation_key, created_at ASC, id ASC)"
             )
@@ -1983,6 +2079,14 @@ def init_database():
 
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_materials_teacher_parent ON course_materials (teacher_id, parent_id, name)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_assignments_offering_created "
+                "ON assignments (class_offering_id, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_assignments_runtime_closure "
+                "ON assignments (status, auto_close, due_at)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_materials_root_path ON course_materials (root_id, material_path)"

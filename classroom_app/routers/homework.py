@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import sqlite3
 from datetime import datetime
-from typing import List
+from typing import Any, List
 from fastapi import APIRouter, Request, Form, HTTPException, Depends, UploadFile, File
 from fastapi.responses import JSONResponse, FileResponse
 
@@ -22,6 +22,13 @@ from ..services.message_center_service import (
     create_assignment_published_notifications,
     create_student_grading_notification,
     create_submission_notification,
+)
+from ..services.assignment_lifecycle_service import (
+    assignment_accepts_submissions,
+    build_assignment_schedule_fields,
+    close_overdue_assignments,
+    enrich_assignment_runtime_view,
+    refresh_assignment_runtime_status,
 )
 from ..services.submission_assets import (
     answers_have_content,
@@ -56,6 +63,15 @@ def _get_allowed_file_types(data: dict, assignment_row=None) -> list[str]:
     return []
 
 
+def _ensure_accepting_submission(assignment: dict[str, Any]) -> None:
+    if assignment_accepts_submissions(assignment):
+        return
+    status = str(assignment.get("status") or "").strip().lower()
+    if status == "new":
+        raise HTTPException(400, "作业尚未开始，当前不可作答或提交")
+    raise HTTPException(400, "作业已截止，当前只能查看，不能作答或提交")
+
+
 # --- 教师作业 API ---
 @router.post("/courses/{course_id}/assignments", response_class=JSONResponse)
 async def create_assignment(course_id: int, request: Request, user: dict = Depends(get_current_teacher)):
@@ -64,8 +80,16 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
     created_at = datetime.now().isoformat()
     class_offering_id = data.get('class_offering_id')
     allowed_file_types_json = encode_allowed_file_types_json(_get_allowed_file_types(data))
+    try:
+        schedule_fields = build_assignment_schedule_fields(
+            data,
+            default_status="new",
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
     with get_db_connection() as conn:
+        close_overdue_assignments(conn)
         actual_course_id = course_id
         if class_offering_id:
             offering = conn.execute(
@@ -87,32 +111,51 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
             """
             INSERT INTO assignments (
                 course_id, title, status, requirements_md, rubric_md, grading_mode,
-                class_offering_id, created_at, allowed_file_types_json
-            ) VALUES (?, ?, 'new', ?, ?, ?, ?, ?, ?)
+                class_offering_id, created_at, allowed_file_types_json,
+                availability_mode, starts_at, due_at, duration_minutes, auto_close, closed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 actual_course_id,
                 data['title'],
+                schedule_fields["status"],
                 data.get('requirements_md', ''),
                 data.get('rubric_md', ''),
                 data.get('grading_mode', 'manual'),
                 int(class_offering_id) if class_offering_id else None,
                 created_at,
                 allowed_file_types_json,
+                schedule_fields["availability_mode"],
+                schedule_fields["starts_at"],
+                schedule_fields["due_at"],
+                schedule_fields["duration_minutes"],
+                schedule_fields["auto_close"],
+                schedule_fields["closed_at"],
             )
         )
         new_id = cursor.lastrowid
+        if schedule_fields["status"] == "published":
+            try:
+                create_assignment_published_notifications(conn, new_id)
+            except Exception as exc:
+                print(f"[MESSAGE_CENTER] assignment publish notify failed: {exc}")
         conn.commit()
     # 作业文件夹现在按 Course / Assignment 组织
     assignment_dir = _build_assignment_storage_dir(actual_course_id, new_id)
     assignment_dir.mkdir(parents=True, exist_ok=True)
-    return {"status": "success", "new_assignment_id": new_id}
+    return {
+        "status": "success",
+        "new_assignment_id": new_id,
+        "assignment_status": schedule_fields["status"],
+        "due_at": schedule_fields["due_at"],
+    }
 
 
 @router.put("/assignments/{assignment_id}", response_class=JSONResponse)
 async def update_assignment(assignment_id: str, request: Request, user: dict = Depends(get_current_teacher)):
     data = await request.json()
     with get_db_connection() as conn:
+        close_overdue_assignments(conn)
         assignment = conn.execute(
             """SELECT a.*, c.created_by_teacher_id
                FROM assignments a
@@ -124,33 +167,55 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
             raise HTTPException(404, "作业不存在")
         if assignment['created_by_teacher_id'] != user['id']:
             raise HTTPException(403, "无权修改该作业")
+        assignment_dict = dict(assignment)
+        assignment_dict = refresh_assignment_runtime_status(conn, assignment_dict)
 
-        previous_status = str(assignment['status'] or '')
-        allowed_file_types_json = encode_allowed_file_types_json(_get_allowed_file_types(data, assignment))
+        previous_status = str(assignment_dict['status'] or '')
+        allowed_file_types_json = encode_allowed_file_types_json(_get_allowed_file_types(data, assignment_dict))
+        try:
+            schedule_fields = build_assignment_schedule_fields(
+                data,
+                existing=assignment_dict,
+                default_status=assignment_dict["status"],
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         conn.execute(
             """
             UPDATE assignments
             SET title = ?, requirements_md = ?, rubric_md = ?, grading_mode = ?,
-                status = ?, allowed_file_types_json = ?
+                status = ?, allowed_file_types_json = ?,
+                availability_mode = ?, starts_at = ?, due_at = ?, duration_minutes = ?, auto_close = ?, closed_at = ?
             WHERE id = ?
             """,
             (
                 data['title'],
                 data.get('requirements_md', ''),
                 data.get('rubric_md', ''),
-                data.get('grading_mode', assignment['grading_mode']),
-                data.get('status', assignment['status']),
+                data.get('grading_mode', assignment_dict['grading_mode']),
+                schedule_fields["status"],
                 allowed_file_types_json,
+                schedule_fields["availability_mode"],
+                schedule_fields["starts_at"],
+                schedule_fields["due_at"],
+                schedule_fields["duration_minutes"],
+                schedule_fields["auto_close"],
+                schedule_fields["closed_at"],
                 assignment_id,
             )
         )
-        if previous_status != 'published' and data.get('status') == 'published':
+        if previous_status != 'published' and schedule_fields["status"] == 'published':
             try:
                 create_assignment_published_notifications(conn, assignment_id)
             except Exception as exc:
                 print(f"[MESSAGE_CENTER] assignment publish notify failed: {exc}")
         conn.commit()
-    return {"status": "success", "updated_assignment_id": assignment_id}
+    return {
+        "status": "success",
+        "updated_assignment_id": assignment_id,
+        "assignment_status": schedule_fields["status"],
+        "due_at": schedule_fields["due_at"],
+    }
 
 
 @router.delete("/assignments/{assignment_id}", response_class=JSONResponse)
@@ -177,9 +242,11 @@ async def delete_assignment(assignment_id: str, user: dict = Depends(get_current
 @router.get("/assignments/{assignment_id}/submissions", response_class=JSONResponse)
 async def get_submissions_for_assignment(assignment_id: str, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
+        close_overdue_assignments(conn)
         assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
         if not assignment:
             raise HTTPException(404, "作业不存在")
+        assignment = refresh_assignment_runtime_status(conn, assignment)
 
         submissions_cursor = conn.execute(
             """
@@ -262,7 +329,12 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
         }
     }
 
-    return {"status": "success", "stats": stats, "submissions": all_entries}
+    return {
+        "status": "success",
+        "stats": stats,
+        "submissions": all_entries,
+        "assignment": enrich_assignment_runtime_view(assignment),
+    }
 
 
 @router.post("/submissions/{submission_id}/grade", response_class=JSONResponse)
@@ -369,14 +441,19 @@ async def submit_assignment(assignment_id: str,
     files: 可选的附件文件列表
     """
     with get_db_connection() as conn:
+        close_overdue_assignments(conn)
+        conn.commit()
         assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
-        if not assignment: raise HTTPException(404, "Assignment not found")
-        if assignment['status'] != 'published': raise HTTPException(400, "作业已截止或未发布")
+        if not assignment:
+            raise HTTPException(404, "Assignment not found")
+        assignment = enrich_assignment_runtime_view(assignment)
+        _ensure_accepting_submission(assignment)
 
         submission = conn.execute(
             "SELECT id FROM submissions WHERE assignment_id = ? AND student_pk_id = ?", (assignment_id, user['id'])
         ).fetchone()
-        if submission: raise HTTPException(400, "您已经提交过此作业")
+        if submission:
+            raise HTTPException(400, "您已经提交过此作业")
 
         prepared_entries = parse_submission_manifest(files, manifest)
         if len(prepared_entries) > MAX_SUBMISSION_FILE_COUNT:
@@ -511,9 +588,13 @@ async def submit_assignment(assignment_id: str,
 async def withdraw_submission(assignment_id: str, user: dict = Depends(get_current_student)):
     """学生撤回已提交的作业（仅限未批改的提交）"""
     with get_db_connection() as conn:
+        close_overdue_assignments(conn)
+        conn.commit()
         submission = conn.execute(
             """
-            SELECT s.*, a.course_id, a.class_offering_id, a.title
+            SELECT s.*, a.course_id, a.class_offering_id, a.title,
+                   a.status AS assignment_status,
+                   a.availability_mode, a.starts_at, a.due_at, a.duration_minutes, a.auto_close
             FROM submissions s
             JOIN assignments a ON a.id = s.assignment_id
             WHERE s.assignment_id = ? AND s.student_pk_id = ?
@@ -522,6 +603,17 @@ async def withdraw_submission(assignment_id: str, user: dict = Depends(get_curre
         ).fetchone()
         if not submission:
             raise HTTPException(404, "未找到提交记录")
+        submission = dict(submission)
+        assignment_snapshot = {
+            "status": submission.get("assignment_status"),
+            "availability_mode": submission.get("availability_mode"),
+            "starts_at": submission.get("starts_at"),
+            "due_at": submission.get("due_at"),
+            "duration_minutes": submission.get("duration_minutes"),
+            "auto_close": submission.get("auto_close"),
+        }
+        if not assignment_accepts_submissions(assignment_snapshot):
+            raise HTTPException(400, "作业已截止，当前只能查看，不能撤回提交")
         if submission['status'] == 'graded':
             raise HTTPException(400, "已批改的作业无法撤回")
         if submission['status'] == 'grading':
@@ -667,8 +759,16 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
     class_offering_id = data.get('class_offering_id')
     if not class_offering_id:
         raise HTTPException(400, "请指定课堂")
+    try:
+        schedule_fields = build_assignment_schedule_fields(
+            data,
+            default_status="published",
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
     with get_db_connection() as conn:
+        close_overdue_assignments(conn)
         paper = conn.execute("SELECT * FROM exam_papers WHERE id = ?", (paper_id,)).fetchone()
         if not paper:
             raise HTTPException(404, "试卷不存在")
@@ -695,13 +795,15 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
             """
             INSERT INTO assignments (
                 course_id, title, status, requirements_md, rubric_md, grading_mode,
-                exam_paper_id, class_offering_id, created_at, allowed_file_types_json
+                exam_paper_id, class_offering_id, created_at, allowed_file_types_json,
+                availability_mode, starts_at, due_at, duration_minutes, auto_close, closed_at
             )
-            VALUES (?, ?, 'published', ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(offering['course_id']),
                 data.get('title', paper['title']),
+                schedule_fields["status"],
                 f"**试卷**: {paper['title']}\n\n{paper['description'] or ''}",
                 "按试卷各题评分",
                 'ai',
@@ -709,18 +811,27 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
                 int(class_offering_id),
                 created_at,
                 allowed_file_types_json,
+                schedule_fields["availability_mode"],
+                schedule_fields["starts_at"],
+                schedule_fields["due_at"],
+                schedule_fields["duration_minutes"],
+                schedule_fields["auto_close"],
+                schedule_fields["closed_at"],
             )
         )
         new_assignment_id = cursor.lastrowid
-        try:
-            create_assignment_published_notifications(conn, new_assignment_id)
-        except Exception as exc:
-            print(f"[MESSAGE_CENTER] exam assignment publish notify failed: {exc}")
+        if schedule_fields["status"] == "published":
+            try:
+                create_assignment_published_notifications(conn, new_assignment_id)
+            except Exception as exc:
+                print(f"[MESSAGE_CENTER] exam assignment publish notify failed: {exc}")
         conn.commit()
         assignment_dir = _build_assignment_storage_dir(offering['course_id'], new_assignment_id)
         assignment_dir.mkdir(parents=True, exist_ok=True)
     return {
         "status": "success",
         "assignment_id": new_assignment_id,
+        "assignment_status": schedule_fields["status"],
+        "due_at": schedule_fields["due_at"],
         "message": "试卷已成功发布到当前课堂"
     }

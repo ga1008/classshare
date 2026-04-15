@@ -2,6 +2,7 @@ import { apiFetch } from './api.js';
 import { showToast, escapeHtml } from './ui.js';
 
 let config = null;
+const DEFAULT_SCHEDULE_MODE = 'permanent';
 
 function getTrimmedInputValue(elementId) {
     const element = document.getElementById(elementId);
@@ -54,8 +55,99 @@ function getConfirmButton() {
     return document.getElementById('exam-assign-confirm-btn');
 }
 
+function toDateTimeLocalValue(raw) {
+    if (!raw) return '';
+    const text = String(raw).trim();
+    if (!text) return '';
+    return text.replace(' ', 'T').slice(0, 16);
+}
+
+function syncScheduleFields(prefix) {
+    const mode = getTrimmedInputValue(`${prefix}-availability-mode`) || DEFAULT_SCHEDULE_MODE;
+    const deadlineGroup = document.getElementById(`${prefix}-deadline-group`);
+    const countdownGroup = document.getElementById(`${prefix}-countdown-group`);
+
+    if (deadlineGroup) {
+        deadlineGroup.style.display = mode === 'deadline' ? '' : 'none';
+    }
+    if (countdownGroup) {
+        countdownGroup.style.display = mode === 'countdown' ? '' : 'none';
+    }
+}
+
+function bindScheduleMode(prefix) {
+    const modeEl = document.getElementById(`${prefix}-availability-mode`);
+    if (!modeEl || modeEl.dataset.bound === '1') return;
+    modeEl.dataset.bound = '1';
+    modeEl.addEventListener('change', () => syncScheduleFields(prefix));
+    syncScheduleFields(prefix);
+}
+
+function resetScheduleFields(prefix, mode = DEFAULT_SCHEDULE_MODE) {
+    const modeEl = document.getElementById(`${prefix}-availability-mode`);
+    const dueEl = document.getElementById(`${prefix}-due-at`);
+    const durationEl = document.getElementById(`${prefix}-duration-minutes`);
+    const startsEl = document.getElementById(`${prefix}-starts-at`);
+
+    if (modeEl) modeEl.value = mode;
+    if (dueEl) dueEl.value = '';
+    if (durationEl) durationEl.value = '';
+    if (startsEl) startsEl.value = '';
+    syncScheduleFields(prefix);
+}
+
+function readSchedulePayload(prefix) {
+    const mode = (getTrimmedInputValue(`${prefix}-availability-mode`) || DEFAULT_SCHEDULE_MODE).toLowerCase();
+    const dueAt = getTrimmedInputValue(`${prefix}-due-at`);
+    const durationText = getTrimmedInputValue(`${prefix}-duration-minutes`);
+    const startsAt = getTrimmedInputValue(`${prefix}-starts-at`);
+
+    if (mode === 'deadline') {
+        if (!dueAt) {
+            return { error: '请设置截止时间' };
+        }
+        return {
+            payload: {
+                availability_mode: mode,
+                due_at: dueAt,
+                duration_minutes: null,
+                starts_at: null,
+            }
+        };
+    }
+
+    if (mode === 'countdown') {
+        if (!durationText) {
+            return { error: '请设置倒计时分钟数' };
+        }
+        const duration = Number(durationText);
+        if (!Number.isFinite(duration) || duration <= 0) {
+            return { error: '倒计时分钟数必须大于 0' };
+        }
+        return {
+            payload: {
+                availability_mode: mode,
+                due_at: null,
+                duration_minutes: Math.floor(duration),
+                starts_at: startsAt || null,
+            }
+        };
+    }
+
+    return {
+        payload: {
+            availability_mode: DEFAULT_SCHEDULE_MODE,
+            due_at: null,
+            duration_minutes: null,
+            starts_at: null,
+        }
+    };
+}
+
 export function init(appConfig) {
     config = appConfig;
+    bindScheduleMode('assignment');
+    bindScheduleMode('exam');
 }
 
 export async function loadExamPapers() {
@@ -66,6 +158,7 @@ export async function loadExamPapers() {
     if (allowedTypesEl) {
         allowedTypesEl.value = '';
     }
+    resetScheduleFields('exam');
 
     setExamAssignFeedback(null, '');
     container.innerHTML = '<div class="text-center p-4"><div class="spinner"></div></div>';
@@ -133,6 +226,13 @@ export async function confirmExamAssign() {
         return;
     }
 
+    const scheduleResult = readSchedulePayload('exam');
+    if (scheduleResult.error) {
+        setExamAssignFeedback('error', scheduleResult.error);
+        showToast(scheduleResult.error, 'warning');
+        return;
+    }
+
     const btn = getConfirmButton();
     if (btn) {
         btn.disabled = true;
@@ -148,6 +248,7 @@ export async function confirmExamAssign() {
                 paper_id: paperId,
                 class_offering_id: config.classOfferingId,
                 allowed_file_types: getTrimmedInputValue('exam-allowed-file-types'),
+                ...scheduleResult.payload,
             },
             silent: true
         });
@@ -185,6 +286,11 @@ export async function saveAssignment() {
         showToast('请输入作业标题', 'warning');
         return;
     }
+    const scheduleResult = readSchedulePayload('assignment');
+    if (scheduleResult.error) {
+        showToast(scheduleResult.error, 'warning');
+        return;
+    }
 
     const assignmentId = idEl ? idEl.value : '';
     const btn = document.getElementById('btn-save-assignment');
@@ -200,6 +306,7 @@ export async function saveAssignment() {
         grading_mode: modeEl ? modeEl.value : 'manual',
         class_offering_id: config.classOfferingId,
         allowed_file_types: getTrimmedInputValue('assignment-allowed-file-types'),
+        ...scheduleResult.payload,
     };
 
     try {
@@ -232,13 +339,25 @@ export async function saveAssignment() {
     }
 }
 
-export function editAssignment(assignmentId, title, requirements, rubric, gradingMode, allowedFileTypes = '') {
+export function editAssignment(
+    assignmentId,
+    title,
+    requirements,
+    rubric,
+    gradingMode,
+    allowedFileTypes = '',
+    schedule = null,
+) {
     const idEl = document.getElementById('assignment-id');
     const titleEl = document.getElementById('assignment-title');
     const reqEl = document.getElementById('assignment-requirements');
     const rubricEl = document.getElementById('assignment-rubric');
     const modeEl = document.getElementById('assignment-grading-mode');
     const allowedTypesEl = document.getElementById('assignment-allowed-file-types');
+    const scheduleModeEl = document.getElementById('assignment-availability-mode');
+    const dueAtEl = document.getElementById('assignment-due-at');
+    const durationEl = document.getElementById('assignment-duration-minutes');
+    const startsAtEl = document.getElementById('assignment-starts-at');
 
     if (idEl) idEl.value = assignmentId || '';
     if (titleEl) titleEl.value = title || '';
@@ -246,6 +365,11 @@ export function editAssignment(assignmentId, title, requirements, rubric, gradin
     if (rubricEl) rubricEl.value = rubric || '';
     if (modeEl) modeEl.value = gradingMode || 'manual';
     if (allowedTypesEl) allowedTypesEl.value = allowedFileTypes || '';
+    if (scheduleModeEl) scheduleModeEl.value = schedule?.availability_mode || DEFAULT_SCHEDULE_MODE;
+    if (dueAtEl) dueAtEl.value = toDateTimeLocalValue(schedule?.due_at);
+    if (durationEl) durationEl.value = schedule?.duration_minutes || '';
+    if (startsAtEl) startsAtEl.value = toDateTimeLocalValue(schedule?.starts_at);
+    syncScheduleFields('assignment');
 
     setExamAssignFeedback(null, '');
     if (window.UI) {
@@ -254,5 +378,5 @@ export function editAssignment(assignmentId, title, requirements, rubric, gradin
 }
 
 export function newAssignment() {
-    editAssignment('', '', '', '', 'manual', '');
+    editAssignment('', '', '', '', 'manual', '', { availability_mode: DEFAULT_SCHEDULE_MODE });
 }

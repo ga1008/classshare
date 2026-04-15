@@ -263,10 +263,18 @@
                         </div>
                         <p class="text-muted">作业已成功提交，等待教师批改。</p>
                         <p class="text-sm text-muted mt-1">提交时间: <span class="format-date">{{ submission.submitted_at }}</span></p>
+                        {% if assignment.status == 'closed' %}
+                        <p class="text-sm text-danger mt-2">作业已截止，当前只能查看，无法撤回修改。</p>
+                        {% endif %}
+                        {% if assignment.status == 'new' %}
+                        <p class="text-sm text-warning mt-2">作业尚未开始，当前无法撤回提交。</p>
+                        {% endif %}
+                        {% if can_withdraw_submission %}
                         <button class="btn btn-outline btn-sm text-warning mt-md" onclick="withdrawSubmission()">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
                             撤回作业
                         </button>
+                        {% endif %}
                     </div>
                 {% endif %}
 
@@ -401,6 +409,20 @@
                         {{ assignment.allowed_file_types_label }}
                         {% else %}
                         不限制
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="info-cell">
+                    <div class="text-xs text-muted mb-1">时间策略</div>
+                    <div class="font-medium">{{ assignment.availability_mode_label or '长期有效' }}</div>
+                </div>
+                <div class="info-cell">
+                    <div class="text-xs text-muted mb-1">截止时间</div>
+                    <div class="font-medium">
+                        {% if assignment.due_at %}
+                        <span class="format-date">{{ assignment.due_at }}</span>
+                        {% else %}
+                        长期有效
                         {% endif %}
                     </div>
                 </div>

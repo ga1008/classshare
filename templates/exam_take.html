@@ -703,6 +703,7 @@
     const ALLOWED_FILE_TYPES_LABEL = {{ assignment.allowed_file_types_label | tojson }};
     const SUBMISSION_FILES = {{ submission_files | tojson }};
     const CLASS_OFFERING_ID = {{ assignment.class_offering_id or 'null' }};
+    const CAN_WITHDRAW_SUBMISSION = {{ can_withdraw_submission | tojson }};
 
     {% if submission %}
     const SUBMISSION_EXISTS = true;
@@ -1222,6 +1223,22 @@
         }
     }
 
+    async function handleWithdrawSubmission() {
+        if (!CAN_WITHDRAW_SUBMISSION) {
+            showMessage('当前状态不允许撤回', 'warning');
+            return;
+        }
+        if (!confirm('撤回后可重新答题和上传附件，是否继续？')) return;
+        try {
+            await apiFetch(`/api/assignments/${ASSIGNMENT_ID}/withdraw`, { method: 'DELETE' });
+            showMessage('已撤回提交，即将刷新页面', 'success');
+            localStorage.removeItem(`exam_${ASSIGNMENT_ID}`);
+            setTimeout(() => location.reload(), 800);
+        } catch (e) {
+            showMessage(e.message || '撤回失败，请稍后重试', 'error');
+        }
+    }
+
     // --- Submitted View (Read-Only) ---
 
     function renderSubmittedView() {
@@ -1254,6 +1271,15 @@
                     <div class="result-icon">✅</div>
                     <h3>已提交</h3>
                     <p>试卷已成功提交，等待教师批改。</p>
+                </div>
+            `;
+        }
+
+        if (CAN_WITHDRAW_SUBMISSION && SUBMISSION_STATUS === 'submitted') {
+            html += `
+                <div class="mb-4 text-center">
+                    <button class="btn btn-outline btn-sm" id="withdrawExamBtn">撤回并继续作答</button>
+                    <p class="text-sm text-muted mt-2">在截止前可撤回提交并修改答案，截止后只可查看。</p>
                 </div>
             `;
         }
@@ -1315,6 +1341,7 @@
             `;
         }
         elements.dynamicArea.innerHTML = `<div class="paper-content">${html}</div>`;
+        document.getElementById('withdrawExamBtn')?.addEventListener('click', handleWithdrawSubmission);
 
         // Update sidebar
         renderSidebarForSubmitted(allQuestions, submittedAnswers);

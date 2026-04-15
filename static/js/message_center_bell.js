@@ -134,7 +134,7 @@ if (bellShells.length > 0) {
         if (!document.hidden) {
             refreshBell({ allowPopup: true });
         }
-    }, 10000);
+    }, 15000);
 
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {

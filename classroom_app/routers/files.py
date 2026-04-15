@@ -55,6 +55,7 @@ from ..services.submission_preview_service import (
     build_submission_file_preview_payload,
     ensure_submission_file_access,
     serialize_submission_file_row,
+    _resolve_file_path,
 )
 from ..services.rate_limit_service import (
     RateLimitExceededError,
@@ -99,6 +100,12 @@ def _ensure_classroom_access_for_user(conn, class_offering_id: int, user: Option
         raise HTTPException(status_code=403, detail="Permission denied")
 
     return offering
+
+
+def _load_discussion_mood_for_user(class_offering_id: int, user: dict) -> dict:
+    with get_db_connection() as conn:
+        _ensure_classroom_access_for_user(conn, class_offering_id, user)
+        return get_discussion_mood_payload(conn, class_offering_id)
 
 
 def _ensure_course_file_access(conn, file_row, user: Optional[dict]):
@@ -1196,9 +1203,11 @@ async def get_discussion_mood(
         class_offering_id: int,
         user: dict = Depends(get_current_user)
 ):
-    with get_db_connection() as conn:
-        _ensure_classroom_access_for_user(conn, class_offering_id, user)
-        payload = get_discussion_mood_payload(conn, class_offering_id)
+    payload = await asyncio.to_thread(
+        _load_discussion_mood_for_user,
+        class_offering_id,
+        dict(user),
+    )
 
     await maybe_schedule_discussion_mood_refresh(
         class_offering_id,
@@ -1260,8 +1269,8 @@ async def get_submission_file_raw(file_id: int, user: Optional[dict] = Depends(g
     if preview_type != "image":
         raise HTTPException(400, "Only image files support raw preview")
 
-    file_path = Path(str(file_info["stored_path"]))
-    if not file_path.exists():
+    file_path = _resolve_file_path(str(file_info["stored_path"]))
+    if file_path is None:
         raise HTTPException(404, "File not found on disk")
 
     return FileResponse(file_path, media_type=file_info.get("mime_type") or "application/octet-stream")
@@ -1278,8 +1287,8 @@ async def download_submission_file(file_id: int, user: Optional[dict] = Depends(
 
     # 安全检查：只允许教师 或 文件所有者学生 下载
 
-    file_path = Path(str(file_info['stored_path']))
-    if not file_path.exists():
+    file_path = _resolve_file_path(str(file_info['stored_path']))
+    if file_path is None:
         raise HTTPException(404, "File not found on disk")
 
     return FileResponse(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import re
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -20,15 +21,42 @@ ACTIVITY_TONE_BY_CATEGORY = {
     "ai_feedback": "primary",
 }
 
+DASHBOARD_FILTER_VALUES = {
+    "teacher": ("all", "attention", "recent"),
+    "student": ("all", "attention", "progress", "recent"),
+}
 
-def build_dashboard_context(conn, user: dict) -> dict[str, Any]:
+
+def build_dashboard_context(
+    conn,
+    user: dict,
+    *,
+    initial_filter: Any = None,
+    initial_search: Any = None,
+) -> dict[str, Any]:
     role = str(user.get("role") or "").strip().lower()
     if role == "teacher":
-        return _build_teacher_dashboard_context(conn, user)
-    return _build_student_dashboard_context(conn, user)
+        return _build_teacher_dashboard_context(
+            conn,
+            user,
+            initial_filter=initial_filter,
+            initial_search=initial_search,
+        )
+    return _build_student_dashboard_context(
+        conn,
+        user,
+        initial_filter=initial_filter,
+        initial_search=initial_search,
+    )
 
 
-def _build_teacher_dashboard_context(conn, user: dict) -> dict[str, Any]:
+def _build_teacher_dashboard_context(
+    conn,
+    user: dict,
+    *,
+    initial_filter: Any = None,
+    initial_search: Any = None,
+) -> dict[str, Any]:
     teacher_id = int(user["id"])
     offerings = _load_teacher_offerings(conn, teacher_id)
     offering_ids = [int(item["id"]) for item in offerings]
@@ -172,6 +200,17 @@ def _build_teacher_dashboard_context(conn, user: dict) -> dict[str, Any]:
             {"label": "待批改", "value": pending_review_count, "note": "含已提交与批改中"},
             {"label": "资料", "value": resource_total, "note": f"文件 {resource_count} · 材料 {material_count}"},
         ]
+        offering["search_text"] = _build_dashboard_search_text(
+            offering.get("course_name"),
+            offering.get("class_name"),
+            offering.get("semester"),
+            offering.get("schedule_info"),
+            description,
+            summary,
+            *meta,
+            *(badge.get("label") for badge in badges),
+            *(f"{metric['label']} {metric['value']} {metric['note']}" for metric in offering["metrics"]),
+        )
         enriched_offerings.append(offering)
 
     distinct_class_count = len({int(item["class_id"]) for item in offerings})
@@ -294,6 +333,24 @@ def _build_teacher_dashboard_context(conn, user: dict) -> dict[str, Any]:
             "tone": "neutral",
         })
 
+    dashboard_filters = [
+        {"value": "all", "label": "全部", "count": len(offerings)},
+        {"value": "attention", "label": "待处理", "count": attention_count},
+        {"value": "recent", "label": "近期活跃", "count": recent_count},
+    ]
+    selected_filter = _normalize_dashboard_filter("teacher", initial_filter)
+    search_query = _normalize_dashboard_search(initial_search)
+    initial_visible_count = _apply_dashboard_view_state(
+        enriched_offerings,
+        filter_value=selected_filter,
+        search_query=search_query,
+    )
+    initial_results_summary = _build_dashboard_results_summary(
+        dashboard_filters,
+        filter_value=selected_filter,
+        search_query=search_query,
+    )
+
     return {
         "dashboard_theme": "teacher",
         "dashboard_hero": {
@@ -330,12 +387,12 @@ def _build_teacher_dashboard_context(conn, user: dict) -> dict[str, Any]:
             "subtitle": ui_copy["activity_subtitle"],
             "items": recent_activity,
         },
-        "dashboard_filters": [
-            {"value": "all", "label": "全部", "count": len(offerings)},
-            {"value": "attention", "label": "待处理", "count": attention_count},
-            {"value": "recent", "label": "近期活跃", "count": recent_count},
-        ],
+        "dashboard_filters": dashboard_filters,
         "dashboard_search_placeholder": "搜索课程、班级或学期",
+        "dashboard_initial_filter": selected_filter,
+        "dashboard_initial_search": search_query,
+        "dashboard_initial_visible_count": initial_visible_count,
+        "dashboard_initial_results_summary": initial_results_summary,
         "dashboard_empty_state": {
             "title": ui_copy["empty_title"],
             "description": ui_copy["empty_description"],
@@ -347,7 +404,13 @@ def _build_teacher_dashboard_context(conn, user: dict) -> dict[str, Any]:
     }
 
 
-def _build_student_dashboard_context(conn, user: dict) -> dict[str, Any]:
+def _build_student_dashboard_context(
+    conn,
+    user: dict,
+    *,
+    initial_filter: Any = None,
+    initial_search: Any = None,
+) -> dict[str, Any]:
     student_id = int(user["id"])
     student_security_summary = build_student_security_summary(conn, student_id)
     student_profile = conn.execute(
@@ -474,6 +537,18 @@ def _build_student_dashboard_context(conn, user: dict) -> dict[str, Any]:
             {"label": "资料", "value": resource_total, "note": f"文件 {resource_count} · 材料 {material_count}"},
             {"label": "考试", "value": exam_count, "note": f"课堂任务 {assignment_count}"},
         ]
+        offering["search_text"] = _build_dashboard_search_text(
+            offering.get("course_name"),
+            offering.get("class_name"),
+            offering.get("teacher_name"),
+            offering.get("semester"),
+            offering.get("schedule_info"),
+            description,
+            summary,
+            *meta,
+            *(badge.get("label") for badge in badges),
+            *(f"{metric['label']} {metric['value']} {metric['note']}" for metric in offering["metrics"]),
+        )
         enriched_offerings.append(offering)
 
     priority_items = _load_student_priority_items(conn, student_id)
@@ -544,6 +619,24 @@ def _build_student_dashboard_context(conn, user: dict) -> dict[str, Any]:
         },
     ]
     recent_count = sum(1 for item in enriched_offerings if item["has_recent_activity"])
+    dashboard_filters = [
+        {"value": "all", "label": "全部", "count": len(offerings)},
+        {"value": "attention", "label": "待完成", "count": attention_count},
+        {"value": "progress", "label": "有进展", "count": progress_count},
+        {"value": "recent", "label": "近期活跃", "count": recent_count},
+    ]
+    selected_filter = _normalize_dashboard_filter("student", initial_filter)
+    search_query = _normalize_dashboard_search(initial_search)
+    initial_visible_count = _apply_dashboard_view_state(
+        enriched_offerings,
+        filter_value=selected_filter,
+        search_query=search_query,
+    )
+    initial_results_summary = _build_dashboard_results_summary(
+        dashboard_filters,
+        filter_value=selected_filter,
+        search_query=search_query,
+    )
 
     return {
         "dashboard_theme": "student",
@@ -581,13 +674,12 @@ def _build_student_dashboard_context(conn, user: dict) -> dict[str, Any]:
             "subtitle": ui_copy["activity_subtitle"],
             "items": recent_activity,
         },
-        "dashboard_filters": [
-            {"value": "all", "label": "全部", "count": len(offerings)},
-            {"value": "attention", "label": "待完成", "count": attention_count},
-            {"value": "progress", "label": "有进展", "count": progress_count},
-            {"value": "recent", "label": "近期活跃", "count": recent_count},
-        ],
+        "dashboard_filters": dashboard_filters,
         "dashboard_search_placeholder": "搜索课程、教师或学期",
+        "dashboard_initial_filter": selected_filter,
+        "dashboard_initial_search": search_query,
+        "dashboard_initial_visible_count": initial_visible_count,
+        "dashboard_initial_results_summary": initial_results_summary,
         "dashboard_empty_state": {
             "title": ui_copy["empty_title"],
             "description": ui_copy["empty_description"],
@@ -858,6 +950,88 @@ def _query_scalar(conn, sql: str, params: tuple[Any, ...]) -> int:
     if not row:
         return 0
     return int(row[0] or 0)
+
+
+def _normalize_dashboard_filter(role: str, value: Any) -> str:
+    allowed_values = DASHBOARD_FILTER_VALUES.get(role, ("all",))
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in allowed_values else "all"
+
+
+def _normalize_dashboard_search(value: Any, *, max_length: int = 80) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip())[:max_length]
+
+
+def _normalize_dashboard_search_token(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+def _build_dashboard_search_text(*parts: Any) -> str:
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        token = _normalize_dashboard_search_token(part)
+        if not token:
+            continue
+        for candidate in (token, token.replace(" ", "")):
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            tokens.append(candidate)
+    return " ".join(tokens)
+
+
+def _matches_dashboard_filter(offering: dict[str, Any], filter_value: str) -> bool:
+    if filter_value == "attention":
+        return bool(offering.get("needs_attention"))
+    if filter_value == "recent":
+        return bool(offering.get("has_recent_activity"))
+    if filter_value == "progress":
+        return bool(offering.get("has_progress"))
+    return True
+
+
+def _matches_dashboard_search(offering: dict[str, Any], search_query: str) -> bool:
+    if not search_query:
+        return True
+    normalized_query = _normalize_dashboard_search_token(search_query)
+    if not normalized_query:
+        return True
+    haystack = str(offering.get("search_text") or "")
+    if normalized_query in haystack:
+        return True
+    compact_query = normalized_query.replace(" ", "")
+    return bool(compact_query) and compact_query in haystack.replace(" ", "")
+
+
+def _apply_dashboard_view_state(
+    offerings: list[dict[str, Any]],
+    *,
+    filter_value: str,
+    search_query: str,
+) -> int:
+    visible_count = 0
+    for offering in offerings:
+        is_visible = _matches_dashboard_filter(offering, filter_value) and _matches_dashboard_search(offering, search_query)
+        offering["initially_visible"] = is_visible
+        if is_visible:
+            visible_count += 1
+    return visible_count
+
+
+def _build_dashboard_results_summary(
+    filters: list[dict[str, Any]],
+    *,
+    filter_value: str,
+    search_query: str,
+) -> str:
+    filter_labels = {str(item.get("value") or ""): str(item.get("label") or "") for item in filters}
+    fragments: list[str] = []
+    if filter_value != "all":
+        fragments.append(f"筛选：{filter_labels.get(filter_value, filter_value)}")
+    if search_query:
+        fragments.append(f"关键词：{search_query}")
+    return " · ".join(fragments) if fragments else "显示全部课堂"
 
 
 def _pick_latest_datetime(*values: Any) -> str:

@@ -1,6 +1,7 @@
 from datetime import datetime
 import sqlite3
 import json
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request, Form, HTTPException, Depends, status, UploadFile, File
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
@@ -27,6 +28,12 @@ from ..services.discussion_mood_service import maybe_schedule_discussion_mood_re
 from ..services.submission_assets import decode_allowed_file_types_json, summarize_allowed_file_types
 from ..services.dashboard_service import build_dashboard_context
 from ..services.classroom_page_service import build_classroom_page_context
+from ..services.assignment_lifecycle_service import (
+    assignment_accepts_submissions,
+    close_overdue_assignments,
+    enrich_assignment_runtime_view,
+    refresh_assignment_runtime_status,
+)
 from ..services.student_auth_service import (
     PASSWORD_POLICY_HINT,
     build_password_setup_token,
@@ -61,7 +68,7 @@ def _enrich_assignment_upload_config(assignment: dict) -> dict:
     allowed_file_types = decode_allowed_file_types_json(assignment.get("allowed_file_types_json"))
     assignment["allowed_file_types"] = allowed_file_types
     assignment["allowed_file_types_label"] = summarize_allowed_file_types(allowed_file_types)
-    return assignment
+    return enrich_assignment_runtime_view(assignment)
 
 
 def _serialize_submission_file_rows(rows) -> list[dict]:
@@ -133,7 +140,6 @@ def _perform_student_password_login(
     if not verify_password(password, student_row["hashed_password"]):
         raise HTTPException(status_code=400, detail="登录失败：账号或密码错误。")
 
-    invalidate_session_for_user(str(student_row["id"]), "student")
     login_count = record_student_login(
         conn,
         student_row=student_row,
@@ -219,7 +225,7 @@ async def permission_warning_page(
 
 
 @router.post("/api/student/login/password", response_class=JSONResponse)
-async def api_student_password_login(
+def api_student_password_login(
     request: Request,
     identifier: str = Form(),
     password: str = Form(),
@@ -249,7 +255,7 @@ async def api_student_password_login(
 
 
 @router.post("/api/student/login/identity", response_class=JSONResponse)
-async def api_student_identity_login(
+def api_student_identity_login(
     request: Request,
     name: str = Form(),
     student_id_number: str = Form(),
@@ -302,7 +308,7 @@ async def api_student_identity_login(
 
 
 @router.post("/api/student/password/setup", response_class=JSONResponse)
-async def api_student_password_setup(
+def api_student_password_setup(
     request: Request,
     setup_token: str = Form(),
     password: str = Form(),
@@ -355,7 +361,6 @@ async def api_student_password_setup(
                 approved_request_id=token_payload.get("reset_request_id"),
             )
 
-        invalidate_session_for_user(str(student_row["id"]), "student")
         login_count = record_student_login(
             conn,
             student_row=student_row,
@@ -376,7 +381,7 @@ async def api_student_password_setup(
 
 
 @router.post("/api/student/password/forgot", response_class=JSONResponse)
-async def api_student_password_forgot(
+def api_student_password_forgot(
     request: Request,
     name: str = Form(),
     student_id_number: str = Form(),
@@ -422,7 +427,7 @@ async def api_student_password_forgot(
 
 
 @router.post("/api/student/password/change", response_class=JSONResponse)
-async def api_student_password_change(
+def api_student_password_change(
     current_password: str = Form(),
     new_password: str = Form(),
     confirm_password: str = Form(),
@@ -461,7 +466,7 @@ async def api_student_password_change(
 
 
 @router.post("/student/login")
-async def handle_student_login(
+def handle_student_login(
     request: Request,
     identifier: Optional[str] = Form(default=None),
     password: Optional[str] = Form(default=None),
@@ -514,7 +519,7 @@ async def handle_student_login(
 
 
 @router.post("/teacher/register")
-async def handle_teacher_register(request: Request, name: str = Form(), email: str = Form(), password: str = Form()):
+def handle_teacher_register(request: Request, name: str = Form(), email: str = Form(), password: str = Form()):
     """V4.0: 教师注册"""
     hashed_password = get_password_hash(password)
     try:
@@ -535,7 +540,7 @@ async def handle_teacher_register(request: Request, name: str = Form(), email: s
 
 
 @router.post("/teacher/login")
-async def handle_teacher_login(
+def handle_teacher_login(
     request: Request,
     email: str = Form(),
     password: str = Form(),
@@ -557,9 +562,6 @@ async def handle_teacher_login(
 
     teacher_data = dict(teacher)
 
-    # 使该用户之前的会话失效
-    invalidate_session_for_user(str(teacher_data['id']), "teacher")
-
     token_data = {
         "id": teacher_data['id'],  # 数据库主键 PK
         "name": teacher_data['name'],
@@ -579,7 +581,7 @@ async def handle_teacher_login(
 
 
 @router.get("/logout")
-async def logout(request: Request):
+def logout(request: Request):
     from ..dependencies import get_active_user_from_request
 
     # 获取当前用户并使其会话失效
@@ -598,10 +600,31 @@ async def logout(request: Request):
 # ============================
 
 @router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request, user: dict = Depends(get_current_user)):
+async def dashboard(
+    request: Request,
+    filter: Optional[str] = None,
+    q: Optional[str] = None,
+    search: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
     """V4.0: 仪表盘，显示用户所有相关的 "班级课堂" """
     with get_db_connection() as conn:
-        dashboard_context = build_dashboard_context(conn, user)
+        dashboard_context = build_dashboard_context(
+            conn,
+            user,
+            initial_filter=filter,
+            initial_search=q if q is not None else search,
+        )
+
+    current_search = str(dashboard_context.get("dashboard_initial_search") or "")
+    for item in dashboard_context.get("dashboard_filters", []):
+        params: dict[str, str] = {}
+        filter_value = str(item.get("value") or "all")
+        if filter_value and filter_value != "all":
+            params["filter"] = filter_value
+        if current_search:
+            params["q"] = current_search
+        item["href"] = "/dashboard" if not params else f"/dashboard?{urlencode(params)}"
 
     return templates.TemplateResponse(
         request,
@@ -677,11 +700,19 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
         # 修复：从 V3.2 复制，但 V4.0 还不支持显示大小
         files_info = [{"id": row['id'], "name": row['file_name'], "size": format_size(row['file_size'])} for row in files_cursor]
 
-        assignments_cursor = conn.execute("SELECT * FROM assignments WHERE course_id = ? AND (class_offering_id = ? OR class_offering_id IS NULL) ORDER BY created_at DESC",
-                                          (course_id, class_offering_id))
+        close_overdue_assignments(conn)
+        assignments_cursor = conn.execute(
+            """
+            SELECT *
+            FROM assignments
+            WHERE course_id = ? AND class_offering_id = ?
+            ORDER BY created_at DESC
+            """,
+            (course_id, class_offering_id)
+        )
         assignments = []
         for row in assignments_cursor:
-            assignment = dict(row)
+            assignment = _enrich_assignment_upload_config(dict(row))
             if user['role'] == 'student':
                 if assignment['status'] == 'new': continue
                 submission = conn.execute(
@@ -748,79 +779,95 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
 async def assignment_detail_page(request: Request, assignment_id: str, user: dict = Depends(get_current_user)):
     """V4.0: 作业详情页 (学生/教师均可访问)"""
     with get_db_connection() as conn:
+        close_overdue_assignments(conn)
         assignment_row = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
-    if not assignment_row:
-        raise HTTPException(404, "Assignment not found")
-    assignment = _enrich_assignment_upload_config(dict(assignment_row))
+        if not assignment_row:
+            raise HTTPException(404, "Assignment not found")
+        assignment_row = refresh_assignment_runtime_status(conn, assignment_row)
+        assignment = _enrich_assignment_upload_config(dict(assignment_row))
 
-    # 如果是试卷型作业且用户是学生 → 重定向到考试页面
-    if assignment.get('exam_paper_id') and user['role'] == 'student':
-        return RedirectResponse(url=f"/exam/take/{assignment_id}")
+        # 如果是试卷型作业且用户是学生 → 重定向到考试页面
+        if assignment.get('exam_paper_id') and user['role'] == 'student':
+            return RedirectResponse(url=f"/exam/take/{assignment_id}")
 
-    if user['role'] == 'teacher':
-        if assignment.get("class_offering_id"):
-            try:
-                record_behavior_event(
-                    class_offering_id=int(assignment["class_offering_id"]),
-                    user_pk=int(user["id"]),
-                    user_role=str(user["role"]),
-                    display_name=str(user.get("name") or user.get("username") or user["id"]),
-                    action_type="page_view",
-                    session_started_at=str(user.get("login_time") or "").strip() or None,
-                    summary_text=f"查看作业详情：{assignment.get('title') or assignment_id}",
-                    payload={"page": "assignment_detail", "assignment_id": assignment_id},
-                    page_key="assignment_detail",
-                )
-            except Exception as exc:
-                print(f"[BEHAVIOR] 记录教师作业页访问失败: {exc}")
-        return templates.TemplateResponse(request, "assignment_detail_teacher.html", {
-            "request": request, "user_info": user, "assignment": assignment
-        })
-    else:
+        if user['role'] == 'teacher':
+            if assignment.get("class_offering_id"):
+                try:
+                    record_behavior_event(
+                        class_offering_id=int(assignment["class_offering_id"]),
+                        user_pk=int(user["id"]),
+                        user_role=str(user["role"]),
+                        display_name=str(user.get("name") or user.get("username") or user["id"]),
+                        action_type="page_view",
+                        session_started_at=str(user.get("login_time") or "").strip() or None,
+                        summary_text=f"查看作业详情：{assignment.get('title') or assignment_id}",
+                        payload={"page": "assignment_detail", "assignment_id": assignment_id},
+                        page_key="assignment_detail",
+                    )
+                except Exception as exc:
+                    print(f"[BEHAVIOR] 记录教师作业页访问失败: {exc}")
+            return templates.TemplateResponse(request, "assignment_detail_teacher.html", {
+                "request": request, "user_info": user, "assignment": assignment
+            })
+
         if assignment['status'] == 'new':
-            return templates.TemplateResponse(request, "status.html",
-                                              {"request": request, "success": False, "message": "该作业尚未发布",
-                                               "back_url": "/dashboard"})
+            return templates.TemplateResponse(
+                request,
+                "status.html",
+                {
+                    "request": request,
+                    "success": False,
+                    "message": "该作业尚未发布",
+                    "back_url": "/dashboard",
+                },
+            )
 
-        with get_db_connection() as conn:
-            submission_row = conn.execute(
-                "SELECT * FROM submissions WHERE assignment_id = ? AND student_pk_id = ?", (assignment_id, user['id'])
-            ).fetchone()
-            submission = dict(submission_row) if submission_row else None
-            submission_files = []
-            if submission:
-                files_cursor = conn.execute(
-                    "SELECT * FROM submission_files WHERE submission_id = ? ORDER BY COALESCE(relative_path, original_filename), id",
-                    (submission['id'],)
-                )
-                submission_files = _serialize_submission_file_rows(files_cursor)
+        submission_row = conn.execute(
+            "SELECT * FROM submissions WHERE assignment_id = ? AND student_pk_id = ?",
+            (assignment_id, user['id'])
+        ).fetchone()
+        submission = dict(submission_row) if submission_row else None
+        submission_files = []
+        if submission:
+            files_cursor = conn.execute(
+                "SELECT * FROM submission_files WHERE submission_id = ? ORDER BY COALESCE(relative_path, original_filename), id",
+                (submission['id'],)
+            )
+            submission_files = _serialize_submission_file_rows(files_cursor)
 
-        if assignment.get("class_offering_id"):
-            try:
-                record_behavior_event(
-                    class_offering_id=int(assignment["class_offering_id"]),
-                    user_pk=int(user["id"]),
-                    user_role=str(user["role"]),
-                    display_name=str(user.get("name") or user.get("username") or user["id"]),
-                    action_type="page_view",
-                    session_started_at=str(user.get("login_time") or "").strip() or None,
-                    summary_text=f"查看作业详情：{assignment.get('title') or assignment_id}",
-                    payload={
-                        "page": "assignment_detail",
-                        "assignment_id": assignment_id,
-                        "has_submission": bool(submission),
-                    },
-                    page_key="assignment_detail",
-                )
-            except Exception as exc:
-                print(f"[BEHAVIOR] 记录学生作业页访问失败: {exc}")
+    can_withdraw_submission = bool(
+        submission
+        and submission.get("status") == "submitted"
+        and assignment_accepts_submissions(assignment)
+    )
 
-        return templates.TemplateResponse(request, "assignment_detail_student.html", {
-            "request": request, "user_info": user, "assignment": assignment,
-            "submission": submission, "submission_files": submission_files,
-            "max_upload_mb": MAX_UPLOAD_SIZE_MB,
-            "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
-        })
+    if assignment.get("class_offering_id"):
+        try:
+            record_behavior_event(
+                class_offering_id=int(assignment["class_offering_id"]),
+                user_pk=int(user["id"]),
+                user_role=str(user["role"]),
+                display_name=str(user.get("name") or user.get("username") or user["id"]),
+                action_type="page_view",
+                session_started_at=str(user.get("login_time") or "").strip() or None,
+                summary_text=f"查看作业详情：{assignment.get('title') or assignment_id}",
+                payload={
+                    "page": "assignment_detail",
+                    "assignment_id": assignment_id,
+                    "has_submission": bool(submission),
+                },
+                page_key="assignment_detail",
+            )
+        except Exception as exc:
+            print(f"[BEHAVIOR] 记录学生作业页访问失败: {exc}")
+
+    return templates.TemplateResponse(request, "assignment_detail_student.html", {
+        "request": request, "user_info": user, "assignment": assignment,
+        "submission": submission, "submission_files": submission_files,
+        "can_withdraw_submission": can_withdraw_submission,
+        "max_upload_mb": MAX_UPLOAD_SIZE_MB,
+        "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
+    })
 
 
 # ============================
@@ -1112,6 +1159,7 @@ async def exam_new_page(request: Request, user: dict = Depends(get_current_teach
 async def submission_detail_page(request: Request, submission_id: int, user: dict = Depends(get_current_user)):
     """查看/批改提交详情页（教师+学生均可访问）"""
     with get_db_connection() as conn:
+        close_overdue_assignments(conn)
         submission = ensure_submission_access(conn, submission_id, user)
         if submission is None:
             raise HTTPException(404, "提交记录不存在")
@@ -1120,6 +1168,7 @@ async def submission_detail_page(request: Request, submission_id: int, user: dic
         assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (submission['assignment_id'],)).fetchone()
         if not assignment:
             raise HTTPException(404, "作业不存在")
+        assignment = refresh_assignment_runtime_status(conn, assignment)
         assignment = _enrich_assignment_upload_config(dict(assignment))
 
         # 获取提交的附件
@@ -1151,9 +1200,11 @@ async def submission_detail_page(request: Request, submission_id: int, user: dic
 async def exam_take_page(request: Request, assignment_id: str, user: dict = Depends(get_current_user)):
     """学生考试界面"""
     with get_db_connection() as conn:
+        close_overdue_assignments(conn)
         assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
         if not assignment:
             raise HTTPException(404, "作业不存在")
+        assignment = refresh_assignment_runtime_status(conn, assignment)
         assignment = _enrich_assignment_upload_config(dict(assignment))
 
         if not assignment.get('exam_paper_id'):
@@ -1184,6 +1235,12 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
                 )
                 submission_files = _serialize_submission_file_rows(files_cursor)
 
+    can_withdraw_submission = bool(
+        submission
+        and submission.get("status") == "submitted"
+        and assignment_accepts_submissions(assignment)
+    )
+
     if assignment.get("class_offering_id"):
         try:
             record_behavior_event(
@@ -1211,6 +1268,7 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
         "paper": dict(paper),
         "submission": submission,
         "submission_files": submission_files,
+        "can_withdraw_submission": can_withdraw_submission,
         "max_upload_mb": MAX_UPLOAD_SIZE_MB,
         "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
     })

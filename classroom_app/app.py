@@ -23,6 +23,9 @@ from .services.behavior_tracking_service import (
 )
 from .services.discussion_mood_service import stop_discussion_mood_refresh_tasks
 from .services.message_center_service import schedule_pending_private_ai_reply_jobs
+from .services.submission_file_alignment import repair_stale_stored_paths
+from .services.assignment_lifecycle_service import close_overdue_assignments
+from .database import get_db_connection
 
 # 导入所有 V4.0 路由
 from .routers import ui, files, homework, ai, materials, emoji, behavior, message_center
@@ -55,6 +58,24 @@ async def startup_event():
         print(f"[MESSAGE_CENTER] 恢复 {resumed_private_ai_jobs} 个待处理的 AI 私信任务")
     start_behavior_write_pipeline()
     start_behavior_profile_scheduler()
+
+    # Auto-repair stale stored_path entries (e.g. wrong drive letter after migration)
+    try:
+        with get_db_connection() as align_conn:
+            repair_report = repair_stale_stored_paths(align_conn)
+            closed_count = close_overdue_assignments(align_conn)
+            align_conn.commit()
+        if repair_report.paths_repaired > 0 or repair_report.paths_still_missing > 0:
+            print(
+                f"[ALIGNMENT] stored_path repair: "
+                f"{repair_report.paths_repaired} repaired, "
+                f"{repair_report.paths_already_valid} valid, "
+                f"{repair_report.paths_still_missing} still missing"
+            )
+        if closed_count > 0:
+            print(f"[ASSIGNMENT] startup auto-close completed: {closed_count} assignment(s) closed")
+    except Exception as exc:
+        print(f"[ALIGNMENT] stored_path auto-repair failed (non-fatal): {exc}")
 
 
 @app.on_event("shutdown")

@@ -288,6 +288,33 @@
             {% endif %}
 
             <div class="req-section">
+                <h3>时间设置</h3>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="badge badge-outline">{{ assignment.availability_mode_label or '长期有效' }}</span>
+                    {% if assignment.status == 'published' %}
+                    <span class="badge badge-success">允许提交</span>
+                    {% elif assignment.status == 'closed' %}
+                    <span class="badge badge-danger">已截止（只读）</span>
+                    {% else %}
+                    <span class="badge badge-warning">未开始</span>
+                    {% endif %}
+                </div>
+                <p class="text-sm text-muted mt-2">
+                    {% if assignment.due_at %}
+                    截止时间：{{ assignment.due_at[:16] | replace('T', ' ') }}
+                    {% else %}
+                    截止时间：长期有效
+                    {% endif %}
+                </p>
+                {% if assignment.availability_mode == 'countdown' %}
+                <p class="text-sm text-muted mt-1">
+                    倒计时：{{ assignment.duration_minutes or '-' }} 分钟
+                    {% if assignment.starts_at %}，开始时间：{{ assignment.starts_at[:16] | replace('T', ' ') }}{% endif %}
+                </p>
+                {% endif %}
+            </div>
+
+            <div class="req-section">
                 <h3>附件提交</h3>
                 <p class="text-sm text-muted">学生可在提交时上传一次文件或文件夹，后端会按当前作业配置过滤不符合类型要求的文件。</p>
                 <div class="mt-2">
@@ -383,6 +410,47 @@
                         >
                         <p class="text-xs text-muted mt-1">支持扩展名或 MIME 类型，多个值用逗号分隔；留空表示不限制。</p>
                     </div>
+                    <div class="form-group">
+                        <label class="form-label" for="edit-availability-mode">答题时间策略</label>
+                        <select id="edit-availability-mode" class="form-select">
+                            <option value="permanent" {{ 'selected' if assignment.availability_mode == 'permanent' else '' }}>长期有效</option>
+                            <option value="deadline" {{ 'selected' if assignment.availability_mode == 'deadline' else '' }}>截止时间</option>
+                            <option value="countdown" {{ 'selected' if assignment.availability_mode == 'countdown' else '' }}>倒计时</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="edit-deadline-group">
+                        <label class="form-label" for="edit-due-at">截止时间</label>
+                        <input
+                            type="datetime-local"
+                            id="edit-due-at"
+                            class="form-control"
+                            value="{{ assignment.due_at[:16] if assignment.due_at else '' }}"
+                        >
+                    </div>
+                    <div id="edit-countdown-group">
+                        <div class="form-group">
+                            <label class="form-label" for="edit-duration-minutes">倒计时（分钟）</label>
+                            <input
+                                type="number"
+                                id="edit-duration-minutes"
+                                class="form-control"
+                                min="1"
+                                step="1"
+                                value="{{ assignment.duration_minutes or '' }}"
+                                placeholder="例如：90"
+                            >
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="edit-starts-at">开始时间（可选）</label>
+                            <input
+                                type="datetime-local"
+                                id="edit-starts-at"
+                                class="form-control"
+                                value="{{ assignment.starts_at[:16] if assignment.starts_at else '' }}"
+                            >
+                            <p class="text-xs text-muted mt-1">留空表示发布后从当前时间开始计时。</p>
+                        </div>
+                    </div>
                     <div class="flex justify-end gap-2 mt-4">
                         <button type="button" class="btn btn-outline" onclick="closeEditModal()">取消</button>
                         <button type="submit" class="btn btn-primary">保存修改</button>
@@ -433,6 +501,11 @@
     const currentAssignmentId = "{{ assignment.id }}";
     const currentClassOfferingId = {{ assignment.class_offering_id | tojson }};
     const currentAllowedFileTypes = {{ assignment.allowed_file_types | tojson }};
+    const currentAvailabilityMode = {{ assignment.availability_mode | default('permanent') | tojson }};
+    const currentDueAt = {{ assignment.due_at | tojson }};
+    const currentDurationMinutes = {{ assignment.duration_minutes | tojson }};
+    const currentStartsAt = {{ assignment.starts_at | tojson }};
+    const currentAutoClose = {{ assignment.auto_close | default(1) | tojson }};
     let allEntries = [];
     let currentFilter = 'all';
     let autoRefreshTimer = null;
@@ -441,6 +514,7 @@
         renderMarkdown('assignment-requirements', {{ assignment.requirements_md | tojson }});
         renderMarkdown('assignment-rubric', {{ assignment.rubric_md | tojson }});
         loadSubmissions();
+        syncEditScheduleMode();
 
         autoRefreshTimer = setInterval(() => {
             if (allEntries.some(s => s.status === 'grading')) {
@@ -453,6 +527,47 @@
             if (!event.target.closest('.dropdown')) dd.style.display = 'none';
         });
     });
+
+    function syncEditScheduleMode() {
+        const mode = document.getElementById('edit-availability-mode')?.value || 'permanent';
+        const deadlineGroup = document.getElementById('edit-deadline-group');
+        const countdownGroup = document.getElementById('edit-countdown-group');
+        if (deadlineGroup) {
+            deadlineGroup.style.display = mode === 'deadline' ? '' : 'none';
+        }
+        if (countdownGroup) {
+            countdownGroup.style.display = mode === 'countdown' ? '' : 'none';
+        }
+    }
+
+    document.getElementById('edit-availability-mode')?.addEventListener('change', syncEditScheduleMode);
+
+    function buildScheduleFromEditForm() {
+        const mode = (document.getElementById('edit-availability-mode')?.value || 'permanent').trim();
+        const dueAt = (document.getElementById('edit-due-at')?.value || '').trim();
+        const durationRaw = (document.getElementById('edit-duration-minutes')?.value || '').trim();
+        const startsAt = (document.getElementById('edit-starts-at')?.value || '').trim();
+
+        if (mode === 'deadline' && !dueAt) {
+            throw new Error('请设置截止时间');
+        }
+        if (mode === 'countdown') {
+            if (!durationRaw) {
+                throw new Error('请设置倒计时分钟数');
+            }
+            const duration = Number(durationRaw);
+            if (!Number.isFinite(duration) || duration <= 0) {
+                throw new Error('倒计时分钟数必须大于 0');
+            }
+        }
+
+        return {
+            availability_mode: mode,
+            due_at: mode === 'deadline' ? dueAt : null,
+            duration_minutes: mode === 'countdown' ? Number(durationRaw) : null,
+            starts_at: mode === 'countdown' && startsAt ? startsAt : null,
+        };
+    }
 
     // ==================== Data Loading ====================
     async function loadSubmissions() {
@@ -697,6 +812,11 @@
                     grading_mode: {{ assignment.grading_mode | tojson }},
                     status: newStatus,
                     allowed_file_types: currentAllowedFileTypes,
+                    availability_mode: currentAvailabilityMode,
+                    due_at: currentDueAt,
+                    duration_minutes: currentDurationMinutes,
+                    starts_at: currentStartsAt,
+                    auto_close: currentAutoClose,
                 })
             });
             if (response.ok) {
@@ -711,6 +831,7 @@
     document.getElementById('edit-assignment-form').addEventListener('submit', async function(e) {
         e.preventDefault();
         try {
+            const schedulePayload = buildScheduleFromEditForm();
             const response = await fetch(`/api/assignments/${currentAssignmentId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -721,6 +842,7 @@
                     grading_mode: document.getElementById('edit-grading-mode').value,
                     status: {{ assignment.status | tojson }},
                     allowed_file_types: document.getElementById('edit-allowed-file-types').value,
+                    ...schedulePayload,
                 })
             });
             if (response.ok) {

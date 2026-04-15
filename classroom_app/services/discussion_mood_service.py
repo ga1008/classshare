@@ -50,6 +50,20 @@ def get_discussion_mood_payload(conn, class_offering_id: int) -> dict[str, Any]:
     return _build_fallback_payload(class_offering_id)
 
 
+def _load_refresh_snapshot_inputs(
+    class_offering_id: int,
+    latest_message_id: int | None,
+) -> tuple[Any, int]:
+    with get_db_connection() as conn:
+        snapshot_row = _load_snapshot_row(conn, class_offering_id)
+        resolved_latest_message_id = int(
+            latest_message_id
+            if latest_message_id is not None
+            else _load_latest_chat_message_id(conn, class_offering_id)
+        )
+    return snapshot_row, resolved_latest_message_id
+
+
 async def maybe_schedule_discussion_mood_refresh(
     class_offering_id: int,
     *,
@@ -64,13 +78,11 @@ async def maybe_schedule_discussion_mood_refresh(
         if existing_task and not existing_task.done():
             return False
 
-        with get_db_connection() as conn:
-            snapshot_row = _load_snapshot_row(conn, normalized_room_id)
-            resolved_latest_message_id = int(
-                latest_message_id
-                if latest_message_id is not None
-                else _load_latest_chat_message_id(conn, normalized_room_id)
-            )
+        snapshot_row, resolved_latest_message_id = await asyncio.to_thread(
+            _load_refresh_snapshot_inputs,
+            normalized_room_id,
+            latest_message_id,
+        )
 
         if not _should_refresh_snapshot(
             snapshot_row,
@@ -112,13 +124,11 @@ async def _refresh_discussion_mood_task(
             class_offering_id=class_offering_id,
             latest_message_id=latest_message_id,
         )
-        with get_db_connection() as conn:
-            _upsert_snapshot(
-                conn,
-                class_offering_id=class_offering_id,
-                payload=snapshot,
-            )
-            conn.commit()
+        await asyncio.to_thread(
+            _store_discussion_mood_snapshot,
+            class_offering_id,
+            snapshot,
+        )
         print(
             f"[DISCUSSION_MOOD] 已刷新课堂 {class_offering_id} 的情绪语录，"
             f"source={snapshot['source']}, reason={reason}, latest_message_id={latest_message_id}"
@@ -139,32 +149,10 @@ async def _generate_discussion_mood_snapshot(
     class_offering_id: int,
     latest_message_id: int,
 ) -> dict[str, Any]:
-    with get_db_connection() as conn:
-        room = conn.execute(
-            """
-            SELECT o.id,
-                   c.name AS course_name,
-                   cl.name AS class_name,
-                   t.name AS teacher_name
-            FROM class_offerings o
-            JOIN courses c ON c.id = o.course_id
-            JOIN classes cl ON cl.id = o.class_id
-            JOIN teachers t ON t.id = o.teacher_id
-            WHERE o.id = ?
-            LIMIT 1
-            """,
-            (class_offering_id,),
-        ).fetchone()
-        rows = conn.execute(
-            """
-            SELECT id, user_name, user_role, message, logged_at, emoji_payload_json, attachments_json
-            FROM chat_logs
-            WHERE class_offering_id = ?
-            ORDER BY id DESC
-            LIMIT ?
-            """,
-            (class_offering_id, DISCUSSION_MOOD_HISTORY_LIMIT),
-        ).fetchall()
+    room, rows = await asyncio.to_thread(
+        _load_discussion_mood_generation_context,
+        class_offering_id,
+    )
 
     if room is None or not rows:
         return _build_fallback_payload(
@@ -237,6 +225,46 @@ async def _generate_discussion_mood_snapshot(
             latest_message_id=latest_message_id,
             source="fallback",
         )
+
+
+def _store_discussion_mood_snapshot(class_offering_id: int, payload: dict[str, Any]) -> None:
+    with get_db_connection() as conn:
+        _upsert_snapshot(
+            conn,
+            class_offering_id=class_offering_id,
+            payload=payload,
+        )
+        conn.commit()
+
+
+def _load_discussion_mood_generation_context(class_offering_id: int):
+    with get_db_connection() as conn:
+        room = conn.execute(
+            """
+            SELECT o.id,
+                   c.name AS course_name,
+                   cl.name AS class_name,
+                   t.name AS teacher_name
+            FROM class_offerings o
+            JOIN courses c ON c.id = o.course_id
+            JOIN classes cl ON cl.id = o.class_id
+            JOIN teachers t ON t.id = o.teacher_id
+            WHERE o.id = ?
+            LIMIT 1
+            """,
+            (class_offering_id,),
+        ).fetchone()
+        rows = conn.execute(
+            """
+            SELECT id, user_name, user_role, message, logged_at, emoji_payload_json, attachments_json
+            FROM chat_logs
+            WHERE class_offering_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (class_offering_id, DISCUSSION_MOOD_HISTORY_LIMIT),
+        ).fetchall()
+    return room, rows
 
 
 def _build_generation_prompt(

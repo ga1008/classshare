@@ -20,7 +20,12 @@
 {% endblock %}
 
 {% block main_content %}
-<section class="dashboard-shell" data-dashboard-root>
+<section
+    class="dashboard-shell"
+    data-dashboard-root
+    data-initial-filter="{{ dashboard_initial_filter }}"
+    data-initial-search="{{ dashboard_initial_search }}"
+>
     <section class="dashboard-hero">
         <div class="dashboard-hero__content">
             <span class="dashboard-hero__eyebrow">{{ dashboard_hero.eyebrow }}</span>
@@ -59,35 +64,52 @@
             <div class="dashboard-toolbar">
                 <div class="dashboard-toolbar__filters" role="tablist" aria-label="首页筛选">
                     {% for filter in dashboard_filters %}
-                    <button
-                        type="button"
-                        class="dashboard-filter-btn{% if loop.first %} is-active{% endif %}"
+                    <a
+                        href="{{ filter.href }}"
+                        class="dashboard-filter-btn{% if filter.value == dashboard_initial_filter %} is-active{% endif %}"
                         data-filter-value="{{ filter.value }}"
+                        data-filter-label="{{ filter.label }}"
+                        role="tab"
+                        aria-selected="{{ 'true' if filter.value == dashboard_initial_filter else 'false' }}"
                     >
                         {{ filter.label }}
                         <span>{{ filter.count }}</span>
-                    </button>
+                    </a>
                     {% endfor %}
                 </div>
 
-                <div class="dashboard-toolbar__search">
+                <form method="get" action="/dashboard" class="dashboard-toolbar__search" data-dashboard-search-form>
+                    <input type="hidden" name="filter" value="{{ dashboard_initial_filter }}" data-dashboard-filter-field>
                     <label class="sr-only" for="dashboard-search">搜索课堂</label>
-                    <input
-                        id="dashboard-search"
-                        type="search"
-                        class="dashboard-search-input"
-                        placeholder="{{ dashboard_search_placeholder }}"
-                        data-dashboard-search
-                    >
-                </div>
+                    <div class="dashboard-search-shell">
+                        <input
+                            id="dashboard-search"
+                            type="search"
+                            name="q"
+                            class="dashboard-search-input"
+                            placeholder="{{ dashboard_search_placeholder }}"
+                            value="{{ dashboard_initial_search }}"
+                            data-dashboard-search
+                        >
+                        <button type="submit" class="dashboard-search-submit">搜索</button>
+                    </div>
+                </form>
             </div>
 
             <div class="dashboard-results-bar">
-                <span>当前显示 <strong data-visible-count>{{ class_offerings|length }}</strong> 个课堂</span>
-                <button type="button" class="dashboard-reset-link" data-reset-search hidden>清除筛选</button>
+                <span>当前显示 <strong data-visible-count>{{ dashboard_initial_visible_count }}</strong> 个课堂</span>
+                <span class="dashboard-results-bar__summary" data-results-summary aria-live="polite">{{ dashboard_initial_results_summary }}</span>
+                <button
+                    type="button"
+                    class="dashboard-reset-link"
+                    data-reset-search
+                    {% if dashboard_initial_filter == 'all' and not dashboard_initial_search %}hidden{% endif %}
+                >
+                    清除筛选
+                </button>
             </div>
 
-            <div class="dashboard-offering-grid" data-offering-list>
+            <div class="dashboard-offering-grid" data-offering-list{% if dashboard_initial_visible_count == 0 %} hidden{% endif %}>
                 {% for offering in class_offerings %}
                 <article
                     class="dashboard-offering-card dashboard-reveal"
@@ -95,7 +117,9 @@
                     data-attention="{{ 'true' if offering.needs_attention else 'false' }}"
                     data-recent="{{ 'true' if offering.has_recent_activity else 'false' }}"
                     data-progress="{{ 'true' if offering.has_progress else 'false' }}"
-                    data-search-text="{{ (offering.course_name ~ ' ' ~ offering.class_name ~ ' ' ~ (offering.teacher_name or '') ~ ' ' ~ (offering.semester or ''))|lower }}"
+                    data-search-text="{{ offering.search_text }}"
+                    aria-hidden="{{ 'false' if offering.initially_visible else 'true' }}"
+                    {% if not offering.initially_visible %}hidden{% endif %}
                 >
                     <div class="dashboard-offering-card__top">
                         <div class="dashboard-offering-card__copy">
@@ -151,7 +175,7 @@
                 {% endfor %}
             </div>
 
-            <div class="dashboard-empty-search" data-empty-search hidden>
+            <div class="dashboard-empty-search" data-empty-search{% if dashboard_initial_visible_count > 0 %} hidden{% endif %}>
                 <h3>没有匹配的课堂</h3>
                 <p>可以清空搜索词，或切换筛选查看其他课堂。</p>
             </div>

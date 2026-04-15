@@ -4,6 +4,7 @@ import uuid
 import threading
 import ipaddress
 import re
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict
 from urllib.parse import urlencode, urlsplit
@@ -421,15 +422,25 @@ def get_role_label(role: Optional[str]) -> str:
     return "访客"
 
 
-def invalidate_user_session(user_id: str, role: Optional[str] = None) -> bool:
+def invalidate_user_session(
+    user_id: str,
+    role: Optional[str] = None,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> bool:
     """使用户的所有会话失效"""
-    return invalidate_session_for_user(user_id, role)
+    return invalidate_session_for_user(user_id, role, conn=conn)
 
 
-def invalidate_session_for_user(user_id: str, role: Optional[str] = None) -> bool:
+def invalidate_session_for_user(
+    user_id: str,
+    role: Optional[str] = None,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> bool:
     raw_user_id = str(user_id).strip()
     normalized_role = role.strip().lower() if role else None
-    removed_count = delete_user_sessions(raw_user_id, normalized_role)
+    removed_count = delete_user_sessions(raw_user_id, normalized_role, conn=conn)
     removed_cache_count = _drop_cached_sessions_for_user(raw_user_id, normalized_role)
 
     if removed_count > 0 or removed_cache_count > 0:

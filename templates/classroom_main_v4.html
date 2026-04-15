@@ -221,12 +221,18 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 assignment-grid">
                     {% for assignment in assignments %}
                     {% if user_info.role == 'teacher' %}
-                        {% if assignment.status == 'new' %}
+                        {% if assignment.effective_status == 'new' %}
                             {% set status_label = '草稿' %}
                             {% set status_class = 'badge-warning' %}
-                        {% else %}
-                            {% set status_label = '已发布' %}
+                        {% elif assignment.effective_status == 'closed' %}
+                            {% set status_label = '已截止' %}
+                            {% set status_class = 'badge-danger' %}
+                        {% elif assignment.effective_status == 'published' %}
+                            {% set status_label = '进行中' %}
                             {% set status_class = 'badge-success' %}
+                        {% else %}
+                            {% set status_label = assignment.effective_status or assignment.status %}
+                            {% set status_class = 'badge-secondary' %}
                         {% endif %}
                     {% else %}
                         {% if assignment.submission_status == 'unsubmitted' %}
@@ -620,6 +626,30 @@
                     <input type="text" id="assignment-allowed-file-types" class="form-control" placeholder="例如：.pdf,.docx,image/*">
                     <p class="form-hint">支持扩展名或 MIME 类型，多个值用逗号分隔；留空表示不限制，学生上传文件夹时也会按此规则过滤子文件。</p>
                 </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="assignment-availability-mode">答题时间策略</label>
+                    <select id="assignment-availability-mode" class="form-select">
+                        <option value="permanent">长期有效</option>
+                        <option value="deadline">截止时间</option>
+                        <option value="countdown">倒计时</option>
+                    </select>
+                </div>
+                <div class="form-group" id="assignment-deadline-group">
+                    <label class="form-label" for="assignment-due-at">截止时间</label>
+                    <input type="datetime-local" id="assignment-due-at" class="form-control">
+                </div>
+                <div id="assignment-countdown-group">
+                    <div class="form-group">
+                        <label class="form-label" for="assignment-duration-minutes">倒计时（分钟）</label>
+                        <input type="number" id="assignment-duration-minutes" class="form-control" min="1" step="1" placeholder="例如：90">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="assignment-starts-at">开始时间（可选）</label>
+                        <input type="datetime-local" id="assignment-starts-at" class="form-control">
+                        <p class="form-hint">留空表示发布后从当前时间开始计时。</p>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" data-dismiss="modal">取消</button>
@@ -648,6 +678,29 @@
                     <label class="form-label" for="exam-allowed-file-types">接收附件类型</label>
                     <input type="text" id="exam-allowed-file-types" class="form-control" placeholder="例如：.zip,.py,.pdf">
                     <p class="form-hint">留空表示不限制。学生上传的文件和文件夹内容会在服务端按类型过滤，不符合规则的文件会被丢弃。</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="exam-availability-mode">答题时间策略</label>
+                    <select id="exam-availability-mode" class="form-select">
+                        <option value="permanent">长期有效</option>
+                        <option value="deadline">截止时间</option>
+                        <option value="countdown">倒计时</option>
+                    </select>
+                </div>
+                <div class="form-group" id="exam-deadline-group">
+                    <label class="form-label" for="exam-due-at">截止时间</label>
+                    <input type="datetime-local" id="exam-due-at" class="form-control">
+                </div>
+                <div id="exam-countdown-group">
+                    <div class="form-group">
+                        <label class="form-label" for="exam-duration-minutes">倒计时（分钟）</label>
+                        <input type="number" id="exam-duration-minutes" class="form-control" min="1" step="1" placeholder="例如：90">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="exam-starts-at">开始时间（可选）</label>
+                        <input type="datetime-local" id="exam-starts-at" class="form-control">
+                        <p class="form-hint">留空表示发布后从当前时间开始计时。</p>
+                    </div>
                 </div>
                 <div id="exam-list-container" class="exam-list-container">
                     <div class="text-center p-4"><div class="spinner"></div></div>

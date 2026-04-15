@@ -52,7 +52,7 @@ def _ensure_behavior_access(conn, class_offering_id: int, user_pk: int, user_rol
 
 
 @router.post("/{class_offering_id}/behavior/batch")
-async def ingest_behavior_batch(
+def ingest_behavior_batch(
     class_offering_id: int,
     body: BehaviorBatchRequest,
     user: dict = Depends(get_current_user),

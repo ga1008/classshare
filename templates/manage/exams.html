@@ -437,6 +437,30 @@
                     </div>
                 </div>
             </div>
+
+            <div class="form-group">
+                <label class="form-label" for="assign-availability-mode">答题时间策略</label>
+                <select id="assign-availability-mode" class="form-select">
+                    <option value="permanent">长期有效</option>
+                    <option value="deadline">截止时间</option>
+                    <option value="countdown">倒计时</option>
+                </select>
+            </div>
+            <div class="form-group" id="assign-deadline-group">
+                <label class="form-label" for="assign-due-at">截止时间</label>
+                <input type="datetime-local" id="assign-due-at" class="form-control">
+            </div>
+            <div id="assign-countdown-group">
+                <div class="form-group">
+                    <label class="form-label" for="assign-duration-minutes">倒计时（分钟）</label>
+                    <input type="number" id="assign-duration-minutes" class="form-control" min="1" step="1" placeholder="例如：90">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="assign-starts-at">开始时间（可选）</label>
+                    <input type="datetime-local" id="assign-starts-at" class="form-control">
+                    <p class="text-muted text-sm mt-1">留空表示发布后从当前时间开始计时。</p>
+                </div>
+            </div>
         </div>
         <div class="modal-footer">
             <button class="btn btn-outline" onclick="closeAssignModal()">取消</button>
@@ -455,6 +479,73 @@
     let currentExamId = null;
     let pollingInterval = null;
     let progressSimulators = {};
+    const DEFAULT_ASSIGN_MODE = 'permanent';
+
+    function syncAssignScheduleFields() {
+        const mode = (document.getElementById('assign-availability-mode')?.value || DEFAULT_ASSIGN_MODE).trim();
+        const deadlineGroup = document.getElementById('assign-deadline-group');
+        const countdownGroup = document.getElementById('assign-countdown-group');
+        if (deadlineGroup) {
+            deadlineGroup.style.display = mode === 'deadline' ? '' : 'none';
+        }
+        if (countdownGroup) {
+            countdownGroup.style.display = mode === 'countdown' ? '' : 'none';
+        }
+    }
+
+    function resetAssignScheduleFields() {
+        const modeEl = document.getElementById('assign-availability-mode');
+        const dueEl = document.getElementById('assign-due-at');
+        const durationEl = document.getElementById('assign-duration-minutes');
+        const startsEl = document.getElementById('assign-starts-at');
+        if (modeEl) modeEl.value = DEFAULT_ASSIGN_MODE;
+        if (dueEl) dueEl.value = '';
+        if (durationEl) durationEl.value = '';
+        if (startsEl) startsEl.value = '';
+        syncAssignScheduleFields();
+    }
+
+    function buildAssignSchedulePayload() {
+        const mode = (document.getElementById('assign-availability-mode')?.value || DEFAULT_ASSIGN_MODE).trim().toLowerCase();
+        const dueAt = (document.getElementById('assign-due-at')?.value || '').trim();
+        const durationText = (document.getElementById('assign-duration-minutes')?.value || '').trim();
+        const startsAt = (document.getElementById('assign-starts-at')?.value || '').trim();
+
+        if (mode === 'deadline') {
+            if (!dueAt) {
+                throw new Error('请设置截止时间');
+            }
+            return {
+                availability_mode: mode,
+                due_at: dueAt,
+                duration_minutes: null,
+                starts_at: null,
+            };
+        }
+
+        if (mode === 'countdown') {
+            if (!durationText) {
+                throw new Error('请设置倒计时分钟数');
+            }
+            const duration = Number(durationText);
+            if (!Number.isFinite(duration) || duration <= 0) {
+                throw new Error('倒计时分钟数必须大于 0');
+            }
+            return {
+                availability_mode: mode,
+                due_at: null,
+                duration_minutes: Math.floor(duration),
+                starts_at: startsAt || null,
+            };
+        }
+
+        return {
+            availability_mode: DEFAULT_ASSIGN_MODE,
+            due_at: null,
+            duration_minutes: null,
+            starts_at: null,
+        };
+    }
 
     // Helper: get all cards that are currently in AI generation state
     function getActiveAICards() {
@@ -654,6 +745,7 @@
         currentExamId = examId;
         document.getElementById('assign-exam-name').textContent = examTitle;
         const listDiv = document.getElementById('offering-list');
+        resetAssignScheduleFields();
 
         try {
             document.getElementById('assignModal').classList.add('active');
@@ -698,6 +790,14 @@
             return;
         }
 
+        let schedulePayload;
+        try {
+            schedulePayload = buildAssignSchedulePayload();
+        } catch (e) {
+            window.showMessage(e.message || '请检查时间策略设置', 'warning');
+            return;
+        }
+
         const btn = document.getElementById('confirm-assign-btn');
         const originalContent = btn.innerHTML;
         btn.disabled = true;
@@ -709,7 +809,10 @@
             try {
                 await window.apiFetch(`/api/exam-papers/${currentExamId}/assign`, {
                     method: 'POST',
-                    body: JSON.stringify({ class_offering_id: parseInt(cb.value) }),
+                    body: JSON.stringify({
+                        class_offering_id: parseInt(cb.value),
+                        ...schedulePayload
+                    }),
                     headers: { 'Content-Type': 'application/json' }
                 });
                 success++;
@@ -760,6 +863,11 @@
     // Initialize
     document.addEventListener('DOMContentLoaded', function() {
         startPolling();
+        const modeEl = document.getElementById('assign-availability-mode');
+        if (modeEl) {
+            modeEl.addEventListener('change', syncAssignScheduleFields);
+        }
+        syncAssignScheduleFields();
     });
 
     window.addEventListener('beforeunload', function() {

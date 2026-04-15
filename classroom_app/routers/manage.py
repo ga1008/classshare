@@ -13,6 +13,7 @@ from ..dependencies import get_current_teacher, invalidate_session_for_user
 from ..services.file_handler import save_upload_file
 from ..services.roster_handler import parse_excel_to_students
 from ..services.student_auth_service import build_student_security_summary, list_student_login_history
+from ..services.submission_file_alignment import run_full_alignment
 
 router = APIRouter(prefix="/api/manage", dependencies=[Depends(get_current_teacher)])
 
@@ -482,3 +483,30 @@ async def api_reject_password_reset_request(
         conn.commit()
 
     return {"status": "success", "message": "已拒绝该找回密码申请。"}
+
+
+@router.post("/system/repair-submission-files", response_class=JSONResponse)
+async def api_repair_submission_files(user: dict = Depends(get_current_teacher)):
+    """Repair stale stored_path entries and recover orphaned submission files.
+
+    This is an administrative action that:
+    1. Fixes stored_path values that point to wrong drives / directories
+    2. Discovers files on disk with no DB record and reconstructs entries
+    """
+    try:
+        with get_db_connection() as conn:
+            report = run_full_alignment(conn)
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(500, f"修复失败: {exc}")
+
+    return {
+        "status": "success",
+        "message": (
+            f"路径修复: {report['stale_path_repair']['paths_repaired']} 条已修复, "
+            f"{report['stale_path_repair']['paths_still_missing']} 条仍缺失; "
+            f"孤立文件恢复: {report['orphan_recovery']['orphan_files_recovered']} 个文件已恢复, "
+            f"{report['orphan_recovery']['orphan_submissions_created']} 条提交记录已重建"
+        ),
+        "report": report,
+    }

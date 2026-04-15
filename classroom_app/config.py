@@ -86,8 +86,8 @@ def _format_size_label(size_bytes: int | None) -> str:
 
 # --- Paths ---
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-DB_PATH = DATA_DIR / "classroom.db"
+DATA_DIR = Path(os.getenv("MAIN_DATA_DIR", str(BASE_DIR / "data"))).expanduser()
+DB_PATH = Path(os.getenv("MAIN_DB_PATH", str(DATA_DIR / "classroom.db"))).expanduser()
 HOMEWORK_SUBMISSIONS_DIR = BASE_DIR / "homework_submissions"
 SHARE_DIR = BASE_DIR / "shared_files"
 ROSTER_DIR = BASE_DIR / "rosters"

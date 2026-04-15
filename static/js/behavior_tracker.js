@@ -5,7 +5,7 @@
             this.pageKey = String(options.pageKey || 'page').trim() || 'page';
             this.endpoint = options.endpoint || `/api/classrooms/${this.classOfferingId}/behavior/batch`;
             this.heartbeatMs = Number(options.heartbeatMs || 60000);
-            this.maxBatchSize = Number(options.maxBatchSize || 12);
+            this.maxBatchSize = Number(options.maxBatchSize || 16);
             this.maxQueuedEvents = Number(options.maxQueuedEvents || 48);
             this.events = [];
             this.flushTimer = null;
@@ -202,7 +202,7 @@
             this.flush({ sync });
         }
 
-        flushSoon(delay = 1500) {
+        flushSoon(delay = 2200) {
             if (this.flushTimer) {
                 return;
             }

@@ -1,10 +1,95 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import HTTPException
 
 from .file_preview_service import infer_file_preview_profile, load_text_content
+from .submission_file_alignment import _resolve_stored_path, _file_hash_sha256, _infer_mime_type
+
+
+def _fill_file_metadata_from_disk(item: dict) -> dict:
+    """When *file_size* (and optionally other metadata) is missing or zero in
+    the database row, resolve the file on disk, read its actual attributes,
+    patch the dict **and** write the corrected values back to the database.
+
+    If the file cannot be located on disk the dict is returned unchanged.
+    """
+    file_id = item.get("id")
+    stored_path = item.get("stored_path")
+    needs_size = not item.get("file_size")
+    needs_hash = not item.get("file_hash")
+
+    if not needs_size and not needs_hash:
+        return item
+
+    resolved = _resolve_file_path(str(stored_path)) if stored_path else None
+    if resolved is None:
+        return item
+
+    try:
+        stat = resolved.stat()
+    except OSError:
+        return item
+
+    updates: dict = {}
+    if needs_size and stat.st_size > 0:
+        updates["file_size"] = stat.st_size
+        item["file_size"] = stat.st_size
+
+    if needs_hash:
+        try:
+            actual_hash = _file_hash_sha256(resolved)
+            updates["file_hash"] = actual_hash
+            item["file_hash"] = actual_hash
+        except OSError:
+            pass
+
+    # Also fill mime_type / file_ext if missing
+    if not item.get("mime_type") or item.get("mime_type") == "application/octet-stream":
+        guessed_mime = _infer_mime_type(item.get("original_filename") or str(resolved.name))
+        if guessed_mime != "application/octet-stream":
+            updates["mime_type"] = guessed_mime
+            item["mime_type"] = guessed_mime
+
+    if not item.get("file_ext"):
+        ext = resolved.suffix.lower()
+        if ext:
+            updates["file_ext"] = ext
+            item["file_ext"] = ext
+
+    if updates and file_id:
+        from ..database import get_db_connection
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        try:
+            with get_db_connection() as conn:
+                conn.execute(
+                    f"UPDATE submission_files SET {set_clause} WHERE id = ?",
+                    (*updates.values(), file_id),
+                )
+                conn.commit()
+        except Exception:
+            pass  # non-fatal: the dict is already patched for this request
+
+    return item
+
+
+def _resolve_file_path(stored_path: str) -> Path | None:
+    """Attempt to locate the file on disk even when *stored_path* is stale
+    (e.g. references a different drive letter or base directory).
+    Returns a valid ``Path`` if the file can be found, ``None`` otherwise.
+    """
+    # Direct hit
+    if os.path.isfile(stored_path):
+        return Path(stored_path)
+
+    # Try alignment resolver
+    resolved = _resolve_stored_path(stored_path)
+    if resolved is not None:
+        return Path(resolved)
+
+    return None
 
 
 def _coerce_user_id(user: dict | None) -> int:
@@ -98,6 +183,7 @@ def ensure_submission_file_access(conn, file_id: int, user: dict | None) -> dict
 
 def serialize_submission_file_row(row, extra: dict | None = None) -> dict:
     item = dict(row)
+    _fill_file_metadata_from_disk(item)
     display_name = item.get("relative_path") or item.get("original_filename") or "file"
     profile = infer_file_preview_profile(display_name, item.get("mime_type"))
     item["display_name"] = display_name
@@ -117,8 +203,8 @@ async def build_submission_file_preview_payload(file_row) -> dict:
         payload["content_encoding"] = None
         return payload
 
-    file_path = Path(str(payload["stored_path"]))
-    if not file_path.exists():
+    file_path = _resolve_file_path(str(payload["stored_path"]))
+    if file_path is None:
         raise HTTPException(404, "File not found on disk")
 
     content, encoding = await load_text_content(
