@@ -406,6 +406,19 @@
         </div>
     </div>
 
+
+    <!-- Teacher Feedback Section (shown if graded) -->
+    {% if submission.feedback_md %}
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title text-base m-0">教师评语</h2>
+        </div>
+        <div class="card-body">
+            <div class="md-content" id="teacher-feedback"></div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Answers Section -->
     <div class="card">
         <div class="card-header">
@@ -466,18 +479,6 @@
                     </div>
                 </div>
             </div>
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- Teacher Feedback Section (shown if graded) -->
-    {% if submission.feedback_md %}
-    <div class="card">
-        <div class="card-header">
-            <h2 class="card-title text-base m-0">教师评语</h2>
-        </div>
-        <div class="card-body">
-            <div class="md-content" id="teacher-feedback"></div>
         </div>
     </div>
     {% endif %}
