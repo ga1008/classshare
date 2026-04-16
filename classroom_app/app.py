@@ -23,6 +23,7 @@ from .services.behavior_tracking_service import (
 )
 from .services.discussion_mood_service import stop_discussion_mood_refresh_tasks
 from .services.message_center_service import schedule_pending_private_ai_reply_jobs
+from .services.runtime_metrics_service import begin_http_request, finish_http_request, get_runtime_metrics_snapshot
 from .services.submission_file_alignment import repair_stale_stored_paths
 from .services.assignment_lifecycle_service import close_overdue_assignments
 from .database import get_db_connection
@@ -92,6 +93,38 @@ async def shutdown_event():
 # 新增：全局异常处理器
 # -----------------
 
+
+def _resolve_request_route_template(request: Request) -> str:
+    route = request.scope.get("route")
+    route_path = getattr(route, "path", None)
+    return str(route_path or request.url.path or "/")
+
+
+@app.middleware("http")
+async def runtime_metrics_middleware(request: Request, call_next):
+    started_at = begin_http_request()
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        finish_http_request(
+            started_at=started_at,
+            method=request.method,
+            route_path=_resolve_request_route_template(request),
+            fallback_path=request.url.path,
+            status_code=500,
+            error_message=str(exc),
+        )
+        raise
+
+    finish_http_request(
+        started_at=started_at,
+        method=request.method,
+        route_path=_resolve_request_route_template(request),
+        fallback_path=request.url.path,
+        status_code=response.status_code,
+    )
+    return response
+
 @app.get("/api/internal/health")
 async def internal_health():
     behavior_stats = get_behavior_write_pipeline_stats()
@@ -105,6 +138,33 @@ async def internal_health():
         "behavior_write_worker_alive": behavior_stats["alive"],
         "behavior_write_queue_depth": behavior_stats["queue_depth"],
         "behavior_write_queue_capacity": behavior_stats["queue_capacity"],
+    }
+
+
+@app.get("/api/internal/metrics")
+async def internal_metrics():
+    from .services.chat_handler import manager
+
+    room_connection_total = sum(len(room_connections) for room_connections in manager.rooms.values())
+    room_participant_total = sum(len(participants) for participants in manager.room_participants.values())
+
+    return {
+        "status": "ok",
+        "service": "main",
+        "database_path": str(DB_PATH),
+        "runtime": get_runtime_metrics_snapshot(),
+        "discussion_runtime": {
+            "room_count": len(manager.rooms),
+            "active_socket_count": int(room_connection_total),
+            "active_participant_count": int(room_participant_total),
+            "rooms": {
+                str(room_id): {
+                    "socket_count": len(room_connections),
+                    "participant_count": len(manager.room_participants.get(room_id, {})),
+                }
+                for room_id, room_connections in manager.rooms.items()
+            },
+        },
     }
 
 

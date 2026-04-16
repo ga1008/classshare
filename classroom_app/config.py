@@ -84,21 +84,26 @@ def _format_size_label(size_bytes: int | None) -> str:
     return f"{value:.{precision}f} {units[unit_index]}"
 
 
+def _read_path_env(name: str, default: Path) -> Path:
+    raw_value = str(os.getenv(name, "") or "").strip()
+    return Path(raw_value).expanduser() if raw_value else default
+
+
 # --- Paths ---
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = Path(os.getenv("MAIN_DATA_DIR", str(BASE_DIR / "data"))).expanduser()
-DB_PATH = Path(os.getenv("MAIN_DB_PATH", str(DATA_DIR / "classroom.db"))).expanduser()
-HOMEWORK_SUBMISSIONS_DIR = BASE_DIR / "homework_submissions"
-SHARE_DIR = BASE_DIR / "shared_files"
-ROSTER_DIR = BASE_DIR / "rosters"
-ATTENDANCE_DIR = BASE_DIR / "attendance"
-CHAT_LOG_DIR = BASE_DIR / "chat_logs"
+DATA_DIR = _read_path_env("MAIN_DATA_DIR", BASE_DIR / "data")
+DB_PATH = _read_path_env("MAIN_DB_PATH", DATA_DIR / "classroom.db")
+HOMEWORK_SUBMISSIONS_DIR = _read_path_env("MAIN_HOMEWORK_SUBMISSIONS_DIR", BASE_DIR / "homework_submissions")
+SHARE_DIR = _read_path_env("MAIN_SHARE_DIR", BASE_DIR / "shared_files")
+ROSTER_DIR = _read_path_env("MAIN_ROSTER_DIR", BASE_DIR / "rosters")
+ATTENDANCE_DIR = _read_path_env("MAIN_ATTENDANCE_DIR", BASE_DIR / "attendance")
+CHAT_LOG_DIR = _read_path_env("MAIN_CHAT_LOG_DIR", BASE_DIR / "chat_logs")
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
 CONFIG_FILE = BASE_DIR / "config.json"
 
 # Global file storage.
-GLOBAL_FILES_DIR = BASE_DIR / "storage/global_files"
+GLOBAL_FILES_DIR = _read_path_env("MAIN_GLOBAL_FILES_DIR", BASE_DIR / "storage/global_files")
 FILE_CHUNK_SIZE = 8192
 
 # --- Service ---
@@ -126,7 +131,7 @@ MAX_SUBMISSION_FILE_COUNT = int(os.getenv("MAX_SUBMISSION_FILE_COUNT", 500))
 
 # --- Chunked uploads ---
 UPLOAD_CHUNK_SIZE_BYTES = 5 * 1024 * 1024
-CHUNKED_UPLOADS_DIR = BASE_DIR / "storage/chunked_uploads"
+CHUNKED_UPLOADS_DIR = _read_path_env("MAIN_CHUNKED_UPLOADS_DIR", BASE_DIR / "storage/chunked_uploads")
 CHUNK_UPLOAD_TIMEOUT_HOURS = 24
 
 # --- SQLite ---

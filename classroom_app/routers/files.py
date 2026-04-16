@@ -51,6 +51,13 @@ from ..services.file_handler import delete_file_safely
 from ..services.file_service import save_file_globally, get_file_lock, stream_file
 from ..services.download_policy import apply_download_policy, ensure_download_allowed
 from ..services.message_center_service import create_discussion_mention_notifications
+from ..services.runtime_metrics_service import (
+    record_websocket_connect,
+    record_websocket_disconnect,
+    record_websocket_error,
+    record_websocket_received,
+    record_websocket_sent,
+)
 from ..services.submission_preview_service import (
     build_submission_file_preview_payload,
     ensure_submission_file_access,
@@ -412,6 +419,7 @@ async def _broadcast_discussion_ai_reply(class_offering_id: int, reply_text: str
         "logged_at": now.isoformat(),
     })
     await manager.broadcast(class_offering_id, json.dumps(stored_message, ensure_ascii=False))
+    record_websocket_sent(class_offering_id, max(1, len(manager.rooms.get(class_offering_id, {}))))
 
 
 async def _handle_discussion_ai_mention(
@@ -522,6 +530,7 @@ async def _process_discussion_chat_message(
     )
 
     await manager.broadcast(class_offering_id, json.dumps(stored_message, ensure_ascii=False))
+    record_websocket_sent(class_offering_id, max(1, len(manager.rooms.get(class_offering_id, {}))))
     await maybe_schedule_discussion_mood_refresh(
         class_offering_id,
         reason="message",
@@ -1317,6 +1326,7 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
         client_ip = normalize_ip(client_ip) or client_ip
     except Exception as e:
         print(f"[WS ERROR] 获取客户端IP失败: {e}")
+        record_websocket_error(class_offering_id, f"client_ip_failed: {e}")
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
@@ -1332,6 +1342,7 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
 
     if user is None:
         print(f"[WS ERROR] Token验证失败 - IP: {client_ip}")
+        record_websocket_error(class_offering_id, "token_verification_failed")
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
@@ -1339,6 +1350,7 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
         user_pk = int(user.get("id"))
     except (TypeError, ValueError):
         print("[WS ERROR] 非法用户ID")
+        record_websocket_error(class_offering_id, "invalid_user_id")
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
@@ -1346,6 +1358,7 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
         await asyncio.to_thread(_ensure_websocket_room_access_sync, class_offering_id, user, user_pk)
     except HTTPException as exc:
         print(f"[WS ERROR] WebSocket 房间鉴权失败 - user_id: {user_pk}, classroom: {class_offering_id}, detail: {exc.detail}")
+        record_websocket_error(class_offering_id, f"room_access_denied: {exc.detail}")
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
@@ -1354,9 +1367,11 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
     ws_user['id'] = client_id
 
     connection_id = await manager.connect(websocket, ws_user)
+    record_websocket_connect(class_offering_id)
     try:
         while True:
             raw_data = await websocket.receive_text()
+            record_websocket_received(class_offering_id)
             data = raw_data.strip()
             if not data:
                 continue
@@ -1449,7 +1464,10 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
             except RateLimitExceededError as exc:
                 await _send_discussion_rate_limit_message(websocket, exc)
     except WebSocketDisconnect:
+        record_websocket_disconnect(class_offering_id)
         await manager.disconnect(connection_id)
     except Exception as e:
         print(f"[WS ERROR] {e}")
+        record_websocket_error(class_offering_id, str(e))
+        record_websocket_disconnect(class_offering_id)
         await manager.disconnect(connection_id)
