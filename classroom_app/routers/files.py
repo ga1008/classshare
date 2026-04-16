@@ -866,7 +866,7 @@ async def complete_chunked_upload(
 
         # 阶段 2：写入数据库
         with get_db_connection() as conn:
-            conn.execute("""
+            cursor = conn.execute("""
                 INSERT INTO course_files
                 (course_id, file_name, file_hash, file_size,
                  is_public, is_teacher_resource, description, original_link, uploaded_by_teacher_id)
@@ -876,6 +876,7 @@ async def complete_chunked_upload(
                 upload['is_public'], upload['is_teacher_resource'],
                 upload['description'], '', upload['teacher_id']
             ))
+            file_id = cursor.lastrowid
             conn.execute(
                 "UPDATE chunked_uploads SET status = 'completed' WHERE upload_id = ?",
                 (req.upload_id,)
@@ -894,11 +895,59 @@ async def complete_chunked_upload(
         # 阶段 4：清理临时目录
         shutil.rmtree(str(temp_dir), ignore_errors=True)
 
+        # 阶段 5：检查是否需要 AI 自动填充软件信息
+        ai_description = ""
+        ai_download_url = ""
+        try:
+            with get_db_connection() as conn:
+                existing = conn.execute(
+                    """SELECT cf.description, cf.original_link
+                       FROM course_files cf
+                       WHERE cf.file_name = ? AND cf.id != ? AND cf.description != ''
+                       LIMIT 1""",
+                    (upload['file_name'], file_id),
+                ).fetchone()
+
+            if existing and existing["description"]:
+                # 同名文件已有描述，直接沿用
+                ai_description = str(existing["description"] or "")
+                ai_download_url = str(existing["original_link"] or "")
+            else:
+                # 无已有描述，调用 AI 联网搜索获取
+                from ..core import ai_client
+                ai_resp = await ai_client.post(
+                    "/api/ai/software-info",
+                    json={"file_name": upload['file_name']},
+                    timeout=60.0,
+                )
+                ai_resp.raise_for_status()
+                ai_data = ai_resp.json()
+                ai_description = str(ai_data.get("description", "")).strip()
+                ai_download_url = str(ai_data.get("download_url", "")).strip()
+
+            # 写入数据库
+            if ai_description or ai_download_url:
+                final_desc = _normalize_shared_file_description(ai_description)
+                try:
+                    final_link = _normalize_shared_file_original_link(ai_download_url)
+                except HTTPException:
+                    final_link = ""
+                with get_db_connection() as conn:
+                    conn.execute(
+                        "UPDATE course_files SET description = ?, original_link = ? WHERE id = ?",
+                        (final_desc, final_link, file_id),
+                    )
+                    conn.commit()
+        except Exception as e:
+            print(f"[FILES] AI 自动填充失败 (file_id={file_id}): {e}")
+
         return {
             "status": "success",
             "message": f"文件 '{upload['file_name']}' 上传成功",
             "file_hash": file_hash,
-            "file_size": total_size
+            "file_size": total_size,
+            "file_id": file_id,
+            "file_name": upload['file_name'],
         }
 
     except HTTPException:
@@ -956,6 +1005,89 @@ async def update_file_description(
         "status": "success",
         "message": "文件简介已更新",
         "file": metadata,
+    }
+
+
+@router.post("/api/files/{file_id}/ai-enrich")
+async def ai_enrich_file_metadata(
+    file_id: int,
+    user: dict = Depends(get_current_teacher)
+):
+    """手动触发 AI 联网搜索强制更新文件的描述和原始下载链接"""
+    # 1. 查找文件并验证权限
+    with get_db_connection() as conn:
+        file_row = conn.execute(
+            """
+            SELECT cf.id, cf.file_name, cf.description, cf.original_link
+            FROM course_files cf
+            JOIN courses c ON cf.course_id = c.id
+            WHERE cf.id = ? AND c.created_by_teacher_id = ?
+            """,
+            (file_id, int(user["id"])),
+        ).fetchone()
+
+    if not file_row:
+        raise HTTPException(404, "文件不存在或无操作权限")
+
+    file_name = file_row["file_name"]
+    existing_desc = str(file_row["description"] or "").strip()
+    existing_link = str(file_row["original_link"] or "")
+
+    # 2. 调用 AI 服务强制获取最新软件信息
+    try:
+        from ..core import ai_client
+        response = await ai_client.post(
+            "/api/ai/software-info",
+            json={"file_name": file_name},
+            timeout=60.0,
+        )
+        response.raise_for_status()
+        data = response.json()
+    except Exception as e:
+        print(f"[FILES] AI 填充调用失败 (file_id={file_id}): {e}")
+        return {
+            "status": "error",
+            "message": "AI服务暂时不可用",
+            "file": {
+                "id": int(file_row["id"]),
+                "file_name": str(file_name),
+                "description": existing_desc,
+                "original_link": existing_link,
+            },
+        }
+
+    # 3. 提取并校验 AI 返回的数据
+    ai_description = str(data.get("description", "")).strip()
+    ai_download_url = str(data.get("download_url", "")).strip()
+
+    # AI 返回空值时保留原有数据
+    final_description = ai_description if ai_description else existing_desc
+    final_original_link = ai_download_url if ai_download_url else existing_link
+
+    try:
+        final_original_link = _normalize_shared_file_original_link(final_original_link)
+    except HTTPException:
+        final_original_link = ""
+
+    final_description = _normalize_shared_file_description(final_description)
+
+    # 4. 更新数据库
+    with get_db_connection() as conn:
+        conn.execute(
+            "UPDATE course_files SET description = ?, original_link = ? WHERE id = ?",
+            (final_description, final_original_link, file_id),
+        )
+        conn.commit()
+
+    return {
+        "status": "success",
+        "message": "AI信息更新完成",
+        "file": {
+            "id": file_id,
+            "file_name": str(file_name),
+            "description": final_description,
+            "original_link": final_original_link,
+        },
     }
 
 

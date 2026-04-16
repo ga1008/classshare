@@ -31,6 +31,7 @@ function refs() {
         modalTeacherForm: document.getElementById('shared-file-teacher-form'),
         modalSaveBtn: document.getElementById('shared-file-save-btn'),
         modalDeleteBtn: document.getElementById('shared-file-delete-btn'),
+        modalAiEnrichBtn: document.getElementById('shared-file-ai-enrich-btn'),
     };
 }
 
@@ -52,6 +53,48 @@ function formatDescription(text) {
         .split('\n')
         .map((line) => `<p>${escapeHtml(line)}</p>`)
         .join('');
+}
+
+async function triggerAiEnrichment(fileId, fileName) {
+    const { modalAiEnrichBtn } = refs();
+    const originalLabel = modalAiEnrichBtn?.textContent;
+    if (modalAiEnrichBtn) {
+        modalAiEnrichBtn.disabled = true;
+        modalAiEnrichBtn.textContent = 'AI 查询中...';
+    }
+
+    try {
+        const result = await apiFetch(`/api/files/${fileId}/ai-enrich`, {
+            method: 'POST',
+            silent: true,
+        });
+
+        if (result.status === 'success' && result.file) {
+            state.files = state.files.map((item) => {
+                if (Number(item.id) !== Number(fileId)) return item;
+                return {
+                    ...item,
+                    description: result.file.description ?? item.description,
+                    original_link: result.file.original_link ?? item.original_link,
+                };
+            });
+            renderFiles();
+            if (state.activeFileId === Number(fileId)) {
+                renderFileModal(getFileById(fileId));
+            }
+            showToast(`AI 已更新「${fileName}」的信息`, 'success');
+        } else if (result.status === 'error') {
+            showToast(result.message || 'AI服务暂时不可用', 'warning');
+        }
+    } catch (error) {
+        console.warn(`AI enrichment failed for file ${fileId}:`, error);
+        showToast('AI 信息更新失败', 'error');
+    } finally {
+        if (modalAiEnrichBtn) {
+            modalAiEnrichBtn.disabled = false;
+            modalAiEnrichBtn.textContent = originalLabel || '更新软件信息';
+        }
+    }
 }
 
 function truncateText(text, maxLength = 96) {
@@ -242,6 +285,9 @@ function renderFileModal(file) {
     }
     if (modalDeleteBtn) {
         modalDeleteBtn.hidden = !isTeacherView();
+    }
+    if (refs().modalAiEnrichBtn) {
+        refs().modalAiEnrichBtn.hidden = !isTeacherView();
     }
 
     if (modalStatus && modalStatusText) {
@@ -522,6 +568,13 @@ function bindModalEvents() {
     modalDeleteBtn?.addEventListener('click', () => {
         if (!state.activeFileId) return;
         deleteFile(state.activeFileId);
+    });
+
+    const { modalAiEnrichBtn } = refs();
+    modalAiEnrichBtn?.addEventListener('click', () => {
+        if (!state.activeFileId) return;
+        const file = getFileById(state.activeFileId);
+        triggerAiEnrichment(state.activeFileId, file?.file_name || '文件');
     });
 
     modalCopyLinkBtn?.addEventListener('click', async () => {

@@ -245,6 +245,10 @@ class GradingJob(BaseModel):
     # model_type 将在 run_grading_job 中动态决定，这里不再需要
 
 
+class SoftwareInfoRequest(BaseModel):
+    file_name: str
+
+
 # --- 提示词模板 (更新) ---
 GRADING_SYSTEM_PROMPT = """
 你是一个严格、公正的AI作业批改助教。
@@ -1669,6 +1673,80 @@ async def _call_ai_platform_chat(
             raise HTTPException(500, f"{platform_name} 聊天调用失败: {e}")
 
 
+SOFTWARE_INFO_SYSTEM_PROMPT = """你是一个软件信息查询助手。用户会给你一个软件文件名，你需要通过网络搜索找到该软件的准确信息。
+
+请务必使用 **中文** 回复。
+
+你必须严格按照以下JSON格式返回结果，不要包含任何额外的解释或代码块标记：
+{"description": "<软件的简要描述，包括用途、主要功能、适用场景等，200字以内>", "download_url": "<该软件的官方网站下载地址，必须是 https:// 开头的有效URL>"}
+
+如果无法确定某个字段，请用空字符串 "" 代替。
+如果文件名看起来不是软件（比如是文档、图片、代码文件、课件等非安装包/应用程序），请返回：
+{"description": "", "download_url": ""}
+"""
+
+
+async def _call_volcengine_with_web_search(
+    system_prompt: str,
+    user_message: str,
+    task_label: str = "software_info",
+) -> str:
+    """
+    使用火山引擎 Responses API + 联网搜索获取信息。
+    直接用 httpx 调用 HTTP API，绕过 SDK 响应解析的 typing 兼容性问题。
+    """
+    volc_config = PLATFORMS_CONFIG.get("volcengine")
+    if not volc_config or not volc_config["enabled"]:
+        raise HTTPException(500, "火山引擎平台未启用")
+
+    api_key = volc_config["api_key"]
+    model_name = volc_config["models"]["standard"]
+    if not api_key:
+        raise HTTPException(500, "火山引擎 API Key 未配置")
+
+    base_url = volc_config.get("responses_base_url") or VOLCENGINE_OPENAI_BASE_URL
+
+    async with ai_limiter.slot(priority="background", label=task_label):
+        print(f"[AI WORKER] 开始联网搜索调用 (Responses API, Model: {model_name})")
+
+        async with httpx.AsyncClient(timeout=60.0) as http:
+            resp = await http.post(
+                f"{base_url}/responses",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "ark-beta-web-search": "true",
+                },
+                json={
+                    "model": model_name,
+                    "instructions": system_prompt,
+                    "input": [
+                        {
+                            "role": "user",
+                            "content": [{"type": "input_text", "text": user_message}],
+                        }
+                    ],
+                    "tools": [
+                        {"type": "web_search", "sources": ["search_engine"]},
+                    ],
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        # 从 Responses API 输出中提取文本
+        text_parts = []
+        for item in data.get("output", []):
+            if item.get("type") == "message":
+                for content_block in item.get("content", []):
+                    if content_block.get("type") == "output_text":
+                        text_parts.append(content_block.get("text", ""))
+
+        result = "\n".join(text_parts).strip()
+        print(f"[AI WORKER] 联网搜索调用成功。")
+        return result
+
+
 # --- API Endpoints (保持不变) ---
 @app.post("/api/ai/generate-assignment")
 async def generate_assignment_task(req: GenerationRequest):
@@ -1823,6 +1901,36 @@ async def ai_chat_task(req: AIChatRequest):
         # 捕获 _call_ai_platform_chat 中可能抛出的 HTTPException
         detail = getattr(e, 'detail', str(e))
         raise HTTPException(status_code=500, detail=f"AI 聊天处理失败: {detail}")
+
+
+@app.post("/api/ai/software-info")
+async def get_software_info(req: SoftwareInfoRequest):
+    """使用火山引擎 AI 联网搜索获取软件信息（描述+下载地址）"""
+    try:
+        raw_text = await _call_volcengine_with_web_search(
+            system_prompt=SOFTWARE_INFO_SYSTEM_PROMPT,
+            user_message=f"请搜索以下软件的信息：{req.file_name}",
+        )
+
+        if not raw_text or not raw_text.strip():
+            return {"status": "success", "description": "", "download_url": ""}
+
+        # 复用已有的健壮 JSON 解析器
+        parsed = _robust_parse_grading_json(raw_text)
+
+        description = str(parsed.get("description", ""))[:5000]
+        download_url = str(parsed.get("download_url", "")).strip()
+
+        return {
+            "status": "success",
+            "description": description,
+            "download_url": download_url,
+        }
+    except Exception as e:
+        print(f"[ERROR] 软件信息查询失败: {e}")
+        traceback.print_exc()
+        # 优雅降级 — 返回空数据而非报错
+        return {"status": "success", "description": "", "download_url": ""}
 
 
 @app.post("/api/ai/submit-grading-job")
