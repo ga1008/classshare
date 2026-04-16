@@ -321,11 +321,12 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
         "min_score": min(scores) if scores else 0,
         "pass_rate": round(len([s for s in scores if s >= 60]) / len(scores) * 100, 1) if scores else 0,
         "score_distribution": {
-            "excellent": len([s for s in scores if s >= 90]),
-            "good": len([s for s in scores if 80 <= s < 90]),
-            "medium": len([s for s in scores if 70 <= s < 80]),
-            "pass": len([s for s in scores if 60 <= s < 70]),
+            "none": total_students - len(submitted_entries),
             "fail": len([s for s in scores if s < 60]),
+            "pass": len([s for s in scores if 60 <= s < 70]),
+            "medium": len([s for s in scores if 70 <= s < 80]),
+            "good": len([s for s in scores if 80 <= s < 90]),
+            "excellent": len([s for s in scores if s >= 90]),
         }
     }
 

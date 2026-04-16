@@ -71,12 +71,19 @@
         border-radius: var(--radius-md);
         min-width: 60px;
     }
-    .score-excellent { color: #059669; background: #d1fae5; }
-    .score-good { color: #2563eb; background: #dbeafe; }
-    .score-medium { color: #0891b2; background: #cffafe; }
-    .score-pass { color: #d97706; background: #fef3c7; }
-    .score-fail { color: #dc2626; background: #fee2e2; }
-    .score-none { color: var(--text-muted); background: var(--bg-color); }
+    .score-excellent { color: #059669; background: linear-gradient(135deg, #d1fae5, #a7f3d0); }
+    .score-good { color: #2563eb; background: linear-gradient(135deg, #dbeafe, #bfdbfe); }
+    .score-medium { color: #0891b2; background: linear-gradient(135deg, #cffafe, #a5f3fc); }
+    .score-pass { color: #d97706; background: linear-gradient(135deg, #fef3c7, #fde68a); }
+    .score-fail { color: #dc2626; background: linear-gradient(135deg, #fee2e2, #fecaca); }
+    .score-none { color: #94a3b8; background: #f1f5f9; }
+
+    /* Score display with grade label */
+    .score-detail-display { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .score-grade-tag {
+        font-size: 0.75rem; font-weight: 600; padding: 2px 8px;
+        border-radius: 4px; line-height: 1.3;
+    }
 
     /* Answer cards */
     .question-card {
@@ -364,16 +371,34 @@
                     <span class="info-label">得分</span>
                     <span class="info-value">
                         {% if submission.score != None %}
-                        <span class="score-badge
-                            {% if submission.score >= 90 %}score-excellent
-                            {% elif submission.score >= 80 %}score-good
-                            {% elif submission.score >= 70 %}score-medium
-                            {% elif submission.score >= 60 %}score-pass
-                            {% else %}score-fail{% endif %}">
-                            {{ submission.score }}
-                        </span>
+                        <div class="score-detail-display">
+                            <span class="score-badge
+                                {% if submission.score >= 90 %}score-excellent
+                                {% elif submission.score >= 80 %}score-good
+                                {% elif submission.score >= 70 %}score-medium
+                                {% elif submission.score >= 60 %}score-pass
+                                {% else %}score-fail{% endif %}">
+                                {{ submission.score }}
+                            </span>
+                            <span class="score-grade-tag"
+                                style="background:
+                                {% if submission.score >= 90 %}#d1fae5;color:#059669
+                                {% elif submission.score >= 80 %}#dbeafe;color:#2563eb
+                                {% elif submission.score >= 70 %}#cffafe;color:#0891b2
+                                {% elif submission.score >= 60 %}#fef3c7;color:#d97706
+                                {% else %}#fee2e2;color:#dc2626{% endif %}">
+                                {% if submission.score >= 90 %}极好
+                                {% elif submission.score >= 80 %}优秀
+                                {% elif submission.score >= 70 %}良好
+                                {% elif submission.score >= 60 %}及格
+                                {% else %}不及格{% endif %}
+                            </span>
+                        </div>
                         {% else %}
-                        <span class="score-badge score-none">-</span>
+                        <div class="score-detail-display">
+                            <span class="score-badge score-none">-</span>
+                            <span class="score-grade-tag" style="background:#f1f5f9;color:#94a3b8">无成绩</span>
+                        </div>
                         {% endif %}
                     </span>
                 </div>

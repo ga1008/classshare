@@ -52,42 +52,40 @@
     .stat-value { font-size: 1.4rem; font-weight: 700; color: var(--text-primary); line-height: 1.3; }
     .stat-label { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
 
-    /* Score distribution bar */
-    .dist-bar-container {
-        display: flex; height: 24px; border-radius: var(--radius-sm);
-        overflow: hidden; background: var(--border-color); margin-bottom: var(--spacing-md);
-    }
-    .dist-segment {
-        display: flex; align-items: center; justify-content: center;
-        font-size: 0.7rem; font-weight: 600; color: white;
-        transition: width var(--transition-normal); min-width: 0;
-        overflow: hidden; white-space: nowrap;
-    }
-    .dist-legend {
-        display: flex; gap: var(--spacing-md); flex-wrap: wrap;
-        font-size: 0.8rem; color: var(--text-secondary); margin-bottom: var(--spacing-md);
-    }
-    .dist-legend span { display: inline-flex; align-items: center; gap: 4px; }
-    .dist-dot {
-        display: inline-block; width: 10px; height: 10px;
-        border-radius: 2px; flex-shrink: 0;
+    /* Score distribution chart */
+    #dist-chart {
+        width: 100%;
+        height: 320px;
+        min-height: 260px;
     }
 
     /* Score colors */
     .score-excellent { color: #059669; } .score-good { color: #2563eb; }
     .score-medium { color: #0891b2; } .score-pass { color: #d97706; }
-    .score-fail { color: #dc2626; }
+    .score-fail { color: #dc2626; } .score-none { color: #94a3b8; }
 
+    /* Score display in table */
+    .score-cell { display: flex; flex-direction: column; gap: 3px; min-width: 90px; }
     .score-badge-inline {
         display: inline-block; padding: 2px 10px; border-radius: var(--radius-sm);
-        font-weight: 700; font-size: 0.9rem;
+        font-weight: 700; font-size: 0.85rem; text-align: center; min-width: 36px;
+        transition: transform 0.15s;
     }
-    .sb-excellent { background: #d1fae5; color: #059669; }
-    .sb-good { background: #dbeafe; color: #2563eb; }
-    .sb-medium { background: #cffafe; color: #0891b2; }
-    .sb-pass { background: #fef3c7; color: #d97706; }
-    .sb-fail { background: #fee2e2; color: #dc2626; }
-    .sb-none { background: var(--bg-color); color: var(--text-muted); }
+    .score-badge-inline:hover { transform: scale(1.08); }
+    .score-grade-label {
+        font-size: 0.7rem; font-weight: 600; padding: 1px 6px;
+        border-radius: 3px; display: inline-block; line-height: 1.3;
+    }
+    .sb-excellent { background: linear-gradient(135deg, #d1fae5, #a7f3d0); color: #059669; }
+    .sb-good { background: linear-gradient(135deg, #dbeafe, #bfdbfe); color: #2563eb; }
+    .sb-medium { background: linear-gradient(135deg, #cffafe, #a5f3fc); color: #0891b2; }
+    .sb-pass { background: linear-gradient(135deg, #fef3c7, #fde68a); color: #d97706; }
+    .sb-fail { background: linear-gradient(135deg, #fee2e2, #fecaca); color: #dc2626; }
+    .sb-none { background: #f1f5f9; color: #94a3b8; }
+    .score-progress-bar {
+        height: 4px; border-radius: 2px; background: var(--border-color); width: 100%; margin-top: 2px; overflow: hidden;
+    }
+    .score-progress-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease-out; }
 
     /* Dropdown */
     .dropdown { position: relative; display: inline-block; }
@@ -132,13 +130,6 @@
     .table-clickable tbody tr:hover { background: var(--primary-light); }
     .table-clickable tbody tr.unsubmitted-row { opacity: 0.6; }
     .table-clickable tbody tr.unsubmitted-row:hover { opacity: 0.85; background: var(--surface-hover); }
-
-    /* Score bar */
-    .score-bar {
-        height: 4px; border-radius: 2px; background: var(--border-color);
-        width: 50px; display: inline-block; vertical-align: middle; margin-left: 4px;
-    }
-    .score-bar-fill { height: 100%; border-radius: 2px; }
 
     /* Requirements section */
     .req-section {
@@ -266,8 +257,7 @@
                 <div class="req-section" style="border-top:none; padding-top:0;">
                     <h3>分数分布</h3>
                 </div>
-                <div class="dist-bar-container" id="dist-bar"></div>
-                <div class="dist-legend" id="dist-legend"></div>
+                <div id="dist-chart"></div>
             </div>
 
             <!-- Requirements -->
@@ -487,6 +477,7 @@
 </div>
 
 {% include "partials/markdown_assets.html" %}
+<script src="{{ asset_url('js/echarts.min.js') }}"></script>
 {% endblock %}
 
 {% block scripts %}
@@ -588,6 +579,22 @@
     }
 
     // ==================== Statistics ====================
+    let distChartInstance = null;
+
+    const SCORE_CATEGORIES = [
+        { key: 'none',       label: '无成绩', range: '未提交',  color: '#94a3b8', badgeCls: 'sb-none' },
+        { key: 'fail',       label: '不及格', range: '0-59',   color: '#ef4444', badgeCls: 'sb-fail' },
+        { key: 'pass',       label: '及格',   range: '60-69',  color: '#f59e0b', badgeCls: 'sb-pass' },
+        { key: 'medium',     label: '良好',   range: '70-79',  color: '#06b6d4', badgeCls: 'sb-medium' },
+        { key: 'good',       label: '优秀',   range: '80-89',  color: '#3b82f6', badgeCls: 'sb-good' },
+        { key: 'excellent',  label: '极好',   range: '90-100', color: '#10b981', badgeCls: 'sb-excellent' },
+    ];
+
+    // Cleanup ECharts on page unload
+    window.addEventListener('beforeunload', () => {
+        if (distChartInstance) { distChartInstance.dispose(); distChartInstance = null; }
+    });
+
     function updateStats(stats) {
         document.getElementById('stat-total-students').textContent = stats.total_students ?? '-';
         document.getElementById('stat-submitted').textContent = stats.total_submissions ?? 0;
@@ -600,31 +607,107 @@
         document.getElementById('stat-pass-rate').textContent = stats.pass_rate != null ? stats.pass_rate + '%' : '-';
         document.getElementById('stat-grading').textContent = stats.grading_count ?? 0;
 
-        // Score distribution
+        // Score distribution chart
         const dist = stats.score_distribution;
-        if (dist && stats.graded_count > 0) {
-            const total = stats.graded_count;
-            const segments = [
-                { label: '优秀', count: dist.excellent, color: '#10b981' },
-                { label: '良好', count: dist.good, color: '#3b82f6' },
-                { label: '中等', count: dist.medium, color: '#06b6d4' },
-                { label: '及格', count: dist.pass, color: '#f59e0b' },
-                { label: '不及格', count: dist.fail, color: '#ef4444' },
-            ];
-            let barHtml = '';
-            let legendHtml = '';
-            segments.forEach(seg => {
-                if (seg.count > 0) {
-                    const pct = (seg.count / total * 100).toFixed(1);
-                    barHtml += `<div class="dist-segment" style="width:${pct}%;background:${seg.color}">${seg.count}</div>`;
-                }
-                legendHtml += `<span><span class="dist-dot" style="background:${seg.color}"></span>${seg.label}: ${seg.count}人</span>`;
-            });
-            document.getElementById('dist-bar').innerHTML = barHtml;
-            document.getElementById('dist-legend').innerHTML = legendHtml;
+        if (dist && (stats.graded_count > 0 || (dist.none || 0) > 0)) {
+            renderScoreChart(dist, stats.total_students);
             document.getElementById('dist-section').style.display = '';
         } else {
             document.getElementById('dist-section').style.display = 'none';
+        }
+    }
+
+    function renderScoreChart(dist, totalStudents) {
+        const container = document.getElementById('dist-chart');
+        if (!container || typeof echarts === 'undefined') return;
+
+        if (!distChartInstance) {
+            distChartInstance = echarts.init(container);
+        }
+
+        const labels = SCORE_CATEGORIES.map(c => c.label);
+        const ranges = SCORE_CATEGORIES.map(c => c.range);
+        const counts = SCORE_CATEGORIES.map(c => dist[c.key] || 0);
+        const colors = SCORE_CATEGORIES.map(c => c.color);
+
+        const option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function(params) {
+                    const p = params[0];
+                    const idx = p.dataIndex;
+                    const pct = totalStudents > 0 ? (p.value / totalStudents * 100).toFixed(1) : 0;
+                    return `<strong>${labels[idx]}</strong> (${ranges[idx]})<br/>` +
+                           `人数: <strong>${p.value}</strong><br/>` +
+                           `占比: ${pct}%`;
+                },
+                backgroundColor: 'rgba(255,255,255,0.96)',
+                borderColor: '#e2e8f0',
+                borderWidth: 1,
+                textStyle: { color: '#334155', fontSize: 13 },
+                padding: [10, 14],
+            },
+            grid: {
+                left: 48, right: 20, top: 30, bottom: 46,
+                containLabel: false,
+            },
+            xAxis: {
+                type: 'category',
+                data: labels,
+                axisTick: { show: false },
+                axisLine: { lineStyle: { color: '#e2e8f0' } },
+                axisLabel: {
+                    color: '#475569',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    margin: 12,
+                    formatter: function(val, idx) { return val + '\n' + ranges[idx]; },
+                },
+            },
+            yAxis: {
+                type: 'value',
+                name: '人数',
+                nameTextStyle: { color: '#94a3b8', fontSize: 11 },
+                minInterval: 1,
+                axisLine: { show: false },
+                axisTick: { show: false },
+                splitLine: { lineStyle: { color: '#f1f5f9', type: 'dashed' } },
+                axisLabel: { color: '#94a3b8', fontSize: 11 },
+            },
+            series: [{
+                type: 'bar',
+                data: counts.map((v, i) => ({
+                    value: v,
+                    itemStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: colors[i] },
+                            { offset: 1, color: colors[i] + '88' },
+                        ]),
+                        borderRadius: [4, 4, 0, 0],
+                    },
+                })),
+                barWidth: '42%',
+                barMaxWidth: 56,
+                label: {
+                    show: true,
+                    position: 'top',
+                    color: '#475569',
+                    fontWeight: 700,
+                    fontSize: 13,
+                },
+                animationDuration: 600,
+                animationEasing: 'cubicOut',
+            }],
+        };
+
+        distChartInstance.setOption(option, true);
+
+        // Responsive resize
+        if (!container._resizeBound) {
+            container._resizeBound = true;
+            const ro = new ResizeObserver(() => distChartInstance?.resize());
+            ro.observe(container);
         }
     }
 
@@ -667,11 +750,15 @@
             };
             const st = statusMap[sub.status] || { cls: 'badge-secondary', text: sub.status || '-' };
 
-            // Score display with color
+            // Score display with color and grade label
+            const scoreInfo = getScoreInfo(sub.score, sub.status);
             const scoreDisplay = sub.score != null
-                ? `<span class="score-badge-inline ${getScoreBadgeClass(sub.score)}">${sub.score}</span>
-                   <div class="score-bar"><div class="score-bar-fill" style="width:${sub.score}%;background:${getScoreColor(sub.score)}"></div></div>`
-                : '<span class="text-muted">-</span>';
+                ? `<div class="score-cell">
+                     <span class="score-badge-inline ${scoreInfo.badgeCls}">${sub.score}</span>
+                     <span class="score-grade-label" style="background:${scoreInfo.bgColor};color:${scoreInfo.color}">${scoreInfo.label}</span>
+                     <div class="score-progress-bar"><div class="score-progress-fill" style="width:${sub.score}%;background:${scoreInfo.color}"></div></div>
+                   </div>`
+                : `<div class="score-cell"><span class="text-muted">-</span></div>`;
 
             row.innerHTML = `
                 <td class="text-sm text-muted">${escapeHtml(sub.student_id_number || '-')}</td>
@@ -699,20 +786,13 @@
         });
     }
 
-    function getScoreColor(score) {
-        if (score >= 90) return '#10b981';
-        if (score >= 80) return '#3b82f6';
-        if (score >= 70) return '#06b6d4';
-        if (score >= 60) return '#f59e0b';
-        return '#ef4444';
-    }
-
-    function getScoreBadgeClass(score) {
-        if (score >= 90) return 'sb-excellent';
-        if (score >= 80) return 'sb-good';
-        if (score >= 70) return 'sb-medium';
-        if (score >= 60) return 'sb-pass';
-        return 'sb-fail';
+    function getScoreInfo(score, status) {
+        if (score == null) return { label: '无成绩', color: '#94a3b8', bgColor: '#f1f5f9', badgeCls: 'sb-none' };
+        if (score >= 90) return { label: '极好', color: '#059669', bgColor: '#d1fae5', badgeCls: 'sb-excellent' };
+        if (score >= 80) return { label: '优秀', color: '#2563eb', bgColor: '#dbeafe', badgeCls: 'sb-good' };
+        if (score >= 70) return { label: '良好', color: '#0891b2', bgColor: '#cffafe', badgeCls: 'sb-medium' };
+        if (score >= 60) return { label: '及格', color: '#d97706', bgColor: '#fef3c7', badgeCls: 'sb-pass' };
+        return { label: '不及格', color: '#dc2626', bgColor: '#fee2e2', badgeCls: 'sb-fail' };
     }
 
     // ==================== Navigation ====================
