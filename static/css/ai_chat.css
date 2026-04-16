@@ -457,6 +457,32 @@
     justify-content: center;
 }
 
+/* Non-image file preview icon */
+.preview-file-icon {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding: 6px;
+    color: var(--text-muted);
+    background: var(--secondary-color);
+    border-radius: 6px;
+    box-sizing: border-box;
+}
+
+.preview-file-name {
+    font-size: 9px;
+    max-width: 52px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 3px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
 /* ========================
    Streaming Cursor
    ======================== */

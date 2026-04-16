@@ -1,2 +1,4 @@
 -r requirements.lock.txt
 
+
+fitz

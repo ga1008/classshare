@@ -25,6 +25,14 @@ from pydantic import BaseModel, Field
 # --- 加载 .env 配置 ---
 load_dotenv()
 
+# --- 文档文本提取 ---
+import re as _re
+from ai_assistant_doc_extract import (
+    ExtractResult as _ExtractResult,
+    extract_document_text as _extract_doc_text,
+    render_pdf_pages_to_data_urls as _render_pdf_pages,
+)
+
 # --- AI 平台 SDK ---
 try:
     from openai import OpenAI, AsyncOpenAI
@@ -372,6 +380,7 @@ class AIChatRequest(BaseModel):
     new_message: str  # 用户的最新文本输入
     base64_urls: List[str] = Field(default_factory=list)  # 新上传的图片 (base64 data URLs)
     image_inputs: List[Dict[str, Any]] = Field(default_factory=list)
+    file_texts: List[Dict[str, str]] = Field(default_factory=list)  # 文件文本内容 [{"name": "foo.py", "content": "..."}]
     model_capability: Literal["standard", "thinking", "vision"] = "standard"
     response_format: Literal["text", "json"] = "text"
     task_priority: Literal["interactive", "default", "background"] = "default"
@@ -465,9 +474,11 @@ def _normalize_request_image_inputs(req: AIChatRequest) -> list[dict[str, str]]:
     return normalized
 
 
-def _build_user_message_content(new_message: str, image_inputs: list[dict[str, str]]) -> str | list[dict[str, Any]]:
+def _build_user_message_content(new_message: str, image_inputs: list[dict[str, str]], file_texts: list[dict[str, str]] | None = None) -> str | list[dict[str, Any]]:
     text_content = str(new_message or "")
-    if not image_inputs:
+    has_file_texts = bool(file_texts)
+
+    if not image_inputs and not has_file_texts:
         return text_content
 
     content: list[dict[str, Any]] = [{"type": "text", "text": text_content}]
@@ -479,6 +490,16 @@ def _build_user_message_content(new_message: str, image_inputs: list[dict[str, s
             "type": "image_url",
             "image_url": {"url": item["url"]},
         })
+
+    if file_texts:
+        for ft in file_texts:
+            name = ft.get("name", "unknown")
+            file_content = ft.get("content", "")
+            content.append({
+                "type": "text",
+                "text": f"\n--- 文件: {name} ---\n```\n{file_content}\n```\n",
+            })
+
     return content
 
 
@@ -699,9 +720,10 @@ def _guess_mime_type(file_path: Path, explicit_mime_type: str | None = None) -> 
 
 def _is_text_like_grading_file(file_path: Path, mime_type: str | None = None) -> bool:
     text_like_extensions = {
-        ".c", ".cc", ".cpp", ".cs", ".csv", ".go", ".h", ".hpp", ".html", ".ini", ".java", ".js",
-        ".json", ".jsx", ".kt", ".log", ".md", ".php", ".py", ".rb", ".rs", ".sh", ".sql", ".svg",
-        ".tex", ".toml", ".ts", ".tsx", ".txt", ".vue", ".xml", ".yaml", ".yml",
+        ".c", ".cc", ".cpp", ".cs", ".css", ".csv", ".dart", ".go", ".h", ".hpp", ".html", ".ini",
+        ".java", ".js", ".json", ".jsx", ".kt", ".less", ".log", ".lua", ".md", ".php", ".py",
+        ".r", ".rb", ".rs", ".scss", ".sh", ".sql", ".svg", ".swift", ".tex", ".toml", ".ts",
+        ".tsx", ".txt", ".vue", ".xml", ".yaml", ".yml",
     }
     normalized_mime_type = _guess_mime_type(file_path, mime_type)
     return (
@@ -760,10 +782,12 @@ def _categorize_grading_file(file_info: dict[str, Any]) -> str:
     file_path = file_info["path"]
     mime_type = file_info["mime_type"]
     ext = file_info["ext"]
-    if mime_type.startswith("image/") or ext in {".bmp", ".gif", ".jpeg", ".jpg", ".png", ".webp"} or is_image_file(file_path):
+    if mime_type.startswith("image/") or ext in {".bmp", ".gif", ".ico", ".jpeg", ".jpg", ".png", ".svg", ".tiff", ".tif", ".webp"} or is_image_file(file_path):
         return "image"
-    if ext in {".pdf", ".doc", ".docx", ".xls", ".xlsx"}:
-        return "document"
+    if ext == ".pdf":
+        return "document_native"
+    if ext in {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".rtf", ".odt"}:
+        return "document_extractable"
     if _is_text_like_grading_file(file_path, mime_type):
         return "text"
     return "binary"
@@ -781,18 +805,20 @@ def _validate_grading_file_limits(grading_files: list[dict[str, Any]]) -> None:
         category = file_info.get("category")
         file_size = int(file_info.get("size") or 0)
         display_name = file_info.get("display_name") or file_info["path"].name
-        if category == "document" and file_size > VOLCENGINE_DOCUMENT_MAX_BYTES:
-            raise ValueError(f"文档 '{display_name}' 超过火山方舟文档上限 {_human_size(VOLCENGINE_DOCUMENT_MAX_BYTES)}")
+        if category == "document_native" and file_size > VOLCENGINE_DOCUMENT_MAX_BYTES:
+            raise ValueError(f"PDF文档 '{display_name}' 超过火山方舟文档上限 {_human_size(VOLCENGINE_DOCUMENT_MAX_BYTES)}")
         if category == "image" and file_size > VOLCENGINE_IMAGE_MAX_BYTES:
             raise ValueError(f"图片 '{display_name}' 超过火山方舟图片上限 {_human_size(VOLCENGINE_IMAGE_MAX_BYTES)}")
 
 
 def _select_grading_execution(grading_files: list[dict[str, Any]]) -> dict[str, Any]:
-    has_documents = any(file_info["category"] == "document" for file_info in grading_files)
+    has_native_documents = any(file_info["category"] == "document_native" for file_info in grading_files)
+    has_extractable_documents = any(file_info["category"] == "document_extractable" for file_info in grading_files)
     has_images = any(file_info["category"] == "image" for file_info in grading_files)
     has_binary = any(file_info["category"] == "binary" for file_info in grading_files)
 
-    if has_documents:
+    # 原生文档 (PDF) 优先使用火山方舟 Responses API
+    if has_native_documents:
         for platform_name in ENABLED_PLATFORMS:
             if platform_name != "volcengine":
                 continue
@@ -803,7 +829,49 @@ def _select_grading_execution(grading_files: list[dict[str, Any]]) -> dict[str, 
                 "capability": "vision" if has_images else "thinking",
                 "mode": "volcengine_responses",
             }
-        raise ValueError("当前启用的 AI 平台不支持直接识别 PDF/DOC/XLS 等文档附件，请启用火山方舟。")
+        # 火山引擎不可用: PDF 会被 _pre_extract_documents 降级为提取模式，
+        # 走 document_extractable 或 image 路径，此处不再硬性报错
+
+    # 可提取文档 + 图片：需要支持多模态的平台
+    if has_extractable_documents and has_images:
+        for platform_name in ENABLED_PLATFORMS:
+            if platform_name == "volcengine":
+                config = PLATFORMS_CONFIG[platform_name]
+                return {
+                    "platform_name": platform_name,
+                    "platform_config": {"name": platform_name, **config},
+                    "capability": "vision",
+                    "mode": "volcengine_responses",
+                }
+            config = PLATFORMS_CONFIG[platform_name]
+            if config["models"].get("vision"):
+                return {
+                    "platform_name": platform_name,
+                    "platform_config": {"name": platform_name, **config},
+                    "capability": "vision",
+                    "mode": "vision_messages",
+                }
+        raise ValueError("当前启用的 AI 平台不支持图片附件识别，请启用支持视觉能力的模型。")
+
+    # 仅可提取文档 (无 PDF、无图片)：文本提取后可使用任意平台
+    if has_extractable_documents:
+        for platform_name in ENABLED_PLATFORMS:
+            config = PLATFORMS_CONFIG[platform_name]
+            if config["models"].get("thinking"):
+                return {
+                    "platform_name": platform_name,
+                    "platform_config": {"name": platform_name, **config},
+                    "capability": "thinking",
+                    "mode": "text_messages",
+                }
+            if config["models"].get("standard"):
+                return {
+                    "platform_name": platform_name,
+                    "platform_config": {"name": platform_name, **config},
+                    "capability": "standard",
+                    "mode": "text_messages",
+                }
+        raise ValueError("没有可用于批改的 AI 平台配置")
 
     if has_images:
         for platform_name in ENABLED_PLATFORMS:
@@ -848,8 +916,81 @@ def _read_text_file_excerpt(file_path: Path, max_bytes: int = AI_GRADING_MAX_RAW
     with open(file_path, "rb") as file:
         data = file.read(max_bytes + 1)
     truncated = len(data) > max_bytes
-    text = data[:max_bytes].decode("utf-8", errors="ignore")
-    return text, truncated
+    raw = data[:max_bytes]
+
+    # 优先尝试 UTF-8
+    try:
+        return raw.decode("utf-8"), truncated
+    except UnicodeDecodeError:
+        pass
+
+    # 使用 chardet 检测编码
+    try:
+        import chardet
+        detected = chardet.detect(raw)
+        encoding = detected.get("encoding") or "utf-8"
+        return raw.decode(encoding, errors="replace"), truncated
+    except Exception:
+        pass
+
+    # 最后兜底
+    return raw.decode("utf-8", errors="replace"), truncated
+
+
+def _robust_parse_grading_json(raw_text: str) -> dict[str, Any]:
+    """从 AI 响应中解析批改结果 JSON，支持多种异常格式的兜底解析。"""
+    if not raw_text or not raw_text.strip():
+        raise ValueError("AI 返回了空内容")
+
+    text = raw_text.strip()
+
+    # 策略 1: 去除 markdown 代码块包裹
+    if text.startswith("```"):
+        first_nl = text.find("\n")
+        if first_nl != -1:
+            text = text[first_nl + 1:]
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+
+    # 策略 2: 直接解析
+    try:
+        result = json.loads(text)
+        if isinstance(result, dict):
+            return result
+    except json.JSONDecodeError:
+        pass
+
+    # 策略 3: 定位 JSON 对象边界 { ... }
+    first_brace = text.find("{")
+    last_brace = text.rfind("}")
+    if first_brace != -1 and last_brace > first_brace:
+        candidate = text[first_brace:last_brace + 1]
+        try:
+            result = json.loads(candidate)
+            if isinstance(result, dict):
+                return result
+        except json.JSONDecodeError:
+            pass
+        # 策略 4: 修复常见问题 (单引号 → 双引号)
+        try:
+            fixed = candidate.replace("'", '"')
+            result = json.loads(fixed)
+            if isinstance(result, dict):
+                return result
+        except json.JSONDecodeError:
+            pass
+
+    # 策略 5: 正则兜底提取 score 和 feedback_md
+    score_match = _re.search(r'"score"\s*:\s*(\d+)', text)
+    feedback_match = _re.search(r'"feedback_md"\s*:\s*"((?:[^"\\]|\\.)*)"', text, _re.DOTALL)
+    if score_match:
+        return {
+            "score": int(score_match.group(1)),
+            "feedback_md": feedback_match.group(1) if feedback_match else text,
+        }
+
+    raise ValueError(f"无法从 AI 响应中解析出有效的批改结果。原始内容前200字: {text[:200]}")
 
 
 def _build_text_grading_message(
@@ -878,12 +1019,28 @@ def _build_text_grading_message(
                 text_content += f"\n--- 文件: {display_name} ({file_size}) ---\n```\n{excerpt}\n```\n"
                 if truncated:
                     text_content += f"[系统说明] 文件 {display_name} 已按 {_human_size(AI_GRADING_MAX_RAW_TEXT_FILE_BYTES)} 截断。\n"
+            elif category == "document_extractable":
+                cached = file_info.get("_extract_result")
+                if cached is None:
+                    cached = _extract_doc_text(file_info["path"], file_info["ext"], AI_GRADING_MAX_RAW_TEXT_FILE_BYTES)
+                    file_info["_extract_result"] = cached
+                extracted, truncated = cached.text, cached.truncated
+                img_note = ""
+                if cached.has_images:
+                    img_note = f"\n[系统说明] 该文档还包含 {len(cached.images)} 张嵌入图片，已单独提交。"
+                if extracted.strip():
+                    text_content += f"\n--- 文档: {display_name} ({file_size}, 已提取文本) ---\n```\n{extracted}\n```\n"
+                    if truncated:
+                        text_content += f"[系统说明] 文档 {display_name} 已按 {_human_size(AI_GRADING_MAX_RAW_TEXT_FILE_BYTES)} 截断。\n"
+                    text_content += img_note + "\n"
+                else:
+                    text_content += f"\n--- 文档: {display_name} ({file_size}) ---\n[系统说明] 无法从该文档中提取文本内容。{img_note}\n"
+            elif category == "document_native":
+                text_content += f"\n--- PDF文档: {display_name} ({file_size}) ---\n该PDF文档将以原始文件方式提交给模型。\n"
             elif category == "image":
                 text_content += f"\n--- 图片文件: {display_name} ({file_size}) ---\n该图片将以图像输入方式提交给模型。\n"
-            elif category == "document":
-                text_content += f"\n--- 文档文件: {display_name} ({file_size}) ---\n该文档将以原始文件方式提交给模型。\n"
             else:
-                text_content += f"\n--- 二进制文件: {display_name} ({file_size}) ---\n当前平台不支持直接解析该类型文件。\n"
+                text_content += f"\n--- 文件: {display_name} ({file_size}) ---\n[系统说明] 当前平台不支持直接解析该类型文件。\n"
 
     return [{"role": "user", "content": text_content}]
 
@@ -917,21 +1074,49 @@ def _build_volcengine_responses_input(
 
     for file_info in grading_files:
         category = file_info["category"]
-        if category == "document":
+        if category == "document_native":
             content_items.append(
                 {
-                    # Inference: Ark Responses follows the OpenAI-compatible input_file schema.
                     "type": "input_file",
                     "filename": file_info["original_filename"],
                     "file_data": _build_data_url(file_info["path"], file_info["mime_type"]),
                 }
             )
             continue
+        if category == "document_extractable":
+            # 优先使用预提取结果，避免重复提取
+            cached = file_info.get("_extract_result")
+            if cached is None:
+                cached = _extract_doc_text(file_info["path"], file_info["ext"], AI_GRADING_MAX_RAW_TEXT_FILE_BYTES)
+                file_info["_extract_result"] = cached
+            extracted, truncated = cached.text, cached.truncated
+            img_note = ""
+            if cached.has_images:
+                img_note = f"\n[系统说明] 该文档包含 {len(cached.images)} 张嵌入图片，已附在下方。"
+            if extracted.strip():
+                suffix = f"\n[系统说明] 文档已按 {_human_size(AI_GRADING_MAX_RAW_TEXT_FILE_BYTES)} 截断。" if truncated else ""
+                content_items.append(
+                    {
+                        "type": "input_text",
+                        "text": f"\n--- 文档: {file_info['display_name']} (已提取文本) ---\n{extracted}\n{suffix}{img_note}",
+                    }
+                )
+            else:
+                content_items.append(
+                    {
+                        "type": "input_text",
+                        "text": f"\n--- 文档: {file_info['display_name']} (无法提取文本内容) ---{img_note}",
+                    }
+                )
+            continue
         if category == "image":
+            # 优先使用预提取的嵌入图片 data URL（来自文档），避免重新读取文件
+            embedded_url = file_info.get("_embedded_data_url")
+            image_url = embedded_url or _build_data_url(file_info["path"], file_info["mime_type"])
             content_items.append(
                 {
                     "type": "input_image",
-                    "image_url": _build_data_url(file_info["path"], file_info["mime_type"]),
+                    "image_url": image_url,
                 }
             )
             continue
@@ -992,16 +1177,25 @@ async def _call_volcengine_responses_api(
     if not output_text:
         raise ValueError("火山方舟 Responses API 未返回可解析的文本结果")
 
-    try:
-        return json.loads(output_text)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"火山方舟 Responses API 返回的结果不是有效 JSON: {output_text}") from exc
+    return _robust_parse_grading_json(output_text)
 
 
 def build_vision_messages(rubric: str, files: List[Path], platform_type: str,
                           requirements_md: str = "", answers_json: str = None) -> List[Dict[str, Any]]:
     """构建视觉消息 (支持文件 + JSON 答案混合)"""
     answers_text = _extract_answers_text(answers_json)
+
+    def _read_file_text_safe(fp: Path) -> str:
+        """安全读取文件文本：先尝试直接读取，失败则用文档提取。"""
+        ext = fp.suffix.lower()
+        if ext in {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"}:
+            result = _extract_doc_text(fp, ext, AI_GRADING_MAX_RAW_TEXT_FILE_BYTES)
+            if result.text.strip():
+                return result.text
+        try:
+            return fp.read_text(encoding='utf-8', errors='ignore')
+        except Exception:
+            return ""
 
     if platform_type == "volcengine":
         content = []
@@ -1018,10 +1212,10 @@ def build_vision_messages(rubric: str, files: List[Path], platform_type: str,
                 b64_url = file_to_base64_url(file_path)
                 if b64_url: content.append({"type": "image_url", "image_url": {"url": b64_url}})
             else:
-                try:
-                    code = file_path.read_text(encoding='utf-8', errors='ignore')
-                    text_content += f"\n--- {file_path.name} ---\n```\n{code}\n```\n"
-                except Exception:
+                file_text = _read_file_text_safe(file_path)
+                if file_text:
+                    text_content += f"\n--- {file_path.name} ---\n```\n{file_text}\n```\n"
+                else:
                     text_content += f"\n--- {file_path.name} (无法读取) ---\n"
         content.append({"type": "text", "text": text_content})
         return [{"role": "user", "content": content}]
@@ -1039,11 +1233,11 @@ def build_vision_messages(rubric: str, files: List[Path], platform_type: str,
                 b64_url = file_to_base64_url(file_path)
                 if b64_url: content.append({"type": "image_url", "image_url": {"url": b64_url}})
             else:
-                try:
-                    code = file_path.read_text(encoding='utf-8', errors='ignore')
+                file_text = _read_file_text_safe(file_path)
+                if file_text:
                     content.append(
-                        {"type": "text", "text": f"\n--- 文件: {file_path.name} ---\n```\n{code}\n```\n"})
-                except Exception:
+                        {"type": "text", "text": f"\n--- 文件: {file_path.name} ---\n```\n{file_text}\n```\n"})
+                else:
                     content.append({"type": "text", "text": f"\n--- 文件: {file_path.name} (无法读取) ---\n"})
         return [{"role": "user", "content": content}]
 
@@ -1116,19 +1310,15 @@ async def _call_ai_platform(
                 print("[ERROR] AI 返回了空内容。")
                 raise HTTPException(500, "AI 返回空内容")
 
-            response_content_cleaned = response_content.strip()
-            if response_content_cleaned.startswith("```json"):
-                response_content_cleaned = response_content_cleaned[7:]
-                if response_content_cleaned.endswith("```"): response_content_cleaned = response_content_cleaned[:-3]
-                response_content_cleaned = response_content_cleaned.strip()
-
-            try:
-                return json.loads(response_content_cleaned)
-            except json.JSONDecodeError as e:
-                print(f"[ERROR] 解析AI返回内容为JSON失败: {e}")
-                if require_json_output:
-                    raise HTTPException(500, f"AI未按要求返回有效的JSON格式: {e}")
-                else:
+            if require_json_output:
+                try:
+                    return _robust_parse_grading_json(response_content)
+                except ValueError as e:
+                    raise HTTPException(500, str(e)) from e
+            else:
+                try:
+                    return _robust_parse_grading_json(response_content)
+                except ValueError:
                     return {"text": response_content}
             # --- 解析结束 ---
 
@@ -1556,7 +1746,7 @@ async def ai_chat_task_stream(req: AIChatRequest):
     """
     # 1. 构建新的用户消息 (可能包含图片)
     image_inputs = _normalize_request_image_inputs(req)
-    new_user_message_content = _build_user_message_content(req.new_message, image_inputs)
+    new_user_message_content = _build_user_message_content(req.new_message, image_inputs, req.file_texts)
 
     # 2. 将新消息添加到历史记录中
     history = list(req.messages or [])
@@ -1591,7 +1781,7 @@ async def ai_chat_task(req: AIChatRequest):
 
     # 1. 构建新的用户消息 (可能包含图片)
     image_inputs = _normalize_request_image_inputs(req)
-    new_user_message_content = _build_user_message_content(req.new_message, image_inputs)
+    new_user_message_content = _build_user_message_content(req.new_message, image_inputs, req.file_texts)
 
     # 4. 将新消息添加到历史记录中
     # (注意: VolcEngine 和 OpenAI 都能处理这种多部分 "content" 列表)
@@ -1643,7 +1833,85 @@ async def submit_grading_task(job: GradingJob):
     return {"status": "queued", "submission_id": job.submission_id}
 
 
-# --- 后台任务 (更新: 支持文件 + JSON 答案) ---
+def _pre_extract_documents(grading_files: list[dict[str, Any]]) -> None:
+    """预提取可提取文档的文本和嵌入图片。
+
+    - 将提取结果缓存到 file_info["_extract_result"] 中，供后续构建输入时复用。
+    - 如果发现嵌入图片，将其作为新的 "image" 条目追加到 grading_files 末尾，
+      使得 _select_grading_execution() 能据此选择支持视觉的模式。
+    - 当火山引擎不可用时，将 PDF 降级为提取模式。
+    """
+    volcengine_available = "volcengine" in ENABLED_PLATFORMS
+
+    for file_info in list(grading_files):  # list() 以允许迭代中追加
+        category = file_info.get("category")
+
+        if category == "document_extractable":
+            file_path = file_info["path"]
+            ext = file_info["ext"]
+            result = _extract_doc_text(file_path, ext, AI_GRADING_MAX_RAW_TEXT_FILE_BYTES)
+            file_info["_extract_result"] = result
+
+            if result.has_images:
+                img_count = len(result.images)
+                print(f"[AI WORKER] 从 {file_info['display_name']} 中提取到 {img_count} 张嵌入图片")
+                for img in result.images:
+                    grading_files.append({
+                        "path": file_path,
+                        "display_name": f"{file_info['display_name']} -> {img['filename']}",
+                        "original_filename": img["filename"],
+                        "relative_path": f"{file_info.get('relative_path', '')}/{img['filename']}",
+                        "mime_type": img["data_url"].split(";")[0].split(":")[1] if ":" in img["data_url"] else "image/png",
+                        "size": len(img["data_url"]),
+                        "ext": Path(img["filename"]).suffix.lower(),
+                        "hash": None,
+                        "category": "image",
+                        "_embedded_data_url": img["data_url"],
+                    })
+
+        elif category == "document_native" and not volcengine_available:
+            # 火山引擎不可用: 降级提取 PDF 文本+图片
+            file_path = file_info["path"]
+            result = _extract_doc_text(file_path, ".pdf", AI_GRADING_MAX_RAW_TEXT_FILE_BYTES)
+            file_info["_extract_result"] = result
+            # 重新分类为 document_extractable，使下游文本路径能处理
+            file_info["category"] = "document_extractable"
+
+            if result.has_images:
+                for img in result.images:
+                    grading_files.append({
+                        "path": file_path,
+                        "display_name": f"{file_info['display_name']} -> {img['filename']}",
+                        "original_filename": img["filename"],
+                        "relative_path": f"{file_info.get('relative_path', '')}/{img['filename']}",
+                        "mime_type": img["data_url"].split(";")[0].split(":")[1] if ":" in img["data_url"] else "image/png",
+                        "size": len(img["data_url"]),
+                        "ext": Path(img["filename"]).suffix.lower(),
+                        "hash": None,
+                        "category": "image",
+                        "_embedded_data_url": img["data_url"],
+                    })
+
+            # 如果文本提取内容太少，渲染 PDF 页面为图片
+            if not result.text.strip() or len(result.text.strip()) < 50:
+                print(f"[AI WORKER] PDF文本提取不足，尝试渲染页面为图片: {file_info['display_name']}")
+                rendered_pages = _render_pdf_pages(file_path)
+                for page_img in rendered_pages:
+                    grading_files.append({
+                        "path": file_path,
+                        "display_name": f"{file_info['display_name']} -> {page_img['filename']}",
+                        "original_filename": page_img["filename"],
+                        "relative_path": f"{file_info.get('relative_path', '')}/{page_img['filename']}",
+                        "mime_type": "image/png",
+                        "size": len(page_img["data_url"]),
+                        "ext": ".png",
+                        "hash": None,
+                        "category": "image",
+                        "_embedded_data_url": page_img["data_url"],
+                    })
+
+
+# --- 后台任务 (更新: 支持文件 + JSON 答案 + 文档内嵌图片) ---
 async def run_grading_job(job: GradingJob):
     callback_data = {}
     try:
@@ -1657,11 +1925,37 @@ async def run_grading_job(job: GradingJob):
         if not has_files and not has_answers:
             raise ValueError("没有找到可批改的内容（无文件也无答案）")
 
-        unsupported_binary_files = [f["display_name"] for f in grading_files if f["category"] == "binary"]
+        unsupported_binary_files = [f for f in grading_files if f["category"] == "binary"]
         if unsupported_binary_files:
-            raise ValueError(
-                "以下附件类型当前无法直接传给 AI 识别: " + ", ".join(unsupported_binary_files[:10])
-            )
+            # 尝试将二进制文件作为文本读取
+            for file_info in unsupported_binary_files:
+                try:
+                    file_path = file_info["path"]
+                    if file_path.stat().st_size > AI_GRADING_MAX_RAW_TEXT_FILE_BYTES:
+                        continue
+                    text, _ = _read_text_file_excerpt(file_path)
+                    # 启发式判断: 可打印字符占比 > 30% 视为文本
+                    sample = text[:2000]
+                    printable_count = sum(1 for ch in sample if ch.isprintable() or ch in {"\n", "\r", "\t"})
+                    if len(sample) > 0 and printable_count / len(sample) > 0.3:
+                        file_info["category"] = "text"
+                        print(f"[AI WORKER] 重新分类二进制文件为文本: {file_info['display_name']}")
+                except Exception:
+                    pass
+
+            # 移除仍然无法处理的二进制文件
+            still_binary = [f for f in grading_files if f["category"] == "binary"]
+            if still_binary:
+                skipped_names = [f["display_name"] for f in still_binary]
+                print(f"[AI WORKER] 跳过不支持的二进制文件: {skipped_names}")
+                grading_files = [f for f in grading_files if f["category"] != "binary"]
+                if not grading_files and not has_answers:
+                    raise ValueError(
+                        "所有附件均为不支持的二进制格式: " + ", ".join(skipped_names[:10])
+                    )
+
+        # 预提取文档内容，发现嵌入图片后作为独立图片条目加入评分文件
+        _pre_extract_documents(grading_files)
 
         _validate_grading_file_limits(grading_files)
         execution = _select_grading_execution(grading_files)

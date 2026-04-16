@@ -774,11 +774,11 @@ class AIChatComponent {
             deep_thinking: this.isDeepThinking
         }, 'ai_chat');
 
-        // 1. 渲染用户消息 (无变化)
+        // 1. 渲染用户消息
         const userAttachments = this.pendingFiles.map(file => ({
-            type: 'image',
+            type: file.type.startsWith('image/') ? 'image' : 'file',
             name: file.name,
-            previewUrl: URL.createObjectURL(file)
+            previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null
         }));
         this.renderMessage('user', message, userAttachments);
 
@@ -1098,19 +1098,35 @@ class AIChatComponent {
     }
     onFileSelected(e) {
         let acceptedCount = 0;
+        const textExtensions = ['.txt', '.md', '.py', '.js', '.ts', '.tsx', '.jsx', '.html', '.htm', '.css',
+            '.json', '.xml', '.yaml', '.yml', '.toml', '.c', '.cpp', '.h', '.hpp', '.java', '.kt', '.rs',
+            '.go', '.rb', '.php', '.sh', '.bat', '.sql', '.csv', '.vue', '.log', '.ini', '.cfg', '.conf',
+            '.r', '.lua', '.scss', '.less', '.dart', '.swift', '.tex', '.env'];
+        const docExtensions = ['.docx', '.pptx', '.xlsx', '.xls', '.doc', '.ppt', '.pdf'];
+
         for (const file of e.target.files) {
-            if (file.type.startsWith('image/')) {
-                if (this.pendingFiles.length < 5) {
-                    this.pendingFiles.push(file);
-                    acceptedCount += 1;
-                } else {
-                    showMessage('一次最多上传5张图片。', 'error');
-                }
+            if (this.pendingFiles.length >= 5) {
+                showMessage('一次最多上传5个文件。', 'error');
+                break;
+            }
+
+            const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
+            const isImage = file.type.startsWith('image/');
+            const isText = textExtensions.includes(ext) || file.type.startsWith('text/') ||
+                file.type === 'application/javascript' || file.type === 'application/json' ||
+                file.type === 'application/xml' || file.type === 'image/svg+xml';
+            const isDoc = docExtensions.includes(ext);
+
+            if (isImage || isText || isDoc) {
+                this.pendingFiles.push(file);
+                acceptedCount += 1;
+            } else {
+                showMessage(`不支持的文件类型: ${file.name}`, 'warning');
             }
         }
         this.renderPreviews();
         if (acceptedCount > 0) {
-            window.behaviorTracker?.log('ai_attachment_select', `选择 ${acceptedCount} 张 AI 图片附件`, {
+            window.behaviorTracker?.log('ai_attachment_select', `选择 ${acceptedCount} 个附件`, {
                 accepted_count: acceptedCount,
                 pending_count: this.pendingFiles.length
             }, 'ai_chat');
@@ -1122,8 +1138,27 @@ class AIChatComponent {
         this.pendingFiles.forEach((file, index) => {
             const item = document.createElement('div');
             item.className = 'preview-item';
-            const img = document.createElement('img');
-            img.src = URL.createObjectURL(file);
+
+            if (file.type.startsWith('image/')) {
+                const img = document.createElement('img');
+                img.src = URL.createObjectURL(file);
+                item.appendChild(img);
+            } else {
+                // 非图片文件: 显示文件图标+文件名
+                const fileDiv = document.createElement('div');
+                fileDiv.className = 'preview-file-icon';
+                fileDiv.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                    </svg>
+                    <span class="preview-file-name">${file.name}</span>
+                `;
+                item.appendChild(fileDiv);
+            }
+
             const removeBtn = document.createElement('button');
             removeBtn.className = 'remove-preview';
             removeBtn.innerHTML = '&times;';
@@ -1131,7 +1166,6 @@ class AIChatComponent {
                 this.pendingFiles.splice(index, 1);
                 this.renderPreviews();
             };
-            item.appendChild(img);
             item.appendChild(removeBtn);
             this.previewsBox.appendChild(item);
         });

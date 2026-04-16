@@ -4,6 +4,8 @@ import uuid
 import asyncio
 import time
 import traceback
+import tempfile
+import os
 from pathlib import Path
 from typing import List, Literal, Dict, Any, Optional
 from enum import Enum
@@ -181,16 +183,109 @@ def _get_user_pk_role(user: dict) -> (int, str):
 
 
 async def _upload_file_to_base64(file: UploadFile) -> str:
-    """辅助函数：将 UploadFile 转换为 base64 data URL"""
+    """辅助函数：将 UploadFile (仅图片) 转换为 base64 data URL"""
     if file.content_type not in ["image/jpeg", "image/png", "image/gif", "image/webp"]:
         raise HTTPException(status_code=400, detail=f"不支持的文件类型: {file.content_type}。仅支持图片。")
 
     contents = await file.read()
-    if len(contents) > MAX_UPLOAD_SIZE_BYTES:  # 借用 config 中的设置
+    if len(contents) > MAX_UPLOAD_SIZE_BYTES:
         raise HTTPException(status_code=413, detail=f"文件大小不能超过 {MAX_UPLOAD_SIZE_MB}MB")
 
     base64_data = base64.b64encode(contents).decode('utf-8')
     return f"data:{file.content_type};base64,{base64_data}"
+
+
+def _decode_bytes_with_detection(data: bytes) -> str:
+    """使用编码检测将字节数据解码为字符串。"""
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    try:
+        import chardet
+        detected = chardet.detect(data)
+        encoding = detected.get("encoding") or "utf-8"
+        return data.decode(encoding, errors="replace")
+    except Exception:
+        return data.decode("utf-8", errors="replace")
+
+
+# 文件类型扩展名常量
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff", ".tif", ".svg"}
+_TEXT_EXTENSIONS = {
+    ".txt", ".md", ".py", ".js", ".ts", ".tsx", ".jsx", ".html", ".htm", ".css",
+    ".json", ".xml", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
+    ".c", ".cpp", ".h", ".hpp", ".java", ".kt", ".rs", ".go", ".rb", ".php",
+    ".sh", ".bat", ".ps1", ".sql", ".r", ".lua", ".vue", ".svg", ".csv",
+    ".log", ".env", ".dart", ".swift", ".tex", ".scss", ".less", ".md",
+}
+_DOCUMENT_EXTENSIONS = {".docx", ".pptx", ".xlsx", ".xls", ".doc", ".ppt", ".pdf"}
+
+
+async def _process_chat_file(file: UploadFile) -> dict:
+    """处理上传文件用于 AI 聊天。
+
+    Returns:
+        图片文件: {"type": "image", "data_url": "...", "name": "..."}
+        文本文件: {"type": "text", "name": "...", "content": "..."}
+    """
+    contents = await file.read()
+    chat_max_bytes = 10 * 1024 * 1024  # 10MB 限制
+    if len(contents) > chat_max_bytes:
+        raise HTTPException(status_code=413, detail=f"文件 {file.filename} 大小超过 10MB 限制")
+
+    content_type = (file.content_type or "").lower()
+    filename = file.filename or "unknown"
+    ext = Path(filename).suffix.lower()
+
+    # 图片文件: 转为 base64 data URL
+    image_types = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/tiff"}
+    if content_type in image_types or (ext in _IMAGE_EXTENSIONS and content_type.startswith("image/")):
+        try:
+            from PIL import Image
+            import io
+            Image.open(io.BytesIO(contents)).verify()
+            mime = content_type or "image/png"
+            b64 = base64.b64encode(contents).decode("utf-8")
+            return {"type": "image", "data_url": f"data:{mime};base64,{b64}", "name": filename}
+        except Exception:
+            pass
+
+    # 文本/代码文件: 直接读取文本内容
+    text_mime_types = {
+        "text/", "application/javascript", "application/json", "application/xml",
+        "image/svg+xml",
+    }
+    if ext in _TEXT_EXTENSIONS or any(content_type.startswith(t) for t in text_mime_types):
+        text = _decode_bytes_with_detection(contents)
+        return {"type": "text", "name": filename, "content": text}
+
+    # 文档文件: 提取文本
+    if ext in _DOCUMENT_EXTENSIONS:
+        from ai_assistant_doc_extract import extract_document_text
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp.write(contents)
+            tmp_path = tmp.name
+        try:
+            result = extract_document_text(Path(tmp_path), ext)
+            return {"type": "text", "name": filename, "content": result.text or f"[无法从 {filename} 提取文本]"}
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    # 未知类型: 尝试作为文本读取
+    try:
+        text = _decode_bytes_with_detection(contents)
+        sample = text[:2000]
+        printable_count = sum(1 for ch in sample if ch.isprintable() or ch in {"\n", "\r", "\t"})
+        if len(sample) > 0 and printable_count / len(sample) > 0.3:
+            return {"type": "text", "name": filename, "content": text}
+    except Exception:
+        pass
+
+    raise HTTPException(status_code=400, detail=f"不支持的文件类型: {filename}")
 
 
 def _ensure_classroom_access(conn, class_offering_id: int, user_pk: int, user_role: str) -> sqlite3.Row:
@@ -982,23 +1077,34 @@ async def handle_ai_chat(
             print(f"[ERROR] 现场生成 context_prompt 失败: {e}")
             user_context_prompt = f"无法加载用户 {user_pk} 的背景信息。"
 
-    # 3. 处理上传的文件 -> 转换为 Base64
+    # 3. 处理上传的文件 -> 图片转 Base64，文本文件提取内容
     base64_urls = []
     user_attachments = []
+    file_texts = []
     model_capability: Literal["standard", "thinking", "vision"] = "standard"
 
     if files:
-        model_capability = "vision"  # 只要有文件就切换到 vision
         for file in files:
             try:
-                b64_url = await _upload_file_to_base64(file)
-                base64_urls.append(b64_url)
-                user_attachments.append({"type": "image", "name": file.filename})
+                result = await _process_chat_file(file)
+                if result["type"] == "image":
+                    base64_urls.append(result["data_url"])
+                    user_attachments.append({"type": "image", "name": result["name"]})
+                elif result["type"] == "text":
+                    file_texts.append({"name": result["name"], "content": result["content"]})
+                    user_attachments.append({"type": "text", "name": result["name"]})
             except HTTPException as e:
-                # 如果只是某个文件失败，可以跳过
                 print(f"文件 {file.filename} 处理失败: {e.detail}")
             except Exception as e:
                 print(f"文件 {file.filename} 处理失败: {e}")
+
+        # 根据上传内容选择模型能力
+        if base64_urls:
+            model_capability = "vision"
+        elif file_texts:
+            model_capability = "thinking" if deep_thinking else "standard"
+        elif deep_thinking:
+            model_capability = "thinking"
     elif deep_thinking:
         model_capability = "thinking"
     attachments_json = json.dumps(user_attachments) if user_attachments else None
@@ -1081,8 +1187,9 @@ async def handle_ai_chat(
                 "source": "current_upload",
             }
             for b64_url, attachment in zip(base64_urls, user_attachments)
-            if str(b64_url or "").strip()
+            if str(b64_url or "").strip() and attachment.get("type") == "image"
         ],
+        "file_texts": file_texts,
         "model_capability": model_capability,
         "task_priority": "interactive",
         "task_label": "user_chat",
