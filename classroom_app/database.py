@@ -1973,6 +1973,12 @@ def init_database():
             except sqlite3.OperationalError:
                 pass  # 列已存在
 
+            # 兼容已有数据库：为 exam_papers 添加标签列
+            try:
+                conn.execute("ALTER TABLE exam_papers ADD COLUMN tags_json TEXT DEFAULT '[]'")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+
             # 15. 课程材料库
             conn.execute('''
                         CREATE TABLE IF NOT EXISTS course_materials

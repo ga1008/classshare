@@ -1092,6 +1092,23 @@ async def manage_exams_page(request: Request, user: dict = Depends(get_current_t
                     paper['questions_json'] = json.loads(paper['questions_json'])
                 except (json.JSONDecodeError, TypeError):
                     paper['questions_json'] = None
+            # 解析 tags_json
+            if paper.get('tags_json'):
+                try:
+                    paper['tags_json'] = json.loads(paper['tags_json'])
+                except (json.JSONDecodeError, TypeError):
+                    paper['tags_json'] = []
+            else:
+                paper['tags_json'] = []
+            # 提取题型集合
+            question_types = set()
+            if paper.get('questions_json') and isinstance(paper['questions_json'], dict):
+                for page in paper['questions_json'].get('pages', []):
+                    for q in page.get('questions', []):
+                        qtype = q.get('type')
+                        if qtype:
+                            question_types.add(qtype)
+            paper['question_types'] = sorted(question_types)
             papers.append(paper)
 
     return templates.TemplateResponse(request, "manage/exams.html", {

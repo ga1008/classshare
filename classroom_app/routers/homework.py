@@ -664,6 +664,32 @@ async def list_exam_papers(user: dict = Depends(get_current_teacher)):
     return {"status": "success", "papers": papers}
 
 
+@router.put("/exam-papers/{paper_id}/tags", response_class=JSONResponse)
+async def update_exam_paper_tags(paper_id: str, request: Request, user: dict = Depends(get_current_teacher)):
+    """更新试卷标签"""
+    data = await request.json()
+    tags = data.get('tags', [])
+    if not isinstance(tags, list) or len(tags) > 20:
+        raise HTTPException(400, "标签格式不正确")
+    for t in tags:
+        if not isinstance(t, str) or len(t) == 0 or len(t) > 10:
+            raise HTTPException(400, "每个标签长度应为1-10个字符")
+
+    now = datetime.now().isoformat()
+    with get_db_connection() as conn:
+        existing = conn.execute("SELECT teacher_id FROM exam_papers WHERE id = ?", (paper_id,)).fetchone()
+        if not existing:
+            raise HTTPException(404, "试卷不存在")
+        if existing['teacher_id'] != user['id']:
+            raise HTTPException(403, "无权修改此试卷")
+        conn.execute(
+            "UPDATE exam_papers SET tags_json = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(tags, ensure_ascii=False), now, paper_id)
+        )
+        conn.commit()
+    return {"status": "success", "tags": tags}
+
+
 @router.post("/exam-papers", response_class=JSONResponse)
 async def create_exam_paper(request: Request, user: dict = Depends(get_current_teacher)):
     """创建新试卷"""
@@ -753,6 +779,28 @@ async def delete_exam_paper(paper_id: str, user: dict = Depends(get_current_teac
     return {"status": "success"}
 
 
+def _auto_add_class_name_tag(conn, paper_row: sqlite3.Row, class_id: int) -> None:
+    """自动将课堂名称添加为试卷标签（去重）。"""
+    class_row = conn.execute("SELECT name FROM classes WHERE id = ?", (class_id,)).fetchone()
+    if not class_row:
+        return
+    class_name = class_row["name"].strip()
+    if not class_name or len(class_name) > 10:
+        return
+
+    try:
+        existing_tags = json.loads(paper_row["tags_json"]) if paper_row["tags_json"] else []
+    except (json.JSONDecodeError, TypeError):
+        existing_tags = []
+
+    if class_name not in existing_tags:
+        existing_tags.append(class_name)
+        conn.execute(
+            "UPDATE exam_papers SET tags_json = ? WHERE id = ?",
+            (json.dumps(existing_tags, ensure_ascii=False), paper_row["id"]),
+        )
+
+
 @router.post("/exam-papers/{paper_id}/assign", response_class=JSONResponse)
 async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depends(get_current_teacher)):
     """将试卷分配给指定课堂（创建 assignment）"""
@@ -826,6 +874,10 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
                 create_assignment_published_notifications(conn, new_assignment_id)
             except Exception as exc:
                 print(f"[MESSAGE_CENTER] exam assignment publish notify failed: {exc}")
+
+        # 自动将课堂名称添加为试卷标签
+        _auto_add_class_name_tag(conn, paper, offering['class_id'])
+
         conn.commit()
         assignment_dir = _build_assignment_storage_dir(offering['course_id'], new_assignment_id)
         assignment_dir.mkdir(parents=True, exist_ok=True)
