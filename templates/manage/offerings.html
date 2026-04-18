@@ -1,35 +1,272 @@
-﻿{% extends "manage/layout.html" %}
+{% extends "manage/layout.html" %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="/static/css/manage_academic.css">
 <style>
-    .offering-preview {
-        display: grid;
+    .offering-page-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+    }
+
+    .offering-editor-state {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
         gap: 12px;
+        padding: 14px 16px;
+        border-radius: 18px;
+        background: rgba(249, 115, 22, 0.1);
+        border: 1px solid rgba(249, 115, 22, 0.2);
+        color: #9a3412;
     }
 
-    .offering-preview .academic-context-block {
-        min-height: 0;
+    .offering-editor-state.is-visible {
+        display: flex;
     }
 
-    .offering-requirement-list {
+    .offering-form-grid {
         display: grid;
-        gap: 12px;
+        gap: 18px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .offering-requirement {
+    .offering-form-grid .full-span {
+        grid-column: 1 / -1;
+    }
+
+    .offering-schedule-panel {
+        display: grid;
+        gap: 16px;
+        padding: 18px;
+        border-radius: 22px;
+        background: rgba(248, 250, 252, 0.92);
+        border: 1px solid rgba(148, 163, 184, 0.18);
+    }
+
+    .offering-schedule-head {
         display: flex;
         justify-content: space-between;
         align-items: center;
         gap: 12px;
-        padding: 14px 16px;
-        border-radius: 16px;
-        border: 1px solid rgba(148, 163, 184, 0.18);
-        background: rgba(248, 250, 252, 0.82);
+        flex-wrap: wrap;
     }
 
-    .offering-requirement strong {
+    .offering-schedule-list {
+        display: grid;
+        gap: 12px;
+    }
+
+    .offering-schedule-row {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: minmax(0, 1fr) 148px auto;
+        align-items: end;
+        padding: 16px;
+        border-radius: 18px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: rgba(255, 255, 255, 0.92);
+    }
+
+    .offering-preview-shell {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.9fr);
+    }
+
+    .offering-preview-summary,
+    .offering-preview-list {
+        display: grid;
+        gap: 12px;
+        padding: 18px;
+        border-radius: 22px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.9));
+    }
+
+    .offering-preview-list {
+        max-height: 520px;
+        overflow-y: auto;
+    }
+
+    .offering-preview-summary h4,
+    .offering-preview-list h4,
+    .offering-course-summary h4 {
+        margin: 0;
         color: var(--text-primary);
+    }
+
+    .offering-preview-meta {
+        display: grid;
+        gap: 10px;
+    }
+
+    .offering-preview-meta-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 10px;
+        border-bottom: 1px dashed rgba(148, 163, 184, 0.28);
+    }
+
+    .offering-preview-meta-row:last-child {
+        padding-bottom: 0;
+        border-bottom: none;
+    }
+
+    .offering-preview-meta-row span {
+        color: var(--text-muted);
+        font-size: 0.84rem;
+    }
+
+    .offering-preview-meta-row strong {
+        color: var(--text-primary);
+        text-align: right;
+    }
+
+    .offering-warning-list {
+        display: grid;
+        gap: 8px;
+    }
+
+    .offering-warning-item {
+        padding: 10px 12px;
+        border-radius: 16px;
+        background: rgba(255, 237, 213, 0.82);
+        border: 1px solid rgba(249, 115, 22, 0.18);
+        color: #9a3412;
+        line-height: 1.55;
+        font-size: 0.88rem;
+    }
+
+    .offering-session-item {
+        display: grid;
+        gap: 8px;
+        padding: 14px;
+        border-radius: 18px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: rgba(248, 250, 252, 0.92);
+    }
+
+    .offering-session-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .offering-session-date {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(14, 165, 233, 0.12);
+        color: #0369a1;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+
+    .offering-session-item strong {
+        color: var(--text-primary);
+    }
+
+    .offering-session-item p {
+        margin: 0;
+        color: var(--text-secondary);
+        line-height: 1.6;
+    }
+
+    .offering-course-summary {
+        display: grid;
+        gap: 14px;
+        padding: 18px;
+        border-radius: 22px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background:
+            radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 34%),
+            linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.88));
+    }
+
+    .offering-course-summary .academic-empty {
+        padding: 24px 16px;
+    }
+
+    .offering-course-lesson-list {
+        display: grid;
+        gap: 10px;
+    }
+
+    .offering-course-lesson-item {
+        display: grid;
+        gap: 4px;
+        padding: 12px 14px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.88);
+        border: 1px solid rgba(148, 163, 184, 0.18);
+    }
+
+    .offering-course-lesson-item span {
+        color: var(--text-secondary);
+        line-height: 1.55;
+        font-size: 0.88rem;
+    }
+
+    .offering-list-grid {
+        display: grid;
+        gap: 16px;
+    }
+
+    .offering-list-card {
+        display: grid;
+        gap: 16px;
+        padding: 20px;
+        border-radius: 24px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.9));
+        box-shadow: var(--shadow-sm);
+    }
+
+    .offering-list-card-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .offering-list-card p {
+        margin: 0;
+        color: var(--text-secondary);
+        line-height: 1.65;
+    }
+
+    .offering-list-card-actions {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .offering-inline-help {
+        color: var(--text-muted);
+        font-size: 0.88rem;
+        line-height: 1.6;
+    }
+
+    @media (max-width: 1100px) {
+        .offering-preview-shell {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 900px) {
+        .offering-form-grid,
+        .offering-schedule-row {
+            grid-template-columns: 1fr;
+        }
     }
 </style>
 {% endblock %}
@@ -40,16 +277,17 @@
 {% endblock %}
 
 {% block content %}
-<div class="academic-shell">
+<div class="academic-shell offering-page-shell">
     <section class="academic-hero">
-        <div class="academic-eyebrow">Course Offering</div>
-        <h2>课堂开设与管理</h2>
+        <div class="academic-eyebrow">Teaching Schedule</div>
+        <h2>开设课堂与生成课程时间轴</h2>
         <p>
-            通过绑定班级、课程、学期和教材来开设课堂，后续课堂材料、考试和 AI 助教均基于此课堂运行。
+            选择学期、班级、课程和教材后，继续配置第一次上课日期与每周上课安排，系统会自动把课程模板拆到具体日期，直接生成课堂时间轴和任务列表。
         </p>
         <div class="academic-hero-actions">
-            <a href="/manage/semesters?open=new" class="academic-link-btn">先建学期</a>
-            <a href="/manage/textbooks?open=new" class="academic-link-btn">先建教材</a>
+            <a href="/manage/courses" class="academic-link-btn">先完善课程模板</a>
+            <a href="/manage/semesters?open=new" class="academic-link-btn">新增学期</a>
+            <a href="/manage/textbooks?open=new" class="academic-link-btn">新增教材</a>
         </div>
     </section>
 
@@ -57,20 +295,22 @@
         <article class="academic-stat-card">
             <div class="academic-stat-label">班级模板</div>
             <div class="academic-stat-value">{{ my_classes|length }}</div>
+            <div class="academic-stat-help">已可直接用于课堂绑定的班级数量。</div>
         </article>
         <article class="academic-stat-card">
             <div class="academic-stat-label">课程模板</div>
             <div class="academic-stat-value">{{ my_courses|length }}</div>
+            <div class="academic-stat-help">已配置课程信息与课堂模板的课程数量。</div>
         </article>
         <article class="academic-stat-card">
             <div class="academic-stat-label">学期配置</div>
             <div class="academic-stat-value">{{ my_semesters|length }}</div>
-            <div class="academic-stat-help">至少一个学期后才能开设课堂。</div>
+            <div class="academic-stat-help">用于计算周次和课堂日期范围。</div>
         </article>
         <article class="academic-stat-card">
-            <div class="academic-stat-label">教材库</div>
-            <div class="academic-stat-value">{{ my_textbooks|length }}</div>
-            <div class="academic-stat-help">已录入的教材数量。</div>
+            <div class="academic-stat-label">已开设课堂</div>
+            <div class="academic-stat-value">{{ my_offerings|length }}</div>
+            <div class="academic-stat-help">支持继续编辑，重新生成时间轴。</div>
         </article>
     </section>
 
@@ -79,15 +319,22 @@
             <div class="academic-card-header">
                 <div>
                     <h3 class="academic-card-title">开设新课堂</h3>
-                    <p class="academic-card-subtitle">选择学期、班级、课程和教材后即可开设。</p>
+                    <p class="academic-card-subtitle">同一张表单同时支持新建与编辑课堂，预览区会实时展示生成的上课日期与课堂内容。</p>
                 </div>
             </div>
             <div class="academic-card-body">
-                <form id="offeringCreateForm" action="/api/manage/class_offerings/create" method="post" class="academic-form-grid">
-                    <div class="academic-field">
-                        <label for="offeringSemesterSelect">学期</label>
+                <div class="offering-editor-state" id="offeringEditorState">
+                    <strong id="offeringEditorStateText">正在编辑课堂</strong>
+                    <button type="button" class="btn btn-ghost btn-sm" id="offeringCancelEditBtn">退出编辑</button>
+                </div>
+
+                <form id="offeringSaveForm" class="offering-form-grid">
+                    <input type="hidden" id="offeringIdInput">
+
+                    <div class="form-group">
+                        <label class="form-label required" for="offeringSemesterSelect">学期</label>
                         <div class="academic-split-field">
-                            <select id="offeringSemesterSelect" name="semester_id" class="form-control" required>
+                            <select id="offeringSemesterSelect" class="form-control" required>
                                 <option value="">请选择学期</option>
                                 {% for semester in my_semesters %}
                                 <option value="{{ semester.id }}" {% if default_semester_id and semester.id == default_semester_id %}selected{% endif %}>{{ semester.name }} · {{ semester.start_date }} 至 {{ semester.end_date }}</option>
@@ -96,10 +343,11 @@
                             <a href="/manage/semesters?open=new" class="academic-link-btn">新增学期</a>
                         </div>
                     </div>
-                    <div class="academic-field">
-                        <label for="offeringClassSelect">班级</label>
+
+                    <div class="form-group">
+                        <label class="form-label required" for="offeringClassSelect">班级</label>
                         <div class="academic-split-field">
-                            <select id="offeringClassSelect" name="class_id" class="form-control" required>
+                            <select id="offeringClassSelect" class="form-control" required>
                                 <option value="">请选择班级</option>
                                 {% for class_item in my_classes %}
                                 <option value="{{ class_item.id }}">{{ class_item.name }}</option>
@@ -108,10 +356,11 @@
                             <a href="/manage/classes" class="academic-link-btn">新增班级</a>
                         </div>
                     </div>
-                    <div class="academic-field">
-                        <label for="offeringCourseSelect">课程</label>
+
+                    <div class="form-group">
+                        <label class="form-label required" for="offeringCourseSelect">课程</label>
                         <div class="academic-split-field">
-                            <select id="offeringCourseSelect" name="course_id" class="form-control" required>
+                            <select id="offeringCourseSelect" class="form-control" required>
                                 <option value="">请选择课程</option>
                                 {% for course in my_courses %}
                                 <option value="{{ course.id }}">{{ course.name }}</option>
@@ -120,10 +369,11 @@
                             <a href="/manage/courses" class="academic-link-btn">新增课程</a>
                         </div>
                     </div>
-                    <div class="academic-field">
-                        <label for="offeringTextbookSelect">教材</label>
+
+                    <div class="form-group">
+                        <label class="form-label required" for="offeringTextbookSelect">教材</label>
                         <div class="academic-split-field">
-                            <select id="offeringTextbookSelect" name="textbook_id" class="form-control" required>
+                            <select id="offeringTextbookSelect" class="form-control" required>
                                 <option value="">请选择教材</option>
                                 {% for textbook in my_textbooks %}
                                 <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
@@ -132,14 +382,64 @@
                             <a href="/manage/textbooks?open=new" class="academic-link-btn">新增教材</a>
                         </div>
                     </div>
-                    <div class="offering-preview">
-                        <div class="academic-context-block">
-                            <h4>课堂预览</h4>
-                            <pre id="offeringPreviewText">请选择学期、班级、课程和教材。</pre>
+
+                    <div class="form-group">
+                        <label class="form-label required" for="offeringFirstClassDateInput">第一次上课日期</label>
+                        <input id="offeringFirstClassDateInput" class="form-control" type="date">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">预览提示</label>
+                        <div class="offering-inline-help">
+                            第一次上课日期的星期必须包含在“每周上课安排”里。若一周有多天上课，可继续新增多条安排。
                         </div>
                     </div>
-                    <div class="academic-action-group" style="justify-content: flex-end;">
-                        <button type="submit" class="btn btn-primary" id="offeringSubmitBtn">开设课堂</button>
+
+                    <div class="offering-schedule-panel full-span">
+                        <div class="offering-schedule-head">
+                            <div>
+                                <h4>每周上课安排</h4>
+                                <p class="academic-card-subtitle">支持一周一天或多天上课，每条安排都要填写周几和当天上的节数。</p>
+                            </div>
+                            <div class="academic-action-group">
+                                <button type="button" class="btn btn-outline" id="addWeeklyScheduleBtn">新增一行</button>
+                            </div>
+                        </div>
+                        <div class="offering-schedule-list" id="weeklyScheduleContainer"></div>
+                    </div>
+
+                    <div class="offering-preview-shell full-span">
+                        <section class="offering-preview-summary">
+                            <div>
+                                <h4>排课预览摘要</h4>
+                                <p class="academic-card-subtitle">根据课程模板与周循环自动生成，优先展示日期、周次和课堂内容是否匹配。</p>
+                            </div>
+                            <div class="offering-preview-meta" id="offeringPreviewMeta">
+                                <div class="offering-preview-meta-row">
+                                    <span>预览状态</span>
+                                    <strong>请选择课程与排课信息</strong>
+                                </div>
+                            </div>
+                            <div class="offering-warning-list" id="offeringPreviewWarnings"></div>
+                        </section>
+
+                        <section class="offering-preview-list">
+                            <div>
+                                <h4>课堂内容映射</h4>
+                                <p class="academic-card-subtitle">系统会把课程模板逐次映射到具体周次和日期，课堂页时间轴也会沿用这里的结果。</p>
+                            </div>
+                            <div id="offeringPreviewList">
+                                <div class="academic-empty">
+                                    <strong>预览还未生成</strong>
+                                    先选择课程、学期和每周上课安排，系统再自动推导每一次课的日期与内容。
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+
+                    <div class="academic-action-group full-span" style="justify-content:flex-end;">
+                        <button type="button" class="btn btn-outline" id="offeringPreviewBtn">刷新预览</button>
+                        <button type="submit" class="btn btn-primary" id="offeringSaveBtn">开设课堂</button>
                     </div>
                 </form>
             </div>
@@ -148,44 +448,16 @@
         <article class="academic-card">
             <div class="academic-card-header">
                 <div>
-                    <h3 class="academic-card-title">前置资源检查</h3>
-                    <p class="academic-card-subtitle">检查开课前所需的基础资源是否齐备。</p>
+                    <h3 class="academic-card-title">课程模板概览</h3>
+                    <p class="academic-card-subtitle">选择课程后，这里会显示课程模板的总学时、课次数和部分课堂设置，方便排课前核对。</p>
                 </div>
             </div>
-            <div class="academic-card-body offering-requirement-list">
-                <div class="offering-requirement">
-                    <div>
-                        <strong>学期</strong>
-                        <div class="academic-hint">开课默认会优先选中当前学期。</div>
+            <div class="academic-card-body">
+                <div class="offering-course-summary" id="offeringCourseSummary">
+                    <div class="academic-empty">
+                        <strong>还没有选中课程</strong>
+                        选择课程后，可在这里快速确认课程模板是否足够完整，避免开课后再返工调整。
                     </div>
-                    <span class="academic-badge {{ 'is-success' if my_semesters else 'is-accent' }}">{{ my_semesters|length }} 个</span>
-                </div>
-                <div class="offering-requirement">
-                    <div>
-                        <strong>教材</strong>
-                        <div class="academic-hint">绑定教材后可自动关联简介和目录。</div>
-                    </div>
-                    <span class="academic-badge {{ 'is-success' if my_textbooks else 'is-accent' }}">{{ my_textbooks|length }} 本</span>
-                </div>
-                <div class="offering-requirement">
-                    <div>
-                        <strong>班级</strong>
-                        <div class="academic-hint">学生访问权限由班级绑定决定。</div>
-                    </div>
-                    <span class="academic-badge {{ 'is-success' if my_classes else 'is-accent' }}">{{ my_classes|length }} 个</span>
-                </div>
-                <div class="offering-requirement">
-                    <div>
-                        <strong>课程</strong>
-                        <div class="academic-hint">课程描述和学分信息用于课堂配置。</div>
-                    </div>
-                    <span class="academic-badge {{ 'is-success' if my_courses else 'is-accent' }}">{{ my_courses|length }} 门</span>
-                </div>
-                <div class="academic-context-block">
-                    <h4>操作指引</h4>
-                    <pre>1. 先配置学期和教材。
-2. 再选择班级与课程开设课堂。
-3. 最后在 AI 配置页完善相关设置。</pre>
                 </div>
             </div>
         </article>
@@ -194,31 +466,77 @@
     <section class="academic-card">
         <div class="academic-card-header">
             <div>
-                <h3 class="academic-card-title">已开设课堂</h3>
-                <p class="academic-card-subtitle">已开设的课堂列表，包含学期和教材绑定信息。</p>
+                <h3 class="academic-card-title">已设置的课堂</h3>
+                <p class="academic-card-subtitle">点击编辑后会回填到上方表单，可重新生成时间轴和课堂内容映射。</p>
             </div>
         </div>
         <div class="academic-card-body">
-            <div class="academic-list" id="offeringList">
+            <div class="offering-list-grid" id="offeringList">
                 {% for offering in my_offerings %}
-                <div class="academic-list-item" id="offering-item-{{ offering.id }}">
-                    <div class="academic-list-main">
-                        <strong>{{ offering.course_name }} / {{ offering.class_name }}</strong>
-                        <p>{{ offering.semester or '未绑定学期' }} · {{ offering.textbook_title or '未绑定教材' }}</p>
+                <article class="offering-list-card" id="offering-card-{{ offering.id }}">
+                    <div class="offering-list-card-top">
+                        <div>
+                            <div class="academic-card-kicker">{{ offering.semester or '未绑定学期' }}</div>
+                            <h3 class="academic-card-title">{{ offering.course_name }} / {{ offering.class_name }}</h3>
+                            <p>{{ offering.schedule_info or '暂未配置首次上课日期和每周上课安排。' }}</p>
+                        </div>
                         <div class="academic-badge-row">
-                            {% if offering.semester %}<span class="academic-badge">{{ offering.semester }}</span>{% endif %}
                             {% if offering.textbook_title %}<span class="academic-badge is-success">{{ offering.textbook_title }}</span>{% endif %}
+                            {% if offering.first_class_date %}<span class="academic-badge">{{ offering.first_class_date }}</span>{% endif %}
+                            <span class="academic-badge {% if offering.scheduled_session_count %}is-accent{% else %}is-muted{% endif %}">
+                                {{ offering.scheduled_session_count }} 次课
+                            </span>
                         </div>
                     </div>
-                    <div class="academic-list-side">
-                        <a href="/manage/ai" class="btn btn-outline btn-sm">配置 AI</a>
-                        <button type="button" class="btn btn-danger btn-sm" data-action="delete" data-offering-id="{{ offering.id }}" data-offering-name="{{ offering.course_name }} / {{ offering.class_name }}">删除</button>
+
+                    <div class="academic-meta-list">
+                        <div class="academic-meta-row">
+                            <span class="academic-meta-label">排课起点</span>
+                            <span class="academic-meta-value">{{ offering.first_class_date or '未设置' }}</span>
+                        </div>
+                        <div class="academic-meta-row">
+                            <span class="academic-meta-label">课堂周期</span>
+                            <span class="academic-meta-value">
+                                {% if offering.weekly_schedule %}
+                                {{ offering.weekly_schedule | length }} 个上课日 / 周
+                                {% else %}
+                                未设置
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="academic-meta-row">
+                            <span class="academic-meta-label">时间范围</span>
+                            <span class="academic-meta-value">
+                                {% if offering.scheduled_start_date and offering.scheduled_end_date %}
+                                {{ offering.scheduled_start_date }} 至 {{ offering.scheduled_end_date }}
+                                {% else %}
+                                预览未生成
+                                {% endif %}
+                            </span>
+                        </div>
                     </div>
-                </div>
+
+                    <div class="offering-list-card-actions">
+                        <div class="academic-action-group">
+                            <button type="button" class="btn btn-outline btn-sm" data-action="edit-offering" data-offering-id="{{ offering.id }}">编辑</button>
+                            <a href="/classroom/{{ offering.id }}" class="btn btn-ghost btn-sm">进入课堂</a>
+                            <a href="/manage/ai" class="btn btn-ghost btn-sm">配置 AI</a>
+                        </div>
+                        <button
+                            type="button"
+                            class="btn btn-danger btn-sm"
+                            data-action="delete-offering"
+                            data-offering-id="{{ offering.id }}"
+                            data-offering-name="{{ offering.course_name }} / {{ offering.class_name }}"
+                        >
+                            删除
+                        </button>
+                    </div>
+                </article>
                 {% else %}
                 <div class="academic-empty">
                     <strong>还没有开设任何课堂</strong>
-                    开设课堂后，即可为课堂分配材料、发布试卷和配置 AI 助教。
+                    先在上方完成课程与排课配置，系统就会自动生成对应的课堂时间轴和任务列表。
                 </div>
                 {% endfor %}
             </div>
@@ -226,12 +544,35 @@
     </section>
 </div>
 
+<template id="weeklyScheduleRowTemplate">
+    <div class="offering-schedule-row" data-schedule-row>
+        <div class="form-group">
+            <label class="form-label">周几上课</label>
+            <select class="form-control" data-field="weekday">
+                <option value="0">周一</option>
+                <option value="1">周二</option>
+                <option value="2">周三</option>
+                <option value="3">周四</option>
+                <option value="4">周五</option>
+                <option value="5">周六</option>
+                <option value="6">周日</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">当天节数</label>
+            <input class="form-control" type="number" min="1" max="12" step="1" value="2" data-field="section_count">
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm text-danger" data-action="remove-schedule">删除</button>
+    </div>
+</template>
+
 <script>
     window.OFFERINGS_PAGE_DATA = {
         classes: {{ my_classes | tojson }},
         courses: {{ my_courses | tojson }},
         semesters: {{ my_semesters | tojson }},
         textbooks: {{ my_textbooks | tojson }},
+        offerings: {{ my_offerings | tojson }},
         defaultSemesterId: {{ default_semester_id | tojson }}
     };
 </script>

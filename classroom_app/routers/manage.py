@@ -4,8 +4,9 @@ import sqlite3
 import tempfile
 import traceback
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 import aiofiles
 import httpx
@@ -18,10 +19,24 @@ from ..database import get_db_connection
 from ..dependencies import get_current_teacher, invalidate_session_for_user
 from ..services.academic_service import (
     build_classroom_ai_context,
+    build_textbook_prompt_context,
     compute_semester_week_count,
     infer_semester_name,
     parse_date_input,
     parse_json_list_field,
+    serialize_textbook_row,
+)
+from ..services.course_planning_service import (
+    CoursePlanningError,
+    build_offering_session_plan,
+    build_schedule_info_text,
+    load_course_lessons_by_course_id,
+    normalize_course_lessons,
+    normalize_total_hours,
+    normalize_weekly_schedule,
+    replace_course_lessons,
+    replace_offering_sessions,
+    serialize_course_row,
 )
 from ..services.file_handler import save_upload_file
 from ..services.roster_handler import parse_excel_to_students
@@ -120,6 +135,165 @@ def _remove_file_if_exists(path_value: str | None) -> None:
         pass
 
 
+def _parse_optional_int(raw_value: Any) -> int | None:
+    normalized = str(raw_value or "").strip()
+    if not normalized:
+        return None
+    try:
+        return int(normalized)
+    except (TypeError, ValueError) as exc:
+        raise CoursePlanningError("ID 参数格式不正确") from exc
+
+
+def _parse_nonnegative_float(raw_value: Any, *, field_name: str, default: float = 0.0) -> float:
+    normalized = str(raw_value or "").strip()
+    if not normalized:
+        return float(default)
+    try:
+        value = float(normalized)
+    except (TypeError, ValueError) as exc:
+        raise CoursePlanningError(f"{field_name}格式不正确") from exc
+    if value < 0:
+        raise CoursePlanningError(f"{field_name}不能小于 0")
+    if value > 100:
+        raise CoursePlanningError(f"{field_name}不能大于 100")
+    return value
+
+
+async def _parse_json_request(request: Request, *, error_message: str = "请求数据格式错误") -> dict[str, Any]:
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, error_message) from exc
+
+    if not isinstance(payload, dict):
+        raise HTTPException(400, error_message)
+    return payload
+
+
+def _prepare_course_payload(
+    data: dict[str, Any],
+    *,
+    require_lessons: bool,
+) -> dict[str, Any]:
+    name = str(data.get("name") or "").strip()
+    description = str(data.get("description") or "").strip()
+    course_id = _parse_optional_int(data.get("course_id"))
+    credits = _parse_nonnegative_float(data.get("credits"), field_name="学分", default=0.0)
+    total_hours = normalize_total_hours(data.get("total_hours"))
+    lessons = normalize_course_lessons(
+        data.get("lessons", data.get("lessons_json")),
+        require_items=require_lessons,
+    )
+
+    planned_section_count = sum(int(item.get("section_count") or 0) for item in lessons)
+    if lessons and total_hours <= 0:
+        total_hours = planned_section_count
+    if lessons and total_hours > 0 and planned_section_count != total_hours:
+        raise CoursePlanningError(
+            f"课堂设置合计 {planned_section_count} 小节，与课程总学时 {total_hours} 不一致，请先调整。"
+        )
+    if not name:
+        raise CoursePlanningError("课程名称不能为空")
+
+    return {
+        "course_id": course_id,
+        "name": name,
+        "description": description,
+        "credits": credits,
+        "total_hours": total_hours,
+        "lessons": lessons,
+        "planned_section_count": planned_section_count,
+    }
+
+
+def _prepare_offering_payload(
+    conn,
+    *,
+    teacher_id: int,
+    data: dict[str, Any],
+    require_schedule: bool,
+    allow_missing_lessons: bool,
+) -> dict[str, Any]:
+    offering_id = _parse_optional_int(data.get("offering_id"))
+    class_id = _parse_optional_int(data.get("class_id"))
+    course_id = _parse_optional_int(data.get("course_id"))
+    semester_id = _parse_optional_int(data.get("semester_id"))
+    textbook_id = _parse_optional_int(data.get("textbook_id"))
+
+    if not class_id or not course_id or not semester_id or not textbook_id:
+        raise CoursePlanningError("请完整选择学期、班级、课程和教材")
+
+    class_row, course_row, semester_row, textbook_row = _validate_teacher_owned_selection(
+        conn,
+        teacher_id=teacher_id,
+        class_id=class_id,
+        course_id=course_id,
+        semester_id=semester_id,
+        textbook_id=textbook_id,
+    )
+
+    first_class_date_value = parse_date_input(data.get("first_class_date"), "第一次上课日期")
+    if require_schedule and not first_class_date_value:
+        raise CoursePlanningError("请先填写第一次上课日期")
+
+    weekly_schedule = normalize_weekly_schedule(
+        data.get("weekly_schedule", data.get("weekly_schedule_json", "[]")),
+        first_class_date=first_class_date_value,
+        require_items=require_schedule,
+    ) if (require_schedule or str(data.get("weekly_schedule", data.get("weekly_schedule_json", ""))).strip()) else []
+
+    course_lessons = load_course_lessons_by_course_id(conn, [course_id]).get(course_id, [])
+    if not course_lessons and not allow_missing_lessons:
+        raise CoursePlanningError("所选课程还没有配置课堂设置，请先到课程管理页补齐课堂内容")
+
+    semester_start_date = parse_date_input(semester_row["start_date"], "学期开始日期")
+    semester_end_date = parse_date_input(semester_row["end_date"], "学期结束日期")
+
+    if course_lessons and first_class_date_value and weekly_schedule:
+        plan = build_offering_session_plan(
+            course_lessons=course_lessons,
+            first_class_date=first_class_date_value,
+            weekly_schedule=weekly_schedule,
+            semester_start_date=semester_start_date,
+            semester_end_date=semester_end_date,
+        )
+    else:
+        warnings = []
+        if not course_lessons:
+            warnings.append("所选课程暂未配置课堂设置，当前只能保存基础绑定信息。")
+        plan = {
+            "sessions": [],
+            "session_count": 0,
+            "warnings": warnings,
+            "schedule_info": build_schedule_info_text(
+                first_class_date=first_class_date_value,
+                weekly_schedule=weekly_schedule,
+                session_count=0,
+                end_date=None,
+            ),
+            "weekly_schedule_summary": "",
+            "first_class_date": first_class_date_value.isoformat() if first_class_date_value else "",
+        }
+
+    return {
+        "offering_id": offering_id,
+        "class_id": class_id,
+        "course_id": course_id,
+        "semester_id": semester_id,
+        "textbook_id": textbook_id,
+        "class_row": class_row,
+        "course_row": course_row,
+        "semester_row": semester_row,
+        "textbook_row": textbook_row,
+        "first_class_date": first_class_date_value,
+        "weekly_schedule": weekly_schedule,
+        "weekly_schedule_json": json.dumps(weekly_schedule, ensure_ascii=False),
+        "course_lessons": course_lessons,
+        "plan": plan,
+    }
+
+
 # --- 班级管理 ---
 @router.post("/classes/create", response_class=JSONResponse)
 async def api_create_class(request: Request, class_name: str = Form(), file: UploadFile = File(...),
@@ -206,6 +380,191 @@ async def api_delete_class(class_id: int, user: dict = Depends(get_current_teach
 
 
 # --- 课程管理 ---
+@router.post("/courses/save", response_class=JSONResponse)
+async def api_save_course(
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    data = await _parse_json_request(request)
+
+    try:
+        payload = _prepare_course_payload(data, require_lessons=True)
+    except CoursePlanningError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    with get_db_connection() as conn:
+        try:
+            if payload["course_id"]:
+                _ensure_teacher_owned_record(
+                    conn,
+                    table="courses",
+                    record_id=payload["course_id"],
+                    teacher_id=user["id"],
+                    owner_column="created_by_teacher_id",
+                )
+                conn.execute(
+                    """
+                    UPDATE courses
+                    SET name = ?, description = ?, credits = ?, total_hours = ?
+                    WHERE id = ? AND created_by_teacher_id = ?
+                    """,
+                    (
+                        payload["name"],
+                        payload["description"],
+                        payload["credits"],
+                        payload["total_hours"],
+                        payload["course_id"],
+                        user["id"],
+                    ),
+                )
+                course_id = int(payload["course_id"])
+                action_text = "更新"
+            else:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO courses (name, description, credits, total_hours, created_by_teacher_id)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        payload["name"],
+                        payload["description"],
+                        payload["credits"],
+                        payload["total_hours"],
+                        user["id"],
+                    ),
+                )
+                course_id = int(cursor.lastrowid)
+                action_text = "创建"
+
+            replace_course_lessons(conn, course_id=course_id, lessons=payload["lessons"])
+            conn.commit()
+        except sqlite3.IntegrityError as exc:
+            conn.rollback()
+            raise HTTPException(400, f"保存课程失败：{exc}") from exc
+
+    return {
+        "status": "success",
+        "message": f"课程“{payload['name']}”已{action_text}",
+        "course_id": course_id,
+    }
+
+
+@router.post("/courses/ai-generate-lessons", response_class=JSONResponse)
+async def api_ai_generate_course_lessons(
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    data = await _parse_json_request(request)
+
+    course_name = str(data.get("name") or "").strip()
+    course_description = str(data.get("description") or "").strip()
+    textbook_id = _parse_optional_int(data.get("textbook_id"))
+    total_hours = normalize_total_hours(data.get("total_hours"))
+    per_session_sections = _parse_optional_int(data.get("per_session_sections"))
+
+    if not course_name:
+        raise HTTPException(400, "请先填写课程名称")
+    if not textbook_id:
+        raise HTTPException(400, "请先选择教材")
+    if total_hours <= 0:
+        raise HTTPException(400, "请先填写课程总学时")
+    if not per_session_sections or per_session_sections <= 0:
+        raise HTTPException(400, "请先填写每次课的小节数")
+    if total_hours % per_session_sections != 0:
+        raise HTTPException(400, "课程总学时必须能被每次课的小节数整除")
+
+    session_count = total_hours // per_session_sections
+    with get_db_connection() as conn:
+        textbook_row = _ensure_teacher_owned_record(
+            conn,
+            table="textbooks",
+            record_id=textbook_id,
+            teacher_id=user["id"],
+            owner_column="teacher_id",
+        )
+        textbook = serialize_textbook_row(textbook_row)
+
+    textbook_context = build_textbook_prompt_context(textbook)
+    system_prompt = (
+        "你是一名高校课程设计专家。请根据课程名称、课程简介和教材内容，"
+        "为教师拆分出可直接落地的课堂设置。输出必须是合法 JSON 对象，"
+        "不要输出 Markdown 代码块。"
+    )
+    user_message = (
+        f"课程名称：{course_name}\n"
+        f"课程简介：{course_description or '未补充'}\n"
+        f"教材信息：\n{textbook_context}\n\n"
+        f"请把课程拆成 {session_count} 次课，每次课固定 {per_session_sections} 小节。\n"
+        "输出 JSON 对象，格式如下：\n"
+        "{\n"
+        '  "lessons": [\n'
+        '    {"title": "第1次课标题", "content": "本次课内容概述，尽量具体到知识点、实验或案例。", "section_count": 2}\n'
+        "  ]\n"
+        "}\n\n"
+        "要求：\n"
+        "1. lessons 数量必须严格等于指定的课次数。\n"
+        "2. 每一项都要贴合教材目录，内容循序渐进，避免重复。\n"
+        "3. title 简洁明确，content 重点说明本次课讲什么、做什么。\n"
+        "4. section_count 统一填写为指定的小节数。\n"
+        "5. 不要输出额外解释文字。"
+    )
+
+    try:
+        response = await ai_client.post(
+            "/api/ai/chat",
+            json={
+                "system_prompt": system_prompt,
+                "messages": [],
+                "new_message": user_message,
+                "base64_urls": [],
+                "model_capability": "thinking",
+                "web_search_enabled": False,
+            },
+            timeout=180.0,
+        )
+        response.raise_for_status()
+        data = response.json()
+    except httpx.ConnectError:
+        raise HTTPException(503, "AI 助手服务未运行，请先启动 ai_assistant.py。")
+    except httpx.TimeoutException:
+        raise HTTPException(504, "AI 服务响应超时，请稍后重试。")
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(exc.response.status_code, f"AI 服务错误: {exc.response.text}")
+    except Exception as exc:
+        raise HTTPException(500, f"AI 请求失败: {exc}")
+
+    if data.get("status") != "success":
+        raise HTTPException(500, f"AI 返回异常: {data.get('detail', '未知错误')}")
+
+    response_text = str(data.get("response_text") or "").strip()
+    if not response_text:
+        raise HTTPException(500, "AI 未返回有效内容")
+
+    try:
+        parsed = _parse_ai_json(response_text)
+        generated_lessons = normalize_course_lessons(parsed.get("lessons"), require_items=True)
+    except (json.JSONDecodeError, CoursePlanningError) as exc:
+        raise HTTPException(500, f"AI 返回格式不正确：{exc}") from exc
+
+    if len(generated_lessons) != session_count:
+        raise HTTPException(
+            500,
+            f"AI 返回了 {len(generated_lessons)} 条课堂设置，预期应为 {session_count} 条，请重试。",
+        )
+
+    for item in generated_lessons:
+        item["section_count"] = per_session_sections
+        item["source_type"] = "ai"
+
+    return {
+        "status": "success",
+        "message": f"已根据教材拆分出 {session_count} 次课，可继续手动调整。",
+        "session_count": session_count,
+        "total_hours": total_hours,
+        "lessons": generated_lessons,
+    }
+
+
 @router.post("/courses/create", response_class=JSONResponse)
 async def api_create_course(
         request: Request,
@@ -841,6 +1200,142 @@ async def api_ai_format_textbook_intro_catalog(
 
 
 # --- 班级课堂 (关联) ---
+@router.post("/class_offerings/preview", response_class=JSONResponse)
+async def api_preview_class_offering(
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    data = await _parse_json_request(request)
+
+    try:
+        with get_db_connection() as conn:
+            payload = _prepare_offering_payload(
+                conn,
+                teacher_id=int(user["id"]),
+                data=data,
+                require_schedule=True,
+                allow_missing_lessons=True,
+            )
+    except CoursePlanningError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    plan = payload["plan"]
+    planned_section_count = sum(int(item.get("section_count") or 0) for item in payload["course_lessons"])
+
+    return {
+        "status": "success",
+        "preview": plan,
+        "class_name": str(payload["class_row"]["name"] or ""),
+        "course_name": str(payload["course_row"]["name"] or ""),
+        "semester_name": str(payload["semester_row"]["name"] or ""),
+        "textbook_title": str(payload["textbook_row"]["title"] or ""),
+        "course_lesson_count": len(payload["course_lessons"]),
+        "planned_section_count": planned_section_count,
+        "course_total_hours": int(payload["course_row"]["total_hours"] or 0),
+    }
+
+
+@router.post("/class_offerings/save", response_class=JSONResponse)
+async def api_save_class_offering(
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    data = await _parse_json_request(request)
+
+    try:
+        with get_db_connection() as conn:
+            payload = _prepare_offering_payload(
+                conn,
+                teacher_id=int(user["id"]),
+                data=data,
+                require_schedule=True,
+                allow_missing_lessons=False,
+            )
+
+            if payload["offering_id"]:
+                _ensure_teacher_owned_offering(conn, payload["offering_id"], user["id"])
+                conn.execute(
+                    """
+                    UPDATE class_offerings
+                    SET class_id = ?,
+                        course_id = ?,
+                        semester = ?,
+                        semester_id = ?,
+                        textbook_id = ?,
+                        schedule_info = ?,
+                        first_class_date = ?,
+                        weekly_schedule_json = ?
+                    WHERE id = ? AND teacher_id = ?
+                    """,
+                    (
+                        payload["class_id"],
+                        payload["course_id"],
+                        str(payload["semester_row"]["name"] or "").strip(),
+                        payload["semester_id"],
+                        payload["textbook_id"],
+                        payload["plan"]["schedule_info"],
+                        payload["first_class_date"].isoformat() if payload["first_class_date"] else "",
+                        payload["weekly_schedule_json"],
+                        payload["offering_id"],
+                        user["id"],
+                    ),
+                )
+                offering_id = int(payload["offering_id"])
+                action_text = "更新"
+            else:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO class_offerings (
+                        class_id,
+                        course_id,
+                        teacher_id,
+                        semester,
+                        semester_id,
+                        textbook_id,
+                        schedule_info,
+                        first_class_date,
+                        weekly_schedule_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        payload["class_id"],
+                        payload["course_id"],
+                        user["id"],
+                        str(payload["semester_row"]["name"] or "").strip(),
+                        payload["semester_id"],
+                        payload["textbook_id"],
+                        payload["plan"]["schedule_info"],
+                        payload["first_class_date"].isoformat() if payload["first_class_date"] else "",
+                        payload["weekly_schedule_json"],
+                    ),
+                )
+                offering_id = int(cursor.lastrowid)
+                action_text = "开设"
+
+            replace_offering_sessions(
+                conn,
+                offering_id=offering_id,
+                sessions=payload["plan"]["sessions"],
+            )
+            conn.commit()
+    except CoursePlanningError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except sqlite3.IntegrityError:
+        raise HTTPException(400, "保存失败，该班级课程在当前学期可能已存在。")
+    except Exception as exc:
+        raise HTTPException(500, f"数据库错误: {exc}")
+
+    return {
+        "status": "success",
+        "message": (
+            f"课堂已{action_text}，并生成 {payload['plan']['session_count']} 次课的时间安排。"
+        ),
+        "offering_id": offering_id,
+        "preview": payload["plan"],
+    }
+
+
 @router.post("/class_offerings/create", response_class=JSONResponse)
 async def api_create_class_offering(
         request: Request,

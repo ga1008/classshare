@@ -16,6 +16,8 @@ const MAX_FREQUENT_ITEMS = 8;
 const DEFAULT_ALIAS_SWITCH_COOLDOWN_SECONDS = 10;
 const DEFAULT_ALIAS_SWITCH_LIMIT = 6;
 const DISCUSSION_ROOM_DESKTOP_BREAKPOINT = 1120;
+const DISCUSSION_ROOM_MIN_BODY_HEIGHT = 100;
+const DISCUSSION_ROOM_STICKY_TOP = 16;
 const DISCUSSION_MOOD_POLL_MS = 25000;
 const DISCUSSION_MOOD_REFRESH_DELAY_MS = 6000;
 const MESSAGE_MENU_HOVER_DELAY_MS = 260;
@@ -83,6 +85,10 @@ export class ClassroomChat {
         this.currentUser = options.currentUser || {};
         this.discussionRoom = document.getElementById(options.discussionRoomId);
         this.workspaceContent = document.getElementById(options.workspaceContentId);
+        this.workspaceSidebar = this.discussionRoom?.closest('.workspace-sidebar') || null;
+        this.discussionRoomHeader = this.discussionRoom?.querySelector('.discussion-room-header') || null;
+        this.discussionRoomBody = this.discussionRoom?.querySelector('.discussion-room-body') || null;
+        this.discussionRoomComposer = this.discussionRoom?.querySelector('.discussion-room-composer') || null;
 
         this.ws = null;
         this.onFileEvent = null;
@@ -133,7 +139,7 @@ export class ClassroomChat {
         this.sendRateLimitUntil = 0;
         this.roomHeightFrame = null;
         this.roomHeightObserver = null;
-        this.lastDiscussionRoomHeight = 0;
+        this.lastDiscussionRoomLayoutKey = '';
         this.defaultSendButtonMarkup = this.sendButton?.innerHTML || '';
 
         this.handleDocumentPointerDown = this.handleDocumentPointerDown.bind(this);
@@ -267,21 +273,30 @@ export class ClassroomChat {
     }
 
     setupDiscussionRoomSizing() {
-        if (!this.discussionRoom || !this.workspaceContent) {
+        if (!this.discussionRoom || !this.workspaceSidebar) {
             return;
         }
 
         this.scheduleDiscussionRoomResize();
         window.addEventListener('resize', this.scheduleDiscussionRoomResize);
+        window.addEventListener('scroll', this.scheduleDiscussionRoomResize, { passive: true });
 
         if (window.ResizeObserver && !this.roomHeightObserver) {
             this.roomHeightObserver = new ResizeObserver(() => this.scheduleDiscussionRoomResize());
-            this.roomHeightObserver.observe(this.workspaceContent);
+            [
+                this.workspaceContent,
+                this.workspaceSidebar,
+                this.discussionRoomHeader,
+                this.discussionRoomComposer,
+                this.discussionRoomBody,
+            ].filter(Boolean).forEach((element) => {
+                this.roomHeightObserver.observe(element);
+            });
         }
     }
 
     scheduleDiscussionRoomResize() {
-        if (!this.discussionRoom || !this.workspaceContent || this.roomHeightFrame !== null) {
+        if (!this.discussionRoom || !this.workspaceSidebar || this.roomHeightFrame !== null) {
             return;
         }
 
@@ -292,45 +307,45 @@ export class ClassroomChat {
     }
 
     syncDiscussionRoomHeight() {
-        if (!this.discussionRoom || !this.workspaceContent) {
+        if (!this.discussionRoom || !this.workspaceSidebar) {
             return;
         }
+
+        const resetLayout = () => {
+            this.workspaceSidebar.classList.remove('is-sticky-active');
+            this.discussionRoom.classList.remove('is-sticky-active');
+            this.workspaceSidebar.style.removeProperty('--discussion-sidebar-top');
+            this.workspaceSidebar.style.removeProperty('--discussion-sidebar-height');
+            this.discussionRoom.style.removeProperty('--discussion-body-min-height');
+            this.lastDiscussionRoomLayoutKey = '';
+        };
 
         if (window.innerWidth <= DISCUSSION_ROOM_DESKTOP_BREAKPOINT) {
-            this.discussionRoom.style.height = '';
-            this.discussionRoom.style.maxHeight = '';
-            this.discussionRoom.style.minHeight = '';
-            this.lastDiscussionRoomHeight = 0;
+            resetLayout();
             return;
         }
 
-        const visibleSections = Array.from(this.workspaceContent.children).filter((element) => {
-            return element instanceof HTMLElement && !element.hidden;
-        });
+        const headerHeight = Math.ceil(this.discussionRoomHeader?.offsetHeight || 0);
+        const composerHeight = Math.ceil(this.discussionRoomComposer?.offsetHeight || 0);
+        const sidebarHeight = Math.max(0, Math.floor(window.innerHeight - DISCUSSION_ROOM_STICKY_TOP));
+        const messageBodyHeight = sidebarHeight - headerHeight - composerHeight;
 
-        if (!visibleSections.length) {
-            this.discussionRoom.style.height = '';
-            this.discussionRoom.style.maxHeight = '';
-            this.discussionRoom.style.minHeight = '';
-            this.lastDiscussionRoomHeight = 0;
+        if (messageBodyHeight <= DISCUSSION_ROOM_MIN_BODY_HEIGHT) {
+            resetLayout();
             return;
         }
 
-        const firstRect = visibleSections[0].getBoundingClientRect();
-        const lastRect = visibleSections[visibleSections.length - 1].getBoundingClientRect();
-        const alignedHeight = Math.round(lastRect.bottom - firstRect.top);
-        if (alignedHeight <= 0) {
+        const layoutKey = `${sidebarHeight}:${headerHeight}:${composerHeight}`;
+        if (layoutKey === this.lastDiscussionRoomLayoutKey) {
             return;
         }
 
-        if (alignedHeight === this.lastDiscussionRoomHeight) {
-            return;
-        }
-
-        this.discussionRoom.style.height = `${alignedHeight}px`;
-        this.discussionRoom.style.maxHeight = `${alignedHeight}px`;
-        this.discussionRoom.style.minHeight = `${alignedHeight}px`;
-        this.lastDiscussionRoomHeight = alignedHeight;
+        this.workspaceSidebar.classList.add('is-sticky-active');
+        this.discussionRoom.classList.add('is-sticky-active');
+        this.workspaceSidebar.style.setProperty('--discussion-sidebar-top', `${DISCUSSION_ROOM_STICKY_TOP}px`);
+        this.workspaceSidebar.style.setProperty('--discussion-sidebar-height', `${sidebarHeight}px`);
+        this.discussionRoom.style.setProperty('--discussion-body-min-height', `${DISCUSSION_ROOM_MIN_BODY_HEIGHT}px`);
+        this.lastDiscussionRoomLayoutKey = layoutKey;
     }
 
     handleMessagesWheel(event) {
@@ -2519,6 +2534,7 @@ export class ClassroomChat {
         }
         this.chatInput.style.height = 'auto';
         this.chatInput.style.height = `${Math.min(this.chatInput.scrollHeight, 160)}px`;
+        this.scheduleDiscussionRoomResize();
     }
 
     removeEmptyState() {

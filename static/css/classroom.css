@@ -373,6 +373,281 @@
     padding: var(--spacing-xl);
 }
 
+.teaching-plan-panel {
+    display: grid;
+    gap: var(--spacing-lg);
+}
+
+.teaching-plan-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.85fr);
+    gap: var(--spacing-lg);
+}
+
+.teaching-plan-main,
+.teaching-task-list-panel {
+    display: grid;
+    gap: var(--spacing-md);
+}
+
+.teaching-plan-focus {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: var(--spacing-md);
+    flex-wrap: wrap;
+    padding: 1rem 1.1rem;
+    border-radius: var(--radius-lg);
+    background:
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.16), transparent 40%),
+        linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(248, 250, 252, 0.96));
+    border: 1px solid rgba(79, 70, 229, 0.16);
+}
+
+.teaching-plan-focus-label {
+    display: inline-flex;
+    margin-bottom: 0.45rem;
+    padding: 0.28rem 0.7rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--primary-color);
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.teaching-plan-focus strong {
+    display: block;
+    color: var(--text-primary);
+    font-size: 1.08rem;
+}
+
+.teaching-plan-focus p {
+    margin: 0.45rem 0 0;
+    color: var(--text-secondary);
+    line-height: 1.7;
+}
+
+.teaching-plan-focus-meta {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.45rem 0.85rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.82);
+    color: var(--text-primary);
+    font-size: 0.84rem;
+    font-weight: 600;
+}
+
+.teaching-timeline-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 0.35rem;
+    cursor: grab;
+    user-select: none;
+    touch-action: pan-y;
+}
+
+.teaching-timeline-scroll.is-dragging {
+    cursor: grabbing;
+}
+
+.teaching-timeline-track {
+    display: flex;
+    align-items: stretch;
+    gap: 1rem;
+    min-width: max-content;
+    padding: 0.2rem 0.1rem 0.4rem;
+}
+
+.teaching-timeline-node {
+    position: relative;
+    flex: 0 0 286px;
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(248, 250, 252, 0.9);
+    box-shadow: var(--shadow-sm);
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+
+.teaching-timeline-node::before {
+    content: "";
+    position: absolute;
+    top: 1.3rem;
+    right: calc(-0.6rem - 1px);
+    width: 1.2rem;
+    height: 2px;
+    background: rgba(148, 163, 184, 0.36);
+}
+
+.teaching-timeline-node:last-child::before {
+    display: none;
+}
+
+.teaching-timeline-node:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 32px rgba(14, 165, 233, 0.12);
+}
+
+.teaching-timeline-node.is-completed {
+    border-color: rgba(148, 163, 184, 0.22);
+    background: rgba(248, 250, 252, 0.8);
+}
+
+.teaching-timeline-node.is-current,
+.teaching-timeline-node.is-anchor {
+    border-color: rgba(14, 165, 233, 0.34);
+    background:
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.14), transparent 42%),
+        linear-gradient(135deg, rgba(219, 234, 254, 0.92), rgba(255, 255, 255, 0.98));
+}
+
+.teaching-timeline-node.is-next {
+    border-color: rgba(249, 115, 22, 0.3);
+    background:
+        radial-gradient(circle at top right, rgba(249, 115, 22, 0.12), transparent 44%),
+        linear-gradient(135deg, rgba(255, 247, 237, 0.94), rgba(255, 255, 255, 0.98));
+}
+
+.teaching-timeline-node-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.teaching-timeline-chip,
+.teaching-timeline-date {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.32rem 0.72rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.82);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.teaching-timeline-node strong {
+    color: var(--text-primary);
+    font-size: 1rem;
+}
+
+.teaching-timeline-node p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.7;
+}
+
+.teaching-timeline-meta {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.teaching-timeline-meta span {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.28rem 0.68rem;
+    border-radius: 999px;
+    background: rgba(79, 70, 229, 0.08);
+    color: var(--primary-hover);
+    font-size: 0.76rem;
+    font-weight: 600;
+}
+
+.teaching-plan-inline-note {
+    color: var(--text-muted);
+    font-size: 0.84rem;
+}
+
+.teaching-task-list-panel {
+    padding: 1rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(248, 250, 252, 0.82);
+}
+
+.teaching-task-list-head h3 {
+    margin: 0.3rem 0 0;
+    color: var(--text-primary);
+}
+
+.teaching-task-list {
+    display: grid;
+    gap: 0.85rem;
+    max-height: 520px;
+    overflow-y: auto;
+    padding-right: 0.15rem;
+}
+
+.teaching-task-item {
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.95rem 1rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(255, 255, 255, 0.9);
+    text-align: left;
+    width: 100%;
+    appearance: none;
+    -webkit-appearance: none;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.teaching-task-item:hover {
+    transform: translateY(-1px);
+    border-color: rgba(79, 70, 229, 0.22);
+    box-shadow: 0 12px 22px rgba(79, 70, 229, 0.08);
+}
+
+.teaching-task-item.is-current,
+.teaching-task-item.is-anchor {
+    border-color: rgba(14, 165, 233, 0.32);
+    background: rgba(239, 246, 255, 0.92);
+}
+
+.teaching-task-item.is-next {
+    border-color: rgba(249, 115, 22, 0.28);
+    background: rgba(255, 247, 237, 0.92);
+}
+
+.teaching-task-item-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    align-items: flex-start;
+}
+
+.teaching-task-item-top strong {
+    color: var(--text-primary);
+}
+
+.teaching-task-item-top span {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.teaching-task-item p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.teaching-task-item-meta {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
 .section-subtitle {
     margin: 0.35rem 0 0;
     font-size: 0.92rem;
@@ -416,9 +691,9 @@
     min-height: 0;
 }
 
-.classroom-page .assignment-grid {
-    min-height: 260px;
-}
+    .classroom-page .assignment-grid {
+        min-height: 260px;
+    }
 
 .assignment-card-unified {
     height: 100%;
@@ -1176,6 +1451,7 @@
     flex-direction: column;
     gap: 0.45rem;
     padding: 1rem;
+    height: 100%;
     border-radius: 1.2rem;
     border: 1px solid rgba(226, 232, 240, 0.9);
     background: rgba(255, 255, 255, 0.95);
@@ -3124,5 +3400,795 @@
 
     .classroom-page .modal-backdrop {
         padding: 0.75rem;
+    }
+}
+
+@media (max-width: 1120px) {
+    .teaching-plan-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .teaching-plan-focus,
+    .teaching-task-item-top,
+    .teaching-timeline-node-top {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .teaching-timeline-node {
+        flex-basis: 260px;
+    }
+}
+
+/* Embedded teaching timeline */
+.classroom-page .workspace-hero-main {
+    min-height: auto;
+    gap: 1rem;
+    justify-content: flex-start;
+}
+
+.classroom-page #hero-info-card {
+    cursor: default;
+}
+
+.classroom-page .embedded-teaching-plan {
+    display: grid;
+    gap: 1rem;
+    margin-top: 0.35rem;
+    padding: 1.1rem 1.15rem 1.15rem;
+    border-radius: calc(var(--radius-xl) - 0.1rem);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background:
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.14), transparent 36%),
+        linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.94));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.classroom-page .embedded-teaching-plan-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.classroom-page .embedded-teaching-plan-heading h2 {
+    margin: 0.28rem 0 0.3rem;
+    font-size: 1.12rem;
+    color: var(--text-primary);
+}
+
+.classroom-page .embedded-teaching-plan-subtitle {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    line-height: 1.65;
+}
+
+.classroom-page .embedded-teaching-plan-stats {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+
+.classroom-page .embedded-teaching-plan-stats span {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.35rem 0.72rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.classroom-page .embedded-teaching-plan-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.88fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.classroom-page .embedded-teaching-plan-main {
+    display: grid;
+    gap: 0.85rem;
+}
+
+.classroom-page .teaching-plan-focus-bar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+    padding: 0.85rem 0.95rem;
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(191, 219, 254, 0.82);
+}
+
+.classroom-page .teaching-plan-focus-bar strong {
+    display: block;
+    margin-top: 0.22rem;
+    color: var(--text-primary);
+    font-size: 0.98rem;
+}
+
+.classroom-page .teaching-timeline-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    cursor: grab;
+    user-select: none;
+    touch-action: pan-y;
+    padding: 0.2rem max(0.85rem, calc(50% - 7rem)) 0.3rem;
+    border-radius: 1.2rem;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    background:
+        linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.98));
+    scroll-snap-type: x proximity;
+    scrollbar-gutter: stable both-edges;
+}
+
+.classroom-page .teaching-timeline-scroll.is-dragging {
+    cursor: grabbing;
+}
+
+.classroom-page .teaching-timeline-track {
+    display: flex;
+    align-items: stretch;
+    gap: 0.8rem;
+    min-width: max-content;
+    padding: 0.1rem 0;
+}
+
+.classroom-page .teaching-timeline-segment {
+    position: relative;
+    flex: 0 0 14rem;
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.92rem 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 1.1rem;
+    background: rgba(255, 255, 255, 0.96);
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    box-shadow: 0 10px 28px -24px rgba(15, 23, 42, 0.28);
+    transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
+    scroll-snap-align: center;
+}
+
+.classroom-page .teaching-timeline-segment:hover {
+    transform: translateY(-1px);
+    border-color: rgba(79, 70, 229, 0.22);
+    box-shadow: 0 16px 36px -28px rgba(79, 70, 229, 0.35);
+}
+
+.classroom-page .teaching-timeline-segment.is-completed {
+    background: rgba(248, 250, 252, 0.92);
+    color: var(--text-secondary);
+}
+
+.classroom-page .teaching-timeline-segment.is-current,
+.classroom-page .teaching-timeline-segment.is-anchor {
+    border-color: rgba(14, 165, 233, 0.34);
+    background:
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.14), transparent 44%),
+        linear-gradient(135deg, rgba(239, 246, 255, 0.98), rgba(255, 255, 255, 0.98));
+}
+
+.classroom-page .teaching-timeline-segment.is-next {
+    border-color: rgba(249, 115, 22, 0.28);
+    background:
+        radial-gradient(circle at top right, rgba(249, 115, 22, 0.12), transparent 44%),
+        linear-gradient(135deg, rgba(255, 247, 237, 0.98), rgba(255, 255, 255, 0.98));
+}
+
+.classroom-page .teaching-timeline-segment.is-selected {
+    transform: translateY(-2px);
+    border-color: rgba(30, 64, 175, 0.28);
+    box-shadow: 0 20px 42px -28px rgba(14, 165, 233, 0.45);
+}
+
+.classroom-page .teaching-timeline-segment-order {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 0.26rem 0.62rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--primary-hover);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.classroom-page .teaching-timeline-segment-title {
+    color: var(--text-primary);
+    font-size: 0.94rem;
+    line-height: 1.45;
+}
+
+.classroom-page .teaching-timeline-segment-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.42rem;
+}
+
+.classroom-page .teaching-timeline-segment-meta span {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.22rem 0.54rem;
+    border-radius: 999px;
+    background: rgba(241, 245, 249, 0.9);
+    color: var(--text-muted);
+    font-size: 0.74rem;
+    font-weight: 600;
+}
+
+.classroom-page .teaching-timeline-detail-card {
+    display: grid;
+    gap: 0.8rem;
+    padding: 1rem 1.05rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(255, 255, 255, 0.96);
+}
+
+.classroom-page .teaching-timeline-detail-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+}
+
+.classroom-page .teaching-timeline-detail-copy h3 {
+    margin: 0.2rem 0 0;
+    color: var(--text-primary);
+    font-size: 1.03rem;
+    line-height: 1.5;
+}
+
+.classroom-page .teaching-timeline-detail-kicker {
+    display: inline-flex;
+    align-items: center;
+    color: var(--primary-color);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.classroom-page .teaching-timeline-detail-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.34rem 0.72rem;
+    border-radius: 999px;
+    background: rgba(226, 232, 240, 0.72);
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.classroom-page .teaching-timeline-detail-status.is-current,
+.classroom-page .teaching-timeline-detail-status.is-anchor {
+    background: rgba(224, 242, 254, 0.96);
+    color: #0369a1;
+}
+
+.classroom-page .teaching-timeline-detail-status.is-next {
+    background: rgba(255, 237, 213, 0.96);
+    color: #c2410c;
+}
+
+.classroom-page .teaching-timeline-detail-summary {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.75;
+}
+
+.classroom-page .teaching-timeline-detail-summary.md-content {
+    font-size: 0.95rem;
+}
+
+.classroom-page .teaching-timeline-detail-summary.md-content > :first-child {
+    margin-top: 0;
+}
+
+.classroom-page .teaching-timeline-detail-summary.md-content > :last-child {
+    margin-bottom: 0;
+}
+
+.classroom-page .teaching-timeline-detail-summary.md-content :is(ul, ol, blockquote, pre, table, details, figure) {
+    margin-block: 0.8rem;
+}
+
+.classroom-page .teaching-timeline-detail-summary.md-content pre {
+    margin-inline: 0;
+}
+
+.classroom-page .teaching-timeline-detail-summary.md-content table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.classroom-page .teaching-timeline-detail-summary.md-content img {
+    display: block;
+    max-width: min(100%, 28rem);
+    height: auto;
+    border-radius: 0.9rem;
+    box-shadow: 0 12px 30px -24px rgba(15, 23, 42, 0.28);
+}
+
+.classroom-page .teaching-timeline-detail-summary.md-content input[type="checkbox"] {
+    margin-right: 0.5rem;
+    accent-color: var(--primary-color);
+}
+
+.classroom-page .teaching-timeline-detail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.classroom-page .teaching-timeline-detail-meta span {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.28rem 0.65rem;
+    border-radius: 999px;
+    background: rgba(241, 245, 249, 0.88);
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    font-weight: 600;
+}
+
+.classroom-page .teaching-timeline-detail-meta span.is-warning {
+    background: rgba(255, 247, 237, 0.96);
+    color: #c2410c;
+}
+
+.classroom-page .teaching-plan-inline-note {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.classroom-page .teaching-task-list-panel {
+    display: grid;
+    gap: 0.8rem;
+    padding: 0.95rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(255, 255, 255, 0.92);
+}
+
+.classroom-page .teaching-task-list-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+}
+
+.classroom-page .teaching-task-list-head h3 {
+    margin: 0.28rem 0 0;
+}
+
+.classroom-page .teaching-task-list-caption {
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    line-height: 1.5;
+    text-align: right;
+}
+
+.classroom-page .teaching-task-list {
+    display: grid;
+    gap: 0.7rem;
+    max-height: 19.5rem;
+    overflow-y: auto;
+    padding-right: 0.1rem;
+}
+
+.classroom-page .teaching-task-item {
+    gap: 0.4rem;
+    padding: 0.82rem 0.88rem;
+    border-radius: 0.95rem;
+    box-shadow: none;
+}
+
+.classroom-page .teaching-task-item-top span {
+    padding: 0.2rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(241, 245, 249, 0.92);
+    font-weight: 700;
+}
+
+.classroom-page .teaching-task-item.is-selected {
+    border-color: rgba(30, 64, 175, 0.26);
+    background: rgba(239, 246, 255, 0.96);
+    box-shadow: 0 14px 28px -24px rgba(14, 165, 233, 0.35);
+}
+
+.classroom-page .workspace-sidebar.is-sticky-active {
+    position: sticky;
+    top: var(--discussion-sidebar-top, 16px);
+    height: var(--discussion-sidebar-height, auto);
+}
+
+.classroom-page .discussion-room {
+    grid-template-rows: auto minmax(var(--discussion-body-min-height, 100px), 1fr) auto;
+    min-height: auto;
+    height: auto;
+    max-height: none;
+}
+
+.classroom-page .discussion-room-body {
+    min-height: var(--discussion-body-min-height, 100px);
+}
+
+.classroom-page .chat-messages {
+    min-height: 100px;
+}
+
+.classroom-page .discussion-room.is-sticky-active {
+    height: 100%;
+}
+
+.classroom-page .discussion-room.is-sticky-active .discussion-room-composer {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+}
+
+@media (max-width: 1380px) {
+    .classroom-page .embedded-teaching-plan-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .classroom-page .teaching-task-list {
+        max-height: 15rem;
+    }
+}
+
+@media (max-width: 1120px) {
+    .classroom-page .workspace-sidebar.is-sticky-active {
+        position: static;
+        top: auto;
+        height: auto;
+    }
+
+    .classroom-page .discussion-room.is-sticky-active .discussion-room-composer {
+        position: relative;
+        bottom: auto;
+    }
+}
+
+@media (max-width: 768px) {
+    .classroom-page .embedded-teaching-plan-head,
+    .classroom-page .embedded-teaching-plan-stats,
+    .classroom-page .teaching-plan-focus-bar,
+    .classroom-page .teaching-timeline-detail-top,
+    .classroom-page .teaching-task-list-head,
+    .classroom-page .teaching-task-item-top {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .classroom-page .embedded-teaching-plan {
+        padding: 1rem;
+    }
+
+    .classroom-page .teaching-timeline-scroll {
+        padding-inline: 0.75rem;
+    }
+
+    .classroom-page .teaching-timeline-segment {
+        flex-basis: 12.5rem;
+    }
+
+    .classroom-page .teaching-task-list-caption {
+        text-align: left;
+    }
+}
+
+/* Header refinement */
+.classroom-page .workspace-hero {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+}
+
+.classroom-page .workspace-hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.92fr);
+    gap: var(--spacing-lg);
+    align-items: start;
+}
+
+.classroom-page .workspace-hero-main {
+    padding: 0;
+    gap: 0.95rem;
+}
+
+.classroom-page .workspace-hero-topbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.classroom-page .workspace-hero-copy {
+    flex: 1;
+    min-width: 0;
+    gap: 0.72rem;
+}
+
+.classroom-page .workspace-hero-toolbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+}
+
+.classroom-page .workspace-hero-toolbar-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.5rem 0.88rem;
+    border-radius: 999px;
+    border: 1px solid rgba(14, 165, 233, 0.16);
+    background: rgba(224, 242, 254, 0.82);
+    color: #0369a1;
+    font-size: 0.8rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.classroom-page #hero-info-card .hero-desc-expand-btn {
+    margin-top: 0;
+    padding: 0.56rem 0.96rem;
+    background: rgba(15, 23, 42, 0.9);
+    color: #f8fafc;
+    box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.82);
+}
+
+.classroom-page #hero-info-card .hero-desc-expand-btn:hover {
+    background: rgba(30, 41, 59, 0.96);
+    color: #ffffff;
+}
+
+.classroom-page .workspace-hero-summary-card {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem 1.05rem;
+    border-radius: 1.1rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(255, 255, 255, 0.64);
+}
+
+.classroom-page .workspace-hero-desc-wrap {
+    margin: 0;
+    max-height: none;
+}
+
+.classroom-page .workspace-hero-text {
+    max-width: none;
+    -webkit-line-clamp: 3;
+    max-height: 4.95em;
+}
+
+.classroom-page .workspace-hero-class-note {
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.classroom-page .workspace-hero-meta {
+    margin-top: 0.1rem;
+}
+
+.classroom-page .workspace-hero-bottom {
+    display: grid;
+    gap: 0.95rem;
+}
+
+.classroom-page .workspace-hero-nav {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.classroom-page .workspace-hero-nav-link {
+    min-height: 4.8rem;
+    justify-content: space-between;
+    background: rgba(255, 255, 255, 0.7);
+}
+
+.classroom-page .workspace-hero-aside {
+    align-self: stretch;
+}
+
+.classroom-page .workspace-spotlight-card,
+.classroom-page .workspace-stat-card {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.classroom-page .embedded-teaching-plan {
+    margin-top: 0;
+    padding: 1.2rem 1.25rem 1.25rem;
+}
+
+.classroom-page .embedded-teaching-plan-head {
+    align-items: center;
+}
+
+.classroom-page .embedded-teaching-plan-heading h2 {
+    font-size: 1.2rem;
+}
+
+.classroom-page .embedded-teaching-plan-subtitle {
+    max-width: 70ch;
+}
+
+.classroom-page .embedded-teaching-plan-shell {
+    grid-template-columns: 1fr;
+    gap: 0;
+}
+
+.classroom-page .embedded-teaching-plan-main.is-full {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.classroom-page .teaching-plan-focus-bar {
+    padding: 0.95rem 1rem;
+    border-color: rgba(125, 211, 252, 0.52);
+}
+
+.classroom-page .teaching-plan-focus-meta {
+    max-width: 100%;
+}
+
+.classroom-page .teaching-timeline-scroll {
+    padding: 0.25rem max(1rem, calc(50% - 8rem)) 0.42rem;
+}
+
+.classroom-page .teaching-timeline-track {
+    gap: 0.9rem;
+}
+
+.classroom-page .teaching-timeline-segment {
+    flex-basis: 15rem;
+    min-height: 7.2rem;
+}
+
+.classroom-page .teaching-timeline-detail-card {
+    padding: 1.05rem 1.12rem;
+}
+
+@media (max-width: 1280px) {
+    .classroom-page .workspace-hero-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .classroom-page .workspace-hero-toolbar {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 768px) {
+    .classroom-page .workspace-hero-topbar,
+    .classroom-page .workspace-hero-toolbar,
+    .classroom-page .embedded-teaching-plan-head,
+    .classroom-page .teaching-plan-focus-bar,
+    .classroom-page .teaching-timeline-detail-top {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .classroom-page .workspace-hero-summary-card,
+    .classroom-page .embedded-teaching-plan {
+        padding: 1rem;
+    }
+
+    .classroom-page .teaching-timeline-scroll {
+        padding-inline: 0.8rem;
+    }
+
+    .classroom-page .teaching-timeline-segment {
+        flex-basis: 13.25rem;
+    }
+}
+
+/* Workspace navigation motion */
+.classroom-page [data-workspace-section] {
+    scroll-margin-top: 92px;
+    transition: border-color 240ms ease, box-shadow 320ms ease, background-color 320ms ease;
+}
+
+.classroom-page .workspace-hero-nav-link {
+    transition:
+        transform 220ms ease,
+        border-color 220ms ease,
+        background-color 220ms ease,
+        color 220ms ease,
+        box-shadow 260ms ease;
+}
+
+.classroom-page .workspace-hero-nav-link small {
+    transition: color 220ms ease;
+}
+
+.classroom-page .workspace-hero-nav-link:hover {
+    transform: translateY(-2px);
+    border-color: rgba(14, 165, 233, 0.2);
+    background: rgba(248, 250, 252, 0.98);
+    box-shadow: 0 18px 38px -32px rgba(14, 165, 233, 0.35);
+}
+
+.classroom-page .workspace-hero-nav-link.is-active {
+    border-color: rgba(14, 165, 233, 0.3);
+    background:
+        linear-gradient(135deg, rgba(239, 246, 255, 0.98), rgba(255, 255, 255, 0.96));
+    box-shadow: 0 18px 42px -32px rgba(14, 165, 233, 0.44);
+}
+
+.classroom-page .workspace-hero-nav-link.is-active small {
+    color: rgba(15, 23, 42, 0.78);
+}
+
+.classroom-page [data-workspace-section].is-nav-spotlight {
+    border-color: rgba(14, 165, 233, 0.34);
+    box-shadow:
+        0 0 0 1px rgba(125, 211, 252, 0.18),
+        0 30px 58px -38px rgba(14, 165, 233, 0.58);
+}
+
+.classroom-page :is(#assignment-panel, #materials-panel, #resources-panel, #discussion-room).is-nav-spotlight {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.985), rgba(240, 249, 255, 0.98)),
+        #ffffff;
+}
+
+.classroom-page #timeline-panel.is-nav-spotlight {
+    background:
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.18), transparent 38%),
+        linear-gradient(135deg, rgba(239, 246, 255, 0.98), rgba(255, 255, 255, 0.96));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .classroom-page [data-workspace-section].is-nav-spotlight {
+        animation: workspace-section-spotlight 1.45s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+}
+
+@keyframes workspace-section-spotlight {
+    0% {
+        box-shadow:
+            0 0 0 0 rgba(125, 211, 252, 0),
+            0 18px 38px -34px rgba(14, 165, 233, 0.18);
+    }
+    38% {
+        box-shadow:
+            0 0 0 3px rgba(125, 211, 252, 0.18),
+            0 34px 62px -34px rgba(14, 165, 233, 0.56);
+    }
+    100% {
+        box-shadow:
+            0 0 0 1px rgba(125, 211, 252, 0.18),
+            0 30px 58px -38px rgba(14, 165, 233, 0.58);
+    }
+}
+
+@media (max-width: 768px) {
+    .classroom-page [data-workspace-section] {
+        scroll-margin-top: 84px;
     }
 }

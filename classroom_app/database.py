@@ -458,6 +458,32 @@ def init_database():
                                      )
                          )
                          ''')
+            try:
+                conn.execute(
+                    "ALTER TABLE courses "
+                    "ADD COLUMN total_hours INTEGER NOT NULL DEFAULT 0"
+                )
+            except sqlite3.OperationalError:
+                pass
+
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS course_lessons
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    course_id INTEGER NOT NULL,
+                    order_index INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    content TEXT DEFAULT '',
+                    section_count INTEGER NOT NULL DEFAULT 1,
+                    source_type TEXT NOT NULL DEFAULT 'manual',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE,
+                    UNIQUE (course_id, order_index)
+                )
+                '''
+            )
 
             conn.execute(
                 '''
@@ -574,6 +600,44 @@ def init_database():
                 )
             except sqlite3.OperationalError:
                 pass
+            try:
+                conn.execute(
+                    "ALTER TABLE class_offerings "
+                    "ADD COLUMN first_class_date TEXT"
+                )
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute(
+                    "ALTER TABLE class_offerings "
+                    "ADD COLUMN weekly_schedule_json TEXT NOT NULL DEFAULT '[]'"
+                )
+            except sqlite3.OperationalError:
+                pass
+
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS class_offering_sessions
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    class_offering_id INTEGER NOT NULL,
+                    course_lesson_id INTEGER,
+                    order_index INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    content TEXT DEFAULT '',
+                    section_count INTEGER NOT NULL DEFAULT 1,
+                    slot_section_count INTEGER NOT NULL DEFAULT 1,
+                    session_date TEXT NOT NULL,
+                    weekday INTEGER NOT NULL,
+                    week_index INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                    FOREIGN KEY (course_lesson_id) REFERENCES course_lessons (id) ON DELETE SET NULL,
+                    UNIQUE (class_offering_id, order_index)
+                )
+                '''
+            )
 
             # 6. 课程资源 (替换旧的 shared_files)
 
@@ -2157,6 +2221,14 @@ def init_database():
                 "ON textbooks (teacher_id, publisher COLLATE NOCASE)"
             )
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_courses_teacher_name "
+                "ON courses (created_by_teacher_id, name COLLATE NOCASE)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_course_lessons_course_order "
+                "ON course_lessons (course_id, order_index)"
+            )
+            conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_class_offerings_unique_semester_id "
                 "ON class_offerings (class_id, course_id, semester_id) "
                 "WHERE semester_id IS NOT NULL"
@@ -2168,6 +2240,14 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_class_offerings_teacher_textbook "
                 "ON class_offerings (teacher_id, textbook_id, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_class_offerings_teacher_first_date "
+                "ON class_offerings (teacher_id, first_class_date, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_class_offering_sessions_lookup "
+                "ON class_offering_sessions (class_offering_id, session_date, order_index)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_materials_teacher_parent ON course_materials (teacher_id, parent_id, name)"

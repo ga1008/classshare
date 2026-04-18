@@ -42,6 +42,11 @@ from ..services.academic_service import (
     serialize_semester_row,
     serialize_textbook_row,
 )
+from ..services.course_planning_service import (
+    decorate_offering_sessions,
+    load_course_lessons_by_course_id,
+    serialize_course_row,
+)
 from ..services.student_auth_service import (
     PASSWORD_POLICY_HINT,
     build_password_setup_token,
@@ -739,6 +744,28 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
                     assignment['submission_status'] = 'unsubmitted'
             assignments.append(assignment)
 
+        session_rows = conn.execute(
+            """
+            SELECT id,
+                   course_lesson_id,
+                   order_index,
+                   title,
+                   content,
+                   section_count,
+                   slot_section_count,
+                   session_date,
+                   weekday,
+                   week_index
+            FROM class_offering_sessions
+            WHERE class_offering_id = ?
+            ORDER BY order_index, session_date
+            """,
+            (class_offering_id,),
+        ).fetchall()
+        teaching_plan = decorate_offering_sessions(session_rows)
+        if teaching_plan.get("schedule_summary") and not offering_data.get("schedule_info"):
+            offering_data["schedule_info"] = teaching_plan["schedule_summary"]
+
         classroom_page = build_classroom_page_context(
             conn=conn,
             user=user,
@@ -746,6 +773,12 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
             assignments=assignments,
             shared_files=files_info,
         )
+        classroom_page["teaching_plan"] = teaching_plan
+        if teaching_plan.get("session_count"):
+            hero_nav = list(classroom_page.get("hero", {}).get("nav") or [])
+            if not any(item.get("target") == "timeline-panel" for item in hero_nav):
+                hero_nav.insert(0, {"target": "timeline-panel", "label": "时间轴", "note": "课程进度"})
+                classroom_page["hero"]["nav"] = hero_nav
 
     try:
         record_behavior_event(
@@ -927,11 +960,32 @@ async def get_manage_courses_page(request: Request, user: dict = Depends(get_cur
             "SELECT id, name, credits FROM courses WHERE created_by_teacher_id = ? ORDER BY name", (user['id'],)
         )
         my_courses = my_courses_cursor.fetchall()
+        my_courses = _load_teacher_course_rows(conn, int(user["id"]))
+        textbooks = [
+            {
+                "id": item["id"],
+                "title": item["title"],
+                "author_display": item["author_display"],
+                "publisher": item["publisher"],
+                "publication_year": item["publication_year"],
+            }
+            for item in (serialize_textbook_row(row) for row in _load_teacher_textbook_rows(conn, int(user["id"])))
+        ]
+
+    course_stats = {
+        "course_count": len(my_courses),
+        "active_course_count": sum(1 for item in my_courses if item.get("is_in_use")),
+        "lesson_count": sum(int(item.get("lesson_count") or 0) for item in my_courses),
+        "total_hours": sum(int(item.get("total_hours") or 0) for item in my_courses),
+    }
 
     return templates.TemplateResponse(request, "manage/courses.html", {
         "request": request,
         "user_info": user,
         "my_courses": my_courses,
+        "courses_json": my_courses,
+        "textbooks_json": textbooks,
+        "course_stats": course_stats,
         "page_title": "课程管理",
         "active_page": "courses"
     })
@@ -974,30 +1028,102 @@ def _load_teacher_textbook_rows(conn, teacher_id: int):
     ).fetchall()
 
 
+def _safe_parse_json_list(raw_value):
+    if raw_value in (None, ""):
+        return []
+    try:
+        parsed = json.loads(str(raw_value))
+    except (TypeError, json.JSONDecodeError):
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _load_teacher_course_rows(conn, teacher_id: int):
+    rows = conn.execute(
+        """
+        SELECT c.id,
+               c.name,
+               c.description,
+               c.credits,
+               c.total_hours,
+               c.created_at,
+               c.created_by_teacher_id,
+               COUNT(DISTINCT o.id) AS offering_count
+        FROM courses c
+        LEFT JOIN class_offerings o
+            ON o.course_id = c.id
+           AND o.teacher_id = c.created_by_teacher_id
+        WHERE c.created_by_teacher_id = ?
+        GROUP BY c.id, c.name, c.description, c.credits, c.total_hours, c.created_at, c.created_by_teacher_id
+        ORDER BY c.created_at DESC, c.name
+        """,
+        (teacher_id,),
+    ).fetchall()
+    course_ids = [int(row["id"]) for row in rows]
+    lessons_by_course = load_course_lessons_by_course_id(conn, course_ids)
+
+    return [
+        serialize_course_row(
+            row,
+            lessons=lessons_by_course.get(int(row["id"]), []),
+            offering_count=int(row["offering_count"] or 0),
+        )
+        for row in rows
+    ]
+
+
 def _load_teacher_offering_rows(conn, teacher_id: int):
-    return conn.execute(
+    rows = conn.execute(
         """
         SELECT o.id,
                o.class_id,
                o.course_id,
                o.semester_id,
                o.textbook_id,
+               o.first_class_date,
+               o.weekly_schedule_json,
+               o.schedule_info,
                COALESCE(s.name, o.semester) AS semester,
                c.name AS class_name,
                co.name AS course_name,
                co.description,
                co.credits,
-               tb.title AS textbook_title
+               tb.title AS textbook_title,
+               COUNT(DISTINCT os.id) AS scheduled_session_count,
+               MIN(os.session_date) AS scheduled_start_date,
+               MAX(os.session_date) AS scheduled_end_date
         FROM class_offerings o
         JOIN classes c ON o.class_id = c.id
         JOIN courses co ON o.course_id = co.id
         LEFT JOIN academic_semesters s ON s.id = o.semester_id
         LEFT JOIN textbooks tb ON tb.id = o.textbook_id
+        LEFT JOIN class_offering_sessions os ON os.class_offering_id = o.id
         WHERE o.teacher_id = ?
-        ORDER BY COALESCE(s.start_date, o.created_at) DESC, co.name, c.name
+        GROUP BY o.id,
+                 o.class_id,
+                 o.course_id,
+                 o.semester_id,
+                 o.textbook_id,
+                 o.first_class_date,
+                 o.weekly_schedule_json,
+                 o.schedule_info,
+                 s.name,
+                 c.name,
+                 co.name,
+                 co.description,
+                 co.credits,
+                 tb.title
+        ORDER BY COALESCE(s.start_date, o.first_class_date, o.created_at) DESC, co.name, c.name
         """,
         (teacher_id,),
     ).fetchall()
+    offerings = []
+    for row in rows:
+        item = dict(row)
+        item["weekly_schedule"] = _safe_parse_json_list(item.get("weekly_schedule_json"))
+        item["scheduled_session_count"] = int(item.get("scheduled_session_count") or 0)
+        offerings.append(item)
+    return offerings
 
 
 @router.get("/manage/semesters", response_class=HTMLResponse)
@@ -1058,13 +1184,7 @@ async def get_manage_offerings_page(request: Request, user: dict = Depends(get_c
                 (user["id"],),
             ).fetchall()
         ]
-        my_courses = [
-            dict(row)
-            for row in conn.execute(
-                "SELECT id, name FROM courses WHERE created_by_teacher_id = ? ORDER BY name",
-                (user["id"],),
-            ).fetchall()
-        ]
+        my_courses = _load_teacher_course_rows(conn, int(user["id"]))
         semester_rows = _load_teacher_semester_rows(conn, int(user["id"]))
         textbook_rows = _load_teacher_textbook_rows(conn, int(user["id"]))
         my_semesters = [serialize_semester_row(row) for row in semester_rows]
@@ -1078,7 +1198,7 @@ async def get_manage_offerings_page(request: Request, user: dict = Depends(get_c
             }
             for item in (serialize_textbook_row(row) for row in textbook_rows)
         ]
-        my_offerings = [dict(row) for row in _load_teacher_offering_rows(conn, int(user["id"]))]
+        my_offerings = _load_teacher_offering_rows(conn, int(user["id"]))
 
     return templates.TemplateResponse(request, "manage/offerings.html", {
         "request": request,
@@ -1097,7 +1217,7 @@ async def get_manage_offerings_page(request: Request, user: dict = Depends(get_c
 @router.get("/manage/ai", response_class=HTMLResponse)
 async def get_manage_ai_page(request: Request, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
-        my_offerings = [dict(row) for row in _load_teacher_offering_rows(conn, int(user["id"]))]
+        my_offerings = _load_teacher_offering_rows(conn, int(user["id"]))
         my_textbooks = [
             serialize_textbook_row(row)
             for row in _load_teacher_textbook_rows(conn, int(user["id"]))
