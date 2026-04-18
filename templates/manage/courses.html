@@ -2,6 +2,7 @@
 
 {% block extra_head %}
 <link rel="stylesheet" href="/static/css/manage_academic.css">
+<link rel="stylesheet" href="/static/css/learning_material_selector.css">
 <style>
     .course-page-shell {
         display: flex;
@@ -261,6 +262,49 @@
         grid-column: 1 / -1;
     }
 
+    .course-lesson-material {
+        display: grid;
+        gap: 12px;
+        padding: 14px 16px;
+        border-radius: 18px;
+        border: 1px dashed rgba(14, 165, 233, 0.28);
+        background: linear-gradient(135deg, rgba(239, 246, 255, 0.9), rgba(255, 255, 255, 0.96));
+    }
+
+    .course-lesson-material.is-empty {
+        border-color: rgba(148, 163, 184, 0.2);
+        background: rgba(248, 250, 252, 0.9);
+    }
+
+    .course-lesson-material-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .course-lesson-material-copy {
+        display: grid;
+        gap: 4px;
+    }
+
+    .course-lesson-material-copy strong {
+        color: var(--text-primary);
+    }
+
+    .course-lesson-material-copy span {
+        color: var(--text-muted);
+        font-size: 0.88rem;
+        word-break: break-all;
+    }
+
+    .course-lesson-material-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
     .course-modal-footer-note {
         color: var(--text-muted);
         font-size: 0.88rem;
@@ -436,6 +480,10 @@
                                     {% endif %}
                                 </strong>
                             </div>
+                            <div class="course-meta-row">
+                                <span>已配文档</span>
+                                <strong>{{ course.material_lesson_count }} 次课</strong>
+                            </div>
                         </div>
 
                         {% if course.lesson_preview %}
@@ -444,7 +492,12 @@
                             <div class="course-lesson-mini-item">
                                 <strong>{{ lesson.title }}</strong>
                                 <span>{{ lesson.content_preview }}</span>
-                                <em>{{ lesson.section_count }} 小节</em>
+                                <em>
+                                    {{ lesson.section_count }} 小节
+                                    {% if lesson.learning_material_name %}
+                                    · {{ lesson.learning_material_name }}
+                                    {% endif %}
+                                </em>
                             </div>
                             {% endfor %}
                         </div>
@@ -590,9 +643,28 @@
                 <label class="form-label">上课内容</label>
                 <textarea class="form-control" rows="4" data-field="content" placeholder="说明本次课要讲的知识点、实验内容或案例任务"></textarea>
             </div>
+            <div class="form-group full-span">
+                <label class="form-label">课程材料</label>
+                <div class="course-lesson-material is-empty" data-role="lesson-material">
+                    <input type="hidden" data-field="learning_material_id">
+                    <div class="course-lesson-material-head">
+                        <div class="course-lesson-material-copy">
+                            <strong data-role="material-summary">未绑定课堂文档</strong>
+                            <span data-role="material-path">可选择课程材料库中的 Markdown 文档，后续开设课堂会自动继承。</span>
+                        </div>
+                        <div class="course-lesson-material-actions">
+                            <button type="button" class="btn btn-outline btn-sm" data-action="pick-material">选择材料</button>
+                            <button type="button" class="btn btn-ghost btn-sm" data-action="preview-material" disabled>预览文档</button>
+                            <button type="button" class="btn btn-ghost btn-sm" data-action="clear-material" disabled>清除</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </article>
 </template>
+
+{% include "partials/learning_material_selector.html" %}
 
 <script>
     window.COURSE_PAGE_DATA = {

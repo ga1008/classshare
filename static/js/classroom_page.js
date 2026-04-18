@@ -1,3 +1,9 @@
+import { apiFetch } from '/static/js/api.js';
+import { initLearningMaterialSelector } from '/static/js/learning_material_selector.js';
+import { showToast } from '/static/js/ui.js';
+
+const learningMaterialSelector = initLearningMaterialSelector();
+
 function initCoursePopover() {
     const popover = document.getElementById('course-info-popover');
     if (!popover) return;
@@ -207,14 +213,25 @@ function initTeachingTimeline() {
         : [];
     if (!widget || !scrollEl || !sessions.length) return;
 
+    const userInfo = window.APP_CONFIG?.userInfo || {};
+    const isTeacher = String(userInfo.role || '').trim() === 'teacher';
     const detailKicker = document.getElementById('teachingTimelineDetailKicker');
     const detailTitle = document.getElementById('teachingTimelineDetailTitle');
     const detailStatus = document.getElementById('teachingTimelineDetailStatus');
     const detailSummary = document.getElementById('teachingTimelineDetailSummary');
     const detailMeta = document.getElementById('teachingTimelineDetailMeta');
+    const materialPanel = document.getElementById('teachingTimelineMaterialPanel');
+    const materialName = document.getElementById('teachingTimelineMaterialName');
+    const materialPath = document.getElementById('teachingTimelineMaterialPath');
+    const selectMaterialBtn = document.getElementById('teachingTimelineSelectMaterialBtn');
+    const clearMaterialBtn = document.getElementById('teachingTimelineClearMaterialBtn');
+    const openMaterialBtn = document.getElementById('teachingTimelineOpenMaterialBtn');
     const sessionButtons = Array.from(scrollEl.querySelectorAll('[data-session-order]'));
     const sessionMap = new Map(
         sessions.map((session) => [String(session.order_index), session]),
+    );
+    const buttonMap = new Map(
+        sessionButtons.map((button) => [String(button.getAttribute('data-session-order') || ''), button]),
     );
     const detailSummaryCache = new Map();
 
@@ -232,6 +249,20 @@ function initTeachingTimeline() {
     let dragDistance = 0;
     let snapTimer = 0;
     let ignoreClickUntil = 0;
+
+    const getSessionByOrder = (sessionOrder) => sessionMap.get(String(sessionOrder || '').trim());
+
+    const updateSessionButtonMaterialState = (session) => {
+        if (!session) return;
+        const button = buttonMap.get(String(session.order_index));
+        if (!button) return;
+        const indicator = button.querySelector('[data-role="session-material-indicator"]');
+        const hasMaterial = Boolean(session.learning_material_id);
+        if (indicator) {
+            indicator.hidden = !hasMaterial;
+        }
+        button.dataset.hasMaterial = hasMaterial ? 'true' : 'false';
+    };
 
     const renderDetailMeta = (session) => {
         if (!detailMeta) return;
@@ -299,6 +330,30 @@ function initTeachingTimeline() {
         detailSummaryCache.set(cacheKey, detailSummary.innerHTML);
     };
 
+    const renderMaterialPanel = (session) => {
+        if (!materialPanel || !materialName || !materialPath) return;
+        const hasMaterial = Boolean(session.learning_material_id && session.learning_material_viewer_url);
+        materialPanel.classList.toggle('is-empty', !hasMaterial);
+
+        if (hasMaterial) {
+            materialName.textContent = session.learning_material_name || '已绑定课堂文档';
+            materialPath.textContent = session.learning_material_path || '';
+        } else if (isTeacher) {
+            materialName.textContent = '尚未绑定课堂文档';
+            materialPath.textContent = '可为本次课绑定一份 Markdown 材料，师生可从这里直接进入文档页面。';
+        } else {
+            materialName.textContent = '教师尚未配置学习文档';
+            materialPath.textContent = '当前节点还没有可打开的课堂文档。';
+        }
+
+        if (openMaterialBtn) {
+            openMaterialBtn.disabled = !hasMaterial;
+        }
+        if (clearMaterialBtn) {
+            clearMaterialBtn.hidden = !hasMaterial;
+        }
+    };
+
     const focusSession = (sessionOrder, behavior = 'smooth') => {
         const sessionNode = scrollEl.querySelector(`[data-session-order="${sessionOrder}"]`);
         if (!sessionNode) return;
@@ -320,7 +375,7 @@ function initTeachingTimeline() {
 
     const setActiveSession = (sessionOrder, options = {}) => {
         const key = String(sessionOrder || '').trim();
-        const session = sessionMap.get(key);
+        const session = getSessionByOrder(key);
         if (!session) return;
 
         const previousOrder = selectedOrder;
@@ -334,10 +389,42 @@ function initTeachingTimeline() {
         }
         renderDetailSummary(session);
         renderDetailMeta(session);
+        renderMaterialPanel(session);
 
         if (options.center !== false && (options.forceCenter || previousOrder !== key)) {
             focusSession(key, options.behavior || 'smooth');
         }
+    };
+
+    const applySessionPatch = (patch) => {
+        if (!patch) return;
+        const session = getSessionByOrder(patch.order_index);
+        if (!session) return;
+        Object.assign(session, patch, {
+            has_learning_material: Boolean(patch.learning_material_id),
+        });
+        updateSessionButtonMaterialState(session);
+        if (String(session.order_index) === selectedOrder) {
+            renderMaterialPanel(session);
+        }
+    };
+
+    const persistSessionMaterial = async (learningMaterialId) => {
+        const session = getSessionByOrder(selectedOrder);
+        if (!session?.id) return;
+        const result = await apiFetch(
+            `/api/classrooms/${window.APP_CONFIG.classOfferingId}/sessions/${session.id}/learning-material`,
+            {
+                method: 'PUT',
+                body: { learning_material_id: learningMaterialId },
+                silent: true,
+            },
+        );
+        applySessionPatch(result.session);
+        if (window.materialsApp && typeof window.materialsApp.refresh === 'function') {
+            window.materialsApp.refresh().catch(() => {});
+        }
+        showToast(result.message || '课堂材料已更新', 'success');
     };
 
     const getNearestSessionOrder = () => {
@@ -440,6 +527,55 @@ function initTeachingTimeline() {
         if (pointerId !== null) return;
         scheduleSnapToNearest();
     }, { passive: true });
+
+    sessionButtons.forEach((button) => {
+        const session = getSessionByOrder(button.getAttribute('data-session-order'));
+        updateSessionButtonMaterialState(session);
+    });
+
+    openMaterialBtn?.addEventListener('click', () => {
+        const session = getSessionByOrder(selectedOrder);
+        const viewerUrl = session?.learning_material_viewer_url || '';
+        if (!viewerUrl) {
+            showToast(isTeacher ? '当前次课还没有绑定文档' : '教师尚未配置学习文档', 'warning');
+            return;
+        }
+        window.open(viewerUrl, '_blank', 'noopener');
+    });
+
+    selectMaterialBtn?.addEventListener('click', async () => {
+        const session = getSessionByOrder(selectedOrder);
+        if (!session) return;
+        try {
+            const selectedMaterial = await learningMaterialSelector.open({
+                title: '选择课堂材料',
+                subtitle: '为当前时间轴节点绑定一个 Markdown 文档，课堂内“学习文档”按钮会直接跳转到该页面。',
+                confirmLabel: '绑定到本次课',
+                initialMaterial: session.learning_material,
+            });
+            if (!selectedMaterial || Number(selectedMaterial.id) === Number(session.learning_material_id || 0)) {
+                return;
+            }
+            await persistSessionMaterial(Number(selectedMaterial.id));
+        } catch (error) {
+            showToast(error.message || '更新课堂材料失败', 'error');
+        }
+    });
+
+    clearMaterialBtn?.addEventListener('click', async () => {
+        const session = getSessionByOrder(selectedOrder);
+        if (!session?.learning_material_id) {
+            showToast('当前次课还没有绑定文档', 'warning');
+            return;
+        }
+        const confirmed = window.confirm('确定移除本次课的学习文档吗？');
+        if (!confirmed) return;
+        try {
+            await persistSessionMaterial(null);
+        } catch (error) {
+            showToast(error.message || '移除课堂材料失败', 'error');
+        }
+    });
 
     window.requestAnimationFrame(() => {
         setActiveSession(selectedOrder, {

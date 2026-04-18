@@ -39,6 +39,11 @@ from ..services.course_planning_service import (
     serialize_course_row,
 )
 from ..services.file_handler import save_upload_file
+from ..services.materials_service import (
+    attach_learning_material_briefs,
+    get_learning_material_brief_map,
+    sync_classroom_learning_material_assignments,
+)
 from ..services.roster_handler import parse_excel_to_students
 from ..services.student_auth_service import build_student_security_summary, list_student_login_history
 from ..services.submission_file_alignment import run_full_alignment
@@ -244,6 +249,12 @@ def _prepare_offering_payload(
     ) if (require_schedule or str(data.get("weekly_schedule", data.get("weekly_schedule_json", ""))).strip()) else []
 
     course_lessons = load_course_lessons_by_course_id(conn, [course_id]).get(course_id, [])
+    course_lessons = attach_learning_material_briefs(
+        conn,
+        course_lessons,
+        teacher_id=teacher_id,
+        markdown_only=True,
+    )
     if not course_lessons and not allow_missing_lessons:
         raise CoursePlanningError("所选课程还没有配置课堂设置，请先到课程管理页补齐课堂内容")
 
@@ -394,6 +405,20 @@ async def api_save_course(
 
     with get_db_connection() as conn:
         try:
+            selected_material_ids = [
+                lesson.get("learning_material_id")
+                for lesson in payload["lessons"]
+                if lesson.get("learning_material_id")
+            ]
+            material_map = get_learning_material_brief_map(
+                conn,
+                selected_material_ids,
+                teacher_id=int(user["id"]),
+                markdown_only=True,
+            )
+            if len(material_map) != len({int(item) for item in selected_material_ids}):
+                raise HTTPException(400, "课程中选择的课堂材料不存在、无权访问，或不是 Markdown 文档")
+
             if payload["course_id"]:
                 _ensure_teacher_owned_record(
                     conn,
@@ -1317,6 +1342,16 @@ async def api_save_class_offering(
                 conn,
                 offering_id=offering_id,
                 sessions=payload["plan"]["sessions"],
+            )
+            sync_classroom_learning_material_assignments(
+                conn,
+                class_offering_id=offering_id,
+                teacher_id=int(user["id"]),
+                material_ids=[
+                    session.get("learning_material_id")
+                    for session in payload["plan"]["sessions"]
+                    if session.get("learning_material_id")
+                ],
             )
             conn.commit()
     except CoursePlanningError as exc:

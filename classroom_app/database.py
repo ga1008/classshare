@@ -484,6 +484,13 @@ def init_database():
                 )
                 '''
             )
+            try:
+                conn.execute(
+                    "ALTER TABLE course_lessons "
+                    "ADD COLUMN learning_material_id INTEGER REFERENCES course_materials (id) ON DELETE SET NULL"
+                )
+            except sqlite3.OperationalError:
+                pass
 
             conn.execute(
                 '''
@@ -638,6 +645,13 @@ def init_database():
                 )
                 '''
             )
+            try:
+                conn.execute(
+                    "ALTER TABLE class_offering_sessions "
+                    "ADD COLUMN learning_material_id INTEGER REFERENCES course_materials (id) ON DELETE SET NULL"
+                )
+            except sqlite3.OperationalError:
+                pass
 
             # 6. 课程资源 (替换旧的 shared_files)
 
@@ -2229,6 +2243,10 @@ def init_database():
                 "ON course_lessons (course_id, order_index)"
             )
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_course_lessons_material_lookup "
+                "ON course_lessons (course_id, learning_material_id, order_index)"
+            )
+            conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_class_offerings_unique_semester_id "
                 "ON class_offerings (class_id, course_id, semester_id) "
                 "WHERE semester_id IS NOT NULL"
@@ -2248,6 +2266,10 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_class_offering_sessions_lookup "
                 "ON class_offering_sessions (class_offering_id, session_date, order_index)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_class_offering_sessions_material_lookup "
+                "ON class_offering_sessions (class_offering_id, learning_material_id, order_index)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_materials_teacher_parent ON course_materials (teacher_id, parent_id, name)"

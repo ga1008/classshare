@@ -1,9 +1,11 @@
 import { apiFetch } from '/static/js/api.js';
 import { closeModal, openModal, showMessage } from '/static/js/ui.js';
+import { initLearningMaterialSelector } from '/static/js/learning_material_selector.js';
 
 const pageData = window.COURSE_PAGE_DATA || {};
 const courses = Array.isArray(pageData.courses) ? pageData.courses : [];
 const courseMap = new Map(courses.map((item) => [Number(item.id), item]));
+const learningMaterialSelector = initLearningMaterialSelector();
 
 const elements = {
     openButtons: [
@@ -38,6 +40,56 @@ function getCourseCards() {
     return Array.from(document.querySelectorAll('.course-card[data-course-id]'));
 }
 
+function normalizeLearningMaterial(data = {}) {
+    const materialId = Number(
+        data.learning_material?.id
+        || data.learning_material_id
+        || 0,
+    );
+    if (!materialId) {
+        return null;
+    }
+    return {
+        id: materialId,
+        parent_id: data.learning_material?.parent_id ?? data.learning_material_parent_id ?? null,
+        name: data.learning_material?.name || data.learning_material_name || '',
+        material_path: data.learning_material?.material_path || data.learning_material_path || '',
+        preview_type: 'markdown',
+        node_type: 'file',
+        viewer_url: data.learning_material?.viewer_url || data.learning_material_viewer_url || `/materials/view/${materialId}`,
+    };
+}
+
+function setLessonMaterial(row, material) {
+    if (!row) return;
+    const normalized = normalizeLearningMaterial(material || {});
+    const materialBox = row.querySelector('[data-role="lesson-material"]');
+    const materialInput = row.querySelector('[data-field="learning_material_id"]');
+    const summary = row.querySelector('[data-role="material-summary"]');
+    const path = row.querySelector('[data-role="material-path"]');
+    const previewBtn = row.querySelector('[data-action="preview-material"]');
+    const clearBtn = row.querySelector('[data-action="clear-material"]');
+
+    if (!normalized) {
+        if (materialInput) materialInput.value = '';
+        if (summary) summary.textContent = '未绑定课堂文档';
+        if (path) path.textContent = '可选择课程材料库中的 Markdown 文档，后续开设课堂会自动继承。';
+        if (previewBtn) previewBtn.disabled = true;
+        if (clearBtn) clearBtn.disabled = true;
+        materialBox?.classList.add('is-empty');
+        row.dataset.learningMaterialViewerUrl = '';
+        return;
+    }
+
+    if (materialInput) materialInput.value = String(normalized.id);
+    if (summary) summary.textContent = normalized.name || '已绑定课堂文档';
+    if (path) path.textContent = normalized.material_path || '';
+    if (previewBtn) previewBtn.disabled = false;
+    if (clearBtn) clearBtn.disabled = false;
+    materialBox?.classList.remove('is-empty');
+    row.dataset.learningMaterialViewerUrl = normalized.viewer_url || '';
+}
+
 function createLessonRow(data = {}) {
     if (!elements.lessonTemplate || !elements.lessonsContainer) {
         return null;
@@ -51,6 +103,7 @@ function createLessonRow(data = {}) {
     row.querySelector('[data-field="title"]').value = data.title || '';
     row.querySelector('[data-field="content"]').value = data.content || '';
     row.querySelector('[data-field="section_count"]').value = String(data.section_count || 2);
+    setLessonMaterial(row, data);
     elements.lessonsContainer.appendChild(fragment);
     return row;
 }
@@ -82,6 +135,7 @@ function collectLessons() {
         title: row.querySelector('[data-field="title"]')?.value || '',
         content: row.querySelector('[data-field="content"]')?.value || '',
         section_count: Number(row.querySelector('[data-field="section_count"]')?.value || 0),
+        learning_material_id: Number(row.querySelector('[data-field="learning_material_id"]')?.value || 0) || null,
     }));
 }
 
@@ -328,10 +382,53 @@ function bindEvents() {
 
     elements.lessonsContainer?.addEventListener('click', (event) => {
         const button = event.target.closest('[data-action="remove-lesson"]');
-        if (!button) return;
-        const row = button.closest('[data-lesson-row]');
-        row?.remove();
-        ensureOneLessonRow();
+        if (button) {
+            const row = button.closest('[data-lesson-row]');
+            row?.remove();
+            ensureOneLessonRow();
+            return;
+        }
+
+        const row = event.target.closest('[data-lesson-row]');
+        if (!row) return;
+
+        const pickButton = event.target.closest('[data-action="pick-material"]');
+        if (pickButton) {
+            const currentMaterial = normalizeLearningMaterial({
+                learning_material_id: row.querySelector('[data-field="learning_material_id"]')?.value || '',
+                learning_material_name: row.querySelector('[data-role="material-summary"]')?.textContent || '',
+                learning_material_path: row.querySelector('[data-role="material-path"]')?.textContent || '',
+                learning_material_viewer_url: row.dataset.learningMaterialViewerUrl || '',
+            });
+            learningMaterialSelector.open({
+                title: '选择本次课的课程材料',
+                subtitle: '浏览课程材料库中的文件夹结构，并为当前课堂节点绑定一个 Markdown 文档。',
+                confirmLabel: '绑定到本次课',
+                initialMaterial: currentMaterial,
+            }).then((selectedMaterial) => {
+                if (!selectedMaterial) return;
+                setLessonMaterial(row, selectedMaterial);
+            }).catch((error) => {
+                showMessage(error.message || '加载材料选择器失败', 'error');
+            });
+            return;
+        }
+
+        const previewButton = event.target.closest('[data-action="preview-material"]');
+        if (previewButton) {
+            const viewerUrl = row.dataset.learningMaterialViewerUrl || '';
+            if (!viewerUrl) {
+                showMessage('当前课堂还没有绑定文档', 'warning');
+                return;
+            }
+            window.open(viewerUrl, '_blank', 'noopener');
+            return;
+        }
+
+        const clearButton = event.target.closest('[data-action="clear-material"]');
+        if (clearButton) {
+            setLessonMaterial(row, null);
+        }
     });
 
     elements.courseCardGrid?.addEventListener('click', (event) => {

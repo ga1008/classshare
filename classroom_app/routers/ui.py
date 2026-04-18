@@ -47,6 +47,7 @@ from ..services.course_planning_service import (
     load_course_lessons_by_course_id,
     serialize_course_row,
 )
+from ..services.materials_service import attach_learning_material_briefs
 from ..services.student_auth_service import (
     PASSWORD_POLICY_HINT,
     build_password_setup_token,
@@ -755,14 +756,21 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
                    slot_section_count,
                    session_date,
                    weekday,
-                   week_index
+                   week_index,
+                   learning_material_id
             FROM class_offering_sessions
             WHERE class_offering_id = ?
             ORDER BY order_index, session_date
             """,
             (class_offering_id,),
         ).fetchall()
-        teaching_plan = decorate_offering_sessions(session_rows)
+        session_items = attach_learning_material_briefs(
+            conn,
+            [dict(row) for row in session_rows],
+            teacher_id=int(offering_data["teacher_id"]),
+            markdown_only=True,
+        )
+        teaching_plan = decorate_offering_sessions(session_items)
         if teaching_plan.get("schedule_summary") and not offering_data.get("schedule_info"):
             offering_data["schedule_info"] = teaching_plan["schedule_summary"]
 
@@ -1061,6 +1069,13 @@ def _load_teacher_course_rows(conn, teacher_id: int):
     ).fetchall()
     course_ids = [int(row["id"]) for row in rows]
     lessons_by_course = load_course_lessons_by_course_id(conn, course_ids)
+    for course_id, lesson_items in lessons_by_course.items():
+        lessons_by_course[course_id] = attach_learning_material_briefs(
+            conn,
+            lesson_items,
+            teacher_id=teacher_id,
+            markdown_only=True,
+        )
 
     return [
         serialize_course_row(

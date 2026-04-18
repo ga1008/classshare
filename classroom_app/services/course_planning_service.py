@@ -75,6 +75,18 @@ def _parse_int(
     return parsed
 
 
+def _parse_optional_positive_int(value: Any, *, field_name: str) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError) as exc:
+        raise CoursePlanningError(f"{field_name} value is invalid") from exc
+    if parsed <= 0:
+        raise CoursePlanningError(f"{field_name} must be greater than 0")
+    return parsed
+
+
 def normalize_total_hours(value: Any) -> int:
     return _parse_int(
         value,
@@ -110,6 +122,10 @@ def normalize_course_lessons(
             maximum=MAX_SECTION_COUNT,
             default=1,
         )
+        learning_material_id = _parse_optional_positive_int(
+            raw_item.get("learning_material_id"),
+            field_name=f"lesson {index} learning material",
+        )
 
         if not title and not content:
             continue
@@ -133,6 +149,7 @@ def normalize_course_lessons(
                 "content": content,
                 "section_count": section_count,
                 "source_type": _normalize_text(raw_item.get("source_type")) or "manual",
+                "learning_material_id": learning_material_id,
             }
         )
 
@@ -248,9 +265,10 @@ def replace_course_lessons(
             title,
             content,
             section_count,
-            source_type
+            source_type,
+            learning_material_id
         )
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -260,6 +278,7 @@ def replace_course_lessons(
                 item["content"],
                 int(item["section_count"]),
                 item.get("source_type") or "manual",
+                item.get("learning_material_id"),
             )
             for item in lessons
         ],
@@ -288,9 +307,10 @@ def replace_offering_sessions(
             slot_section_count,
             session_date,
             weekday,
-            week_index
+            week_index,
+            learning_material_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -304,6 +324,7 @@ def replace_offering_sessions(
                 item["session_date"],
                 int(item["weekday"]),
                 int(item.get("week_index") or 0),
+                item.get("learning_material_id"),
             )
             for item in sessions
         ],
@@ -321,7 +342,7 @@ def load_course_lessons_by_course_id(
     placeholders = ",".join("?" for _ in normalized_course_ids)
     rows = conn.execute(
         f"""
-        SELECT id, course_id, order_index, title, content, section_count, source_type
+        SELECT id, course_id, order_index, title, content, section_count, source_type, learning_material_id
         FROM course_lessons
         WHERE course_id IN ({placeholders})
         ORDER BY course_id, order_index, id
@@ -334,6 +355,7 @@ def load_course_lessons_by_course_id(
         item = dict(row)
         item["section_count"] = int(item.get("section_count") or 0)
         item["order_index"] = int(item.get("order_index") or len(grouped[int(item["course_id"])]) + 1)
+        item["learning_material_id"] = int(item["learning_material_id"]) if item.get("learning_material_id") else None
         grouped[int(item["course_id"])].append(item)
     return dict(grouped)
 
@@ -371,12 +393,14 @@ def serialize_course_row(
     item["coverage_status"] = coverage_status
     item["coverage_label"] = coverage_label
     item["lessons"] = lesson_list
+    item["material_lesson_count"] = sum(1 for lesson in lesson_list if lesson.get("learning_material_id"))
     item["lesson_preview_titles"] = lesson_titles[:4]
     item["lesson_preview"] = [
         {
             "title": lesson["title"],
             "content_preview": truncate_text(lesson.get("content"), 88),
             "section_count": int(lesson.get("section_count") or 0),
+            "learning_material_name": str(lesson.get("learning_material_name") or "").strip(),
         }
         for lesson in lesson_list[:3]
     ]
@@ -389,6 +413,11 @@ def serialize_course_row(
                 str(item.get("name") or "").strip(),
                 description,
                 " ".join(lesson_titles),
+                " ".join(
+                    str(lesson.get("learning_material_name") or "").strip()
+                    for lesson in lesson_list
+                    if lesson.get("learning_material_name")
+                ),
                 " ".join(
                     truncate_text(lesson.get("content"), 120) for lesson in lesson_list if lesson.get("content")
                 ),
@@ -597,6 +626,7 @@ def decorate_offering_sessions(
                 "is_section_match": slot_section_count in (0, section_count),
                 "date_label": f"{session_date.isoformat()} {weekday_label(weekday)}",
                 "content_preview": truncate_text(item.get("content"), 120),
+                "learning_material_id": int(item["learning_material_id"]) if item.get("learning_material_id") else None,
             }
         )
 
@@ -641,6 +671,7 @@ def decorate_offering_sessions(
         item["detail_content"] = detail_content
         item["detail_lines"] = content_lines
         item["detail_summary"] = detail_content or item.get("content_preview") or ""
+        item["has_learning_material"] = bool(item.get("learning_material_id"))
         item["detail_meta"] = " · ".join(
             part
             for part in [
@@ -733,6 +764,11 @@ def build_offering_session_plan(
                 "weekday": int(occurrence["weekday"]),
                 "weekday_label": occurrence["weekday_label"],
                 "week_index": _compute_week_index(session_date, semester_start_date),
+                "learning_material_id": lesson.get("learning_material_id"),
+                "learning_material": lesson.get("learning_material"),
+                "learning_material_name": lesson.get("learning_material_name"),
+                "learning_material_path": lesson.get("learning_material_path"),
+                "learning_material_viewer_url": lesson.get("learning_material_viewer_url"),
             }
         )
 

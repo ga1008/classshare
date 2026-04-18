@@ -23,8 +23,10 @@ from ..services.download_policy import apply_download_policy, ensure_download_al
 from ..services.file_preview_service import TEXT_CONTENT_ENCODINGS
 from ..services.materials_service import (
     MATERIAL_TYPE_REGISTRY,
+    attach_learning_material_briefs,
     attach_learning_document_metadata,
     ensure_classroom_access,
+    ensure_teacher_learning_material_owner,
     ensure_teacher_material_owner,
     ensure_user_material_access,
     get_effective_assignment_nodes,
@@ -37,6 +39,7 @@ from ..services.materials_service import (
     make_unique_material_name,
     normalize_material_path,
     serialize_material_row,
+    sync_classroom_learning_material_assignments,
 )
 from ..services.materials_git_service import (
     attach_git_repository_metadata,
@@ -71,6 +74,10 @@ class MaterialRepositoryCredentialRequest(BaseModel):
     username: str = ""
     secret: str = ""
     auth_mode: str = "password"
+
+
+class ClassroomLearningMaterialUpdateRequest(BaseModel):
+    learning_material_id: int | None = None
 
 
 MATERIAL_LIBRARY_SORT_LABELS = {
@@ -994,6 +1001,98 @@ async def assign_material_to_classrooms(
         "assignments": [dict(row) for row in assignment_rows],
         "added_count": len(add_ids),
         "removed_count": len(remove_ids),
+    }
+
+
+@router.put("/api/classrooms/{class_offering_id}/sessions/{session_id}/learning-material", response_class=JSONResponse)
+async def update_classroom_session_learning_material(
+    class_offering_id: int,
+    session_id: int,
+    payload: ClassroomLearningMaterialUpdateRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        session_row = conn.execute(
+            """
+            SELECT s.id,
+                   s.class_offering_id,
+                   s.course_lesson_id,
+                   s.order_index,
+                   s.title,
+                   s.content,
+                   s.section_count,
+                   s.slot_section_count,
+                   s.session_date,
+                   s.weekday,
+                   s.week_index,
+                   s.learning_material_id
+            FROM class_offering_sessions s
+            JOIN class_offerings o ON o.id = s.class_offering_id
+            WHERE s.id = ? AND s.class_offering_id = ? AND o.teacher_id = ?
+            LIMIT 1
+            """,
+            (session_id, class_offering_id, user["id"]),
+        ).fetchone()
+        if not session_row:
+            raise HTTPException(404, "课堂节点不存在或无权操作")
+
+        learning_material_id = payload.learning_material_id
+        if learning_material_id is not None:
+            learning_material_id = int(learning_material_id)
+            if learning_material_id <= 0:
+                learning_material_id = None
+            else:
+                ensure_teacher_learning_material_owner(conn, learning_material_id, user["id"])
+
+        conn.execute(
+            """
+            UPDATE class_offering_sessions
+            SET learning_material_id = ?
+            WHERE id = ? AND class_offering_id = ?
+            """,
+            (learning_material_id, session_id, class_offering_id),
+        )
+
+        if learning_material_id:
+            sync_classroom_learning_material_assignments(
+                conn,
+                class_offering_id=class_offering_id,
+                teacher_id=int(user["id"]),
+                material_ids=[learning_material_id],
+            )
+
+        updated_row = conn.execute(
+            """
+            SELECT id,
+                   class_offering_id,
+                   course_lesson_id,
+                   order_index,
+                   title,
+                   content,
+                   section_count,
+                   slot_section_count,
+                   session_date,
+                   weekday,
+                   week_index,
+                   learning_material_id
+            FROM class_offering_sessions
+            WHERE id = ? AND class_offering_id = ?
+            LIMIT 1
+            """,
+            (session_id, class_offering_id),
+        ).fetchone()
+        session_item = attach_learning_material_briefs(
+            conn,
+            [dict(updated_row)],
+            teacher_id=int(user["id"]),
+            markdown_only=True,
+        )[0]
+        conn.commit()
+
+    return {
+        "status": "success",
+        "message": "课堂材料已更新",
+        "session": session_item,
     }
 
 

@@ -1,6 +1,8 @@
 import mimetypes
 
+from datetime import datetime
 from pathlib import PurePosixPath
+from typing import Iterable
 
 from fastapi import HTTPException
 
@@ -256,6 +258,116 @@ def serialize_material_row(row, extra: dict | None = None) -> dict:
     return item
 
 
+def _normalize_positive_ids(values: Iterable[int | str | None]) -> list[int]:
+    normalized: list[int] = []
+    seen: set[int] = set()
+    for value in values:
+        try:
+            parsed = int(value or 0)
+        except (TypeError, ValueError):
+            continue
+        if parsed <= 0 or parsed in seen:
+            continue
+        seen.add(parsed)
+        normalized.append(parsed)
+    return normalized
+
+
+def build_learning_material_brief(row) -> dict:
+    item = dict(row)
+    return {
+        "id": int(item.get("id") or 0),
+        "parent_id": int(item["parent_id"]) if item.get("parent_id") is not None else None,
+        "root_id": int(item.get("root_id") or 0),
+        "name": str(item.get("name") or "").strip(),
+        "material_path": str(item.get("material_path") or "").strip(),
+        "preview_type": str(item.get("preview_type") or "").strip(),
+        "node_type": str(item.get("node_type") or "").strip(),
+        "viewer_url": f"/materials/view/{int(item.get('id') or 0)}" if int(item.get("id") or 0) > 0 else "",
+    }
+
+
+def get_learning_material_brief_map(
+    conn,
+    material_ids: Iterable[int | str | None],
+    *,
+    teacher_id: int | None = None,
+    markdown_only: bool = False,
+) -> dict[int, dict]:
+    normalized_ids = _normalize_positive_ids(material_ids)
+    if not normalized_ids:
+        return {}
+
+    placeholders = ",".join("?" for _ in normalized_ids)
+    conditions = [f"id IN ({placeholders})"]
+    params: list[object] = list(normalized_ids)
+
+    if teacher_id is not None:
+        conditions.append("teacher_id = ?")
+        params.append(int(teacher_id))
+    if markdown_only:
+        conditions.append("node_type = 'file'")
+        conditions.append("preview_type = 'markdown'")
+
+    rows = conn.execute(
+        f"""
+        SELECT id, parent_id, root_id, name, material_path, preview_type, node_type
+        FROM course_materials
+        WHERE {' AND '.join(conditions)}
+        ORDER BY id
+        """,
+        params,
+    ).fetchall()
+
+    result: dict[int, dict] = {}
+    for row in rows:
+        if is_git_internal_material_path(row["material_path"]):
+            continue
+        brief = build_learning_material_brief(row)
+        result[int(brief["id"])] = brief
+    return result
+
+
+def attach_learning_material_briefs(
+    conn,
+    items: list[dict],
+    *,
+    id_field: str = "learning_material_id",
+    teacher_id: int | None = None,
+    markdown_only: bool = False,
+) -> list[dict]:
+    material_map = get_learning_material_brief_map(
+        conn,
+        (item.get(id_field) for item in items),
+        teacher_id=teacher_id,
+        markdown_only=markdown_only,
+    )
+
+    for item in items:
+        try:
+            material_id = int(item.get(id_field) or 0)
+        except (TypeError, ValueError):
+            material_id = 0
+        material = material_map.get(material_id)
+        if not material:
+            item[id_field] = None
+            item["learning_material"] = None
+            item["learning_material_name"] = ""
+            item["learning_material_path"] = ""
+            item["learning_material_parent_id"] = None
+            item["learning_material_viewer_url"] = ""
+            continue
+
+        item[id_field] = int(material["id"])
+        item["learning_material"] = material
+        item["learning_material_name"] = material["name"]
+        item["learning_material_path"] = material["material_path"]
+        item["learning_material_parent_id"] = material["parent_id"]
+        item["learning_material_viewer_url"] = material["viewer_url"]
+
+    return items
+
+
 def get_learning_document_map(conn, folder_ids: list[int]) -> dict[int, dict]:
     normalized_ids = [int(folder_id) for folder_id in folder_ids if folder_id]
     if not normalized_ids:
@@ -368,6 +480,13 @@ def ensure_teacher_material_owner(conn, material_id: int, teacher_id: int):
     return row
 
 
+def ensure_teacher_learning_material_owner(conn, material_id: int, teacher_id: int):
+    row = ensure_teacher_material_owner(conn, material_id, teacher_id)
+    if row["node_type"] != "file" or str(row["preview_type"] or "") != "markdown":
+        raise HTTPException(400, "只能选择已上传的 Markdown 文档")
+    return row
+
+
 def _get_student_offering_ids(conn, student_id: int) -> list[int]:
     rows = conn.execute(
         """
@@ -471,6 +590,113 @@ def get_effective_assignment_nodes(conn, class_offering_id: int) -> list[dict]:
             continue
         effective.append(row_dict)
     return effective
+
+
+def get_learning_material_assignment_anchor(conn, material_row):
+    if material_row["node_type"] != "file":
+        return material_row
+    parent_id = material_row["parent_id"]
+    if not parent_id:
+        return material_row
+
+    parent = conn.execute(
+        """
+        SELECT id, parent_id, root_id, name, material_path, preview_type, node_type
+        FROM course_materials
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (parent_id,),
+    ).fetchone()
+    if not parent:
+        return material_row
+    if is_git_internal_material_path(parent["material_path"]):
+        return material_row
+    if parent["node_type"] != "folder":
+        return material_row
+    return parent
+
+
+def sync_classroom_learning_material_assignments(
+    conn,
+    *,
+    class_offering_id: int,
+    teacher_id: int,
+    material_ids: Iterable[int | str | None],
+) -> list[dict]:
+    owned_offering = conn.execute(
+        "SELECT id FROM class_offerings WHERE id = ? AND teacher_id = ? LIMIT 1",
+        (class_offering_id, teacher_id),
+    ).fetchone()
+    if not owned_offering:
+        raise HTTPException(404, "课堂不存在或无权操作")
+
+    normalized_ids = _normalize_positive_ids(material_ids)
+    if not normalized_ids:
+        return []
+
+    material_map = get_learning_material_brief_map(
+        conn,
+        normalized_ids,
+        teacher_id=teacher_id,
+        markdown_only=True,
+    )
+    missing_ids = [material_id for material_id in normalized_ids if material_id not in material_map]
+    if missing_ids:
+        raise HTTPException(400, "所选课堂文档不存在、无权访问，或不是 Markdown 文档")
+
+    existing_rows = conn.execute(
+        """
+        SELECT m.id, m.parent_id, m.root_id, m.name, m.material_path, m.preview_type, m.node_type
+        FROM course_material_assignments a
+        JOIN course_materials m ON m.id = a.material_id
+        WHERE a.class_offering_id = ?
+        ORDER BY LENGTH(m.material_path) DESC, m.id DESC
+        """,
+        (class_offering_id,),
+    ).fetchall()
+    existing_assignments = [
+        build_learning_material_brief(row)
+        for row in existing_rows
+        if not is_git_internal_material_path(row["material_path"])
+    ]
+
+    inserted_anchors: list[dict] = []
+    assigned_anchor_ids = {int(item["id"]) for item in existing_assignments if int(item.get("id") or 0) > 0}
+    now = datetime.now().isoformat()
+
+    for material_id in normalized_ids:
+        material = material_map[material_id]
+        if any(
+            int(existing["root_id"]) == int(material["root_id"])
+            and is_descendant_path(material["material_path"], existing["material_path"])
+            for existing in existing_assignments
+        ):
+            continue
+
+        anchor_row = get_learning_material_assignment_anchor(conn, material)
+        anchor = build_learning_material_brief(anchor_row)
+        anchor_id = int(anchor["id"] or 0)
+        if anchor_id <= 0 or anchor_id in assigned_anchor_ids:
+            continue
+
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO course_material_assignments (
+                material_id,
+                class_offering_id,
+                assigned_by_teacher_id,
+                created_at
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (anchor_id, class_offering_id, teacher_id, now),
+        )
+        assigned_anchor_ids.add(anchor_id)
+        existing_assignments.append(anchor)
+        inserted_anchors.append(anchor)
+
+    return inserted_anchors
 
 
 def get_nearest_assignment_anchor(conn, class_offering_id: int, material_row) -> dict | None:
