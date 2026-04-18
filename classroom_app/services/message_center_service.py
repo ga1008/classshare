@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import json
@@ -13,6 +13,7 @@ from .psych_profile_service import (
     load_ai_class_config,
     load_latest_hidden_profile,
 )
+from .academic_service import build_classroom_ai_context
 from .prompt_utils import build_time_context_text, polite_address
 from .rate_limit_service import (
     RateLimitExceededError,
@@ -1598,6 +1599,7 @@ async def _generate_ai_private_reply_text(
     with get_db_connection() as conn:
         history_rows = _load_private_ai_history(conn, conversation_key)
         class_ai_config = load_ai_class_config(conn, class_offering_id)
+        classroom_ai_context = build_classroom_ai_context(conn, class_offering_id)
         hidden_profile = load_latest_hidden_profile(
             conn,
             class_offering_id=class_offering_id,
@@ -1621,6 +1623,8 @@ async def _generate_ai_private_reply_text(
         rag_syllabus=rag_syllabus,
         user_context_prompt=user_context_prompt,
         psych_profile=hidden_profile,
+        classroom_context_prompt=classroom_ai_context.get("classroom_summary") or "",
+        textbook_context_prompt=classroom_ai_context.get("textbook_summary") or "",
     )
     final_system_prompt = (
         f"{base_system_prompt}\n\n"
@@ -1991,9 +1995,9 @@ def create_assignment_published_notifications(conn, assignment_id: int | str) ->
     mention_everyone = False
     for row in student_rows:
         notification_title = (
-            f"{sender_display_name} 鍦ㄨ鍫傝璁轰腑 @浜嗘墍鏈変汉"
+            f"{sender_display_name} 在课堂讨论中 @了所有人"
             if mention_everyone
-            else f"{sender_display_name} 鍦ㄨ鍫傝璁轰腑 @浜嗕綘"
+            else f"{sender_display_name} 在课堂讨论中 @了你"
         )
         payload = _build_notification_payload(
             recipient_role="student",
@@ -2291,6 +2295,6 @@ def create_discussion_mention_notifications(
             },
         )
         if mention_everyone:
-            payload["title"] = f"{sender_display_name} 鍦ㄨ鍫傝璁轰腑 @浜嗘墍鏈変汉"
+            payload["title"] = f"{sender_display_name} 在课堂讨论中 @了所有人"
         inserted_count += 1 if _insert_notification_if_allowed(conn, payload) else 0
     return inserted_count

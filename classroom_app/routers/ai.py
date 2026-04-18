@@ -35,6 +35,7 @@ from ..services.psych_profile_service import (
     load_ai_class_config as fetch_ai_class_config,
     load_latest_hidden_profile as load_hidden_profile_snapshot,
 )
+from ..services.academic_service import build_classroom_ai_context
 from ..services.prompt_utils import (
     polite_address,
     build_time_context_text,
@@ -1119,6 +1120,7 @@ async def handle_ai_chat(
             (session_db_id, message, attachments_json)
         )
         class_ai_config = fetch_ai_class_config(conn, class_offering_id)
+        classroom_ai_context = build_classroom_ai_context(conn, class_offering_id)
         latest_hidden_profile = load_hidden_profile_snapshot(conn, class_offering_id, user_pk, user_role)
         all_messages = conn.execute(
             """
@@ -1172,6 +1174,8 @@ async def handle_ai_chat(
         rag_syllabus,
         user_context_prompt,
         latest_hidden_profile,
+        classroom_context_prompt=classroom_ai_context.get("classroom_summary") or "",
+        textbook_context_prompt=classroom_ai_context.get("textbook_summary") or "",
     )
 
     # 7. 准备发送给 ai_assistant 的数据
@@ -1343,12 +1347,12 @@ async def handle_ai_chat(
                             **{key: value for key, value in event.items() if key != "event"}
                         )
         except httpx.ConnectError:
-            error_message = "鏃犳硶杩炴帴鍒?AI 鍔╂暀鏈嶅姟銆?"
+            error_message = "无法连接到 AI 助教服务。"
             print(f"[ERROR] {error_message}")
             yield _encode_stream_event("error", message=error_message)
             yield _encode_stream_event("done", has_thinking=False)
         except Exception as e:
-            error_message = f"AI 娴佸紡浼犺緭涓彂鐢熸湭鐭ラ敊璇? {e}"
+            error_message = f"AI 流式传输中发生未知错误：{e}"
             print(f"[ERROR] {error_message}")
             yield _encode_stream_event("error", message=error_message)
             yield _encode_stream_event("done", has_thinking=bool(thinking_content.strip()))
@@ -1358,7 +1362,7 @@ async def handle_ai_chat(
             stored_final_answer = (
                 final_answer.strip()
                 or error_message
-                or "锛圓I 娌℃湁杩斿洖鏈夋晥鍐呭锛?"
+                or "（AI 没有返回有效内容）"
             )
 
             with get_db_connection() as conn:
@@ -1399,53 +1403,31 @@ async def handle_ai_chat(
 def get_course_context_for_offering(class_offering_id: int, teacher_id: int) -> Dict[str, Any]:
     """获取课堂的课程上下文信息（大纲、简介等）"""
     with get_db_connection() as conn:
-        # 验证教师是否有权访问此课堂 - 先不使用LEFT JOIN
-        offering = conn.execute(
-            """SELECT co.id, co.course_id, c.name as course_name, c.description as course_description,
-                      cl.name as class_name
-               FROM class_offerings co
-               JOIN courses c ON co.course_id = c.id
-               JOIN classes cl ON co.class_id = cl.id
-               WHERE co.id = ? AND co.teacher_id = ?""",
-            (class_offering_id, teacher_id)
-        ).fetchone()
-
-        if not offering:
-            raise HTTPException(status_code=404, detail="课堂不存在或无权访问")
-
-        # 转换为字典
-        offering_dict = dict(offering)
-
-        # 单独获取AI配置（如果存在）
-        syllabus = ""
-        system_prompt = ""
-        ai_config = conn.execute(
-            "SELECT syllabus, system_prompt FROM ai_class_configs WHERE class_offering_id = ?",
-            (class_offering_id,)
-        ).fetchone()
-        if ai_config:
-            ai_dict = dict(ai_config)
-            syllabus = ai_dict.get('syllabus') or ""
-            system_prompt = ai_dict.get('system_prompt') or ""
-
-        # 获取课程文件信息（如果有）
+        _ensure_classroom_access(conn, class_offering_id, teacher_id, "teacher")
+        classroom_context = build_classroom_ai_context(conn, class_offering_id)
+        ai_config = fetch_ai_class_config(conn, class_offering_id)
         materials = conn.execute(
             """SELECT file_name as title, description, stored_path as file_path
                FROM course_files
                WHERE course_id = ?
                ORDER BY uploaded_at DESC
                LIMIT 10""",
-            (offering_dict['course_id'],)
+            (classroom_context.get("course_id"),)
         ).fetchall()
 
         return {
-            "offering_id": offering_dict['id'],
-            "course_name": offering_dict['course_name'],
-            "course_description": offering_dict.get('course_description') or "",
-            "class_name": offering_dict['class_name'],
-            "syllabus": syllabus,
-            "system_prompt": system_prompt,
-            "materials": [dict(row) for row in materials]
+            "offering_id": int(classroom_context.get("id") or class_offering_id),
+            "course_name": classroom_context.get("course_name") or "",
+            "course_description": classroom_context.get("course_description") or "",
+            "class_name": classroom_context.get("class_name") or "",
+            "semester_name": classroom_context.get("semester_name") or "",
+            "syllabus": ai_config.get("syllabus") or "",
+            "system_prompt": ai_config.get("system_prompt") or "",
+            "materials": [dict(row) for row in materials],
+            "recent_material_names": classroom_context.get("recent_material_names") or [],
+            "classroom_summary": classroom_context.get("classroom_summary") or "",
+            "textbook_summary": classroom_context.get("textbook_summary") or "",
+            "textbook": classroom_context.get("textbook") or None,
         }
 
 
@@ -1647,6 +1629,9 @@ async def ai_suggest_exam_topics(request: Request, user: dict = Depends(get_curr
 课程名称：{context['course_name']}
 课程描述：{context['course_description']}
 班级：{context['class_name']}
+学期：{context.get('semester_name') or '未设置'}
+课堂概览：{context.get('classroom_summary') or '暂无'}
+教材信息：{context.get('textbook_summary') or '当前课堂未绑定教材'}
 教学大纲：{context['syllabus'][:500]}...
 
 请列出3-5个主要的出题范围，每个范围包含：
@@ -1836,10 +1821,18 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
                 context = get_course_context_for_offering(int(class_offering_id), user['id'])
                 prompt_parts.append(f"\n课程背景信息：")
                 prompt_parts.append(f"课程名称：{context['course_name']}")
+                if context.get('semester_name'):
+                    prompt_parts.append(f"所属学期：{context['semester_name']}")
+                if context.get('classroom_summary'):
+                    prompt_parts.append(f"课堂概览：{context['classroom_summary'][:400]}...")
                 if context['course_description']:
                     prompt_parts.append(f"课程描述：{context['course_description'][:200]}...")
                 if context['syllabus']:
                     prompt_parts.append(f"教学大纲要点：{context['syllabus'][:300]}...")
+                if context.get('textbook_summary'):
+                    prompt_parts.append(f"教材信息：{context['textbook_summary'][:400]}...")
+                if context.get('recent_material_names'):
+                    prompt_parts.append(f"最近使用材料：{', '.join(context['recent_material_names'][:6])}")
             except Exception as e:
                 print(f"[WARN] 获取课程上下文失败: {e}")
                 pass  # 忽略上下文获取失败

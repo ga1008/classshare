@@ -1,99 +1,242 @@
-{% extends "manage/layout.html" %}
+﻿{% extends "manage/layout.html" %}
 
-{% block title %}开设课堂{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/manage_academic.css">
+<style>
+    .offering-preview {
+        display: grid;
+        gap: 12px;
+    }
+
+    .offering-preview .academic-context-block {
+        min-height: 0;
+    }
+
+    .offering-requirement-list {
+        display: grid;
+        gap: 12px;
+    }
+
+    .offering-requirement {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: rgba(248, 250, 252, 0.82);
+    }
+
+    .offering-requirement strong {
+        color: var(--text-primary);
+    }
+</style>
+{% endblock %}
+
+{% block header_actions %}
+<a href="/manage/semesters" class="btn btn-outline">学期管理</a>
+<a href="/manage/textbooks" class="btn btn-primary">教材管理</a>
+{% endblock %}
 
 {% block content %}
-<div class="grid-1-col">
-    <div class="panel">
-        <div class="panel-header"><h2>开设新课堂 (关联)</h2></div>
-        <div class="panel-body">
-            <p class="description mb-2">
-                “课堂”是将您的一个“班级”和一门“课程”在特定学期关联起来的实例。
-            </p>
-            <form id="form-create-offering" action="/api/manage/class_offerings/create" method="POST">
-                <div class="form-group">
-                    <label class="form-label" for="select-class">选择班级</label>
-                    <select class="form-select" id="select-class" name="class_id" required>
-                        <option value="">-- 请选择班级 --</option>
-                        {% for class in my_classes %}
-                        <option value="{{ class.id }}">{{ class.name }}</option>
-                        {% else %}
-                        <option value="" disabled>请先创建班级</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="select-course">选择课程</label>
-                    <select class="form-select" id="select-course" name="course_id" required>
-                        <option value="">-- 请选择课程 --</option>
-                        {% for course in my_courses %}
-                        <option value="{{ course.id }}">{{ course.name }}</option>
-                        {% else %}
-                        <option value="" disabled>请先创建课程</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="semester">学期 (可选)</label>
-                    <input class="form-control" type="text" id="semester" name="semester" placeholder="例如: 2025-2026-1 或 2025-Fall">
-                </div>
-                <button type="submit" class="btn btn-success btn-block">关联班级与课程</button>
-            </form>
+<div class="academic-shell">
+    <section class="academic-hero">
+        <div class="academic-eyebrow">Course Offering</div>
+        <h2>课堂开设与管理</h2>
+        <p>
+            通过绑定班级、课程、学期和教材来开设课堂，后续课堂材料、考试和 AI 助教均基于此课堂运行。
+        </p>
+        <div class="academic-hero-actions">
+            <a href="/manage/semesters?open=new" class="academic-link-btn">先建学期</a>
+            <a href="/manage/textbooks?open=new" class="academic-link-btn">先建教材</a>
         </div>
-    </div>
+    </section>
 
-    <div class="panel">
-        <div class="panel-header"><h2>已开设的课堂</h2></div>
-        <div class="panel-body">
-            <ul class="item-list">
-                {% for offering in my_offerings %}
-                <li>
-                    <div>
-                        <strong>{{ offering.course_name }}</strong> - {{ offering.class_name }}
-                        {% if offering.semester %}
-                        <span class="text-muted text-sm ml-2">
-                            ({{ offering.semester }})
-                        </span>
-                        {% endif %}
+    <section class="academic-stat-grid">
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">班级模板</div>
+            <div class="academic-stat-value">{{ my_classes|length }}</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">课程模板</div>
+            <div class="academic-stat-value">{{ my_courses|length }}</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">学期配置</div>
+            <div class="academic-stat-value">{{ my_semesters|length }}</div>
+            <div class="academic-stat-help">至少一个学期后才能开设课堂。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">教材库</div>
+            <div class="academic-stat-value">{{ my_textbooks|length }}</div>
+            <div class="academic-stat-help">已录入的教材数量。</div>
+        </article>
+    </section>
+
+    <section class="academic-content-grid two-column">
+        <article class="academic-card">
+            <div class="academic-card-header">
+                <div>
+                    <h3 class="academic-card-title">开设新课堂</h3>
+                    <p class="academic-card-subtitle">选择学期、班级、课程和教材后即可开设。</p>
+                </div>
+            </div>
+            <div class="academic-card-body">
+                <form id="offeringCreateForm" action="/api/manage/class_offerings/create" method="post" class="academic-form-grid">
+                    <div class="academic-field">
+                        <label for="offeringSemesterSelect">学期</label>
+                        <div class="academic-split-field">
+                            <select id="offeringSemesterSelect" name="semester_id" class="form-control" required>
+                                <option value="">请选择学期</option>
+                                {% for semester in my_semesters %}
+                                <option value="{{ semester.id }}" {% if default_semester_id and semester.id == default_semester_id %}selected{% endif %}>{{ semester.name }} · {{ semester.start_date }} 至 {{ semester.end_date }}</option>
+                                {% endfor %}
+                            </select>
+                            <a href="/manage/semesters?open=new" class="academic-link-btn">新增学期</a>
+                        </div>
                     </div>
-                    <button class="btn btn-danger btn-sm"
-                            data-id="{{ offering.id }}"
-                            data-name="{{ offering.course_name }} - {{ offering.class_name }}"
-                            onclick="deleteOffering(this)">删除</button>
-                </li>
-                {% else %}
-                <li class="placeholder">暂未开设任何课堂</li>
-                {% endfor %}
-            </ul>
+                    <div class="academic-field">
+                        <label for="offeringClassSelect">班级</label>
+                        <div class="academic-split-field">
+                            <select id="offeringClassSelect" name="class_id" class="form-control" required>
+                                <option value="">请选择班级</option>
+                                {% for class_item in my_classes %}
+                                <option value="{{ class_item.id }}">{{ class_item.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <a href="/manage/classes" class="academic-link-btn">新增班级</a>
+                        </div>
+                    </div>
+                    <div class="academic-field">
+                        <label for="offeringCourseSelect">课程</label>
+                        <div class="academic-split-field">
+                            <select id="offeringCourseSelect" name="course_id" class="form-control" required>
+                                <option value="">请选择课程</option>
+                                {% for course in my_courses %}
+                                <option value="{{ course.id }}">{{ course.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <a href="/manage/courses" class="academic-link-btn">新增课程</a>
+                        </div>
+                    </div>
+                    <div class="academic-field">
+                        <label for="offeringTextbookSelect">教材</label>
+                        <div class="academic-split-field">
+                            <select id="offeringTextbookSelect" name="textbook_id" class="form-control" required>
+                                <option value="">请选择教材</option>
+                                {% for textbook in my_textbooks %}
+                                <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
+                                {% endfor %}
+                            </select>
+                            <a href="/manage/textbooks?open=new" class="academic-link-btn">新增教材</a>
+                        </div>
+                    </div>
+                    <div class="offering-preview">
+                        <div class="academic-context-block">
+                            <h4>课堂预览</h4>
+                            <pre id="offeringPreviewText">请选择学期、班级、课程和教材。</pre>
+                        </div>
+                    </div>
+                    <div class="academic-action-group" style="justify-content: flex-end;">
+                        <button type="submit" class="btn btn-primary" id="offeringSubmitBtn">开设课堂</button>
+                    </div>
+                </form>
+            </div>
+        </article>
+
+        <article class="academic-card">
+            <div class="academic-card-header">
+                <div>
+                    <h3 class="academic-card-title">前置资源检查</h3>
+                    <p class="academic-card-subtitle">检查开课前所需的基础资源是否齐备。</p>
+                </div>
+            </div>
+            <div class="academic-card-body offering-requirement-list">
+                <div class="offering-requirement">
+                    <div>
+                        <strong>学期</strong>
+                        <div class="academic-hint">开课默认会优先选中当前学期。</div>
+                    </div>
+                    <span class="academic-badge {{ 'is-success' if my_semesters else 'is-accent' }}">{{ my_semesters|length }} 个</span>
+                </div>
+                <div class="offering-requirement">
+                    <div>
+                        <strong>教材</strong>
+                        <div class="academic-hint">绑定教材后可自动关联简介和目录。</div>
+                    </div>
+                    <span class="academic-badge {{ 'is-success' if my_textbooks else 'is-accent' }}">{{ my_textbooks|length }} 本</span>
+                </div>
+                <div class="offering-requirement">
+                    <div>
+                        <strong>班级</strong>
+                        <div class="academic-hint">学生访问权限由班级绑定决定。</div>
+                    </div>
+                    <span class="academic-badge {{ 'is-success' if my_classes else 'is-accent' }}">{{ my_classes|length }} 个</span>
+                </div>
+                <div class="offering-requirement">
+                    <div>
+                        <strong>课程</strong>
+                        <div class="academic-hint">课程描述和学分信息用于课堂配置。</div>
+                    </div>
+                    <span class="academic-badge {{ 'is-success' if my_courses else 'is-accent' }}">{{ my_courses|length }} 门</span>
+                </div>
+                <div class="academic-context-block">
+                    <h4>操作指引</h4>
+                    <pre>1. 先配置学期和教材。
+2. 再选择班级与课程开设课堂。
+3. 最后在 AI 配置页完善相关设置。</pre>
+                </div>
+            </div>
+        </article>
+    </section>
+
+    <section class="academic-card">
+        <div class="academic-card-header">
+            <div>
+                <h3 class="academic-card-title">已开设课堂</h3>
+                <p class="academic-card-subtitle">已开设的课堂列表，包含学期和教材绑定信息。</p>
+            </div>
         </div>
-    </div>
+        <div class="academic-card-body">
+            <div class="academic-list" id="offeringList">
+                {% for offering in my_offerings %}
+                <div class="academic-list-item" id="offering-item-{{ offering.id }}">
+                    <div class="academic-list-main">
+                        <strong>{{ offering.course_name }} / {{ offering.class_name }}</strong>
+                        <p>{{ offering.semester or '未绑定学期' }} · {{ offering.textbook_title or '未绑定教材' }}</p>
+                        <div class="academic-badge-row">
+                            {% if offering.semester %}<span class="academic-badge">{{ offering.semester }}</span>{% endif %}
+                            {% if offering.textbook_title %}<span class="academic-badge is-success">{{ offering.textbook_title }}</span>{% endif %}
+                        </div>
+                    </div>
+                    <div class="academic-list-side">
+                        <a href="/manage/ai" class="btn btn-outline btn-sm">配置 AI</a>
+                        <button type="button" class="btn btn-danger btn-sm" data-action="delete" data-offering-id="{{ offering.id }}" data-offering-name="{{ offering.course_name }} / {{ offering.class_name }}">删除</button>
+                    </div>
+                </div>
+                {% else %}
+                <div class="academic-empty">
+                    <strong>还没有开设任何课堂</strong>
+                    开设课堂后，即可为课堂分配材料、发布试卷和配置 AI 助教。
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
 </div>
+
+<script>
+    window.OFFERINGS_PAGE_DATA = {
+        classes: {{ my_classes | tojson }},
+        courses: {{ my_courses | tojson }},
+        semesters: {{ my_semesters | tojson }},
+        textbooks: {{ my_textbooks | tojson }},
+        defaultSemesterId: {{ default_semester_id | tojson }}
+    };
+</script>
 {% endblock %}
 
 {% block scripts %}
-<script>
-    document.addEventListener('DOMContentLoaded', () => {
-        // 绑定创建课堂表单
-        const formCreateOffering = document.getElementById('form-create-offering');
-        if (formCreateOffering) {
-            formCreateOffering.onsubmit = e => handleFormSubmit(e);
-        }
-    });
-
-    // 删除课堂的 JS
-    async function deleteOffering(button) {
-        const offeringId = button.dataset.id;
-        const offeringName = button.dataset.name;
-        
-        if (!confirm(`确定要删除课堂 "${offeringName}" 吗？\n警告：这将同时删除该课堂的所有AI配置和聊天记录！`)) {
-            return;
-        }
-
-        const data = await apiFetch(`/api/manage/class_offerings/${offeringId}`, { method: 'DELETE' });
-        if(data) {
-            showMessage(data.message || '删除成功！', 'success');
-            location.reload();
-        }
-    }
-</script>
+<script type="module" src="/static/js/manage_offerings.js"></script>
 {% endblock %}

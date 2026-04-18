@@ -541,10 +541,14 @@ async def manage_materials_page(request: Request, user: dict = Depends(get_curre
     with get_db_connection() as conn:
         offerings = conn.execute(
             """
-            SELECT o.id, o.semester, c.name AS class_name, co.name AS course_name
+            SELECT o.id,
+                   COALESCE(s.name, o.semester) AS semester,
+                   c.name AS class_name,
+                   co.name AS course_name
             FROM class_offerings o
             JOIN classes c ON o.class_id = c.id
             JOIN courses co ON o.course_id = co.id
+            LEFT JOIN academic_semesters s ON s.id = o.semester_id
             WHERE o.teacher_id = ?
             ORDER BY co.name, c.name
             """,

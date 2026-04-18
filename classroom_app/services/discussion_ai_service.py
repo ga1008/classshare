@@ -12,6 +12,7 @@ from ..core import ai_client
 from ..database import get_db_connection
 from ..routers.ai import format_system_prompt
 from .discussion_attachment_service import build_attachment_image_inputs_from_payloads
+from .academic_service import build_classroom_ai_context
 from .behavior_tracking_service import record_behavior_event
 from .psych_profile_service import (
     compose_classroom_chat_system_prompt as build_classroom_chat_prompt,
@@ -312,6 +313,7 @@ async def generate_discussion_ai_reply(
         with get_db_connection() as conn:
             class_snapshot = _load_classroom_snapshot(conn, class_offering_id)
             class_ai_config = fetch_ai_class_config(conn, class_offering_id)
+            classroom_ai_context = build_classroom_ai_context(conn, class_offering_id)
             user_context_prompt = format_system_prompt(user_pk, user_role, class_offering_id)
             hidden_profile = load_latest_hidden_profile(conn, class_offering_id, user_pk, user_role)
             rows = conn.execute(
@@ -348,6 +350,8 @@ async def generate_discussion_ai_reply(
             rag_syllabus=rag_syllabus,
             user_context_prompt=user_context_prompt,
             psych_profile=hidden_profile,
+            classroom_context_prompt=classroom_ai_context.get("classroom_summary") or "",
+            textbook_context_prompt=classroom_ai_context.get("textbook_summary") or "",
         )
         final_system_prompt = (
             f"{base_system_prompt}\n\n"

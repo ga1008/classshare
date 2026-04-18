@@ -104,6 +104,7 @@ CONFIG_FILE = BASE_DIR / "config.json"
 
 # Global file storage.
 GLOBAL_FILES_DIR = _read_path_env("MAIN_GLOBAL_FILES_DIR", BASE_DIR / "storage/global_files")
+TEXTBOOK_ATTACHMENT_DIR = _read_path_env("MAIN_TEXTBOOK_ATTACHMENT_DIR", BASE_DIR / "storage/textbook_attachments")
 FILE_CHUNK_SIZE = 8192
 
 # --- Service ---

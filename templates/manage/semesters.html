@@ -1,0 +1,373 @@
+﻿{% extends "manage/layout.html" %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/manage_academic.css">
+<style>
+    .semester-layout {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+    }
+
+    .semester-calendar-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+    }
+
+    .semester-calendar-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 16px;
+    }
+
+    .semester-calendar-legend .academic-badge {
+        padding: 6px 10px;
+    }
+
+    .semester-calendar-scroll {
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding-bottom: 12px;
+        cursor: grab;
+        user-select: none;
+    }
+
+    .semester-calendar-scroll.is-dragging {
+        cursor: grabbing;
+    }
+
+    .semester-calendar-board {
+        display: grid;
+        gap: 0;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 22px;
+        overflow: hidden;
+        min-width: max-content;
+        background: #fff;
+    }
+
+    .semester-sticky-cell {
+        position: sticky;
+        left: 0;
+        z-index: 6;
+        background: linear-gradient(180deg, #f8fafc, #eef2f7);
+        border-right: 1px solid rgba(148, 163, 184, 0.18);
+    }
+
+    .semester-header-cell,
+    .semester-weekday-cell,
+    .semester-day-cell {
+        min-height: 58px;
+        padding: 10px 12px;
+        border-right: 1px solid rgba(148, 163, 184, 0.16);
+        border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+    }
+
+    .semester-header-cell {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 46px;
+        font-weight: 700;
+        color: var(--text-primary);
+        background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.92));
+    }
+
+    .semester-header-cell.month {
+        min-height: 52px;
+        justify-content: flex-start;
+        color: #0f172a;
+        background: linear-gradient(135deg, rgba(255, 247, 237, 0.9), rgba(239, 246, 255, 0.92));
+    }
+
+    .semester-week-label {
+        font-size: 0.76rem;
+        color: var(--text-muted);
+        display: block;
+        margin-top: 4px;
+    }
+
+    .semester-weekday-cell {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        color: var(--text-secondary);
+        background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(255, 255, 255, 0.98));
+    }
+
+    .semester-day-cell {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 96px;
+        background: #fff;
+    }
+
+    .semester-day-cell .date-number {
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .semester-day-cell .date-meta {
+        font-size: 0.74rem;
+        line-height: 1.45;
+        color: var(--text-muted);
+    }
+
+    .semester-day-cell.is-weekend {
+        background: rgba(248, 250, 252, 0.86);
+    }
+
+    .semester-day-cell.is-holiday {
+        background: linear-gradient(180deg, rgba(255, 237, 213, 0.82), rgba(255, 247, 237, 0.9));
+    }
+
+    .semester-day-cell.is-workday {
+        background: linear-gradient(180deg, rgba(224, 242, 254, 0.72), rgba(239, 246, 255, 0.92));
+    }
+
+    .semester-day-cell.is-today {
+        box-shadow: inset 0 0 0 2px rgba(14, 165, 233, 0.42);
+        background: linear-gradient(180deg, rgba(219, 234, 254, 0.92), rgba(239, 246, 255, 0.98));
+    }
+
+    .semester-day-cell.is-outside {
+        background: rgba(248, 250, 252, 0.74);
+    }
+
+    .semester-day-cell.is-outside .date-number,
+    .semester-day-cell.is-outside .date-meta {
+        opacity: 0.56;
+    }
+
+    .semester-chip-line {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .semester-mini-tag {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 7px;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.08);
+        color: var(--text-secondary);
+        font-size: 0.72rem;
+    }
+
+    .semester-mini-tag.holiday {
+        background: rgba(249, 115, 22, 0.16);
+        color: #c2410c;
+    }
+
+    .semester-mini-tag.workday {
+        background: rgba(14, 165, 233, 0.16);
+        color: #0369a1;
+    }
+
+    .semester-summary-grid {
+        display: grid;
+        gap: 14px;
+    }
+
+    .semester-summary-grid .academic-context-block {
+        min-height: 120px;
+    }
+</style>
+{% endblock %}
+
+{% block header_actions %}
+<button type="button" class="btn btn-primary" id="openSemesterCreateBtn">新增学期</button>
+{% endblock %}
+
+{% block content %}
+<div class="academic-shell semester-layout">
+    <section class="academic-hero">
+        <div class="academic-eyebrow">Academic Calendar</div>
+        <h2>学期管理</h2>
+        <p>
+            管理学期时间范围与校历，系统自动计算周次并标注法定假期。日历视图直观展示每个教学日的安排。
+        </p>
+        <div class="academic-hero-actions">
+            <button type="button" class="btn btn-primary" id="heroSemesterCreateBtn">新建学期</button>
+            <span class="academic-badge is-accent">广西法定假期标注</span>
+            <span class="academic-badge is-success">周次自动计算</span>
+            <span class="academic-badge">横向拖拽浏览</span>
+        </div>
+    </section>
+
+    <section class="academic-stat-grid">
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">学期数量</div>
+            <div class="academic-stat-value">{{ semesters|length }}</div>
+            <div class="academic-stat-help">当前教师已配置的学期总数。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">进行中</div>
+            <div class="academic-stat-value">{{ semesters|selectattr('is_current')|list|length }}</div>
+            <div class="academic-stat-help">当前日期落入学期区间的学期数量。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">累计周数</div>
+            <div class="academic-stat-value">{{ semesters|sum(attribute='week_count') }}</div>
+            <div class="academic-stat-help">所有学期自动计算后的总周次。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">默认草稿</div>
+            <div class="academic-stat-value" style="font-size: 1.1rem;">{{ semester_defaults.name }}</div>
+            <div class="academic-stat-help">建议时间：{{ semester_defaults.start_date }} 至 {{ semester_defaults.end_date }}</div>
+        </article>
+    </section>
+
+    <section class="academic-content-grid two-column">
+        <article class="academic-card">
+            <div class="academic-card-header">
+                <div>
+                    <h3 class="academic-card-title">学期列表</h3>
+                    <p class="academic-card-subtitle">支持搜索、编辑和删除。选择任意学期后，下方会同步渲染完整日历。</p>
+                </div>
+            </div>
+            <div class="academic-card-body">
+                <div class="academic-toolbar academic-toolbar-between">
+                    <label class="academic-search" for="semesterSearchInput">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+                        <input type="search" id="semesterSearchInput" class="form-control" placeholder="搜索学期名称、日期或周数">
+                    </label>
+                    <button type="button" class="btn btn-outline" id="semesterClearSearchBtn">清空</button>
+                </div>
+                <div class="academic-list" id="semesterList"></div>
+                <div class="academic-empty" id="semesterListEmpty" hidden>
+                    <strong>没有匹配的学期</strong>
+                    可以换个关键词，或者直接新增一个新的学期。
+                </div>
+            </div>
+        </article>
+
+        <article class="academic-card">
+            <div class="academic-card-header">
+                <div>
+                    <h3 class="academic-card-title">当前焦点</h3>
+                    <p class="academic-card-subtitle">这里会展示当前选中学期的核心信息和使用建议。</p>
+                </div>
+            </div>
+            <div class="academic-card-body semester-summary-grid">
+                <div class="academic-context-block">
+                    <h4>学期摘要</h4>
+                    <pre id="semesterSummaryText">请选择一个学期。</pre>
+                </div>
+                <div class="academic-context-block">
+                    <h4>管理建议</h4>
+                    <pre id="semesterAdviceText">开设课堂、排课和考试发布前建议先创建学期，以确保时间信息统一。</pre>
+                </div>
+                <div class="academic-context-block">
+                    <h4>图例说明</h4>
+                    <div class="semester-chip-line">
+                        <span class="semester-mini-tag">普通教学日</span>
+                        <span class="semester-mini-tag holiday">法定假期</span>
+                        <span class="semester-mini-tag workday">调休上课</span>
+                        <span class="semester-mini-tag">周末</span>
+                    </div>
+                </div>
+            </div>
+        </article>
+    </section>
+
+    <section class="academic-card">
+        <div class="academic-card-header">
+            <div>
+                <h3 class="academic-card-title">完整学期日历</h3>
+                <p class="academic-card-subtitle">从第 1 周到最后一周横向展开。超出容器宽度时，可直接按住鼠标左右拖动。</p>
+            </div>
+            <div class="academic-quick-links">
+                <button type="button" class="btn btn-outline" id="scrollCalendarStartBtn">回到开头</button>
+                <button type="button" class="btn btn-outline" id="scrollCalendarTodayBtn">定位今天</button>
+            </div>
+        </div>
+        <div class="academic-card-body">
+            <div class="semester-calendar-legend">
+                <span class="academic-badge">第一行显示月份</span>
+                <span class="academic-badge">第二行显示周次</span>
+                <span class="academic-badge is-accent">周末 / 节假日高亮</span>
+                <span class="academic-badge is-success">今天高亮</span>
+            </div>
+            <div class="semester-calendar-toolbar">
+                <div class="academic-filter-field" style="min-width: 260px;">
+                    <span>当前查看学期</span>
+                    <select id="semesterCalendarSelect" class="form-control"></select>
+                </div>
+                <div class="academic-hint">提示：拖动滚动条或按住表格左右拖拽，都可以浏览完整周历。</div>
+            </div>
+            <div class="semester-calendar-scroll" id="semesterCalendarScroll">
+                <div id="semesterCalendarBoard" class="semester-calendar-board"></div>
+            </div>
+            <div class="academic-empty" id="semesterCalendarEmpty" hidden>
+                <strong>还没有学期数据</strong>
+                先新增一个学期，后续开设课堂时就能直接绑定。
+            </div>
+        </div>
+    </section>
+</div>
+
+<div class="academic-modal-backdrop" id="semesterModalBackdrop">
+    <div class="academic-modal slim" role="dialog" aria-modal="true" aria-labelledby="semesterModalTitle">
+        <div class="academic-modal-header">
+            <div>
+                <h3 class="academic-modal-title" id="semesterModalTitle">新增学期</h3>
+                <p class="academic-modal-subtitle">留空时系统将自动生成学期名称，保存后仍可修改。</p>
+            </div>
+            <button type="button" class="academic-modal-close" id="semesterModalCloseBtn" aria-label="关闭">&times;</button>
+        </div>
+        <form id="semesterForm" action="/api/manage/semesters/save" method="post">
+            <div class="academic-modal-body">
+                <input type="hidden" name="semester_id" id="semesterIdInput">
+                <div class="academic-form-grid two-col">
+                    <div class="academic-field">
+                        <label for="semesterNameInput">学期名称</label>
+                        <input type="text" id="semesterNameInput" name="name" class="form-control" placeholder="例如：2025-2026 第一学期">
+                        <div class="academic-hint">根据所选日期自动生成，保存后可随时修改。</div>
+                    </div>
+                    <div class="academic-field">
+                        <label>自动周数</label>
+                        <div class="academic-context-block">
+                            <h4 id="semesterWeekCountValue">0 周</h4>
+                            <p id="semesterWeekCountHint">选择开始和结束日期后自动计算。</p>
+                        </div>
+                    </div>
+                    <div class="academic-field">
+                        <label for="semesterStartInput">开始日期</label>
+                        <input type="date" id="semesterStartInput" name="start_date" class="form-control" required>
+                    </div>
+                    <div class="academic-field">
+                        <label for="semesterEndInput">结束日期</label>
+                        <input type="date" id="semesterEndInput" name="end_date" class="form-control" required>
+                    </div>
+                </div>
+            </div>
+            <div class="academic-modal-footer">
+                <button type="button" class="btn btn-ghost" id="semesterModalCancelBtn">取消</button>
+                <button type="submit" class="btn btn-primary" id="semesterSubmitBtn">保存学期</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    window.SEMESTER_MANAGE_DATA = {
+        semesters: {{ semesters_json | tojson }},
+        holidayLookup: {{ holiday_lookup | tojson }},
+        todayIso: {{ today_iso | tojson }},
+        defaults: {{ semester_defaults | tojson }}
+    };
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/manage_semesters.js"></script>
+{% endblock %}

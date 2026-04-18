@@ -1,275 +1,170 @@
-{% extends "manage/layout.html" %}
+﻿{% extends "manage/layout.html" %}
 
-{% block title %}课堂AI配置{% endblock %}
-
-{% block content %}
-<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-    <div class="lg:col-span-8 lg:col-start-3">
-        <div class="card">
-            <div class="card-header">
-                <h2 class="card-title flex items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path><line x1="8" y1="16" x2="8" y2="16"></line><line x1="16" y1="16" x2="16" y2="16"></line></svg>
-                    课堂AI助手配置
-                </h2>
-            </div>
-            <div class="card-body">
-                {% if my_offerings %}
-                <div class="alert alert-info mb-5">
-                    <p class="mb-1">
-                        <strong>配置说明：</strong> 每个课堂都可以拥有独立的AI助手配置。
-                    </p>
-                    <ul class="ai-config-list">
-                        <li><strong>System Prompt:</strong> 决定了AI的角色、语气和行为边界。</li>
-                        <li><strong>RAG 材料:</strong> 作为AI回答专业问题的首要参考知识库。</li>
-                    </ul>
-                </div>
-
-                <form id="form-configure-ai" action="/api/manage/ai/configure" method="POST">
-                    <div class="form-group">
-                        <label class="form-label" for="ai-select-offering">选择要配置的课堂</label>
-                        <select id="ai-select-offering" name="class_offering_id" required class="form-control ai-select">
-                            <option value="">-- 请选择一个已开设的课堂 --</option>
-                            {% for offering in my_offerings %}
-                            <!-- 使用 data-* 属性存储预填充所需的信息 -->
-                            <option value="{{ offering.id }}"
-                                    data-course-name="{{ offering.course_name }}"
-                                    data-class-name="{{ offering.class_name }}"
-                                    data-course-desc="{{ offering.description or '' }}"
-                                    data-course-credits="{{ offering.credits or 0.0 }}">
-                                {{ offering.course_name }} - {{ offering.class_name }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-
-                    <div id="ai-config-details" class="ai-config-details" style="display: none;">
-                        <div class="ai-divider"></div>
-
-                        <div class="form-group">
-                            <div class="flex justify-between items-end mb-2">
-                                <label class="form-label mb-0" for="ai-system-prompt">AI 系统提示 (System Prompt)</label>
-                                <span class="badge badge-outline">角色设定</span>
-                            </div>
-                            <textarea class="form-control ai-mono" id="ai-system-prompt" name="system_prompt" rows="8" placeholder="例如：
-你是一个专业的《[此处填写课程名称]》课程教学助手。
-你的任务是回答学生关于课程内容的问题，并辅助教师（{{ user_info.name }}）进行教学。
-...
-"></textarea>
-                            <p class="form-hint mt-2 text-muted text-sm">定义AI的角色、行为准则和回答策略。</p>
-                        </div>
-
-                        <div class="form-group mt-5">
-                            <div class="flex justify-between items-end mb-2">
-                                <label class="form-label mb-0" for="ai-syllabus">课程大纲 / 知识点 (RAG材料)</label>
-                                <span class="badge badge-outline">知识库</span>
-                            </div>
-                            <textarea class="form-control ai-mono" id="ai-syllabus" name="syllabus" rows="12" placeholder="请粘贴课程的核心知识点、章节大纲或评分标准...
-- 变量与数据类型
-- 列表、元组、字典
-...
-"></textarea>
-                            <p class="form-hint mt-2 text-muted text-sm">作为AI回答专业问题的主要依据，内容越详细，AI回答越准确。</p>
-                        </div>
-
-                        <div class="mt-6 flex justify-end">
-                            <button type="submit" class="btn btn-primary ai-save-btn">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                                保存AI配置
-                            </button>
-                        </div>
-                    </div>
-                </form>
-
-                {% else %}
-                <div class="text-center p-xl">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="text-muted mx-auto mb-3"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
-                    <h3 class="text-lg font-medium text-primary mb-2">暂无课堂可配置</h3>
-                    <p class="text-muted mb-4">请先在 "开设课堂" 页面中至少创建一个课堂，然后才能进行AI配置。</p>
-                    <a href="/manage/offerings" class="btn btn-primary">前往开设课堂</a>
-                </div>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-</div>
-
-
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/manage_academic.css">
 <style>
-    .ai-config-list { margin: 0; padding-left: 1.5rem; font-size: 0.9rem; }
-    .ai-config-details { margin-top: var(--spacing-5); animation: fadeIn 0.3s ease; }
-    .ai-divider { height: 1px; background: var(--border-color); margin: var(--spacing-5) 0; }
-    .ai-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.9rem; line-height: 1.65; }
-    .ai-save-btn { min-width: 150px; }
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(-10px); }
-        to { opacity: 1; transform: translateY(0); }
+    .ai-textarea {
+        min-height: 220px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        line-height: 1.72;
+    }
+
+    .ai-context-columns {
+        display: grid;
+        gap: 16px;
+    }
+
+    .ai-material-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
     }
 </style>
 {% endblock %}
 
-{% block scripts %}
+{% block header_actions %}
+<a href="/manage/offerings" class="btn btn-outline">开设课堂</a>
+<a href="/manage/textbooks" class="btn btn-primary">教材管理</a>
+{% endblock %}
+
+{% block content %}
+<div class="academic-shell">
+    <section class="academic-hero">
+        <div class="academic-eyebrow">AI Configuration</div>
+        <h2>课堂 AI 助教配置</h2>
+        <p>
+            为每个课堂配置独立的 AI 系统提示词和课程大纲，绑定教材后 AI 将自动关联教材信息作为辅助参考。
+        </p>
+        <div class="academic-hero-actions">
+            <span class="academic-badge is-success">教材信息自动关联</span>
+            <span class="academic-badge">课堂信息自动填充</span>
+            <span class="academic-badge is-accent">支持手动重新生成</span>
+        </div>
+    </section>
+
+    <section class="academic-stat-grid">
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">可配置课堂</div>
+            <div class="academic-stat-value">{{ my_offerings|length }}</div>
+            <div class="academic-stat-help">只有已经开设的课堂才能拥有独立 AI 配置。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">教材候选</div>
+            <div class="academic-stat-value">{{ my_textbooks|length }}</div>
+            <div class="academic-stat-help">教材变更后建议重新生成提示词。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">系统提示词</div>
+            <div class="academic-stat-value">课堂级</div>
+            <div class="academic-stat-help">每个课堂独立维护，不会互相覆盖。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">知识依据</div>
+            <div class="academic-stat-value">大纲 + 教材</div>
+            <div class="academic-stat-help">可包含课程大纲、章节结构和考核要求。</div>
+        </article>
+    </section>
+
+    {% if my_offerings %}
+    <section class="academic-content-grid two-column">
+        <article class="academic-card">
+            <div class="academic-card-header">
+                <div>
+                    <h3 class="academic-card-title">课堂 AI 配置</h3>
+                    <p class="academic-card-subtitle">选择课堂后，配置其 AI 提示词和教材绑定。</p>
+                </div>
+            </div>
+            <div class="academic-card-body">
+                <form id="aiConfigForm" action="/api/manage/ai/configure" method="post" class="academic-form-grid">
+                    <div class="academic-field">
+                        <label for="aiOfferingSelect">课堂</label>
+                        <select id="aiOfferingSelect" name="class_offering_id" class="form-control" required>
+                            <option value="">请选择课堂</option>
+                            {% for offering in my_offerings %}
+                            <option value="{{ offering.id }}" data-textbook-id="{{ offering.textbook_id or '' }}">{{ offering.course_name }} / {{ offering.class_name }}{% if offering.semester %} · {{ offering.semester }}{% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="academic-field">
+                        <label for="aiTextbookSelect">教材绑定</label>
+                        <div class="academic-split-field">
+                            <select id="aiTextbookSelect" name="textbook_id" class="form-control">
+                                <option value="">暂不绑定教材</option>
+                                {% for textbook in my_textbooks %}
+                                <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
+                                {% endfor %}
+                            </select>
+                            <a href="/manage/textbooks?open=new" class="academic-link-btn">新增教材</a>
+                        </div>
+                    </div>
+                    <div class="academic-action-group" style="justify-content: space-between;">
+                        <div style="display: flex; gap: 8px;">
+                            <button type="button" class="btn btn-outline" id="aiRegenerateBtn">重新生成默认草稿</button>
+                            <button type="button" class="btn btn-accent" id="aiGenerateBtn">AI 生成</button>
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="aiConfigSubmitBtn">保存 AI 配置</button>
+                    </div>
+                    <div class="academic-field">
+                        <label for="aiSystemPromptInput">系统提示词</label>
+                        <textarea id="aiSystemPromptInput" name="system_prompt" class="form-control ai-textarea" placeholder="选择课堂后自动加载已有配置，也可点击"重新生成默认草稿"自动填充。"></textarea>
+                    </div>
+                    <div class="academic-field">
+                        <label for="aiSyllabusInput">课程大纲 / 知识依据</label>
+                        <textarea id="aiSyllabusInput" name="syllabus" class="form-control ai-textarea" placeholder="填写课程目标、章节安排、知识点和考核方式等。"></textarea>
+                    </div>
+                </form>
+            </div>
+        </article>
+
+        <article class="academic-card">
+            <div class="academic-card-header">
+                <div>
+                    <h3 class="academic-card-title">课堂信息预览</h3>
+                    <p class="academic-card-subtitle">展示当前课堂的基本信息、教材内容和课堂材料，供配置时参考。</p>
+                </div>
+            </div>
+            <div class="academic-card-body ai-context-columns">
+                <div class="academic-context-block">
+                    <h4>课堂摘要</h4>
+                    <pre id="aiClassroomSummary">请选择课堂后加载。</pre>
+                </div>
+                <div class="academic-context-block">
+                    <h4>教材摘要</h4>
+                    <pre id="aiTextbookSummary">当前课堂尚未加载教材信息。</pre>
+                </div>
+                <div class="academic-context-block">
+                    <h4>最近课堂材料</h4>
+                    <div class="ai-material-list" id="aiMaterialList">
+                        <span class="academic-badge is-muted">暂无数据</span>
+                    </div>
+                </div>
+            </div>
+        </article>
+    </section>
+    {% else %}
+    <section class="academic-card">
+        <div class="academic-card-body">
+            <div class="academic-empty">
+                <strong>还没有可配置的课堂</strong>
+                先到“开设课堂”页面创建至少一个课堂实例，再回来配置课堂 AI。
+                <div class="academic-hero-actions" style="justify-content: center; margin-top: 16px;">
+                    <a href="/manage/offerings" class="btn btn-primary">前往开设课堂</a>
+                </div>
+            </div>
+        </div>
+    </section>
+    {% endif %}
+</div>
+
 <script>
-    /**
-     * 根据课堂信息生成默认的 System Prompt
-     */
-    function generateDefaultPrompt(teacherName, courseName, className) {
-        return `你是一个专业的《${courseName}》课程教学AI助手。
-你的主要任务是解答学生关于课程内容的问题，并辅助教师（${teacherName}）进行教学工作。
-
---- 课堂基本信息 ---
-课程名称: ${courseName}
-授课班级: ${className}
-任课教师: ${teacherName}
-------------------
-
-行为准则：
-1. 态度必须友好、耐心、具有启发性，鼓励学生独立思考。
-2. 回答专业问题时，必须严格基于【RAG材料】中提供的课程大纲和知识点。
-3. 如果学生的问题超出了课程大纲范围，或者你不知道答案，请诚实地告诉学生，并建议他们查阅相关资料或直接询问教师。
-4. 绝不直接提供作业或考试的最终答案，而是提供解题思路或相关知识点提示。
-5. 保持回答简洁明了，对于复杂的概念，尽量使用通俗易懂的例子进行解释。`;
-    }
-
-    /**
-     * 根据课程信息生成默认的 RAG 材料模板
-     */
-    function generateDefaultSyllabus(courseName, description, credits) {
-        let syllabus = `=== ${courseName} 课程信息 ===
-`;
-        if (description) syllabus += `课程简介: ${description}
-`;
-        if (credits > 0) syllabus += `课程学分: ${credits} 学分
-`;
-
-        syllabus += `
-=== 核心知识点架构 (请教师在此处详细补充) ===
-`;
-        syllabus += `第一章：基础概念引入
-`;
-        syllabus += `  - 核心概念 1.1：[说明]
-`;
-        syllabus += `  - 核心概念 1.2：[说明]
-
-`;
-        syllabus += `第二章：进阶原理
-`;
-        syllabus += `  - 原理 2.1：[说明]
-`;
-        syllabus += `  - 原理 2.2：[说明]
-
-`;
-        syllabus += `=== 课程考核与评分标准 ===
-`;
-        syllabus += `- 平时成绩：[%]
-`;
-        syllabus += `- 期末成绩：[%]
-`;
-
-        return syllabus;
-    }
-
-    document.addEventListener('DOMContentLoaded', () => {
-        const formConfigureAI = document.getElementById('form-configure-ai');
-        const aiSelect = document.getElementById('ai-select-offering');
-        const aiConfigDetails = document.getElementById('ai-config-details');
-        const systemPromptTextarea = document.getElementById('ai-system-prompt');
-        const syllabusTextarea = document.getElementById('ai-syllabus');
-
-        // 从 Jinja2 模板获取教师姓名
-        const teacherName = "{{ user_info.name }}";
-
-        if (!formConfigureAI) return;
-
-        // 绑定表单提交
-        formConfigureAI.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const form = e.target;
-            const submitBtn = form.querySelector('button[type="submit"]');
-            const originalText = submitBtn.innerHTML;
-
-            submitBtn.innerHTML = '<span class="spinner" style="width: 14px; height: 14px; border-width: 2px;"></span> 保存中...';
-            submitBtn.disabled = true;
-
-            try {
-                const formData = new FormData(form);
-                const data = await window.apiFetch(form.action, {
-                    method: 'POST',
-                    body: formData
-                });
-
-                window.showMessage(data.message || 'AI配置保存成功！', 'success');
-
-                // 添加一个小动画效果提示保存成功
-                aiConfigDetails.style.boxShadow = '0 0 0 2px var(--success-color)';
-                setTimeout(() => { aiConfigDetails.style.boxShadow = 'none'; }, 1000);
-
-            } catch (err) {
-                window.showMessage(err.message || '保存失败', 'error');
-            } finally {
-                submitBtn.innerHTML = originalText;
-                submitBtn.disabled = false;
-            }
-        });
-
-        // 绑定下拉框选择事件
-        aiSelect.addEventListener('change', async (e) => {
-            const offeringId = e.target.value;
-            const selectedOption = e.target.options[e.target.selectedIndex];
-
-            // 立即清空
-            systemPromptTextarea.value = '';
-            syllabusTextarea.value = '';
-
-            if (offeringId) {
-                // 显示配置区域
-                aiConfigDetails.style.display = 'block';
-
-                // UX 优化: 加载状态
-                systemPromptTextarea.placeholder = "正在加载服务器配置...";
-                syllabusTextarea.placeholder = "正在加载服务器配置...";
-                systemPromptTextarea.disabled = true;
-                syllabusTextarea.disabled = true;
-
-                const courseName = selectedOption.dataset.courseName;
-                const className = selectedOption.dataset.className;
-                const courseDesc = selectedOption.dataset.courseDesc;
-                const courseCredits = parseFloat(selectedOption.dataset.courseCredits);
-
-                try {
-                    // 调用 API 加载已有数据
-                    const data = await window.apiFetch(`/api/manage/ai/config/${offeringId}`);
-
-                    // 设置 System Prompt
-                    if (data && data.system_prompt) {
-                        systemPromptTextarea.value = data.system_prompt;
-                    } else {
-                        systemPromptTextarea.value = generateDefaultPrompt(teacherName, courseName, className);
-                    }
-
-                    // 设置 Syllabus
-                    if (data && data.syllabus) {
-                        syllabusTextarea.value = data.syllabus;
-                    } else {
-                        syllabusTextarea.value = generateDefaultSyllabus(courseName, courseDesc, courseCredits);
-                    }
-
-                } catch (err) {
-                    console.error("加载AI配置失败:", err);
-                    // 即使API加载失败，也生成默认值
-                    systemPromptTextarea.value = generateDefaultPrompt(teacherName, courseName, className);
-                    syllabusTextarea.value = generateDefaultSyllabus(courseName, courseDesc, courseCredits);
-                    window.showMessage("未能加载服务器上的配置，已为您生成默认模板。", "warning");
-
-                } finally {
-                     systemPromptTextarea.disabled = false;
-                     syllabusTextarea.disabled = false;
-                }
-
-            } else {
-                // 未选择，隐藏配置区域
-                aiConfigDetails.style.display = 'none';
-            }
-        });
-    });
+    window.MANAGE_AI_DATA = {
+        offerings: {{ my_offerings | tojson }},
+        textbooks: {{ my_textbooks | tojson }},
+        teacherName: {{ user_info.name | tojson }}
+    };
 </script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/manage_ai.js') }}"></script>
 {% endblock %}

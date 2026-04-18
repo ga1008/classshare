@@ -77,6 +77,8 @@ def compose_classroom_chat_system_prompt(
     rag_syllabus: str,
     user_context_prompt: str,
     psych_profile: Optional[dict[str, Any]],
+    classroom_context_prompt: str = "",
+    textbook_context_prompt: str = "",
 ) -> str:
     hidden_profile_summary = str(psych_profile.get("profile_summary") or "") if psych_profile else ""
     hidden_mental_state = str(psych_profile.get("mental_state_summary") or "") if psych_profile else ""
@@ -91,6 +93,14 @@ def compose_classroom_chat_system_prompt(
 
     sections = [
         teacher_base_prompt,
+        "",
+        "--- 课堂信息 ---",
+        classroom_context_prompt or "（暂无课堂上下文信息）",
+        "---------------------------",
+        "",
+        "--- 教材信息 ---",
+        textbook_context_prompt or "（当前课堂未绑定教材）",
+        "---------------------------",
         "",
         "--- 课程大纲 / 知识点 (RAG) ---",
         rag_syllabus or "（暂无课程大纲信息）",

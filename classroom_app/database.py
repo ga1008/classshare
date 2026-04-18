@@ -459,6 +459,48 @@ def init_database():
                          )
                          ''')
 
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS academic_semesters
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    teacher_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    start_date TEXT NOT NULL,
+                    end_date TEXT NOT NULL,
+                    week_count INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                    UNIQUE (teacher_id, name)
+                )
+                '''
+            )
+
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS textbooks
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    teacher_id INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    authors_json TEXT NOT NULL DEFAULT '[]',
+                    publisher TEXT DEFAULT '',
+                    publication_date TEXT,
+                    introduction TEXT DEFAULT '',
+                    catalog_text TEXT DEFAULT '',
+                    attachment_name TEXT DEFAULT '',
+                    attachment_path TEXT DEFAULT '',
+                    attachment_size INTEGER NOT NULL DEFAULT 0,
+                    attachment_mime_type TEXT DEFAULT '',
+                    tags_json TEXT NOT NULL DEFAULT '[]',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE
+                )
+                '''
+            )
+
             # 5. 班级课堂 (核心关联表)
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS class_offerings
@@ -515,8 +557,23 @@ def init_database():
                              course_id,
                              semester
                          )
-                             )
+                         )
                          ''')
+
+            try:
+                conn.execute(
+                    "ALTER TABLE class_offerings "
+                    "ADD COLUMN semester_id INTEGER REFERENCES academic_semesters (id) ON DELETE SET NULL"
+                )
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute(
+                    "ALTER TABLE class_offerings "
+                    "ADD COLUMN textbook_id INTEGER REFERENCES textbooks (id) ON DELETE SET NULL"
+                )
+            except sqlite3.OperationalError:
+                pass
 
             # 6. 课程资源 (替换旧的 shared_files)
 
@@ -1748,7 +1805,7 @@ def init_database():
                 "ON discussion_mood_snapshots (updated_at DESC, id DESC)"
             )
 
-            # 13.9 绯荤粺淇℃伅涓績閫氱煡
+            # 13.9 系统信息中心通知
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS message_center_notifications
                          (
@@ -1813,7 +1870,7 @@ def init_database():
                          )
                          ''')
 
-            # 13.12 绉佷俊瀹¤鏃ュ織锛堜笉璁板綍鍐呭锛?
+            # 13.12 私信审计日志（不记录内容）
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS private_message_audit_logs
                          (
@@ -2083,6 +2140,35 @@ def init_database():
             except sqlite3.OperationalError:
                 pass
 
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_academic_semesters_teacher_period "
+                "ON academic_semesters (teacher_id, start_date DESC, end_date DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_textbooks_teacher_updated "
+                "ON textbooks (teacher_id, updated_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_textbooks_teacher_title "
+                "ON textbooks (teacher_id, title COLLATE NOCASE)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_textbooks_teacher_publisher "
+                "ON textbooks (teacher_id, publisher COLLATE NOCASE)"
+            )
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_class_offerings_unique_semester_id "
+                "ON class_offerings (class_id, course_id, semester_id) "
+                "WHERE semester_id IS NOT NULL"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_class_offerings_teacher_semester "
+                "ON class_offerings (teacher_id, semester_id, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_class_offerings_teacher_textbook "
+                "ON class_offerings (teacher_id, textbook_id, created_at DESC)"
+            )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_materials_teacher_parent ON course_materials (teacher_id, parent_id, name)"
             )

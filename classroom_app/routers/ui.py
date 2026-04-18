@@ -34,6 +34,14 @@ from ..services.assignment_lifecycle_service import (
     enrich_assignment_runtime_view,
     refresh_assignment_runtime_status,
 )
+from ..services.academic_service import (
+    build_holiday_lookup,
+    build_semester_defaults,
+    choose_default_semester_id,
+    china_today,
+    serialize_semester_row,
+    serialize_textbook_row,
+)
 from ..services.student_auth_service import (
     PASSWORD_POLICY_HINT,
     build_password_setup_token,
@@ -649,17 +657,21 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
     with get_db_connection() as conn:
         offering = conn.execute(
             """SELECT o.*,
+                      COALESCE(s.name, o.semester) as semester_display,
                       c.name as course_name,
                       c.description as course_description,
                       c.credits as course_credits,
                       cl.name as class_name,
                       cl.description as class_description,
                       t.name as teacher_name,
+                      tb.title as textbook_title,
                       (SELECT COUNT(*) FROM students s WHERE s.class_id = o.class_id) as class_student_count
                FROM class_offerings o
                         JOIN courses c ON o.course_id = c.id
                         JOIN classes cl ON o.class_id = cl.id
                         JOIN teachers t ON o.teacher_id = t.id
+                        LEFT JOIN academic_semesters s ON s.id = o.semester_id
+                        LEFT JOIN textbooks tb ON tb.id = o.textbook_id
                WHERE o.id = ?""",
             (class_offering_id,)
         ).fetchone()
@@ -667,6 +679,7 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
         if not offering: raise HTTPException(404, "未找到此课堂")
 
         offering_data = dict(offering)
+        offering_data["semester"] = offering_data.get("semester_display") or offering_data.get("semester")
         course_id = offering_data['course_id']
 
         if user['role'] == 'student':
@@ -924,36 +937,158 @@ async def get_manage_courses_page(request: Request, user: dict = Depends(get_cur
     })
 
 
+def _load_teacher_semester_rows(conn, teacher_id: int):
+    return conn.execute(
+        """
+        SELECT id, name, start_date, end_date, week_count, created_at, updated_at
+        FROM academic_semesters
+        WHERE teacher_id = ?
+        ORDER BY start_date DESC, updated_at DESC, id DESC
+        """,
+        (teacher_id,),
+    ).fetchall()
+
+
+def _load_teacher_textbook_rows(conn, teacher_id: int):
+    return conn.execute(
+        """
+        SELECT id,
+               title,
+               authors_json,
+               publisher,
+               publication_date,
+               introduction,
+               catalog_text,
+               attachment_name,
+               attachment_path,
+               attachment_size,
+               attachment_mime_type,
+               tags_json,
+               created_at,
+               updated_at
+        FROM textbooks
+        WHERE teacher_id = ?
+        ORDER BY updated_at DESC, id DESC
+        """,
+        (teacher_id,),
+    ).fetchall()
+
+
+def _load_teacher_offering_rows(conn, teacher_id: int):
+    return conn.execute(
+        """
+        SELECT o.id,
+               o.class_id,
+               o.course_id,
+               o.semester_id,
+               o.textbook_id,
+               COALESCE(s.name, o.semester) AS semester,
+               c.name AS class_name,
+               co.name AS course_name,
+               co.description,
+               co.credits,
+               tb.title AS textbook_title
+        FROM class_offerings o
+        JOIN classes c ON o.class_id = c.id
+        JOIN courses co ON o.course_id = co.id
+        LEFT JOIN academic_semesters s ON s.id = o.semester_id
+        LEFT JOIN textbooks tb ON tb.id = o.textbook_id
+        WHERE o.teacher_id = ?
+        ORDER BY COALESCE(s.start_date, o.created_at) DESC, co.name, c.name
+        """,
+        (teacher_id,),
+    ).fetchall()
+
+
+@router.get("/manage/semesters", response_class=HTMLResponse)
+async def get_manage_semesters_page(request: Request, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        semesters = [
+            serialize_semester_row(row)
+            for row in _load_teacher_semester_rows(conn, int(user["id"]))
+        ]
+
+    current_date = china_today()
+    covered_years = {current_date.year, current_date.year + 1}
+    for item in semesters:
+        for key in ("start_date", "end_date"):
+            value = str(item.get(key) or "").strip()
+            if len(value) >= 4 and value[:4].isdigit():
+                covered_years.add(int(value[:4]))
+    holiday_lookup = build_holiday_lookup(covered_years)
+
+    return templates.TemplateResponse(request, "manage/semesters.html", {
+        "request": request,
+        "user_info": user,
+        "semesters": semesters,
+        "semesters_json": semesters,
+        "holiday_lookup": holiday_lookup,
+        "semester_defaults": build_semester_defaults(current_date),
+        "today_iso": current_date.isoformat(),
+        "page_title": "学期管理",
+        "active_page": "semesters",
+    })
+
+
+@router.get("/manage/textbooks", response_class=HTMLResponse)
+async def get_manage_textbooks_page(request: Request, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        textbooks = [
+            serialize_textbook_row(row)
+            for row in _load_teacher_textbook_rows(conn, int(user["id"]))
+        ]
+
+    return templates.TemplateResponse(request, "manage/textbooks.html", {
+        "request": request,
+        "user_info": user,
+        "textbooks": textbooks,
+        "textbooks_json": textbooks,
+        "page_title": "教材管理",
+        "active_page": "textbooks",
+    })
+
+
 @router.get("/manage/offerings", response_class=HTMLResponse)
 async def get_manage_offerings_page(request: Request, user: dict = Depends(get_current_teacher)):
-    """显示开设课堂页面 (列表和新建)"""
-    conn = get_db_connection()
-    try:
-        my_classes = conn.execute(
-            "SELECT id, name FROM classes WHERE created_by_teacher_id = ?", (user['id'],)
-        ).fetchall()
-        my_courses = conn.execute(
-            "SELECT id, name FROM courses WHERE created_by_teacher_id = ?", (user['id'],)
-        ).fetchall()
-        my_offerings = conn.execute(
-            """
-            SELECT o.id, c.name as class_name, co.name as course_name, o.semester
-            FROM class_offerings o
-            JOIN classes c ON o.class_id = c.id
-            JOIN courses co ON o.course_id = co.id
-            WHERE o.teacher_id = ?
-            ORDER BY co.name, c.name
-            """, (user['id'],)
-        ).fetchall()
-    finally:
-        conn.close()
+    with get_db_connection() as conn:
+        my_classes = [
+            dict(row)
+            for row in conn.execute(
+                "SELECT id, name FROM classes WHERE created_by_teacher_id = ? ORDER BY name",
+                (user["id"],),
+            ).fetchall()
+        ]
+        my_courses = [
+            dict(row)
+            for row in conn.execute(
+                "SELECT id, name FROM courses WHERE created_by_teacher_id = ? ORDER BY name",
+                (user["id"],),
+            ).fetchall()
+        ]
+        semester_rows = _load_teacher_semester_rows(conn, int(user["id"]))
+        textbook_rows = _load_teacher_textbook_rows(conn, int(user["id"]))
+        my_semesters = [serialize_semester_row(row) for row in semester_rows]
+        my_textbooks = [
+            {
+                "id": item["id"],
+                "title": item["title"],
+                "author_display": item["author_display"],
+                "publication_year": item["publication_year"],
+                "publisher": item["publisher"],
+            }
+            for item in (serialize_textbook_row(row) for row in textbook_rows)
+        ]
+        my_offerings = [dict(row) for row in _load_teacher_offering_rows(conn, int(user["id"]))]
 
     return templates.TemplateResponse(request, "manage/offerings.html", {
         "request": request,
         "user_info": user,
         "my_classes": my_classes,
         "my_courses": my_courses,
+        "my_semesters": my_semesters,
+        "my_textbooks": my_textbooks,
         "my_offerings": my_offerings,
+        "default_semester_id": choose_default_semester_id(my_semesters),
         "page_title": "开设课堂",
         "active_page": "offerings"
     })
@@ -961,26 +1096,19 @@ async def get_manage_offerings_page(request: Request, user: dict = Depends(get_c
 
 @router.get("/manage/ai", response_class=HTMLResponse)
 async def get_manage_ai_page(request: Request, user: dict = Depends(get_current_teacher)):
-    """显示课堂AI配置页面"""
     with get_db_connection() as conn:
-        # 优化：查询时额外获取课程的 description 和 credits，用于前端预填充
-        my_offerings = conn.execute(
-            """
-            SELECT o.id, c.name as class_name, 
-                   co.name as course_name, co.description, co.credits
-            FROM class_offerings o
-            JOIN classes c ON o.class_id = c.id
-            JOIN courses co ON o.course_id = co.id
-            WHERE o.teacher_id = ?
-            ORDER BY co.name, c.name
-            """, (user['id'],)
-        ).fetchall()
+        my_offerings = [dict(row) for row in _load_teacher_offering_rows(conn, int(user["id"]))]
+        my_textbooks = [
+            serialize_textbook_row(row)
+            for row in _load_teacher_textbook_rows(conn, int(user["id"]))
+        ]
 
     return templates.TemplateResponse(request, "manage/ai.html", {
         "request": request,
         "user_info": user,
         "my_offerings": my_offerings,
-        "page_title": "课堂AI配置",
+        "my_textbooks": my_textbooks,
+        "page_title": "课堂 AI 配置",
         "active_page": "ai"
     })
 
@@ -1289,4 +1417,3 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
         "max_upload_mb": MAX_UPLOAD_SIZE_MB,
         "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
     })
-
