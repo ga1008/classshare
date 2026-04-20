@@ -1,5 +1,6 @@
 import { apiFetch } from '/static/js/api.js';
 import { initLearningMaterialSelector } from '/static/js/learning_material_selector.js';
+import { initSessionMaterialAiAssistant } from '/static/js/session_material_ai_assistant.js';
 import { showToast } from '/static/js/ui.js';
 
 const learningMaterialSelector = initLearningMaterialSelector();
@@ -608,6 +609,7 @@ function initTeachingTimeline() {
     const materialPath = document.getElementById('teachingTimelineMaterialPath');
     const openMaterialHint = document.getElementById('teachingTimelineOpenMaterialHint');
     const selectMaterialBtn = document.getElementById('teachingTimelineSelectMaterialBtn');
+    const aiMaterialBtn = document.getElementById('teachingTimelineAiMaterialBtn');
     const openMaterialBtn = document.getElementById('teachingTimelineOpenMaterialBtn');
     const sessionButtons = Array.from(scrollEl.querySelectorAll('[data-session-order]'));
     const sessionMap = new Map(
@@ -633,6 +635,7 @@ function initTeachingTimeline() {
     let snapTimer = 0;
     let ignoreClickUntil = 0;
     let projectionFrame = 0;
+    let sessionMaterialAssistant = null;
 
     const getSessionByOrder = (sessionOrder) => sessionMap.get(String(sessionOrder || '').trim());
 
@@ -816,6 +819,7 @@ function initTeachingTimeline() {
         renderDetailSummary(session);
         renderDetailMeta(session);
         renderMaterialPanel(session);
+        sessionMaterialAssistant?.syncSelectedSession(session);
 
         if (options.center !== false && (options.forceCenter || previousOrder !== key)) {
             focusSession(key, options.behavior || 'smooth');
@@ -833,9 +837,19 @@ function initTeachingTimeline() {
         updateSessionButtonMaterialState(session);
         if (String(session.order_index) === selectedOrder) {
             renderMaterialPanel(session);
+            sessionMaterialAssistant?.syncSelectedSession(session);
         }
         scheduleProjectionSync();
     };
+
+    if (isTeacher) {
+        sessionMaterialAssistant = initSessionMaterialAiAssistant({
+            classOfferingId: window.APP_CONFIG.classOfferingId,
+            getSessions: () => sessions,
+            getCurrentSession: () => getSessionByOrder(selectedOrder),
+            onSessionPatch: applySessionPatch,
+        });
+    }
 
     const persistSessionMaterial = async (learningMaterialId) => {
         const session = getSessionByOrder(selectedOrder);
@@ -1005,12 +1019,18 @@ function initTeachingTimeline() {
         }
     });
 
+    aiMaterialBtn?.addEventListener('click', () => {
+        sessionMaterialAssistant?.openForCurrentSession();
+    });
+
     window.requestAnimationFrame(() => {
         setActiveSession(selectedOrder, {
             center: true,
             behavior: 'auto',
             forceCenter: true,
         });
+        sessionMaterialAssistant?.syncSelectedSession(getSessionByOrder(selectedOrder));
+        sessionMaterialAssistant?.startPolling();
         window.requestAnimationFrame(scheduleProjectionSync);
     });
 }

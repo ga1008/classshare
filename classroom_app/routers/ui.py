@@ -49,6 +49,7 @@ from ..services.course_planning_service import (
     serialize_course_row,
 )
 from ..services.materials_service import attach_learning_material_briefs
+from ..services.session_material_generation_service import attach_generation_tasks
 from ..services.student_auth_service import (
     PASSWORD_POLICY_HINT,
     build_password_setup_token,
@@ -770,6 +771,11 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
             [dict(row) for row in session_rows],
             teacher_id=int(offering_data["teacher_id"]),
             markdown_only=True,
+        )
+        attach_generation_tasks(
+            conn,
+            session_items,
+            teacher_id=int(offering_data["teacher_id"]),
         )
         teaching_plan = decorate_offering_sessions(session_items)
         if teaching_plan.get("schedule_summary") and not offering_data.get("schedule_info"):

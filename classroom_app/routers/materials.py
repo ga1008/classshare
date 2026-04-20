@@ -1,3 +1,4 @@
+import asyncio
 import json
 import hashlib
 import os
@@ -47,6 +48,14 @@ from ..services.materials_git_service import (
     get_material_repository_detail,
     refresh_root_git_metadata,
     save_material_repository_credential,
+)
+from ..services.session_material_generation_service import (
+    create_generation_task,
+    extract_example_documents,
+    get_teacher_session_with_material_state,
+    normalize_document_type,
+    normalize_requirement_text,
+    run_generation_task,
 )
 
 router = APIRouter()
@@ -1264,6 +1273,115 @@ async def update_classroom_session_learning_material(
     return {
         "status": "success",
         "message": "课堂材料已更新",
+        "session": session_item,
+    }
+
+
+@router.get("/api/classrooms/{class_offering_id}/sessions/{session_id}/ai-material-task", response_class=JSONResponse)
+async def get_classroom_session_ai_material_task(
+    class_offering_id: int,
+    session_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        session_item = get_teacher_session_with_material_state(
+            conn,
+            class_offering_id=class_offering_id,
+            session_id=session_id,
+            teacher_id=int(user["id"]),
+        )
+        if not session_item:
+            raise HTTPException(404, "Session not found or access denied")
+        conn.commit()
+
+    return {
+        "status": "success",
+        "task": session_item.get("material_generation_task"),
+        "session": session_item,
+    }
+
+
+@router.post("/api/classrooms/{class_offering_id}/sessions/{session_id}/ai-material-task", response_class=JSONResponse)
+async def create_classroom_session_ai_material_task(
+    class_offering_id: int,
+    session_id: int,
+    mode: str = Form(default="guided"),
+    document_type: str = Form(default=""),
+    requirement_text: str = Form(default=""),
+    guided_document_type: str = Form(default=""),
+    guided_requirement_text: str = Form(default=""),
+    auto_document_type: str = Form(default=""),
+    auto_requirement_text: str = Form(default=""),
+    example_files: list[UploadFile] | None = File(default=None),
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        session_item = get_teacher_session_with_material_state(
+            conn,
+            class_offering_id=class_offering_id,
+            session_id=session_id,
+            teacher_id=int(user["id"]),
+        )
+        if not session_item:
+            raise HTTPException(404, "Session not found or access denied")
+
+        existing_task = session_item.get("material_generation_task")
+        if existing_task and existing_task.get("is_active"):
+            conn.commit()
+            return {
+                "status": "accepted",
+                "message": "AI assistant is already generating material for this session.",
+                "task": existing_task,
+                "session": session_item,
+            }
+
+        normalized_mode = str(mode or "guided").strip().lower()
+        if normalized_mode not in {"guided", "auto"}:
+            normalized_mode = "guided"
+        requested_document_type = (
+            auto_document_type if normalized_mode == "auto" else guided_document_type
+        ) or document_type
+        requested_requirement_text = (
+            auto_requirement_text if normalized_mode == "auto" else guided_requirement_text
+        ) or requirement_text
+        normalized_document_type = normalize_document_type(
+            requested_document_type,
+            session_title=session_item.get("title") or "",
+            session_content=session_item.get("content") or "",
+        )
+        normalized_requirement_text = normalize_requirement_text(requested_requirement_text)
+        conn.commit()
+
+    example_documents = await extract_example_documents(
+        example_files if normalized_mode == "guided" else None,
+    )
+
+    with get_db_connection() as conn:
+        task = create_generation_task(
+            conn,
+            class_offering_id=class_offering_id,
+            session_id=session_id,
+            teacher_id=int(user["id"]),
+            trigger_mode=normalized_mode,
+            document_type=normalized_document_type,
+            requirement_text=normalized_requirement_text,
+            example_documents=example_documents,
+        )
+        session_item = get_teacher_session_with_material_state(
+            conn,
+            class_offering_id=class_offering_id,
+            session_id=session_id,
+            teacher_id=int(user["id"]),
+        )
+        conn.commit()
+
+    if task and not task.get("already_running"):
+        asyncio.create_task(run_generation_task(int(task["id"])))
+
+    return {
+        "status": "accepted",
+        "message": "AI assistant started generating session material.",
+        "task": task,
         "session": session_item,
     }
 

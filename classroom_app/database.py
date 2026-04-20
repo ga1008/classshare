@@ -2158,6 +2158,32 @@ def init_database():
                          ''')
 
             conn.execute('''
+                        CREATE TABLE IF NOT EXISTS session_material_generation_tasks
+                        (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            class_offering_id INTEGER NOT NULL,
+                            session_id INTEGER NOT NULL,
+                            teacher_id INTEGER NOT NULL,
+                            trigger_mode TEXT NOT NULL DEFAULT 'guided',
+                            status TEXT NOT NULL DEFAULT 'queued',
+                            document_type TEXT DEFAULT '',
+                            requirement_text TEXT DEFAULT '',
+                            request_payload_json TEXT,
+                            result_payload_json TEXT,
+                            generated_material_id INTEGER REFERENCES course_materials (id) ON DELETE SET NULL,
+                            generated_material_path TEXT DEFAULT '',
+                            error_message TEXT DEFAULT '',
+                            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            started_at TEXT,
+                            completed_at TEXT,
+                            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                            FOREIGN KEY (session_id) REFERENCES class_offering_sessions (id) ON DELETE CASCADE,
+                            FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE
+                        )
+                         ''')
+
+            conn.execute('''
                         CREATE TABLE IF NOT EXISTS teacher_git_credentials
                         (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2299,6 +2325,18 @@ def init_database():
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_teacher_git_credentials_lookup ON teacher_git_credentials (teacher_id, remote_host, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_session_material_generation_tasks_session "
+                "ON session_material_generation_tasks (session_id, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_session_material_generation_tasks_offering "
+                "ON session_material_generation_tasks (class_offering_id, status, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_session_material_generation_tasks_teacher "
+                "ON session_material_generation_tasks (teacher_id, created_at DESC, id DESC)"
             )
 
             conn.commit()

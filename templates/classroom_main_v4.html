@@ -329,6 +329,22 @@
                                     {% if user_info.role == 'teacher' %}
                                     <div class="teaching-timeline-detail-actions" id="teachingTimelineDetailActions">
                                         <button type="button" class="btn btn-outline btn-sm" id="teachingTimelineSelectMaterialBtn">选择课堂材料</button>
+                                        <button
+                                            type="button"
+                                            class="btn btn-outline btn-sm btn-ai-assistant{% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %} is-busy{% endif %}"
+                                            id="teachingTimelineAiMaterialBtn"
+                                            {% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %}disabled{% endif %}
+                                        >
+                                            {% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %}
+                                            助教在思考
+                                            {% elif selected_session.material_generation_task and selected_session.material_generation_task.status == 'completed' %}
+                                            再次生成
+                                            {% elif selected_session.material_generation_task and selected_session.material_generation_task.status == 'failed' %}
+                                            重新生成
+                                            {% else %}
+                                            AI助教
+                                            {% endif %}
+                                        </button>
                                     </div>
                                     {% endif %}
                                 </div>
@@ -372,6 +388,30 @@
                                         </button>
                                     </div>
                                 </div>
+                                {% if user_info.role == 'teacher' %}
+                                <div
+                                    class="teaching-timeline-ai-task-strip{% if not selected_session.material_generation_task %} is-hidden{% endif %}"
+                                    id="teachingTimelineAiTaskStrip"
+                                    {% if not selected_session.material_generation_task %}hidden{% endif %}
+                                >
+                                    <span class="teaching-timeline-ai-task-pill" id="teachingTimelineAiTaskPill">
+                                        {% if selected_session.material_generation_task %}
+                                        {{ selected_session.material_generation_task.status_label }}
+                                        {% endif %}
+                                    </span>
+                                    <span class="teaching-timeline-ai-task-copy" id="teachingTimelineAiTaskCopy">
+                                        {% if selected_session.material_generation_task %}
+                                            {% if selected_session.material_generation_task.status == 'running' or selected_session.material_generation_task.status == 'queued' %}
+                                            AI 助教正在参考历史文档和课堂信息，完成后会自动绑定到本课。
+                                            {% elif selected_session.material_generation_task.status == 'completed' %}
+                                            最近一次 AI 生成已完成，可以直接打开文档，也可以再次发起生成。
+                                            {% elif selected_session.material_generation_task.status == 'failed' %}
+                                            上一次 AI 生成未完成，请调整要求后重新尝试。
+                                            {% endif %}
+                                        {% endif %}
+                                    </span>
+                                </div>
+                                {% endif %}
                                 <div class="teaching-timeline-detail-summary md-content" id="teachingTimelineDetailSummary">{{ selected_session.detail_content or selected_session.detail_summary }}</div>
                                 <div class="teaching-timeline-detail-meta" id="teachingTimelineDetailMeta">
                                     <span>{{ selected_session.detail_meta }}</span>
@@ -998,6 +1038,7 @@
 
 {% if user_info.role == 'teacher' %}
 {% include "partials/learning_material_selector.html" %}
+{% include "partials/session_material_ai_modal.html" %}
 {% endif %}
 
 <div id="ai-chat-modal">
