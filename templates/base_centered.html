@@ -8,10 +8,18 @@
 <style>
     body {
         display: flex;
-        justify-content: center;
-        align-items: center;
+        flex-direction: column;
         min-height: 100vh;
         {% block bg_gradient %}background: linear-gradient(135deg, var(--bg-color) 0%, var(--primary-light) 100%);{% endblock %}
+    }
+
+    .centered-page-shell {
+        flex: 1;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: var(--spacing-xl, 2rem) var(--spacing-md, 1rem);
     }
 
     .login-card {
@@ -139,7 +147,10 @@
 {% endblock %}
 
 {% block body %}
-    {% block card_content %}{% endblock %}
+    <main class="centered-page-shell">
+        {% block card_content %}{% endblock %}
+    </main>
+    {% include "partials/site_record_footer.html" %}
 {% endblock %}
 
 {% block scripts %}

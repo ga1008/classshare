@@ -170,3 +170,25 @@ if SECRET_KEY == "DEFAULT_WEAK_SECRET_KEY_REPLACE_ME":
     print("=" * 60)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
+
+# --- Site record / ownership ---
+SITE_DISPLAY_NAME = os.getenv("SITE_DISPLAY_NAME", "课堂互动平台")
+SITE_OWNER_NAME = os.getenv("SITE_OWNER_NAME", "张老师")
+SITE_OWNER_STATEMENT = os.getenv(
+    "SITE_OWNER_STATEMENT",
+    f"本网站（{SITE_DISPLAY_NAME}）由{SITE_OWNER_NAME}负责运营，站内内容与服务均归权利人依法所有。",
+)
+SITE_ICP_RECORD_NUMBER = os.getenv("SITE_ICP_RECORD_NUMBER", "桂ICP备2026007021号").strip()
+SITE_ICP_RECORD_APPROVED_AT = os.getenv("SITE_ICP_RECORD_APPROVED_AT", "2026-04-20").strip()
+SITE_ICP_RECORD_LOOKUP_URL = _read_url_env("SITE_ICP_RECORD_LOOKUP_URL") or "https://beian.miit.gov.cn"
+SITE_ICP_NOTICE_SOURCE = os.getenv("SITE_ICP_NOTICE_SOURCE", "工信部ICP备案").strip()
+
+SITE_RECORD = {
+    "site_name": SITE_DISPLAY_NAME,
+    "owner_name": SITE_OWNER_NAME,
+    "owner_statement": SITE_OWNER_STATEMENT,
+    "icp_number": SITE_ICP_RECORD_NUMBER,
+    "approved_at": SITE_ICP_RECORD_APPROVED_AT,
+    "lookup_url": SITE_ICP_RECORD_LOOKUP_URL,
+    "notice_source": SITE_ICP_NOTICE_SOURCE,
+}
