@@ -167,9 +167,12 @@ cython_debug/
 
 *.xlsx
 
+
 .idea
 data/
 shared_files/
 
 homework_submissions/
 storage/global_files/*
+
+tools/guardianangel.net.cn_nginx/
