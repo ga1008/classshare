@@ -1284,6 +1284,7 @@ def _build_manage_workflow_snapshot(conn, teacher_id: int) -> dict:
         })
 
     prep_ready_count = sum(1 for item in prep_resources if item["ready"])
+    prep_inventory_count = sum(int(item["count"]) for item in prep_resources)
 
     def resolve_step_status(*, completed: bool, partial: bool) -> str:
         if completed:
@@ -1304,6 +1305,8 @@ def _build_manage_workflow_snapshot(conn, teacher_id: int) -> dict:
                 partial=prep_ready_count > 0,
             ),
             "count": prep_ready_count,
+            "badge_count": prep_inventory_count,
+            "badge_text": f"已有 {prep_inventory_count} 份",
             "total": len(prep_resources),
         },
         {
@@ -1317,6 +1320,8 @@ def _build_manage_workflow_snapshot(conn, teacher_id: int) -> dict:
                 partial=counts["current_semesters"] > 0,
             ),
             "count": counts["semesters"],
+            "badge_count": counts["semesters"],
+            "badge_text": f"已有 {counts['semesters']} 份",
         },
         {
             "id": "offerings",
@@ -1329,6 +1334,8 @@ def _build_manage_workflow_snapshot(conn, teacher_id: int) -> dict:
                 partial=counts["offerings"] > 0,
             ),
             "count": counts["offerings"],
+            "badge_count": counts["offerings"],
+            "badge_text": f"已有 {counts['offerings']} 份",
         },
         {
             "id": "ai",
@@ -1341,6 +1348,8 @@ def _build_manage_workflow_snapshot(conn, teacher_id: int) -> dict:
                 partial=counts["ai_configs"] > 0,
             ),
             "count": counts["ai_configs"],
+            "badge_count": counts["ai_configs"],
+            "badge_text": f"已有 {counts['ai_configs']} 份",
         },
     ]
 

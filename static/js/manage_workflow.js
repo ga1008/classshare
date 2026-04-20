@@ -3,23 +3,24 @@ const steps = Array.isArray(config.steps) ? config.steps : [];
 const prepResources = Array.isArray(config.prep_resources) ? config.prep_resources : [];
 const counts = config.counts || {};
 const stageViews = config.stage_views || {};
+const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
 const stepMap = new Map(steps.map((item) => [item.id, item]));
 const prepMap = new Map(prepResources.map((item) => [item.id, item]));
 const stageOrder = steps.map((item) => item.id);
-
-const statusLabels = {
-    complete: '已完成',
-    in_progress: '进行中',
-    pending: '待开始',
-};
+const animationTimers = new WeakMap();
 
 const elements = {
     recommendedLabel: document.getElementById('workflowRecommendedLabel'),
     recommendedHelp: document.getElementById('workflowRecommendedHelp'),
+    stageRail: document.querySelector('.workflow-stage-rail'),
+    stageTrack: document.getElementById('workflowStageTrack'),
     stageButtons: Array.from(document.querySelectorAll('[data-stage-id]')),
+    stageArrows: Array.from(document.querySelectorAll('[data-arrow-after-stage]')),
     prepTabs: document.getElementById('workflowPrepTabs'),
     prepButtons: Array.from(document.querySelectorAll('[data-prep-id]')),
+    focusCard: document.querySelector('.workflow-focus-card'),
+    frameShell: document.querySelector('.workflow-frame-shell'),
     stageEyebrow: document.getElementById('workflowStageEyebrow'),
     stageTitle: document.getElementById('workflowStageTitle'),
     stageDescription: document.getElementById('workflowStageDescription'),
@@ -41,6 +42,23 @@ const state = {
     frameSrc: '',
 };
 
+const dragState = {
+    active: false,
+    dragging: false,
+    suppressClick: false,
+    pointerId: null,
+    startX: 0,
+    startScrollLeft: 0,
+    lastX: 0,
+    lastTime: 0,
+    velocity: 0,
+    targetScrollLeft: 0,
+    metricsFrame: 0,
+    scrollFrame: 0,
+    momentumFrame: 0,
+    momentumLastTime: 0,
+};
+
 function resolveInitialStage() {
     const params = new URLSearchParams(window.location.search);
     const fromQuery = String(params.get('stage') || '').trim();
@@ -57,6 +75,10 @@ function resolveInitialPrep() {
         return fromQuery;
     }
     return String(config.recommended_prep || prepResources[0]?.id || 'classes');
+}
+
+function countOf(key) {
+    return Number(counts[key] || 0);
 }
 
 function escapeHtml(value) {
@@ -84,6 +106,7 @@ function syncUrl() {
     } else {
         params.delete('prep');
     }
+
     const query = params.toString();
     const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
     window.history.replaceState({}, '', nextUrl);
@@ -102,7 +125,7 @@ function getCurrentFrameTarget() {
         }
         return {
             title: `${resource.title}准备`,
-            subtitle: '下方直接复用当前模块中的新建表单与已创建列表。',
+            subtitle: '下方直接处理当前基础资源的表单和已创建列表。',
             href: resource.href,
             embedUrl: resource.embed_url,
         };
@@ -112,9 +135,10 @@ function getCurrentFrameTarget() {
     if (!view) {
         return null;
     }
+
     return {
         title: step.title,
-        subtitle: '下方直接复用当前阶段页面中的表单、列表与已有业务逻辑。',
+        subtitle: '下方直接复用当前阶段已有的表单和列表。',
         href: view.href,
         embedUrl: view.embed_url,
     };
@@ -126,21 +150,25 @@ function buildStageSummary(step) {
     }
 
     if (step.id === 'preparation') {
-        return `当前已准备 ${prepResources.filter((item) => item.ready).length}/${prepResources.length} 项基础资源。建议优先补齐班级、课程和教材，再继续进入学期与课堂流程。`;
+        const readyCount = prepResources.filter((item) => item.ready).length;
+        return `已准备 ${readyCount}/${prepResources.length} 项基础资源，优先补齐班级、课程和教材后再继续。`;
     }
+
     if (step.id === 'semester') {
-        return counts.semesters > 0
-            ? `当前已维护 ${counts.semesters} 个学期，其中 ${counts.current_semesters} 个覆盖今天的日期。新建课堂时会优先使用这里定义的时间范围。`
-            : '当前还没有学期。建议先创建本学期，再继续开设课堂，避免排课时间和周次规则不一致。';
+        return countOf('semesters') > 0
+            ? `当前共有 ${countOf('semesters')} 个学期，其中 ${countOf('current_semesters')} 个覆盖今天的日期。`
+            : '当前还没有学期，建议先创建本学期，再继续开设课堂。';
     }
+
     if (step.id === 'offerings') {
-        return counts.offerings > 0
-            ? `当前已开设 ${counts.offerings} 个课堂。可以继续补充课堂，也可以返回前序资源页面完善课程、教材和班级。`
-            : '当前还没有课堂。这里会将学期、班级、课程和教材组合为具体课堂，并生成课堂排期。';
+        return countOf('offerings') > 0
+            ? `当前已开设 ${countOf('offerings')} 个课堂，可以继续补充或调整已有课堂。`
+            : '这里会把学期、班级、课程和教材组合成具体课堂。';
     }
-    return counts.ai_configs > 0
-        ? `当前已有 ${counts.ai_configs} 个课堂完成 AI 配置。建议持续检查提示词、知识依据和教材绑定是否与课堂保持一致。`
-        : '当前还没有课堂级 AI 配置。请先选择一个已经开设的课堂，再绑定教材并补全提示词与知识依据。';
+
+    return countOf('ai_configs') > 0
+        ? `当前已有 ${countOf('ai_configs')} 个课堂完成 AI 助手配置。`
+        : '当前还没有课堂级 AI 配置，请先选择一个已开设的课堂。';
 }
 
 function buildStageAdvice(step) {
@@ -151,23 +179,26 @@ function buildStageAdvice(step) {
     if (step.id === 'preparation') {
         const missing = prepResources.filter((item) => !item.ready).map((item) => item.title);
         if (!missing.length) {
-            return '基础资源已经齐备。建议下一步直接确认学期，再进入课堂创建流程。';
+            return '基础资源已经齐备，建议直接进入“确认学期”。';
         }
-        return `还未准备：${missing.join('、')}。这些资源彼此独立、可跨学期复用，先整理好后续会减少重复录入。`;
+        return `还未准备：${missing.join('、')}。先补齐这些资源，后续开设课堂会更顺畅。`;
     }
+
     if (step.id === 'semester') {
-        return counts.semesters > 0
-            ? '若本学期已经在用，优先检查日期范围和周次是否准确；如果即将进入新学期，建议现在就提前建好草稿。'
-            : '创建学期时建议直接按实际起止日期填写，这样课堂时间轴、考试安排和课堂周次会保持一致。';
+        return countOf('semesters') > 0
+            ? '优先检查当前学期的起止日期和周次设置是否准确。'
+            : '创建学期时建议直接按真实教学周期填写日期范围。';
     }
+
     if (step.id === 'offerings') {
-        return counts.semesters === 0
-            ? '在开设课堂前，建议先回到“确认学期”创建至少一个学期。'
-            : '开设课堂时优先绑定课程模板和教材，后续课堂 AI 会直接复用这里的上下文。';
+        return countOf('semesters') === 0
+            ? '建议先回到“确认学期”，至少创建一个可用学期。'
+            : '开设课堂时优先绑定课程模板和教材，后续 AI 上下文会更稳定。';
     }
-    return counts.offerings === 0
-        ? '先创建至少一个课堂，课堂级 AI 助教才能建立自己的上下文。'
-        : '建议为正在使用的课堂逐个完成 AI 配置，避免不同班级共用同一套提示词造成语境错位。';
+
+    return countOf('offerings') === 0
+        ? '先创建至少一个课堂，课堂级 AI 助手才能建立自己的上下文。'
+        : '建议优先为当前正在使用的课堂完成 AI 配置。';
 }
 
 function buildChecklistItems(step) {
@@ -178,9 +209,9 @@ function buildChecklistItems(step) {
     if (step.id === 'preparation') {
         return prepResources.map((item) => ({
             title: item.title,
-            ready: item.ready,
+            ready: Boolean(item.ready),
             status: item.status_label,
-            description: `${item.description} 当前已准备 ${item.count} 项。`,
+            description: `当前 ${item.count} 项，可跨学期复用。`,
         }));
     }
 
@@ -191,19 +222,19 @@ function buildChecklistItems(step) {
                 title: '基础资源准备',
                 ready: basicReady >= 3,
                 status: `${basicReady}/${prepResources.length}`,
-                description: '至少建议先准备班级、课程和教材，再统一建立本学期。',
+                description: '建议至少先准备班级、课程和教材。',
             },
             {
                 title: '学期数量',
-                ready: counts.semesters > 0,
-                status: `${counts.semesters} 个`,
-                description: '学期决定课堂时间范围、周次和后续排课依据。',
+                ready: countOf('semesters') > 0,
+                status: `${countOf('semesters')} 个`,
+                description: '学期决定课堂时间范围和周次设置。',
             },
             {
                 title: '当前学期识别',
-                ready: counts.current_semesters > 0,
-                status: `${counts.current_semesters} 个`,
-                description: '若今天落在某个学期范围内，开课时会更容易直接选中当前学期。',
+                ready: countOf('current_semesters') > 0,
+                status: `${countOf('current_semesters')} 个`,
+                description: '覆盖今天日期的学期更适合作为默认学期。',
             },
         ];
     }
@@ -212,27 +243,27 @@ function buildChecklistItems(step) {
         return [
             {
                 title: '班级',
-                ready: counts.classes > 0,
-                status: `${counts.classes} 个`,
-                description: '课堂必须绑定一个班级。建议先导入学生名单，再集中开课。',
+                ready: countOf('classes') > 0,
+                status: `${countOf('classes')} 个`,
+                description: '每个课堂都需要绑定班级。',
             },
             {
                 title: '课程与教材',
-                ready: counts.courses > 0 && counts.textbooks > 0,
-                status: `${counts.courses} 门课程 / ${counts.textbooks} 本教材`,
-                description: '课程模板决定课堂结构，教材会直接成为课堂和 AI 助教的参考依据。',
+                ready: countOf('courses') > 0 && countOf('textbooks') > 0,
+                status: `${countOf('courses')} 门 / ${countOf('textbooks')} 本`,
+                description: '课程模板和教材都会进入课堂上下文。',
             },
             {
                 title: '学期',
-                ready: counts.semesters > 0,
-                status: `${counts.semesters} 个`,
-                description: '课堂在这里绑定学期后，排课预览和时间轴才能保持准确。',
+                ready: countOf('semesters') > 0,
+                status: `${countOf('semesters')} 个`,
+                description: '绑定学期后，排课预览和时间信息才会准确。',
             },
             {
                 title: '已开课堂',
-                ready: counts.offerings > 0,
-                status: `${counts.offerings} 个`,
-                description: '已经创建的课堂可以继续编辑，也能直接进入课堂或配置 AI。',
+                ready: countOf('offerings') > 0,
+                status: `${countOf('offerings')} 个`,
+                description: '已创建的课堂可以继续编辑，或直接进入使用。',
             },
         ];
     }
@@ -240,23 +271,37 @@ function buildChecklistItems(step) {
     return [
         {
             title: '已开课堂',
-            ready: counts.offerings > 0,
-            status: `${counts.offerings} 个`,
-            description: '只有已经开设的课堂，才能拥有独立的课堂级 AI 助教配置。',
+            ready: countOf('offerings') > 0,
+            status: `${countOf('offerings')} 个`,
+            description: '只有已开设的课堂才能继续配置课堂级 AI 助手。',
         },
         {
-            title: '教材储备',
-            ready: counts.textbooks > 0,
-            status: `${counts.textbooks} 本`,
-            description: '教材越完善，AI 自动生成的提示词和知识依据越稳定。',
+            title: '教材准备',
+            ready: countOf('textbooks') > 0,
+            status: `${countOf('textbooks')} 本`,
+            description: '教材越完整，AI 上下文越稳定。',
         },
         {
             title: '已完成配置',
-            ready: counts.ai_configs > 0,
-            status: `${counts.ai_configs} 个`,
-            description: '建议为常用课堂逐个完成 AI 配置，避免遗漏当前正在教学的班级。',
+            ready: countOf('ai_configs') > 0,
+            status: `${countOf('ai_configs')} 个`,
+            description: '建议优先覆盖正在使用的课堂。',
         },
     ];
+}
+
+function resolveStageBadgeText(step) {
+    if (!step) {
+        return '已有 0 份';
+    }
+
+    const fromSnapshot = String(step.badge_text || '').trim();
+    if (fromSnapshot) {
+        return fromSnapshot;
+    }
+
+    const count = Number(step.badge_count ?? step.count ?? 0);
+    return `已有 ${count} 份`;
 }
 
 function renderChecklist(step) {
@@ -277,18 +322,35 @@ function renderChecklist(step) {
 }
 
 function renderStageRail() {
+    const currentIndex = stageOrder.indexOf(state.stage);
+
     elements.stageButtons.forEach((button) => {
         const stageId = button.dataset.stageId;
         const step = stepMap.get(stageId);
         const badge = button.querySelector('.workflow-status-badge');
-        button.classList.toggle('is-active', stageId === state.stage);
-        button.classList.toggle('is-complete', step?.status === 'complete');
-        if (badge && step) {
-            badge.textContent = statusLabels[step.status] || step.status;
-            badge.classList.remove('is-complete', 'is-in_progress', 'is-pending');
-            badge.classList.add(`is-${step.status}`);
+        const isActive = stageId === state.stage;
+        const badgeCount = Number(step?.badge_count ?? step?.count ?? 0);
+
+        button.classList.toggle('is-active', isActive);
+        button.classList.toggle('has-content', badgeCount > 0);
+        button.setAttribute('aria-current', isActive ? 'step' : 'false');
+        button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        button.setAttribute('tabindex', isActive ? '0' : '-1');
+
+        if (badge) {
+            badge.textContent = resolveStageBadgeText(step);
+            badge.classList.remove('is-complete', 'is-in_progress', 'is-pending', 'has-count', 'is-empty', 'is-active-stage');
+            badge.classList.add(badgeCount > 0 ? 'has-count' : 'is-empty');
+            if (isActive) {
+                badge.classList.add('is-active-stage');
+            }
         }
-        button.setAttribute('aria-current', stageId === state.stage ? 'true' : 'false');
+    });
+
+    elements.stageArrows.forEach((arrow) => {
+        const arrowIndex = stageOrder.indexOf(arrow.dataset.arrowAfterStage);
+        arrow.classList.toggle('is-traversed', currentIndex > arrowIndex);
+        arrow.classList.toggle('is-current', currentIndex === arrowIndex);
     });
 }
 
@@ -296,8 +358,10 @@ function renderPrepTabs() {
     if (!elements.prepTabs) {
         return;
     }
+
     const showTabs = state.stage === 'preparation';
     elements.prepTabs.hidden = !showTabs;
+
     elements.prepButtons.forEach((button) => {
         button.classList.toggle('is-active', showTabs && button.dataset.prepId === state.prep);
     });
@@ -307,6 +371,7 @@ function renderStageCopy(step) {
     if (!step) {
         return;
     }
+
     if (elements.stageEyebrow) {
         elements.stageEyebrow.textContent = step.eyebrow || '流程阶段';
     }
@@ -329,13 +394,14 @@ function renderRecommended() {
     if (!recommendedStep) {
         return;
     }
+
     if (elements.recommendedLabel) {
         elements.recommendedLabel.textContent = recommendedStep.title;
     }
     if (elements.recommendedHelp) {
         elements.recommendedHelp.textContent = state.stage === recommendedStep.id
-            ? '当前就是系统推荐的下一步，可直接在下方继续处理。'
-            : `系统建议优先处理“${recommendedStep.title}”，也可以按需切换到其他阶段。`;
+            ? '当前就是推荐阶段，可以直接在下方继续处理。'
+            : `系统建议优先处理“${recommendedStep.title}”。`;
     }
 }
 
@@ -360,6 +426,7 @@ function updateFrameMeta(target) {
     if (!target) {
         return;
     }
+
     if (elements.frameTitle) {
         elements.frameTitle.textContent = target.title;
     }
@@ -369,6 +436,279 @@ function updateFrameMeta(target) {
     if (elements.openPageLink) {
         elements.openPageLink.href = target.href;
     }
+}
+
+function restartAnimation(node, className, duration = 480) {
+    if (!node || prefersReducedMotion) {
+        return;
+    }
+
+    const activeTimer = animationTimers.get(node);
+    if (activeTimer) {
+        window.clearTimeout(activeTimer);
+    }
+
+    node.classList.remove(className);
+    void node.offsetWidth;
+    node.classList.add(className);
+
+    const timer = window.setTimeout(() => {
+        node.classList.remove(className);
+        animationTimers.delete(node);
+    }, duration);
+    animationTimers.set(node, timer);
+}
+
+function ensureActiveStepVisible({ animate = false } = {}) {
+    const activeButton = elements.stageButtons.find((button) => button.dataset.stageId === state.stage);
+    if (!activeButton) {
+        return;
+    }
+
+    activeButton.scrollIntoView({
+        behavior: animate && !prefersReducedMotion ? 'smooth' : 'auto',
+        block: 'nearest',
+        inline: 'center',
+    });
+}
+
+function animateCurrentStep() {
+    const activeButton = elements.stageButtons.find((button) => button.dataset.stageId === state.stage);
+    restartAnimation(activeButton, 'is-activating', 420);
+    ensureActiveStepVisible({ animate: true });
+}
+
+function playPanelTransitions() {
+    restartAnimation(elements.focusCard, 'is-switching', 420);
+    restartAnimation(elements.frameShell, 'is-switching', 460);
+}
+
+function clampRailScroll(value) {
+    const rail = elements.stageRail;
+    if (!rail) {
+        return 0;
+    }
+    const maxScrollLeft = Math.max(rail.scrollWidth - rail.clientWidth, 0);
+    return Math.min(Math.max(value, 0), maxScrollLeft);
+}
+
+function updateStageRailMetrics() {
+    const rail = elements.stageRail;
+    if (!rail) {
+        return;
+    }
+
+    const maxScrollLeft = Math.max(rail.scrollWidth - rail.clientWidth, 0);
+    const hasOverflow = maxScrollLeft > 4;
+    rail.classList.toggle('is-scrollable', hasOverflow);
+    rail.classList.toggle('is-at-start', rail.scrollLeft <= 2);
+    rail.classList.toggle('is-at-end', rail.scrollLeft >= maxScrollLeft - 2);
+}
+
+function scheduleStageRailMetrics() {
+    if (dragState.metricsFrame) {
+        return;
+    }
+    dragState.metricsFrame = window.requestAnimationFrame(() => {
+        dragState.metricsFrame = 0;
+        updateStageRailMetrics();
+    });
+}
+
+function cancelRailScrollFrame() {
+    if (!dragState.scrollFrame) {
+        return;
+    }
+    window.cancelAnimationFrame(dragState.scrollFrame);
+    dragState.scrollFrame = 0;
+}
+
+function scheduleRailScroll(nextScrollLeft) {
+    const rail = elements.stageRail;
+    if (!rail) {
+        return;
+    }
+
+    dragState.targetScrollLeft = clampRailScroll(nextScrollLeft);
+    if (dragState.scrollFrame) {
+        return;
+    }
+
+    dragState.scrollFrame = window.requestAnimationFrame(() => {
+        dragState.scrollFrame = 0;
+        rail.scrollLeft = dragState.targetScrollLeft;
+        updateStageRailMetrics();
+    });
+}
+
+function cancelRailMomentum() {
+    if (!dragState.momentumFrame) {
+        return;
+    }
+    window.cancelAnimationFrame(dragState.momentumFrame);
+    dragState.momentumFrame = 0;
+    elements.stageRail?.classList.remove('is-gliding');
+}
+
+function startRailMomentum(initialVelocity) {
+    const rail = elements.stageRail;
+    if (!rail || prefersReducedMotion || Math.abs(initialVelocity) < 0.02) {
+        return;
+    }
+
+    cancelRailMomentum();
+    dragState.velocity = initialVelocity;
+    dragState.momentumLastTime = performance.now();
+    rail.classList.add('is-gliding');
+
+    const step = (timestamp) => {
+        const deltaTime = Math.min(32, Math.max(8, timestamp - dragState.momentumLastTime || 16));
+        dragState.momentumLastTime = timestamp;
+
+        const maxScrollLeft = Math.max(rail.scrollWidth - rail.clientWidth, 0);
+        if (maxScrollLeft <= 0) {
+            cancelRailMomentum();
+            updateStageRailMetrics();
+            return;
+        }
+
+        const nextScrollLeft = clampRailScroll(rail.scrollLeft + dragState.velocity * deltaTime);
+        const hitEdge = nextScrollLeft <= 0 || nextScrollLeft >= maxScrollLeft;
+        rail.scrollLeft = nextScrollLeft;
+        updateStageRailMetrics();
+
+        dragState.velocity *= hitEdge ? 0.72 : Math.pow(0.94, deltaTime / 16);
+        if (Math.abs(dragState.velocity) < 0.02) {
+            cancelRailMomentum();
+            updateStageRailMetrics();
+            return;
+        }
+
+        dragState.momentumFrame = window.requestAnimationFrame(step);
+    };
+
+    dragState.momentumFrame = window.requestAnimationFrame(step);
+}
+
+function resetDragState() {
+    dragState.active = false;
+    dragState.dragging = false;
+    dragState.pointerId = null;
+    dragState.startX = 0;
+    dragState.startScrollLeft = 0;
+    dragState.lastX = 0;
+    dragState.lastTime = 0;
+    dragState.velocity = 0;
+    elements.stageRail?.classList.remove('is-dragging');
+}
+
+function temporarilySuppressClick() {
+    dragState.suppressClick = true;
+    window.setTimeout(() => {
+        dragState.suppressClick = false;
+    }, 180);
+}
+
+function bindStageRailDrag() {
+    const rail = elements.stageRail;
+    if (!rail) {
+        return;
+    }
+
+    rail.addEventListener('dragstart', (event) => {
+        event.preventDefault();
+    });
+
+    rail.addEventListener('scroll', scheduleStageRailMetrics, { passive: true });
+
+    rail.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0 || rail.scrollWidth <= rail.clientWidth) {
+            return;
+        }
+
+        cancelRailMomentum();
+        cancelRailScrollFrame();
+
+        dragState.active = true;
+        dragState.dragging = false;
+        dragState.pointerId = event.pointerId;
+        dragState.startX = event.clientX;
+        dragState.startScrollLeft = rail.scrollLeft;
+        dragState.lastX = event.clientX;
+        dragState.lastTime = performance.now();
+        dragState.velocity = 0;
+    });
+
+    rail.addEventListener('pointermove', (event) => {
+        if (!dragState.active || dragState.pointerId !== event.pointerId) {
+            return;
+        }
+
+        const deltaX = event.clientX - dragState.startX;
+        if (!dragState.dragging && Math.abs(deltaX) > 8) {
+            dragState.dragging = true;
+            rail.classList.add('is-dragging');
+            if (typeof rail.setPointerCapture === 'function') {
+                try {
+                    rail.setPointerCapture(event.pointerId);
+                } catch {
+                    // ignore pointer capture failures
+                }
+            }
+        }
+
+        if (!dragState.dragging) {
+            return;
+        }
+
+        event.preventDefault();
+        scheduleRailScroll(dragState.startScrollLeft - deltaX);
+
+        const now = performance.now();
+        const deltaTime = Math.max(now - dragState.lastTime, 1);
+        const instantVelocity = (dragState.lastX - event.clientX) / deltaTime;
+        dragState.velocity = (dragState.velocity * 0.72) + (instantVelocity * 0.28);
+        dragState.lastX = event.clientX;
+        dragState.lastTime = now;
+    });
+
+    const finishDrag = (event) => {
+        if (!dragState.active || dragState.pointerId !== event.pointerId) {
+            return;
+        }
+
+        const wasDragging = dragState.dragging;
+        const releaseVelocity = dragState.velocity;
+
+        if (typeof rail.hasPointerCapture === 'function' && rail.hasPointerCapture(event.pointerId)) {
+            try {
+                rail.releasePointerCapture(event.pointerId);
+            } catch {
+                // ignore pointer release failures
+            }
+        }
+
+        resetDragState();
+
+        if (!wasDragging) {
+            return;
+        }
+
+        temporarilySuppressClick();
+        startRailMomentum(releaseVelocity);
+    };
+
+    rail.addEventListener('pointerup', finishDrag);
+    rail.addEventListener('pointercancel', finishDrag);
+    rail.addEventListener('lostpointercapture', (event) => {
+        if (!dragState.active || dragState.pointerId !== event.pointerId) {
+            return;
+        }
+        resetDragState();
+        updateStageRailMetrics();
+    });
+
+    window.addEventListener('resize', scheduleStageRailMetrics);
 }
 
 function loadFrame() {
@@ -384,11 +724,11 @@ function loadFrame() {
 
     state.frameSrc = target.embedUrl;
     setLoading(true);
-    elements.frame.style.height = '960px';
+    elements.frame.style.height = '920px';
     elements.frame.src = target.embedUrl;
 }
 
-function render() {
+function render({ animateStep = false, animatePanels = false } = {}) {
     const step = getCurrentStep();
     renderRecommended();
     renderStageRail();
@@ -396,39 +736,57 @@ function render() {
     renderStageCopy(step);
     renderChecklist(step);
     renderStepNavigation();
+
+    if (animatePanels) {
+        playPanelTransitions();
+    }
+    if (animateStep) {
+        animateCurrentStep();
+    } else {
+        ensureActiveStepVisible();
+    }
+
     loadFrame();
     syncUrl();
+    scheduleStageRailMetrics();
 }
 
-function switchStage(nextStage) {
-    if (!stepMap.has(nextStage)) {
+function switchStage(nextStage, { animate = true } = {}) {
+    if (!stepMap.has(nextStage) || nextStage === state.stage) {
         return;
     }
+
     state.stage = nextStage;
-    if (state.stage !== 'preparation') {
-        const firstIncompletePrep = prepResources.find((item) => !item.ready)?.id;
-        if (firstIncompletePrep) {
-            state.prep = firstIncompletePrep;
-        }
-    }
-    render();
+    render({
+        animateStep: animate,
+        animatePanels: animate,
+    });
 }
 
-function switchPrep(nextPrep) {
+function switchPrep(nextPrep, { animate = true } = {}) {
     if (!prepMap.has(nextPrep)) {
         return;
     }
-    state.prep = nextPrep;
-    if (state.stage !== 'preparation') {
-        state.stage = 'preparation';
+
+    const stageChanged = state.stage !== 'preparation';
+    const prepChanged = state.prep !== nextPrep;
+    if (!stageChanged && !prepChanged) {
+        return;
     }
-    render();
+
+    state.prep = nextPrep;
+    state.stage = 'preparation';
+    render({
+        animateStep: animate,
+        animatePanels: animate,
+    });
 }
 
 function handleEmbedMessage(event) {
     if (event.origin !== window.location.origin) {
         return;
     }
+
     const payload = event.data || {};
     if (payload.type !== 'manage-embed-height' || !elements.frame) {
         return;
@@ -436,6 +794,7 @@ function handleEmbedMessage(event) {
     if (elements.frame.contentWindow && event.source !== elements.frame.contentWindow) {
         return;
     }
+
     const nextHeight = Number(payload.height || 0);
     if (Number.isFinite(nextHeight) && nextHeight > 0) {
         elements.frame.style.height = `${Math.max(nextHeight, 720)}px`;
@@ -445,9 +804,41 @@ function handleEmbedMessage(event) {
 
 function bindEvents() {
     elements.stageButtons.forEach((button) => {
-        button.addEventListener('click', () => {
+        button.addEventListener('click', (event) => {
+            if (dragState.suppressClick) {
+                dragState.suppressClick = false;
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
             switchStage(button.dataset.stageId);
         });
+    });
+
+    elements.stageTrack?.addEventListener('keydown', (event) => {
+        const currentIndex = stageOrder.indexOf(state.stage);
+        let nextIndex = currentIndex;
+
+        if (event.key === 'ArrowRight') {
+            nextIndex = Math.min(stageOrder.length - 1, currentIndex + 1);
+        } else if (event.key === 'ArrowLeft') {
+            nextIndex = Math.max(0, currentIndex - 1);
+        } else if (event.key === 'Home') {
+            nextIndex = 0;
+        } else if (event.key === 'End') {
+            nextIndex = stageOrder.length - 1;
+        } else {
+            return;
+        }
+
+        if (nextIndex === -1 || nextIndex === currentIndex) {
+            return;
+        }
+
+        event.preventDefault();
+        switchStage(stageOrder[nextIndex]);
+        const nextButton = elements.stageButtons.find((button) => button.dataset.stageId === stageOrder[nextIndex]);
+        nextButton?.focus();
     });
 
     elements.prepButtons.forEach((button) => {
@@ -482,5 +873,6 @@ function bindEvents() {
     });
 }
 
+bindStageRailDrag();
 bindEvents();
 render();
