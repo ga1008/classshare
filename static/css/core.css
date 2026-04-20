@@ -378,14 +378,14 @@ hr { border: 0; border-top: 1px solid var(--border-color); margin: var(--spacing
 .site-record-footer {
     width: min(960px, calc(100% - (var(--spacing-lg) * 2)));
     margin: 0 auto var(--spacing-lg);
-    padding: var(--spacing-md) var(--spacing-lg);
+    padding: 0.75rem var(--spacing-lg);
     display: grid;
-    gap: 0.35rem;
+    gap: 0.2rem;
     border-radius: var(--radius-lg);
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    background: rgba(255, 255, 255, 0.72);
-    backdrop-filter: blur(10px);
-    box-shadow: 0 16px 36px -28px rgba(15, 23, 42, 0.5);
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    background: rgba(255, 255, 255, 0.38);
+    backdrop-filter: blur(4px);
+    box-shadow: 0 6px 18px -20px rgba(15, 23, 42, 0.35);
     text-align: center;
 }
 
@@ -395,8 +395,8 @@ hr { border: 0; border-top: 1px solid var(--border-color); margin: var(--spacing
     align-items: center;
     flex-wrap: wrap;
     gap: 0.5rem 0.875rem;
-    color: var(--text-secondary);
-    font-size: 0.8125rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
     line-height: 1.6;
 }
 
@@ -408,24 +408,27 @@ hr { border: 0; border-top: 1px solid var(--border-color); margin: var(--spacing
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    font-weight: 600;
-    color: var(--text-primary);
+    font-weight: 500;
+    color: var(--text-secondary);
 }
 
 .site-record-footer__record::before {
     content: "";
-    width: 0.45rem;
-    height: 0.45rem;
+    width: 0.35rem;
+    height: 0.35rem;
     border-radius: 999px;
-    background: linear-gradient(135deg, var(--success-color), #0ea5e9);
-    box-shadow: 0 0 0 0.2rem rgba(16, 185, 129, 0.12);
+    background: rgba(148, 163, 184, 0.7);
+}
+
+.site-record-footer__record:hover {
+    color: var(--text-primary);
 }
 
 .site-record-footer__statement {
     margin: 0;
     color: var(--text-muted);
-    font-size: 0.75rem;
-    line-height: 1.7;
+    font-size: 0.72rem;
+    line-height: 1.6;
 }
 
 @media (max-width: 768px) {
@@ -433,12 +436,12 @@ hr { border: 0; border-top: 1px solid var(--border-color); margin: var(--spacing
     .toast-container { left: var(--spacing-md); right: var(--spacing-md); top: var(--spacing-md); }
     .site-record-footer {
         width: calc(100% - (var(--spacing-md) * 2));
-        padding: var(--spacing-sm) var(--spacing-md);
+        padding: 0.65rem var(--spacing-md);
     }
 
     .site-record-footer__meta {
         gap: 0.35rem 0.75rem;
-        font-size: 0.75rem;
+        font-size: 0.72rem;
     }
 
     .site-record-footer__meta span {
