@@ -929,10 +929,24 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
 # V4.1: 新的管理中心路由
 # ============================
 
-@router.get("/manage", response_class=RedirectResponse)
-async def redirect_to_manage_classes(user: dict = Depends(get_current_teacher)):
-    """管理中心根目录，重定向到班级管理页"""
-    return RedirectResponse(url="/manage/classes", status_code=status.HTTP_303_SEE_OTHER)
+@router.get("/manage", response_class=HTMLResponse)
+async def manage_workflow_page(request: Request, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        workflow_snapshot = _build_manage_workflow_snapshot(conn, int(user["id"]))
+
+    return templates.TemplateResponse(
+        request,
+        "manage/workflow.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="教学流程工作台",
+            active_page="workflow",
+            extra={
+                "workflow_snapshot": workflow_snapshot,
+            },
+        ),
+    )
 
 
 @router.get("/manage/classes", response_class=HTMLResponse)
@@ -950,25 +964,34 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
             """,
             (user['id'],)
         )
-        my_classes = my_classes_cursor.fetchall()
+        my_classes = [dict(row) for row in my_classes_cursor.fetchall()]
 
-    return templates.TemplateResponse(request, "manage/classes.html", {
-        "request": request,
-        "user_info": user,
-        "my_classes": my_classes,
-        "page_title": "班级管理",
-        "active_page": "classes"  # 用于侧边栏高亮
-    })
+    class_stats = {
+        "class_count": len(my_classes),
+        "student_count": sum(int(item.get("student_count") or 0) for item in my_classes),
+        "largest_class_size": max((int(item.get("student_count") or 0) for item in my_classes), default=0),
+    }
+
+    return templates.TemplateResponse(
+        request,
+        "manage/classes.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="班级管理",
+            active_page="classes",
+            extra={
+                "my_classes": my_classes,
+                "class_stats": class_stats,
+            },
+        ),
+    )
 
 
 @router.get("/manage/courses", response_class=HTMLResponse)
 async def get_manage_courses_page(request: Request, user: dict = Depends(get_current_teacher)):
     """显示课程管理页面 (列表和新建)"""
     with get_db_connection() as conn:
-        my_courses_cursor = conn.execute(
-            "SELECT id, name, credits FROM courses WHERE created_by_teacher_id = ? ORDER BY name", (user['id'],)
-        )
-        my_courses = my_courses_cursor.fetchall()
         my_courses = _load_teacher_course_rows(conn, int(user["id"]))
         textbooks = [
             {
@@ -988,16 +1011,22 @@ async def get_manage_courses_page(request: Request, user: dict = Depends(get_cur
         "total_hours": sum(int(item.get("total_hours") or 0) for item in my_courses),
     }
 
-    return templates.TemplateResponse(request, "manage/courses.html", {
-        "request": request,
-        "user_info": user,
-        "my_courses": my_courses,
-        "courses_json": my_courses,
-        "textbooks_json": textbooks,
-        "course_stats": course_stats,
-        "page_title": "课程管理",
-        "active_page": "courses"
-    })
+    return templates.TemplateResponse(
+        request,
+        "manage/courses.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="课程管理",
+            active_page="courses",
+            extra={
+                "my_courses": my_courses,
+                "courses_json": my_courses,
+                "textbooks_json": textbooks,
+                "course_stats": course_stats,
+            },
+        ),
+    )
 
 def _load_teacher_textbook_rows(conn, teacher_id: int):
     return conn.execute(
@@ -1129,6 +1158,228 @@ def _load_teacher_offering_rows(conn, teacher_id: int):
     return offerings
 
 
+def _is_embedded_manage_request(request: Request) -> bool:
+    return str(request.query_params.get("embed") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _build_manage_template_context(
+    request: Request,
+    user: dict,
+    *,
+    page_title: str,
+    active_page: str,
+    extra: dict | None = None,
+) -> dict:
+    context = {
+        "request": request,
+        "user_info": user,
+        "page_title": page_title,
+        "active_page": active_page,
+        "embedded_mode": _is_embedded_manage_request(request),
+    }
+    if extra:
+        context.update(extra)
+    return context
+
+
+def _build_manage_view_url(path: str, **params) -> str:
+    query = {}
+    for key, value in params.items():
+        if value in (None, "", False):
+            continue
+        query[key] = value
+    if not query:
+        return path
+    return f"{path}?{urlencode(query)}"
+
+
+def _build_manage_workflow_snapshot(conn, teacher_id: int) -> dict:
+    semester_rows = [serialize_semester_row(row) for row in load_teacher_semester_rows(conn, teacher_id)]
+
+    counts = {
+        "classes": int(conn.execute(
+            "SELECT COUNT(*) FROM classes WHERE created_by_teacher_id = ?",
+            (teacher_id,),
+        ).fetchone()[0] or 0),
+        "courses": int(conn.execute(
+            "SELECT COUNT(*) FROM courses WHERE created_by_teacher_id = ?",
+            (teacher_id,),
+        ).fetchone()[0] or 0),
+        "textbooks": int(conn.execute(
+            "SELECT COUNT(*) FROM textbooks WHERE teacher_id = ?",
+            (teacher_id,),
+        ).fetchone()[0] or 0),
+        "exams": int(conn.execute(
+            "SELECT COUNT(*) FROM exam_papers WHERE teacher_id = ?",
+            (teacher_id,),
+        ).fetchone()[0] or 0),
+        "materials": int(conn.execute(
+            "SELECT COUNT(*) FROM course_materials WHERE teacher_id = ? AND name != '.git'",
+            (teacher_id,),
+        ).fetchone()[0] or 0),
+        "semesters": len(semester_rows),
+        "current_semesters": sum(1 for item in semester_rows if item.get("is_current")),
+        "offerings": int(conn.execute(
+            "SELECT COUNT(*) FROM class_offerings WHERE teacher_id = ?",
+            (teacher_id,),
+        ).fetchone()[0] or 0),
+        "ai_configs": int(conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM ai_class_configs cfg
+            JOIN class_offerings o ON o.id = cfg.class_offering_id
+            WHERE o.teacher_id = ?
+            """,
+            (teacher_id,),
+        ).fetchone()[0] or 0),
+    }
+
+    resource_definitions = [
+        {
+            "id": "classes",
+            "title": "班级",
+            "description": "先准备好班级和学生名单，开课时才能直接绑定到课堂。",
+            "count_key": "classes",
+            "href": "/manage/classes",
+        },
+        {
+            "id": "courses",
+            "title": "课程",
+            "description": "课程模板决定后续课堂的教学结构、学时和内容映射。",
+            "count_key": "courses",
+            "href": "/manage/courses",
+        },
+        {
+            "id": "textbooks",
+            "title": "教材",
+            "description": "教材用于开课绑定，也会作为 AI 助教的重要知识依据。",
+            "count_key": "textbooks",
+            "href": "/manage/textbooks",
+        },
+        {
+            "id": "exams",
+            "title": "试卷",
+            "description": "试卷和考试资源可跨学期复用，适合在准备阶段统一整理。",
+            "count_key": "exams",
+            "href": "/manage/exams",
+        },
+        {
+            "id": "materials",
+            "title": "材料",
+            "description": "课堂材料和文档目录建议提前维护，便于课程与课堂持续复用。",
+            "count_key": "materials",
+            "href": "/manage/materials",
+        },
+    ]
+
+    prep_resources = []
+    for item in resource_definitions:
+        count = counts[item["count_key"]]
+        prep_resources.append({
+            **item,
+            "count": count,
+            "ready": count > 0,
+            "status_label": "已准备" if count > 0 else "待准备",
+            "embed_url": _build_manage_view_url(item["href"], embed=1),
+        })
+
+    prep_ready_count = sum(1 for item in prep_resources if item["ready"])
+
+    def resolve_step_status(*, completed: bool, partial: bool) -> str:
+        if completed:
+            return "complete"
+        if partial:
+            return "in_progress"
+        return "pending"
+
+    steps = [
+        {
+            "id": "preparation",
+            "title": "流程前准备",
+            "eyebrow": "准备基础资源",
+            "description": "先整理班级、课程、教材、试卷和材料，再进入学期与课堂流程会更顺畅。",
+            "summary": f"已准备 {prep_ready_count}/{len(prep_resources)} 项基础资源",
+            "status": resolve_step_status(
+                completed=prep_ready_count == len(prep_resources),
+                partial=prep_ready_count > 0,
+            ),
+            "count": prep_ready_count,
+            "total": len(prep_resources),
+        },
+        {
+            "id": "semester",
+            "title": "确认学期",
+            "eyebrow": "统一学期范围",
+            "description": "先定义学期区间和周次规则，后续开设课堂时才能共享一致的时间基准。",
+            "summary": f"已创建 {counts['semesters']} 个学期",
+            "status": resolve_step_status(
+                completed=counts["semesters"] > 0,
+                partial=counts["current_semesters"] > 0,
+            ),
+            "count": counts["semesters"],
+        },
+        {
+            "id": "offerings",
+            "title": "开设课堂",
+            "eyebrow": "绑定学期与教学资源",
+            "description": "将学期、班级、课程和教材组合为具体课堂，并生成课堂排期与内容映射。",
+            "summary": f"已开设 {counts['offerings']} 个课堂",
+            "status": resolve_step_status(
+                completed=counts["offerings"] > 0,
+                partial=counts["offerings"] > 0,
+            ),
+            "count": counts["offerings"],
+        },
+        {
+            "id": "ai",
+            "title": "配置 AI 助教",
+            "eyebrow": "完善课堂支持",
+            "description": "为具体课堂绑定教材、提示词和知识依据，让 AI 助教具备可落地的教学语境。",
+            "summary": f"已完成 {counts['ai_configs']} 个课堂 AI 配置",
+            "status": resolve_step_status(
+                completed=counts["ai_configs"] > 0 and counts["ai_configs"] >= counts["offerings"] > 0,
+                partial=counts["ai_configs"] > 0,
+            ),
+            "count": counts["ai_configs"],
+        },
+    ]
+
+    if prep_ready_count < len(prep_resources):
+        recommended_stage = "preparation"
+    elif counts["semesters"] == 0:
+        recommended_stage = "semester"
+    elif counts["offerings"] == 0:
+        recommended_stage = "offerings"
+    else:
+        recommended_stage = "ai"
+
+    recommended_prep = next((item["id"] for item in prep_resources if not item["ready"]), prep_resources[0]["id"])
+
+    stage_views = {
+        "semester": {
+            "href": "/manage/semesters",
+            "embed_url": _build_manage_view_url("/manage/semesters", embed=1),
+        },
+        "offerings": {
+            "href": "/manage/offerings",
+            "embed_url": _build_manage_view_url("/manage/offerings", embed=1),
+        },
+        "ai": {
+            "href": "/manage/ai",
+            "embed_url": _build_manage_view_url("/manage/ai", embed=1),
+        },
+    }
+
+    return {
+        "counts": counts,
+        "prep_resources": prep_resources,
+        "steps": steps,
+        "recommended_stage": recommended_stage,
+        "recommended_prep": recommended_prep,
+        "stage_views": stage_views,
+    }
+
+
 @router.get("/manage/semesters", response_class=HTMLResponse)
 async def get_manage_semesters_page(request: Request, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
@@ -1139,15 +1390,21 @@ async def get_manage_semesters_page(request: Request, user: dict = Depends(get_c
     current_date = china_today()
     semesters = semester_calendar["semesters"]
 
-    return templates.TemplateResponse(request, "manage/semesters.html", {
-        "request": request,
-        "user_info": user,
-        "semesters": semesters,
-        "semester_calendar": semester_calendar,
-        "semester_defaults": build_semester_defaults(current_date),
-        "page_title": "学期管理",
-        "active_page": "semesters",
-    })
+    return templates.TemplateResponse(
+        request,
+        "manage/semesters.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="学期管理",
+            active_page="semesters",
+            extra={
+                "semesters": semesters,
+                "semester_calendar": semester_calendar,
+                "semester_defaults": build_semester_defaults(current_date),
+            },
+        ),
+    )
 
 
 @router.get("/manage/textbooks", response_class=HTMLResponse)
@@ -1158,14 +1415,20 @@ async def get_manage_textbooks_page(request: Request, user: dict = Depends(get_c
             for row in _load_teacher_textbook_rows(conn, int(user["id"]))
         ]
 
-    return templates.TemplateResponse(request, "manage/textbooks.html", {
-        "request": request,
-        "user_info": user,
-        "textbooks": textbooks,
-        "textbooks_json": textbooks,
-        "page_title": "教材管理",
-        "active_page": "textbooks",
-    })
+    return templates.TemplateResponse(
+        request,
+        "manage/textbooks.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="教材管理",
+            active_page="textbooks",
+            extra={
+                "textbooks": textbooks,
+                "textbooks_json": textbooks,
+            },
+        ),
+    )
 
 
 @router.get("/manage/offerings", response_class=HTMLResponse)
@@ -1194,18 +1457,24 @@ async def get_manage_offerings_page(request: Request, user: dict = Depends(get_c
         ]
         my_offerings = _load_teacher_offering_rows(conn, int(user["id"]))
 
-    return templates.TemplateResponse(request, "manage/offerings.html", {
-        "request": request,
-        "user_info": user,
-        "my_classes": my_classes,
-        "my_courses": my_courses,
-        "my_semesters": my_semesters,
-        "my_textbooks": my_textbooks,
-        "my_offerings": my_offerings,
-        "default_semester_id": choose_default_semester_id(my_semesters),
-        "page_title": "开设课堂",
-        "active_page": "offerings"
-    })
+    return templates.TemplateResponse(
+        request,
+        "manage/offerings.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="开设课堂",
+            active_page="offerings",
+            extra={
+                "my_classes": my_classes,
+                "my_courses": my_courses,
+                "my_semesters": my_semesters,
+                "my_textbooks": my_textbooks,
+                "my_offerings": my_offerings,
+                "default_semester_id": choose_default_semester_id(my_semesters),
+            },
+        ),
+    )
 
 
 @router.get("/manage/ai", response_class=HTMLResponse)
@@ -1217,14 +1486,20 @@ async def get_manage_ai_page(request: Request, user: dict = Depends(get_current_
             for row in _load_teacher_textbook_rows(conn, int(user["id"]))
         ]
 
-    return templates.TemplateResponse(request, "manage/ai.html", {
-        "request": request,
-        "user_info": user,
-        "my_offerings": my_offerings,
-        "my_textbooks": my_textbooks,
-        "page_title": "课堂 AI 配置",
-        "active_page": "ai"
-    })
+    return templates.TemplateResponse(
+        request,
+        "manage/ai.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="课堂 AI 助教",
+            active_page="ai",
+            extra={
+                "my_offerings": my_offerings,
+                "my_textbooks": my_textbooks,
+            },
+        ),
+    )
 
 
 @router.get("/manage/system", response_class=HTMLResponse)
@@ -1290,15 +1565,21 @@ async def get_manage_system_page(request: Request, user: dict = Depends(get_curr
             (user["id"],),
         ).fetchall()
 
-    return templates.TemplateResponse(request, "manage/system.html", {
-        "request": request,
-        "user_info": user,
-        "system_summary": dict(system_summary) if system_summary else {},
-        "login_summary": dict(login_summary) if login_summary else {},
-        "reset_requests": reset_requests,
-        "page_title": "系统管理",
-        "active_page": "system",
-    })
+    return templates.TemplateResponse(
+        request,
+        "manage/system.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="系统管理",
+            active_page="system",
+            extra={
+                "system_summary": dict(system_summary) if system_summary else {},
+                "login_summary": dict(login_summary) if login_summary else {},
+                "reset_requests": reset_requests,
+            },
+        ),
+    )
 
 
 # ============================
@@ -1353,13 +1634,19 @@ async def manage_exams_page(request: Request, user: dict = Depends(get_current_t
             paper['question_types'] = sorted(question_types)
             papers.append(paper)
 
-    return templates.TemplateResponse(request, "manage/exams.html", {
-        "request": request,
-        "user_info": user,
-        "papers": papers,
-        "page_title": "试卷库",
-        "active_page": "exams"
-    })
+    return templates.TemplateResponse(
+        request,
+        "manage/exams.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="试卷管理",
+            active_page="exams",
+            extra={
+                "papers": papers,
+            },
+        ),
+    )
 
 
 @router.get("/exam/{exam_id}/edit", response_class=HTMLResponse)

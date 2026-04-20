@@ -1,0 +1,459 @@
+.workflow-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.workflow-hero {
+    display: grid;
+    gap: 20px;
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+    align-items: stretch;
+}
+
+.workflow-hero-copy {
+    display: grid;
+    gap: 16px;
+}
+
+.workflow-hero-copy p {
+    margin: 0;
+}
+
+.workflow-hero-side {
+    display: grid;
+    gap: 12px;
+    align-content: start;
+}
+
+.workflow-hero-panel {
+    padding: 18px 20px;
+    border-radius: 22px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: var(--shadow-sm);
+}
+
+.workflow-hero-panel span {
+    display: block;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.workflow-hero-panel strong {
+    display: block;
+    margin-top: 10px;
+    font-size: 1.2rem;
+    color: var(--text-primary);
+}
+
+.workflow-hero-panel p {
+    margin: 8px 0 0;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.workflow-stage-rail {
+    position: relative;
+    overflow-x: auto;
+    padding-bottom: 6px;
+}
+
+.workflow-stage-rail::before {
+    content: "";
+    position: absolute;
+    left: 46px;
+    right: 46px;
+    top: 36px;
+    height: 2px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(249, 115, 22, 0.32), rgba(14, 165, 233, 0.3));
+}
+
+.workflow-stage-track {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(220px, 1fr));
+    gap: 16px;
+    min-width: 960px;
+}
+
+.workflow-step {
+    position: relative;
+    display: grid;
+    gap: 12px;
+    padding: 16px 18px 18px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
+    box-shadow: 0 18px 34px rgba(15, 23, 42, 0.06);
+    text-align: left;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.workflow-step:hover {
+    transform: translateY(-3px);
+    border-color: rgba(14, 165, 233, 0.28);
+    box-shadow: 0 22px 38px rgba(14, 165, 233, 0.12);
+}
+
+.workflow-step.is-active {
+    border-color: rgba(14, 165, 233, 0.34);
+    background:
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.16), transparent 34%),
+        linear-gradient(180deg, rgba(240, 249, 255, 0.98), rgba(255, 255, 255, 0.96));
+}
+
+.workflow-step.is-complete .workflow-step-index {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.18), rgba(14, 165, 233, 0.2));
+    color: #0369a1;
+}
+
+.workflow-step.is-active .workflow-step-index {
+    background: linear-gradient(135deg, rgba(249, 115, 22, 0.18), rgba(14, 165, 233, 0.2));
+    color: #0f172a;
+}
+
+.workflow-step-index {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(255, 255, 255, 0.95);
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+.workflow-step-copy {
+    display: grid;
+    gap: 6px;
+}
+
+.workflow-step-copy span {
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+}
+
+.workflow-step-copy strong {
+    color: var(--text-primary);
+    font-size: 1rem;
+}
+
+.workflow-step-copy p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    font-size: 0.88rem;
+}
+
+.workflow-step-foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.workflow-step-summary {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
+.workflow-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: rgba(248, 250, 252, 0.9);
+    color: var(--text-secondary);
+}
+
+.workflow-status-badge.is-complete {
+    background: rgba(34, 197, 94, 0.12);
+    border-color: rgba(34, 197, 94, 0.18);
+    color: #15803d;
+}
+
+.workflow-status-badge.is-in_progress {
+    background: rgba(249, 115, 22, 0.12);
+    border-color: rgba(249, 115, 22, 0.18);
+    color: #c2410c;
+}
+
+.workflow-status-badge.is-pending {
+    background: rgba(148, 163, 184, 0.12);
+    border-color: rgba(148, 163, 184, 0.22);
+    color: #475569;
+}
+
+.workflow-stage-header {
+    align-items: flex-start;
+}
+
+.workflow-stage-header-copy {
+    display: grid;
+    gap: 8px;
+}
+
+.workflow-stage-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #0369a1;
+}
+
+.workflow-stage-eyebrow::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #f97316, #0ea5e9);
+}
+
+.workflow-stage-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.workflow-stage-body {
+    display: grid;
+    gap: 18px;
+}
+
+.workflow-stage-insight-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.workflow-stage-insight {
+    padding: 18px 20px;
+    border-radius: 20px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(248, 250, 252, 0.78);
+}
+
+.workflow-stage-insight h4 {
+    margin: 0 0 10px;
+    color: var(--text-primary);
+    font-size: 0.96rem;
+}
+
+.workflow-stage-insight p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.7;
+}
+
+.workflow-stage-checklist {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.workflow-check-item {
+    display: grid;
+    gap: 8px;
+    padding: 14px 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(255, 255, 255, 0.92);
+}
+
+.workflow-check-item.is-ready {
+    border-color: rgba(34, 197, 94, 0.2);
+    background: linear-gradient(180deg, rgba(240, 253, 244, 0.88), rgba(255, 255, 255, 0.98));
+}
+
+.workflow-check-item-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+}
+
+.workflow-check-item strong {
+    color: var(--text-primary);
+}
+
+.workflow-check-item p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    font-size: 0.88rem;
+}
+
+.workflow-prep-tabs {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.workflow-prep-tabs[hidden] {
+    display: none;
+}
+
+.workflow-prep-tab {
+    display: grid;
+    gap: 10px;
+    padding: 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(255, 255, 255, 0.94);
+    text-align: left;
+    cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.workflow-prep-tab:hover {
+    transform: translateY(-2px);
+    border-color: rgba(14, 165, 233, 0.26);
+}
+
+.workflow-prep-tab.is-active {
+    border-color: rgba(14, 165, 233, 0.34);
+    box-shadow: 0 18px 32px rgba(14, 165, 233, 0.12);
+    background:
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.14), transparent 34%),
+        linear-gradient(180deg, rgba(240, 249, 255, 0.98), rgba(255, 255, 255, 0.96));
+}
+
+.workflow-prep-tab-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+}
+
+.workflow-prep-tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    height: 34px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.06);
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+.workflow-prep-tab strong {
+    color: var(--text-primary);
+}
+
+.workflow-prep-tab p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    font-size: 0.88rem;
+}
+
+.workflow-frame-shell {
+    position: relative;
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 24px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background:
+        linear-gradient(180deg, rgba(248, 250, 252, 0.82), rgba(255, 255, 255, 0.94));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.workflow-frame-toolbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.workflow-frame-toolbar-copy {
+    display: grid;
+    gap: 4px;
+}
+
+.workflow-frame-toolbar-copy strong {
+    color: var(--text-primary);
+}
+
+.workflow-frame-toolbar-copy span {
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+}
+
+.workflow-frame-loading {
+    position: absolute;
+    inset: 58px 14px 14px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.78);
+    backdrop-filter: blur(3px);
+    color: var(--text-secondary);
+    z-index: 1;
+}
+
+.workflow-frame-loading.is-visible {
+    display: flex;
+}
+
+.workflow-frame-loading span {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.06);
+}
+
+.workflow-content-frame {
+    width: 100%;
+    min-height: 960px;
+    border: none;
+    border-radius: 20px;
+    background: #fff;
+}
+
+@media (max-width: 1080px) {
+    .workflow-hero,
+    .workflow-stage-insight-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .workflow-stage-track {
+        min-width: 840px;
+    }
+
+    .workflow-stage-actions,
+    .workflow-frame-toolbar {
+        justify-content: flex-start;
+    }
+
+    .workflow-content-frame {
+        min-height: 780px;
+    }
+}

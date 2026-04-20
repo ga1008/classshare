@@ -1,76 +1,181 @@
 {% extends "manage/layout.html" %}
 
-{% block title %}班级管理{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/manage_academic.css">
+<style>
+    .class-page-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+    }
+
+    .class-form-note {
+        padding: 14px 16px;
+        border-radius: 18px;
+        border: 1px dashed rgba(14, 165, 233, 0.28);
+        background: rgba(239, 246, 255, 0.72);
+        color: var(--text-secondary);
+        line-height: 1.65;
+        font-size: 0.9rem;
+    }
+
+    .class-upload-list {
+        display: grid;
+        gap: 12px;
+    }
+
+    .class-upload-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        align-items: flex-start;
+        padding: 16px 18px;
+        border-radius: 20px;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        background: rgba(255, 255, 255, 0.94);
+    }
+
+    .class-upload-item strong {
+        color: var(--text-primary);
+    }
+
+    .class-upload-item p {
+        margin: 6px 0 0;
+        color: var(--text-secondary);
+        line-height: 1.6;
+    }
+
+    .class-upload-item-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        justify-content: flex-end;
+    }
+</style>
+{% endblock %}
+
+{% block header_actions %}
+<button type="button" class="btn btn-primary" id="focusClassCreateBtn">新建班级</button>
+{% endblock %}
 
 {% block content %}
-<div class="grid-2-col">
-    <div class="panel">
-        <div class="panel-header"><h2>新建班级 (从Excel)</h2></div>
-        <div class="panel-body">
-            <form id="form-create-class" action="/api/manage/classes/create" method="POST">
-                <div class="form-group">
-                    <label class="form-label" for="class_name">班级名称 (如: 软工2406班)</label>
-                    <input class="form-control" type="text" id="class_name" name="class_name" required>
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="roster_file">学生名单Excel/CSV</label>
-                    <input class="form-control" type="file" id="roster_file" name="file" required accept=".xlsx,.xls,.csv">
-                    <span class="description">文件需包含 '姓名' 和 '学号' 两列。</span>
-                </div>
-                <button type="submit" class="btn btn-primary btn-block">创建班级并导入学生</button>
-            </form>
+<div class="academic-shell class-page-shell">
+    <section class="academic-hero">
+        <div class="academic-eyebrow">Class Library</div>
+        <h2>班级与学生名单管理</h2>
+        <p>
+            先维护可复用的班级和学生名单，后续开设课堂时可以直接绑定，不需要每个学期重复导入。
+            导入后如需删除班级，请先确认不再影响已有课堂。
+        </p>
+        <div class="academic-hero-actions">
+            <button type="button" class="btn btn-primary" id="heroClassCreateBtn">导入新班级</button>
+            <span class="academic-badge is-success">支持 Excel / CSV 导入</span>
+            <span class="academic-badge">班级可跨学期复用</span>
         </div>
-    </div>
+    </section>
 
-    <div class="panel">
-        <div class="panel-header"><h2>我的班级</h2></div>
-        <div class="panel-body">
-            <ul class="item-list">
-                {% for class in my_classes %}
-                <li>
-                    <span>
-                        {{ class.name }} ({{ class.student_count }}人)
-                    </span>
-                    <div>
-                        <button class="btn btn-danger btn-sm" 
-                                data-id="{{ class.id }}" 
-                                data-name="{{ class.name }}"
-                                onclick="deleteClass(this)">删除</button>
+    <section class="academic-stat-grid">
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">班级数量</div>
+            <div class="academic-stat-value">{{ class_stats.class_count }}</div>
+            <div class="academic-stat-help">当前教师名下可直接用于开课绑定的班级总数。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">学生总数</div>
+            <div class="academic-stat-value">{{ class_stats.student_count }}</div>
+            <div class="academic-stat-help">已导入到这些班级中的学生人数总和。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">最大班级</div>
+            <div class="academic-stat-value">{{ class_stats.largest_class_size }}</div>
+            <div class="academic-stat-help">当前学生人数最多的班级规模。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">平均人数</div>
+            <div class="academic-stat-value">
+                {{ ((class_stats.student_count / class_stats.class_count) | round(1)) if class_stats.class_count else 0 }}
+            </div>
+            <div class="academic-stat-help">按已导入学生数计算的平均班级人数。</div>
+        </article>
+    </section>
+
+    <section class="academic-content-grid two-column">
+        <article class="academic-card">
+            <div class="academic-card-header">
+                <div>
+                    <h3 class="academic-card-title">导入班级</h3>
+                    <p class="academic-card-subtitle">填写班级名称并上传学生名单文件，保存后即可在“开设课堂”阶段直接选用。</p>
+                </div>
+            </div>
+            <div class="academic-card-body">
+                <form id="classCreateForm" action="/api/manage/classes/create" method="post" enctype="multipart/form-data" class="academic-form-grid">
+                    <div class="academic-field">
+                        <label for="classNameInput">班级名称</label>
+                        <input type="text" id="classNameInput" name="class_name" class="form-control" required placeholder="例如：软件工程 2406 班">
                     </div>
-                </li>
-                {% else %}
-                <li class="placeholder">暂无班级</li>
-                {% endfor %}
-            </ul>
-        </div>
-    </div>
+                    <div class="academic-field">
+                        <label for="classRosterInput">学生名单文件</label>
+                        <input type="file" id="classRosterInput" name="file" class="form-control" required accept=".xlsx,.xls,.csv">
+                        <div class="academic-hint">文件至少需要包含“姓名”和“学号”两列，支持 Excel 或 CSV。</div>
+                    </div>
+                    <div class="class-form-note">
+                        建议使用一个班级一个名单文件的方式维护。导入成功后，课堂创建时就可以直接复用该班级，而不需要再次上传名单。
+                    </div>
+                    <div class="academic-action-group" style="justify-content: flex-end;">
+                        <button type="submit" class="btn btn-primary">创建班级并导入学生</button>
+                    </div>
+                </form>
+            </div>
+        </article>
+
+        <article class="academic-card">
+            <div class="academic-card-header">
+                <div>
+                    <h3 class="academic-card-title">已创建班级</h3>
+                    <p class="academic-card-subtitle">可在后续学期与课堂中重复使用。删除前请确认不再需要该班级及其学生数据。</p>
+                </div>
+            </div>
+            <div class="academic-card-body">
+                <div class="class-upload-list" id="classList">
+                    {% for class_item in my_classes %}
+                    <article class="class-upload-item">
+                        <div>
+                            <strong>{{ class_item.name }}</strong>
+                            <p>已导入 {{ class_item.student_count }} 名学生，可直接在开设课堂时绑定。</p>
+                        </div>
+                        <div class="class-upload-item-actions">
+                            <span class="academic-badge">{{ class_item.student_count }} 名学生</span>
+                            <button
+                                type="button"
+                                class="btn btn-danger btn-sm"
+                                data-action="delete-class"
+                                data-class-id="{{ class_item.id }}"
+                                data-class-name="{{ class_item.name }}"
+                            >
+                                删除
+                            </button>
+                        </div>
+                    </article>
+                    {% else %}
+                    <div class="academic-empty">
+                        <strong>还没有班级</strong>
+                        先导入一个班级，后续开设课堂时才能直接绑定到教学流程中。
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </article>
+    </section>
 </div>
+
+<script>
+    window.MANAGE_CLASSES_DATA = {
+        classes: {{ my_classes | tojson }}
+    };
+</script>
 {% endblock %}
 
 {% block scripts %}
-<script>
-    document.addEventListener('DOMContentLoaded', () => {
-        // 绑定创建班级表单
-        const formCreateClass = document.getElementById('form-create-class');
-        if (formCreateClass) {
-            formCreateClass.onsubmit = e => handleFormSubmit(e);
-        }
-    });
-
-    // 删除班级的 JS
-    async function deleteClass(button) {
-        const classId = button.dataset.id;
-        const className = button.dataset.name;
-        
-        if (!confirm(`确定要删除班级 "${className}" 吗？\n警告：这将同时删除该班级下的所有学生和课堂关联！`)) {
-            return;
-        }
-
-        const data = await apiFetch(`/api/manage/classes/${classId}`, { method: 'DELETE' });
-        if(data) {
-            showMessage(data.message || '删除成功！', 'success');
-            location.reload();
-        }
-    }
-</script>
+<script type="module" src="/static/js/manage_classes.js"></script>
 {% endblock %}

@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ page_title }} - 教师管理中心</title>
-    <!-- New Core Design System -->
     <link rel="stylesheet" href="/static/css/core.css">
     <link rel="stylesheet" href="/static/css/layout.css">
     <link rel="stylesheet" href="/static/css/buttons.css">
@@ -16,13 +15,21 @@
     <link rel="stylesheet" href="/static/css/message_center.css">
     {% block extra_head %}{% endblock %}
     <style>
-        body { background-color: var(--bg-color); }
+        body {
+            background-color: var(--bg-color);
+        }
+
+        body.manage-embedded-page {
+            background: transparent;
+        }
 
         .manage-layout::before {
             content: "";
             position: fixed;
             inset: 0;
-            background: radial-gradient(circle at top left, rgba(79, 70, 229, 0.09), transparent 30%), radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.08), transparent 26%);
+            background:
+                radial-gradient(circle at top left, rgba(79, 70, 229, 0.09), transparent 30%),
+                radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.08), transparent 26%);
             pointer-events: none;
             z-index: -1;
         }
@@ -32,7 +39,6 @@
             min-height: 100vh;
         }
 
-        /* --- Sidebar --- */
         .manage-sidebar {
             width: 260px;
             background-color: rgba(255, 255, 255, 0.93);
@@ -43,7 +49,7 @@
             position: sticky;
             top: 0;
             height: 100vh;
-            z-index: 20; /* Ensure shadow shows over main content */
+            z-index: 20;
         }
 
         .manage-brand {
@@ -139,12 +145,11 @@
             color: var(--text-muted);
         }
 
-        /* --- Main Content --- */
         .manage-main {
             flex: 1;
             display: flex;
             flex-direction: column;
-            min-width: 0; /* Important for flex-child truncation */
+            min-width: 0;
         }
 
         .manage-header {
@@ -216,6 +221,16 @@
             margin: 0 auto;
         }
 
+        .manage-content.is-embedded {
+            max-width: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .manage-embedded-root {
+            min-height: 100vh;
+        }
+
         .page-header-actions {
             display: flex;
             justify-content: space-between;
@@ -223,7 +238,6 @@
             margin-bottom: var(--spacing-5);
         }
 
-        /* --- Mobile Styles --- */
         .mobile-toggle {
             display: none;
             background: none;
@@ -240,40 +254,51 @@
                 z-index: 50;
                 transition: left 0.3s ease;
             }
+
             .manage-sidebar.open {
                 left: 0;
                 box-shadow: var(--shadow-lg);
             }
+
             .mobile-toggle {
                 display: block;
             }
+
             .manage-content {
                 padding: var(--spacing-4);
             }
+
+            .manage-content.is-embedded {
+                padding: 0;
+            }
+
             .manage-header {
                 height: auto;
                 min-height: 70px;
                 padding: var(--spacing-3) var(--spacing-4);
                 align-items: flex-start;
             }
+
             .manage-header,
             .manage-header-start,
             .manage-header-end {
                 flex-wrap: wrap;
             }
+
             .manage-header-start,
             .manage-header-end {
                 width: 100%;
             }
+
             .manage-header-end {
                 justify-content: space-between;
             }
         }
     </style>
 </head>
-<body>
+<body class="{% if embedded_mode %}manage-embedded-page{% endif %}">
+    {% if not embedded_mode %}
     <div class="manage-layout">
-        <!-- Sidebar Navigation -->
         <aside class="manage-sidebar" id="sidebar">
             <a href="/dashboard" class="manage-brand">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>
@@ -286,39 +311,49 @@
                     返回仪表盘
                 </a>
 
-                <div class="manage-nav-section-title">管理中心</div>
+                <div class="manage-nav-section-title">流程工作台</div>
+                <a href="/manage" class="manage-nav-item {{ 'active' if active_page == 'workflow' }}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h4"></path><path d="M10 12h4"></path><path d="M16 12h4"></path><circle cx="4" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="20" cy="12" r="2"></circle></svg>
+                    流程工作台
+                </a>
 
+                <div class="manage-nav-section-title">流程阶段</div>
+                <a href="/manage/semesters" class="manage-nav-item {{ 'active' if active_page == 'semesters' }}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="M8 14h.01"></path><path d="M12 14h.01"></path><path d="M16 14h.01"></path><path d="M8 18h.01"></path><path d="M12 18h.01"></path></svg>
+                    确认学期
+                </a>
                 <a href="/manage/offerings" class="manage-nav-item {{ 'active' if active_page == 'offerings' }}">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                     开设课堂
                 </a>
+                <a href="/manage/ai" class="manage-nav-item {{ 'active' if active_page == 'ai' }}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path><line x1="8" y1="16" x2="8" y2="16"></line><line x1="16" y1="16" x2="16" y2="16"></line></svg>
+                    配置 AI 助教
+                </a>
+
+                <div class="manage-nav-section-title">基础资源</div>
                 <a href="/manage/classes" class="manage-nav-item {{ 'active' if active_page == 'classes' }}">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                    班级管理
+                    班级
                 </a>
                 <a href="/manage/courses" class="manage-nav-item {{ 'active' if active_page == 'courses' }}">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
-                    课程管理
-                </a>
-                <a href="/manage/semesters" class="manage-nav-item {{ 'active' if active_page == 'semesters' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="M8 14h.01"></path><path d="M12 14h.01"></path><path d="M16 14h.01"></path><path d="M8 18h.01"></path><path d="M12 18h.01"></path></svg>
-                    学期管理
+                    课程
                 </a>
                 <a href="/manage/textbooks" class="manage-nav-item {{ 'active' if active_page == 'textbooks' }}">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><path d="M8 7h8"></path><path d="M8 11h8"></path><path d="M8 15h5"></path></svg>
-                    教材管理
+                    教材
                 </a>
                 <a href="/manage/exams" class="manage-nav-item {{ 'active' if active_page == 'exams' }}">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                    试卷库                </a>
+                    试卷
+                </a>
                 <a href="/manage/materials" class="manage-nav-item {{ 'active' if active_page == 'materials' }}">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><path d="M9 7h6"></path><path d="M9 11h6"></path><path d="M9 15h4"></path></svg>
-                    课程材料
+                    材料
                 </a>
-                <a href="/manage/ai" class="manage-nav-item {{ 'active' if active_page == 'ai' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path><line x1="8" y1="16" x2="8" y2="16"></line><line x1="16" y1="16" x2="16" y2="16"></line></svg>
-                    课堂AI配置
-                </a>
+
+                <div class="manage-nav-section-title">系统</div>
                 <a href="/manage/system" class="manage-nav-item {{ 'active' if active_page == 'system' }}">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"></path><path d="m16.24 7.76 2.83-2.83"></path><path d="M18 12h4"></path><path d="m16.24 16.24 2.83 2.83"></path><path d="M12 18v4"></path><path d="m4.93 19.07 2.83-2.83"></path><path d="M2 12h4"></path><path d="m4.93 4.93 2.83 2.83"></path><circle cx="12" cy="12" r="3"></circle></svg>
                     系统管理
@@ -338,9 +373,12 @@
                 </a>
             </div>
         </aside>
+    {% else %}
+    <div class="manage-embedded-root">
+    {% endif %}
 
-        <!-- Main Content -->
         <main class="manage-main">
+            {% if not embedded_mode %}
             <header class="manage-header">
                 <div class="manage-header-start">
                     <button class="mobile-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">
@@ -355,25 +393,24 @@
                     <div class="manage-header-page-actions">{% block header_actions %}{% endblock %}</div>
                 </div>
             </header>
+            {% endif %}
 
-            <div class="manage-content">
-                {% block content %}
-                {% endblock %}
+            <div class="manage-content{% if embedded_mode %} is-embedded{% endif %}">
+                {% block content %}{% endblock %}
             </div>
         </main>
     </div>
 
-    <!-- Global Toast Container -->
     <div id="toast-container" class="toast-container"></div>
 
     <script type="module" src="/static/js/auth.js"></script>
+    {% if not embedded_mode %}
     <script type="module" src="/static/js/message_center_bell.js"></script>
+    {% endif %}
     <script type="module">
         import { showMessage } from '/static/js/ui.js';
         import { apiFetch } from '/static/js/api.js';
 
-        // Expose to global scope for legacy inline handlers if needed,
-        // but prefer attaching event listeners in block scripts.
         window.showMessage = showMessage;
         window.apiFetch = apiFetch;
 
@@ -382,7 +419,7 @@
             const form = event.target;
             const submitBtn = form.querySelector('button[type="submit"]');
 
-            if(submitBtn) {
+            if (submitBtn) {
                 submitBtn.dataset.originalText = submitBtn.innerHTML;
                 submitBtn.innerHTML = '<span class="spinner" style="width: 14px; height: 14px; border-width: 2px;"></span> 提交中...';
                 submitBtn.disabled = true;
@@ -390,46 +427,72 @@
 
             try {
                 const formData = new FormData(form);
-                const url = form.action;
-                const method = form.method || 'POST';
-
-                const data = await apiFetch(url, {
-                    method: method,
-                    body: formData
+                const data = await apiFetch(form.action, {
+                    method: form.method || 'POST',
+                    body: formData,
                 });
 
-                showMessage(data.message || '操作成功！', 'success');
+                showMessage(data.message || '操作成功', 'success');
 
                 if (successCallback) {
                     successCallback(data);
                 } else {
-                    setTimeout(() => location.reload(), 1000);
+                    window.setTimeout(() => window.location.reload(), 1000);
                 }
-            } catch (err) {
-                showMessage(err.message || '操作失败', 'error');
+            } catch (error) {
+                showMessage(error.message || '操作失败', 'error');
             } finally {
-                if(submitBtn) {
+                if (submitBtn) {
                     submitBtn.innerHTML = submitBtn.dataset.originalText;
                     submitBtn.disabled = false;
                 }
             }
         };
 
-        // Handle mobile sidebar click outside
-        document.addEventListener('click', (e) => {
+        document.addEventListener('click', (event) => {
             const sidebar = document.getElementById('sidebar');
             const toggle = document.querySelector('.mobile-toggle');
-            if (window.innerWidth <= 768 &&
+            if (
+                window.innerWidth <= 768 &&
+                sidebar &&
+                toggle &&
                 sidebar.classList.contains('open') &&
-                !sidebar.contains(e.target) &&
-                !toggle.contains(e.target)) {
+                !sidebar.contains(event.target) &&
+                !toggle.contains(event.target)
+            ) {
                 sidebar.classList.remove('open');
             }
         });
+
+        {% if embedded_mode %}
+        if (window.self !== window.top) {
+            const publishHeight = () => {
+                const height = Math.max(
+                    document.body?.scrollHeight || 0,
+                    document.documentElement?.scrollHeight || 0
+                );
+                window.parent.postMessage({
+                    type: 'manage-embed-height',
+                    path: `${window.location.pathname}${window.location.search}`,
+                    height,
+                }, window.location.origin);
+            };
+
+            const schedulePublish = () => window.requestAnimationFrame(publishHeight);
+            const resizeObserver = new ResizeObserver(schedulePublish);
+            if (document.documentElement) {
+                resizeObserver.observe(document.documentElement);
+            }
+            if (document.body) {
+                resizeObserver.observe(document.body);
+            }
+            window.addEventListener('load', schedulePublish);
+            window.addEventListener('resize', schedulePublish);
+            window.setTimeout(schedulePublish, 120);
+        }
+        {% endif %}
     </script>
 
-    {% block scripts %}
-    {% endblock %}
+    {% block scripts %}{% endblock %}
 </body>
 </html>
-

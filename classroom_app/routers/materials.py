@@ -587,6 +587,7 @@ async def manage_materials_page(request: Request, user: dict = Depends(get_curre
             "user_info": user,
             "page_title": "课程材料",
             "active_page": "materials",
+            "embedded_mode": str(request.query_params.get("embed") or "").strip().lower() in {"1", "true", "yes", "on"},
             "offerings": [dict(row) for row in offerings],
             "material_stats": stats,
             "type_registry": type_registry,
