@@ -6,6 +6,11 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from .message_center_service import CATEGORY_LABELS, get_message_center_summary
+from .academic_service import (
+    build_semester_calendar_payload,
+    load_student_semester_rows,
+    load_teacher_semester_rows,
+)
 from .student_auth_service import build_student_security_summary
 from .ui_copy_service import get_ui_copy_block, render_ui_copy_block
 from .prompt_utils import polite_address
@@ -350,6 +355,9 @@ def _build_teacher_dashboard_context(
         filter_value=selected_filter,
         search_query=search_query,
     )
+    semester_calendar = build_semester_calendar_payload(
+        load_teacher_semester_rows(conn, teacher_id),
+    )
 
     return {
         "dashboard_theme": "teacher",
@@ -400,6 +408,7 @@ def _build_teacher_dashboard_context(
             "action_href": "/manage/offerings",
         },
         "class_offerings": enriched_offerings,
+        "dashboard_semester_calendar": semester_calendar,
         "student_security_summary": None,
     }
 
@@ -637,6 +646,9 @@ def _build_student_dashboard_context(
         filter_value=selected_filter,
         search_query=search_query,
     )
+    semester_calendar = build_semester_calendar_payload(
+        load_student_semester_rows(conn, student_id),
+    )
 
     return {
         "dashboard_theme": "student",
@@ -687,6 +699,7 @@ def _build_student_dashboard_context(
             "action_href": "/message-center",
         },
         "class_offerings": enriched_offerings,
+        "dashboard_semester_calendar": semester_calendar,
         "student_security_summary": student_security_summary,
     }
 

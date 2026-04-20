@@ -1004,6 +1004,177 @@ async def assign_material_to_classrooms(
     }
 
 
+@router.post("/api/materials/{material_id}/ai-assign-sessions", response_class=JSONResponse)
+async def ai_assign_material_to_sessions(
+    material_id: int,
+    payload: MaterialAssignRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    """AI 分析文档结构并自动将文档文件绑定到对应课堂的课次（session）上。"""
+    desired_ids = [int(item) for item in payload.class_offering_ids if item]
+    if not desired_ids:
+        raise HTTPException(400, "请至少选择一个课堂")
+
+    with get_db_connection() as conn:
+        material = ensure_teacher_material_owner(conn, material_id, user["id"])
+
+        # 获取该材料下的所有文件（含子目录递归）
+        subtree_rows = _collect_subtree_rows(conn, material, include_internal=False)
+        file_rows = [
+            dict(row) for row in subtree_rows
+            if row["node_type"] == "file" and not is_git_internal_material_path(row["material_path"])
+        ]
+        if not file_rows:
+            raise HTTPException(400, "当前材料下没有可分配的文件")
+
+        # 收集所有选中课堂的课次信息
+        offering_rows = conn.execute(
+            "SELECT id FROM class_offerings WHERE teacher_id = ?",
+            (user["id"],),
+        ).fetchall()
+        allowed_ids = {int(row["id"]) for row in offering_rows}
+        invalid_ids = set(desired_ids) - allowed_ids
+        if invalid_ids:
+            raise HTTPException(403, "包含无权分配的课堂")
+
+        all_sessions_by_offering: dict[int, list[dict]] = {}
+        for offering_id in desired_ids:
+            sessions = conn.execute(
+                """
+                SELECT s.id, s.order_index, s.title, s.content, s.learning_material_id
+                FROM class_offering_sessions s
+                WHERE s.class_offering_id = ?
+                ORDER BY s.order_index
+                """,
+                (offering_id,),
+            ).fetchall()
+            all_sessions_by_offering[offering_id] = [dict(s) for s in sessions]
+
+    # 构建发送给 AI 的内容
+    file_list_text = "\n".join(
+        f"  - ID={row['id']}, path=\"{row['material_path']}\""
+        for row in file_rows
+    )
+
+    sessions_context_parts: list[str] = []
+    for offering_id in desired_ids:
+        sessions = all_sessions_by_offering.get(offering_id, [])
+        if not sessions:
+            continue
+        sessions_text = "\n".join(
+            f"    - order_index={s['order_index']}, session_id={s['id']}, title=\"{s['title']}\""
+            for s in sessions
+        )
+        sessions_context_parts.append(
+            f"  课堂 ID={offering_id}（共 {len(sessions)} 次课）:\n{sessions_text}"
+        )
+    sessions_context_text = "\n".join(sessions_context_parts)
+
+    if not sessions_context_text:
+        raise HTTPException(400, "所选课堂暂无课次安排，请先配置课堂的课次拆分")
+
+    system_prompt = (
+        "你是一名教学材料匹配助手。你的任务是根据文档文件的完整路径和课堂课次的标题、顺序，"
+        "将文档文件智能匹配到对应的课次上。\n\n"
+        "匹配规则：\n"
+        "1. 优先按路径中的序号（如 lesson01、L1、第1课、01 等）与课次的 order_index 对应。\n"
+        "2. 路径可能包含 README.md、index.md 等文件名，请以文件所在目录的序号为准。\n"
+        "3. 文档数量与课次数可能不完全对应，以两者中的较小者为准，多余的文档或课次不分配。\n"
+        "4. 必须使用文档的完整路径进行识别和匹配。\n"
+        "5. 每个课次只能匹配一个文档文件，每个文档也只能匹配到一个课次。\n\n"
+        "输出格式：严格的 JSON 对象，包含 \"assignments\" 数组，每个元素包含：\n"
+        "  - class_offering_id: 课堂 ID\n"
+        "  - session_id: 课次 ID\n"
+        "  - material_id: 文档文件 ID\n"
+        "  - material_path: 文档完整路径\n"
+        "  - confidence: 匹配置信度（high/medium/low）\n\n"
+        "只输出 JSON，不要输出任何其他解释文字或 Markdown 代码块。"
+    )
+
+    user_message = (
+        f"请将以下文档文件匹配到对应课堂的课次上。\n\n"
+        f"【文档文件列表】\n{file_list_text}\n\n"
+        f"【课堂课次列表】\n{sessions_context_text}\n\n"
+        f"请返回匹配结果 JSON。"
+    )
+
+    response_text = await _call_ai_chat(system_prompt, user_message, capability="thinking")
+    parsed_result = _parse_ai_json(response_text)
+
+    assignments_raw = parsed_result.get("assignments", [])
+    if not isinstance(assignments_raw, list) or not assignments_raw:
+        raise HTTPException(500, "AI 未返回有效的匹配结果，请重试或手动分配")
+
+    # 构建校验映射
+    file_id_map = {int(row["id"]): row for row in file_rows}
+    session_id_map: dict[int, dict] = {}
+    for offering_id, sessions in all_sessions_by_offering.items():
+        for s in sessions:
+            session_id_map[int(s["id"])] = {**s, "class_offering_id": offering_id}
+
+    # 过滤有效匹配并执行绑定
+    valid_assignments: list[dict] = []
+    bound_material_ids: set[int] = set()
+    now = datetime.now().isoformat()
+
+    with get_db_connection() as conn:
+        for item in assignments_raw:
+            offering_id = int(item.get("class_offering_id") or 0)
+            session_id = int(item.get("session_id") or 0)
+            mat_id = int(item.get("material_id") or 0)
+
+            if offering_id not in allowed_ids:
+                continue
+            if session_id not in session_id_map:
+                continue
+            if mat_id not in file_id_map:
+                continue
+            session_info = session_id_map[session_id]
+            if int(session_info["class_offering_id"]) != offering_id:
+                continue
+            if mat_id in bound_material_ids:
+                continue
+
+            bound_material_ids.add(mat_id)
+
+            # 绑定 learning_material_id 到 session
+            conn.execute(
+                """
+                UPDATE class_offering_sessions
+                SET learning_material_id = ?
+                WHERE id = ? AND class_offering_id = ?
+                """,
+                (mat_id, session_id, offering_id),
+            )
+
+            # 同步课堂材料访问权限
+            sync_classroom_learning_material_assignments(
+                conn,
+                class_offering_id=offering_id,
+                teacher_id=int(user["id"]),
+                material_ids=[mat_id],
+            )
+
+            valid_assignments.append({
+                "class_offering_id": offering_id,
+                "session_id": session_id,
+                "session_title": session_info.get("title", ""),
+                "order_index": session_info.get("order_index", 0),
+                "material_id": mat_id,
+                "material_path": file_id_map[mat_id]["material_path"],
+                "confidence": item.get("confidence", "medium"),
+            })
+
+        conn.commit()
+
+    return {
+        "status": "success",
+        "message": f"AI 已完成匹配，成功绑定 {len(valid_assignments)} 个文档到课次",
+        "total_assignments": len(valid_assignments),
+        "assignments": valid_assignments,
+    }
+
+
 @router.put("/api/classrooms/{class_offering_id}/sessions/{session_id}/learning-material", response_class=JSONResponse)
 async def update_classroom_session_learning_material(
     class_offering_id: int,

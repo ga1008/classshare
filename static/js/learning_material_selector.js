@@ -34,6 +34,7 @@ function refs() {
         selectedName: document.getElementById('learningMaterialSelectorSelectedName'),
         selectedPath: document.getElementById('learningMaterialSelectorSelectedPath'),
         footerNote: document.getElementById('learningMaterialSelectorFooterNote'),
+        clearBtn: document.getElementById('learningMaterialSelectorClearBtn'),
         confirmBtn: document.getElementById('learningMaterialSelectorConfirmBtn'),
         cancelBtn: document.getElementById('learningMaterialSelectorCancelBtn'),
         closeBtn: document.getElementById('learningMaterialSelectorCloseBtn'),
@@ -132,8 +133,14 @@ function renderSelectedMaterial() {
     const dom = refs();
     const material = state.selectedMaterial;
     const hasMaterial = Boolean(material && material.id);
+    const allowClear = Boolean(state.options.allowClear);
 
     dom.selected?.classList.toggle('is-empty', !hasMaterial);
+    if (dom.clearBtn) {
+        dom.clearBtn.hidden = !allowClear;
+        dom.clearBtn.disabled = !allowClear || !hasMaterial;
+        dom.clearBtn.textContent = state.options.clearLabel || '清空当前文档';
+    }
     if (dom.confirmBtn) {
         dom.confirmBtn.disabled = !hasMaterial;
     }
@@ -298,6 +305,11 @@ function handleCancel() {
     settle(undefined);
 }
 
+function handleClear() {
+    if (!state.options.allowClear) return;
+    settle({ clear: true });
+}
+
 function handleConfirm() {
     if (!state.selectedMaterial) {
         showToast('请先选择一个 Markdown 文档。', 'warning');
@@ -322,6 +334,7 @@ function bindEvents() {
 
     dom.closeBtn?.addEventListener('click', handleCancel);
     dom.cancelBtn?.addEventListener('click', handleCancel);
+    dom.clearBtn?.addEventListener('click', handleClear);
     dom.confirmBtn?.addEventListener('click', handleConfirm);
 
     dom.modal.addEventListener('click', (event) => {

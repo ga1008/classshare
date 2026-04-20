@@ -120,6 +120,7 @@ const state = {
     overview: null,
     stats: null,
     searchTimer: null,
+    _aiAssignBusy: false,
     repository: {
         materialId: null,
         detail: null,
@@ -169,6 +170,10 @@ const refs = {
     assignName: document.getElementById('materials-assign-name'),
     assignOptions: document.getElementById('materials-assign-options'),
     assignSaveBtn: document.getElementById('materials-assign-save-btn'),
+    assignAiBtn: document.getElementById('materials-assign-ai-btn'),
+    aiAssignResult: document.getElementById('materials-ai-assign-result'),
+    aiAssignSummary: document.getElementById('materials-ai-assign-summary'),
+    aiAssignList: document.getElementById('materials-ai-assign-list'),
     rootCount: document.getElementById('materials-root-count'),
     totalCount: document.getElementById('materials-total-count'),
     folderFileSummary: document.getElementById('materials-folder-file-summary'),
@@ -775,7 +780,103 @@ async function openAssignModal() {
             (item) => Number(item.class_offering_id) === Number(checkbox.value),
         );
     });
+
+    // 重置 AI 分配状态
+    setAiAssignBusy(false);
+    if (refs.aiAssignResult) refs.aiAssignResult.hidden = true;
+    if (refs.aiAssignList) refs.aiAssignList.innerHTML = '';
+    if (refs.aiAssignSummary) refs.aiAssignSummary.textContent = '';
+    updateAiButtonState();
+
     openModal('materials-assign-modal');
+}
+
+function updateAiButtonState() {
+    if (!refs.assignAiBtn) return;
+    const checkedCount = refs.assignOptions?.querySelectorAll('input[type="checkbox"]:checked').length || 0;
+    refs.assignAiBtn.disabled = checkedCount === 0 || state._aiAssignBusy === true;
+}
+
+function setAiAssignBusy(busy) {
+    state._aiAssignBusy = busy;
+    const btn = refs.assignAiBtn;
+    if (!btn) return;
+    const contentEl = btn.querySelector('.materials-ai-btn-content');
+    const loadingEl = btn.querySelector('.materials-ai-btn-loading');
+    if (contentEl) contentEl.hidden = busy;
+    if (loadingEl) loadingEl.hidden = !busy;
+    btn.classList.toggle('materials-ai-btn--loading', busy);
+    updateAiButtonState();
+}
+
+function renderAiAssignResult(assignments) {
+    if (!refs.aiAssignResult || !refs.aiAssignList || !refs.aiAssignSummary) return;
+    if (!assignments || !assignments.length) {
+        refs.aiAssignSummary.textContent = '未找到匹配结果';
+        refs.aiAssignList.innerHTML = '<div class="text-muted text-sm" style="padding:8px 0;">AI 未能将文档匹配到课次，请手动分配。</div>';
+        refs.aiAssignResult.hidden = false;
+        return;
+    }
+
+    refs.aiAssignSummary.textContent = `成功绑定 ${assignments.length} 个文档到课次`;
+    refs.aiAssignList.innerHTML = assignments.map((item) => {
+        const confidence = String(item.confidence || 'medium').toLowerCase();
+        const confidenceLabel = confidence === 'high' ? '高' : (confidence === 'low' ? '低' : '中');
+        const pathFull = item.material_path || '';
+        const pathShort = pathFull ? pathFull.split('/').slice(-2).join('/') : '';
+        const orderIdx = item.order_index || 0;
+        const sessionTitle = item.session_title || '';
+        return `
+            <div class="materials-ai-assign-item">
+                <span class="materials-ai-assign-path" title="${escapeHtml(pathFull)}">${escapeHtml(pathShort)}</span>
+                <span class="materials-ai-assign-arrow">&rarr;</span>
+                <span class="materials-ai-assign-session">
+                    <strong>第${escapeHtml(String(orderIdx))}课</strong>
+                    ${sessionTitle ? `<span class="materials-ai-assign-session-title">${escapeHtml(sessionTitle)}</span>` : ''}
+                </span>
+                <span class="materials-ai-confidence materials-ai-confidence--${escapeHtml(confidence)}">${escapeHtml(confidenceLabel)}</span>
+            </div>
+        `;
+    }).join('');
+    refs.aiAssignResult.hidden = false;
+}
+
+async function runAiAssign() {
+    if (!state.activeDetail) {
+        console.warn('[AI Assign] state.activeDetail is null, cannot proceed');
+        showToast('请先选择一个材料', 'warning');
+        return;
+    }
+    const materialId = state.activeDetail.id;
+    const selectedOfferingIds = Array.from(
+        refs.assignOptions?.querySelectorAll('input[type="checkbox"]:checked') || [],
+    ).map((checkbox) => Number(checkbox.value));
+    if (!selectedOfferingIds.length) {
+        showToast('请先选择至少一个课堂', 'warning');
+        return;
+    }
+
+    console.log(`[AI Assign] Starting for material ${materialId}, offerings:`, selectedOfferingIds);
+    setAiAssignBusy(true);
+    try {
+        const result = await apiFetch(`/api/materials/${materialId}/ai-assign-sessions`, {
+            method: 'POST',
+            body: { class_offering_ids: selectedOfferingIds },
+        });
+        console.log('[AI Assign] API response:', result);
+        showToast(result.message || 'AI 分配完成', 'success');
+        renderAiAssignResult(result.assignments || []);
+        // 刷新详情和列表以反映绑定变化
+        await loadLibrary(state.currentParentId);
+        if (state.activeDetail) {
+            await loadMaterialDetail(state.activeDetail.id);
+        }
+    } catch (error) {
+        // apiFetch 已自动展示错误 toast，此处仅做日志记录
+        console.error('[AI Assign] Failed:', error);
+    } finally {
+        setAiAssignBusy(false);
+    }
 }
 
 async function saveAssignments() {
@@ -1152,6 +1253,22 @@ function bindEvents() {
         saveAssignments().catch((error) => {
             showToast(error.message || '保存课堂分配失败', 'error');
         });
+    });
+
+    refs.assignAiBtn?.addEventListener('click', () => {
+        runAiAssign().catch((error) => {
+            showToast(error.message || 'AI 分配失败', 'error');
+        });
+    });
+
+    refs.assignOptions?.addEventListener('input', () => {
+        updateAiButtonState();
+    });
+
+    refs.assignOptions?.addEventListener('click', (event) => {
+        if (event.target.type === 'checkbox' || event.target.closest('label.materials-modal-option')) {
+            requestAnimationFrame(() => updateAiButtonState());
+        }
     });
 
     refs.detailModalCloseBtn?.addEventListener('click', () => {

@@ -1,4 +1,5 @@
-import { formatDate } from '/static/js/ui.js';
+import { formatDate, showMessage } from '/static/js/ui.js';
+import { initSemesterCalendar } from '/static/js/semester_calendar.js';
 
 const root = document.querySelector('[data-dashboard-root]');
 
@@ -24,6 +25,7 @@ if (root) {
     const offeringList = root.querySelector('[data-offering-list]');
     const emptySearch = root.querySelector('[data-empty-search]');
     const resetButton = root.querySelector('[data-reset-search]');
+    const semesterCalendarRoot = root.querySelector('[data-semester-calendar-root]');
 
     const filterLabels = new Map(
         filterButtons.map((button) => [
@@ -240,4 +242,8 @@ if (root) {
     syncSearchForm();
     updateFilterUi();
     applyFilters({ syncUrl: false });
+
+    initSemesterCalendar(semesterCalendarRoot, window.DASHBOARD_SEMESTER_CALENDAR || {}, {
+        onMessage: (message, tone) => showMessage(message, tone || 'info'),
+    });
 }

@@ -1,0 +1,66 @@
+{% set panel_title = semester_calendar_panel_title | default('完整学期日历') %}
+{% set panel_subtitle = semester_calendar_panel_subtitle | default('从第 1 周到最后一周横向展开，可拖动浏览完整学期周历。') %}
+{% set panel_hint = semester_calendar_panel_hint | default('提示：可拖动滚动条，或按住表格左右拖动浏览。') %}
+{% set panel_empty_title = semester_calendar_empty_title | default('还没有学期数据') %}
+{% set panel_empty_description = semester_calendar_empty_description | default('先创建或绑定学期后，这里会自动显示完整学期周历。') %}
+{% set panel_class = semester_calendar_panel_class | default('') %}
+
+<section class="semester-calendar-panel{% if panel_class %} {{ panel_class }}{% endif %}" data-semester-calendar-root>
+    <div class="semester-calendar-panel__header">
+        <div class="semester-calendar-panel__heading">
+            <h3 class="semester-calendar-panel__title">{{ panel_title }}</h3>
+            <p class="semester-calendar-panel__subtitle">{{ panel_subtitle }}</p>
+        </div>
+        <div class="semester-calendar-panel__actions">
+            <button type="button" class="btn btn-outline" data-semester-calendar-scroll-start>回到开头</button>
+            <button type="button" class="btn btn-outline" data-semester-calendar-scroll-today>定位今天</button>
+        </div>
+    </div>
+
+    <div class="semester-calendar-panel__overview" data-semester-calendar-overview hidden>
+        <article class="semester-calendar-overview-card">
+            <span>日期范围</span>
+            <strong data-semester-calendar-period>--</strong>
+            <small data-semester-calendar-period-note>--</small>
+        </article>
+        <article class="semester-calendar-overview-card">
+            <span>教学周次</span>
+            <strong data-semester-calendar-week-range>--</strong>
+            <small data-semester-calendar-week-note>开学首周计为第 1 周</small>
+        </article>
+        <article class="semester-calendar-overview-card">
+            <span>当前进度</span>
+            <strong data-semester-calendar-progress>--</strong>
+            <small data-semester-calendar-status>--</small>
+        </article>
+        <article class="semester-calendar-overview-card">
+            <span>节假日 / 调休</span>
+            <strong data-semester-calendar-holiday-summary>--</strong>
+            <small data-semester-calendar-holiday-note>--</small>
+        </article>
+    </div>
+
+    <div class="semester-calendar-panel__legend">
+        <span class="semester-calendar-chip">第一行显示月份</span>
+        <span class="semester-calendar-chip">第二行显示周次</span>
+        <span class="semester-calendar-chip is-accent">周末 / 节假日高亮</span>
+        <span class="semester-calendar-chip is-success">当前周与今天高亮</span>
+    </div>
+
+    <div class="semester-calendar-panel__toolbar">
+        <label class="semester-calendar-panel__field">
+            <span>当前查看学期</span>
+            <select class="form-control" data-semester-calendar-select></select>
+        </label>
+        <div class="semester-calendar-panel__hint">{{ panel_hint }}</div>
+    </div>
+
+    <div class="semester-calendar-scroll" data-semester-calendar-scroll>
+        <div class="semester-calendar-board" data-semester-calendar-board></div>
+    </div>
+
+    <div class="semester-calendar-panel__empty" data-semester-calendar-empty hidden>
+        <strong>{{ panel_empty_title }}</strong>
+        <p>{{ panel_empty_description }}</p>
+    </div>
+</section>

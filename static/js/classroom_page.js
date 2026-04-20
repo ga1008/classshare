@@ -205,7 +205,7 @@ function initWorkspaceNav() {
     syncActiveLinkFromViewport();
 }
 
-function initTeachingTimeline() {
+function initTeachingTimelineLegacy() {
     const widget = document.getElementById('teaching-plan-widget');
     const scrollEl = document.getElementById('teachingTimelineScroll');
     const sessions = Array.isArray(window.APP_CONFIG?.teachingPlan?.sessions)
@@ -583,6 +583,435 @@ function initTeachingTimeline() {
             behavior: 'auto',
             forceCenter: true,
         });
+    });
+}
+
+function initTeachingTimeline() {
+    const widget = document.getElementById('teaching-plan-widget');
+    const stageEl = document.getElementById('teachingTimelineStage');
+    const scrollEl = document.getElementById('teachingTimelineScroll');
+    const sessions = Array.isArray(window.APP_CONFIG?.teachingPlan?.sessions)
+        ? window.APP_CONFIG.teachingPlan.sessions
+        : [];
+    if (!widget || !scrollEl || !sessions.length) return;
+
+    const userInfo = window.APP_CONFIG?.userInfo || {};
+    const isTeacher = String(userInfo.role || '').trim() === 'teacher';
+    const detailCard = document.getElementById('teachingTimelineDetail');
+    const detailKicker = document.getElementById('teachingTimelineDetailKicker');
+    const detailTitle = document.getElementById('teachingTimelineDetailTitle');
+    const detailStatus = document.getElementById('teachingTimelineDetailStatus');
+    const detailSummary = document.getElementById('teachingTimelineDetailSummary');
+    const detailMeta = document.getElementById('teachingTimelineDetailMeta');
+    const materialPanel = document.getElementById('teachingTimelineMaterialPanel');
+    const materialName = document.getElementById('teachingTimelineMaterialName');
+    const materialPath = document.getElementById('teachingTimelineMaterialPath');
+    const openMaterialHint = document.getElementById('teachingTimelineOpenMaterialHint');
+    const selectMaterialBtn = document.getElementById('teachingTimelineSelectMaterialBtn');
+    const openMaterialBtn = document.getElementById('teachingTimelineOpenMaterialBtn');
+    const sessionButtons = Array.from(scrollEl.querySelectorAll('[data-session-order]'));
+    const sessionMap = new Map(
+        sessions.map((session) => [String(session.order_index), session]),
+    );
+    const buttonMap = new Map(
+        sessionButtons.map((button) => [String(button.getAttribute('data-session-order') || ''), button]),
+    );
+    const detailSummaryCache = new Map();
+
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const resolveBehavior = (behavior) => (prefersReducedMotion ? 'auto' : behavior);
+    let selectedOrder = String(
+        sessions.find((session) => session.is_anchor)?.order_index
+        ?? sessions[0]?.order_index
+        ?? '',
+    );
+
+    let pointerId = null;
+    let startX = 0;
+    let startScrollLeft = 0;
+    let dragDistance = 0;
+    let snapTimer = 0;
+    let ignoreClickUntil = 0;
+    let projectionFrame = 0;
+
+    const getSessionByOrder = (sessionOrder) => sessionMap.get(String(sessionOrder || '').trim());
+
+    const updateSessionButtonMaterialState = (session) => {
+        if (!session) return;
+        const button = buttonMap.get(String(session.order_index));
+        if (!button) return;
+        const indicator = button.querySelector('[data-role="session-material-indicator"]');
+        const hasMaterial = Boolean(session.learning_material_id);
+        if (indicator) {
+            indicator.hidden = !hasMaterial;
+        }
+        button.dataset.hasMaterial = hasMaterial ? 'true' : 'false';
+    };
+
+    const syncProjection = () => {
+        if (!stageEl || !detailCard) return;
+        const activeButton = buttonMap.get(selectedOrder);
+        if (!activeButton) return;
+
+        const stageRect = stageEl.getBoundingClientRect();
+        const buttonRect = activeButton.getBoundingClientRect();
+        const detailRect = detailCard.getBoundingClientRect();
+        const beamLeft = Math.max(
+            28,
+            Math.min(stageRect.width - 28, buttonRect.left - stageRect.left + (buttonRect.width / 2)),
+        );
+        const beamTop = Math.max(0, buttonRect.bottom - stageRect.top + 10);
+        const beamHeight = Math.max(0, detailRect.top - buttonRect.bottom - 18);
+        const detailLocalLeft = Math.max(
+            42,
+            Math.min(detailRect.width - 42, beamLeft - (detailRect.left - stageRect.left)),
+        );
+
+        stageEl.style.setProperty('--timeline-projector-left', `${beamLeft.toFixed(2)}px`);
+        stageEl.style.setProperty('--timeline-projector-top', `${beamTop.toFixed(2)}px`);
+        stageEl.style.setProperty('--timeline-projector-height', `${beamHeight.toFixed(2)}px`);
+        detailCard.style.setProperty('--timeline-projector-local-left', `${detailLocalLeft.toFixed(2)}px`);
+    };
+
+    const scheduleProjectionSync = () => {
+        if (projectionFrame) return;
+        projectionFrame = window.requestAnimationFrame(() => {
+            projectionFrame = 0;
+            syncProjection();
+        });
+    };
+
+    const renderDetailMeta = (session) => {
+        if (!detailMeta) return;
+        detailMeta.textContent = '';
+
+        const metaItems = [];
+        if (session.detail_meta) {
+            metaItems.push({ text: session.detail_meta, warning: false });
+        }
+        if (session.detail_hint) {
+            metaItems.push({ text: session.detail_hint, warning: true });
+        }
+
+        metaItems.forEach((item) => {
+            const chip = document.createElement('span');
+            chip.textContent = item.text;
+            if (item.warning) {
+                chip.classList.add('is-warning');
+            }
+            detailMeta.appendChild(chip);
+        });
+    };
+
+    const renderDetailSummary = (session) => {
+        if (!detailSummary) return;
+
+        const cacheKey = String(session.order_index ?? '');
+        if (detailSummaryCache.has(cacheKey)) {
+            detailSummary.classList.add('md-content');
+            detailSummary.innerHTML = detailSummaryCache.get(cacheKey) || '';
+            return;
+        }
+
+        const markdownSource = String(
+            session.detail_content
+            || session.detail_summary
+            || session.content_preview
+            || '',
+        ).trim();
+        const emptyHtml = '<p class="text-muted">暂无课堂内容。</p>';
+        const runtime = window.MarkdownRuntime;
+
+        detailSummary.classList.add('md-content');
+        if (runtime && typeof runtime.renderIntoElement === 'function') {
+            runtime.renderIntoElement(detailSummary, markdownSource, {
+                emptyHtml,
+                fallbackMode: 'lines',
+                silent: true,
+            });
+            detailSummaryCache.set(cacheKey, detailSummary.innerHTML);
+            return;
+        }
+
+        if (!markdownSource) {
+            detailSummary.innerHTML = emptyHtml;
+            detailSummaryCache.set(cacheKey, detailSummary.innerHTML);
+            return;
+        }
+
+        detailSummary.innerHTML = String(markdownSource)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\n/g, '<br>');
+        detailSummaryCache.set(cacheKey, detailSummary.innerHTML);
+    };
+
+    const renderMaterialPanel = (session) => {
+        if (!materialPanel || !materialName || !materialPath) return;
+        const hasMaterial = Boolean(session.learning_material_id && session.learning_material_viewer_url);
+        materialPanel.classList.toggle('is-empty', !hasMaterial);
+        materialPanel.dataset.materialReady = hasMaterial ? 'true' : 'false';
+
+        if (hasMaterial) {
+            materialName.textContent = session.learning_material_name || '已绑定课堂文档';
+            materialPath.textContent = session.learning_material_path || '';
+            if (openMaterialHint) {
+                openMaterialHint.textContent = '进入本次课学习入口';
+            }
+        } else if (isTeacher) {
+            materialName.textContent = '尚未绑定课堂文档';
+            materialPath.textContent = '可为本次课绑定一份 Markdown 材料，师生可从这里直接进入文档页面。';
+            if (openMaterialHint) {
+                openMaterialHint.textContent = '先为本次课绑定文档';
+            }
+        } else {
+            materialName.textContent = '教师尚未配置学习文档';
+            materialPath.textContent = '当前节点还没有可打开的课堂文档。';
+            if (openMaterialHint) {
+                openMaterialHint.textContent = '等待教师配置学习文档';
+            }
+        }
+
+        if (openMaterialBtn) {
+            openMaterialBtn.disabled = !hasMaterial;
+            openMaterialBtn.dataset.materialReady = hasMaterial ? 'true' : 'false';
+        }
+    };
+
+    const focusSession = (sessionOrder, behavior = 'smooth') => {
+        const sessionNode = scrollEl.querySelector(`[data-session-order="${sessionOrder}"]`);
+        if (!sessionNode) return;
+        sessionNode.scrollIntoView({
+            behavior: resolveBehavior(behavior),
+            inline: 'center',
+            block: 'nearest',
+        });
+        scheduleProjectionSync();
+    };
+
+    const syncSelectedState = (activeOrder) => {
+        const activeOrderText = String(activeOrder);
+        sessionButtons.forEach((button) => {
+            const isSelected = button.getAttribute('data-session-order') === activeOrderText;
+            button.classList.toggle('is-selected', isSelected);
+            button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+        });
+    };
+
+    const setActiveSession = (sessionOrder, options = {}) => {
+        const key = String(sessionOrder || '').trim();
+        const session = getSessionByOrder(key);
+        if (!session) return;
+
+        const previousOrder = selectedOrder;
+        selectedOrder = key;
+        syncSelectedState(key);
+        if (detailKicker) detailKicker.textContent = session.session_number_label || '';
+        if (detailTitle) detailTitle.textContent = session.detail_title || session.title || '';
+        if (detailStatus) {
+            detailStatus.textContent = session.session_status_label || '';
+            detailStatus.className = `teaching-timeline-detail-status is-${session.progress_state || 'upcoming'}`;
+        }
+        renderDetailSummary(session);
+        renderDetailMeta(session);
+        renderMaterialPanel(session);
+
+        if (options.center !== false && (options.forceCenter || previousOrder !== key)) {
+            focusSession(key, options.behavior || 'smooth');
+        }
+        scheduleProjectionSync();
+    };
+
+    const applySessionPatch = (patch) => {
+        if (!patch) return;
+        const session = getSessionByOrder(patch.order_index);
+        if (!session) return;
+        Object.assign(session, patch, {
+            has_learning_material: Boolean(patch.learning_material_id),
+        });
+        updateSessionButtonMaterialState(session);
+        if (String(session.order_index) === selectedOrder) {
+            renderMaterialPanel(session);
+        }
+        scheduleProjectionSync();
+    };
+
+    const persistSessionMaterial = async (learningMaterialId) => {
+        const session = getSessionByOrder(selectedOrder);
+        if (!session?.id) return;
+        const result = await apiFetch(
+            `/api/classrooms/${window.APP_CONFIG.classOfferingId}/sessions/${session.id}/learning-material`,
+            {
+                method: 'PUT',
+                body: { learning_material_id: learningMaterialId },
+                silent: true,
+            },
+        );
+        applySessionPatch(result.session);
+        if (window.materialsApp && typeof window.materialsApp.refresh === 'function') {
+            window.materialsApp.refresh().catch(() => {});
+        }
+        showToast(result.message || '课堂材料已更新', 'success');
+    };
+
+    const getNearestSessionOrder = () => {
+        const viewportCenter = scrollEl.scrollLeft + (scrollEl.clientWidth / 2);
+        let nearestOrder = selectedOrder;
+        let nearestDistance = Number.POSITIVE_INFINITY;
+
+        sessionButtons.forEach((button) => {
+            const order = button.getAttribute('data-session-order');
+            const buttonCenter = button.offsetLeft + (button.offsetWidth / 2);
+            const distance = Math.abs(buttonCenter - viewportCenter);
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestOrder = order || nearestOrder;
+            }
+        });
+
+        return nearestOrder;
+    };
+
+    const scheduleSnapToNearest = () => {
+        window.clearTimeout(snapTimer);
+        snapTimer = window.setTimeout(() => {
+            if (!sessionButtons.length) return;
+            setActiveSession(getNearestSessionOrder(), {
+                center: true,
+                behavior: 'smooth',
+            });
+        }, 110);
+    };
+
+    scrollEl.addEventListener('pointerdown', (event) => {
+        if (!event.isPrimary || event.button !== 0) return;
+        pointerId = event.pointerId;
+        startX = event.clientX;
+        startScrollLeft = scrollEl.scrollLeft;
+        dragDistance = 0;
+        scrollEl.classList.add('is-dragging');
+        scrollEl.setPointerCapture(event.pointerId);
+    });
+
+    scrollEl.addEventListener('pointermove', (event) => {
+        if (pointerId !== event.pointerId) return;
+        event.preventDefault();
+        const deltaX = event.clientX - startX;
+        dragDistance = Math.max(dragDistance, Math.abs(deltaX));
+        scrollEl.scrollLeft = startScrollLeft - deltaX;
+    });
+
+    const releaseDrag = (event) => {
+        if (pointerId !== event.pointerId) return;
+        const didDrag = dragDistance > 6;
+        pointerId = null;
+        dragDistance = 0;
+        scrollEl.classList.remove('is-dragging');
+        if (scrollEl.hasPointerCapture(event.pointerId)) {
+            scrollEl.releasePointerCapture(event.pointerId);
+        }
+        if (didDrag) {
+            ignoreClickUntil = Date.now() + 180;
+            scheduleSnapToNearest();
+        }
+    };
+
+    scrollEl.addEventListener('pointerup', releaseDrag);
+    scrollEl.addEventListener('pointercancel', releaseDrag);
+    scrollEl.addEventListener('pointerleave', (event) => {
+        if (pointerId === event.pointerId && event.buttons === 0) {
+            releaseDrag(event);
+        }
+    });
+
+    sessionButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            if (Date.now() < ignoreClickUntil) return;
+            setActiveSession(button.getAttribute('data-session-order'), {
+                center: true,
+                behavior: 'smooth',
+            });
+        });
+        button.addEventListener('keydown', (event) => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+                return;
+            }
+            event.preventDefault();
+            const currentIndex = sessions.findIndex((session) => String(session.order_index) === selectedOrder);
+            if (currentIndex === -1) return;
+            const nextIndex = event.key === 'ArrowRight'
+                ? Math.min(currentIndex + 1, sessions.length - 1)
+                : Math.max(currentIndex - 1, 0);
+            const nextOrder = sessions[nextIndex]?.order_index;
+            if (nextOrder != null) {
+                setActiveSession(nextOrder, { center: true, behavior: 'smooth' });
+                sessionButtons[nextIndex]?.focus();
+            }
+        });
+    });
+
+    scrollEl.addEventListener('scroll', () => {
+        scheduleProjectionSync();
+        if (pointerId !== null) return;
+        scheduleSnapToNearest();
+    }, { passive: true });
+
+    window.addEventListener('resize', scheduleProjectionSync);
+
+    sessionButtons.forEach((button) => {
+        const session = getSessionByOrder(button.getAttribute('data-session-order'));
+        updateSessionButtonMaterialState(session);
+    });
+
+    openMaterialBtn?.addEventListener('click', () => {
+        const session = getSessionByOrder(selectedOrder);
+        const viewerUrl = session?.learning_material_viewer_url || '';
+        if (!viewerUrl) {
+            showToast(isTeacher ? '当前次课还没有绑定文档' : '教师尚未配置学习文档', 'warning');
+            return;
+        }
+        window.open(viewerUrl, '_blank', 'noopener');
+    });
+
+    selectMaterialBtn?.addEventListener('click', async () => {
+        const session = getSessionByOrder(selectedOrder);
+        if (!session) return;
+        try {
+            const selectedMaterial = await learningMaterialSelector.open({
+                title: '选择课堂材料',
+                subtitle: '为当前时间轴节点绑定一个 Markdown 文档，课堂内“学习文档”按钮会直接跳转到该页面。',
+                confirmLabel: '绑定到本次课',
+                allowClear: Boolean(session.learning_material_id),
+                clearLabel: '解绑当前文档',
+                footerNote: session.learning_material_id
+                    ? '单击文件选中，双击文件夹继续进入；如需解绑当前文档，可直接点“解绑当前文档”。'
+                    : '仅支持绑定 Markdown 文档。单击文件选中，双击文件夹继续进入。',
+                initialMaterial: session.learning_material,
+            });
+            if (!selectedMaterial) {
+                return;
+            }
+            if (selectedMaterial.clear) {
+                await persistSessionMaterial(null);
+                return;
+            }
+            if (Number(selectedMaterial.id) === Number(session.learning_material_id || 0)) {
+                return;
+            }
+            await persistSessionMaterial(Number(selectedMaterial.id));
+        } catch (error) {
+            showToast(error.message || '更新课堂材料失败', 'error');
+        }
+    });
+
+    window.requestAnimationFrame(() => {
+        setActiveSession(selectedOrder, {
+            center: true,
+            behavior: 'auto',
+            forceCenter: true,
+        });
+        window.requestAnimationFrame(scheduleProjectionSync);
     });
 }
 

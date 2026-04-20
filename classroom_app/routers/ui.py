@@ -35,10 +35,11 @@ from ..services.assignment_lifecycle_service import (
     refresh_assignment_runtime_status,
 )
 from ..services.academic_service import (
-    build_holiday_lookup,
+    build_semester_calendar_payload,
     build_semester_defaults,
     choose_default_semester_id,
     china_today,
+    load_teacher_semester_rows,
     serialize_semester_row,
     serialize_textbook_row,
 )
@@ -998,19 +999,6 @@ async def get_manage_courses_page(request: Request, user: dict = Depends(get_cur
         "active_page": "courses"
     })
 
-
-def _load_teacher_semester_rows(conn, teacher_id: int):
-    return conn.execute(
-        """
-        SELECT id, name, start_date, end_date, week_count, created_at, updated_at
-        FROM academic_semesters
-        WHERE teacher_id = ?
-        ORDER BY start_date DESC, updated_at DESC, id DESC
-        """,
-        (teacher_id,),
-    ).fetchall()
-
-
 def _load_teacher_textbook_rows(conn, teacher_id: int):
     return conn.execute(
         """
@@ -1144,28 +1132,19 @@ def _load_teacher_offering_rows(conn, teacher_id: int):
 @router.get("/manage/semesters", response_class=HTMLResponse)
 async def get_manage_semesters_page(request: Request, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
-        semesters = [
-            serialize_semester_row(row)
-            for row in _load_teacher_semester_rows(conn, int(user["id"]))
-        ]
+        semester_calendar = build_semester_calendar_payload(
+            load_teacher_semester_rows(conn, int(user["id"])),
+        )
 
     current_date = china_today()
-    covered_years = {current_date.year, current_date.year + 1}
-    for item in semesters:
-        for key in ("start_date", "end_date"):
-            value = str(item.get(key) or "").strip()
-            if len(value) >= 4 and value[:4].isdigit():
-                covered_years.add(int(value[:4]))
-    holiday_lookup = build_holiday_lookup(covered_years)
+    semesters = semester_calendar["semesters"]
 
     return templates.TemplateResponse(request, "manage/semesters.html", {
         "request": request,
         "user_info": user,
         "semesters": semesters,
-        "semesters_json": semesters,
-        "holiday_lookup": holiday_lookup,
+        "semester_calendar": semester_calendar,
         "semester_defaults": build_semester_defaults(current_date),
-        "today_iso": current_date.isoformat(),
         "page_title": "学期管理",
         "active_page": "semesters",
     })
@@ -1200,7 +1179,7 @@ async def get_manage_offerings_page(request: Request, user: dict = Depends(get_c
             ).fetchall()
         ]
         my_courses = _load_teacher_course_rows(conn, int(user["id"]))
-        semester_rows = _load_teacher_semester_rows(conn, int(user["id"]))
+        semester_rows = load_teacher_semester_rows(conn, int(user["id"]))
         textbook_rows = _load_teacher_textbook_rows(conn, int(user["id"]))
         my_semesters = [serialize_semester_row(row) for row in semester_rows]
         my_textbooks = [

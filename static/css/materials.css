@@ -1545,3 +1545,124 @@
     align-items: center;
     gap: 0.5rem;
 }
+
+/* AI 智能分配按钮状态 */
+.materials-ai-btn-loading:not([hidden]) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+.materials-ai-btn-loading:not([hidden])::before {
+    content: '';
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: materials-ai-spin 0.6s linear infinite;
+}
+@keyframes materials-ai-spin {
+    to { transform: rotate(360deg); }
+}
+.materials-ai-btn--loading {
+    opacity: 0.75;
+    cursor: wait;
+}
+
+/* AI 匹配结果展示 */
+.materials-ai-assign-result {
+    margin-top: var(--spacing-md);
+    padding: var(--spacing-md);
+    border: 1px solid rgba(59, 130, 246, 0.15);
+    border-radius: var(--radius-md, 8px);
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.03), rgba(139, 92, 246, 0.03));
+}
+.materials-ai-assign-result[hidden] {
+    display: none;
+}
+.materials-ai-assign-result .materials-section-header {
+    margin-bottom: var(--spacing-sm);
+}
+.materials-ai-assign-list-scroll {
+    max-height: 240px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.25) transparent;
+}
+.materials-ai-assign-list-scroll::-webkit-scrollbar {
+    width: 5px;
+}
+.materials-ai-assign-list-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+.materials-ai-assign-list-scroll::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.3);
+    border-radius: 3px;
+}
+.materials-ai-assign-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 8px 10px;
+    font-size: 0.82rem;
+    border-radius: 6px;
+    transition: background 0.15s;
+}
+.materials-ai-assign-item:hover {
+    background: rgba(59, 130, 246, 0.05);
+}
+.materials-ai-assign-item + .materials-ai-assign-item {
+    border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+.materials-ai-assign-arrow {
+    color: var(--primary-color);
+    font-weight: 700;
+    flex-shrink: 0;
+    font-size: 0.9rem;
+}
+.materials-ai-assign-path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+    font-family: var(--font-mono, 'Menlo', 'Consolas', monospace);
+    font-size: 0.78rem;
+}
+.materials-ai-assign-session {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-weight: 500;
+}
+.materials-ai-assign-session-title {
+    color: var(--text-secondary);
+    font-weight: 400;
+    font-size: 0.78rem;
+}
+.materials-ai-confidence {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+}
+.materials-ai-confidence--high {
+    background: rgba(34, 197, 94, 0.1);
+    color: #16a34a;
+    border: 1px solid rgba(34, 197, 94, 0.2);
+}
+.materials-ai-confidence--medium {
+    background: rgba(234, 179, 8, 0.1);
+    color: #b45309;
+    border: 1px solid rgba(234, 179, 8, 0.2);
+}
+.materials-ai-confidence--low {
+    background: rgba(239, 68, 68, 0.08);
+    color: #dc2626;
+    border: 1px solid rgba(239, 68, 68, 0.15);
+}

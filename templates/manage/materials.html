@@ -196,9 +196,20 @@
                         {% endif %}
                     </div>
                 </div>
+                <div class="materials-ai-assign-result" id="materials-ai-assign-result" hidden>
+                    <div class="materials-section-header">
+                        <h3>AI 匹配结果</h3>
+                        <span class="text-muted text-sm" id="materials-ai-assign-summary"></span>
+                    </div>
+                    <div class="materials-ai-assign-list-scroll" id="materials-ai-assign-list"></div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-outline" id="materials-assign-ai-btn">
+                    <span class="materials-ai-btn-content">AI 智能分配</span>
+                    <span class="materials-ai-btn-loading" hidden>AI 分析中...</span>
+                </button>
                 <button type="button" class="btn btn-primary" id="materials-assign-save-btn">保存分配</button>
             </div>
         </div>

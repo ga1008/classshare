@@ -100,23 +100,6 @@
         flex-wrap: wrap;
     }
 
-    .teaching-timeline-segment-tags {
-        display: flex;
-        gap: 6px;
-        flex-wrap: wrap;
-    }
-
-    .teaching-timeline-segment-doc {
-        display: inline-flex;
-        align-items: center;
-        padding: 2px 8px;
-        border-radius: 999px;
-        background: rgba(14, 165, 233, 0.12);
-        color: #0369a1;
-        font-size: 0.72rem;
-        font-weight: 700;
-        letter-spacing: 0.02em;
-    }
 </style>
 {% endblock %}
 
@@ -293,90 +276,112 @@
 
                 <div class="embedded-teaching-plan-shell" id="teaching-plan-widget">
                     <div class="embedded-teaching-plan-main is-full">
-                        <div class="teaching-plan-focus-bar">
-                            <div>
-                                <span class="teaching-plan-focus-label">当前定位</span>
-                                <strong>{{ teaching_plan.focus_title }}</strong>
-                            </div>
-                            <span class="teaching-plan-focus-meta">{{ teaching_plan.focus_status_label }} · {{ teaching_plan.focus_meta }}</span>
-                        </div>
+                        <div class="teaching-timeline-stage" id="teachingTimelineStage">
+                            <div class="teaching-timeline-projector" aria-hidden="true"></div>
 
-                        <div class="teaching-timeline-scroll" id="teachingTimelineScroll" aria-label="课程时间轴">
-                            <div class="teaching-timeline-track">
-                                {% for session in teaching_plan.sessions %}
-                                <button
-                                    type="button"
-                                    class="teaching-timeline-segment is-{{ session.progress_state }}{% if session.is_anchor %} is-anchor is-selected{% endif %}"
-                                    data-session-order="{{ session.order_index }}"
-                                    data-session-id="{{ session.id }}"
-                                    data-session-select
-                                    aria-pressed="{{ 'true' if session.is_anchor else 'false' }}"
-                                    {% if session.is_anchor %}data-anchor="true"{% endif %}
-                                >
-                                    <span class="teaching-timeline-segment-order">{{ session.session_number_label }}</span>
-                                    <strong class="teaching-timeline-segment-title">{{ session.segment_title }}</strong>
-                                    <span class="teaching-timeline-segment-tags">
-                                        <span
-                                            class="teaching-timeline-segment-doc"
-                                            data-role="session-material-indicator"
-                                            {% if not session.has_learning_material %}hidden{% endif %}
-                                        >
-                                            文档
+                            <div class="teaching-timeline-scroll" id="teachingTimelineScroll" aria-label="课程时间轴">
+                                <div class="teaching-timeline-track">
+                                    {% for session in teaching_plan.sessions %}
+                                    <button
+                                        type="button"
+                                        class="teaching-timeline-segment is-{{ session.progress_state }}{% if session.is_anchor %} is-anchor is-selected{% endif %}"
+                                        data-session-order="{{ session.order_index }}"
+                                        data-session-id="{{ session.id }}"
+                                        data-session-select
+                                        data-has-material="{{ 'true' if session.has_learning_material else 'false' }}"
+                                        aria-controls="teachingTimelineDetail"
+                                        aria-pressed="{{ 'true' if session.is_anchor else 'false' }}"
+                                        {% if session.is_anchor %}data-anchor="true"{% endif %}
+                                    >
+                                        <span class="teaching-timeline-segment-order">{{ session.session_number_label }}</span>
+                                        <strong class="teaching-timeline-segment-title">{{ session.segment_title }}</strong>
+                                        <span class="teaching-timeline-segment-tags">
+                                            <span
+                                                class="teaching-timeline-segment-doc"
+                                                data-role="session-material-indicator"
+                                                {% if not session.has_learning_material %}hidden{% endif %}
+                                            >
+                                                学习文档
+                                            </span>
                                         </span>
-                                    </span>
-                                    <span class="teaching-timeline-segment-meta">
-                                        <span>{{ session.relative_day_label }}</span>
-                                        <span>{{ session.week_label or '未排周次' }}</span>
-                                    </span>
-                                </button>
-                                {% endfor %}
-                            </div>
-                        </div>
-
-                        <article class="teaching-timeline-detail-card" id="teachingTimelineDetail" aria-live="polite">
-                            <div class="teaching-timeline-detail-top">
-                                <div class="teaching-timeline-detail-copy">
-                                    <span class="teaching-timeline-detail-kicker" id="teachingTimelineDetailKicker">{{ selected_session.session_number_label }}</span>
-                                    <h3 id="teachingTimelineDetailTitle">{{ selected_session.detail_title }}</h3>
+                                        <span
+                                            class="teaching-timeline-segment-meta"
+                                            data-weekday-label="{{ session.timeline_weekday_label }}"
+                                            data-relative-date-label="{{ session.timeline_relative_date_label }}"
+                                        >
+                                            <span>{{ session.relative_day_label }}</span>
+                                            <span>{{ session.week_label or '未排周次' }}</span>
+                                        </span>
+                                    </button>
+                                    {% endfor %}
                                 </div>
-                                <div class="teaching-timeline-detail-side">
-                                    <span class="teaching-timeline-detail-status is-{{ selected_session.progress_state }}" id="teachingTimelineDetailStatus">{{ selected_session.session_status_label }}</span>
+                            </div>
+
+                            <article class="teaching-timeline-detail-card" id="teachingTimelineDetail" aria-live="polite">
+                                <div class="teaching-timeline-detail-top">
+                                    <div class="teaching-timeline-detail-copy">
+                                        <div class="teaching-timeline-detail-heading">
+                                            <span class="teaching-timeline-detail-kicker" id="teachingTimelineDetailKicker">{{ selected_session.session_number_label }}</span>
+                                            <span class="teaching-timeline-detail-status is-{{ selected_session.progress_state }}" id="teachingTimelineDetailStatus">{{ selected_session.session_status_label }}</span>
+                                        </div>
+                                        <h3 id="teachingTimelineDetailTitle">{{ selected_session.detail_title }}</h3>
+                                    </div>
+                                    {% if user_info.role == 'teacher' %}
                                     <div class="teaching-timeline-detail-actions" id="teachingTimelineDetailActions">
-                                        {% if user_info.role == 'teacher' %}
                                         <button type="button" class="btn btn-outline btn-sm" id="teachingTimelineSelectMaterialBtn">选择课堂材料</button>
-                                        <button type="button" class="btn btn-ghost btn-sm" id="teachingTimelineClearMaterialBtn" {% if not selected_session.has_learning_material %}hidden{% endif %}>移除材料</button>
-                                        {% endif %}
-                                        <button type="button" class="btn btn-primary btn-sm" id="teachingTimelineOpenMaterialBtn" {% if not selected_session.has_learning_material %}disabled{% endif %}>学习文档</button>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <div class="teaching-timeline-material-panel{% if not selected_session.has_learning_material %} is-empty{% endif %}" id="teachingTimelineMaterialPanel">
+                                    <div class="teaching-timeline-material-copy">
+                                        <strong id="teachingTimelineMaterialName">
+                                            {% if selected_session.learning_material_name %}
+                                            {{ selected_session.learning_material_name }}
+                                            {% else %}
+                                            {% if user_info.role == 'teacher' %}尚未绑定课堂文档{% else %}教师尚未配置学习文档{% endif %}
+                                            {% endif %}
+                                        </strong>
+                                        <span id="teachingTimelineMaterialPath">
+                                            {% if selected_session.learning_material_path %}
+                                            {{ selected_session.learning_material_path }}
+                                            {% else %}
+                                            {% if user_info.role == 'teacher' %}可为本次课绑定一份 Markdown 材料，师生可从这里直接进入文档页面。{% else %}当前节点还没有可打开的课堂文档。{% endif %}
+                                            {% endif %}
+                                        </span>
+                                    </div>
+                                    <div class="teaching-timeline-material-actions">
+                                        <button
+                                            type="button"
+                                            class="teaching-timeline-open-material-btn"
+                                            id="teachingTimelineOpenMaterialBtn"
+                                            {% if not selected_session.has_learning_material %}disabled{% endif %}
+                                        >
+                                            <span class="teaching-timeline-open-material-copy">
+                                                <span>学习文档</span>
+                                                <small id="teachingTimelineOpenMaterialHint">
+                                                    {% if selected_session.has_learning_material %}
+                                                    进入本次课学习入口
+                                                    {% elif user_info.role == 'teacher' %}
+                                                    先为本次课绑定文档
+                                                    {% else %}
+                                                    等待教师配置学习文档
+                                                    {% endif %}
+                                                </small>
+                                            </span>
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                                        </button>
                                     </div>
                                 </div>
-                            </div>
-                            <div class="teaching-timeline-material-panel{% if not selected_session.has_learning_material %} is-empty{% endif %}" id="teachingTimelineMaterialPanel">
-                                <div class="teaching-timeline-material-copy">
-                                    <strong id="teachingTimelineMaterialName">
-                                        {% if selected_session.learning_material_name %}
-                                        {{ selected_session.learning_material_name }}
-                                        {% else %}
-                                        {% if user_info.role == 'teacher' %}尚未绑定课堂文档{% else %}教师尚未配置学习文档{% endif %}
-                                        {% endif %}
-                                    </strong>
-                                    <span id="teachingTimelineMaterialPath">
-                                        {% if selected_session.learning_material_path %}
-                                        {{ selected_session.learning_material_path }}
-                                        {% else %}
-                                        {% if user_info.role == 'teacher' %}可为本次课绑定一份 Markdown 材料，师生可从这里直接进入文档页面。{% else %}当前节点还没有可打开的课堂文档。{% endif %}
-                                        {% endif %}
-                                    </span>
+                                <div class="teaching-timeline-detail-summary md-content" id="teachingTimelineDetailSummary">{{ selected_session.detail_content or selected_session.detail_summary }}</div>
+                                <div class="teaching-timeline-detail-meta" id="teachingTimelineDetailMeta">
+                                    <span>{{ selected_session.detail_meta }}</span>
+                                    {% if selected_session.detail_hint %}
+                                    <span class="is-warning">{{ selected_session.detail_hint }}</span>
+                                    {% endif %}
                                 </div>
-                            </div>
-                            <div class="teaching-timeline-detail-summary md-content" id="teachingTimelineDetailSummary">{{ selected_session.detail_content or selected_session.detail_summary }}</div>
-                            <div class="teaching-timeline-detail-meta" id="teachingTimelineDetailMeta">
-                                <span>{{ selected_session.detail_meta }}</span>
-                                {% if selected_session.detail_hint %}
-                                <span class="is-warning">{{ selected_session.detail_hint }}</span>
-                                {% endif %}
-                            </div>
-                            <p class="teaching-plan-inline-note">支持鼠标按住时间轴左右拖动，点击任一课次可快速查看详细内容，今天的课会优先居中显示。</p>
-                        </article>
+                                <p class="teaching-plan-inline-note">支持鼠标按住时间轴左右拖动，点击任一课次可快速查看详细内容，今天的课会优先居中显示。</p>
+                            </article>
+                        </div>
                     </div>
                 </div>
             </section>

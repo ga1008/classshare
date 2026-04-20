@@ -305,6 +305,186 @@ def build_holiday_lookup(years: Iterable[int]) -> dict[str, dict[str, str]]:
     return lookup
 
 
+def load_teacher_semester_rows(conn, teacher_id: int):
+    return conn.execute(
+        """
+        SELECT id, name, start_date, end_date, week_count, created_at, updated_at
+        FROM academic_semesters
+        WHERE teacher_id = ?
+        ORDER BY start_date DESC, updated_at DESC, id DESC
+        """,
+        (teacher_id,),
+    ).fetchall()
+
+
+def load_student_semester_rows(conn, student_id: int):
+    student_row = conn.execute(
+        """
+        SELECT class_id
+        FROM students
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (student_id,),
+    ).fetchone()
+    if not student_row or not student_row["class_id"]:
+        return []
+
+    class_id = int(student_row["class_id"])
+    offering_rows = [
+        dict(row)
+        for row in conn.execute(
+            """
+            SELECT id, teacher_id, semester_id, semester
+            FROM class_offerings
+            WHERE class_id = ?
+            ORDER BY id DESC
+            """,
+            (class_id,),
+        ).fetchall()
+    ]
+    if not offering_rows:
+        return []
+
+    teacher_ids = sorted(
+        {
+            int(row["teacher_id"])
+            for row in offering_rows
+            if row.get("teacher_id") not in (None, "")
+        }
+    )
+    if not teacher_ids:
+        return []
+
+    placeholders = ",".join("?" for _ in teacher_ids)
+    candidate_rows = [
+        dict(row)
+        for row in conn.execute(
+            f"""
+            SELECT id, teacher_id, name, start_date, end_date, week_count, created_at, updated_at
+            FROM academic_semesters
+            WHERE teacher_id IN ({placeholders})
+            ORDER BY teacher_id ASC, start_date DESC, updated_at DESC, id DESC
+            """,
+            tuple(teacher_ids),
+        ).fetchall()
+    ]
+    if not candidate_rows:
+        return []
+
+    direct_semester_ids = {
+        int(row["semester_id"])
+        for row in offering_rows
+        if row.get("semester_id") not in (None, "")
+    }
+    legacy_semester_pairs = {
+        (int(row["teacher_id"]), str(row.get("semester") or "").strip())
+        for row in offering_rows
+        if row.get("teacher_id") not in (None, "")
+        and row.get("semester_id") in (None, "")
+        and str(row.get("semester") or "").strip()
+    }
+
+    matched_items: list[dict[str, Any]] = []
+    matched_teacher_ids: set[int] = set()
+    seen_semester_ids: set[int] = set()
+
+    def append_unique(item: dict[str, Any]) -> None:
+        semester_id = int(item.get("id") or 0)
+        if semester_id and semester_id in seen_semester_ids:
+            return
+        if semester_id:
+            seen_semester_ids.add(semester_id)
+        teacher_id = int(item.get("teacher_id") or 0)
+        if teacher_id:
+            matched_teacher_ids.add(teacher_id)
+        matched_items.append(item)
+
+    for item in candidate_rows:
+        if int(item.get("id") or 0) in direct_semester_ids:
+            append_unique(item)
+
+    for item in candidate_rows:
+        key = (int(item.get("teacher_id") or 0), str(item.get("name") or "").strip())
+        if key[0] and key in legacy_semester_pairs:
+            append_unique(item)
+
+    teacher_candidate_map: dict[int, list[dict[str, Any]]] = {}
+    for item in candidate_rows:
+        teacher_id = int(item.get("teacher_id") or 0)
+        if teacher_id:
+            teacher_candidate_map.setdefault(teacher_id, []).append(item)
+
+    current_date = china_today()
+    for teacher_id in teacher_ids:
+        if teacher_id in matched_teacher_ids:
+            continue
+        options = teacher_candidate_map.get(teacher_id) or []
+        if not options:
+            continue
+
+        current_item = None
+        for item in options:
+            start_date_value = parse_date_input(item.get("start_date"))
+            end_date_value = parse_date_input(item.get("end_date"))
+            if start_date_value and end_date_value and start_date_value <= current_date <= end_date_value:
+                current_item = item
+                break
+
+        append_unique(current_item or options[0])
+
+    matched_items.sort(
+        key=lambda item: (
+            parse_date_input(item.get("start_date")) or date.min,
+            str(item.get("updated_at") or item.get("created_at") or ""),
+            int(item.get("id") or 0),
+        ),
+        reverse=True,
+    )
+    return matched_items
+
+
+def build_semester_calendar_payload(
+    semesters: Iterable[dict[str, Any] | sqlite3.Row | Any],
+    *,
+    reference_date: date | None = None,
+) -> dict[str, Any]:
+    current_date = reference_date or china_today()
+    serialized_items: list[dict[str, Any]] = []
+    seen_keys: set[tuple[str, str, str, int]] = set()
+
+    for raw_item in semesters:
+        try:
+            item = serialize_semester_row(raw_item, reference_date=current_date)
+        except Exception:
+            continue
+
+        dedupe_key = (
+            str(item.get("name") or "").casefold(),
+            str(item.get("start_date") or ""),
+            str(item.get("end_date") or ""),
+            int(item.get("week_count") or 0),
+        )
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+        serialized_items.append(item)
+
+    covered_years = {current_date.year, current_date.year + 1}
+    for item in serialized_items:
+        for key in ("start_date", "end_date"):
+            value = str(item.get(key) or "").strip()
+            if len(value) >= 4 and value[:4].isdigit():
+                covered_years.add(int(value[:4]))
+
+    return {
+        "semesters": serialized_items,
+        "holiday_lookup": build_holiday_lookup(covered_years),
+        "today_iso": current_date.isoformat(),
+        "default_semester_id": choose_default_semester_id(serialized_items, reference_date=current_date),
+    }
+
+
 def serialize_semester_row(row: Any, *, reference_date: date | None = None) -> dict[str, Any]:
     item = dict(row)
     today = reference_date or china_today()

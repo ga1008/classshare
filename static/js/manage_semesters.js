@@ -1,16 +1,19 @@
-﻿import { apiFetch } from '/static/js/api.js';
+import { apiFetch } from '/static/js/api.js';
 import { showMessage } from '/static/js/ui.js';
+import {
+    computeSemesterWeekCount,
+    initSemesterCalendar,
+    parseIsoDate,
+} from '/static/js/semester_calendar.js';
 
 const config = window.SEMESTER_MANAGE_DATA || {};
-const todayIso = String(config.todayIso || '');
-const holidayLookup = config.holidayLookup || {};
-
-const dayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-const monthFormatter = new Intl.DateTimeFormat('zh-CN', { month: 'numeric' });
-const dateFormatter = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short' });
+const semesterCalendarConfig = config.semesterCalendar || {};
+const todayIso = String(semesterCalendarConfig.todayIso || semesterCalendarConfig.today_iso || '');
 
 const state = {
-    semesters: Array.isArray(config.semesters) ? config.semesters.map(normalizeSemester) : [],
+    semesters: Array.isArray(semesterCalendarConfig.semesters)
+        ? semesterCalendarConfig.semesters.map(normalizeSemester)
+        : [],
     activeSemesterId: null,
     search: '',
 };
@@ -22,12 +25,7 @@ const elements = {
     clearSearchBtn: document.getElementById('semesterClearSearchBtn'),
     summaryText: document.getElementById('semesterSummaryText'),
     adviceText: document.getElementById('semesterAdviceText'),
-    calendarSelect: document.getElementById('semesterCalendarSelect'),
-    calendarBoard: document.getElementById('semesterCalendarBoard'),
-    calendarScroll: document.getElementById('semesterCalendarScroll'),
-    calendarEmpty: document.getElementById('semesterCalendarEmpty'),
-    scrollStartBtn: document.getElementById('scrollCalendarStartBtn'),
-    scrollTodayBtn: document.getElementById('scrollCalendarTodayBtn'),
+    calendarRoot: document.querySelector('[data-semester-calendar-root]'),
     openCreateBtns: [
         document.getElementById('openSemesterCreateBtn'),
         document.getElementById('heroSemesterCreateBtn'),
@@ -46,7 +44,7 @@ const elements = {
     submitBtn: document.getElementById('semesterSubmitBtn'),
 };
 
-let dragState = null;
+let semesterCalendar = null;
 
 function normalizeSemester(item) {
     const weekCount = Number(item.week_count || 0);
@@ -69,45 +67,7 @@ function getSemesterById(semesterId) {
 }
 
 function getActiveSemester() {
-    return getSemesterById(state.activeSemesterId);
-}
-
-function parseIsoDate(isoDate) {
-    const normalized = String(isoDate || '').trim();
-    if (!normalized) return null;
-    const parts = normalized.split('-').map((part) => Number(part));
-    if (parts.length < 3 || parts.some((part) => !Number.isFinite(part))) return null;
-    return new Date(parts[0], parts[1] - 1, parts[2]);
-}
-
-function formatIsoDate(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
-
-function addDays(date, amount) {
-    const next = new Date(date.getTime());
-    next.setDate(next.getDate() + amount);
-    return next;
-}
-
-function getMonday(date) {
-    const weekday = date.getDay() || 7;
-    return addDays(date, 1 - weekday);
-}
-
-function getSunday(date) {
-    const weekday = date.getDay() || 7;
-    return addDays(date, 7 - weekday);
-}
-
-function computeWeekCount(startDate, endDate) {
-    if (!startDate || !endDate || endDate < startDate) return 0;
-    const calendarStart = getMonday(startDate);
-    const calendarEnd = getSunday(endDate);
-    return Math.floor((calendarEnd - calendarStart) / (1000 * 60 * 60 * 24 * 7)) + 1;
+    return semesterCalendar?.getActiveSemester() || getSemesterById(state.activeSemesterId);
 }
 
 function inferSemesterName(dateValue) {
@@ -128,22 +88,23 @@ function inferSemesterName(dateValue) {
     return `${startYear}-${startYear + 1}${termLabel}`;
 }
 
-function formatDateLabel(value) {
-    const date = parseIsoDate(value);
-    return date ? dateFormatter.format(date) : '未设置';
-}
-
 function getCurrentWeekText(semester) {
-    if (!semester?.is_current) return '当前不在学期范围内';
+    if (!semester?.is_current) {
+        return '当前不在学期范围内';
+    }
     const today = parseIsoDate(todayIso);
     const startDate = parseIsoDate(semester.start_date);
-    if (!today || !startDate) return '当前不在学期范围内';
-    const currentWeek = computeWeekCount(startDate, today);
+    if (!today || !startDate) {
+        return '当前不在学期范围内';
+    }
+    const currentWeek = computeSemesterWeekCount(startDate, today);
     return `今天位于第 ${Math.max(currentWeek, 1)} 周`;
 }
 
 function renderSemesterList() {
-    if (!elements.list) return;
+    if (!elements.list) {
+        return;
+    }
 
     const query = state.search.trim().toLowerCase();
     const items = query
@@ -151,7 +112,11 @@ function renderSemesterList() {
         : state.semesters;
 
     elements.list.innerHTML = items.map((semester) => `
-        <div class="academic-list-item" data-semester-id="${semester.id}">
+        <div
+            class="academic-list-item${semester.id === state.activeSemesterId ? ' is-active' : ''}"
+            data-semester-id="${semester.id}"
+            aria-current="${semester.id === state.activeSemesterId ? 'true' : 'false'}"
+        >
             <div class="academic-list-main">
                 <strong>${escapeHtml(semester.name || '未命名学期')}</strong>
                 <p>${escapeHtml(semester.start_date || '--')} 至 ${escapeHtml(semester.end_date || '--')} · ${semester.week_count || 0} 周</p>
@@ -176,8 +141,12 @@ function renderSemesterList() {
 function renderSummary() {
     const semester = getActiveSemester();
     if (!semester) {
-        if (elements.summaryText) elements.summaryText.textContent = '请选择一个学期。';
-        if (elements.adviceText) elements.adviceText.textContent = '请先新增一个学期，开设课堂时可直接绑定。';
+        if (elements.summaryText) {
+            elements.summaryText.textContent = '请选择一个学期。';
+        }
+        if (elements.adviceText) {
+            elements.adviceText.textContent = '请先新增一个学期，开设课堂时可直接绑定。';
+        }
         return;
     }
 
@@ -205,151 +174,24 @@ function renderSummary() {
     }
 }
 
-function computeMonthGroups(weeks) {
-    const labels = weeks.map((weekStart) => {
-        const monthNames = new Set();
-        for (let i = 0; i < 7; i += 1) {
-            monthNames.add(monthFormatter.format(addDays(weekStart, i)));
-        }
-        return Array.from(monthNames).join(' / ');
-    });
-
-    const groups = [];
-    labels.forEach((label, index) => {
-        const lastGroup = groups[groups.length - 1];
-        if (lastGroup && lastGroup.label === label) {
-            lastGroup.span += 1;
-            return;
-        }
-        groups.push({ label, start: index, span: 1 });
-    });
-    return groups;
-}
-
-function renderCalendar() {
-    const semester = getActiveSemester();
-    if (!elements.calendarBoard || !elements.calendarEmpty || !elements.calendarSelect) return;
-
-    if (!semester) {
-        elements.calendarBoard.innerHTML = '';
-        elements.calendarBoard.style.gridTemplateColumns = '';
-        elements.calendarEmpty.hidden = false;
-        return;
-    }
-
-    const startDate = parseIsoDate(semester.start_date);
-    const endDate = parseIsoDate(semester.end_date);
-    if (!startDate || !endDate) {
-        elements.calendarBoard.innerHTML = '';
-        elements.calendarEmpty.hidden = false;
-        return;
-    }
-
-    elements.calendarEmpty.hidden = true;
-    const calendarStart = getMonday(startDate);
-    const calendarEnd = getSunday(endDate);
-    const weeks = [];
-    for (let cursor = new Date(calendarStart); cursor <= calendarEnd; cursor = addDays(cursor, 7)) {
-        weeks.push(new Date(cursor));
-    }
-
-    const board = elements.calendarBoard;
-    board.innerHTML = '';
-    board.style.gridTemplateColumns = `160px repeat(${weeks.length}, minmax(96px, 1fr))`;
-    board.style.gridTemplateRows = '52px 52px repeat(7, minmax(64px, auto))';
-
-    const createCell = (className, text, row, column, columnSpan = 1) => {
-        const cell = document.createElement('div');
-        cell.className = className;
-        if (text != null) {
-            cell.textContent = text;
-        }
-        cell.style.gridRow = String(row);
-        cell.style.gridColumn = `${column} / span ${columnSpan}`;
-        board.appendChild(cell);
-        return cell;
-    };
-
-    createCell('semester-header-cell semester-sticky-cell', '月份', 1, 1);
-    computeMonthGroups(weeks).forEach((group) => {
-        createCell('semester-header-cell month', group.label, 1, group.start + 2, group.span);
-    });
-
-    createCell('semester-header-cell semester-sticky-cell', '周次', 2, 1);
-    weeks.forEach((weekStart, index) => {
-        const weekCell = createCell('semester-header-cell', `第 ${index + 1} 周`, 2, index + 2);
-        const label = document.createElement('span');
-        label.className = 'semester-week-label';
-        label.textContent = `${monthFormatter.format(weekStart)}${weekStart.getDate()}日`;
-        weekCell.appendChild(label);
-    });
-
-    for (let dayIndex = 0; dayIndex < 7; dayIndex += 1) {
-        createCell('semester-weekday-cell semester-sticky-cell', dayLabels[dayIndex], dayIndex + 3, 1);
-        weeks.forEach((weekStart, weekIndex) => {
-            const currentDate = addDays(weekStart, dayIndex);
-            const isoDate = formatIsoDate(currentDate);
-            const holidayInfo = holidayLookup[isoDate];
-            const inSemester = currentDate >= startDate && currentDate <= endDate;
-            const isWeekend = currentDate.getDay() === 0 || currentDate.getDay() === 6;
-            const isHoliday = holidayInfo?.kind === 'holiday';
-            const isWorkday = holidayInfo?.kind === 'workday';
-            const isToday = isoDate === todayIso;
-
-            const cell = createCell('semester-day-cell', '', dayIndex + 3, weekIndex + 2);
-            cell.dataset.date = isoDate;
-            if (isWeekend) cell.classList.add('is-weekend');
-            if (isHoliday) cell.classList.add('is-holiday');
-            if (isWorkday) cell.classList.add('is-workday');
-            if (isToday) cell.classList.add('is-today');
-            if (!inSemester) cell.classList.add('is-outside');
-
-            const number = document.createElement('div');
-            number.className = 'date-number';
-            number.textContent = String(currentDate.getDate());
-            cell.appendChild(number);
-
-            const meta = document.createElement('div');
-            meta.className = 'date-meta';
-            meta.textContent = inSemester ? dateFormatter.format(currentDate) : `衔接日 · ${dateFormatter.format(currentDate)}`;
-            cell.appendChild(meta);
-
-            if (holidayInfo?.label) {
-                const tag = document.createElement('div');
-                tag.className = `semester-mini-tag ${holidayInfo.kind === 'workday' ? 'workday' : 'holiday'}`;
-                tag.textContent = holidayInfo.label;
-                cell.appendChild(tag);
-            } else if (isWeekend) {
-                const tag = document.createElement('div');
-                tag.className = 'semester-mini-tag';
-                tag.textContent = '周末';
-                cell.appendChild(tag);
-            }
-        });
-    }
-}
-
-function renderCalendarSelect() {
-    if (!elements.calendarSelect) return;
-    elements.calendarSelect.innerHTML = state.semesters.map((semester) => `
-        <option value="${semester.id}">${escapeHtml(semester.name || '未命名学期')} · ${escapeHtml(semester.start_date || '--')}</option>
-    `).join('');
-
-    if (state.activeSemesterId != null) {
-        elements.calendarSelect.value = String(state.activeSemesterId);
-    }
-}
-
 function setActiveSemester(semesterId) {
     const semester = getSemesterById(semesterId);
     state.activeSemesterId = semester ? semester.id : (state.semesters[0]?.id ?? null);
-    renderCalendarSelect();
+
+    if (semesterCalendar) {
+        semesterCalendar.setActiveSemester(state.activeSemesterId);
+        return;
+    }
+
+    renderSemesterList();
     renderSummary();
-    renderCalendar();
 }
 
 function openModal(mode, semester = null) {
-    if (!elements.modalBackdrop || !elements.form) return;
+    if (!elements.modalBackdrop || !elements.form) {
+        return;
+    }
+
     const defaults = config.defaults || {};
     elements.modalTitle.textContent = mode === 'edit' ? '编辑学期' : '新增学期';
     elements.submitBtn.textContent = mode === 'edit' ? '保存修改' : '保存学期';
@@ -375,14 +217,16 @@ function openModal(mode, semester = null) {
 }
 
 function closeModal() {
-    if (!elements.modalBackdrop) return;
+    if (!elements.modalBackdrop) {
+        return;
+    }
     elements.modalBackdrop.classList.remove('is-open');
 }
 
 function updateWeekPreview() {
     const startDate = parseIsoDate(elements.startInput?.value);
     const endDate = parseIsoDate(elements.endInput?.value);
-    const weekCount = computeWeekCount(startDate, endDate);
+    const weekCount = computeSemesterWeekCount(startDate, endDate);
 
     if (elements.weekCountValue) {
         elements.weekCountValue.textContent = weekCount > 0 ? `${weekCount} 周` : '0 周';
@@ -404,9 +248,14 @@ function updateWeekPreview() {
 
 async function handleDeleteSemester(semesterId) {
     const semester = getSemesterById(semesterId);
-    if (!semester) return;
+    if (!semester) {
+        return;
+    }
+
     const confirmed = window.confirm(`确定删除学期“${semester.name}”吗？\n如果已经有课堂绑定到这个学期，需要先调整课堂绑定。`);
-    if (!confirmed) return;
+    if (!confirmed) {
+        return;
+    }
 
     const result = await apiFetch(`/api/manage/semesters/${semester.id}`, { method: 'DELETE' });
     showMessage(result.message || '学期已删除', 'success');
@@ -415,7 +264,9 @@ async function handleDeleteSemester(semesterId) {
 
 async function handleSubmit(event) {
     event.preventDefault();
-    if (!elements.form || !elements.submitBtn) return;
+    if (!elements.form || !elements.submitBtn) {
+        return;
+    }
 
     const startDate = parseIsoDate(elements.startInput.value);
     const endDate = parseIsoDate(elements.endInput.value);
@@ -448,49 +299,6 @@ async function handleSubmit(event) {
     }
 }
 
-function bindDragScroll() {
-    if (!elements.calendarScroll) return;
-
-    elements.calendarScroll.addEventListener('pointerdown', (event) => {
-        if (event.pointerType === 'mouse' && event.button !== 0) return;
-        dragState = {
-            pointerId: event.pointerId,
-            startX: event.clientX,
-            startScrollLeft: elements.calendarScroll.scrollLeft,
-        };
-        elements.calendarScroll.classList.add('is-dragging');
-        elements.calendarScroll.setPointerCapture?.(event.pointerId);
-    });
-
-    elements.calendarScroll.addEventListener('pointermove', (event) => {
-        if (!dragState) return;
-        const delta = event.clientX - dragState.startX;
-        elements.calendarScroll.scrollLeft = dragState.startScrollLeft - delta;
-    });
-
-    const releaseDrag = (event) => {
-        if (!dragState) return;
-        if (event?.pointerId && dragState.pointerId && event.pointerId !== dragState.pointerId) return;
-        elements.calendarScroll.classList.remove('is-dragging');
-        dragState = null;
-    };
-
-    elements.calendarScroll.addEventListener('pointerup', releaseDrag);
-    elements.calendarScroll.addEventListener('pointercancel', releaseDrag);
-    elements.calendarScroll.addEventListener('pointerleave', releaseDrag);
-}
-
-function scrollCalendarToToday() {
-    if (!elements.calendarScroll) return;
-    const todayCell = elements.calendarBoard?.querySelector(`[data-date="${todayIso}"]`);
-    if (!todayCell) {
-        showMessage('今天不在当前学期网格范围内', 'info');
-        return;
-    }
-    const left = todayCell.offsetLeft - 180;
-    elements.calendarScroll.scrollTo({ left: Math.max(left, 0), behavior: 'smooth' });
-}
-
 function escapeHtml(value) {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -508,7 +316,9 @@ function initEvents() {
     elements.modalCloseBtn?.addEventListener('click', closeModal);
     elements.modalCancelBtn?.addEventListener('click', closeModal);
     elements.modalBackdrop?.addEventListener('click', (event) => {
-        if (event.target === elements.modalBackdrop) closeModal();
+        if (event.target === elements.modalBackdrop) {
+            closeModal();
+        }
     });
 
     elements.searchInput?.addEventListener('input', (event) => {
@@ -518,15 +328,22 @@ function initEvents() {
 
     elements.clearSearchBtn?.addEventListener('click', () => {
         state.search = '';
-        if (elements.searchInput) elements.searchInput.value = '';
+        if (elements.searchInput) {
+            elements.searchInput.value = '';
+        }
         renderSemesterList();
     });
 
     elements.list?.addEventListener('click', async (event) => {
         const actionButton = event.target.closest('[data-action]');
-        if (!actionButton) return;
+        if (!actionButton) {
+            return;
+        }
+
         const semesterId = Number(actionButton.dataset.semesterId || 0);
-        if (!semesterId) return;
+        if (!semesterId) {
+            return;
+        }
 
         if (actionButton.dataset.action === 'focus') {
             setActiveSemester(semesterId);
@@ -534,23 +351,15 @@ function initEvents() {
         }
         if (actionButton.dataset.action === 'edit') {
             const semester = getSemesterById(semesterId);
-            if (semester) openModal('edit', semester);
+            if (semester) {
+                openModal('edit', semester);
+            }
             return;
         }
         if (actionButton.dataset.action === 'delete') {
             await handleDeleteSemester(semesterId);
         }
     });
-
-    elements.calendarSelect?.addEventListener('change', (event) => {
-        setActiveSemester(Number(event.target.value || 0));
-    });
-
-    elements.scrollStartBtn?.addEventListener('click', () => {
-        elements.calendarScroll?.scrollTo({ left: 0, behavior: 'smooth' });
-    });
-
-    elements.scrollTodayBtn?.addEventListener('click', scrollCalendarToToday);
 
     elements.startInput?.addEventListener('change', updateWeekPreview);
     elements.endInput?.addEventListener('change', updateWeekPreview);
@@ -559,23 +368,25 @@ function initEvents() {
         elements.nameInput.dataset.touched = value ? 'true' : 'false';
     });
     elements.form?.addEventListener('submit', handleSubmit);
-
-    bindDragScroll();
 }
 
 function initDefaultState() {
+    renderSemesterList();
+
     if (state.semesters.length === 0) {
-        renderSemesterList();
         renderSummary();
-        renderCalendar();
         return;
     }
+
     const currentSemester = state.semesters.find((item) => item.is_current);
     state.activeSemesterId = currentSemester?.id ?? state.semesters[0].id;
-    renderSemesterList();
-    renderCalendarSelect();
+
+    if (semesterCalendar) {
+        semesterCalendar.setActiveSemester(state.activeSemesterId);
+        return;
+    }
+
     renderSummary();
-    renderCalendar();
 }
 
 function handleQueryOpen() {
@@ -584,6 +395,15 @@ function handleQueryOpen() {
         openModal('create');
     }
 }
+
+semesterCalendar = initSemesterCalendar(elements.calendarRoot, semesterCalendarConfig, {
+    onChange: (semester) => {
+        state.activeSemesterId = semester?.id ?? null;
+        renderSemesterList();
+        renderSummary();
+    },
+    onMessage: (message, tone) => showMessage(message, tone || 'info'),
+});
 
 initEvents();
 initDefaultState();

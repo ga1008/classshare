@@ -492,6 +492,29 @@ def _build_relative_day_label(session_date: date | None, today: date) -> str:
     return f"{abs(delta_days)} 天前"
 
 
+def _build_month_day_label(session_date: date | None) -> str:
+    if not session_date:
+        return ""
+    return f"{session_date.month}月{session_date.day}日"
+
+
+def _build_timeline_weekday_label(*, week_index: int, weekday_text: str) -> str:
+    weekday_text = str(weekday_text or "").strip()
+    if week_index > 0 and weekday_text:
+        return f"第{week_index}周{weekday_text}"
+    if week_index > 0:
+        return f"第{week_index}周"
+    return weekday_text or "待排时间"
+
+
+def _build_timeline_relative_date_label(*, relative_day_label: str, session_date: date | None) -> str:
+    relative_text = str(relative_day_label or "").strip()
+    month_day_label = _build_month_day_label(session_date)
+    if relative_text and month_day_label:
+        return f"{relative_text}（{month_day_label}）"
+    return relative_text or month_day_label
+
+
 def _build_session_status_label(
     *,
     progress_state: str,
@@ -660,6 +683,15 @@ def decorate_offering_sessions(
 
         item["session_number_label"] = f"第 {order_index} 次课"
         item["relative_day_label"] = _build_relative_day_label(session_date, today)
+        item["month_day_label"] = _build_month_day_label(session_date)
+        item["timeline_weekday_label"] = _build_timeline_weekday_label(
+            week_index=week_index,
+            weekday_text=item.get("weekday_label") or "",
+        )
+        item["timeline_relative_date_label"] = _build_timeline_relative_date_label(
+            relative_day_label=item["relative_day_label"],
+            session_date=session_date,
+        )
         item["segment_title"] = truncate_text(item.get("title"), 18)
         item["session_status_label"] = _build_session_status_label(
             progress_state=progress_state,
