@@ -77,8 +77,10 @@ services:
         condition: service_healthy
     ports:
       - "${LANSHARE_HTTP_PORT:-80}:80"
+      - "${LANSHARE_HTTPS_PORT:-443}:443"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./tools/guardianangel.net.cn_nginx:/etc/nginx/ssl:ro
     networks:
       - lanshare
     healthcheck:

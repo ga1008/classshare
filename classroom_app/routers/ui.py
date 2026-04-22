@@ -11,7 +11,13 @@ import pandas as pd
 
 from ..core import templates, COURSE_INFO
 # 修复：移除不再需要的 TEACHER_PASS, SHARE_DIR, ROSTER_DIR
-from ..config import TEACHER_USER, MAX_SUBMISSION_FILE_COUNT, MAX_UPLOAD_SIZE_MB
+from ..config import (
+    TEACHER_USER,
+    MAX_SUBMISSION_FILE_COUNT,
+    MAX_UPLOAD_SIZE_MB,
+    MAX_SUBMISSION_PER_FILE_MB,
+    MAX_SUBMISSION_TOTAL_MB,
+)
 from ..dependencies import (
     get_current_user, get_current_user_optional, get_current_teacher, get_current_student,
     create_access_token, get_password_hash, verify_password,
@@ -909,6 +915,8 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
                 "exam_questions": exam_questions,
                 "max_upload_mb": MAX_UPLOAD_SIZE_MB,
                 "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
+                "max_per_file_mb": MAX_SUBMISSION_PER_FILE_MB,
+                "max_total_mb": MAX_SUBMISSION_TOTAL_MB,
             })
 
         if assignment['status'] == 'new':
@@ -978,6 +986,8 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
         "resubmission_due_at": submission.get("resubmission_due_at") if submission else None,
         "max_upload_mb": MAX_UPLOAD_SIZE_MB,
         "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
+        "max_per_file_mb": MAX_SUBMISSION_PER_FILE_MB,
+        "max_total_mb": MAX_SUBMISSION_TOTAL_MB,
     })
 
 
@@ -1892,4 +1902,6 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
         "resubmission_due_at": submission.get("resubmission_due_at") if submission else None,
         "max_upload_mb": MAX_UPLOAD_SIZE_MB,
         "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
+        "max_per_file_mb": MAX_SUBMISSION_PER_FILE_MB,
+        "max_total_mb": MAX_SUBMISSION_TOTAL_MB,
     })

@@ -12,6 +12,10 @@ from fastapi.responses import JSONResponse, FileResponse
 from ..config import (
     HOMEWORK_SUBMISSIONS_DIR,
     MAX_SUBMISSION_FILE_COUNT,
+    MAX_SUBMISSION_PER_FILE_BYTES,
+    MAX_SUBMISSION_PER_FILE_MB,
+    MAX_SUBMISSION_TOTAL_BYTES,
+    MAX_SUBMISSION_TOTAL_MB,
     MAX_UPLOAD_SIZE_BYTES,
     MAX_UPLOAD_SIZE_MB,
 )
@@ -166,11 +170,19 @@ def _validate_upload_entries(files: List[UploadFile], manifest: str):
 
     total_size = 0
     for entry in prepared_entries:
-        if entry.size_bytes > MAX_UPLOAD_SIZE_BYTES:
-            raise HTTPException(413, f"文件 '{entry.relative_path}' 超过 {MAX_UPLOAD_SIZE_MB}MB")
+        if entry.size_bytes > MAX_SUBMISSION_PER_FILE_BYTES:
+            raise HTTPException(
+                413,
+                f"文件 '{entry.relative_path}' 超过单文件大小限制 {MAX_SUBMISSION_PER_FILE_MB:.0f}MB"
+                f"（当前 {entry.size_bytes / 1024 / 1024:.1f}MB）",
+            )
         total_size += entry.size_bytes
-    if total_size > MAX_UPLOAD_SIZE_BYTES:
-        raise HTTPException(413, f"总文件大小超过 {MAX_UPLOAD_SIZE_MB}MB")
+    if total_size > MAX_SUBMISSION_TOTAL_BYTES:
+        raise HTTPException(
+            413,
+            f"总文件大小超过限制 {MAX_SUBMISSION_TOTAL_MB:.0f}MB"
+            f"（当前 {total_size / 1024 / 1024:.1f}MB）",
+        )
     return prepared_entries
 
 

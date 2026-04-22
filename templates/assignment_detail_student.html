@@ -135,7 +135,7 @@
     .file-chips {
         display: flex;
         flex-wrap: wrap;
-        gap: var(--spacing-sm);
+        gap: 6px;
         margin-top: var(--spacing-md);
     }
     .file-chip {
@@ -145,8 +145,12 @@
         background: var(--bg-color);
         border: 1px solid var(--border-color);
         border-radius: var(--radius-sm);
-        padding: 4px 8px;
+        padding: 5px 10px;
         font-size: 0.85rem;
+        transition: border-color 0.2s, background 0.2s;
+    }
+    .file-chip:hover {
+        background: var(--surface-hover);
     }
     .submit-action-bar {
         background: var(--bg-color);
@@ -226,7 +230,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-primary mx-auto mb-2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             <p class="mb-1 text-primary font-medium">拖拽文件或文件夹到此处</p>
             <p class="text-xs text-muted">
-                支持多个文件、文件夹（保留子目录），总大小不超过 {{ max_upload_mb }} MB，最多 {{ max_submission_file_count }} 个文件
+                支持同时选择多个文件或文件夹，单文件不超过 {{ max_per_file_mb | int }}MB，总大小不超过 {{ max_total_mb | int }}MB，最多 {{ max_submission_file_count }} 个文件
                 {% if assignment.allowed_file_types %}
                 ，允许类型: {{ assignment.allowed_file_types_label }}
                 {% endif %}
@@ -458,7 +462,8 @@
     import { showToast, renderMarkdown, formatDateLocal } from '{{ asset_url("js/ui.js") }}';
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
 
-    const MAX_SIZE = {{ max_upload_mb }} * 1024 * 1024;
+    const MAX_SIZE = {{ max_total_mb }} * 1024 * 1024;
+    const MAX_PER_FILE = {{ max_per_file_mb }} * 1024 * 1024;
     const MAX_FILES = {{ max_submission_file_count }};
     const ASSIGNMENT_ID = "{{ assignment.id }}";
     const ALLOWED_FILE_TYPES = {{ assignment.allowed_file_types | tojson }};
@@ -634,6 +639,7 @@
             summaryId: 'upload-summary',
             allowedFileTypes: ALLOWED_FILE_TYPES,
             maxBytes: MAX_SIZE,
+            maxPerFileBytes: MAX_PER_FILE,
             maxFiles: MAX_FILES,
             notify: showToast,
             onChange: (entries) => {

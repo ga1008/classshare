@@ -697,7 +697,8 @@
     const ASSIGNMENT_ID = "{{ assignment.id }}";
     const USER_ROLE = "{{ user_info.role }}";
     const MAX_UPLOAD_MB = {{ max_upload_mb }};
-    const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
+    const MAX_UPLOAD_BYTES = {{ max_total_mb }} * 1024 * 1024;
+    const MAX_PER_FILE_BYTES = {{ max_per_file_mb }} * 1024 * 1024;
     const MAX_FILE_COUNT = {{ max_submission_file_count }};
     const ALLOWED_FILE_TYPES = {{ assignment.allowed_file_types | tojson }};
     const ALLOWED_FILE_TYPES_LABEL = {{ assignment.allowed_file_types_label | tojson }};
@@ -980,7 +981,7 @@
                         <div class="upload-dropzone" id="exam-drop-zone">
                             <p class="mb-2 font-medium text-primary">拖拽文件或文件夹到此处</p>
                             <p class="text-sm text-muted">
-                                支持多文件与文件夹上传，总大小不超过 ${MAX_UPLOAD_MB} MB，最多 ${MAX_FILE_COUNT} 个文件
+                                支持同时选择多个文件，单文件不超过 ${(MAX_PER_FILE_BYTES / 1024 / 1024).toFixed(0)}MB，总大小不超过 ${(MAX_UPLOAD_BYTES / 1024 / 1024).toFixed(0)}MB，最多 ${MAX_FILE_COUNT} 个文件
                                 ${ALLOWED_FILE_TYPES.length ? `，允许类型：${esc(ALLOWED_FILE_TYPES_LABEL)}` : ''}
                             </p>
                         </div>
@@ -1019,6 +1020,7 @@
             summaryId: 'examUploadSummary',
             allowedFileTypes: ALLOWED_FILE_TYPES,
             maxBytes: MAX_UPLOAD_BYTES,
+            maxPerFileBytes: MAX_PER_FILE_BYTES,
             maxFiles: MAX_FILE_COUNT,
             notify: showMessage,
             onChange: (entries) => {
