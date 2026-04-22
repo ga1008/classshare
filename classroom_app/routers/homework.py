@@ -1,11 +1,15 @@
 import uuid
 import json
+import io
+import zipfile
 import pandas as pd
 import sqlite3
+from urllib.parse import quote
 from datetime import datetime
+from pathlib import Path
 from typing import Any, List
 from fastapi import APIRouter, Request, Form, HTTPException, Depends, UploadFile, File
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 
 # 修复：移除这个错误的导入，COURSE_INFO 不再是 V4.0 的依赖
 # from ..core import COURSE_INFO
@@ -850,6 +854,115 @@ async def return_submission(submission_id: int, user: dict = Depends(get_current
         _build_submission_storage_dir(submission['course_id'], submission['assignment_id'], submission['student_pk_id'])
     )
     return {"status": "success", "deleted_submission_id": submission_id}
+
+
+@router.get("/assignments/{assignment_id}/export-attachments/{class_offering_id}")
+async def export_submission_attachments(
+    assignment_id: str,
+    class_offering_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    """将指定作业所有已提交学生的附件打包为 zip 下载。
+    目录结构: 班级名-作业名/学生姓名-学号/原始附件文件
+    """
+    with get_db_connection() as conn:
+        assignment = _get_assignment_for_teacher(conn, assignment_id, int(user["id"]))
+
+        offering = conn.execute(
+            "SELECT * FROM class_offerings WHERE id = ?", (class_offering_id,)
+        ).fetchone()
+        if not offering:
+            raise HTTPException(404, "未找到班级课堂")
+        if int(assignment.get("class_offering_id") or 0) != int(class_offering_id):
+            raise HTTPException(400, "作业与当前班级课堂不匹配")
+
+        class_id = offering["class_id"]
+        class_info = conn.execute(
+            "SELECT name FROM classes WHERE id = ?", (class_id,)
+        ).fetchone()
+        if not class_info:
+            raise HTTPException(404, "未找到班级")
+        class_name = str(class_info["name"] or "").strip()
+
+        # 获取所有已提交学生的附件记录
+        rows = conn.execute(
+            """
+            SELECT sf.stored_path, sf.relative_path, sf.original_filename,
+                   s.student_pk_id, stu.name AS student_name,
+                   stu.student_id_number
+            FROM submission_files sf
+            JOIN submissions s ON s.id = sf.submission_id
+            JOIN students stu ON stu.id = s.student_pk_id
+            WHERE s.assignment_id = ?
+              AND s.student_pk_id IN (SELECT id FROM students WHERE class_id = ?)
+              AND s.status != 'unsubmitted'
+            ORDER BY stu.student_id_number, sf.relative_path
+            """,
+            (assignment_id, class_id),
+        ).fetchall()
+
+    if not rows:
+        raise HTTPException(404, "当前没有已提交附件可供导出")
+
+    # Build zip in memory
+    assignment_title = str(assignment.get("title") or "").strip()
+    # Sanitize folder names for cross-platform compatibility
+    root_folder = _sanitize_zip_path(f"{class_name}-{assignment_title}")
+    zip_buffer = io.BytesIO()
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        # Map student_pk_id -> unique folder name (handles duplicate names)
+        student_folder_map: dict[int, str] = {}
+        used_folder_names: set[str] = set()
+
+        for row in rows:
+            stored_path = Path(row["stored_path"])
+            if not stored_path.exists():
+                continue
+
+            student_pk_id = int(row["student_pk_id"])
+
+            # Resolve folder name once per student
+            if student_pk_id not in student_folder_map:
+                student_name = str(row["student_name"] or "").strip() or "未知"
+                student_id_number = str(row["student_id_number"] or "").strip() or "无学号"
+                folder = _sanitize_zip_path(f"{student_name}-{student_id_number}")
+
+                if folder in used_folder_names:
+                    base = folder
+                    idx = 2
+                    while f"{base}_{idx}" in used_folder_names:
+                        idx += 1
+                    folder = f"{base}_{idx}"
+                used_folder_names.add(folder)
+                student_folder_map[student_pk_id] = folder
+
+            student_folder = student_folder_map[student_pk_id]
+
+            # Use relative_path to preserve sub-directory structure if any
+            relative_path = str(row["relative_path"] or row["original_filename"] or "file")
+            arc_path = f"{root_folder}/{student_folder}/{relative_path}"
+
+            zf.write(stored_path, arc_path)
+
+    zip_buffer.seek(0)
+    zip_filename = f"{root_folder}.zip"
+    encoded_filename = quote(zip_filename)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/x-zip-compressed",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
+    )
+
+
+def _sanitize_zip_path(name: str) -> str:
+    """Remove or replace characters that are unsafe in zip paths / filenames."""
+    import re
+    # Replace characters unsafe for filenames (Windows + cross-platform)
+    sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', name)
+    # Collapse consecutive underscores and strip
+    sanitized = re.sub(r'_+', '_', sanitized).strip('_ ')
+    return sanitized or "export"
 
 
 @router.get("/assignments/{assignment_id}/export/{class_offering_id}", response_class=FileResponse)

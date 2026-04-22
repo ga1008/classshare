@@ -285,6 +285,52 @@
     .file-chip:hover {
         background: var(--surface-hover);
     }
+
+    /* Export overlay animation */
+    .export-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+        z-index: 9999;
+        justify-content: center;
+        align-items: center;
+        animation: fadeIn 0.2s ease-out;
+    }
+    .export-overlay.active { display: flex; }
+    .export-dialog {
+        background: var(--surface-color);
+        border-radius: var(--radius-lg);
+        padding: var(--spacing-xl) var(--spacing-2xl);
+        box-shadow: var(--shadow-lg);
+        text-align: center;
+        min-width: 280px;
+        animation: scaleIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .export-spinner {
+        width: 44px; height: 44px;
+        border: 3px solid var(--border-color);
+        border-top-color: var(--primary-color);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin: 0 auto var(--spacing-md);
+    }
+    .export-checkmark {
+        width: 44px; height: 44px;
+        border-radius: 50%;
+        background: var(--success-color);
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto var(--spacing-md);
+        animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .export-checkmark svg { stroke: white; }
+    .export-dialog p { margin: 0; font-size: 0.95rem; color: var(--text-primary); }
+    .export-dialog .text-muted { font-size: 0.82rem; margin-top: 6px; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes scaleIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes popIn { 0% { opacity: 0; transform: scale(0.3); } 60% { transform: scale(1.1); } 100% { opacity: 1; transform: scale(1); } }
+
     @media (max-width: 900px) {
         .offline-modal-grid { grid-template-columns: 1fr; }
         .selection-toolbar { width: 100%; margin-left: 0; }
@@ -329,6 +375,10 @@
         <button class="btn btn-success btn-sm" onclick="exportGrades()">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             导出成绩
+        </button>
+        <button class="btn btn-outline btn-sm" onclick="exportAttachments()" id="export-attachments-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+            导出附件
         </button>
     </div>
 </header>
@@ -511,6 +561,15 @@
         </div>
     </div>
 </main>
+
+<!-- 导出附件进度遮罩 -->
+<div class="export-overlay" id="export-overlay">
+    <div class="export-dialog">
+        <div class="export-spinner" id="export-spinner-icon"></div>
+        <p id="export-overlay-text">正在打包附件...</p>
+        <p class="text-muted" id="export-overlay-sub">请勿关闭页面</p>
+    </div>
+</div>
 
 <!-- 编辑作业模态框 -->
 <div class="modal-backdrop" id="edit-modal">
@@ -1602,6 +1661,68 @@
                 showToast('导出成功', 'success');
             } else { throw new Error('导出失败'); }
         } catch (error) { showToast('导出成绩失败', 'error'); }
+    };
+
+    window.exportAttachments = async function() {
+        if (!currentClassOfferingId) {
+            showToast('此作业未关联班级课堂，无法导出附件', 'warning');
+            return;
+        }
+        const btn = document.getElementById('export-attachments-btn');
+        const overlay = document.getElementById('export-overlay');
+        const overlayText = document.getElementById('export-overlay-text');
+        const overlaySub = document.getElementById('export-overlay-sub');
+        const spinnerIcon = document.getElementById('export-spinner-icon');
+
+        // Show overlay with spinner
+        btn.disabled = true;
+        overlayText.textContent = '正在打包附件...';
+        overlaySub.textContent = '请勿关闭页面';
+        spinnerIcon.className = 'export-spinner';
+        spinnerIcon.innerHTML = '';
+        overlay.classList.add('active');
+
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}/export-attachments/${currentClassOfferingId}`);
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.detail || '导出失败');
+            }
+            const blob = await response.blob();
+
+            // Extract filename from Content-Disposition header
+            const disposition = response.headers.get('Content-Disposition') || '';
+            let filename = `附件_${currentAssignmentId}.zip`;
+            const utf8Match = disposition.match(/filename\*=UTF-8''(.+)/i);
+            if (utf8Match) {
+                filename = decodeURIComponent(utf8Match[1]);
+            } else {
+                const plainMatch = disposition.match(/filename="?([^";\n]+)"?/);
+                if (plainMatch) filename = plainMatch[1];
+            }
+
+            // Show success state
+            spinnerIcon.className = 'export-checkmark';
+            spinnerIcon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+            overlayText.textContent = '打包完成';
+            const sizeMB = (blob.size / 1024 / 1024).toFixed(1);
+            overlaySub.textContent = `${filename}（${sizeMB} MB）`;
+
+            // Trigger download after brief success display
+            await new Promise(r => setTimeout(r, 600));
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            showToast(`附件导出成功（${sizeMB} MB）`, 'success');
+        } catch (error) {
+            showToast(error.message || '导出附件失败', 'error');
+        } finally {
+            overlay.classList.remove('active');
+            btn.disabled = false;
+        }
     };
 
     // ==================== Status Dropdown ====================
