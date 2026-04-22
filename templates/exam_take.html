@@ -704,6 +704,8 @@
     const SUBMISSION_FILES = {{ submission_files | tojson }};
     const CLASS_OFFERING_ID = {{ assignment.class_offering_id or 'null' }};
     const CAN_WITHDRAW_SUBMISSION = {{ can_withdraw_submission | tojson }};
+    const CAN_RESUBMIT_SUBMISSION = {{ can_resubmit_submission | tojson }};
+    const RESUBMISSION_DUE_AT = {{ resubmission_due_at | tojson }};
 
     {% if submission %}
     const SUBMISSION_EXISTS = true;
@@ -733,6 +735,7 @@
         totalQuestions: 0
     };
     let uploadManager = null;
+    let isEditingResubmission = false;
 
     // DOM Elements
     const elements = {
@@ -741,10 +744,12 @@
         sidebarBackdrop: document.getElementById('sidebarBackdrop'),
         mobileToggle: document.getElementById('mobileSidebarToggle'),
         dynamicArea: document.getElementById('dynamicArea'),
+        progressContainer: document.getElementById('progressContainer'),
         pageContent: document.getElementById('pageContent'),
         progressFill: document.getElementById('progressFill'),
         pageNameLabel: document.getElementById('pageNameLabel'),
         pageIdxLabel: document.getElementById('pageIdxLabel'),
+        navContainer: document.getElementById('navContainer'),
         prevBtn: document.getElementById('prevBtn'),
         nextBtn: document.getElementById('nextBtn'),
         answeredCount: document.getElementById('answeredCount'),
@@ -777,7 +782,7 @@
 
     // --- Data Persistence ---
     function saveToLocal() {
-        if (SUBMISSION_EXISTS) return;
+        if (SUBMISSION_EXISTS && !isEditingResubmission) return;
         localStorage.setItem(`exam_${ASSIGNMENT_ID}`, JSON.stringify({
             answers: state.answers,
             currentPage: state.currentPageIdx
@@ -1182,7 +1187,10 @@
         if (unanswered.length > 0) {
             if (!confirm(`还有 ${unanswered.length} 道题未作答，确定要强行交卷吗？`)) return;
         } else {
-            if (!confirm('确定要提交试卷吗？提交后不可修改。')) return;
+            const confirmText = isEditingResubmission
+                ? '确定要重新提交试卷吗？新的提交会替换当前版本。'
+                : '确定要提交试卷吗？提交后不可修改。';
+            if (!confirm(confirmText)) return;
         }
 
         const btn = document.getElementById('submitExamBtn');
@@ -1284,6 +1292,16 @@
             `;
         }
 
+        if (CAN_RESUBMIT_SUBMISSION && SUBMISSION_STATUS === 'submitted') {
+            html += `
+                <div class="result-banner warning">
+                    <h3>教师已撤回批改结果</h3>
+                    <p>旧答卷和附件仍可查看下载，请在 ${RESUBMISSION_DUE_AT ? new Date(RESUBMISSION_DUE_AT).toLocaleString('zh-CN') : '重交截止时间'} 前重新提交。</p>
+                    <button class="btn btn-primary" id="resubmitExamBtn" style="margin-top: 1rem;">重新作答并提交</button>
+                </div>
+            `;
+        }
+
         // Reconstruct answers from submission data
         const submittedAnswers = {};
         if (SUBMISSION_DATA) {
@@ -1342,9 +1360,82 @@
         }
         elements.dynamicArea.innerHTML = `<div class="paper-content">${html}</div>`;
         document.getElementById('withdrawExamBtn')?.addEventListener('click', handleWithdrawSubmission);
+        document.getElementById('resubmitExamBtn')?.addEventListener('click', startExamResubmission);
 
         // Update sidebar
         renderSidebarForSubmitted(allQuestions, submittedAnswers);
+    }
+
+    function extractSubmittedAnswers() {
+        const submittedAnswers = {};
+        if (SUBMISSION_DATA) {
+            const ansList = SUBMISSION_DATA.answers || SUBMISSION_DATA;
+            if (Array.isArray(ansList)) {
+                ansList.forEach(item => {
+                    const key = item.question_id || item.question;
+                    if (key) submittedAnswers[key] = item.answer || '';
+                });
+            } else if (typeof ansList === 'object') {
+                Object.entries(ansList).forEach(([key, value]) => {
+                    submittedAnswers[key] = typeof value === 'object' ? (value.answer || value.text || '') : String(value || '');
+                });
+            }
+        }
+        return submittedAnswers;
+    }
+
+    function restoreExamEditingShell() {
+        elements.dynamicArea.innerHTML = `
+            <div class="exam-progress" id="progressContainer">
+                <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+                <div class="progress-labels">
+                    <span id="pageNameLabel">加载中...</span>
+                    <span id="pageIdxLabel">第1页 / 共?页</span>
+                </div>
+            </div>
+            <div class="paper-content" id="pageContent"></div>
+            <div class="paper-footer" id="navContainer">
+                <button class="btn btn-outline" id="prevBtn" disabled>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                    上一页
+                </button>
+                <button class="btn btn-primary" id="nextBtn">
+                    下一页
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+            </div>
+        `;
+        elements.pageContent = document.getElementById('pageContent');
+        elements.progressFill = document.getElementById('progressFill');
+        elements.pageNameLabel = document.getElementById('pageNameLabel');
+        elements.pageIdxLabel = document.getElementById('pageIdxLabel');
+        elements.navContainer = document.getElementById('navContainer');
+        elements.progressContainer = document.getElementById('progressContainer');
+        elements.prevBtn = document.getElementById('prevBtn');
+        elements.nextBtn = document.getElementById('nextBtn');
+        elements.prevBtn?.addEventListener('click', () => goToPage(state.currentPageIdx - 1));
+        elements.nextBtn?.addEventListener('click', () => goToPage(state.currentPageIdx + 1));
+        if (elements.saveStatus) {
+            elements.saveStatus.style.display = '';
+            elements.saveStatus.classList.remove('saved');
+        }
+    }
+
+    function startExamResubmission() {
+        if (!CAN_RESUBMIT_SUBMISSION) return;
+        isEditingResubmission = true;
+        state.answers = extractSubmittedAnswers();
+        for (const page of state.pages) {
+            for (const q of (page.questions || [])) {
+                if (state.answers[q.id] === undefined) state.answers[q.id] = '';
+            }
+        }
+        state.currentPageIdx = 0;
+        state.activeQuestionId = null;
+        uploadManager = null;
+        restoreExamEditingShell();
+        renderCurrentPage();
+        saveToLocal();
     }
 
     function renderSidebarForSubmitted(allQuestions, submittedAnswers) {
@@ -1399,7 +1490,7 @@
         if (elements.sidebarBackdrop) elements.sidebarBackdrop.addEventListener('click', closeMobileSidebar);
 
         window.addEventListener('beforeunload', () => {
-            if(!SUBMISSION_EXISTS) saveToLocal();
+            if(!SUBMISSION_EXISTS || isEditingResubmission) saveToLocal();
         });
     }
 

@@ -591,6 +591,8 @@ function initTeachingTimeline() {
     const widget = document.getElementById('teaching-plan-widget');
     const stageEl = document.getElementById('teachingTimelineStage');
     const scrollEl = document.getElementById('teachingTimelineScroll');
+    const prevTimelineBtn = document.getElementById('teachingTimelinePrevBtn');
+    const nextTimelineBtn = document.getElementById('teachingTimelineNextBtn');
     const sessions = Array.isArray(window.APP_CONFIG?.teachingPlan?.sessions)
         ? window.APP_CONFIG.teachingPlan.sessions
         : [];
@@ -631,13 +633,45 @@ function initTeachingTimeline() {
     let pointerId = null;
     let startX = 0;
     let startScrollLeft = 0;
+    let lastPointerTime = 0;
+    let scrollVelocity = 0;
     let dragDistance = 0;
+    let dragTargetScrollLeft = 0;
+    let lastDragTargetScrollLeft = 0;
     let snapTimer = 0;
+    let motionFrame = 0;
+    let motionMode = 'idle';
+    let suppressSnapUntil = 0;
     let ignoreClickUntil = 0;
     let projectionFrame = 0;
+    let cardMotionFrame = 0;
+    let detailTransitionTimer = 0;
     let sessionMaterialAssistant = null;
 
     const getSessionByOrder = (sessionOrder) => sessionMap.get(String(sessionOrder || '').trim());
+    const getMaxScrollLeft = () => Math.max(0, scrollEl.scrollWidth - scrollEl.clientWidth);
+    const clampScrollLeft = (value) => Math.max(0, Math.min(getMaxScrollLeft(), Number(value) || 0));
+    const setTimelineScrollLeft = (value) => {
+        scrollEl.scrollLeft = clampScrollLeft(value);
+        scheduleProjectionSync();
+        scheduleCardMotionSync();
+    };
+    const getSessionCenterScrollLeft = (sessionOrder) => {
+        const button = buttonMap.get(String(sessionOrder || '').trim());
+        if (!button) return scrollEl.scrollLeft;
+        return clampScrollLeft(button.offsetLeft + (button.offsetWidth / 2) - (scrollEl.clientWidth / 2));
+    };
+    const getSelectedIndex = () => sessions.findIndex((session) => String(session.order_index) === selectedOrder);
+    const stopTimelineMotion = () => {
+        window.clearTimeout(snapTimer);
+        snapTimer = 0;
+        if (motionFrame) {
+            window.cancelAnimationFrame(motionFrame);
+            motionFrame = 0;
+        }
+        motionMode = 'idle';
+        scrollEl.classList.remove('is-settling');
+    };
 
     const updateSessionButtonMaterialState = (session) => {
         if (!session) return;
@@ -682,6 +716,42 @@ function initTeachingTimeline() {
             projectionFrame = 0;
             syncProjection();
         });
+    };
+
+    const syncCardMotion = () => {
+        if (!sessionButtons.length) return;
+        const viewportCenter = scrollEl.scrollLeft + (scrollEl.clientWidth / 2);
+        const baseWidth = sessionButtons[0]?.offsetWidth || 180;
+        const influenceWidth = Math.max(150, baseWidth * 0.86);
+
+        sessionButtons.forEach((button) => {
+            const buttonCenter = button.offsetLeft + (button.offsetWidth / 2);
+            const distance = Math.abs(buttonCenter - viewportCenter);
+            const rawFocus = Math.max(0, 1 - (distance / influenceWidth));
+            const focus = rawFocus * rawFocus * (3 - (2 * rawFocus));
+            button.style.setProperty('--timeline-card-focus', focus.toFixed(3));
+            button.style.setProperty('--timeline-card-lift', `${(-2.4 * focus).toFixed(2)}px`);
+            button.style.setProperty('--timeline-card-scale', (1 + (0.022 * focus)).toFixed(4));
+        });
+    };
+
+    const scheduleCardMotionSync = () => {
+        if (cardMotionFrame) return;
+        cardMotionFrame = window.requestAnimationFrame(() => {
+            cardMotionFrame = 0;
+            syncCardMotion();
+        });
+    };
+
+    const playDetailTransition = () => {
+        if (!detailCard || prefersReducedMotion) return;
+        window.clearTimeout(detailTransitionTimer);
+        detailCard.classList.remove('is-switching');
+        detailCard.offsetWidth;
+        detailCard.classList.add('is-switching');
+        detailTransitionTimer = window.setTimeout(() => {
+            detailCard.classList.remove('is-switching');
+        }, 280);
     };
 
     const renderDetailMeta = (session) => {
@@ -782,15 +852,61 @@ function initTeachingTimeline() {
         }
     };
 
+    const animateToScrollLeft = (targetScrollLeft, options = {}) => {
+        const target = clampScrollLeft(targetScrollLeft);
+        if (prefersReducedMotion || options.behavior === 'auto') {
+            stopTimelineMotion();
+            suppressSnapUntil = performance.now() + 220;
+            setTimelineScrollLeft(target);
+            options.onComplete?.();
+            return;
+        }
+
+        stopTimelineMotion();
+        motionMode = 'snap';
+        scrollEl.classList.add('is-settling');
+        let velocity = 0;
+        let lastTimestamp = 0;
+        const stiffness = Number(options.stiffness || 0.28);
+        const damping = Number(options.damping || 0.64);
+
+        const step = (timestamp) => {
+            if (!lastTimestamp) lastTimestamp = timestamp;
+            const dtScale = Math.min(2.1, Math.max(0.55, (timestamp - lastTimestamp) / 16.67));
+            lastTimestamp = timestamp;
+
+            const current = scrollEl.scrollLeft;
+            const distance = target - current;
+            velocity = (velocity + distance * stiffness * dtScale) * Math.pow(damping, dtScale);
+            setTimelineScrollLeft(current + velocity * dtScale);
+
+            if (Math.abs(distance) < 0.45 && Math.abs(velocity) < 0.16) {
+                setTimelineScrollLeft(target);
+                motionFrame = 0;
+                motionMode = 'idle';
+                scrollEl.classList.remove('is-settling');
+                options.onComplete?.();
+                return;
+            }
+            motionFrame = window.requestAnimationFrame(step);
+        };
+
+        motionFrame = window.requestAnimationFrame(step);
+    };
+
     const focusSession = (sessionOrder, behavior = 'smooth') => {
-        const sessionNode = scrollEl.querySelector(`[data-session-order="${sessionOrder}"]`);
-        if (!sessionNode) return;
-        sessionNode.scrollIntoView({
+        animateToScrollLeft(getSessionCenterScrollLeft(sessionOrder), {
             behavior: resolveBehavior(behavior),
-            inline: 'center',
-            block: 'nearest',
+            stiffness: behavior === 'gear' ? 0.34 : 0.24,
+            damping: behavior === 'gear' ? 0.58 : 0.66,
+            onComplete: scheduleProjectionSync,
         });
-        scheduleProjectionSync();
+    };
+
+    const updateTimelineControls = () => {
+        const currentIndex = getSelectedIndex();
+        if (prevTimelineBtn) prevTimelineBtn.disabled = currentIndex <= 0;
+        if (nextTimelineBtn) nextTimelineBtn.disabled = currentIndex < 0 || currentIndex >= sessions.length - 1;
     };
 
     const syncSelectedState = (activeOrder) => {
@@ -800,6 +916,7 @@ function initTeachingTimeline() {
             button.classList.toggle('is-selected', isSelected);
             button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
         });
+        updateTimelineControls();
     };
 
     const setActiveSession = (sessionOrder, options = {}) => {
@@ -815,6 +932,9 @@ function initTeachingTimeline() {
         if (detailStatus) {
             detailStatus.textContent = session.session_status_label || '';
             detailStatus.className = `teaching-timeline-detail-status is-${session.progress_state || 'upcoming'}`;
+        }
+        if (previousOrder && previousOrder !== key) {
+            playDetailTransition();
         }
         renderDetailSummary(session);
         renderDetailMeta(session);
@@ -887,23 +1007,98 @@ function initTeachingTimeline() {
         return nearestOrder;
     };
 
-    const scheduleSnapToNearest = () => {
+    const snapToNearest = (behavior = 'gear') => {
+        if (!sessionButtons.length) return;
+        setActiveSession(getNearestSessionOrder(), {
+            center: true,
+            behavior,
+            forceCenter: true,
+        });
+    };
+
+    const scheduleSnapToNearest = (delay = 140) => {
         window.clearTimeout(snapTimer);
         snapTimer = window.setTimeout(() => {
-            if (!sessionButtons.length) return;
-            setActiveSession(getNearestSessionOrder(), {
-                center: true,
-                behavior: 'smooth',
-            });
-        }, 110);
+            snapToNearest();
+        }, delay);
+    };
+
+    const startInertia = (initialVelocity) => {
+        stopTimelineMotion();
+        const maxScrollLeft = getMaxScrollLeft();
+        const hasRoomToMove = maxScrollLeft > 0;
+        if (prefersReducedMotion || !hasRoomToMove || Math.abs(initialVelocity) < 0.08) {
+            snapToNearest();
+            return;
+        }
+
+        motionMode = 'inertia';
+        scrollEl.classList.add('is-settling');
+        let velocity = Math.max(-4.2, Math.min(4.2, initialVelocity));
+        let lastTimestamp = 0;
+
+        const step = (timestamp) => {
+            if (!lastTimestamp) lastTimestamp = timestamp;
+            const dtScale = Math.min(2.2, Math.max(0.45, (timestamp - lastTimestamp) / 16.67));
+            lastTimestamp = timestamp;
+
+            const current = scrollEl.scrollLeft;
+            const next = clampScrollLeft(current + velocity * dtScale);
+            const hitEdge = next <= 0 || next >= maxScrollLeft;
+            setTimelineScrollLeft(next);
+
+            velocity *= Math.pow(hitEdge ? 0.68 : 0.885, dtScale);
+            if (Math.abs(velocity) < 0.16 || Math.abs(next - current) < 0.08) {
+                motionFrame = 0;
+                motionMode = 'idle';
+                scrollEl.classList.remove('is-settling');
+                snapToNearest();
+                return;
+            }
+
+            motionFrame = window.requestAnimationFrame(step);
+        };
+
+        motionFrame = window.requestAnimationFrame(step);
+    };
+
+    const startDragFollow = () => {
+        if (motionMode !== 'drag' || motionFrame) return;
+
+        const step = () => {
+            if (motionMode !== 'drag') {
+                motionFrame = 0;
+                return;
+            }
+
+            const current = scrollEl.scrollLeft;
+            const distance = dragTargetScrollLeft - current;
+            if (Math.abs(distance) < 0.35) {
+                setTimelineScrollLeft(dragTargetScrollLeft);
+                motionFrame = 0;
+                return;
+            } else {
+                setTimelineScrollLeft(current + (distance * 0.72));
+            }
+
+            motionFrame = window.requestAnimationFrame(step);
+        };
+
+        motionFrame = window.requestAnimationFrame(step);
     };
 
     scrollEl.addEventListener('pointerdown', (event) => {
         if (!event.isPrimary || event.button !== 0) return;
+        stopTimelineMotion();
         pointerId = event.pointerId;
         startX = event.clientX;
         startScrollLeft = scrollEl.scrollLeft;
+        dragTargetScrollLeft = startScrollLeft;
+        lastDragTargetScrollLeft = startScrollLeft;
+        lastPointerTime = event.timeStamp || performance.now();
+        scrollVelocity = 0;
         dragDistance = 0;
+        motionMode = 'drag';
         scrollEl.classList.add('is-dragging');
         scrollEl.setPointerCapture(event.pointerId);
     });
@@ -912,8 +1107,15 @@ function initTeachingTimeline() {
         if (pointerId !== event.pointerId) return;
         event.preventDefault();
         const deltaX = event.clientX - startX;
+        const timestamp = event.timeStamp || performance.now();
+        const elapsed = Math.max(8, timestamp - lastPointerTime);
+        const nextScrollLeft = clampScrollLeft(startScrollLeft - deltaX);
         dragDistance = Math.max(dragDistance, Math.abs(deltaX));
-        scrollEl.scrollLeft = startScrollLeft - deltaX;
+        scrollVelocity = (scrollVelocity * 0.62) + (((nextScrollLeft - lastDragTargetScrollLeft) / elapsed) * 16.67 * 0.38);
+        lastDragTargetScrollLeft = nextScrollLeft;
+        dragTargetScrollLeft = nextScrollLeft;
+        lastPointerTime = timestamp;
+        startDragFollow();
     });
 
     const releaseDrag = (event) => {
@@ -927,8 +1129,11 @@ function initTeachingTimeline() {
         }
         if (didDrag) {
             ignoreClickUntil = Date.now() + 180;
-            scheduleSnapToNearest();
+            startInertia(scrollVelocity + ((dragTargetScrollLeft - scrollEl.scrollLeft) * 0.18));
+        } else {
+            stopTimelineMotion();
         }
+        scrollVelocity = 0;
     };
 
     scrollEl.addEventListener('pointerup', releaseDrag);
@@ -944,7 +1149,8 @@ function initTeachingTimeline() {
             if (Date.now() < ignoreClickUntil) return;
             setActiveSession(button.getAttribute('data-session-order'), {
                 center: true,
-                behavior: 'smooth',
+                behavior: 'gear',
+                forceCenter: true,
             });
         });
         button.addEventListener('keydown', (event) => {
@@ -959,19 +1165,47 @@ function initTeachingTimeline() {
                 : Math.max(currentIndex - 1, 0);
             const nextOrder = sessions[nextIndex]?.order_index;
             if (nextOrder != null) {
-                setActiveSession(nextOrder, { center: true, behavior: 'smooth' });
+                setActiveSession(nextOrder, { center: true, behavior: 'gear' });
                 sessionButtons[nextIndex]?.focus();
             }
         });
     });
 
+    const shiftActiveSession = (direction) => {
+        const currentIndex = getSelectedIndex();
+        if (currentIndex === -1) return;
+        const nextIndex = Math.max(0, Math.min(sessions.length - 1, currentIndex + direction));
+        if (nextIndex === currentIndex) return;
+        const nextOrder = sessions[nextIndex]?.order_index;
+        if (nextOrder == null) return;
+        setActiveSession(nextOrder, {
+            center: true,
+            behavior: 'gear',
+            forceCenter: true,
+        });
+        sessionButtons[nextIndex]?.focus({ preventScroll: true });
+    };
+
+    prevTimelineBtn?.addEventListener('click', () => shiftActiveSession(-1));
+    nextTimelineBtn?.addEventListener('click', () => shiftActiveSession(1));
+
     scrollEl.addEventListener('scroll', () => {
         scheduleProjectionSync();
-        if (pointerId !== null) return;
-        scheduleSnapToNearest();
+        scheduleCardMotionSync();
+        if (pointerId !== null || motionMode !== 'idle' || performance.now() < suppressSnapUntil) return;
+        scheduleSnapToNearest(180);
     }, { passive: true });
 
-    window.addEventListener('resize', scheduleProjectionSync);
+    window.addEventListener('resize', () => {
+        scheduleProjectionSync();
+        scheduleCardMotionSync();
+        if (motionMode === 'idle') {
+            window.clearTimeout(snapTimer);
+            snapTimer = window.setTimeout(() => {
+                focusSession(selectedOrder, 'auto');
+            }, 120);
+        }
+    });
 
     sessionButtons.forEach((button) => {
         const session = getSessionByOrder(button.getAttribute('data-session-order'));

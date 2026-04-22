@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/static/css/modals.css">
 <link rel="stylesheet" href="/static/css/toast.css">
 <link rel="stylesheet" href="/static/css/ai_chat.css">
-<link rel="stylesheet" href="/static/css/classroom.css">
+<link rel="stylesheet" href="/static/css/classroom.css?v=timeline-smooth-20260422">
 <link rel="stylesheet" href="/static/css/markdown.css">
 <link rel="stylesheet" href="/static/css/materials.css">
 <link rel="stylesheet" href="/static/css/learning_material_selector.css">
@@ -279,6 +279,9 @@
                         <div class="teaching-timeline-stage" id="teachingTimelineStage">
                             <div class="teaching-timeline-projector" aria-hidden="true"></div>
 
+                            <button type="button" class="teaching-timeline-nav-btn is-prev" id="teachingTimelinePrevBtn" aria-label="切换到上一节课">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                            </button>
                             <div class="teaching-timeline-scroll" id="teachingTimelineScroll" aria-label="课程时间轴">
                                 <div class="teaching-timeline-track">
                                     {% for session in teaching_plan.sessions %}
@@ -316,6 +319,9 @@
                                     {% endfor %}
                                 </div>
                             </div>
+                            <button type="button" class="teaching-timeline-nav-btn is-next" id="teachingTimelineNextBtn" aria-label="切换到下一节课">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                            </button>
 
                             <article class="teaching-timeline-detail-card" id="teachingTimelineDetail" aria-live="polite">
                                 <div class="teaching-timeline-detail-top">
@@ -488,6 +494,9 @@
                         {% if assignment.submission_status == 'unsubmitted' %}
                             {% set status_label = '未提交' %}
                             {% set status_class = 'badge-danger' %}
+                        {% elif assignment.submission_status == 'returned' %}
+                            {% set status_label = '待重交' %}
+                            {% set status_class = 'badge-warning' %}
                         {% elif assignment.submission_status == 'submitted' %}
                             {% set status_label = '已提交' %}
                             {% set status_class = 'badge-primary' %}
@@ -1084,7 +1093,7 @@
     import * as fileApp from '/static/js/app_files.js';
     import * as materialsApp from '/static/js/classroom_materials.js';
     import * as examApp from '/static/js/app_exams.js';
-    import { initClassroomPage } from '/static/js/classroom_page.js';
+    import { initClassroomPage } from '/static/js/classroom_page.js?v=timeline-smooth-20260422';
 
     window.UI = ui;
     window.fileApp = fileApp;

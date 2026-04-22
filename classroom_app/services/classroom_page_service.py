@@ -121,7 +121,12 @@ def _build_assignment_stats(*, role: str, assignments: list[dict[str, Any]]) -> 
     draft_count = sum(1 for item in assignments if item.get("status") == "new") if role == "teacher" else 0
     active_count = sum(1 for item in assignments if item.get("status") == "published") if role == "teacher" else 0
     submitted_count = (
-        sum(1 for item in assignments if item.get("submission_status") and item.get("submission_status") != "unsubmitted")
+        sum(
+            1
+            for item in assignments
+            if item.get("submission_status")
+            and item.get("submission_status") not in {"unsubmitted", "returned"}
+        )
         if role != "teacher"
         else 0
     )

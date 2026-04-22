@@ -33,6 +33,7 @@ from ..services.assignment_lifecycle_service import (
     close_overdue_assignments,
     enrich_assignment_runtime_view,
     refresh_assignment_runtime_status,
+    submission_resubmission_accepts,
 )
 from ..services.academic_service import (
     build_semester_calendar_payload,
@@ -737,14 +738,23 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
             if user['role'] == 'student':
                 if assignment['status'] == 'new': continue
                 submission = conn.execute(
-                    "SELECT status, score FROM submissions WHERE assignment_id = ? AND student_pk_id = ?",
+                    """
+                    SELECT status, score, resubmission_allowed, resubmission_due_at
+                    FROM submissions
+                    WHERE assignment_id = ? AND student_pk_id = ?
+                    """,
                     (assignment['id'], user['id'])
                 ).fetchone()
                 if submission:
-                    assignment['submission_status'] = submission['status']
+                    submission_dict = dict(submission)
+                    can_resubmit = submission_resubmission_accepts(submission_dict)
+                    assignment['can_resubmit_submission'] = can_resubmit
+                    assignment['resubmission_due_at'] = submission_dict.get('resubmission_due_at')
+                    assignment['submission_status'] = 'returned' if can_resubmit else submission_dict['status']
                     assignment['submission_score'] = submission['score']
                 else:
                     assignment['submission_status'] = 'unsubmitted'
+                    assignment['can_resubmit_submission'] = False
             assignments.append(assignment)
 
         session_rows = conn.execute(
@@ -852,6 +862,31 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
             return RedirectResponse(url=f"/exam/take/{assignment_id}")
 
         if user['role'] == 'teacher':
+            access_row = conn.execute(
+                """
+                SELECT 1
+                FROM assignments a
+                JOIN courses c ON c.id = a.course_id
+                LEFT JOIN class_offerings o ON o.id = a.class_offering_id
+                WHERE a.id = ?
+                  AND (c.created_by_teacher_id = ? OR o.teacher_id = ?)
+                LIMIT 1
+                """,
+                (assignment_id, user["id"], user["id"]),
+            ).fetchone()
+            if not access_row:
+                raise HTTPException(403, "无权查看该作业")
+            exam_questions = None
+            if assignment.get("exam_paper_id"):
+                paper_row = conn.execute(
+                    "SELECT questions_json FROM exam_papers WHERE id = ?",
+                    (assignment["exam_paper_id"],),
+                ).fetchone()
+                if paper_row:
+                    try:
+                        exam_questions = json.loads(paper_row["questions_json"] or "{}")
+                    except json.JSONDecodeError:
+                        exam_questions = {"pages": []}
             if assignment.get("class_offering_id"):
                 try:
                     record_behavior_event(
@@ -868,7 +903,12 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
                 except Exception as exc:
                     print(f"[BEHAVIOR] 记录教师作业页访问失败: {exc}")
             return templates.TemplateResponse(request, "assignment_detail_teacher.html", {
-                "request": request, "user_info": user, "assignment": assignment
+                "request": request,
+                "user_info": user,
+                "assignment": assignment,
+                "exam_questions": exam_questions,
+                "max_upload_mb": MAX_UPLOAD_SIZE_MB,
+                "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
             })
 
         if assignment['status'] == 'new':
@@ -888,6 +928,8 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
             (assignment_id, user['id'])
         ).fetchone()
         submission = dict(submission_row) if submission_row else None
+        if submission and int(submission.get("is_absence_score") or 0):
+            submission = None
         submission_files = []
         if submission:
             files_cursor = conn.execute(
@@ -896,10 +938,16 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
             )
             submission_files = _serialize_submission_file_rows(files_cursor)
 
+    can_resubmit_submission = bool(
+        submission
+        and submission.get("status") == "submitted"
+        and submission_resubmission_accepts(submission)
+    )
     can_withdraw_submission = bool(
         submission
         and submission.get("status") == "submitted"
         and assignment_accepts_submissions(assignment)
+        and not int(submission.get("resubmission_allowed") or 0)
     )
 
     if assignment.get("class_offering_id"):
@@ -926,6 +974,8 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
         "request": request, "user_info": user, "assignment": assignment,
         "submission": submission, "submission_files": submission_files,
         "can_withdraw_submission": can_withdraw_submission,
+        "can_resubmit_submission": can_resubmit_submission,
+        "resubmission_due_at": submission.get("resubmission_due_at") if submission else None,
         "max_upload_mb": MAX_UPLOAD_SIZE_MB,
         "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
     })
@@ -1789,6 +1839,8 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
                 (assignment_id, user['id'])
             ).fetchone()
             submission = dict(submission_row) if submission_row else None
+            if submission and int(submission.get("is_absence_score") or 0):
+                submission = None
             if submission:
                 files_cursor = conn.execute(
                     "SELECT * FROM submission_files WHERE submission_id = ? ORDER BY COALESCE(relative_path, original_filename), id",
@@ -1796,10 +1848,16 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
                 )
                 submission_files = _serialize_submission_file_rows(files_cursor)
 
+    can_resubmit_submission = bool(
+        submission
+        and submission.get("status") == "submitted"
+        and submission_resubmission_accepts(submission)
+    )
     can_withdraw_submission = bool(
         submission
         and submission.get("status") == "submitted"
         and assignment_accepts_submissions(assignment)
+        and not int(submission.get("resubmission_allowed") or 0)
     )
 
     if assignment.get("class_offering_id"):
@@ -1830,6 +1888,8 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
         "submission": submission,
         "submission_files": submission_files,
         "can_withdraw_submission": can_withdraw_submission,
+        "can_resubmit_submission": can_resubmit_submission,
+        "resubmission_due_at": submission.get("resubmission_due_at") if submission else None,
         "max_upload_mb": MAX_UPLOAD_SIZE_MB,
         "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
     })

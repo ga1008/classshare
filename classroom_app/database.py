@@ -778,6 +778,24 @@ def init_database():
                 conn.execute("ALTER TABLE submissions ADD COLUMN answers_json TEXT")
             except sqlite3.OperationalError:
                 pass  # 列已存在
+            submission_extension_columns = (
+                ("submitted_by_role", "TEXT NOT NULL DEFAULT 'student'"),
+                ("submitted_by_teacher_id", "INTEGER"),
+                ("submission_channel", "TEXT NOT NULL DEFAULT 'online'"),
+                ("resubmission_allowed", "INTEGER NOT NULL DEFAULT 0"),
+                ("resubmission_due_at", "TEXT"),
+                ("returned_at", "TEXT"),
+                ("returned_by_teacher_id", "INTEGER"),
+                ("returned_reason", "TEXT"),
+                ("is_absence_score", "INTEGER NOT NULL DEFAULT 0"),
+                ("absence_scored_at", "TEXT"),
+                ("absence_scored_by_teacher_id", "INTEGER"),
+            )
+            for column_name, column_def in submission_extension_columns:
+                try:
+                    conn.execute(f"ALTER TABLE submissions ADD COLUMN {column_name} {column_def}")
+                except sqlite3.OperationalError:
+                    pass  # 列已存在
 
             # 兼容已有数据库：为 assignments 添加 exam_paper_id 列
             assignments_table_exists = (
@@ -990,6 +1008,44 @@ def init_database():
                              TEXT,
                              answers_json
                              TEXT,
+                             submitted_by_role
+                             TEXT
+                             NOT
+                             NULL
+                             DEFAULT
+                             'student',
+                             submitted_by_teacher_id
+                             INTEGER,
+                             submission_channel
+                             TEXT
+                             NOT
+                             NULL
+                             DEFAULT
+                             'online',
+                             resubmission_allowed
+                             INTEGER
+                             NOT
+                             NULL
+                             DEFAULT
+                             0,
+                             resubmission_due_at
+                             TEXT,
+                             returned_at
+                             TEXT,
+                             returned_by_teacher_id
+                             INTEGER,
+                             returned_reason
+                             TEXT,
+                             is_absence_score
+                             INTEGER
+                             NOT
+                             NULL
+                             DEFAULT
+                             0,
+                             absence_scored_at
+                             TEXT,
+                             absence_scored_by_teacher_id
+                             INTEGER,
                              submitted_at
                              TEXT
                              NOT
@@ -2307,6 +2363,14 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_assignments_runtime_closure "
                 "ON assignments (status, auto_close, due_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_submissions_assignment_status "
+                "ON submissions (assignment_id, status)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_submissions_resubmission_window "
+                "ON submissions (assignment_id, resubmission_allowed, resubmission_due_at)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_materials_root_path ON course_materials (root_id, material_path)"

@@ -67,6 +67,18 @@ def _parse_positive_minutes(raw: Any) -> int | None:
     return value
 
 
+def _parse_resubmission_minutes(raw: Any, default_minutes: int) -> int:
+    if raw is None or str(raw).strip() == "":
+        return default_minutes
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError) as exc:
+        raise ValueError("延后分钟数必须是整数") from exc
+    if value <= 0:
+        raise ValueError("延后分钟数必须大于 0")
+    return value
+
+
 def _normalize_mode(raw: Any, default: str = ASSIGNMENT_MODE_PERMANENT) -> str:
     mode = str(raw or "").strip().lower()
     if mode in ASSIGNMENT_MODES:
@@ -174,6 +186,40 @@ def build_assignment_schedule_fields(
         "auto_close": 1 if auto_close else 0,
         "closed_at": _dt_to_iso(closed_at),
     }
+
+
+def build_resubmission_due_at(
+    payload: dict[str, Any],
+    *,
+    default_minutes: int = 120,
+    now_dt: datetime | None = None,
+) -> str:
+    now_dt = now_dt or _utc_like_now()
+    explicit_due_at = (
+        payload.get("resubmission_due_at")
+        or payload.get("reopen_until")
+        or payload.get("due_at")
+    )
+    due_dt = _parse_iso_like_datetime(explicit_due_at)
+    if due_dt is None:
+        due_dt = now_dt + timedelta(
+            minutes=_parse_resubmission_minutes(payload.get("extension_minutes"), default_minutes)
+        )
+    if due_dt <= now_dt:
+        raise ValueError("重交截止时间必须晚于当前时间")
+    return _dt_to_iso(due_dt)
+
+
+def submission_resubmission_accepts(submission_row, now_dt: datetime | None = None) -> bool:
+    submission = dict(submission_row or {})
+    if not submission:
+        return False
+    if not _is_truthy(submission.get("resubmission_allowed"), default=False):
+        return False
+    due_dt = _parse_iso_like_datetime(submission.get("resubmission_due_at"))
+    if due_dt is None:
+        return False
+    return due_dt > (now_dt or _utc_like_now())
 
 
 def is_assignment_overdue(assignment: dict[str, Any], now_dt: datetime | None = None) -> bool:

@@ -84,11 +84,32 @@ async def ai_generate_assignment(request: Request, user: dict = Depends(get_curr
 async def ai_regrade_submission(submission_id: int, user: dict = Depends(get_current_teacher)):
     """向 AI 助手服务提交一个异步批改任务 (支持文件 + JSON 答案)"""
     with get_db_connection() as conn:
-        submission = conn.execute("SELECT * FROM submissions WHERE id = ?", (submission_id,)).fetchone()
+        submission = conn.execute(
+            """
+            SELECT s.*,
+                   a.requirements_md,
+                   a.rubric_md,
+                   a.allowed_file_types_json,
+                   c.created_by_teacher_id,
+                   o.teacher_id AS offering_teacher_id
+            FROM submissions s
+            JOIN assignments a ON a.id = s.assignment_id
+            JOIN courses c ON c.id = a.course_id
+            LEFT JOIN class_offerings o ON o.id = a.class_offering_id
+            WHERE s.id = ?
+            LIMIT 1
+            """,
+            (submission_id,),
+        ).fetchone()
         if not submission: raise HTTPException(status_code=404, detail="Submission not found")
+        teacher_id = int(user["id"])
+        owner_id = int(submission["created_by_teacher_id"] or 0)
+        offering_teacher_id = int(submission["offering_teacher_id"] or 0)
+        if teacher_id not in {owner_id, offering_teacher_id}:
+            raise HTTPException(status_code=403, detail="Permission denied")
+        if int(submission["resubmission_allowed"] or 0):
+            raise HTTPException(status_code=400, detail="该提交已撤回并等待重交，不能批改旧版本")
         if submission['status'] == 'grading': return {"status": "already_grading"}
-        assignment = conn.execute("SELECT requirements_md, rubric_md, allowed_file_types_json FROM assignments WHERE id = ?",
-                                  (submission['assignment_id'],)).fetchone()
         files_cursor = conn.execute(
             """
             SELECT stored_path, original_filename, relative_path, mime_type, file_size, file_ext, file_hash
@@ -108,9 +129,9 @@ async def ai_regrade_submission(submission_id: int, user: dict = Depends(get_cur
 
     job_data = {
         "submission_id": submission_id,
-        "rubric_md": assignment['rubric_md'],
-        "requirements_md": assignment['requirements_md'] or '',
-        "allowed_file_types_json": assignment["allowed_file_types_json"],
+        "rubric_md": submission['rubric_md'],
+        "requirements_md": submission['requirements_md'] or '',
+        "allowed_file_types_json": submission["allowed_file_types_json"],
         "files": [
             {
                 "stored_path": str(Path(item["stored_path"]).resolve()),
@@ -130,7 +151,10 @@ async def ai_regrade_submission(submission_id: int, user: dict = Depends(get_cur
         response = await ai_client.post("/api/ai/submit-grading-job", json=job_data)
         response.raise_for_status()
         with get_db_connection() as conn:
-            conn.execute("UPDATE submissions SET status = 'grading' WHERE id = ?", (submission_id,))
+            conn.execute(
+                "UPDATE submissions SET status = 'grading' WHERE id = ? AND COALESCE(resubmission_allowed, 0) = 0",
+                (submission_id,),
+            )
             conn.commit()
         return response.json()
     except httpx.ConnectError:
@@ -146,6 +170,13 @@ async def handle_ai_grading_callback(request: Request):
         data = await request.json()
         submission_id = data['submission_id']
         with get_db_connection() as conn:
+            submission = conn.execute(
+                "SELECT resubmission_allowed FROM submissions WHERE id = ?",
+                (submission_id,),
+            ).fetchone()
+            if submission and int(submission["resubmission_allowed"] or 0):
+                conn.commit()
+                return {"status": "ignored_returned_submission"}
             conn.execute(
                 "UPDATE submissions SET status = ?, score = ?, feedback_md = ? WHERE id = ?",
                 (data['status'], data.get('score'), data.get('feedback_md'), submission_id)

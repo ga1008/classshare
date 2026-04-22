@@ -116,6 +116,10 @@
         font-size: 0.85rem; outline: none; transition: border-color var(--transition-fast);
     }
     .filter-bar .filter-input:focus { border-color: var(--primary-color); }
+    .submission-header-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
     .filter-btn {
         padding: 5px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm);
         background: var(--surface-color); font-size: 0.8rem; cursor: pointer;
@@ -123,6 +127,40 @@
     }
     .filter-btn:hover, .filter-btn.active {
         background: var(--primary-color); color: white; border-color: var(--primary-color);
+    }
+    .submissions-table {
+        min-width: 900px;
+    }
+    .sort-header {
+        width: 100%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 4px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-weight: 700;
+        text-align: left;
+        cursor: pointer;
+    }
+    .sort-header:hover { color: var(--primary-color); }
+    .sort-indicator {
+        width: 1em;
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        line-height: 1;
+    }
+    .sort-header.is-active .sort-indicator { color: var(--primary-color); }
+    .sort-header.is-asc .sort-indicator::before { content: "▲"; }
+    .sort-header.is-desc .sort-indicator::before { content: "▼"; }
+    .absence-score-note {
+        color: #dc2626;
+        font-size: 0.68rem;
+        font-weight: 700;
+        line-height: 1.2;
     }
 
     /* Clickable table row */
@@ -149,7 +187,106 @@
     }
 
     /* Action buttons in table */
-    .action-btns { display: flex; gap: 4px; flex-wrap: nowrap; }
+    .action-btns { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+    .submission-checkbox { width: 16px; height: 16px; cursor: pointer; }
+    .selection-toolbar {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        margin-left: auto;
+        flex-wrap: wrap;
+    }
+    .selection-count {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        min-width: 4.5em;
+    }
+    .status-subtext {
+        display: block;
+        margin-top: 4px;
+        font-size: 0.72rem;
+        color: var(--text-muted);
+    }
+    .offline-modal-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 0.85fr);
+        gap: var(--spacing-lg);
+    }
+    .offline-answer-area,
+    .offline-upload-panel {
+        min-width: 0;
+    }
+    .offline-question-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+        max-height: 56vh;
+        overflow-y: auto;
+        padding-right: 4px;
+    }
+    .offline-question {
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-md);
+        background: var(--bg-color);
+    }
+    .offline-question-label {
+        display: flex;
+        gap: var(--spacing-sm);
+        align-items: flex-start;
+        margin-bottom: var(--spacing-sm);
+        font-weight: 600;
+        line-height: 1.5;
+    }
+    .offline-option-list {
+        display: grid;
+        gap: 0.45rem;
+    }
+    .offline-option-list label {
+        display: flex;
+        gap: 0.5rem;
+        align-items: flex-start;
+        padding: 0.45rem 0.6rem;
+        border-radius: var(--radius-sm);
+        background: var(--surface-color);
+        border: 1px solid var(--border-color);
+    }
+    .upload-dropzone {
+        border: 2px dashed var(--border-color);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-lg);
+        text-align: center;
+        cursor: pointer;
+        background: var(--bg-color);
+        transition: all 0.2s;
+    }
+    .upload-dropzone:hover,
+    .upload-dropzone.dragover {
+        border-color: var(--primary-color);
+        background: var(--primary-light);
+    }
+    .file-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-md);
+    }
+    .file-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--surface-color);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-sm);
+        padding: 4px 8px;
+        font-size: 0.85rem;
+    }
+    @media (max-width: 900px) {
+        .offline-modal-grid { grid-template-columns: 1fr; }
+        .selection-toolbar { width: 100%; margin-left: 0; }
+        .submission-header-actions { width: 100%; justify-content: flex-start; }
+        .filter-bar .filter-input { flex-basis: 100%; }
+    }
 </style>
 {% endblock %}
 
@@ -322,11 +459,15 @@
     <div class="card">
         <div class="card-header flex justify-between items-center">
             <h2 class="card-title text-base m-0">学生提交</h2>
-            <div class="flex items-center gap-2">
+            <div class="submission-header-actions flex items-center gap-2">
                 <span class="refresh-indicator" id="refresh-indicator">
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
                     自动刷新
                 </span>
+                <button class="btn btn-outline btn-sm text-danger" type="button" onclick="zeroUnsubmittedScores()" id="zero-unsubmitted-btn" disabled>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"></path><path d="M7 15h10"></path><path d="M8 11h8"></path><path d="M12 5v6"></path></svg>
+                    未提交记 0
+                </button>
                 <button class="btn btn-outline btn-sm text-primary" onclick="aiGradeAll()" id="ai-grade-all-btn">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
                     AI 批量批改
@@ -339,21 +480,28 @@
             <button class="filter-btn" data-filter="submitted" onclick="setFilter('submitted', this)">待批改</button>
             <button class="filter-btn" data-filter="graded" onclick="setFilter('graded', this)">已批改</button>
             <button class="filter-btn" data-filter="unsubmitted" onclick="setFilter('unsubmitted', this)">未提交</button>
+            <button class="filter-btn" data-filter="fail" onclick="setFilter('fail', this)">不及格</button>
+            <div class="selection-toolbar">
+                <span class="selection-count" id="selection-count">已选 0</span>
+                <button class="btn btn-outline btn-sm text-warning" type="button" onclick="openWithdrawModalForSelected()" id="withdraw-selected-btn" disabled>撤回选中</button>
+                <button class="btn btn-outline btn-sm text-warning" type="button" onclick="openWithdrawModalForAll()">全部撤回</button>
+            </div>
         </div>
         <div class="table-responsive">
-            <table class="table table-hover table-clickable">
+            <table class="table table-hover table-clickable submissions-table">
                 <thead>
                     <tr>
-                        <th>学号</th>
-                        <th>学生姓名</th>
-                        <th>状态</th>
-                        <th>得分</th>
-                        <th>提交时间</th>
+                        <th style="width:36px;"><input type="checkbox" class="submission-checkbox" id="select-all-submissions" onchange="toggleSelectAll(this)"></th>
+                        <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="student_id_number" onclick="setSubmissionSort('student_id_number')">学号<span class="sort-indicator" aria-hidden="true"></span></button></th>
+                        <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="student_name" onclick="setSubmissionSort('student_name')">学生姓名<span class="sort-indicator" aria-hidden="true"></span></button></th>
+                        <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="status" onclick="setSubmissionSort('status')">状态<span class="sort-indicator" aria-hidden="true"></span></button></th>
+                        <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="score" onclick="setSubmissionSort('score')">得分<span class="sort-indicator" aria-hidden="true"></span></button></th>
+                        <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="submitted_at" onclick="setSubmissionSort('submitted_at')">提交时间<span class="sort-indicator" aria-hidden="true"></span></button></th>
                         <th>操作</th>
                     </tr>
                 </thead>
                 <tbody id="submissions-list">
-                    <tr><td colspan="6" class="text-center p-xl"><div class="spinner"></div></td></tr>
+                    <tr><td colspan="7" class="text-center p-xl"><div class="spinner"></div></td></tr>
                 </tbody>
             </table>
         </div>
@@ -476,6 +624,87 @@
     </div>
 </div>
 
+<!-- 撤回提交模态框 -->
+<div class="modal-backdrop" id="withdraw-submissions-modal">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">撤回提交</h3>
+                <button class="modal-close" onclick="closeWithdrawModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="withdraw-modal-summary" class="text-sm text-muted mb-md">将撤回选中的提交。</p>
+                <div class="form-group">
+                    <label class="form-label" for="withdraw-resubmission-due-at">重交截止时间</label>
+                    <input type="datetime-local" id="withdraw-resubmission-due-at" class="form-control">
+                    <p class="text-xs text-muted mt-1">留空时按下方延后时间自动计算。</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="withdraw-extension-minutes">延后时间（分钟）</label>
+                    <input type="number" id="withdraw-extension-minutes" class="form-control" min="1" step="1" value="120">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="withdraw-reason">备注（可选）</label>
+                    <textarea id="withdraw-reason" class="form-control" rows="3" placeholder="例如：线下补交、网络异常、需要重新提交附件"></textarea>
+                </div>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button class="btn btn-outline" onclick="closeWithdrawModal()">取消</button>
+                    <button class="btn btn-warning" onclick="confirmWithdrawSubmissions()" id="confirm-withdraw-btn">确认撤回</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 教师线下代交模态框 -->
+<div class="modal-backdrop" id="offline-submit-modal">
+    <div class="modal-dialog" style="max-width: 980px;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">线下代交</h3>
+                <button class="modal-close" onclick="closeOfflineSubmitModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="flex items-center justify-between gap-2 flex-wrap mb-md">
+                    <div>
+                        <div class="text-xs text-muted">当前学生</div>
+                        <div class="font-semibold" id="offline-target-student">-</div>
+                    </div>
+                    <span class="badge badge-outline" id="offline-target-status">线下提交</span>
+                </div>
+                <div class="offline-modal-grid">
+                    <div class="offline-answer-area">
+                        <label class="form-label mb-2 block">答案</label>
+                        <div id="offline-answer-area" class="offline-question-list"></div>
+                    </div>
+                    <div class="offline-upload-panel">
+                        <label class="form-label mb-2 block">附件上传 <span class="text-muted font-normal">(可选)</span></label>
+                        <div class="flex items-center gap-2 mb-2 flex-wrap">
+                            <button type="button" class="btn btn-outline btn-sm" id="offline-pick-files-btn">选择文件</button>
+                            <button type="button" class="btn btn-outline btn-sm" id="offline-pick-folder-btn">选择文件夹</button>
+                            <span class="text-xs text-muted" id="offline-upload-summary">未选择文件</span>
+                        </div>
+                        <div class="upload-dropzone" id="offline-drop-zone">
+                            <p class="mb-1 text-primary font-medium">拖拽文件或文件夹到此处</p>
+                            <p class="text-xs text-muted">
+                                总大小不超过 {{ max_upload_mb }} MB，最多 {{ max_submission_file_count }} 个文件
+                                {% if assignment.allowed_file_types %}，允许类型: {{ assignment.allowed_file_types_label }}{% endif %}
+                            </p>
+                        </div>
+                        <input type="file" id="offline-file-input" class="hidden" multiple>
+                        <input type="file" id="offline-folder-input" class="hidden" webkitdirectory directory multiple>
+                        <div class="file-chips" id="offline-file-chips"></div>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button class="btn btn-outline" onclick="closeOfflineSubmitModal()">取消</button>
+                    <button class="btn btn-primary" onclick="confirmOfflineSubmit()" id="confirm-offline-submit-btn">提交</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% include "partials/markdown_assets.html" %}
 <script src="{{ asset_url('js/echarts.min.js') }}"></script>
 {% endblock %}
@@ -483,11 +712,14 @@
 {% block scripts %}
 <script type="module">
     import { showToast, openModal, closeModal, renderMarkdown, escapeHtml } from '{{ asset_url("js/ui.js") }}';
+    import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
 
     window.openEditModal = () => openModal('edit-modal');
     window.closeEditModal = () => closeModal('edit-modal');
     window.openDeleteModal = () => openModal('delete-modal');
     window.closeDeleteModal = () => closeModal('delete-modal');
+    window.closeWithdrawModal = () => closeModal('withdraw-submissions-modal');
+    window.closeOfflineSubmitModal = () => closeModal('offline-submit-modal');
 
     const currentAssignmentId = "{{ assignment.id }}";
     const currentClassOfferingId = {{ assignment.class_offering_id | tojson }};
@@ -497,9 +729,18 @@
     const currentDurationMinutes = {{ assignment.duration_minutes | tojson }};
     const currentStartsAt = {{ assignment.starts_at | tojson }};
     const currentAutoClose = {{ assignment.auto_close | default(1) | tojson }};
+    const OFFLINE_EXAM_QUESTIONS = {{ exam_questions | tojson if exam_questions else 'null' }};
+    const MAX_UPLOAD_MB = {{ max_upload_mb }};
+    const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
+    const MAX_FILE_COUNT = {{ max_submission_file_count }};
     let allEntries = [];
     let currentFilter = 'all';
+    let currentSort = { key: null, direction: 'asc' };
     let autoRefreshTimer = null;
+    let selectedStudentIds = new Set();
+    let withdrawScope = { scope: 'selected', studentPkIds: [] };
+    let offlineUploadManager = null;
+    let offlineTargetStudent = null;
 
     document.addEventListener('DOMContentLoaded', () => {
         renderMarkdown('assignment-requirements', {{ assignment.requirements_md | tojson }});
@@ -566,7 +807,7 @@
             const response = await fetch(`/api/assignments/${currentAssignmentId}/submissions`);
             const data = await response.json();
             if (data.status === 'success') {
-                allEntries = data.submissions;
+                allEntries = (data.submissions || []).map((entry, index) => ({ ...entry, __rowIndex: index }));
                 renderSubmissions();
                 updateStats(data.stats);
             }
@@ -574,7 +815,7 @@
             console.error('加载数据失败:', error);
             showToast('加载数据失败', 'error');
             document.getElementById('submissions-list').innerHTML =
-                '<tr><td colspan="6" class="text-center text-danger p-lg">加载失败</td></tr>';
+                '<tr><td colspan="7" class="text-center text-danger p-lg">加载失败</td></tr>';
         }
     }
 
@@ -600,7 +841,7 @@
         document.getElementById('stat-submitted').textContent = stats.total_submissions ?? 0;
         document.getElementById('stat-unsubmitted').textContent = stats.unsubmitted_count ?? 0;
         document.getElementById('stat-graded').textContent = stats.graded_count ?? 0;
-        document.getElementById('stat-pending').textContent = stats.submitted_count ?? 0;
+        document.getElementById('stat-pending').textContent = Math.max(0, (stats.submitted_count ?? 0) - (stats.returned_count ?? 0));
         document.getElementById('stat-avg').textContent = stats.average_score ?? '-';
         document.getElementById('stat-max').textContent = stats.max_score ?? '-';
         document.getElementById('stat-min').textContent = stats.min_score ?? '-';
@@ -609,17 +850,25 @@
 
         // Score distribution chart
         const dist = stats.score_distribution;
-        if (dist && (stats.graded_count > 0 || (dist.none || 0) > 0)) {
-            renderScoreChart(dist, stats.total_students);
-            document.getElementById('dist-section').style.display = '';
+        const distSection = document.getElementById('dist-section');
+        const hasDistributionData = dist && Object.values(dist).some(value => Number(value || 0) > 0);
+        if (hasDistributionData) {
+            distSection.style.display = '';
+            requestAnimationFrame(() => renderScoreChart(dist, stats.total_students));
         } else {
-            document.getElementById('dist-section').style.display = 'none';
+            distSection.style.display = 'none';
         }
     }
 
-    function renderScoreChart(dist, totalStudents) {
+    function renderScoreChart(dist, totalStudents, retryCount = 0) {
         const container = document.getElementById('dist-chart');
         if (!container || typeof echarts === 'undefined') return;
+        if (container.clientWidth <= 0) {
+            if (retryCount < 8) {
+                requestAnimationFrame(() => renderScoreChart(dist, totalStudents, retryCount + 1));
+            }
+            return;
+        }
 
         if (!distChartInstance) {
             distChartInstance = echarts.init(container);
@@ -702,6 +951,7 @@
         };
 
         distChartInstance.setOption(option, true);
+        requestAnimationFrame(() => distChartInstance?.resize());
 
         // Responsive resize
         if (!container._resizeBound) {
@@ -712,14 +962,69 @@
     }
 
     // ==================== Render Submissions Table ====================
-    function renderSubmissions() {
-        const tbody = document.getElementById('submissions-list');
-        const searchText = (document.getElementById('submission-filter')?.value || '').toLowerCase();
+    function isAbsenceScore(entry) {
+        return Number(entry?.is_absence_score || 0) === 1;
+    }
 
-        let filtered = allEntries;
-        if (currentFilter !== 'all') {
-            filtered = filtered.filter(s => s.status === currentFilter);
+    function isFailingEntry(entry) {
+        const score = Number(entry?.score);
+        return entry?.score !== null && entry?.score !== undefined && Number.isFinite(score) && score < 60;
+    }
+
+    function matchesCurrentFilter(entry) {
+        if (currentFilter === 'all') return true;
+        if (currentFilter === 'fail') return isFailingEntry(entry);
+        if (currentFilter === 'submitted') {
+            return entry.status === 'submitted' && Number(entry.resubmission_allowed || 0) !== 1;
         }
+        return entry.status === currentFilter;
+    }
+
+    function getSortValue(entry, key) {
+        if (key === 'student_id_number') return String(entry.student_id_number || '');
+        if (key === 'student_name') return String(entry.student_name || '');
+        if (key === 'status') {
+            if (Number(entry.resubmission_allowed || 0) === 1) return 2.5;
+            const order = { unsubmitted: 1, submitted: 2, grading: 3, graded: 4 };
+            return order[entry.status] || 99;
+        }
+        if (key === 'score') {
+            return entry.score === null || entry.score === undefined ? null : Number(entry.score);
+        }
+        if (key === 'submitted_at') {
+            if (!entry.submitted_at || entry.status === 'unsubmitted') return null;
+            const timestamp = new Date(entry.submitted_at).getTime();
+            return Number.isFinite(timestamp) ? timestamp : null;
+        }
+        return '';
+    }
+
+    function sortEntries(entries) {
+        if (!currentSort.key) return entries;
+        const direction = currentSort.direction === 'desc' ? -1 : 1;
+        return [...entries].sort((a, b) => {
+            const av = getSortValue(a, currentSort.key);
+            const bv = getSortValue(b, currentSort.key);
+            const aEmpty = av === null || av === undefined || av === '';
+            const bEmpty = bv === null || bv === undefined || bv === '';
+            if (aEmpty || bEmpty) {
+                if (aEmpty && bEmpty) return (a.__rowIndex || 0) - (b.__rowIndex || 0);
+                return aEmpty ? 1 : -1;
+            }
+            if (typeof av === 'number' && typeof bv === 'number') {
+                return av === bv ? (a.__rowIndex || 0) - (b.__rowIndex || 0) : (av - bv) * direction;
+            }
+            const result = String(av).localeCompare(String(bv), 'zh-Hans-CN', {
+                numeric: true,
+                sensitivity: 'base',
+            });
+            return result === 0 ? (a.__rowIndex || 0) - (b.__rowIndex || 0) : result * direction;
+        });
+    }
+
+    function getFilteredEntries() {
+        const searchText = (document.getElementById('submission-filter')?.value || '').trim().toLowerCase();
+        let filtered = allEntries.filter(matchesCurrentFilter);
         if (searchText) {
             filtered = filtered.filter(s => {
                 const name = (s.student_name || '').toLowerCase();
@@ -727,18 +1032,45 @@
                 return name.includes(searchText) || sid.includes(searchText);
             });
         }
+        return sortEntries(filtered);
+    }
+
+    function updateSortHeaders() {
+        document.querySelectorAll('.sort-header[data-sort-key]').forEach(button => {
+            const isActive = button.dataset.sortKey === currentSort.key;
+            button.classList.toggle('is-active', isActive);
+            button.classList.toggle('is-asc', isActive && currentSort.direction === 'asc');
+            button.classList.toggle('is-desc', isActive && currentSort.direction === 'desc');
+            const th = button.closest('th');
+            if (th) {
+                th.setAttribute(
+                    'aria-sort',
+                    isActive ? (currentSort.direction === 'asc' ? 'ascending' : 'descending') : 'none',
+                );
+            }
+        });
+    }
+
+    function renderSubmissions() {
+        const tbody = document.getElementById('submissions-list');
+        const filtered = getFilteredEntries();
+        updateSortHeaders();
+        updateZeroUnsubmittedButton();
 
         tbody.innerHTML = '';
         if (filtered.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted p-xl">
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted p-xl">
                 ${allEntries.length === 0 ? '暂无学生数据' : '没有匹配的记录'}
             </td></tr>`;
+            syncSelectionToolbar();
             return;
         }
 
         filtered.forEach(sub => {
             const row = document.createElement('tr');
             const isUnsubmitted = sub.status === 'unsubmitted';
+            const absenceScore = isAbsenceScore(sub);
+            const isReturned = Number(sub.resubmission_allowed || 0) === 1;
             if (isUnsubmitted) row.classList.add('unsubmitted-row');
 
             // Status badge
@@ -748,22 +1080,45 @@
                 'graded': { cls: 'badge-success', text: '已批改' },
                 'unsubmitted': { cls: 'badge-secondary', text: '未提交' },
             };
-            const st = statusMap[sub.status] || { cls: 'badge-secondary', text: sub.status || '-' };
+            const st = isReturned
+                ? { cls: 'badge-warning', text: '待重交' }
+                : (statusMap[sub.status] || { cls: 'badge-secondary', text: sub.status || '-' });
+            const statusSubtext = isReturned && sub.resubmission_due_at
+                ? `<span class="status-subtext">截止 ${fmtDate(sub.resubmission_due_at)}</span>`
+                : '';
+            const channelBadge = sub.submission_channel === 'offline'
+                ? `<span class="badge badge-outline ml-1">线下</span>`
+                : absenceScore
+                    ? `<span class="badge badge-outline ml-1">缺交记0</span>`
+                : '';
 
             // Score display with color and grade label
             const scoreInfo = getScoreInfo(sub.score, sub.status);
             const scoreDisplay = sub.score != null
                 ? `<div class="score-cell">
                      <span class="score-badge-inline ${scoreInfo.badgeCls}">${sub.score}</span>
-                     <span class="score-grade-label" style="background:${scoreInfo.bgColor};color:${scoreInfo.color}">${scoreInfo.label}</span>
+                     <span class="score-grade-label" style="background:${scoreInfo.bgColor};color:${scoreInfo.color}">${absenceScore ? '缺交' : scoreInfo.label}</span>
+                     ${absenceScore ? '<div class="absence-score-note">未提交记 0</div>' : ''}
                      <div class="score-progress-bar"><div class="score-progress-fill" style="width:${sub.score}%;background:${scoreInfo.color}"></div></div>
                    </div>`
                 : `<div class="score-cell"><span class="text-muted">-</span></div>`;
 
+            const selectable = !isUnsubmitted && !!sub.id;
+            const selected = selectedStudentIds.has(Number(sub.student_pk_id));
+            const canOfflineSubmit = isUnsubmitted || isReturned;
+            const offlineTitle = canOfflineSubmit ? '线下代交' : '已有正式提交，需先撤回';
+            const aiDisabled = sub.status === 'grading' || isReturned;
+            const withdrawButton = selectable && !isReturned
+                ? `<button class="btn btn-outline btn-sm text-warning" onclick="event.stopPropagation(); openWithdrawModalForOne(${sub.student_pk_id})" title="撤回后开放重交">撤回</button>`
+                : '';
+
             row.innerHTML = `
+                <td>
+                    ${selectable ? `<input type="checkbox" class="submission-checkbox" ${selected ? 'checked' : ''} onclick="event.stopPropagation();" onchange="toggleSubmissionSelection(${sub.student_pk_id}, this.checked)">` : ''}
+                </td>
                 <td class="text-sm text-muted">${escapeHtml(sub.student_id_number || '-')}</td>
                 <td class="font-medium">${escapeHtml(sub.student_name || '-')}</td>
-                <td><span class="badge ${st.cls}">${st.text}</span></td>
+                <td><span class="badge ${st.cls}">${st.text}</span>${channelBadge}${statusSubtext}</td>
                 <td>${scoreDisplay}</td>
                 <td class="text-sm text-muted">${isUnsubmitted ? '-' : fmtDate(sub.submitted_at)}</td>
                 <td>
@@ -771,8 +1126,11 @@
                         ${!isUnsubmitted ? `
                         <button class="btn btn-ghost btn-sm text-primary" onclick="event.stopPropagation(); goDetail(${sub.id})" title="查看详情">详情</button>
                         <button class="btn btn-outline btn-sm text-warning" onclick="event.stopPropagation(); aiRegrade(${sub.id})"
-                            ${sub.status === 'grading' ? 'disabled title="批改中"' : 'title="AI 辅助批改"'}>AI</button>
-                        ` : '<span class="text-muted text-sm">-</span>'}
+                            ${aiDisabled ? `disabled title="${isReturned ? '待重交提交不能批改' : '批改中'}"` : 'title="AI 辅助批改"'}>AI</button>
+                        ${withdrawButton}
+                        ` : ''}
+                        <button class="btn btn-outline btn-sm text-primary" onclick="event.stopPropagation(); openOfflineSubmit(${sub.student_pk_id})"
+                            ${canOfflineSubmit ? `title="${offlineTitle}"` : `disabled title="${offlineTitle}"`}>线下</button>
                     </div>
                 </td>
             `;
@@ -784,6 +1142,7 @@
 
             tbody.appendChild(row);
         });
+        syncSelectionToolbar();
     }
 
     function getScoreInfo(score, status) {
@@ -812,7 +1171,105 @@
         renderSubmissions();
     };
 
+    window.setSubmissionSort = function(key) {
+        if (currentSort.key === key) {
+            currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+            currentSort = { key, direction: 'asc' };
+        }
+        renderSubmissions();
+    };
+
+    function getSelectableEntries(entries = allEntries) {
+        return entries.filter(s => s.id && s.status !== 'unsubmitted');
+    }
+
+    function getZeroUnsubmittedCandidates() {
+        return allEntries.filter(s => s.status === 'unsubmitted' && !isAbsenceScore(s));
+    }
+
+    function updateZeroUnsubmittedButton() {
+        const btn = document.getElementById('zero-unsubmitted-btn');
+        if (!btn) return;
+        const count = getZeroUnsubmittedCandidates().length;
+        btn.disabled = count === 0;
+        btn.title = count > 0
+            ? `将 ${count} 名未提交学生标记为缺交 0 分`
+            : '当前没有需要记 0 的未提交学生';
+    }
+
+    function syncSelectionToolbar() {
+        const selectable = getSelectableEntries();
+        const visibleSelectable = getSelectableEntries(getFilteredEntries());
+        const validIds = new Set(selectable.map(s => Number(s.student_pk_id)));
+        selectedStudentIds = new Set([...selectedStudentIds].filter(id => validIds.has(Number(id))));
+        const count = selectedStudentIds.size;
+        const countEl = document.getElementById('selection-count');
+        const btn = document.getElementById('withdraw-selected-btn');
+        const selectAll = document.getElementById('select-all-submissions');
+        if (countEl) countEl.textContent = `已选 ${count}`;
+        if (btn) btn.disabled = count === 0;
+        if (selectAll) {
+            const visibleSelectedCount = visibleSelectable.filter(s => selectedStudentIds.has(Number(s.student_pk_id))).length;
+            selectAll.checked = visibleSelectable.length > 0 && visibleSelectedCount === visibleSelectable.length;
+            selectAll.indeterminate = visibleSelectedCount > 0 && visibleSelectedCount < visibleSelectable.length;
+        }
+    }
+
+    window.toggleSubmissionSelection = function(studentPkId, checked) {
+        const id = Number(studentPkId);
+        if (checked) selectedStudentIds.add(id);
+        else selectedStudentIds.delete(id);
+        syncSelectionToolbar();
+    };
+
+    window.toggleSelectAll = function(input) {
+        const selectable = getSelectableEntries(getFilteredEntries());
+        if (input.checked) {
+            selectable.forEach(s => selectedStudentIds.add(Number(s.student_pk_id)));
+        } else {
+            selectable.forEach(s => selectedStudentIds.delete(Number(s.student_pk_id)));
+        }
+        renderSubmissions();
+    };
+
     // ==================== Actions ====================
+    window.zeroUnsubmittedScores = async function() {
+        const candidates = getZeroUnsubmittedCandidates();
+        if (candidates.length === 0) {
+            showToast('当前没有需要记 0 的未提交学生', 'info');
+            updateZeroUnsubmittedButton();
+            return;
+        }
+        if (!confirm(`确定将 ${candidates.length} 名未提交学生的成绩标记为 0 分吗？\n\n这会保留“未提交”状态，并用“缺交记0”与真正提交后得 0 分区分。`)) {
+            return;
+        }
+
+        const btn = document.getElementById('zero-unsubmitted-btn');
+        const originalHtml = btn?.innerHTML;
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner spinner-sm mr-2"></div> 记 0 中...';
+        }
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}/submissions/zero-unsubmitted`, {
+                method: 'POST',
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || data.message || '未提交记 0 失败');
+            const count = Number(data.updated_count || 0);
+            showToast(count > 0 ? `已将 ${count} 名未提交学生记为 0 分` : (data.message || '没有需要更新的未提交学生'), count > 0 ? 'success' : 'info');
+            await loadSubmissions();
+        } catch (error) {
+            showToast(error.message || '未提交记 0 失败', 'error');
+        } finally {
+            if (btn) {
+                btn.innerHTML = originalHtml;
+                updateZeroUnsubmittedButton();
+            }
+        }
+    };
+
     window.aiRegrade = async function(subId) {
         if (!confirm('确定要使用 AI 重新批改此作业吗？')) return;
         try {
@@ -830,7 +1287,7 @@
     };
 
     window.aiGradeAll = async function() {
-        const ungraded = allEntries.filter(s => s.status === 'submitted');
+        const ungraded = allEntries.filter(s => s.status === 'submitted' && !Number(s.resubmission_allowed || 0));
         if (ungraded.length === 0) { showToast('没有需要批改的作业', 'info'); return; }
         if (!confirm(`确定要对 ${ungraded.length} 份未批改作业进行 AI 批量批改吗？`)) return;
 
@@ -852,6 +1309,273 @@
         btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg> AI 批量批改`;
         showToast(errors === 0 ? `成功提交 ${processed} 份` : `${processed} 份提交，${errors} 份失败`, errors === 0 ? 'success' : 'warning');
         await loadSubmissions();
+    };
+
+    function toDatetimeLocalValue(date) {
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    function openWithdrawModal(scope, studentPkIds) {
+        const targetCount = scope === 'all' ? getSelectableEntries().length : studentPkIds.length;
+        if (targetCount <= 0) {
+            showToast('没有可撤回的提交', 'info');
+            return;
+        }
+        withdrawScope = { scope, studentPkIds };
+        const dueInput = document.getElementById('withdraw-resubmission-due-at');
+        const minutesInput = document.getElementById('withdraw-extension-minutes');
+        const reasonInput = document.getElementById('withdraw-reason');
+        if (minutesInput) minutesInput.value = '120';
+        if (dueInput) dueInput.value = toDatetimeLocalValue(new Date(Date.now() + 2 * 60 * 60 * 1000));
+        if (reasonInput) reasonInput.value = '';
+        document.getElementById('withdraw-modal-summary').textContent =
+            scope === 'all'
+                ? `将撤回当前作业的 ${targetCount} 条已提交记录，并开放重交。`
+                : `将撤回选中的 ${targetCount} 条提交记录，并开放重交。`;
+        openModal('withdraw-submissions-modal');
+    }
+
+    window.openWithdrawModalForSelected = function() {
+        openWithdrawModal('selected', [...selectedStudentIds]);
+    };
+
+    window.openWithdrawModalForAll = function() {
+        openWithdrawModal('all', []);
+    };
+
+    window.openWithdrawModalForOne = function(studentPkId) {
+        openWithdrawModal('selected', [Number(studentPkId)]);
+    };
+
+    window.confirmWithdrawSubmissions = async function() {
+        const btn = document.getElementById('confirm-withdraw-btn');
+        const dueAt = (document.getElementById('withdraw-resubmission-due-at')?.value || '').trim();
+        const minutesRaw = (document.getElementById('withdraw-extension-minutes')?.value || '120').trim();
+        const reason = (document.getElementById('withdraw-reason')?.value || '').trim();
+        const body = {
+            scope: withdrawScope.scope === 'all' ? 'all' : 'selected',
+            extension_minutes: Number(minutesRaw || 120),
+            reason,
+        };
+        if (withdrawScope.scope !== 'all') body.student_pk_ids = withdrawScope.studentPkIds;
+        if (dueAt) body.resubmission_due_at = dueAt;
+
+        btn.disabled = true;
+        btn.innerHTML = '<div class="spinner spinner-sm mr-2"></div> 撤回中...';
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}/submissions/withdraw`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || '撤回失败');
+            showToast(`已撤回 ${data.updated_count || 0} 条提交`, 'success');
+            selectedStudentIds.clear();
+            closeWithdrawModal();
+            await loadSubmissions();
+        } catch (error) {
+            showToast(error.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '确认撤回';
+        }
+    };
+
+    function initOfflineUpload() {
+        if (offlineUploadManager) {
+            offlineUploadManager.clear();
+            return;
+        }
+        offlineUploadManager = new SubmissionUploadManager({
+            dropZoneId: 'offline-drop-zone',
+            fileInputId: 'offline-file-input',
+            folderInputId: 'offline-folder-input',
+            listId: 'offline-file-chips',
+            summaryId: 'offline-upload-summary',
+            allowedFileTypes: currentAllowedFileTypes,
+            maxBytes: MAX_UPLOAD_BYTES,
+            maxFiles: MAX_FILE_COUNT,
+            notify: showToast,
+        });
+        offlineUploadManager.init();
+        document.getElementById('offline-pick-files-btn')?.addEventListener('click', () => offlineUploadManager.openFilePicker());
+        document.getElementById('offline-pick-folder-btn')?.addEventListener('click', () => offlineUploadManager.openFolderPicker());
+    }
+
+    window.openOfflineSubmit = function(studentPkId) {
+        const entry = allEntries.find(s => Number(s.student_pk_id) === Number(studentPkId));
+        if (!entry) {
+            showToast('未找到学生记录', 'error');
+            return;
+        }
+        const canOfflineSubmit = entry.status === 'unsubmitted' || Number(entry.resubmission_allowed || 0) === 1;
+        if (!canOfflineSubmit) {
+            showToast('该学生已有正式提交，请先撤回后再线下重交', 'warning');
+            return;
+        }
+        offlineTargetStudent = entry;
+        document.getElementById('offline-target-student').textContent =
+            `${entry.student_name || '-'}（${entry.student_id_number || '无学号'}）`;
+        document.getElementById('offline-target-status').textContent =
+            entry.status === 'unsubmitted' ? '首次线下提交' : '撤回后重交';
+        renderOfflineAnswerArea();
+        openModal('offline-submit-modal');
+        initOfflineUpload();
+    };
+
+    function renderOfflineAnswerArea() {
+        const area = document.getElementById('offline-answer-area');
+        if (!area) return;
+        const examPages = OFFLINE_EXAM_QUESTIONS?.pages || [];
+        const questions = [];
+        if (examPages.length) {
+            examPages.forEach((page, pageIndex) => {
+                (page.questions || []).forEach((q, qIndex) => {
+                    questions.push({
+                        id: q.id || `${pageIndex + 1}-${qIndex + 1}`,
+                        text: q.text || `第 ${questions.length + 1} 题`,
+                        type: q.type || 'textarea',
+                        options: q.options || [],
+                    });
+                });
+            });
+        } else {
+            extractQuestions({{ assignment.requirements_md | tojson }}).forEach((text, index) => {
+                questions.push({ id: `q${index + 1}`, text, type: 'textarea', options: [] });
+            });
+            if (!questions.length) {
+                questions.push({ id: 'answer', text: '综合答题区', type: 'textarea', options: [] });
+            }
+        }
+
+        area.innerHTML = questions.map((q, index) => {
+            const question = escapeHtml(q.text || '');
+            const qid = escapeHtml(String(q.id || `q${index + 1}`));
+            if (q.type === 'radio' && q.options?.length) {
+                return `
+                    <div class="offline-question" data-offline-question data-question-id="${qid}" data-question="${question}" data-type="radio">
+                        <div class="offline-question-label"><span class="badge badge-outline">${index + 1}</span><span>${question}</span></div>
+                        <div class="offline-option-list">
+                            ${q.options.map((opt, optIndex) => `
+                                <label><input type="radio" name="offline_${qid}" value="${escapeHtml(opt)}"> <span>${escapeHtml(opt)}</span></label>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            if (q.type === 'checkbox' && q.options?.length) {
+                return `
+                    <div class="offline-question" data-offline-question data-question-id="${qid}" data-question="${question}" data-type="checkbox">
+                        <div class="offline-question-label"><span class="badge badge-outline">${index + 1}</span><span>${question}</span></div>
+                        <div class="offline-option-list">
+                            ${q.options.map((opt) => `
+                                <label><input type="checkbox" value="${escapeHtml(opt)}"> <span>${escapeHtml(opt)}</span></label>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            if (q.type === 'text') {
+                return `
+                    <div class="offline-question" data-offline-question data-question-id="${qid}" data-question="${question}" data-type="text">
+                        <div class="offline-question-label"><span class="badge badge-outline">${index + 1}</span><span>${question}</span></div>
+                        <input type="text" class="form-control" placeholder="输入答案">
+                    </div>
+                `;
+            }
+            return `
+                <div class="offline-question" data-offline-question data-question-id="${qid}" data-question="${question}" data-type="textarea">
+                    <div class="offline-question-label"><span class="badge badge-outline">${index + 1}</span><span>${question}</span></div>
+                    <textarea class="form-control" rows="5" placeholder="输入答案"></textarea>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function extractQuestions(md) {
+        const questions = [];
+        const lines = String(md || '').split('\n');
+        let currentQuestion = '';
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            const headingMatch = trimmed.match(/^(#{1,4})\s+(.+)/);
+            if (headingMatch) {
+                if (currentQuestion) questions.push(currentQuestion);
+                currentQuestion = headingMatch[2].trim();
+                continue;
+            }
+            if (/^\d+[\.\)]\s*/.test(trimmed) && trimmed.length < 120) {
+                if (currentQuestion) questions.push(currentQuestion);
+                currentQuestion = trimmed;
+                continue;
+            }
+            if (/^Question/i.test(trimmed)) {
+                if (currentQuestion) questions.push(currentQuestion);
+                currentQuestion = trimmed;
+                continue;
+            }
+            if (currentQuestion && currentQuestion.length < 80) currentQuestion += ` ${trimmed}`;
+        }
+        if (currentQuestion) questions.push(currentQuestion);
+        return questions.filter(question => !/^(assignment|requirements|rubric|deadline|note|submit)/i.test(question) && question.length > 1);
+    }
+
+    function collectOfflineAnswers() {
+        return [...document.querySelectorAll('[data-offline-question]')].map((node, index) => {
+            const type = node.dataset.type || 'textarea';
+            let answer = '';
+            if (type === 'radio') {
+                answer = node.querySelector('input[type="radio"]:checked')?.value || '';
+            } else if (type === 'checkbox') {
+                answer = [...node.querySelectorAll('input[type="checkbox"]:checked')].map(input => input.value).join('|||');
+            } else {
+                answer = node.querySelector('textarea, input[type="text"]')?.value || '';
+            }
+            return {
+                question_id: node.dataset.questionId || `q${index + 1}`,
+                question: node.dataset.question || `第 ${index + 1} 题`,
+                answer,
+            };
+        });
+    }
+
+    window.confirmOfflineSubmit = async function() {
+        if (!offlineTargetStudent) return;
+        const answers = collectOfflineAnswers();
+        const hasText = answers.some(item => String(item.answer || '').trim());
+        const hasFiles = offlineUploadManager?.hasFiles() ?? false;
+        if (!hasText && !hasFiles) {
+            showToast('请填写答案或上传附件', 'warning');
+            return;
+        }
+
+        const btn = document.getElementById('confirm-offline-submit-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<div class="spinner spinner-sm mr-2"></div> 提交中...';
+        const formData = offlineUploadManager ? offlineUploadManager.buildFormData() : new FormData();
+        formData.append('student_pk_id', String(offlineTargetStudent.student_pk_id));
+        formData.append('answers_json', JSON.stringify({ answers }));
+
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}/submissions/offline`, {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || '线下提交失败');
+            const dropped = Number(data.dropped_file_count || 0);
+            showToast(dropped > 0 ? `提交成功，已过滤 ${dropped} 个不符合要求的文件` : '线下提交成功', dropped > 0 ? 'warning' : 'success');
+            closeOfflineSubmitModal();
+            await loadSubmissions();
+        } catch (error) {
+            showToast(error.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '提交';
+        }
     };
 
     window.exportGrades = async function() {
