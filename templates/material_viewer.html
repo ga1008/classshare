@@ -9,6 +9,9 @@
 <link rel="stylesheet" href="/static/css/toast.css">
 <link rel="stylesheet" href="/static/css/markdown.css">
 <link rel="stylesheet" href="/static/css/materials.css">
+{% if user_info.role == 'teacher' %}
+<link rel="stylesheet" href="{{ asset_url('css/teacher_whiteboard.css') }}">
+{% endif %}
 {% endblock %}
 
 {% block head %}
@@ -16,6 +19,12 @@
 {% include "partials/markdown_assets.html" %}
 <script>
     window.MATERIAL_VIEWER = {{ material | tojson }};
+    window.MATERIAL_VIEWER_CONTEXT = {
+        userId: {{ user_info.id | tojson }},
+        userRole: {{ user_info.role | tojson }},
+        materialId: {{ material.id | tojson }},
+        materialName: {{ material.name | tojson }}
+    };
 </script>
 {% endblock %}
 
@@ -131,4 +140,7 @@
 
 {% block scripts %}
 <script type="module" src="{{ asset_url('js/material_viewer.js') }}"></script>
+{% if user_info.role == 'teacher' %}
+<script type="module" src="{{ asset_url('js/teacher_whiteboard.js') }}"></script>
+{% endif %}
 {% endblock %}
