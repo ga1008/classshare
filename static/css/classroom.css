@@ -3602,6 +3602,13 @@
         linear-gradient(135deg, rgba(255, 247, 237, 0.98), rgba(255, 255, 255, 0.98));
 }
 
+.classroom-page .teaching-timeline-segment.is-home-entry {
+    border-color: rgba(13, 148, 136, 0.28);
+    background:
+        radial-gradient(circle at top right, rgba(20, 184, 166, 0.14), transparent 44%),
+        linear-gradient(135deg, rgba(240, 253, 250, 0.98), rgba(255, 255, 255, 0.98));
+}
+
 .classroom-page .teaching-timeline-segment.is-selected {
     transform: translateY(-2px) scale(1.015);
     border-color: rgba(30, 64, 175, 0.28);
@@ -3698,6 +3705,11 @@
 .classroom-page .teaching-timeline-detail-status.is-next {
     background: rgba(255, 237, 213, 0.96);
     color: #c2410c;
+}
+
+.classroom-page .teaching-timeline-detail-status.is-home {
+    background: rgba(204, 251, 241, 0.96);
+    color: #0f766e;
 }
 
 .classroom-page .teaching-timeline-detail-summary {
@@ -4389,6 +4401,13 @@
     --timeline-card-scale: 1.022;
 }
 
+.classroom-page .teaching-timeline-segment.is-home-entry {
+    border-color: rgba(13, 148, 136, 0.3);
+    background:
+        radial-gradient(circle at top right, rgba(20, 184, 166, 0.14), transparent 44%),
+        linear-gradient(135deg, rgba(240, 253, 250, 0.98), rgba(255, 255, 255, 0.98));
+}
+
 .classroom-page .teaching-timeline-segment::after {
     content: "";
     position: absolute;
@@ -4572,6 +4591,11 @@
 }
 
 .classroom-page .teaching-timeline-material-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.65rem;
+    flex-wrap: wrap;
     margin-left: auto;
 }
 
@@ -4625,6 +4649,12 @@
     box-shadow: 0 18px 34px -26px rgba(3, 105, 161, 0.72);
     cursor: pointer;
     transition: transform 220ms ease, box-shadow 220ms ease, filter 220ms ease;
+}
+
+.classroom-page .teaching-timeline-open-home-btn {
+    min-width: 10.5rem;
+    background:
+        linear-gradient(135deg, #047857, #0f766e);
 }
 
 .classroom-page .teaching-timeline-open-material-btn:hover:not(:disabled) {

@@ -621,6 +621,13 @@ def init_database():
                 )
             except sqlite3.OperationalError:
                 pass
+            try:
+                conn.execute(
+                    "ALTER TABLE class_offerings "
+                    "ADD COLUMN home_learning_material_id INTEGER REFERENCES course_materials (id) ON DELETE SET NULL"
+                )
+            except sqlite3.OperationalError:
+                pass
 
             conn.execute(
                 '''
@@ -2344,6 +2351,10 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_class_offerings_teacher_first_date "
                 "ON class_offerings (teacher_id, first_class_date, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_class_offerings_home_material_lookup "
+                "ON class_offerings (teacher_id, home_learning_material_id)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_class_offering_sessions_lookup "

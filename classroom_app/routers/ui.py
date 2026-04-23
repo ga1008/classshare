@@ -55,7 +55,7 @@ from ..services.course_planning_service import (
     load_course_lessons_by_course_id,
     serialize_course_row,
 )
-from ..services.materials_service import attach_learning_material_briefs
+from ..services.materials_service import attach_home_learning_material_briefs, attach_learning_material_briefs
 from ..services.session_material_generation_service import attach_generation_tasks
 from ..services.student_auth_service import (
     PASSWORD_POLICY_HINT,
@@ -695,6 +695,12 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
 
         offering_data = dict(offering)
         offering_data["semester"] = offering_data.get("semester_display") or offering_data.get("semester")
+        offering_data = attach_home_learning_material_briefs(
+            conn,
+            [offering_data],
+            teacher_id=int(offering_data["teacher_id"]),
+            markdown_only=True,
+        )[0]
         course_id = offering_data['course_id']
 
         if user['role'] == 'student':
@@ -793,7 +799,11 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
             session_items,
             teacher_id=int(offering_data["teacher_id"]),
         )
-        teaching_plan = decorate_offering_sessions(session_items)
+        teaching_plan = decorate_offering_sessions(
+            session_items,
+            home_material=offering_data.get("home_learning_material"),
+            include_home_placeholder=user["role"] == "teacher",
+        )
         if teaching_plan.get("schedule_summary") and not offering_data.get("schedule_info"):
             offering_data["schedule_info"] = teaching_plan["schedule_summary"]
 

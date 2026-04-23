@@ -209,10 +209,19 @@ function initWorkspaceNav() {
 function initTeachingTimelineLegacy() {
     const widget = document.getElementById('teaching-plan-widget');
     const scrollEl = document.getElementById('teachingTimelineScroll');
-    const sessions = Array.isArray(window.APP_CONFIG?.teachingPlan?.sessions)
-        ? window.APP_CONFIG.teachingPlan.sessions
-        : [];
+    const teachingPlan = window.APP_CONFIG?.teachingPlan || {};
+    const lessonSessions = Array.isArray(teachingPlan.sessions) ? teachingPlan.sessions : [];
+    const sessions = Array.isArray(teachingPlan.timeline_entries)
+        ? teachingPlan.timeline_entries
+        : lessonSessions;
     if (!widget || !scrollEl || !sessions.length) return;
+
+    if (!Array.isArray(teachingPlan.timeline_entries)) {
+        teachingPlan.timeline_entries = sessions;
+    }
+    if (!Array.isArray(teachingPlan.sessions)) {
+        teachingPlan.sessions = sessions.filter((session) => !session?.is_home_entry);
+    }
 
     const userInfo = window.APP_CONFIG?.userInfo || {};
     const isTeacher = String(userInfo.role || '').trim() === 'teacher';
@@ -224,8 +233,13 @@ function initTeachingTimelineLegacy() {
     const materialPanel = document.getElementById('teachingTimelineMaterialPanel');
     const materialName = document.getElementById('teachingTimelineMaterialName');
     const materialPath = document.getElementById('teachingTimelineMaterialPath');
+    const openMaterialHint = document.getElementById('teachingTimelineOpenMaterialHint');
+    const openMaterialLabel = document.getElementById('teachingTimelineOpenMaterialLabel');
+    const selectHomeMaterialBtn = document.getElementById('teachingTimelineSelectHomeMaterialBtn');
     const selectMaterialBtn = document.getElementById('teachingTimelineSelectMaterialBtn');
+    const aiMaterialBtn = document.getElementById('teachingTimelineAiMaterialBtn');
     const clearMaterialBtn = document.getElementById('teachingTimelineClearMaterialBtn');
+    const openHomeMaterialBtn = document.getElementById('teachingTimelineOpenHomeMaterialBtn');
     const openMaterialBtn = document.getElementById('teachingTimelineOpenMaterialBtn');
     const sessionButtons = Array.from(scrollEl.querySelectorAll('[data-session-order]'));
     const sessionMap = new Map(
@@ -252,14 +266,38 @@ function initTeachingTimelineLegacy() {
     let ignoreClickUntil = 0;
 
     const getSessionByOrder = (sessionOrder) => sessionMap.get(String(sessionOrder || '').trim());
+    const getHomeMaterial = () => teachingPlan.home_material || null;
+    const hasHomeMaterial = () => Boolean(getHomeMaterial()?.id && getHomeMaterial()?.viewer_url);
+    const isHomeEntry = (session) => Boolean(session?.is_home_entry || session?.entry_type === 'home');
+    const getSessionViewerUrl = (session) => String(
+        isHomeEntry(session)
+            ? session?.home_learning_material_viewer_url || session?.learning_material_viewer_url || ''
+            : session?.learning_material_viewer_url || '',
+    ).trim();
+    const getSessionMaterialReady = (session) => (
+        isHomeEntry(session)
+            ? Boolean(session?.home_learning_material_id && session?.home_learning_material_viewer_url)
+            : Boolean(session?.learning_material_id && session?.learning_material_viewer_url)
+    );
+    const scheduleProjectionSync = () => {};
 
     const updateSessionButtonMaterialState = (session) => {
         if (!session) return;
         const button = buttonMap.get(String(session.order_index));
         if (!button) return;
+        const orderLabel = button.querySelector('.teaching-timeline-segment-order');
+        const titleLabel = button.querySelector('.teaching-timeline-segment-title');
+        const metaLabel = button.querySelector('.teaching-timeline-segment-meta');
         const indicator = button.querySelector('[data-role="session-material-indicator"]');
-        const hasMaterial = Boolean(session.learning_material_id);
+        const hasMaterial = getSessionMaterialReady(session);
+        if (orderLabel) orderLabel.textContent = session.session_number_label || '';
+        if (titleLabel) titleLabel.textContent = session.segment_title || session.detail_title || session.title || '';
+        if (metaLabel) {
+            metaLabel.dataset.weekdayLabel = session.timeline_weekday_label || '';
+            metaLabel.dataset.relativeDateLabel = session.timeline_relative_date_label || '';
+        }
         if (indicator) {
+            indicator.textContent = isHomeEntry(session) ? '首页文档' : '学习文档';
             indicator.hidden = !hasMaterial;
         }
         button.dataset.hasMaterial = hasMaterial ? 'true' : 'false';
@@ -333,25 +371,81 @@ function initTeachingTimelineLegacy() {
 
     const renderMaterialPanel = (session) => {
         if (!materialPanel || !materialName || !materialPath) return;
-        const hasMaterial = Boolean(session.learning_material_id && session.learning_material_viewer_url);
+        const homeEntry = isHomeEntry(session);
+        const hasMaterial = getSessionMaterialReady(session);
+        const homeReady = hasHomeMaterial();
         materialPanel.classList.toggle('is-empty', !hasMaterial);
+        materialPanel.dataset.materialReady = hasMaterial ? 'true' : 'false';
+        materialPanel.dataset.entryType = homeEntry ? 'home' : 'lesson';
 
-        if (hasMaterial) {
+        if (openMaterialLabel) {
+            openMaterialLabel.textContent = homeEntry ? '首页' : '学习文档';
+        }
+        if (openHomeMaterialBtn) {
+            openHomeMaterialBtn.hidden = !homeReady || homeEntry;
+            openHomeMaterialBtn.disabled = !homeReady || homeEntry;
+            openHomeMaterialBtn.dataset.materialReady = homeReady ? 'true' : 'false';
+        }
+
+        if (homeEntry && hasMaterial) {
+            materialName.textContent = session.home_learning_material_name || session.learning_material_name || '课程学习首页';
+            materialPath.textContent = session.home_learning_material_path || session.learning_material_path || '';
+            if (openMaterialHint) {
+                openMaterialHint.textContent = '打开课程目录与简介';
+            }
+        } else if (homeEntry && isTeacher) {
+            materialName.textContent = '尚未配置课程首页';
+            materialPath.textContent = '可绑定课程首页 Markdown，用于目录、简介和后续文档导航。';
+            if (openMaterialHint) {
+                openMaterialHint.textContent = '先设置课程首页';
+            }
+        } else if (homeEntry) {
+            materialName.textContent = '教师尚未配置课程首页';
+            materialPath.textContent = '当前课堂还没有可打开的课程首页。';
+            if (openMaterialHint) {
+                openMaterialHint.textContent = '等待教师配置课程首页';
+            }
+        } else if (hasMaterial) {
             materialName.textContent = session.learning_material_name || '已绑定课堂文档';
             materialPath.textContent = session.learning_material_path || '';
+            if (openMaterialHint) {
+                openMaterialHint.textContent = '进入本次课学习入口';
+            }
         } else if (isTeacher) {
             materialName.textContent = '尚未绑定课堂文档';
             materialPath.textContent = '可为本次课绑定一份 Markdown 材料，师生可从这里直接进入文档页面。';
+            if (openMaterialHint) {
+                openMaterialHint.textContent = '先为本次课绑定文档';
+            }
         } else {
             materialName.textContent = '教师尚未配置学习文档';
             materialPath.textContent = '当前节点还没有可打开的课堂文档。';
+            if (openMaterialHint) {
+                openMaterialHint.textContent = '等待教师配置学习文档';
+            }
         }
 
         if (openMaterialBtn) {
             openMaterialBtn.disabled = !hasMaterial;
+            openMaterialBtn.dataset.materialReady = hasMaterial ? 'true' : 'false';
         }
         if (clearMaterialBtn) {
-            clearMaterialBtn.hidden = !hasMaterial;
+            clearMaterialBtn.hidden = !hasMaterial || homeEntry;
+        }
+    };
+
+    const syncTeacherActionState = (session) => {
+        const homeEntry = isHomeEntry(session);
+        if (selectMaterialBtn) {
+            selectMaterialBtn.hidden = homeEntry;
+            selectMaterialBtn.disabled = homeEntry;
+        }
+        if (aiMaterialBtn) {
+            aiMaterialBtn.hidden = homeEntry;
+            aiMaterialBtn.disabled = homeEntry || Boolean(session?.material_generation_task?.is_active);
+        }
+        if (selectHomeMaterialBtn) {
+            selectHomeMaterialBtn.textContent = hasHomeMaterial() ? '更换首页' : '设置首页';
         }
     };
 
@@ -426,6 +520,49 @@ function initTeachingTimelineLegacy() {
             window.materialsApp.refresh().catch(() => {});
         }
         showToast(result.message || '课堂材料已更新', 'success');
+    };
+
+    const applyHomeMaterialPatch = (result = {}) => {
+        teachingPlan.home_material = result.home_material || null;
+        teachingPlan.has_home_material = Boolean(result.home_material);
+        if (result.home_entry) {
+            const homeEntry = getSessionByOrder('home');
+            if (homeEntry) {
+                Object.assign(homeEntry, result.home_entry);
+                updateSessionButtonMaterialState(homeEntry);
+                if (String(homeEntry.order_index) === selectedOrder) {
+                    if (detailKicker) detailKicker.textContent = homeEntry.session_number_label || '';
+                    if (detailTitle) detailTitle.textContent = homeEntry.detail_title || homeEntry.title || '';
+                    if (detailStatus) {
+                        detailStatus.textContent = homeEntry.session_status_label || '';
+                        detailStatus.className = `teaching-timeline-detail-status is-${homeEntry.progress_state || 'home'}`;
+                    }
+                    renderDetailSummary(homeEntry);
+                    renderDetailMeta(homeEntry);
+                    renderMaterialPanel(homeEntry);
+                }
+            }
+        }
+        const currentSession = getSessionByOrder(selectedOrder);
+        syncTeacherActionState(currentSession);
+        renderMaterialPanel(currentSession);
+        scheduleProjectionSync();
+    };
+
+    const persistHomeMaterial = async (learningMaterialId) => {
+        const result = await apiFetch(
+            `/api/classrooms/${window.APP_CONFIG.classOfferingId}/learning-home-material`,
+            {
+                method: 'PUT',
+                body: { learning_material_id: learningMaterialId },
+                silent: true,
+            },
+        );
+        applyHomeMaterialPatch(result);
+        if (window.materialsApp && typeof window.materialsApp.refresh === 'function') {
+            window.materialsApp.refresh().catch(() => {});
+        }
+        showToast(result.message || '课程首页已更新', 'success');
     };
 
     const getNearestSessionOrder = () => {
@@ -536,17 +673,61 @@ function initTeachingTimelineLegacy() {
 
     openMaterialBtn?.addEventListener('click', () => {
         const session = getSessionByOrder(selectedOrder);
-        const viewerUrl = session?.learning_material_viewer_url || '';
+        const viewerUrl = getSessionViewerUrl(session);
         if (!viewerUrl) {
-            showToast(isTeacher ? '当前次课还没有绑定文档' : '教师尚未配置学习文档', 'warning');
+            if (isHomeEntry(session)) {
+                showToast(isTeacher ? '课程首页尚未配置' : '教师尚未配置课程首页', 'warning');
+            } else {
+                showToast(isTeacher ? '当前次课还没有绑定文档' : '教师尚未配置学习文档', 'warning');
+            }
             return;
         }
         window.open(viewerUrl, '_blank', 'noopener');
     });
 
+    openHomeMaterialBtn?.addEventListener('click', () => {
+        const homeMaterial = getHomeMaterial();
+        const viewerUrl = String(homeMaterial?.viewer_url || '').trim();
+        if (!viewerUrl) {
+            showToast(isTeacher ? '课程首页尚未配置' : '教师尚未配置课程首页', 'warning');
+            return;
+        }
+        window.open(viewerUrl, '_blank', 'noopener');
+    });
+
+    selectHomeMaterialBtn?.addEventListener('click', async () => {
+        try {
+            const currentHomeMaterial = getHomeMaterial();
+            const selectedMaterial = await learningMaterialSelector.open({
+                title: '选择课程首页',
+                subtitle: '首页用于课程目录、简介和后续学习文档导航，会显示在时间轴第一课之前。',
+                confirmLabel: currentHomeMaterial ? '更换首页' : '设置为首页',
+                allowClear: Boolean(currentHomeMaterial),
+                clearLabel: '移除课程首页',
+                footerNote: currentHomeMaterial
+                    ? '选择新的 Markdown 文档可替换首页，也可以移除当前首页入口。'
+                    : '仅支持绑定 Markdown 文档。建议选择根目录下的 README、index 或课程目录文档。',
+                initialMaterial: currentHomeMaterial,
+            });
+            if (!selectedMaterial) {
+                return;
+            }
+            if (selectedMaterial.clear) {
+                await persistHomeMaterial(null);
+                return;
+            }
+            if (Number(selectedMaterial.id) === Number(currentHomeMaterial?.id || 0)) {
+                return;
+            }
+            await persistHomeMaterial(Number(selectedMaterial.id));
+        } catch (error) {
+            showToast(error.message || '更新课程首页失败', 'error');
+        }
+    });
+
     selectMaterialBtn?.addEventListener('click', async () => {
         const session = getSessionByOrder(selectedOrder);
-        if (!session) return;
+        if (!session || isHomeEntry(session)) return;
         try {
             const selectedMaterial = await learningMaterialSelector.open({
                 title: '选择课堂材料',
@@ -593,10 +774,19 @@ function initTeachingTimeline() {
     const scrollEl = document.getElementById('teachingTimelineScroll');
     const prevTimelineBtn = document.getElementById('teachingTimelinePrevBtn');
     const nextTimelineBtn = document.getElementById('teachingTimelineNextBtn');
-    const sessions = Array.isArray(window.APP_CONFIG?.teachingPlan?.sessions)
-        ? window.APP_CONFIG.teachingPlan.sessions
-        : [];
+    const teachingPlan = window.APP_CONFIG?.teachingPlan || {};
+    const lessonSessions = Array.isArray(teachingPlan.sessions) ? teachingPlan.sessions : [];
+    const sessions = Array.isArray(teachingPlan.timeline_entries)
+        ? teachingPlan.timeline_entries
+        : lessonSessions;
     if (!widget || !scrollEl || !sessions.length) return;
+
+    if (!Array.isArray(teachingPlan.timeline_entries)) {
+        teachingPlan.timeline_entries = sessions;
+    }
+    if (!Array.isArray(teachingPlan.sessions)) {
+        teachingPlan.sessions = sessions.filter((session) => !session?.is_home_entry);
+    }
 
     const userInfo = window.APP_CONFIG?.userInfo || {};
     const isTeacher = String(userInfo.role || '').trim() === 'teacher';
@@ -610,8 +800,11 @@ function initTeachingTimeline() {
     const materialName = document.getElementById('teachingTimelineMaterialName');
     const materialPath = document.getElementById('teachingTimelineMaterialPath');
     const openMaterialHint = document.getElementById('teachingTimelineOpenMaterialHint');
+    const openMaterialLabel = document.getElementById('teachingTimelineOpenMaterialLabel');
+    const selectHomeMaterialBtn = document.getElementById('teachingTimelineSelectHomeMaterialBtn');
     const selectMaterialBtn = document.getElementById('teachingTimelineSelectMaterialBtn');
     const aiMaterialBtn = document.getElementById('teachingTimelineAiMaterialBtn');
+    const openHomeMaterialBtn = document.getElementById('teachingTimelineOpenHomeMaterialBtn');
     const openMaterialBtn = document.getElementById('teachingTimelineOpenMaterialBtn');
     const sessionButtons = Array.from(scrollEl.querySelectorAll('[data-session-order]'));
     const sessionMap = new Map(
@@ -649,6 +842,19 @@ function initTeachingTimeline() {
     let sessionMaterialAssistant = null;
 
     const getSessionByOrder = (sessionOrder) => sessionMap.get(String(sessionOrder || '').trim());
+    const getHomeMaterial = () => teachingPlan.home_material || null;
+    const hasHomeMaterial = () => Boolean(getHomeMaterial()?.id && getHomeMaterial()?.viewer_url);
+    const isHomeEntry = (session) => Boolean(session?.is_home_entry || session?.entry_type === 'home');
+    const getSessionViewerUrl = (session) => String(
+        isHomeEntry(session)
+            ? session?.home_learning_material_viewer_url || session?.learning_material_viewer_url || ''
+            : session?.learning_material_viewer_url || '',
+    ).trim();
+    const getSessionMaterialReady = (session) => (
+        isHomeEntry(session)
+            ? Boolean(session?.home_learning_material_id && session?.home_learning_material_viewer_url)
+            : Boolean(session?.learning_material_id && session?.learning_material_viewer_url)
+    );
     const getMaxScrollLeft = () => Math.max(0, scrollEl.scrollWidth - scrollEl.clientWidth);
     const clampScrollLeft = (value) => Math.max(0, Math.min(getMaxScrollLeft(), Number(value) || 0));
     const setTimelineScrollLeft = (value) => {
@@ -677,9 +883,19 @@ function initTeachingTimeline() {
         if (!session) return;
         const button = buttonMap.get(String(session.order_index));
         if (!button) return;
+        const orderLabel = button.querySelector('.teaching-timeline-segment-order');
+        const titleLabel = button.querySelector('.teaching-timeline-segment-title');
+        const metaLabel = button.querySelector('.teaching-timeline-segment-meta');
         const indicator = button.querySelector('[data-role="session-material-indicator"]');
-        const hasMaterial = Boolean(session.learning_material_id);
+        const hasMaterial = getSessionMaterialReady(session);
+        if (orderLabel) orderLabel.textContent = session.session_number_label || '';
+        if (titleLabel) titleLabel.textContent = session.segment_title || session.detail_title || session.title || '';
+        if (metaLabel) {
+            metaLabel.dataset.weekdayLabel = session.timeline_weekday_label || '';
+            metaLabel.dataset.relativeDateLabel = session.timeline_relative_date_label || '';
+        }
         if (indicator) {
+            indicator.textContent = isHomeEntry(session) ? '首页文档' : '学习文档';
             indicator.hidden = !hasMaterial;
         }
         button.dataset.hasMaterial = hasMaterial ? 'true' : 'false';
@@ -822,11 +1038,41 @@ function initTeachingTimeline() {
 
     const renderMaterialPanel = (session) => {
         if (!materialPanel || !materialName || !materialPath) return;
-        const hasMaterial = Boolean(session.learning_material_id && session.learning_material_viewer_url);
+        const homeEntry = isHomeEntry(session);
+        const hasMaterial = getSessionMaterialReady(session);
+        const homeReady = hasHomeMaterial();
         materialPanel.classList.toggle('is-empty', !hasMaterial);
         materialPanel.dataset.materialReady = hasMaterial ? 'true' : 'false';
+        materialPanel.dataset.entryType = homeEntry ? 'home' : 'lesson';
 
-        if (hasMaterial) {
+        if (openMaterialLabel) {
+            openMaterialLabel.textContent = homeEntry ? '首页' : '学习文档';
+        }
+        if (openHomeMaterialBtn) {
+            openHomeMaterialBtn.hidden = !homeReady || homeEntry;
+            openHomeMaterialBtn.disabled = !homeReady || homeEntry;
+            openHomeMaterialBtn.dataset.materialReady = homeReady ? 'true' : 'false';
+        }
+
+        if (homeEntry && hasMaterial) {
+            materialName.textContent = session.home_learning_material_name || session.learning_material_name || '课程学习首页';
+            materialPath.textContent = session.home_learning_material_path || session.learning_material_path || '';
+            if (openMaterialHint) {
+                openMaterialHint.textContent = '打开课程目录与简介';
+            }
+        } else if (homeEntry && isTeacher) {
+            materialName.textContent = '尚未配置课程首页';
+            materialPath.textContent = '可绑定课程首页 Markdown，用于目录、简介和后续文档导航。';
+            if (openMaterialHint) {
+                openMaterialHint.textContent = '先设置课程首页';
+            }
+        } else if (homeEntry) {
+            materialName.textContent = '教师尚未配置课程首页';
+            materialPath.textContent = '当前课堂还没有可打开的课程首页。';
+            if (openMaterialHint) {
+                openMaterialHint.textContent = '等待教师配置课程首页';
+            }
+        } else if (hasMaterial) {
             materialName.textContent = session.learning_material_name || '已绑定课堂文档';
             materialPath.textContent = session.learning_material_path || '';
             if (openMaterialHint) {
@@ -849,6 +1095,21 @@ function initTeachingTimeline() {
         if (openMaterialBtn) {
             openMaterialBtn.disabled = !hasMaterial;
             openMaterialBtn.dataset.materialReady = hasMaterial ? 'true' : 'false';
+        }
+    };
+
+    const syncTeacherActionState = (session) => {
+        const homeEntry = isHomeEntry(session);
+        if (selectMaterialBtn) {
+            selectMaterialBtn.hidden = homeEntry;
+            selectMaterialBtn.disabled = homeEntry;
+        }
+        if (aiMaterialBtn) {
+            aiMaterialBtn.hidden = homeEntry;
+            aiMaterialBtn.disabled = homeEntry || Boolean(session?.material_generation_task?.is_active);
+        }
+        if (selectHomeMaterialBtn) {
+            selectHomeMaterialBtn.textContent = hasHomeMaterial() ? '更换首页' : '设置首页';
         }
     };
 
@@ -939,7 +1200,12 @@ function initTeachingTimeline() {
         renderDetailSummary(session);
         renderDetailMeta(session);
         renderMaterialPanel(session);
-        sessionMaterialAssistant?.syncSelectedSession(session);
+        syncTeacherActionState(session);
+        if (isHomeEntry(session)) {
+            sessionMaterialAssistant?.syncSelectedSession(null);
+        } else {
+            sessionMaterialAssistant?.syncSelectedSession(session);
+        }
 
         if (options.center !== false && (options.forceCenter || previousOrder !== key)) {
             focusSession(key, options.behavior || 'smooth');
@@ -965,8 +1231,11 @@ function initTeachingTimeline() {
     if (isTeacher) {
         sessionMaterialAssistant = initSessionMaterialAiAssistant({
             classOfferingId: window.APP_CONFIG.classOfferingId,
-            getSessions: () => sessions,
-            getCurrentSession: () => getSessionByOrder(selectedOrder),
+            getSessions: () => teachingPlan.sessions || [],
+            getCurrentSession: () => {
+                const session = getSessionByOrder(selectedOrder);
+                return isHomeEntry(session) ? null : session;
+            },
             onSessionPatch: applySessionPatch,
         });
     }
@@ -987,6 +1256,51 @@ function initTeachingTimeline() {
             window.materialsApp.refresh().catch(() => {});
         }
         showToast(result.message || '课堂材料已更新', 'success');
+    };
+
+    const applyHomeMaterialPatch = (result = {}) => {
+        teachingPlan.home_material = result.home_material || null;
+        teachingPlan.has_home_material = Boolean(result.home_material);
+        if (result.home_entry) {
+            const homeEntry = getSessionByOrder('home');
+            if (homeEntry) {
+                Object.assign(homeEntry, result.home_entry);
+                updateSessionButtonMaterialState(homeEntry);
+                if (String(homeEntry.order_index) === selectedOrder) {
+                    if (detailKicker) detailKicker.textContent = homeEntry.session_number_label || '';
+                    if (detailTitle) detailTitle.textContent = homeEntry.detail_title || homeEntry.title || '';
+                    if (detailStatus) {
+                        detailStatus.textContent = homeEntry.session_status_label || '';
+                        detailStatus.className = `teaching-timeline-detail-status is-${homeEntry.progress_state || 'home'}`;
+                    }
+                    renderDetailSummary(homeEntry);
+                    renderDetailMeta(homeEntry);
+                    renderMaterialPanel(homeEntry);
+                }
+            }
+        }
+        const currentSession = getSessionByOrder(selectedOrder);
+        syncTeacherActionState(currentSession);
+        renderMaterialPanel(currentSession);
+        sessionMaterialAssistant?.syncSelectedSession(isHomeEntry(currentSession) ? null : currentSession);
+        scheduleProjectionSync();
+        scheduleCardMotionSync();
+    };
+
+    const persistHomeMaterial = async (learningMaterialId) => {
+        const result = await apiFetch(
+            `/api/classrooms/${window.APP_CONFIG.classOfferingId}/learning-home-material`,
+            {
+                method: 'PUT',
+                body: { learning_material_id: learningMaterialId },
+                silent: true,
+            },
+        );
+        applyHomeMaterialPatch(result);
+        if (window.materialsApp && typeof window.materialsApp.refresh === 'function') {
+            window.materialsApp.refresh().catch(() => {});
+        }
+        showToast(result.message || '课程首页已更新', 'success');
     };
 
     const getNearestSessionOrder = () => {
@@ -1214,17 +1528,61 @@ function initTeachingTimeline() {
 
     openMaterialBtn?.addEventListener('click', () => {
         const session = getSessionByOrder(selectedOrder);
-        const viewerUrl = session?.learning_material_viewer_url || '';
+        const viewerUrl = getSessionViewerUrl(session);
         if (!viewerUrl) {
-            showToast(isTeacher ? '当前次课还没有绑定文档' : '教师尚未配置学习文档', 'warning');
+            if (isHomeEntry(session)) {
+                showToast(isTeacher ? '课程首页尚未配置' : '教师尚未配置课程首页', 'warning');
+            } else {
+                showToast(isTeacher ? '当前次课还没有绑定文档' : '教师尚未配置学习文档', 'warning');
+            }
             return;
         }
         window.open(viewerUrl, '_blank', 'noopener');
     });
 
+    openHomeMaterialBtn?.addEventListener('click', () => {
+        const homeMaterial = getHomeMaterial();
+        const viewerUrl = String(homeMaterial?.viewer_url || '').trim();
+        if (!viewerUrl) {
+            showToast(isTeacher ? '课程首页尚未配置' : '教师尚未配置课程首页', 'warning');
+            return;
+        }
+        window.open(viewerUrl, '_blank', 'noopener');
+    });
+
+    selectHomeMaterialBtn?.addEventListener('click', async () => {
+        try {
+            const currentHomeMaterial = getHomeMaterial();
+            const selectedMaterial = await learningMaterialSelector.open({
+                title: '选择课程首页',
+                subtitle: '首页用于课程目录、简介和后续学习文档导航，会显示在时间轴第一课之前。',
+                confirmLabel: currentHomeMaterial ? '更换首页' : '设置为首页',
+                allowClear: Boolean(currentHomeMaterial),
+                clearLabel: '移除课程首页',
+                footerNote: currentHomeMaterial
+                    ? '选择新的 Markdown 文档可替换首页，也可以移除当前首页入口。'
+                    : '仅支持绑定 Markdown 文档。建议选择根目录下的 README、index 或课程目录文档。',
+                initialMaterial: currentHomeMaterial,
+            });
+            if (!selectedMaterial) {
+                return;
+            }
+            if (selectedMaterial.clear) {
+                await persistHomeMaterial(null);
+                return;
+            }
+            if (Number(selectedMaterial.id) === Number(currentHomeMaterial?.id || 0)) {
+                return;
+            }
+            await persistHomeMaterial(Number(selectedMaterial.id));
+        } catch (error) {
+            showToast(error.message || '更新课程首页失败', 'error');
+        }
+    });
+
     selectMaterialBtn?.addEventListener('click', async () => {
         const session = getSessionByOrder(selectedOrder);
-        if (!session) return;
+        if (!session || isHomeEntry(session)) return;
         try {
             const selectedMaterial = await learningMaterialSelector.open({
                 title: '选择课堂材料',
@@ -1263,7 +1621,8 @@ function initTeachingTimeline() {
             behavior: 'auto',
             forceCenter: true,
         });
-        sessionMaterialAssistant?.syncSelectedSession(getSessionByOrder(selectedOrder));
+        const selectedSession = getSessionByOrder(selectedOrder);
+        sessionMaterialAssistant?.syncSelectedSession(isHomeEntry(selectedSession) ? null : selectedSession);
         sessionMaterialAssistant?.startPolling();
         window.requestAnimationFrame(scheduleProjectionSync);
     });

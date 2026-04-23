@@ -368,6 +368,48 @@ def attach_learning_material_briefs(
     return items
 
 
+def attach_home_learning_material_briefs(
+    conn,
+    items: list[dict],
+    *,
+    id_field: str = "home_learning_material_id",
+    teacher_id: int | None = None,
+    markdown_only: bool = True,
+) -> list[dict]:
+    material_map = get_learning_material_brief_map(
+        conn,
+        (item.get(id_field) for item in items),
+        teacher_id=teacher_id,
+        markdown_only=markdown_only,
+    )
+
+    for item in items:
+        try:
+            material_id = int(item.get(id_field) or 0)
+        except (TypeError, ValueError):
+            material_id = 0
+        material = material_map.get(material_id)
+        if not material:
+            item[id_field] = None
+            item["home_learning_material"] = None
+            item["home_learning_material_name"] = ""
+            item["home_learning_material_path"] = ""
+            item["home_learning_material_parent_id"] = None
+            item["home_learning_material_viewer_url"] = ""
+            item["has_home_learning_material"] = False
+            continue
+
+        item[id_field] = int(material["id"])
+        item["home_learning_material"] = material
+        item["home_learning_material_name"] = material["name"]
+        item["home_learning_material_path"] = material["material_path"]
+        item["home_learning_material_parent_id"] = material["parent_id"]
+        item["home_learning_material_viewer_url"] = material["viewer_url"]
+        item["has_home_learning_material"] = True
+
+    return items
+
+
 def get_learning_document_map(conn, folder_ids: list[int]) -> dict[int, dict]:
     normalized_ids = [int(folder_id) for folder_id in folder_ids if folder_id]
     if not normalized_ids:

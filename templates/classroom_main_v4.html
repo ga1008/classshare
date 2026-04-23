@@ -259,7 +259,8 @@
             </nav>
 
             {% if teaching_plan and teaching_plan.session_count %}
-            {% set selected_session = teaching_plan.anchor_session if teaching_plan.anchor_session else teaching_plan.sessions[0] %}
+            {% set timeline_entries = teaching_plan.timeline_entries if teaching_plan.timeline_entries else teaching_plan.sessions %}
+            {% set selected_session = teaching_plan.anchor_session if teaching_plan.anchor_session else timeline_entries[0] %}
             <section class="embedded-teaching-plan" id="timeline-panel" data-workspace-section data-anchor-order="{{ selected_session.order_index }}">
                 <div class="embedded-teaching-plan-head">
                     <div class="embedded-teaching-plan-heading">
@@ -284,16 +285,17 @@
                             </button>
                             <div class="teaching-timeline-scroll" id="teachingTimelineScroll" aria-label="课程时间轴">
                                 <div class="teaching-timeline-track">
-                                    {% for session in teaching_plan.sessions %}
+                                    {% for session in timeline_entries %}
                                     <button
                                         type="button"
-                                        class="teaching-timeline-segment is-{{ session.progress_state }}{% if session.is_anchor %} is-anchor is-selected{% endif %}"
+                                        class="teaching-timeline-segment is-{{ session.progress_state }}{% if session.is_home_entry %} is-home-entry{% endif %}{% if session.is_anchor %} is-anchor{% endif %}{% if session.order_index == selected_session.order_index %} is-selected{% endif %}"
                                         data-session-order="{{ session.order_index }}"
                                         data-session-id="{{ session.id }}"
+                                        data-entry-type="{{ session.entry_type or 'lesson' }}"
                                         data-session-select
                                         data-has-material="{{ 'true' if session.has_learning_material else 'false' }}"
                                         aria-controls="teachingTimelineDetail"
-                                        aria-pressed="{{ 'true' if session.is_anchor else 'false' }}"
+                                        aria-pressed="{{ 'true' if session.order_index == selected_session.order_index else 'false' }}"
                                         {% if session.is_anchor %}data-anchor="true"{% endif %}
                                     >
                                         <span class="teaching-timeline-segment-order">{{ session.session_number_label }}</span>
@@ -304,7 +306,9 @@
                                                 data-role="session-material-indicator"
                                                 {% if not session.has_learning_material %}hidden{% endif %}
                                             >
+                                                {% if session.is_home_entry %}首页文档{% else %}
                                                 学习文档
+                                                {% endif %}
                                             </span>
                                         </span>
                                         <span
@@ -334,6 +338,9 @@
                                     </div>
                                     {% if user_info.role == 'teacher' %}
                                     <div class="teaching-timeline-detail-actions" id="teachingTimelineDetailActions">
+                                        <button type="button" class="btn btn-outline btn-sm" id="teachingTimelineSelectHomeMaterialBtn">
+                                            {% if teaching_plan.has_home_material %}更换首页{% else %}设置首页{% endif %}
+                                        </button>
                                         <button type="button" class="btn btn-outline btn-sm" id="teachingTimelineSelectMaterialBtn">选择课堂材料</button>
                                         <button
                                             type="button"
@@ -357,21 +364,49 @@
                                 <div class="teaching-timeline-material-panel{% if not selected_session.has_learning_material %} is-empty{% endif %}" id="teachingTimelineMaterialPanel">
                                     <div class="teaching-timeline-material-copy">
                                         <strong id="teachingTimelineMaterialName">
+                                            {% if selected_session.is_home_entry %}
+                                            {% if selected_session.home_learning_material_name %}
+                                            {{ selected_session.home_learning_material_name }}
+                                            {% else %}
+                                            {% if user_info.role == 'teacher' %}尚未配置课程首页{% else %}教师尚未配置课程首页{% endif %}
+                                            {% endif %}
+                                            {% else %}
                                             {% if selected_session.learning_material_name %}
                                             {{ selected_session.learning_material_name }}
                                             {% else %}
                                             {% if user_info.role == 'teacher' %}尚未绑定课堂文档{% else %}教师尚未配置学习文档{% endif %}
                                             {% endif %}
+                                            {% endif %}
                                         </strong>
                                         <span id="teachingTimelineMaterialPath">
+                                            {% if selected_session.is_home_entry %}
+                                            {% if selected_session.home_learning_material_path %}
+                                            {{ selected_session.home_learning_material_path }}
+                                            {% else %}
+                                            {% if user_info.role == 'teacher' %}可绑定课程首页 Markdown，用于目录、简介和后续文档导航。{% else %}当前课堂还没有可打开的课程首页。{% endif %}
+                                            {% endif %}
+                                            {% else %}
                                             {% if selected_session.learning_material_path %}
                                             {{ selected_session.learning_material_path }}
                                             {% else %}
                                             {% if user_info.role == 'teacher' %}可为本次课绑定一份 Markdown 材料，师生可从这里直接进入文档页面。{% else %}当前节点还没有可打开的课堂文档。{% endif %}
                                             {% endif %}
+                                            {% endif %}
                                         </span>
                                     </div>
                                     <div class="teaching-timeline-material-actions">
+                                        <button
+                                            type="button"
+                                            class="teaching-timeline-open-material-btn teaching-timeline-open-home-btn"
+                                            id="teachingTimelineOpenHomeMaterialBtn"
+                                            {% if not teaching_plan.has_home_material or selected_session.is_home_entry %}hidden{% endif %}
+                                        >
+                                            <span class="teaching-timeline-open-material-copy">
+                                                <span>首页</span>
+                                                <small>课程目录与简介</small>
+                                            </span>
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                                        </button>
                                         <button
                                             type="button"
                                             class="teaching-timeline-open-material-btn"
@@ -379,14 +414,24 @@
                                             {% if not selected_session.has_learning_material %}disabled{% endif %}
                                         >
                                             <span class="teaching-timeline-open-material-copy">
-                                                <span>学习文档</span>
+                                                <span id="teachingTimelineOpenMaterialLabel">{% if selected_session.is_home_entry %}首页{% else %}学习文档{% endif %}</span>
                                                 <small id="teachingTimelineOpenMaterialHint">
+                                                    {% if selected_session.is_home_entry %}
+                                                    {% if selected_session.has_home_learning_material %}
+                                                    打开课程目录与简介
+                                                    {% elif user_info.role == 'teacher' %}
+                                                    先设置课程首页
+                                                    {% else %}
+                                                    等待教师配置课程首页
+                                                    {% endif %}
+                                                    {% else %}
                                                     {% if selected_session.has_learning_material %}
                                                     进入本次课学习入口
                                                     {% elif user_info.role == 'teacher' %}
                                                     先为本次课绑定文档
                                                     {% else %}
                                                     等待教师配置学习文档
+                                                    {% endif %}
                                                     {% endif %}
                                                 </small>
                                             </span>

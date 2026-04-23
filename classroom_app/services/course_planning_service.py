@@ -18,6 +18,7 @@ MAX_TOTAL_HOURS = 512
 MAX_SECTION_COUNT = 12
 
 WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+HOME_TIMELINE_ENTRY_ORDER = "home"
 
 
 class CoursePlanningError(ValueError):
@@ -551,6 +552,82 @@ def _build_timeline_status_note(
     return f"当前日期已晚于最后一次课，默认定位到最近一次课：{anchor_title}。"
 
 
+def build_timeline_home_entry(
+    home_material: dict[str, Any] | None = None,
+    *,
+    include_placeholder: bool = False,
+) -> dict[str, Any] | None:
+    material = dict(home_material or {})
+    try:
+        material_id = int(material.get("id") or 0)
+    except (TypeError, ValueError):
+        material_id = 0
+    viewer_url = str(material.get("viewer_url") or "").strip()
+    material_name = str(material.get("name") or "").strip()
+    material_path = str(material.get("material_path") or "").strip()
+    has_material = material_id > 0 and bool(viewer_url)
+
+    if not has_material and not include_placeholder:
+        return None
+
+    title = "目录与课程简介" if has_material else "首页未配置"
+    detail_title = "课程学习首页" if has_material else "课程学习首页未配置"
+    detail_summary = (
+        "从这里进入课程目录、课程简介与后续学习文档导航。"
+        if has_material
+        else "教师可为本课堂绑定一份 Markdown 首页文档，用于放置课程目录、学习说明和后续文档入口。"
+    )
+
+    return {
+        "id": HOME_TIMELINE_ENTRY_ORDER,
+        "course_lesson_id": None,
+        "order_index": HOME_TIMELINE_ENTRY_ORDER,
+        "entry_type": "home",
+        "is_home_entry": True,
+        "is_lesson_entry": False,
+        "is_anchor": False,
+        "progress_state": "home",
+        "session_number_label": "首页",
+        "relative_day_label": "开始学习",
+        "month_day_label": "",
+        "timeline_weekday_label": "课程入口",
+        "timeline_relative_date_label": "目录与简介",
+        "segment_title": title,
+        "session_status_label": "课程入口" if has_material else "待配置",
+        "task_status_label": "课程入口" if has_material else "待配置",
+        "title": detail_title,
+        "detail_title": detail_title,
+        "content": detail_summary,
+        "detail_content": detail_summary,
+        "detail_lines": [detail_summary] if detail_summary else [],
+        "detail_summary": detail_summary,
+        "content_preview": detail_summary,
+        "detail_meta": material_path or "尚未绑定首页文档",
+        "detail_hint": "" if has_material else "首页文档不存在时，学生端不会显示首页入口按钮。",
+        "date_label": "",
+        "week_label": "",
+        "section_count": 0,
+        "slot_section_count": 0,
+        "is_section_match": True,
+        "learning_material_id": material_id if has_material else None,
+        "learning_material": material if has_material else None,
+        "learning_material_name": material_name if has_material else "",
+        "learning_material_path": material_path if has_material else "",
+        "learning_material_parent_id": material.get("parent_id") if has_material else None,
+        "learning_material_viewer_url": viewer_url if has_material else "",
+        "has_learning_material": has_material,
+        "home_learning_material_id": material_id if has_material else None,
+        "home_learning_material": material if has_material else None,
+        "home_learning_material_name": material_name if has_material else "",
+        "home_learning_material_path": material_path if has_material else "",
+        "home_learning_material_viewer_url": viewer_url if has_material else "",
+        "has_home_learning_material": has_material,
+        "material_generation_task": None,
+        "material_generation_status": "idle",
+        "has_material_generation_in_progress": False,
+    }
+
+
 def _decorate_session_progress(
     sessions: list[dict[str, Any]],
     *,
@@ -621,6 +698,8 @@ def decorate_offering_sessions(
     session_rows: Iterable[Any],
     *,
     reference_date: date | None = None,
+    home_material: dict[str, Any] | None = None,
+    include_home_placeholder: bool = False,
 ) -> dict[str, Any]:
     normalized_sessions: list[dict[str, Any]] = []
     today = reference_date or china_today()
@@ -719,9 +798,21 @@ def decorate_offering_sessions(
             else ""
         )
 
+    home_entry = build_timeline_home_entry(
+        home_material,
+        include_placeholder=include_home_placeholder,
+    )
+    timeline_entries = ([home_entry] if home_entry else []) + sessions
+    home_material_payload = dict(home_material or {}) if home_entry and home_entry.get("has_home_learning_material") else None
+
     return {
         **progress,
         "session_count": len(sessions),
+        "timeline_entries": timeline_entries,
+        "timeline_entry_count": len(timeline_entries),
+        "home_entry": home_entry,
+        "home_material": home_material_payload,
+        "has_home_material": bool(home_material_payload),
         "first_session_date": sessions[0]["session_date"] if sessions else "",
         "last_session_date": sessions[-1]["session_date"] if sessions else "",
         "focus_title": anchor_session["title"] if anchor_session else "",

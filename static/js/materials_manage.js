@@ -818,7 +818,11 @@ function renderAiAssignResult(assignments) {
         return;
     }
 
-    refs.aiAssignSummary.textContent = `成功绑定 ${assignments.length} 个文档到课次`;
+    const homeCount = assignments.filter((item) => item.target_type === 'home').length;
+    const lessonCount = assignments.length - homeCount;
+    refs.aiAssignSummary.textContent = homeCount
+        ? `成功识别 ${homeCount} 个首页文档，并绑定 ${lessonCount} 个课次文档`
+        : `成功绑定 ${lessonCount} 个文档到课次`;
     refs.aiAssignList.innerHTML = assignments.map((item) => {
         const confidence = String(item.confidence || 'medium').toLowerCase();
         const confidenceLabel = confidence === 'high' ? '高' : (confidence === 'low' ? '低' : '中');
@@ -826,12 +830,13 @@ function renderAiAssignResult(assignments) {
         const pathShort = pathFull ? pathFull.split('/').slice(-2).join('/') : '';
         const orderIdx = item.order_index || 0;
         const sessionTitle = item.session_title || '';
+        const isHome = item.target_type === 'home';
         return `
             <div class="materials-ai-assign-item">
                 <span class="materials-ai-assign-path" title="${escapeHtml(pathFull)}">${escapeHtml(pathShort)}</span>
                 <span class="materials-ai-assign-arrow">&rarr;</span>
                 <span class="materials-ai-assign-session">
-                    <strong>第${escapeHtml(String(orderIdx))}课</strong>
+                    <strong>${isHome ? '首页' : `第${escapeHtml(String(orderIdx))}课`}</strong>
                     ${sessionTitle ? `<span class="materials-ai-assign-session-title">${escapeHtml(sessionTitle)}</span>` : ''}
                 </span>
                 <span class="materials-ai-confidence materials-ai-confidence--${escapeHtml(confidence)}">${escapeHtml(confidenceLabel)}</span>
