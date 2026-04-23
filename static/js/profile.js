@@ -97,6 +97,49 @@ function updateAvatarPreview(url) {
         });
 }
 
+function setText(selector, value) {
+    document.querySelectorAll(selector).forEach((element) => {
+        element.textContent = value;
+    });
+}
+
+function updateProfileChrome(profile = {}) {
+    if (!profile || typeof profile !== 'object') {
+        return;
+    }
+    const displayRole = profile.display_role || profile.nickname || profile.role_label || '未设置';
+    setText('[data-profile-display-role]', displayRole);
+    setText('[data-profile-mood-display]', profile.today_mood || '未设置');
+
+    const completion = profile.completion || {};
+    if (Number.isFinite(Number(completion.percent))) {
+        setText('[data-profile-completion-value]', String(completion.percent));
+        document.querySelectorAll('[data-profile-completion-bar]').forEach((bar) => {
+            bar.style.width = `${completion.percent}%`;
+        });
+    }
+
+    const summary = document.querySelector('[data-profile-summary]');
+    if (summary) {
+        summary.textContent = profile.description || summary.dataset.emptyText || '';
+    }
+
+    const descriptionPreview = document.querySelector('[data-profile-description-preview]');
+    if (descriptionPreview) {
+        descriptionPreview.textContent = profile.description || '尚未填写';
+    }
+
+    const homepageChip = document.querySelector('[data-profile-homepage-chip]');
+    if (homepageChip) {
+        if (profile.homepage_url) {
+            homepageChip.href = profile.homepage_url;
+            homepageChip.hidden = false;
+        } else {
+            homepageChip.hidden = true;
+        }
+    }
+}
+
 function initAvatarUpload() {
     const input = document.getElementById('profile-avatar-input');
     const pickButton = document.querySelector('[data-profile-avatar-pick]');
@@ -119,6 +162,7 @@ function initAvatarUpload() {
                 body: formData,
             });
             updateAvatarPreview(response.profile?.avatar_url || '/api/profile/avatar');
+            updateProfileChrome(response.profile);
             showToast(response.message || '头像已更新', 'success');
         } catch (error) {
             showToast(error.message || '头像上传失败', 'error');
@@ -144,6 +188,7 @@ function initBasicForm() {
                 method: 'PUT',
                 body: payload,
             });
+            updateProfileChrome(response.profile);
             showToast(response.message || '基础信息已保存', 'success');
         } catch (error) {
             showToast(error.message || '保存失败', 'error');
@@ -172,10 +217,7 @@ async function saveMood(mood, button = null) {
             body: { mood: normalizedMood },
         });
         applyMoodValue(response.profile?.today_mood || normalizedMood);
-        const moodText = document.querySelector('.profile-mood-pill strong');
-        if (moodText) {
-            moodText.textContent = response.profile?.today_mood || '未设置';
-        }
+        updateProfileChrome(response.profile || { today_mood: normalizedMood });
         showToast(response.message || '今日心情已更新', 'success');
     } catch (error) {
         showToast(error.message || '心情保存失败', 'error');
@@ -232,7 +274,15 @@ function initPasswordForm() {
     });
 }
 
+function initActiveNavScroll() {
+    const active = document.querySelector('.profile-nav__link.is-active');
+    if (active && typeof active.scrollIntoView === 'function') {
+        active.scrollIntoView({ block: 'nearest', inline: 'center' });
+    }
+}
+
 if (root) {
+    initActiveNavScroll();
     initCharts();
     initAvatarUpload();
     initBasicForm();
