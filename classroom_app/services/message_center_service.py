@@ -9,8 +9,10 @@ from urllib.parse import quote
 from ..core import ai_client
 from ..database import get_db_connection
 from .psych_profile_service import (
+    build_explicit_user_profile_prompt,
     compose_classroom_chat_system_prompt,
     load_ai_class_config,
+    load_explicit_user_profile,
     load_latest_hidden_profile,
 )
 from .academic_service import build_classroom_ai_context
@@ -215,11 +217,11 @@ def build_conversation_key(identity_a: str, identity_b: str, class_offering_id: 
 
 def build_message_center_link(contact_identity: Optional[str] = None, class_offering_id: Optional[int] = None) -> str:
     if not contact_identity:
-        return "/message-center"
-    params = [f"tab={quote(MESSAGE_CATEGORY_PRIVATE)}", f"contact={quote(contact_identity)}"]
+        return "/profile?section=notifications"
+    params = [f"section=private", f"tab={quote(MESSAGE_CATEGORY_PRIVATE)}", f"contact={quote(contact_identity)}"]
     if class_offering_id:
         params.append(f"scope={int(class_offering_id)}")
-    return "/message-center?" + "&".join(params)
+    return "/profile?" + "&".join(params)
 
 
 def build_actor_display_name(name: str, role: str) -> str:
@@ -236,8 +238,11 @@ def is_blockable_role(role: str) -> bool:
     return str(role or "").strip().lower() not in {AI_ASSISTANT_ROLE, "teacher"}
 
 
-def get_visible_categories(user_role: str) -> tuple[str, ...]:
-    return VISIBLE_NOTIFICATION_CATEGORIES.get(str(user_role or "").strip().lower(), ("all", MESSAGE_CATEGORY_PRIVATE))
+def get_visible_categories(user_role: str, *, include_private: bool = True) -> tuple[str, ...]:
+    categories = VISIBLE_NOTIFICATION_CATEGORIES.get(str(user_role or "").strip().lower(), ("all", MESSAGE_CATEGORY_PRIVATE))
+    if include_private:
+        return categories
+    return tuple(category for category in categories if category != MESSAGE_CATEGORY_PRIVATE)
 
 
 def _ensure_user_identity(user: dict) -> tuple[int, str, str]:
@@ -844,20 +849,30 @@ def _serialize_private_ai_reply_job(row) -> dict[str, Any]:
     }
 
 
-def get_message_center_summary(conn, user: dict) -> dict[str, Any]:
+def get_message_center_summary(conn, user: dict, *, include_private: bool = True) -> dict[str, Any]:
     user_pk, role, _ = _ensure_user_identity(user)
+    conditions = ["recipient_role = ?", "recipient_user_pk = ?"]
+    params: list[Any] = [role, user_pk]
+    if not include_private:
+        conditions.append("category != ?")
+        params.append(MESSAGE_CATEGORY_PRIVATE)
     rows = conn.execute(
         """
         SELECT category,
                COUNT(*) AS total_count,
                SUM(CASE WHEN read_at IS NULL THEN 1 ELSE 0 END) AS unread_count
         FROM message_center_notifications
-        WHERE recipient_role = ? AND recipient_user_pk = ?
+        WHERE {conditions}
         GROUP BY category
-        """,
-        (role, user_pk),
+        """.format(conditions=" AND ".join(conditions)),
+        tuple(params),
     ).fetchall()
 
+    available_categories = (
+        ALL_NOTIFICATION_CATEGORIES
+        if include_private
+        else tuple(category for category in ALL_NOTIFICATION_CATEGORIES if category != MESSAGE_CATEGORY_PRIVATE)
+    )
     counts = {
         category: {
             "category": category,
@@ -865,7 +880,7 @@ def get_message_center_summary(conn, user: dict) -> dict[str, Any]:
             "total_count": 0,
             "unread_count": 0,
         }
-        for category in ALL_NOTIFICATION_CATEGORIES
+        for category in available_categories
     }
     unread_total = 0
     for row in rows:
@@ -886,15 +901,17 @@ def get_message_center_summary(conn, user: dict) -> dict[str, Any]:
         "unread_count": unread_total,
         "total_count": sum(item["total_count"] for item in counts.values()),
     }]
-    for category in get_visible_categories(role):
+    visible_categories = get_visible_categories(role, include_private=include_private)
+    for category in visible_categories:
         if category == "all":
             continue
-        tabs.append(counts[category])
+        if category in counts:
+            tabs.append(counts[category])
 
     return {
         "unread_total": unread_total,
         "tabs": tabs,
-        "visible_categories": list(get_visible_categories(role)),
+        "visible_categories": list(visible_categories),
         "filters": [{"value": key, "label": value} for key, value in FILTER_LABELS.items()],
     }
 
@@ -907,13 +924,19 @@ def list_message_center_items(
     keyword: str = "",
     filter_key: str = "all",
     limit: int = 120,
+    include_private: bool = True,
 ) -> list[dict[str, Any]]:
     user_pk, role, _ = _ensure_user_identity(user)
     conditions = ["recipient_role = ?", "recipient_user_pk = ?"]
     params: list[Any] = [role, user_pk]
+    if not include_private:
+        conditions.append("category != ?")
+        params.append(MESSAGE_CATEGORY_PRIVATE)
 
     normalized_category = str(category or "all").strip()
     if normalized_category != "all":
+        if not include_private and normalized_category == MESSAGE_CATEGORY_PRIVATE:
+            return []
         conditions.append("category = ?")
         params.append(normalized_category)
 
@@ -953,6 +976,7 @@ def mark_message_center_items_read(
     category: str = "all",
     contact_identity: str = "",
     class_offering_id: Optional[int] = None,
+    include_private: bool = True,
 ) -> int:
     user_pk, role, _ = _ensure_user_identity(user)
     read_at = _now_iso()
@@ -966,6 +990,8 @@ def mark_message_center_items_read(
         if not normalized_ids:
             return 0
         placeholders = ",".join("?" for _ in normalized_ids)
+        private_filter_sql = "" if include_private else f" AND category != ?"
+        private_filter_params: tuple[Any, ...] = () if include_private else (MESSAGE_CATEGORY_PRIVATE,)
         cursor = conn.execute(
             f"""
             UPDATE message_center_notifications
@@ -973,17 +999,23 @@ def mark_message_center_items_read(
             WHERE recipient_role = ?
               AND recipient_user_pk = ?
               AND read_at IS NULL
+              {private_filter_sql}
               AND id IN ({placeholders})
             """,
-            (read_at, role, user_pk, *normalized_ids),
+            (read_at, role, user_pk, *private_filter_params, *normalized_ids),
         )
         return int(cursor.rowcount or 0)
 
     conditions = ["recipient_role = ?", "recipient_user_pk = ?", "read_at IS NULL"]
     params: list[Any] = [role, user_pk]
+    if not include_private:
+        conditions.append("category != ?")
+        params.append(MESSAGE_CATEGORY_PRIVATE)
 
     normalized_category = str(category or "all").strip()
     if normalized_category != "all":
+        if not include_private and normalized_category == MESSAGE_CATEGORY_PRIVATE:
+            return 0
         conditions.append("category = ?")
         params.append(normalized_category)
 
@@ -1514,22 +1546,20 @@ def _build_ai_private_user_context(conn, user: dict, class_offering_id: int) -> 
     if not offering:
         return str(user.get("name") or "")
 
+    explicit_profile = load_explicit_user_profile(conn, int(user["id"]), str(user.get("role") or ""))
     time_context = build_time_context_text()
-    polite_name = polite_address(str(user.get("name") or ""), str(user.get("role") or "student"))
+    polite_name = polite_address(
+        str(explicit_profile.get("name") or user.get("name") or ""),
+        str(user.get("role") or "student"),
+    )
+    explicit_profile_prompt = build_explicit_user_profile_prompt(
+        explicit_profile,
+        heading="【用户在个人中心维护的资料与沟通信号】",
+    )
 
     if str(user.get("role")) == "student":
-        student = conn.execute(
-            """
-            SELECT student_id_number, name, description
-            FROM students
-            WHERE id = ?
-            LIMIT 1
-            """,
-            (user["id"],),
-        ).fetchone()
-        student_id_number = str(student["student_id_number"] or "") if student else ""
-        student_name = str(student["name"] or user.get("name") or "") if student else str(user.get("name") or "")
-        student_desc = str(student["description"] or "") if student else ""
+        student_id_number = str(explicit_profile.get("student_id_number") or "")
+        student_name = str(explicit_profile.get("name") or user.get("name") or "")
         lines = [
             f"姓名：{student_name}",
             f"礼貌称呼：{polite_name}",
@@ -1539,18 +1569,18 @@ def _build_ai_private_user_context(conn, user: dict, class_offering_id: int) -> 
             f"班级：{offering['class_name']}",
             f"授课教师：{offering['teacher_name']}",
         ]
-        if student_desc:
-            lines.append(f"学习画像摘要（仅供内部参考）：{student_desc}")
+        lines.append(explicit_profile_prompt)
         lines.append("当前场景：与课堂 AI 助教进行一对一私信交流。")
         lines.append(time_context)
         return "\n".join(lines)
 
     return "\n".join([
-        f"姓名：{user.get('name') or ''}",
+        f"姓名：{explicit_profile.get('name') or user.get('name') or ''}",
         f"礼貌称呼：{polite_name}",
         "身份：教师",
         f"课程：{offering['course_name']}",
         f"班级：{offering['class_name']}",
+        explicit_profile_prompt,
         "当前场景：与课堂 AI 助教进行一对一私信交流。",
         time_context,
     ])
@@ -1636,7 +1666,8 @@ async def _generate_ai_private_reply_text(
         "5. 可以用对方姓名中的姓氏加上「同学」或「老师」来称呼，但不要太正式。\n"
         "6. 如果问题涉及当前课程，请结合课程与班级上下文回答，让回答有针对性。\n"
         "7. 适当使用 Markdown 格式让回复更易读（如加粗重点、用列表组织步骤、用代码块展示代码），但不要过度格式化。\n"
-        "8. 结合当前时间段调整语气（如深夜温和劝休息、早晨积极鼓励）。"
+        "8. 结合当前时间段调整语气（如深夜温和劝休息、早晨积极鼓励）。\n"
+        "9. 如果背景信息里给出了用户主动设置的今日心情或个人资料，请据此调整安抚强度、回复长度和举例方向，但不要说出来源。"
     )
     history_messages = [
         {
@@ -1932,12 +1963,22 @@ async def send_private_message_and_maybe_reply(
     return payload
 
 
-def get_message_center_bootstrap(conn, user: dict) -> dict[str, Any]:
-    return {
-        "summary": get_message_center_summary(conn, user),
-        "private_contacts": list_private_message_contacts(conn, user),
-        "private_blocks": list_private_message_blocks(conn, user),
+def get_message_center_bootstrap(
+    conn,
+    user: dict,
+    *,
+    include_private: bool = True,
+    include_private_data: bool = True,
+) -> dict[str, Any]:
+    payload = {
+        "summary": get_message_center_summary(conn, user, include_private=include_private),
+        "private_contacts": [],
+        "private_blocks": [],
     }
+    if include_private_data:
+        payload["private_contacts"] = list_private_message_contacts(conn, user)
+        payload["private_blocks"] = list_private_message_blocks(conn, user)
+    return payload
 
 
 def create_assignment_published_notifications(conn, assignment_id: int | str) -> int:

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 from typing import Optional
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ..core import templates
 from ..database import get_db_connection
@@ -23,6 +24,7 @@ from ..services.message_center_service import (
     process_private_ai_reply_job,
     remove_private_message_block,
     send_private_message_and_maybe_reply,
+    MESSAGE_CATEGORY_PRIVATE,
 )
 from ..services.rate_limit_service import RateLimitExceededError
 
@@ -43,35 +45,49 @@ async def message_center_page(
     scope: Optional[int] = Query(default=None),
     user: dict = Depends(get_current_user),
 ):
-    return templates.TemplateResponse(
-        request,
-        "message_center.html",
-        {
-            "request": request,
-            "user_info": user,
-            "page_title": "信息中心",
-            "initial_tab": str(tab or "all"),
-            "initial_contact": str(contact or ""),
-            "initial_scope": _normalize_scope(scope),
-        },
-    )
+    normalized_tab = str(tab or "all")
+    params: dict[str, str] = {}
+    if normalized_tab == MESSAGE_CATEGORY_PRIVATE:
+        params["section"] = "private"
+        params["tab"] = MESSAGE_CATEGORY_PRIVATE
+        if contact:
+            params["contact"] = str(contact)
+        if scope is not None:
+            params["scope"] = str(scope)
+    else:
+        params["section"] = "notifications"
+        if normalized_tab and normalized_tab != "all":
+            params["tab"] = normalized_tab
+    return RedirectResponse(url=f"/profile?{urlencode(params)}", status_code=303)
 
 
 @router.get("/api/message-center/bootstrap", response_class=JSONResponse)
-def api_message_center_bootstrap(user: dict = Depends(get_current_user)):
+def api_message_center_bootstrap(
+    include_private: bool = Query(default=True),
+    private_data: bool = Query(default=True),
+    user: dict = Depends(get_current_user),
+):
     with get_db_connection() as conn:
         return {
             "status": "success",
-            **get_message_center_bootstrap(conn, user),
+            **get_message_center_bootstrap(
+                conn,
+                user,
+                include_private=include_private,
+                include_private_data=private_data,
+            ),
         }
 
 
 @router.get("/api/message-center/summary", response_class=JSONResponse)
-def api_message_center_summary(user: dict = Depends(get_current_user)):
+def api_message_center_summary(
+    include_private: bool = Query(default=True),
+    user: dict = Depends(get_current_user),
+):
     with get_db_connection() as conn:
         return {
             "status": "success",
-            "summary": get_message_center_summary(conn, user),
+            "summary": get_message_center_summary(conn, user, include_private=include_private),
             "latest_unread": get_latest_unread_notification(conn, user),
         }
 
@@ -82,6 +98,7 @@ def api_message_center_items(
     keyword: str = Query(default=""),
     filter_key: str = Query(default="all", alias="filter"),
     limit: int = Query(default=120, ge=1, le=300),
+    include_private: bool = Query(default=True),
     user: dict = Depends(get_current_user),
 ):
     with get_db_connection() as conn:
@@ -92,6 +109,7 @@ def api_message_center_items(
             keyword=keyword,
             filter_key=filter_key,
             limit=limit,
+            include_private=include_private,
         )
         return {
             "status": "success",
@@ -102,6 +120,9 @@ def api_message_center_items(
 @router.post("/api/message-center/read", response_class=JSONResponse)
 async def api_message_center_mark_read(request: Request, user: dict = Depends(get_current_user)):
     data = await request.json()
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="请求格式不正确")
+    include_private = bool(data.get("include_private", True))
     with get_db_connection() as conn:
         updated_count = mark_message_center_items_read(
             conn,
@@ -110,8 +131,9 @@ async def api_message_center_mark_read(request: Request, user: dict = Depends(ge
             category=str(data.get("category") or "all"),
             contact_identity=str(data.get("contact_identity") or ""),
             class_offering_id=_normalize_scope(data.get("class_offering_id")),
+            include_private=include_private,
         )
-        summary = get_message_center_summary(conn, user)
+        summary = get_message_center_summary(conn, user, include_private=include_private)
         conn.commit()
     return {
         "status": "success",

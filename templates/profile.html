@@ -1,0 +1,319 @@
+{% extends "base_navbar.html" %}
+
+{% block title %}个人中心 | 课堂平台{% endblock %}
+
+{% block css %}
+{{ super() }}
+<link rel="stylesheet" href="/static/css/markdown.css">
+<link rel="stylesheet" href="{{ asset_url('css/profile.css') }}">
+{% endblock %}
+
+{% block main_content %}
+<section class="profile-shell" data-profile-root data-active-section="{{ active_section }}">
+    <aside class="profile-sidebar">
+        <section class="profile-identity">
+            <img class="profile-identity__avatar" src="{{ profile.avatar_url }}" alt="头像">
+            <div class="profile-identity__copy">
+                <h1>{{ profile.name }}</h1>
+                <p>{{ profile.display_role }}{% if profile.class_name %} · {{ profile.class_name }}{% endif %}</p>
+            </div>
+            <div class="profile-completion">
+                <div class="profile-completion__top">
+                    <span>资料完整度</span>
+                    <strong>{{ profile.completion.percent }}%</strong>
+                </div>
+                <div class="profile-completion__bar">
+                    <span style="width: {{ profile.completion.percent }}%"></span>
+                </div>
+            </div>
+            <div class="profile-mood-pill">
+                <span>今日心情</span>
+                <strong>{{ profile.today_mood or '未设置' }}</strong>
+            </div>
+        </section>
+
+        <nav class="profile-nav" aria-label="个人中心菜单">
+            {% for item in nav_items %}
+            <a class="profile-nav__link{% if item.active %} is-active{% endif %}" href="{{ item.href }}">
+                <span>{{ item.label }}</span>
+                {% if item.badge %}
+                <strong>{{ item.badge if item.badge < 100 else '99+' }}</strong>
+                {% endif %}
+            </a>
+            {% endfor %}
+        </nav>
+    </aside>
+
+    <section class="profile-main">
+        {% if active_section == 'overview' %}
+        <section class="profile-panel profile-overview-head">
+            <div>
+                <span class="profile-kicker">{{ profile.role_label }}档案</span>
+                <h2>{{ overview.headline }}</h2>
+                <p>{{ profile.description or '这里汇总你的课堂、任务、消息和账号状态。' }}</p>
+            </div>
+            <a class="btn btn-outline" href="/profile?section=settings">完善资料</a>
+        </section>
+
+        <section class="profile-metric-grid">
+            {% for item in overview.metric_cards %}
+            <article class="profile-metric-card">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+                <p>{{ item.note }}</p>
+            </article>
+            {% endfor %}
+        </section>
+
+        <section class="profile-chart-grid">
+            {% for chart in overview.charts %}
+            <article class="profile-panel profile-chart-card">
+                <div class="profile-panel__head">
+                    <h3>{{ chart.title }}</h3>
+                </div>
+                <div class="profile-chart" data-profile-chart="{{ chart.id }}"></div>
+            </article>
+            {% endfor %}
+        </section>
+
+        <section class="profile-panel">
+            <div class="profile-panel__head">
+                <h3>近期动态</h3>
+            </div>
+            <div class="profile-activity-list">
+                {% for item in overview.recent_items %}
+                <a class="profile-activity-item{% if item.is_unread %} is-unread{% endif %}" href="{{ item.href }}">
+                    <span>{{ item.type }}</span>
+                    <div>
+                        <strong>{{ item.title }}</strong>
+                        <p>{{ item.subtitle }}</p>
+                    </div>
+                    <time>{{ item.created_at | datetime_format }}</time>
+                </a>
+                {% else %}
+                <div class="profile-empty">暂无近期动态。</div>
+                {% endfor %}
+            </div>
+        </section>
+        {% elif active_section == 'settings' %}
+        <section class="profile-panel">
+            <div class="profile-panel__head">
+                <h2>基础信息</h2>
+            </div>
+            <div class="profile-settings-grid">
+                <section class="profile-avatar-card">
+                    <img id="profile-avatar-preview" src="{{ profile.avatar_url }}" alt="当前头像">
+                    <input id="profile-avatar-input" type="file" accept="image/png,image/jpeg,image/gif" hidden>
+                    <button type="button" class="btn btn-outline" data-profile-avatar-pick>上传头像/GIF</button>
+                </section>
+
+                <form id="profile-basic-form" class="profile-form">
+                    <div class="profile-form-grid">
+                        <div class="form-group">
+                            <label class="form-label" for="profile-name">姓名</label>
+                            <input id="profile-name" class="form-control" value="{{ profile.name }}" readonly>
+                        </div>
+                        {% if profile.role == 'student' %}
+                        <div class="form-group">
+                            <label class="form-label" for="profile-student-id">学号</label>
+                            <input id="profile-student-id" class="form-control" value="{{ profile.student_id_number }}" readonly>
+                        </div>
+                        {% endif %}
+                        <div class="form-group">
+                            <label class="form-label" for="profile-nickname">身份昵称</label>
+                            <input id="profile-nickname" name="nickname" class="form-control" value="{{ profile.nickname }}" maxlength="40">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="profile-email">邮箱</label>
+                            <input id="profile-email" name="email" type="email" class="form-control" value="{{ profile.email }}" maxlength="120">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="profile-phone">电话</label>
+                            <input id="profile-phone" name="phone" class="form-control" value="{{ profile.phone }}" maxlength="32">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="profile-wechat">微信</label>
+                            <input id="profile-wechat" name="wechat" class="form-control" value="{{ profile.wechat }}" maxlength="64">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="profile-qq">QQ</label>
+                            <input id="profile-qq" name="qq" class="form-control" value="{{ profile.qq }}" maxlength="32">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="profile-homepage">个人主页</label>
+                            <input id="profile-homepage" name="homepage_url" class="form-control" value="{{ profile.homepage_url }}" maxlength="240">
+                        </div>
+                        <div class="form-group profile-form-grid__wide">
+                            <label class="form-label" for="profile-description">个人简介</label>
+                            <textarea id="profile-description" name="description" class="form-control" maxlength="600">{{ profile.description }}</textarea>
+                        </div>
+                    </div>
+                    <div class="profile-form-actions">
+                        <button type="submit" class="btn btn-primary">保存资料</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <section class="profile-panel">
+            <div class="profile-panel__head">
+                <h2>今日心情</h2>
+            </div>
+            <div class="profile-mood-editor">
+                <div class="profile-mood-options">
+                    {% for mood in ['平静', '专注', '开心', '有点累', '需要鼓励'] %}
+                    <button type="button" class="profile-mood-option{% if profile.today_mood == mood %} is-active{% endif %}" data-profile-mood="{{ mood }}">{{ mood }}</button>
+                    {% endfor %}
+                </div>
+                <div class="profile-mood-custom">
+                    <input id="profile-mood-input" class="form-control" value="{{ profile.today_mood }}" maxlength="40" placeholder="自定义今日心情">
+                    <button type="button" id="profile-mood-save" class="btn btn-outline">保存心情</button>
+                </div>
+            </div>
+        </section>
+        {% elif active_section == 'security' %}
+        <section class="profile-panel profile-security-panel">
+            <div class="profile-panel__head">
+                <h2>账号安全</h2>
+            </div>
+            <form id="profile-password-form" class="profile-form profile-password-form">
+                <div class="form-group">
+                    <label class="form-label" for="profile-current-password">当前密码</label>
+                    <input id="profile-current-password" name="current_password" type="password" class="form-control" autocomplete="current-password" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="profile-new-password">新密码</label>
+                    <input id="profile-new-password" name="new_password" type="password" class="form-control" autocomplete="new-password" required>
+                    <span class="form-text">{% if profile.role == 'student' %}至少 8 位，且同时包含字母和数字。{% else %}至少 6 位。{% endif %}</span>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="profile-confirm-password">确认新密码</label>
+                    <input id="profile-confirm-password" name="confirm_password" type="password" class="form-control" autocomplete="new-password" required>
+                </div>
+                <div class="profile-form-actions">
+                    <button type="submit" class="btn btn-primary">更新密码</button>
+                </div>
+            </form>
+            <div class="profile-security-meta">
+                <span>最近密码更新时间</span>
+                <strong>{{ profile.password_updated_at or '暂无记录' }}</strong>
+            </div>
+        </section>
+        {% elif active_section in ['notifications', 'private'] %}
+        <section
+            class="message-center-shell profile-message-center"
+            data-message-center-app
+            data-message-center-mode="{{ 'private' if active_section == 'private' else 'notifications' }}"
+            data-initial-tab="{{ initial_tab }}"
+            data-initial-contact="{{ initial_contact }}"
+            data-initial-scope="{{ initial_scope if initial_scope is not none else '' }}"
+        >
+            <section class="profile-panel profile-message-head">
+                <div>
+                    <span class="profile-kicker">{{ 'Private Messages' if active_section == 'private' else 'Notifications' }}</span>
+                    <h2>{{ '私信' if active_section == 'private' else '通知中心' }}</h2>
+                    <p>{{ '和同学、老师或 AI 助教保持一对一沟通。' if active_section == 'private' else '只展示系统通知，私信已拆分到左侧独立入口。' }}</p>
+                </div>
+                <div class="message-center-hero__stats profile-message-stats">
+                    <div class="message-center-stat">
+                        <span class="message-center-stat__label">总未读</span>
+                        <strong class="message-center-stat__value" id="message-center-unread-total">0</strong>
+                    </div>
+                    <div class="message-center-stat">
+                        <span class="message-center-stat__label">当前分类</span>
+                        <strong class="message-center-stat__value" id="message-center-current-tab-label">全部</strong>
+                    </div>
+                    <div class="message-center-stat{% if active_section == 'notifications' %} is-muted{% endif %}">
+                        <span class="message-center-stat__label">私信联系人</span>
+                        <strong class="message-center-stat__value" id="message-center-contact-total">0</strong>
+                    </div>
+                </div>
+            </section>
+
+            <section class="message-center-toolbar profile-message-toolbar">
+                <div class="message-center-tabs" id="message-center-tabs"></div>
+                <div class="message-center-controls">
+                    <input id="message-center-search" class="message-center-search" type="search" placeholder="搜索关键词">
+                    <select id="message-center-filter" class="message-center-filter"></select>
+                    <button type="button" id="message-center-mark-read" class="btn btn-outline">标记当前已读</button>
+                </div>
+            </section>
+
+            <section class="message-center-body profile-message-body">
+                <div id="message-center-feed" class="message-center-feed"></div>
+                <div id="message-center-private-panel" class="message-center-private-panel" hidden>
+                    <aside class="message-center-sidebar">
+                        <div class="message-center-pane-header">
+                            <h2 class="message-center-pane-title">私信会话</h2>
+                            <p class="message-center-conversation__hint">支持联系本班同学、老师与 AI 助教。</p>
+                        </div>
+                        <div class="message-center-contact-picker">
+                            <label for="message-center-contact-search" class="message-center-conversation__hint">联系人搜索</label>
+                            <input id="message-center-contact-search" class="message-center-search message-center-search--compact" type="search" placeholder="输入姓名、课程、班级关键词">
+                            <label for="message-center-contact-select" class="message-center-conversation__hint">联系人下拉列表</label>
+                            <select id="message-center-contact-select" class="message-center-contact-select"></select>
+                            <div id="message-center-contact-current" class="message-center-contact-current"></div>
+                        </div>
+                        <div class="message-center-blocks">
+                            <div class="message-center-card__actions">
+                                <h3 class="message-center-pane-title">黑名单</h3>
+                                <span class="message-center-pill" id="message-center-block-count">0</span>
+                            </div>
+                            <div id="message-center-block-list" class="message-center-block-list"></div>
+                        </div>
+                    </aside>
+                    <section class="message-center-conversation">
+                        <div id="message-center-conversation-header" class="message-center-conversation__header"></div>
+                        <div id="message-center-conversation-body" class="message-center-conversation__body"></div>
+                        <div class="message-center-composer">
+                            <form id="message-center-compose-form" class="message-center-composer__form">
+                                <div class="message-center-composer__editor">
+                                    <div class="message-center-composer__main">
+                                        <div id="message-center-editor-toolbar" class="message-center-editor-toolbar">
+                                            <button type="button" data-md-insert="heading" title="标题">H</button>
+                                            <button type="button" data-md-insert="bold" title="加粗"><b>B</b></button>
+                                            <button type="button" data-md-insert="italic" title="斜体"><i>I</i></button>
+                                            <button type="button" data-md-insert="code" title="行内代码">&lt;/&gt;</button>
+                                            <button type="button" data-md-insert="codeblock" title="代码块">{ }</button>
+                                            <button type="button" data-md-insert="ul" title="无序列表">&#8226;</button>
+                                            <button type="button" data-md-insert="ol" title="有序列表">1.</button>
+                                            <button type="button" data-md-insert="quote" title="引用">&ldquo;</button>
+                                            <button type="button" data-md-insert="link" title="链接">&#128279;</button>
+                                        </div>
+                                        <textarea id="message-center-compose-input" class="message-center-composer__input" placeholder="输入私信内容（支持 Markdown 语法）"></textarea>
+                                    </div>
+                                    <div class="message-center-composer__actions">
+                                        <div id="message-center-emoji-anchor" class="message-center-emoji-anchor">
+                                            <button type="button" id="message-center-emoji-trigger" class="message-center-composer__action-button message-center-emoji-trigger" title="表情">
+                                                <span class="message-center-composer__action-icon" aria-hidden="true">&#128522;</span>
+                                                <span>表情</span>
+                                            </button>
+                                        </div>
+                                        <button type="submit" class="btn btn-primary message-center-compose-submit" data-send-button>
+                                            <span class="message-center-compose-submit__spinner" aria-hidden="true"></span>
+                                            <span class="message-center-compose-submit__label">发送</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </section>
+                </div>
+            </section>
+        </section>
+        {% endif %}
+    </section>
+</section>
+
+<script type="application/json" id="profile-context-json">{{ profile_context | tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{% include "partials/markdown_assets.html" %}
+<script src="{{ asset_url('js/echarts.min.js') }}"></script>
+<script type="module" src="{{ asset_url('js/profile.js') }}"></script>
+{% if active_section in ['notifications', 'private'] %}
+<script type="module" src="/static/js/message_center.js"></script>
+{% endif %}
+{% endblock %}

@@ -195,6 +195,7 @@
         .manage-header-bell-slot {
             display: inline-flex;
             align-items: center;
+            gap: 0.5rem;
             flex: 0 0 auto;
         }
 
@@ -389,6 +390,7 @@
                 <div class="manage-header-end">
                     <div class="manage-header-bell-slot">
                         {% include "partials/message_center_bell.html" %}
+                        {% include "partials/profile_button.html" %}
                     </div>
                     <div class="manage-header-page-actions">{% block header_actions %}{% endblock %}</div>
                 </div>

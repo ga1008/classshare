@@ -29,7 +29,7 @@ from .services.assignment_lifecycle_service import close_overdue_assignments
 from .database import get_db_connection
 
 # 导入所有 V4.0 路由
-from .routers import ui, files, homework, ai, materials, emoji, behavior, message_center
+from .routers import ui, files, homework, ai, materials, emoji, behavior, message_center, profile
 from .routers import manage as manage_router  # 避免命名冲突
 from .routers import session as session_router
 
@@ -284,6 +284,7 @@ app.include_router(materials.router)
 app.include_router(emoji.router)
 app.include_router(behavior.router)
 app.include_router(message_center.router)
+app.include_router(profile.router)
 app.include_router(manage_router.router)
 
 app.include_router(session_router.router)

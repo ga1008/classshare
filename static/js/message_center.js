@@ -8,6 +8,9 @@ if (app) {
     const PRIVATE_TAB = 'private_message';
     const AI_JOB_POLL_INTERVAL_MS = 2200;
     const ACTIVE_AI_JOB_STATUSES = new Set(['pending', 'running']);
+    const appMode = app.dataset.messageCenterMode || 'full';
+    const isNotificationsMode = appMode === 'notifications';
+    const isPrivateMode = appMode === 'private';
 
     const tabsEl = document.getElementById('message-center-tabs');
     const searchEl = document.getElementById('message-center-search');
@@ -38,7 +41,7 @@ if (app) {
         items: [],
         conversation: null,
         aiReplyJob: null,
-        currentTab: app.dataset.initialTab || 'all',
+        currentTab: isPrivateMode ? PRIVATE_TAB : (app.dataset.initialTab || 'all'),
         currentContact: app.dataset.initialContact || '',
         currentScope: normalizeScope(app.dataset.initialScope),
         keyword: '',
@@ -54,6 +57,20 @@ if (app) {
     };
 
     let emojiPicker = null;
+
+    if (isNotificationsMode && state.currentTab === PRIVATE_TAB) {
+        state.currentTab = 'all';
+    }
+
+    function appendModeParams(params, { includePrivateData = true } = {}) {
+        if (isNotificationsMode) {
+            params.set('include_private', '0');
+            if (!includePrivateData) {
+                params.set('private_data', '0');
+            }
+        }
+        return params;
+    }
 
     function normalizeScope(value) {
         if (value === '' || value == null) {
@@ -374,6 +391,12 @@ if (app) {
     }
 
     function renderTabs() {
+        if (isPrivateMode) {
+            tabsEl.hidden = true;
+            tabsEl.innerHTML = '';
+            return;
+        }
+        tabsEl.hidden = false;
         tabsEl.innerHTML = (state.summary.tabs || []).map((tab) => `
             <button
                 type="button"
@@ -793,9 +816,13 @@ if (app) {
     }
 
     async function markRead(payload) {
+        const body = {
+            ...payload,
+            include_private: !isNotificationsMode,
+        };
         const response = await apiFetch('/api/message-center/read', {
             method: 'POST',
-            body: payload,
+            body,
         });
         applySummary(response.summary || state.summary);
         return response;
@@ -811,6 +838,7 @@ if (app) {
             keyword: state.keyword,
             filter: state.filterKey,
         });
+        appendModeParams(params);
         const response = await apiFetch(`/api/message-center/items?${params.toString()}`, { silent: true });
         state.items = response.items || [];
         renderItems();
@@ -1032,7 +1060,9 @@ if (app) {
 
     async function bootstrap() {
         try {
-            const response = await apiFetch('/api/message-center/bootstrap', { silent: true });
+            const params = appendModeParams(new URLSearchParams(), { includePrivateData: !isNotificationsMode });
+            const query = params.toString();
+            const response = await apiFetch(`/api/message-center/bootstrap${query ? `?${query}` : ''}`, { silent: true });
             state.contacts = response.private_contacts || [];
             sortContactsInPlace();
             state.blocks = response.private_blocks || [];

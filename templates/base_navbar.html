@@ -53,6 +53,7 @@
         <span class="user-name">欢迎, {{ user_info.name }} <span class="text-muted">({{ user_info.nickname if user_info.nickname else ('教师' if user_info.role == 'teacher' else '学生') }})</span></span>
         <div class="flex items-center gap-2">
             {% include "partials/message_center_bell.html" %}
+            {% include "partials/profile_button.html" %}
             {% block navbar_actions %}
             {% if user_info.role == 'teacher' %}
             <a href="/manage" class="btn btn-outline btn-sm">管理中心</a>

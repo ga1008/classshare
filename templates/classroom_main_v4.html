@@ -138,6 +138,7 @@
     </div>
     <div class="navbar-user">
         {% include "partials/message_center_bell.html" %}
+        {% include "partials/profile_button.html" %}
         <span class="user-name">欢迎，{{ user_info.name }} <span class="badge badge-primary ml-2">{{ user_info.nickname if user_info.nickname else ('教师' if user_info.role == 'teacher' else '学生') }}</span></span>
         {% if user_info.role == 'student' %}
         <button type="button" class="btn btn-outline btn-sm" data-open-student-security>修改密码</button>

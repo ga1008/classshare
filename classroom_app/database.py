@@ -277,14 +277,34 @@ def init_database():
                              NOT
                              NULL
                              UNIQUE,
+                             phone
+                             TEXT,
+                             wechat
+                             TEXT,
+                             qq
+                             TEXT,
+                             homepage_url
+                             TEXT,
                              hashed_password
                              TEXT
                              NOT
                              NULL,
+                             password_updated_at
+                             TEXT,
                              profile_info
                              TEXT,
                              nickname TEXT,
                              description
+                             TEXT,
+                             avatar_file_hash
+                             TEXT,
+                             avatar_mime_type
+                             TEXT,
+                             avatar_updated_at
+                             TEXT,
+                             today_mood
+                             TEXT,
+                             today_mood_updated_at
                              TEXT,
                              created_at
                              TEXT
@@ -292,6 +312,23 @@ def init_database():
                              CURRENT_TIMESTAMP
                          )
                          ''')
+
+            for column_name, column_def in {
+                "phone": "TEXT",
+                "wechat": "TEXT",
+                "qq": "TEXT",
+                "homepage_url": "TEXT",
+                "password_updated_at": "TEXT",
+                "avatar_file_hash": "TEXT",
+                "avatar_mime_type": "TEXT",
+                "avatar_updated_at": "TEXT",
+                "today_mood": "TEXT",
+                "today_mood_updated_at": "TEXT",
+            }.items():
+                try:
+                    conn.execute(f"ALTER TABLE teachers ADD COLUMN {column_name} {column_def}")
+                except sqlite3.OperationalError:
+                    pass
 
             conn.execute(
                 '''
@@ -381,6 +418,12 @@ def init_database():
                              TEXT,
                              phone
                              TEXT,
+                             wechat
+                             TEXT,
+                             qq
+                             TEXT,
+                             homepage_url
+                             TEXT,
                              hashed_password
                              TEXT,
                              password_reset_required
@@ -396,6 +439,16 @@ def init_database():
                              nickname
                              TEXT,
                                 description TEXT,
+                             avatar_file_hash
+                             TEXT,
+                             avatar_mime_type
+                             TEXT,
+                             avatar_updated_at
+                             TEXT,
+                             today_mood
+                             TEXT,
+                             today_mood_updated_at
+                             TEXT,
                              created_at
                              TEXT
                              DEFAULT
@@ -425,6 +478,20 @@ def init_database():
                 conn.execute("ALTER TABLE students ADD COLUMN password_updated_at TEXT")
             except sqlite3.OperationalError:
                 pass  # 列已存在
+            for column_name, column_def in {
+                "wechat": "TEXT",
+                "qq": "TEXT",
+                "homepage_url": "TEXT",
+                "avatar_file_hash": "TEXT",
+                "avatar_mime_type": "TEXT",
+                "avatar_updated_at": "TEXT",
+                "today_mood": "TEXT",
+                "today_mood_updated_at": "TEXT",
+            }.items():
+                try:
+                    conn.execute(f"ALTER TABLE students ADD COLUMN {column_name} {column_def}")
+                except sqlite3.OperationalError:
+                    pass
 
             # 4. 课程 (模板)
             conn.execute('''
