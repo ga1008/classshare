@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/static/css/cards.css">
 <link rel="stylesheet" href="/static/css/forms.css">
 <link rel="stylesheet" href="/static/css/modals.css">
+<link rel="stylesheet" href="/static/css/feedback.css">
 <link rel="stylesheet" href="/static/css/toast.css">
 <link rel="stylesheet" href="/static/css/ai_chat.css">
 <link rel="stylesheet" href="/static/css/classroom.css?v=timeline-smooth-20260422">
@@ -138,6 +139,7 @@
     </div>
     <div class="navbar-user">
         {% include "partials/message_center_bell.html" %}
+        {% include "partials/feedback_button.html" %}
         {% include "partials/profile_button.html" %}
         <span class="user-name">欢迎，{{ user_info.name }} <span class="badge badge-primary ml-2">{{ user_info.nickname if user_info.nickname else ('教师' if user_info.role == 'teacher' else '学生') }}</span></span>
         {% if user_info.role == 'student' %}
@@ -150,6 +152,7 @@
 {% if user_info.role == 'student' %}
 {% include "partials/student_security_modal.html" %}
 {% endif %}
+{% include "partials/feedback_modal.html" %}
 
 {% set hero = classroom_page.hero %}
 {% set spotlight = classroom_page.spotlight %}
@@ -1133,6 +1136,7 @@
 
 {% block scripts %}
 <script src="/static/js/behavior_tracker.js"></script>
+<script type="module" src="/static/js/feedback.js"></script>
 <script type="module">
     import * as ui from '/static/js/ui.js';
     import { ClassroomChat } from '/static/js/chat.js';

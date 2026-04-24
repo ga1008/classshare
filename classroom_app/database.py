@@ -304,11 +304,17 @@ def init_database():
                              TEXT,
                              today_mood
                              TEXT,
-                             today_mood_updated_at
-                             TEXT,
-                             created_at
-                             TEXT
-                             DEFAULT
+                              today_mood_updated_at
+                              TEXT,
+                              is_super_admin
+                              INTEGER
+                              NOT
+                              NULL
+                              DEFAULT
+                              0,
+                              created_at
+                              TEXT
+                              DEFAULT
                              CURRENT_TIMESTAMP
                          )
                          ''')
@@ -324,11 +330,30 @@ def init_database():
                 "avatar_updated_at": "TEXT",
                 "today_mood": "TEXT",
                 "today_mood_updated_at": "TEXT",
+                "is_super_admin": "INTEGER NOT NULL DEFAULT 0",
             }.items():
                 try:
                     conn.execute(f"ALTER TABLE teachers ADD COLUMN {column_name} {column_def}")
                 except sqlite3.OperationalError:
                     pass
+
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teachers_super_admin "
+                "ON teachers (is_super_admin, id)"
+            )
+            super_admin_rows = conn.execute(
+                "SELECT id FROM teachers WHERE COALESCE(is_super_admin, 0) = 1 ORDER BY id ASC"
+            ).fetchall()
+            if not super_admin_rows:
+                first_teacher = conn.execute("SELECT id FROM teachers ORDER BY id ASC LIMIT 1").fetchone()
+                if first_teacher is not None:
+                    conn.execute(
+                        "UPDATE teachers SET is_super_admin = 1 WHERE id = ?",
+                        (first_teacher["id"],),
+                    )
+            elif len(super_admin_rows) > 1:
+                keep_teacher_id = super_admin_rows[0]["id"]
+                conn.execute("UPDATE teachers SET is_super_admin = 0 WHERE id != ?", (keep_teacher_id,))
 
             conn.execute(
                 '''
@@ -2706,6 +2731,50 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_blog_ai_reply_jobs_post "
                 "ON blog_ai_reply_jobs (post_id, status, created_at DESC, id DESC)"
+            )
+
+            # App Feedback System
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS app_feedback (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    user_role TEXT NOT NULL,
+                    user_name TEXT DEFAULT '',
+                    feedback_type TEXT NOT NULL,
+                    section TEXT DEFAULT '',
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    page_url TEXT DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS app_feedback_attachments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    feedback_id INTEGER NOT NULL,
+                    file_hash TEXT NOT NULL,
+                    original_filename TEXT NOT NULL,
+                    file_size INTEGER DEFAULT 0,
+                    mime_type TEXT DEFAULT '',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (feedback_id) REFERENCES app_feedback (id) ON DELETE CASCADE
+                )
+            ''')
+
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_app_feedback_user "
+                "ON app_feedback (user_id, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_app_feedback_status "
+                "ON app_feedback (status, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_app_feedback_attachments "
+                "ON app_feedback_attachments (feedback_id, id ASC)"
             )
 
             conn.commit()

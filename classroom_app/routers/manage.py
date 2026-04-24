@@ -44,6 +44,7 @@ from ..services.materials_service import (
     get_learning_material_brief_map,
     sync_classroom_learning_material_assignments,
 )
+from ..services.message_center_service import is_super_admin_teacher
 from ..services.roster_handler import parse_excel_to_students
 from ..services.student_auth_service import build_student_security_summary, list_student_login_history
 from ..services.submission_file_alignment import run_full_alignment
@@ -1796,6 +1797,44 @@ async def api_get_password_reset_request_detail(
         "request": dict(request_row),
         "login_history": login_history,
         "security_summary": security_summary,
+    }
+
+
+@router.post("/system/super-admin", response_class=JSONResponse)
+async def api_update_super_admin_teacher(
+    teacher_id: int = Form(...),
+    user: dict = Depends(get_current_teacher),
+):
+    """设置唯一超管教师。已有超管时，只有当前超管可以调整。"""
+    with get_db_connection() as conn:
+        target_teacher = conn.execute(
+            "SELECT id, name, email FROM teachers WHERE id = ? LIMIT 1",
+            (teacher_id,),
+        ).fetchone()
+        if not target_teacher:
+            raise HTTPException(status_code=404, detail="目标教师不存在。")
+
+        super_admin_count = int(
+            conn.execute(
+                "SELECT COUNT(*) AS cnt FROM teachers WHERE COALESCE(is_super_admin, 0) = 1"
+            ).fetchone()["cnt"]
+            or 0
+        )
+        if super_admin_count > 0 and not is_super_admin_teacher(conn, user["id"]):
+            raise HTTPException(status_code=403, detail="只有当前超管教师可以调整超管身份。")
+
+        conn.execute("UPDATE teachers SET is_super_admin = 0")
+        conn.execute("UPDATE teachers SET is_super_admin = 1 WHERE id = ?", (teacher_id,))
+        conn.commit()
+
+    return {
+        "status": "success",
+        "message": f"已将 {target_teacher['name']} 设置为超管教师。",
+        "teacher": {
+            "id": int(target_teacher["id"]),
+            "name": str(target_teacher["name"] or ""),
+            "email": str(target_teacher["email"] or ""),
+        },
     }
 
 

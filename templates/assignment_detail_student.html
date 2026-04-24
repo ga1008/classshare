@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/static/css/cards.css">
 <link rel="stylesheet" href="/static/css/forms.css">
 <link rel="stylesheet" href="/static/css/toast.css">
+<link rel="stylesheet" href="/static/css/feedback.css">
 <link rel="stylesheet" href="/static/css/markdown.css">
 <style>
     .assignment-header {
@@ -193,6 +194,7 @@
     </div>
     <div class="flex items-center gap-2">
         {% include "partials/message_center_bell.html" %}
+        {% include "partials/feedback_button.html" %}
         {% include "partials/profile_button.html" %}
         {% if assignment.status == 'published' %}
             <span class="badge badge-success text-sm">进行中</span>
@@ -203,6 +205,8 @@
         {% endif %}
     </div>
 </header>
+
+{% include "partials/feedback_modal.html" %}
 
 {% macro submission_form(form_title, action_hint, button_text) %}
 <div class="answer-form-container">
@@ -459,6 +463,7 @@
 {% block scripts %}
 {% include "partials/markdown_assets.html" %}
 <script src="/static/js/behavior_tracker.js"></script>
+<script type="module" src="/static/js/feedback.js"></script>
 <script type="module">
     import { showToast, renderMarkdown, formatDateLocal } from '{{ asset_url("js/ui.js") }}';
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';

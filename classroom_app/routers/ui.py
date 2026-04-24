@@ -56,6 +56,7 @@ from ..services.course_planning_service import (
     serialize_course_row,
 )
 from ..services.materials_service import attach_home_learning_material_briefs, attach_learning_material_briefs
+from ..services.message_center_service import is_super_admin_teacher
 from ..services.session_material_generation_service import attach_generation_tasks
 from ..services.student_auth_service import (
     PASSWORD_POLICY_HINT,
@@ -1650,6 +1651,62 @@ async def get_manage_system_page(request: Request, user: dict = Depends(get_curr
             (user["id"],),
         ).fetchall()
 
+        teacher_rows = conn.execute(
+            """
+            SELECT id, name, email, COALESCE(is_super_admin, 0) AS is_super_admin
+            FROM teachers
+            ORDER BY COALESCE(is_super_admin, 0) DESC, id ASC
+            """
+        ).fetchall()
+        super_admin_teacher = conn.execute(
+            """
+            SELECT id, name, email
+            FROM teachers
+            WHERE COALESCE(is_super_admin, 0) = 1
+            ORDER BY id ASC
+            LIMIT 1
+            """
+        ).fetchone()
+        super_admin_count = int(
+            conn.execute(
+                "SELECT COUNT(*) AS cnt FROM teachers WHERE COALESCE(is_super_admin, 0) = 1"
+            ).fetchone()["cnt"]
+            or 0
+        )
+        current_teacher_is_super_admin = is_super_admin_teacher(conn, user["id"])
+        can_manage_super_admin = current_teacher_is_super_admin or super_admin_count == 0
+
+        feedback_items = []
+        feedback_attachments = {}
+        if current_teacher_is_super_admin:
+            feedback_items = conn.execute(
+                """
+                SELECT f.id, f.user_id, f.user_role, f.user_name, f.feedback_type,
+                       f.section, f.title, f.description, f.page_url, f.status,
+                       f.created_at, f.updated_at,
+                       COUNT(a.id) AS attachment_count
+                FROM app_feedback f
+                LEFT JOIN app_feedback_attachments a ON a.feedback_id = f.id
+                GROUP BY f.id
+                ORDER BY f.created_at DESC, f.id DESC
+                LIMIT 120
+                """
+            ).fetchall()
+            feedback_ids = [int(row["id"]) for row in feedback_items]
+            if feedback_ids:
+                placeholders = ",".join("?" for _ in feedback_ids)
+                attachment_rows = conn.execute(
+                    f"""
+                    SELECT id, feedback_id, file_hash, original_filename, file_size, mime_type, created_at
+                    FROM app_feedback_attachments
+                    WHERE feedback_id IN ({placeholders})
+                    ORDER BY feedback_id DESC, id ASC
+                    """,
+                    tuple(feedback_ids),
+                ).fetchall()
+                for attachment in attachment_rows:
+                    feedback_attachments.setdefault(int(attachment["feedback_id"]), []).append(dict(attachment))
+
     return templates.TemplateResponse(
         request,
         "manage/system.html",
@@ -1662,6 +1719,12 @@ async def get_manage_system_page(request: Request, user: dict = Depends(get_curr
                 "system_summary": dict(system_summary) if system_summary else {},
                 "login_summary": dict(login_summary) if login_summary else {},
                 "reset_requests": reset_requests,
+                "teacher_rows": teacher_rows,
+                "super_admin_teacher": dict(super_admin_teacher) if super_admin_teacher else None,
+                "current_teacher_is_super_admin": current_teacher_is_super_admin,
+                "can_manage_super_admin": can_manage_super_admin,
+                "feedback_items": feedback_items,
+                "feedback_attachments": feedback_attachments,
             },
         ),
     )

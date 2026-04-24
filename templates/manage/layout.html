@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="/static/css/tables.css">
     <link rel="stylesheet" href="/static/css/forms.css">
     <link rel="stylesheet" href="/static/css/modals.css">
+    <link rel="stylesheet" href="/static/css/feedback.css">
     <link rel="stylesheet" href="/static/css/toast.css">
     <link rel="stylesheet" href="/static/css/message_center.css">
     {% block extra_head %}{% endblock %}
@@ -390,6 +391,7 @@
                 <div class="manage-header-end">
                     <div class="manage-header-bell-slot">
                         {% include "partials/message_center_bell.html" %}
+                        {% include "partials/feedback_button.html" %}
                         {% include "partials/profile_button.html" %}
                     </div>
                     <div class="manage-header-page-actions">{% block header_actions %}{% endblock %}</div>
@@ -495,6 +497,8 @@
         {% endif %}
     </script>
 
+    {% include "partials/feedback_modal.html" %}
     {% block scripts %}{% endblock %}
+    <script type="module" src="/static/js/feedback.js"></script>
 </body>
 </html>

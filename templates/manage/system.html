@@ -196,6 +196,108 @@
         margin-top: var(--spacing-md);
     }
 
+    .super-admin-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+        gap: var(--spacing-lg);
+        align-items: start;
+    }
+
+    .super-admin-current {
+        display: grid;
+        gap: var(--spacing-sm);
+    }
+
+    .super-admin-current strong {
+        color: var(--text-primary);
+        font-size: 1.05rem;
+    }
+
+    .super-admin-current span,
+    .super-admin-help {
+        color: var(--text-muted);
+        line-height: 1.6;
+        font-size: 0.875rem;
+    }
+
+    .super-admin-form {
+        display: grid;
+        gap: var(--spacing-sm);
+    }
+
+    .feedback-list {
+        display: grid;
+        gap: var(--spacing-md);
+    }
+
+    .feedback-card {
+        padding: var(--spacing-lg);
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border-color);
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .feedback-card__top {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        align-items: flex-start;
+        margin-bottom: var(--spacing-sm);
+    }
+
+    .feedback-card__title {
+        display: grid;
+        gap: 6px;
+    }
+
+    .feedback-card__title h3 {
+        margin: 0;
+        font-size: 1rem;
+        color: var(--text-primary);
+    }
+
+    .feedback-card__meta,
+    .feedback-card__source {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        color: var(--text-muted);
+        font-size: 0.82rem;
+    }
+
+    .feedback-card__body {
+        margin: var(--spacing-md) 0;
+        color: var(--text-secondary);
+        line-height: 1.7;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .feedback-card__attachments {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-sm);
+    }
+
+    .feedback-card__attachments a {
+        display: block;
+        width: 96px;
+        height: 96px;
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        border: 1px solid var(--border-color);
+        background: var(--bg-color);
+    }
+
+    .feedback-card__attachments img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+
     @media (max-width: 1080px) {
         .system-summary-grid {
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -206,6 +308,7 @@
         .system-summary-grid,
         .detail-grid,
         .diagnostic-grid,
+        .super-admin-grid,
         .diagnostic-stats {
             grid-template-columns: 1fr;
         }
@@ -242,6 +345,112 @@
     <div class="system-summary-card">
         <span>今日学生登录</span>
         <strong>{{ login_summary.today_logins or 0 }}</strong>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <h2>超管教师与反馈接收</h2>
+    </div>
+    <div class="panel-body">
+        <div class="super-admin-grid">
+            <section class="super-admin-current">
+                <span>当前超管教师</span>
+                {% if super_admin_teacher %}
+                <strong>{{ super_admin_teacher.name }}</strong>
+                <span>{{ super_admin_teacher.email }}</span>
+                {% else %}
+                <strong>尚未设置</strong>
+                <span>设置后，Bug 修复反馈、新功能反馈和举报会只通知超管教师。</span>
+                {% endif %}
+                <p class="super-admin-help">
+                    超管教师会在通知区域收到所有问题反馈，并可在本页查看完整图文内容。普通教师不会收到这些反馈通知。
+                </p>
+            </section>
+
+            <form class="super-admin-form" id="super-admin-form">
+                <label class="form-label" for="super-admin-teacher-id">设置超管教师</label>
+                <select class="form-control" id="super-admin-teacher-id" name="teacher_id" {% if not can_manage_super_admin %}disabled{% endif %}>
+                    {% for teacher in teacher_rows %}
+                    <option value="{{ teacher.id }}" {% if teacher.is_super_admin %}selected{% endif %}>
+                        {{ teacher.name }}{% if teacher.email %}（{{ teacher.email }}）{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-primary" {% if not can_manage_super_admin %}disabled{% endif %}>保存超管设置</button>
+                {% if not can_manage_super_admin %}
+                <p class="super-admin-help">只有当前超管教师可以调整此设置。</p>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="panel" id="feedback-list">
+    <div class="panel-header">
+        <h2>问题反馈</h2>
+    </div>
+    <div class="panel-body">
+        {% if current_teacher_is_super_admin %}
+            {% if feedback_items %}
+            <div class="feedback-list">
+                {% for feedback in feedback_items %}
+                {% set type_label = {'bug': 'Bug 修复', 'feature': '新功能反馈', 'report': '举报'}.get(feedback.feedback_type, '问题反馈') %}
+                <article class="feedback-card">
+                    <div class="feedback-card__top">
+                        <div class="feedback-card__title">
+                            <div>
+                                {% if feedback.feedback_type == 'report' %}
+                                <span class="badge badge-danger">{{ type_label }}</span>
+                                {% elif feedback.feedback_type == 'feature' %}
+                                <span class="badge badge-primary">{{ type_label }}</span>
+                                {% else %}
+                                <span class="badge badge-warning">{{ type_label }}</span>
+                                {% endif %}
+                                <span class="badge badge-secondary">{{ feedback.status }}</span>
+                            </div>
+                            <h3>{{ feedback.title }}</h3>
+                        </div>
+                        <div class="feedback-card__meta">
+                            <span>{{ feedback.created_at }}</span>
+                            {% if feedback.attachment_count %}<span>{{ feedback.attachment_count }} 张截图</span>{% endif %}
+                        </div>
+                    </div>
+                    <div class="feedback-card__source">
+                        <span>提交人：{{ feedback.user_name or '未知用户' }}（{{ '教师' if feedback.user_role == 'teacher' else '学生' }}）</span>
+                        {% if feedback.section %}<span>板块：{{ feedback.section }}</span>{% endif %}
+                    </div>
+                    <div class="feedback-card__body">{{ feedback.description }}</div>
+                    {% if feedback.page_url %}
+                    <div class="feedback-card__source">
+                        <span>页面：{{ feedback.page_url }}</span>
+                    </div>
+                    {% endif %}
+                    {% set attachments = feedback_attachments.get(feedback.id, []) %}
+                    {% if attachments %}
+                    <div class="feedback-card__attachments">
+                        {% for attachment in attachments %}
+                        <a href="/api/feedback/{{ feedback.id }}/attachment/{{ attachment.file_hash }}" target="_blank" rel="noopener noreferrer" title="{{ attachment.original_filename }}">
+                            <img src="/api/feedback/{{ feedback.id }}/attachment/{{ attachment.file_hash }}" alt="{{ attachment.original_filename }}" loading="lazy">
+                        </a>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="card text-center p-xl">
+                <h3 class="text-muted mb-1">暂无问题反馈</h3>
+                <p class="text-muted">用户提交 Bug 修复反馈、新功能反馈或举报后，会显示在这里。</p>
+            </div>
+            {% endif %}
+        {% else %}
+            <div class="card text-center p-xl">
+                <h3 class="text-muted mb-1">仅超管教师可查看</h3>
+                <p class="text-muted">问题反馈内容和举报信息只向超管教师开放。</p>
+            </div>
+        {% endif %}
     </div>
 </div>
 
@@ -446,6 +655,27 @@
 {% block scripts %}
 <script>
     (() => {
+        const superAdminForm = document.getElementById('super-admin-form');
+        if (superAdminForm) {
+            superAdminForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const submitBtn = superAdminForm.querySelector('button[type="submit"]');
+                const formData = new FormData(superAdminForm);
+                if (submitBtn) submitBtn.disabled = true;
+                try {
+                    const result = await window.apiFetch('/api/manage/system/super-admin', {
+                        method: 'POST',
+                        body: formData,
+                    });
+                    showMessage(result.message || '超管教师设置已保存。', 'success');
+                    window.setTimeout(() => window.location.reload(), 500);
+                } catch (error) {
+                    showMessage(error.message || '保存超管教师设置失败。', 'error');
+                    if (submitBtn) submitBtn.disabled = false;
+                }
+            });
+        }
+
         const modalId = 'system-reset-detail-modal';
         const loadingEl = document.getElementById('system-reset-detail-loading');
         const contentEl = document.getElementById('system-reset-detail-content');

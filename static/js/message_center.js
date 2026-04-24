@@ -449,6 +449,7 @@ if (app) {
             discussion_mention: '进入课堂',
             grading_result: '查看批改结果',
             ai_feedback: '查看 AI 反馈',
+            app_feedback: '查看反馈',
             private_message: '查看私信',
         };
         return actionMap[item.category] || '查看详情';

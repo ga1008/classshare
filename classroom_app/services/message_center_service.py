@@ -31,6 +31,7 @@ MESSAGE_CATEGORY_GRADING_RESULT = "grading_result"
 MESSAGE_CATEGORY_AI_FEEDBACK = "ai_feedback"
 MESSAGE_CATEGORY_BLOG_COMMENT = "blog_comment"
 MESSAGE_CATEGORY_BLOG_HOT = "blog_hot"
+MESSAGE_CATEGORY_APP_FEEDBACK = "app_feedback"
 
 AI_ASSISTANT_ROLE = "assistant"
 AI_ASSISTANT_LABEL = "AI助教"
@@ -56,6 +57,7 @@ ALL_NOTIFICATION_CATEGORIES = (
     MESSAGE_CATEGORY_AI_FEEDBACK,
     MESSAGE_CATEGORY_BLOG_COMMENT,
     MESSAGE_CATEGORY_BLOG_HOT,
+    MESSAGE_CATEGORY_APP_FEEDBACK,
 )
 
 VISIBLE_NOTIFICATION_CATEGORIES = {
@@ -76,6 +78,7 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_AI_FEEDBACK,
         MESSAGE_CATEGORY_BLOG_COMMENT,
         MESSAGE_CATEGORY_BLOG_HOT,
+        MESSAGE_CATEGORY_APP_FEEDBACK,
     ),
 }
 
@@ -89,6 +92,13 @@ CATEGORY_LABELS = {
     MESSAGE_CATEGORY_AI_FEEDBACK: "AI反馈",
     MESSAGE_CATEGORY_BLOG_COMMENT: "博客评论",
     MESSAGE_CATEGORY_BLOG_HOT: "博客热度",
+    MESSAGE_CATEGORY_APP_FEEDBACK: "问题反馈",
+}
+
+APP_FEEDBACK_TYPE_LABELS = {
+    "bug": "Bug 修复反馈",
+    "feature": "新功能建议",
+    "report": "举报",
 }
 
 FILTER_LABELS = {
@@ -1525,6 +1535,106 @@ def _insert_notification_if_allowed(
     if existing is not None:
         return 0
     return _insert_notification(conn, payload)
+
+
+def is_super_admin_teacher(conn, teacher_id: int | str | None) -> bool:
+    normalized_teacher_id = _safe_int(teacher_id)
+    if normalized_teacher_id is None:
+        return False
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM teachers
+        WHERE id = ?
+          AND COALESCE(is_super_admin, 0) = 1
+        LIMIT 1
+        """,
+        (normalized_teacher_id,),
+    ).fetchone()
+    return row is not None
+
+
+def list_super_admin_teachers(conn) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT id, name, email
+        FROM teachers
+        WHERE COALESCE(is_super_admin, 0) = 1
+        ORDER BY id ASC
+        """
+    ).fetchall()
+    return [
+        {
+            "id": int(row["id"]),
+            "name": str(row["name"] or ""),
+            "email": str(row["email"] or ""),
+        }
+        for row in rows
+    ]
+
+
+def create_app_feedback_notifications(conn, feedback_id: int | str) -> int:
+    feedback = conn.execute(
+        """
+        SELECT f.id, f.user_id, f.user_role, f.user_name, f.feedback_type,
+               f.section, f.title, f.description, f.page_url, f.created_at,
+               (
+                   SELECT COUNT(*)
+                   FROM app_feedback_attachments a
+                   WHERE a.feedback_id = f.id
+               ) AS attachment_count
+        FROM app_feedback f
+        WHERE f.id = ?
+        LIMIT 1
+        """,
+        (feedback_id,),
+    ).fetchone()
+    if not feedback:
+        return 0
+
+    recipients = list_super_admin_teachers(conn)
+    if not recipients:
+        return 0
+
+    feedback_type = str(feedback["feedback_type"] or "").strip().lower()
+    type_label = APP_FEEDBACK_TYPE_LABELS.get(feedback_type, "问题反馈")
+    actor_role = str(feedback["user_role"] or "").strip().lower()
+    actor_user_pk = _safe_int(feedback["user_id"])
+    actor_display_name = str(feedback["user_name"] or "").strip() or build_actor_display_name("", actor_role)
+    section = str(feedback["section"] or "").strip()
+    title = str(feedback["title"] or "").strip()
+    description_preview = _truncate_text(feedback["description"], 110)
+    attachment_count = int(feedback["attachment_count"] or 0)
+    preview_parts = [item for item in (section, title, description_preview) if item]
+    if attachment_count:
+        preview_parts.append(f"{attachment_count} 张截图")
+
+    inserted_count = 0
+    for recipient in recipients:
+        payload = _build_notification_payload(
+            recipient_role="teacher",
+            recipient_user_pk=int(recipient["id"]),
+            category=MESSAGE_CATEGORY_APP_FEEDBACK,
+            title=f"{actor_display_name} 提交了{type_label}",
+            body_preview=" | ".join(preview_parts),
+            actor_role=actor_role if actor_role in {"student", "teacher"} else "",
+            actor_user_pk=actor_user_pk,
+            actor_display_name=actor_display_name,
+            link_url="/manage/system#feedback-list",
+            ref_type=MESSAGE_CATEGORY_APP_FEEDBACK,
+            ref_id=str(feedback["id"]),
+            metadata={
+                "feedback_id": int(feedback["id"]),
+                "feedback_type": feedback_type,
+                "feedback_type_label": type_label,
+                "section": section,
+                "page_url": str(feedback["page_url"] or ""),
+                "attachment_count": attachment_count,
+            },
+            created_at=str(feedback["created_at"] or _now_iso()),
+        )
+        inserted_count += 1 if _insert_notification_if_allowed(conn, payload) else 0
+    return inserted_count
 
 
 def create_private_message(

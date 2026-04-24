@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="/static/css/forms.css">
 <link rel="stylesheet" href="/static/css/tables.css">
 <link rel="stylesheet" href="/static/css/modals.css">
+<link rel="stylesheet" href="/static/css/feedback.css">
 <link rel="stylesheet" href="/static/css/toast.css">
 <link rel="stylesheet" href="/static/css/markdown.css">
 <style>
@@ -353,6 +354,7 @@
     </div>
     <div class="flex items-center gap-2">
         {% include "partials/message_center_bell.html" %}
+        {% include "partials/feedback_button.html" %}
         {% include "partials/profile_button.html" %}
         <button class="btn btn-outline btn-sm" onclick="openEditModal()">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
@@ -383,6 +385,8 @@
         </button>
     </div>
 </header>
+
+{% include "partials/feedback_modal.html" %}
 
 <main class="workspace-container">
     <!-- ====== 作业信息板块 (上方) ====== -->
@@ -774,6 +778,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script type="module" src="/static/js/feedback.js"></script>
 <script type="module">
     import { showToast, openModal, closeModal, renderMarkdown, escapeHtml } from '{{ asset_url("js/ui.js") }}';
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
