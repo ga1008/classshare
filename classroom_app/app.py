@@ -32,6 +32,7 @@ from .database import get_db_connection
 from .routers import ui, files, homework, ai, materials, emoji, behavior, message_center, profile
 from .routers import manage as manage_router  # 避免命名冲突
 from .routers import session as session_router
+from .routers import blog
 
 
 # -----------------
@@ -286,6 +287,7 @@ app.include_router(behavior.router)
 app.include_router(message_center.router)
 app.include_router(profile.router)
 app.include_router(manage_router.router)
+app.include_router(blog.router)
 
 app.include_router(session_router.router)
 

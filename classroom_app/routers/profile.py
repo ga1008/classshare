@@ -55,6 +55,45 @@ def _build_avatar_svg(profile: dict[str, Any]) -> str:
 </svg>"""
 
 
+def _load_avatar_profile(conn, *, role: str, user_id: int) -> dict[str, Any] | None:
+    normalized_role = str(role or "").strip().lower()
+    if normalized_role == "teacher":
+        row = conn.execute(
+            """
+            SELECT id, name, nickname, avatar_file_hash, avatar_mime_type
+            FROM teachers
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+    elif normalized_role == "student":
+        row = conn.execute(
+            """
+            SELECT id, name, nickname, avatar_file_hash, avatar_mime_type
+            FROM students
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+    else:
+        return None
+
+    if row is None:
+        return None
+
+    return {
+        "id": int(row["id"]),
+        "role": normalized_role,
+        "role_label": "教师" if normalized_role == "teacher" else "学生",
+        "name": str(row["name"] or ""),
+        "nickname": str(row["nickname"] or ""),
+        "avatar_file_hash": str(row["avatar_file_hash"] or ""),
+        "avatar_mime_type": str(row["avatar_mime_type"] or ""),
+    }
+
+
 @router.get("/profile", response_class=HTMLResponse)
 async def profile_page(
     request: Request,
@@ -157,9 +196,21 @@ async def api_upload_profile_avatar(
 
 
 @router.get("/api/profile/avatar")
-def api_profile_avatar(user: dict = Depends(get_current_user)):
+def api_profile_avatar(
+    role: str | None = None,
+    user_id: int | None = None,
+    user: dict = Depends(get_current_user),
+):
+    requested_role = str(role or "").strip().lower()
+    requested_user_id = int(user_id) if user_id is not None else None
+
     with get_db_connection() as conn:
-        profile = get_user_profile(conn, user)
+        if requested_role in {"teacher", "student"} and requested_user_id is not None:
+            profile = _load_avatar_profile(conn, role=requested_role, user_id=requested_user_id)
+            if profile is None:
+                raise HTTPException(status_code=404, detail="头像用户不存在。")
+        else:
+            profile = get_user_profile(conn, user)
 
     file_hash = str(profile.get("avatar_file_hash") or "").strip()
     if file_hash:

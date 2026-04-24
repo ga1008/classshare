@@ -2481,6 +2481,233 @@ def init_database():
                 "ON session_material_generation_tasks (teacher_id, created_at DESC, id DESC)"
             )
 
+            # ── 16. 博客中心 ──
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS blog_posts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    author_identity TEXT NOT NULL,
+                    author_role TEXT NOT NULL,
+                    author_user_pk INTEGER NOT NULL,
+                    author_display_name TEXT NOT NULL,
+                    author_display_mode TEXT NOT NULL DEFAULT 'real_name',
+                    author_avatar_hash TEXT DEFAULT '',
+                    author_avatar_mime TEXT DEFAULT '',
+                    title TEXT NOT NULL,
+                    content_md TEXT NOT NULL DEFAULT '',
+                    summary TEXT DEFAULT '',
+                    cover_image_hash TEXT DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'draft',
+                    visibility TEXT NOT NULL DEFAULT 'public',
+                    visible_class_id INTEGER,
+                    visible_user_identities_json TEXT DEFAULT '[]',
+                    allow_comments INTEGER NOT NULL DEFAULT 1,
+                    is_pinned INTEGER NOT NULL DEFAULT 0,
+                    is_featured INTEGER NOT NULL DEFAULT 0,
+                    pinned_at TEXT,
+                    featured_at TEXT,
+                    hot_notified_at TEXT,
+                    view_count INTEGER NOT NULL DEFAULT 0,
+                    like_count INTEGER NOT NULL DEFAULT 0,
+                    comment_count INTEGER NOT NULL DEFAULT 0,
+                    bookmark_count INTEGER NOT NULL DEFAULT 0,
+                    system_tags_json TEXT DEFAULT '[]',
+                    tags_json TEXT DEFAULT '[]',
+                    edited_at TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS blog_comments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    post_id INTEGER NOT NULL,
+                    parent_comment_id INTEGER,
+                    author_identity TEXT NOT NULL,
+                    author_role TEXT NOT NULL,
+                    author_user_pk INTEGER NOT NULL,
+                    author_display_name TEXT NOT NULL,
+                    content_md TEXT NOT NULL,
+                    emoji_payload_json TEXT DEFAULT '',
+                    attachments_json TEXT DEFAULT '[]',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    like_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (post_id) REFERENCES blog_posts (id) ON DELETE CASCADE,
+                    FOREIGN KEY (parent_comment_id) REFERENCES blog_comments (id) ON DELETE CASCADE
+                )
+            ''')
+
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS blog_likes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    target_type TEXT NOT NULL,
+                    target_id INTEGER NOT NULL,
+                    user_identity TEXT NOT NULL,
+                    user_role TEXT NOT NULL,
+                    user_pk INTEGER NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (target_type, target_id, user_identity)
+                )
+            ''')
+
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS blog_bookmarks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    post_id INTEGER NOT NULL,
+                    user_identity TEXT NOT NULL,
+                    user_role TEXT NOT NULL,
+                    user_pk INTEGER NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (post_id, user_identity),
+                    FOREIGN KEY (post_id) REFERENCES blog_posts (id) ON DELETE CASCADE
+                )
+            ''')
+
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS blog_attachments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    post_id INTEGER NOT NULL,
+                    file_hash TEXT NOT NULL,
+                    original_filename TEXT NOT NULL,
+                    mime_type TEXT NOT NULL,
+                    file_size INTEGER NOT NULL,
+                    image_width INTEGER,
+                    image_height INTEGER,
+                    display_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (post_id) REFERENCES blog_posts (id) ON DELETE CASCADE
+                )
+            ''')
+
+            try:
+                conn.execute("ALTER TABLE blog_posts ADD COLUMN hot_notified_at TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute(
+                    "ALTER TABLE blog_posts ADD COLUMN author_display_mode TEXT NOT NULL DEFAULT 'real_name'"
+                )
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE blog_posts ADD COLUMN system_tags_json TEXT DEFAULT '[]'")
+            except sqlite3.OperationalError:
+                pass
+
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS blog_media_assets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    file_hash TEXT NOT NULL,
+                    uploader_identity TEXT NOT NULL,
+                    uploader_role TEXT NOT NULL,
+                    uploader_user_pk INTEGER NOT NULL,
+                    original_filename TEXT NOT NULL,
+                    mime_type TEXT NOT NULL,
+                    file_size INTEGER NOT NULL,
+                    image_width INTEGER,
+                    image_height INTEGER,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (file_hash, uploader_identity)
+                )
+            ''')
+
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS blog_moderation_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    post_id INTEGER NOT NULL,
+                    moderator_identity TEXT NOT NULL,
+                    moderator_role TEXT NOT NULL,
+                    moderator_user_pk INTEGER NOT NULL,
+                    action TEXT NOT NULL,
+                    reason TEXT DEFAULT '',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (post_id) REFERENCES blog_posts (id) ON DELETE CASCADE
+                )
+            ''')
+
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS blog_ai_reply_jobs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trigger_type TEXT NOT NULL,
+                    trigger_id INTEGER NOT NULL,
+                    post_id INTEGER NOT NULL,
+                    trigger_author_identity TEXT DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    assistant_comment_id INTEGER,
+                    error_message TEXT DEFAULT '',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (trigger_type, trigger_id),
+                    FOREIGN KEY (post_id) REFERENCES blog_posts (id) ON DELETE CASCADE,
+                    FOREIGN KEY (assistant_comment_id) REFERENCES blog_comments (id) ON DELETE SET NULL
+                )
+            ''')
+
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_posts_author "
+                "ON blog_posts (author_identity, status, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_posts_status_created "
+                "ON blog_posts (status, is_pinned DESC, is_featured DESC, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_posts_visibility "
+                "ON blog_posts (visibility, status, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_posts_hot "
+                "ON blog_posts (status, like_count DESC, comment_count DESC, view_count DESC, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_posts_featured "
+                "ON blog_posts (is_featured, status, featured_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_posts_visible_class "
+                "ON blog_posts (visible_class_id, status, created_at DESC, id DESC)"
+                "WHERE visibility = 'class_visible'"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_comments_post "
+                "ON blog_comments (post_id, status, created_at ASC, id ASC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_comments_parent "
+                "ON blog_comments (parent_comment_id, created_at ASC, id ASC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_likes_target_user "
+                "ON blog_likes (target_type, target_id, user_identity)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_bookmarks_user "
+                "ON blog_bookmarks (user_identity, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_attachments_post "
+                "ON blog_attachments (post_id, display_order, id ASC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_media_assets_hash "
+                "ON blog_media_assets (file_hash, updated_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_media_assets_uploader "
+                "ON blog_media_assets (uploader_identity, updated_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_moderation_post "
+                "ON blog_moderation_logs (post_id, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_ai_reply_jobs_post "
+                "ON blog_ai_reply_jobs (post_id, status, created_at DESC, id DESC)"
+            )
+
             conn.commit()
         print("[DB] V4.0 数据库架构初始化/验证完成。")
 

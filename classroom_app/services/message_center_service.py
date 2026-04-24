@@ -29,6 +29,8 @@ MESSAGE_CATEGORY_DISCUSSION_MENTION = "discussion_mention"
 MESSAGE_CATEGORY_SUBMISSION = "submission"
 MESSAGE_CATEGORY_GRADING_RESULT = "grading_result"
 MESSAGE_CATEGORY_AI_FEEDBACK = "ai_feedback"
+MESSAGE_CATEGORY_BLOG_COMMENT = "blog_comment"
+MESSAGE_CATEGORY_BLOG_HOT = "blog_hot"
 
 AI_ASSISTANT_ROLE = "assistant"
 AI_ASSISTANT_LABEL = "AI助教"
@@ -52,6 +54,8 @@ ALL_NOTIFICATION_CATEGORIES = (
     MESSAGE_CATEGORY_SUBMISSION,
     MESSAGE_CATEGORY_GRADING_RESULT,
     MESSAGE_CATEGORY_AI_FEEDBACK,
+    MESSAGE_CATEGORY_BLOG_COMMENT,
+    MESSAGE_CATEGORY_BLOG_HOT,
 )
 
 VISIBLE_NOTIFICATION_CATEGORIES = {
@@ -61,6 +65,8 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_ASSIGNMENT,
         MESSAGE_CATEGORY_DISCUSSION_MENTION,
         MESSAGE_CATEGORY_GRADING_RESULT,
+        MESSAGE_CATEGORY_BLOG_COMMENT,
+        MESSAGE_CATEGORY_BLOG_HOT,
     ),
     "teacher": (
         "all",
@@ -68,6 +74,8 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_SUBMISSION,
         MESSAGE_CATEGORY_DISCUSSION_MENTION,
         MESSAGE_CATEGORY_AI_FEEDBACK,
+        MESSAGE_CATEGORY_BLOG_COMMENT,
+        MESSAGE_CATEGORY_BLOG_HOT,
     ),
 }
 
@@ -79,6 +87,8 @@ CATEGORY_LABELS = {
     MESSAGE_CATEGORY_SUBMISSION: "提交动态",
     MESSAGE_CATEGORY_GRADING_RESULT: "批改结果",
     MESSAGE_CATEGORY_AI_FEEDBACK: "AI反馈",
+    MESSAGE_CATEGORY_BLOG_COMMENT: "博客评论",
+    MESSAGE_CATEGORY_BLOG_HOT: "博客热度",
 }
 
 FILTER_LABELS = {
@@ -568,6 +578,76 @@ def _resolve_contact(
     for contact in list_private_message_contacts(conn, user):
         if contact["identity"] == contact_identity and int(contact["class_offering_id"] or 0) == int(normalized_scope or 0):
             return contact
+    direct_contact = _resolve_direct_user_contact(conn, contact_identity, class_offering_id=normalized_scope)
+    if direct_contact and direct_contact["identity"] != _ensure_user_identity(user)[2]:
+        return direct_contact
+    return None
+
+
+def _resolve_direct_user_contact(
+    conn,
+    contact_identity: str,
+    *,
+    class_offering_id: Optional[int] = None,
+) -> Optional[dict[str, Any]]:
+    try:
+        parsed = parse_identity(contact_identity)
+    except ValueError:
+        return None
+
+    role = str(parsed.get("role") or "")
+    if role == AI_ASSISTANT_ROLE:
+        return None
+    if role == "student":
+        row = conn.execute(
+            """
+            SELECT s.id, s.name, s.student_id_number, c.name AS class_name
+            FROM students s
+            LEFT JOIN classes c ON c.id = s.class_id
+            WHERE s.id = ?
+            LIMIT 1
+            """,
+            (parsed["user_pk"],),
+        ).fetchone()
+        if row is None:
+            return None
+        subtitle_parts = ["跨班联系人"]
+        if row["class_name"]:
+            subtitle_parts.append(str(row["class_name"]))
+        if row["student_id_number"]:
+            subtitle_parts.append(f"学号 {row['student_id_number']}")
+        return _build_contact_entry(
+            identity=build_user_identity("student", row["id"]),
+            role="student",
+            display_name=str(row["name"] or "同学"),
+            subtitle=" · ".join(subtitle_parts),
+            class_offering_id=class_offering_id,
+            user_pk=int(row["id"]),
+            can_send=True,
+        )
+
+    if role == "teacher":
+        row = conn.execute(
+            """
+            SELECT id, name
+            FROM teachers
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (parsed["user_pk"],),
+        ).fetchone()
+        if row is None:
+            return None
+        return _build_contact_entry(
+            identity=build_user_identity("teacher", row["id"]),
+            role="teacher",
+            display_name=build_actor_display_name(str(row["name"] or ""), "teacher"),
+            subtitle="教师",
+            class_offering_id=class_offering_id,
+            user_pk=int(row["id"]),
+            can_send=True,
+        )
+
     return None
 
 

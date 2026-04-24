@@ -845,7 +845,7 @@ if (app) {
     }
 
     async function loadConversation(contactIdentity, scope, options = {}) {
-        const { showLoading = true, scrollToBottom = true } = options;
+        const { showLoading = true, scrollToBottom = true, focusComposer = false } = options;
         clearAiReplyPolling();
         state.currentContact = contactIdentity;
         state.currentScope = normalizeScope(scope);
@@ -870,6 +870,9 @@ if (app) {
         renderConversation();
         if (scrollToBottom && !state.keyword.trim()) {
             scrollConversationToBottom();
+        }
+        if (focusComposer && !composeInputEl.disabled) {
+            composeInputEl.focus();
         }
         updateHeroStats();
         updateUrl();
@@ -1075,7 +1078,7 @@ if (app) {
                 renderContacts();
 
                 if (state.currentContact) {
-                    await loadConversation(state.currentContact, state.currentScope);
+                    await loadConversation(state.currentContact, state.currentScope, { focusComposer: true });
                     return;
                 }
 
