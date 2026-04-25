@@ -816,11 +816,6 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
             shared_files=files_info,
         )
         classroom_page["teaching_plan"] = teaching_plan
-        if teaching_plan.get("session_count"):
-            hero_nav = list(classroom_page.get("hero", {}).get("nav") or [])
-            if not any(item.get("target") == "timeline-panel" for item in hero_nav):
-                hero_nav.insert(0, {"target": "timeline-panel", "label": "时间轴", "note": "课程进度"})
-                classroom_page["hero"]["nav"] = hero_nav
 
     try:
         record_behavior_event(

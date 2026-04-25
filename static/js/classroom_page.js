@@ -11,40 +11,105 @@ function initCoursePopover() {
 
     const overlay = document.getElementById('course-popover-overlay');
     const closeBtn = document.getElementById('course-popover-close');
-    const expandBtn = document.getElementById('hero-desc-expand-btn');
+    const titleEl = document.getElementById('course-popover-title');
+    const kickerEl = document.getElementById('course-popover-kicker');
+    const triggerButtons = Array.from(document.querySelectorAll('[data-course-popover-target]'));
+    const panels = Array.from(popover.querySelectorAll('[data-course-popover-panel]'));
+    const popoverCard = popover.querySelector('.course-popover-card');
     const transitionMs = 280;
+    let activeTrigger = null;
+    let closeTimer = 0;
 
-    const openPopover = () => {
+    const getFocusableElements = () => Array.from(
+        popover.querySelectorAll('a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'),
+    ).filter((element) => element.offsetParent !== null || element === document.activeElement);
+
+    const selectPanel = (targetName) => {
+        const resolvedTarget = panels.some((panel) => panel.dataset.coursePopoverPanel === targetName)
+            ? targetName
+            : 'stats';
+
+        panels.forEach((panel) => {
+            panel.hidden = panel.dataset.coursePopoverPanel !== resolvedTarget;
+        });
+
+        return resolvedTarget;
+    };
+
+    const openPopover = (targetName = 'stats', triggerButton = null) => {
+        window.clearTimeout(closeTimer);
+        const activePanel = selectPanel(targetName);
+        activeTrigger = triggerButton || document.activeElement;
         popover.hidden = false;
         popover.setAttribute('aria-hidden', 'false');
+        triggerButtons.forEach((button) => {
+            const isActiveTrigger = button.dataset.coursePopoverTarget === activePanel && button === triggerButton;
+            button.setAttribute('aria-expanded', String(isActiveTrigger));
+        });
+        if (triggerButton) {
+            if (titleEl) {
+                titleEl.textContent = triggerButton.dataset.popoverTitle || titleEl.textContent;
+            }
+            if (kickerEl) {
+                kickerEl.textContent = triggerButton.dataset.popoverKicker || kickerEl.textContent;
+            }
+        }
         document.body.classList.add('has-course-popover');
         window.requestAnimationFrame(() => {
             popover.classList.add('popover-open');
+            (closeBtn || popoverCard)?.focus({ preventScroll: true });
         });
     };
 
     const closePopover = () => {
         popover.classList.remove('popover-open');
         document.body.classList.remove('has-course-popover');
-        window.setTimeout(() => {
+        triggerButtons.forEach((button) => button.setAttribute('aria-expanded', 'false'));
+        closeTimer = window.setTimeout(() => {
             if (!popover.classList.contains('popover-open')) {
                 popover.hidden = true;
                 popover.setAttribute('aria-hidden', 'true');
+                activeTrigger?.focus?.({ preventScroll: true });
+                activeTrigger = null;
             }
         }, transitionMs);
     };
 
-    expandBtn?.addEventListener('click', (event) => {
-        event.stopPropagation();
-        openPopover();
+    triggerButtons.forEach((button) => {
+        button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            openPopover(button.dataset.coursePopoverTarget || 'stats', event.currentTarget);
+        });
     });
 
     overlay?.addEventListener('click', closePopover);
     closeBtn?.addEventListener('click', closePopover);
 
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && popover.classList.contains('popover-open')) {
+        if (!popover.classList.contains('popover-open')) return;
+
+        if (event.key === 'Escape') {
             closePopover();
+            return;
+        }
+
+        if (event.key !== 'Tab') return;
+
+        const focusableElements = getFocusableElements();
+        if (!focusableElements.length) {
+            event.preventDefault();
+            popoverCard?.focus({ preventScroll: true });
+            return;
+        }
+
+        const firstFocusable = focusableElements[0];
+        const lastFocusable = focusableElements[focusableElements.length - 1];
+        if (event.shiftKey && document.activeElement === firstFocusable) {
+            event.preventDefault();
+            lastFocusable.focus({ preventScroll: true });
+        } else if (!event.shiftKey && document.activeElement === lastFocusable) {
+            event.preventDefault();
+            firstFocusable.focus({ preventScroll: true });
         }
     });
 }

@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="/static/css/feedback.css">
 <link rel="stylesheet" href="/static/css/toast.css">
 <link rel="stylesheet" href="/static/css/ai_chat.css">
-<link rel="stylesheet" href="/static/css/classroom.css?v=timeline-smooth-20260422">
+<link rel="stylesheet" href="/static/css/classroom.css?v=top-focus-actions-20260425">
 <link rel="stylesheet" href="/static/css/markdown.css">
 <link rel="stylesheet" href="/static/css/materials.css">
 <link rel="stylesheet" href="/static/css/learning_material_selector.css">
@@ -155,127 +155,45 @@
 {% include "partials/feedback_modal.html" %}
 
 {% set hero = classroom_page.hero %}
-{% set spotlight = classroom_page.spotlight %}
 {% set sections = classroom_page.sections %}
 {% set teaching_plan = classroom_page.teaching_plan %}
 
 <main class="classroom-workspace">
     <section class="workspace-hero">
-        <div class="workspace-hero-grid">
-            <div class="workspace-hero-main" id="hero-info-card">
-                <div class="workspace-hero-topbar">
-                    <div class="workspace-hero-copy">
-                        <div class="workspace-kicker-row">
-                            <p class="workspace-kicker">{{ hero.eyebrow }}</p>
-                            <span class="workspace-role-pill">{{ hero.role_label }}</span>
-                        </div>
-                        <h1>{{ classroom.course_name }}</h1>
-                        <p class="workspace-hero-lead">{{ hero.lead }}</p>
-                        <div class="workspace-hero-chip-row">
-                            {% for chip in hero.feature_chips %}
-                            <span class="workspace-hero-chip">{{ chip }}</span>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    <div class="workspace-hero-toolbar">
-                        {% if teaching_plan and teaching_plan.session_count %}
-                        <span class="workspace-hero-toolbar-pill is-timeline">{{ teaching_plan.timeline_status_label }}</span>
-                        {% endif %}
-                        <button class="hero-desc-expand-btn" id="hero-desc-expand-btn" title="查看完整课程信息">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-                            <span>课程详情</span>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="workspace-hero-summary-card">
-                    <div class="workspace-hero-desc-wrap">
-                        <p class="workspace-hero-text">
-                            {% if classroom.course_description %}
-                            {{ classroom.course_description }}
-                            {% else %}
-                            当前课程暂未填写课程简介。
-                            {% endif %}
-                        </p>
-                    </div>
-                    {% if classroom.class_description %}
-                    <p class="workspace-hero-class-note">班级说明：{{ classroom.class_description }}</p>
-                    {% endif %}
-                </div>
-
-                <div class="workspace-hero-meta">
-                    <span>班级：{{ classroom.class_name }}</span>
-                    <span>授课教师：{{ classroom.teacher_name }}</span>
-                    {% if classroom.semester %}
-                    <span>学期：{{ classroom.semester }}</span>
-                    {% endif %}
-                    {% if classroom.course_credits is not none %}
-                    <span>学分：{{ classroom.course_credits }}</span>
-                    {% endif %}
-                    {% if classroom.class_student_count is not none %}
-                    <span>班级人数：{{ classroom.class_student_count }}</span>
-                    {% endif %}
-                    {% if classroom.schedule_info %}
-                    <span>上课安排：{{ classroom.schedule_info }}</span>
-                    {% endif %}
-                </div>
-            </div>
-
-            <div class="workspace-hero-aside">
-                <section class="workspace-spotlight-card">
-                    <div class="workspace-spotlight-head">
-                        <span class="workspace-spotlight-label">{{ spotlight.label }}</span>
-                        <div class="workspace-spotlight-value-wrap">
-                            <strong class="workspace-spotlight-value">{{ spotlight.value }}</strong>
-                            <span class="workspace-spotlight-suffix">{{ spotlight.suffix }}</span>
-                        </div>
-                    </div>
-                    <p class="workspace-spotlight-note">{{ spotlight.note }}</p>
-                    <div class="workspace-spotlight-highlights">
-                        {% for item in spotlight.highlights %}
-                        <div class="workspace-spotlight-highlight">
-                            <span>{{ item.label }}</span>
-                            <strong>{{ item.value }}</strong>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </section>
-                <div class="workspace-hero-stats">
-                    {% for stat in classroom_page.stats %}
-                    <article class="workspace-stat-card" data-tone="{{ stat.tone }}">
-                        <span class="workspace-stat-label">{{ stat.label }}</span>
-                        <strong class="workspace-stat-value">{{ stat.value }}</strong>
-                        <span class="workspace-stat-note">{{ stat.note }}</span>
-                    </article>
+        <div class="workspace-hero-main" id="hero-info-card">
+            <div class="workspace-hero-title-block">
+                <div class="workspace-hero-classline" aria-label="班级信息">
+                    {% for item in hero.primary_meta %}
+                    <span class="workspace-hero-classitem">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0v4a6 6 0 0 0 12 0V8Z"/><path d="M12 2v20"/><path d="M6 12h12"/></svg>
+                        <span>{{ item.label }}：{{ item.value }}</span>
+                    </span>
                     {% endfor %}
                 </div>
+                <h1>{{ classroom.course_name }}</h1>
+                <p class="workspace-hero-lead">{{ hero.lead }}</p>
+            </div>
+
+            <div class="workspace-hero-actions" aria-label="课堂信息操作">
+                <button class="workspace-hero-action-btn is-stat" id="hero-stats-btn" type="button" data-course-popover-target="stats" data-popover-title="统计信息" data-popover-kicker="课堂概览" aria-haspopup="dialog" aria-controls="course-info-popover" aria-expanded="false">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5"/><path d="M12 16V8"/><path d="M17 16v-3"/></svg>
+                    <span>统计信息</span>
+                </button>
+                <button class="workspace-hero-action-btn" id="hero-course-detail-btn" type="button" data-course-popover-target="details" data-popover-title="课程详情" data-popover-kicker="课程资料" aria-haspopup="dialog" aria-controls="course-info-popover" aria-expanded="false">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                    <span>课程详情</span>
+                </button>
             </div>
         </div>
 
         <div class="workspace-hero-bottom">
-            <nav class="workspace-hero-nav" aria-label="课堂区域导航">
-                {% for item in hero.nav %}
-                <a href="#{{ item.target }}" class="workspace-hero-nav-link" data-workspace-nav>
-                    <span>{{ item.label }}</span>
-                    <small>{{ item.note }}</small>
-                </a>
-                {% endfor %}
-            </nav>
-
             {% if teaching_plan and teaching_plan.session_count %}
             {% set timeline_entries = teaching_plan.timeline_entries if teaching_plan.timeline_entries else teaching_plan.sessions %}
             {% set selected_session = teaching_plan.anchor_session if teaching_plan.anchor_session else timeline_entries[0] %}
             <section class="embedded-teaching-plan" id="timeline-panel" data-workspace-section data-anchor-order="{{ selected_session.order_index }}">
                 <div class="embedded-teaching-plan-head">
                     <div class="embedded-teaching-plan-heading">
-                        <span class="section-eyebrow">Course Timeline</span>
                         <h2>课程进度时间轴</h2>
-                        <p class="embedded-teaching-plan-subtitle">{{ teaching_plan.timeline_status_label }}，{{ teaching_plan.status_note }}</p>
-                    </div>
-                    <div class="embedded-teaching-plan-stats" aria-label="课程时间轴统计">
-                        <span>{{ teaching_plan.session_count }} 次课</span>
-                        <span>{{ teaching_plan.completed_count }} 次已完成</span>
-                        <span>{{ teaching_plan.remaining_count }} 次未结束</span>
                     </div>
                 </div>
 
@@ -474,13 +392,21 @@
                                     <span class="is-warning">{{ selected_session.detail_hint }}</span>
                                     {% endif %}
                                 </div>
-                                <p class="teaching-plan-inline-note">支持鼠标按住时间轴左右拖动，点击任一课次可快速查看详细内容，今天的课会优先居中显示。</p>
                             </article>
                         </div>
                     </div>
                 </div>
             </section>
             {% endif %}
+
+            <nav class="workspace-hero-nav" aria-label="课堂区域导航">
+                {% for item in hero.nav %}
+                <a href="#{{ item.target }}" class="workspace-hero-nav-link" data-workspace-nav>
+                    <span>{{ item.label }}</span>
+                    <small>{{ item.note }}</small>
+                </a>
+                {% endfor %}
+            </nav>
         </div>
     </section>
 
@@ -1026,64 +952,64 @@
 
 <div id="course-info-popover" class="course-popover" role="dialog" aria-modal="true" aria-labelledby="course-popover-title" aria-hidden="true" hidden>
     <div class="course-popover-overlay" id="course-popover-overlay"></div>
-    <div class="course-popover-card">
+    <div class="course-popover-card" tabindex="-1">
         <div class="course-popover-header">
             <div>
-                <p class="course-popover-kicker">课程详情</p>
-                <h3 class="course-popover-title" id="course-popover-title">{{ classroom.course_name }}</h3>
+                <p class="course-popover-kicker" id="course-popover-kicker">课堂概览</p>
+                <h3 class="course-popover-title" id="course-popover-title">统计信息</h3>
             </div>
-            <button class="course-popover-close" id="course-popover-close" title="关闭">&times;</button>
+            <button class="course-popover-close" id="course-popover-close" type="button" title="关闭" aria-label="关闭弹窗">&times;</button>
         </div>
         <div class="course-popover-body">
-            {% if classroom.course_description %}
-            <div class="course-popover-section">
-                <h4>课程简介</h4>
-                <p>{{ classroom.course_description }}</p>
-            </div>
-            {% endif %}
-            <div class="course-popover-section">
-                <h4>基本信息</h4>
-                <div class="course-popover-info-grid">
-                    <div class="course-popover-info-item">
-                        <span class="info-label">班级</span>
-                        <span class="info-value">{{ classroom.class_name }}</span>
-                    </div>
-                    <div class="course-popover-info-item">
-                        <span class="info-label">授课教师</span>
-                        <span class="info-value">{{ classroom.teacher_name }}</span>
-                    </div>
-                    {% if classroom.semester %}
-                    <div class="course-popover-info-item">
-                        <span class="info-label">学期</span>
-                        <span class="info-value">{{ classroom.semester }}</span>
-                    </div>
+            <section class="course-popover-panel" data-course-popover-panel="stats">
+                <div class="course-popover-stat-grid">
+                    {% if teaching_plan and teaching_plan.session_count %}
+                    <article class="course-popover-stat-card" data-tone="primary">
+                        <span class="stat-label">课程进度</span>
+                        <strong class="stat-value">{{ teaching_plan.completed_count }}/{{ teaching_plan.session_count }}</strong>
+                        <span class="stat-note">未结束 {{ teaching_plan.remaining_count }} 次</span>
+                    </article>
                     {% endif %}
-                    {% if classroom.course_credits is not none %}
-                    <div class="course-popover-info-item">
-                        <span class="info-label">学分</span>
-                        <span class="info-value">{{ classroom.course_credits }}</span>
-                    </div>
-                    {% endif %}
-                    {% if classroom.class_student_count is not none %}
-                    <div class="course-popover-info-item">
-                        <span class="info-label">班级人数</span>
-                        <span class="info-value">{{ classroom.class_student_count }}</span>
-                    </div>
-                    {% endif %}
-                    {% if classroom.schedule_info %}
-                    <div class="course-popover-info-item">
-                        <span class="info-label">上课安排</span>
-                        <span class="info-value">{{ classroom.schedule_info }}</span>
-                    </div>
-                    {% endif %}
+                    {% for stat in hero.detail_stats %}
+                    <article class="course-popover-stat-card" data-tone="{{ stat.tone }}">
+                        <span class="stat-label">{{ stat.label }}</span>
+                        <strong class="stat-value">{{ stat.value }}</strong>
+                        <span class="stat-note">{{ stat.note }}</span>
+                    </article>
+                    {% endfor %}
                 </div>
-            </div>
-            {% if classroom.class_description %}
-            <div class="course-popover-section">
-                <h4>班级说明</h4>
-                <p>{{ classroom.class_description }}</p>
-            </div>
-            {% endif %}
+            </section>
+
+            <section class="course-popover-panel" data-course-popover-panel="details" hidden>
+                {% if classroom.course_description %}
+                <div class="course-popover-section">
+                    <h4>课程简介</h4>
+                    <p>{{ classroom.course_description }}</p>
+                </div>
+                {% endif %}
+                {% if hero.secondary_meta %}
+                <div class="course-popover-section">
+                    <h4>课程资料</h4>
+                    <div class="course-popover-info-grid">
+                        {% for item in hero.secondary_meta %}
+                        <div class="course-popover-info-item">
+                            <span class="info-label">{{ item.label }}</span>
+                            <span class="info-value">{{ item.value }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                {% if classroom.class_description %}
+                <div class="course-popover-section">
+                    <h4>班级说明</h4>
+                    <p>{{ classroom.class_description }}</p>
+                </div>
+                {% endif %}
+                {% if not classroom.course_description and not hero.secondary_meta and not classroom.class_description %}
+                <p class="course-popover-empty">暂未填写更多课程信息。</p>
+                {% endif %}
+            </section>
         </div>
     </div>
 </div>
@@ -1143,7 +1069,7 @@
     import * as fileApp from '/static/js/app_files.js';
     import * as materialsApp from '/static/js/classroom_materials.js';
     import * as examApp from '/static/js/app_exams.js';
-    import { initClassroomPage } from '/static/js/classroom_page.js?v=timeline-smooth-20260422';
+    import { initClassroomPage } from '/static/js/classroom_page.js?v=top-focus-actions-20260425';
 
     window.UI = ui;
     window.fileApp = fileApp;
