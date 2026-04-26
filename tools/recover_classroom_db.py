@@ -11,14 +11,16 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from pathlib import PureWindowsPath
 import time
 from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = REPO_ROOT / "data"
-TRACKED_DB_PATH = "data/classroom.db"
+NEW_TRACKED_DB_PATH = "data/db/classroom.db"
+LEGACY_TRACKED_DB_PATH = "data/classroom.db"
+TRACKED_DB_PATHS = (NEW_TRACKED_DB_PATH, LEGACY_TRACKED_DB_PATH)
+SUBMISSION_PATH_MARKERS = ("files/submissions", "homework_submissions")
 MAX_GIT_CANDIDATES = 20
 
 
@@ -38,6 +40,7 @@ class TableMergeStats:
 class RecoveryReport:
     started_at: str
     base_revision: str
+    base_tracked_path: str
     corrupted_backup: str
     output_path: str
     integrity_check: str
@@ -240,26 +243,34 @@ def _export_git_blob(revision: str, tracked_path: str, output_path: Path) -> Non
     output_path.write_bytes(_run_git("show", f"{revision}:{tracked_path}"))
 
 
-def _find_latest_valid_git_snapshot() -> tuple[str, Path]:
-    revisions = _run_git("rev-list", f"--max-count={MAX_GIT_CANDIDATES}", "HEAD", "--", TRACKED_DB_PATH)
-    candidates = [line.strip() for line in revisions.decode("ascii").splitlines() if line.strip()]
-    if not candidates:
-        raise RuntimeError(f"No Git revisions found for {TRACKED_DB_PATH}.")
-
-    for revision in candidates:
-        export_path = DATA_DIR / f"classroom.git-base.{revision[:8]}.db"
-        _export_git_blob(revision, TRACKED_DB_PATH, export_path)
-        try:
-            with sqlite3.connect(export_path) as conn:
-                result = conn.execute("PRAGMA integrity_check").fetchone()
-        except sqlite3.DatabaseError:
-            export_path.unlink(missing_ok=True)
+def _find_latest_valid_git_snapshot() -> tuple[str, Path, str]:
+    for tracked_path in TRACKED_DB_PATHS:
+        revisions = _run_git(
+            "rev-list",
+            f"--max-count={MAX_GIT_CANDIDATES}",
+            "HEAD",
+            "--",
+            tracked_path,
+        )
+        candidates = [line.strip() for line in revisions.decode("ascii").splitlines() if line.strip()]
+        if not candidates:
             continue
-        if result and result[0] == "ok":
-            return revision, export_path
-        export_path.unlink(missing_ok=True)
 
-    raise RuntimeError("No valid Git snapshot of data/classroom.db passed integrity_check.")
+        for revision in candidates:
+            export_path = DATA_DIR / f"classroom.git-base.{revision[:8]}.db"
+            _export_git_blob(revision, tracked_path, export_path)
+            try:
+                with sqlite3.connect(export_path) as conn:
+                    result = conn.execute("PRAGMA integrity_check").fetchone()
+            except sqlite3.DatabaseError:
+                export_path.unlink(missing_ok=True)
+                continue
+            if result and result[0] == "ok":
+                return revision, export_path, tracked_path
+            export_path.unlink(missing_ok=True)
+
+    tracked_labels = ", ".join(TRACKED_DB_PATHS)
+    raise RuntimeError(f"No valid Git snapshot of {tracked_labels} passed integrity_check.")
 
 
 def _initialize_output_database(output_path: Path) -> None:
@@ -383,6 +394,21 @@ def _replace_file_with_retry(source_path: Path, destination_path: Path) -> None:
         raise last_error
 
 
+def _extract_submission_path_parts(raw_path: str) -> list[str]:
+    normalized = str(raw_path or "").replace("\\", "/").strip()
+    if not normalized:
+        return []
+
+    for marker in sorted(SUBMISSION_PATH_MARKERS, key=len, reverse=True):
+        for token in (f"/{marker}/", f"{marker}/"):
+            index = normalized.rfind(token)
+            if index < 0:
+                continue
+            relative = normalized[index + len(token):].strip("/")
+            return [part for part in relative.split("/") if part]
+    return []
+
+
 def _infer_course_id_from_submission_files(conn: sqlite3.Connection, assignment_id: int) -> int | None:
     rows = conn.execute(
         """
@@ -399,15 +425,11 @@ def _infer_course_id_from_submission_files(conn: sqlite3.Connection, assignment_
         raw_path = str(stored_path or relative_path or "").strip()
         if not raw_path:
             continue
-        parts = [part for part in PureWindowsPath(raw_path).parts if part not in {"\\", "/"}]
-        try:
-            root_index = parts.index("homework_submissions")
-        except ValueError:
+        parts = _extract_submission_path_parts(raw_path)
+        if len(parts) < 2:
             continue
-        if len(parts) <= root_index + 2:
-            continue
-        course_token = parts[root_index + 1]
-        assignment_path_token = parts[root_index + 2]
+        course_token = parts[0]
+        assignment_path_token = parts[1]
         if assignment_path_token != assignment_token:
             continue
         if course_token.isdigit():
@@ -516,9 +538,10 @@ def recover_database(corrupted_db_path: Path) -> RecoveryReport:
         raise FileNotFoundError(f"Database not found: {corrupted_db_path}")
 
     started_at = datetime.now().isoformat(timespec="seconds")
-    revision, base_snapshot_path = _find_latest_valid_git_snapshot()
+    revision, base_snapshot_path, base_tracked_path = _find_latest_valid_git_snapshot()
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     backup_path = DATA_DIR / f"classroom.corrupt.{timestamp}.db"
     output_path = DATA_DIR / f"classroom.recovered.{timestamp}.db"
     report_path = DATA_DIR / f"classroom.recovery_report.{timestamp}.json"
@@ -572,6 +595,7 @@ def recover_database(corrupted_db_path: Path) -> RecoveryReport:
     report = RecoveryReport(
         started_at=started_at,
         base_revision=revision,
+        base_tracked_path=base_tracked_path,
         corrupted_backup=str(backup_path),
         output_path=str(output_path),
         integrity_check=integrity_result,
@@ -610,11 +634,14 @@ def recover_database(corrupted_db_path: Path) -> RecoveryReport:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Recover data/classroom.db from the latest valid Git snapshot plus salvageable rows from the current database."
+        description="Recover classroom.db from the latest valid Git snapshot plus salvageable rows from the current database."
     )
+    default_db_path = DATA_DIR / "db" / "classroom.db"
+    if not default_db_path.exists():
+        default_db_path = DATA_DIR / "classroom.db"
     parser.add_argument(
         "--db",
-        default=str(DATA_DIR / "classroom.db"),
+        default=str(default_db_path),
         help="Path to the corrupted classroom.db file.",
     )
     args = parser.parse_args()

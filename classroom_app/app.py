@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 # 修复：导入 templates 以便在错误处理程序中使用
 from .core import app, ai_client, templates
 # 修复：移除 CONFIG_FILE 和 CHAT_LOG_DIR (后者在 V4.0 services/chat_handler.py 中管理)
-from .config import AI_ASSISTANT_URL, BASE_DIR, DB_PATH, MAIN_THREADPOOL_TOKENS, STATIC_DIR
+from .config import AI_ASSISTANT_URL, BASE_DIR, DB_PATH, MAIN_THREADPOOL_TOKENS, STATIC_DIR, ensure_runtime_directories
 from .database import init_database
 from .dependencies import build_login_redirect_url, build_permission_warning_url
 from .dependencies import clear_access_token_cookie, get_active_user_from_request
@@ -46,6 +46,7 @@ async def startup_event():
     # V4.0: 启动时不再读取 config.json。
     # 数据库初始化已移至 main.py 启动器，但在这里再执行一次以确保 worker 进程也能访问
     # （尽管 uvicorn reload 模式下可能不需要，但这是个好习惯）
+    ensure_runtime_directories()
     init_database()
 
     # 确保静态目录存在

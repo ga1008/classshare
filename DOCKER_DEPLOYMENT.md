@@ -38,18 +38,49 @@ docker compose up -d --build
 
 ## Persistent data
 
-The following directories stay on the host and survive image rebuilds and container recreation:
+LanShare now treats `data/` as the canonical runtime data root. New deployments should keep
+SQLite, uploaded media, submissions, imports, and runtime logs under this one host directory:
+
+- `data/`
+
+Older deployments may still have mutable content in these legacy directories:
 
 - `attendance/`
 - `chat_logs/`
-- `data/`
 - `homework_submissions/`
 - `logs/`
 - `rosters/`
 - `shared_files/`
 - `storage/`
 
-This keeps SQLite data, uploads, submissions, chat history, and other mutable assets upgrade-safe.
+The application keeps compatibility with those locations while you migrate, so existing uploads
+and submissions continue to resolve during an upgrade.
+
+## Data layout migration
+
+Preview the migration plan:
+
+```powershell
+python tools/migrate_data_layout.py --verify
+```
+
+Apply the copy into the new `data/` layout:
+
+```powershell
+python tools/migrate_data_layout.py --apply --verify
+```
+
+The tool copies data non-destructively. Keep the legacy folders until verification passes and
+you have a backup. After migration, the app will prefer populated paths such as:
+
+- `data/db/classroom.db`
+- `data/media/blobs/sha256/`
+- `data/files/submissions/`
+- `data/files/legacy_shared/`
+- `data/imports/rosters/`
+- `data/imports/attendance/`
+- `data/logs/chat_logs/`
+- `data/tmp/chunked_uploads/`
 
 ## Upgrade flow
 

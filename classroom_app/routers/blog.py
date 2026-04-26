@@ -7,7 +7,6 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Qu
 from fastapi.responses import FileResponse, JSONResponse
 from PIL import Image, UnidentifiedImageError
 
-from ..config import GLOBAL_FILES_DIR
 from ..core import templates
 from ..database import get_db_connection
 from ..dependencies import get_current_user
@@ -38,7 +37,7 @@ from ..services.blog_service import (
     toggle_like,
     update_post,
 )
-from ..services.file_service import save_file_globally
+from ..services.file_service import resolve_global_file_path, save_file_globally
 
 router = APIRouter()
 
@@ -425,8 +424,8 @@ async def api_get_blog_image(file_hash: str, user: dict = Depends(get_current_us
     if asset is None:
         raise HTTPException(status_code=404, detail="图片不存在或不可访问")
 
-    file_path = Path(GLOBAL_FILES_DIR) / str(file_hash or "").strip().lower()
-    if not file_path.exists():
+    file_path = resolve_global_file_path(str(file_hash or "").strip().lower())
+    if not file_path:
         raise HTTPException(status_code=404, detail="图片不存在")
 
     return FileResponse(

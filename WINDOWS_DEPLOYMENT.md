@@ -70,6 +70,25 @@ build_windows_package.bat --exclude-user-data --exclude-env
 build_windows_package.bat --skip-runtime --no-zip
 ```
 
+## Runtime data layout
+
+The preferred mutable data root is now `data/`. New runtime files are grouped under:
+
+- `data/db/` for SQLite
+- `data/media/blobs/sha256/` for hash-backed uploads and images
+- `data/files/submissions/` for homework submissions
+- `data/files/legacy_shared/` for the older shared-file upload surface
+- `data/imports/` for rosters and attendance files
+- `data/logs/` and `data/tmp/` for runtime output and temporary upload chunks
+
+Existing installs remain compatible with old top-level folders such as `homework_submissions/`,
+`shared_files/`, `rosters/`, `attendance/`, `chat_logs/`, and `storage/`. To copy old data into
+the new layout, run:
+
+```powershell
+python tools\migrate_data_layout.py --apply --verify
+```
+
 ## Installer notes
 
 - The installed shortcuts start the app through `pythonw.exe` so no console window is shown.
@@ -82,7 +101,7 @@ The launcher tracks:
 
 - app version from `deployment/metadata.json`,
 - dependency hash from `requirements.lock.txt`,
-- runtime state in `data/runtime_state.json`.
+- runtime state in `data/runtime/runtime_state.json` after data-layout migration.
 
 After replacing the application files with a newer package, running `start_lanshare.bat` or `repair_runtime.bat` will automatically resync `python_runtime` when the version or dependency hash changes.
 

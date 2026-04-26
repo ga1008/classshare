@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from .file_preview_service import infer_file_preview_profile, load_text_content
-from .submission_file_alignment import _resolve_stored_path, _file_hash_sha256, _infer_mime_type
+from .submission_file_alignment import resolve_submission_file_path, _file_hash_sha256, _infer_mime_type
 
 
 def _fill_file_metadata_from_disk(item: dict) -> dict:
@@ -85,7 +85,7 @@ def _resolve_file_path(stored_path: str) -> Path | None:
         return Path(stored_path)
 
     # Try alignment resolver
-    resolved = _resolve_stored_path(stored_path)
+    resolved = resolve_submission_file_path(stored_path)
     if resolved is not None:
         return Path(resolved)
 

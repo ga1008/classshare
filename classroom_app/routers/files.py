@@ -13,7 +13,7 @@ from fastapi import WebSocket, status, WebSocketDisconnect, UploadFile, File, Fo
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from ..config import GLOBAL_FILES_DIR, UPLOAD_CHUNK_SIZE_BYTES, CHUNKED_UPLOADS_DIR
+from ..config import UPLOAD_CHUNK_SIZE_BYTES, CHUNKED_UPLOADS_DIR
 from ..dependencies import verify_token, get_current_user, get_current_teacher, normalize_ip
 # 导入聊天管理器
 from ..services.chat_handler import (
@@ -47,8 +47,14 @@ from ..services.discussion_attachment_service import (
     resolve_discussion_attachment_payloads,
 )
 from ..services.emoji_service import increment_emoji_usage, resolve_custom_emoji_payloads
-from ..services.file_handler import delete_file_safely
-from ..services.file_service import save_file_globally, get_file_lock, stream_file
+from ..services.file_service import (
+    delete_global_file,
+    global_file_write_path,
+    get_file_lock,
+    resolve_global_file_path,
+    save_file_globally,
+    stream_file,
+)
 from ..services.download_policy import apply_download_policy, ensure_download_allowed
 from ..services.message_center_service import create_discussion_mention_notifications
 from ..services.runtime_metrics_service import (
@@ -566,7 +572,7 @@ def sync_save_chunk(chunk_path: Path, upload_file: UploadFile):
         shutil.copyfileobj(upload_file.file, buffer)
 
 
-def sync_assemble_file(temp_dir: Path, total_chunks: int, final_dir: Path):
+def sync_assemble_file(temp_dir: Path, total_chunks: int):
     """【线程池函数】高速重组大文件并计算哈希"""
     sha256_hash = hashlib.sha256()
     total_size = 0
@@ -585,7 +591,8 @@ def sync_assemble_file(temp_dir: Path, total_chunks: int, final_dir: Path):
                     total_size += len(data)
 
     file_hash = sha256_hash.hexdigest()
-    final_path = final_dir / file_hash
+    final_path = global_file_write_path(file_hash)
+    final_path.parent.mkdir(parents=True, exist_ok=True)
     if not final_path.exists():
         shutil.move(str(temp_assembled), str(final_path))
     else:
@@ -861,7 +868,7 @@ async def complete_chunked_upload(
 
     try:
         file_hash, total_size = await asyncio.to_thread(
-            sync_assemble_file, temp_dir, total_chunks, GLOBAL_FILES_DIR
+            sync_assemble_file, temp_dir, total_chunks
         )
 
         # 阶段 2：写入数据库
@@ -1194,7 +1201,7 @@ async def delete_course_file(
         # 仅当没有其他引用时才删除物理文件
         save_status = True
         if ref_count <= 1:
-            save_status = await delete_file_safely(Path(GLOBAL_FILES_DIR) / file_data['file_hash'])
+            save_status = await delete_global_file(file_data['file_hash'])
 
         # 广播消息
         try:
@@ -1232,8 +1239,8 @@ async def download_course_file(
 
     ensure_download_allowed(file_info["file_size"], resource_label="共享文件")
 
-    file_path = Path(GLOBAL_FILES_DIR) / file_info['file_hash']
-    if not file_path.exists():
+    file_path = resolve_global_file_path(file_info['file_hash'])
+    if not file_path:
         raise HTTPException(404, "文件不存在")
 
     async def streamed_file():
@@ -1370,8 +1377,8 @@ async def download_discussion_attachment(
     if attachment_row is None:
         raise HTTPException(status_code=404, detail="讨论区图片不存在")
 
-    file_path = Path(GLOBAL_FILES_DIR) / str(attachment_row["file_hash"])
-    if not file_path.exists():
+    file_path = resolve_global_file_path(str(attachment_row["file_hash"]))
+    if not file_path:
         raise HTTPException(status_code=404, detail="讨论区图片不存在")
 
     async def streamed_file():

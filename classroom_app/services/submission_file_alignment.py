@@ -18,7 +18,8 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from ..config import HOMEWORK_SUBMISSIONS_DIR
+from ..config import HOMEWORK_SUBMISSIONS_DIR, HOMEWORK_SUBMISSIONS_LEGACY_DIRS
+from ..storage_paths import extract_relative_after_markers, resolve_migrated_file_path
 
 
 # ---------------------------------------------------------------------------
@@ -26,41 +27,29 @@ from ..config import HOMEWORK_SUBMISSIONS_DIR
 # ---------------------------------------------------------------------------
 
 def _extract_relative_submission_path(stored_path: str) -> str | None:
-    """Extract the path relative to ``homework_submissions/`` from an absolute
-    *stored_path*.  Works regardless of the drive letter or OS path separator.
-    Returns ``None`` if the path does not contain the expected directory.
-    """
-    normalized = stored_path.replace("\\", "/")
-    marker = "/homework_submissions/"
-    idx = normalized.find(marker)
-    if idx < 0:
-        # Handle Windows rooted path without leading /
-        marker = "homework_submissions/"
-        idx = normalized.find(marker)
-        if idx < 0:
-            return None
-    return normalized[idx + len(marker):]
+    return extract_relative_after_markers(
+        stored_path,
+        ("homework_submissions", "files/submissions"),
+    )
 
 
-def _resolve_stored_path(stored_path: str) -> str | None:
+def resolve_submission_file_path(stored_path: str) -> str | None:
     """Given a *stored_path* from the database, resolve it to the actual file
     on disk under :pydata:`HOMEWORK_SUBMISSIONS_DIR`.
 
     Returns the real path if the file exists, otherwise ``None``.
     """
-    # Fast-path: the original stored_path might already be valid
-    if os.path.isfile(stored_path):
-        return stored_path
+    resolved = resolve_migrated_file_path(
+        stored_path,
+        active_root=HOMEWORK_SUBMISSIONS_DIR,
+        legacy_roots=HOMEWORK_SUBMISSIONS_LEGACY_DIRS,
+        markers=("homework_submissions", "files/submissions"),
+    )
+    return str(resolved) if resolved else None
 
-    rel = _extract_relative_submission_path(stored_path)
-    if rel is None:
-        return None
 
-    candidate = HOMEWORK_SUBMISSIONS_DIR / rel
-    if candidate.is_file():
-        return str(candidate)
-
-    return None
+def _resolve_stored_path(stored_path: str) -> str | None:
+    return resolve_submission_file_path(stored_path)
 
 
 def _build_expected_stored_path(course_id: int | str,

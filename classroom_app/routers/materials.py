@@ -15,12 +15,10 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
-from ..config import GLOBAL_FILES_DIR
 from ..core import ai_client, templates
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher, get_current_user
-from ..services.file_handler import delete_file_safely
-from ..services.file_service import save_file_globally
+from ..services.file_service import delete_global_file, global_file_write_path, resolve_global_file_path, save_file_globally
 from ..services.download_policy import apply_download_policy, ensure_download_allowed
 from ..services.file_preview_service import TEXT_CONTENT_ENCODINGS
 from ..services.materials_service import (
@@ -128,8 +126,8 @@ def _load_material_storage_path(material_row) -> Path:
     file_hash = _row_value(material_row, "file_hash")
     if not file_hash:
         raise HTTPException(400, "当前节点不是文件材料")
-    file_path = Path(GLOBAL_FILES_DIR) / file_hash
-    if not file_path.exists():
+    file_path = resolve_global_file_path(file_hash)
+    if not file_path:
         raise HTTPException(404, "材料文件不存在")
     return file_path
 
@@ -164,8 +162,8 @@ async def _load_material_text_content(material_row, prefer_optimized: bool = Fal
 
 
 async def _write_material_file(file_hash: str, payload_bytes: bytes):
-    GLOBAL_FILES_DIR.mkdir(parents=True, exist_ok=True)
-    target_path = Path(GLOBAL_FILES_DIR) / file_hash
+    target_path = global_file_write_path(file_hash)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
     if target_path.exists():
         return target_path
 
@@ -1654,7 +1652,7 @@ async def delete_material(material_id: int, user: dict = Depends(get_current_tea
         removed_files = 0
         for file_hash in file_hashes:
             if _count_global_file_references(conn, file_hash) <= 0:
-                if await delete_file_safely(Path(GLOBAL_FILES_DIR) / file_hash):
+                if await delete_global_file(file_hash):
                     removed_files += 1
 
     return {
@@ -1919,7 +1917,7 @@ async def update_material_content(
         should_remove_old_file = bool(old_hash and old_hash != new_hash and _count_global_file_references(conn, old_hash) <= 0)
 
     if should_remove_old_file:
-        await delete_file_safely(Path(GLOBAL_FILES_DIR) / old_hash)
+        await delete_global_file(old_hash)
 
     return {
         "status": "success",

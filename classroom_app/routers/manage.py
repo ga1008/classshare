@@ -13,7 +13,7 @@ import httpx
 from fastapi import APIRouter, Request, Form, HTTPException, Depends, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse
 
-from ..config import ROSTER_DIR, SHARE_DIR, TEXTBOOK_ATTACHMENT_DIR
+from ..config import ROSTER_DIR, TEXTBOOK_ATTACHMENT_DIR, TEXTBOOK_ATTACHMENT_LEGACY_DIRS
 from ..core import ai_client
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher, invalidate_session_for_user
@@ -39,6 +39,7 @@ from ..services.course_planning_service import (
     serialize_course_row,
 )
 from ..services.file_handler import save_upload_file
+from ..services.file_service import save_file_globally
 from ..services.materials_service import (
     attach_learning_material_briefs,
     get_learning_material_brief_map,
@@ -48,6 +49,7 @@ from ..services.message_center_service import is_super_admin_teacher
 from ..services.roster_handler import parse_excel_to_students
 from ..services.student_auth_service import build_student_security_summary, list_student_login_history
 from ..services.submission_file_alignment import run_full_alignment
+from ..storage_paths import resolve_migrated_file_path
 
 router = APIRouter(prefix="/api/manage", dependencies=[Depends(get_current_teacher)])
 
@@ -134,7 +136,12 @@ def _remove_file_if_exists(path_value: str | None) -> None:
         return
 
     try:
-        file_path = Path(normalized_path)
+        file_path = resolve_migrated_file_path(
+            normalized_path,
+            active_root=TEXTBOOK_ATTACHMENT_DIR,
+            legacy_roots=TEXTBOOK_ATTACHMENT_LEGACY_DIRS,
+            markers=("storage/textbook_attachments", "files/textbook_attachments", "textbook_attachments"),
+        ) or Path(normalized_path)
         if file_path.exists():
             file_path.unlink()
     except Exception:
@@ -640,7 +647,7 @@ async def api_delete_course(course_id: int, user: dict = Depends(get_current_tea
             # 4. 删除 course
             conn.execute("DELETE FROM courses WHERE id = ?", (course_id,))
 
-            # TODO: 还应删除服务器上的相关文件 (例如 SHARE_DIR / str(course_id) 目录)
+            # TODO: 还应按引用计数清理未被其他课程复用的哈希文件。
 
             conn.commit()
 
@@ -668,19 +675,33 @@ async def api_upload_course_file(
     if not course:
         raise HTTPException(403, "无权操作此课程")
 
-    upload_dir = SHARE_DIR / str(course_id)
-    file_info = await save_upload_file(upload_dir, file)
+    file_info = await save_file_globally(file)
+    original_filename = "".join(
+        c for c in str(file.filename or "upload") if c.isalnum() or c in (".", "_", "-")
+    ).strip() or "upload"
     if not file_info:
         raise HTTPException(500, "保存文件到服务器失败")
 
     with get_db_connection() as conn:
         conn.execute(
-            "INSERT INTO course_files (course_id, file_name, stored_path, is_public, is_teacher_resource) VALUES (?, ?, ?, ?, ?)",
-            (course_id, file_info['original_filename'], file_info['stored_path'], is_public, is_teacher_resource)
+            """
+            INSERT INTO course_files
+                (course_id, file_name, file_hash, file_size, is_public, is_teacher_resource, uploaded_by_teacher_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                course_id,
+                original_filename,
+                file_info["hash"],
+                file_info["size"],
+                is_public,
+                is_teacher_resource,
+                user["id"],
+            )
         )
         conn.commit()
 
-    return {"status": "success", "message": f"文件 '{file_info['original_filename']}' 上传成功。"}
+    return {"status": "success", "message": f"文件 '{original_filename}' 上传成功。"}
 
 
 # --- 学期与教材管理 ---
@@ -1012,8 +1033,13 @@ async def api_download_textbook_attachment(textbook_id: int, user: dict = Depend
     if not attachment_path:
         raise HTTPException(404, "该教材没有附件")
 
-    file_path = Path(attachment_path)
-    if not file_path.exists():
+    file_path = resolve_migrated_file_path(
+        attachment_path,
+        active_root=TEXTBOOK_ATTACHMENT_DIR,
+        legacy_roots=TEXTBOOK_ATTACHMENT_LEGACY_DIRS,
+        markers=("storage/textbook_attachments", "files/textbook_attachments", "textbook_attachments"),
+    )
+    if not file_path:
         raise HTTPException(404, "教材附件不存在或已丢失")
 
     media_type = str(textbook_row["attachment_mime_type"] or "").strip() or None

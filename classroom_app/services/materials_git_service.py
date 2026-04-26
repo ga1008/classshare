@@ -14,8 +14,8 @@ from urllib.parse import urlsplit, urlunsplit
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import HTTPException
 
-from ..config import GLOBAL_FILES_DIR, SECRET_KEY
-from .file_handler import delete_file_safely
+from ..config import SECRET_KEY
+from .file_service import delete_global_file, global_file_write_path, resolve_global_file_path
 from .materials_service import infer_material_profile, is_git_internal_material_path, serialize_material_row
 
 
@@ -175,8 +175,8 @@ def _count_global_file_references(conn, file_hash: str) -> int:
 
 
 def _load_file_bytes(file_hash: str) -> bytes:
-    file_path = Path(GLOBAL_FILES_DIR) / str(file_hash or "")
-    if not file_path.exists():
+    file_path = resolve_global_file_path(str(file_hash or ""))
+    if not file_path:
         raise FileNotFoundError(f"材料文件不存在: {file_hash}")
     return file_path.read_bytes()
 
@@ -192,9 +192,8 @@ def _load_text_from_row(row: dict | None) -> str:
 
 def _store_bytes_globally(payload_bytes: bytes) -> tuple[str, int]:
     file_hash = hashlib.sha256(payload_bytes).hexdigest()
-    target_dir = Path(GLOBAL_FILES_DIR)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target_path = target_dir / file_hash
+    target_path = global_file_write_path(file_hash)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
     if not target_path.exists():
         target_path.write_bytes(payload_bytes)
     return file_hash, len(payload_bytes)
@@ -1151,7 +1150,7 @@ async def execute_material_repository_action(
                 updated_repository["git_repo_status"] = refreshed_row.get("git_repo_status")
 
             for file_hash in removable_hashes:
-                await delete_file_safely(Path(GLOBAL_FILES_DIR) / file_hash)
+                await delete_global_file(file_hash)
 
         combined_output = _build_combined_output(execution_log)
         auth_state = _classify_auth_failure(remote_info, combined_output)

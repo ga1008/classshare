@@ -1,12 +1,36 @@
 import os
 import re
-from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load .env once at process startup.
+# Load .env once before path constants read environment variables.
 load_dotenv()
 
+from .storage_paths import (
+    BASE_DIR,
+    DATA_ROOT,
+    LEGACY_ATTENDANCE_DIR,
+    LEGACY_CHAT_LOG_DIR,
+    LEGACY_CHUNKED_UPLOADS_DIR,
+    LEGACY_DB_PATH,
+    LEGACY_GLOBAL_FILES_DIR,
+    LEGACY_HOMEWORK_SUBMISSIONS_DIR,
+    LEGACY_ROSTER_DIR,
+    LEGACY_SHARE_DIR,
+    LEGACY_TEXTBOOK_ATTACHMENT_DIR,
+    NEW_ATTENDANCE_DIR,
+    NEW_CHAT_LOG_DIR,
+    NEW_CHUNKED_UPLOADS_DIR,
+    NEW_DB_PATH,
+    NEW_GLOBAL_FILES_DIR,
+    NEW_HOMEWORK_SUBMISSIONS_DIR,
+    NEW_ROSTER_DIR,
+    NEW_SHARE_DIR,
+    NEW_TEXTBOOK_ATTACHMENT_DIR,
+    legacy_candidates,
+    select_compatible_file,
+    select_preferred_dir,
+)
 
 def _read_url_env(name: str) -> str | None:
     value = os.getenv(name)
@@ -84,28 +108,36 @@ def _format_size_label(size_bytes: int | None) -> str:
     return f"{value:.{precision}f} {units[unit_index]}"
 
 
-def _read_path_env(name: str, default: Path) -> Path:
-    raw_value = str(os.getenv(name, "") or "").strip()
-    return Path(raw_value).expanduser() if raw_value else default
-
-
 # --- Paths ---
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = _read_path_env("MAIN_DATA_DIR", BASE_DIR / "data")
-DB_PATH = _read_path_env("MAIN_DB_PATH", DATA_DIR / "classroom.db")
-HOMEWORK_SUBMISSIONS_DIR = _read_path_env("MAIN_HOMEWORK_SUBMISSIONS_DIR", BASE_DIR / "homework_submissions")
-SHARE_DIR = _read_path_env("MAIN_SHARE_DIR", BASE_DIR / "shared_files")
-ROSTER_DIR = _read_path_env("MAIN_ROSTER_DIR", BASE_DIR / "rosters")
-ATTENDANCE_DIR = _read_path_env("MAIN_ATTENDANCE_DIR", BASE_DIR / "attendance")
-CHAT_LOG_DIR = _read_path_env("MAIN_CHAT_LOG_DIR", BASE_DIR / "chat_logs")
+DATA_DIR = DATA_ROOT
+DB_PATH = select_compatible_file(("MAIN_DB_PATH",), NEW_DB_PATH, (LEGACY_DB_PATH,))
+HOMEWORK_SUBMISSIONS_DIR = select_preferred_dir(("MAIN_HOMEWORK_SUBMISSIONS_DIR",), NEW_HOMEWORK_SUBMISSIONS_DIR)
+SHARE_DIR = select_preferred_dir(("MAIN_SHARE_DIR",), NEW_SHARE_DIR)
+ROSTER_DIR = select_preferred_dir(("MAIN_ROSTER_DIR",), NEW_ROSTER_DIR)
+ATTENDANCE_DIR = select_preferred_dir(("MAIN_ATTENDANCE_DIR",), NEW_ATTENDANCE_DIR)
+CHAT_LOG_DIR = select_preferred_dir(("MAIN_CHAT_LOG_DIR",), NEW_CHAT_LOG_DIR)
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
 CONFIG_FILE = BASE_DIR / "config.json"
 
 # Global file storage.
-GLOBAL_FILES_DIR = _read_path_env("MAIN_GLOBAL_FILES_DIR", BASE_DIR / "storage/global_files")
-TEXTBOOK_ATTACHMENT_DIR = _read_path_env("MAIN_TEXTBOOK_ATTACHMENT_DIR", BASE_DIR / "storage/textbook_attachments")
+GLOBAL_FILES_DIR = select_preferred_dir(("MAIN_GLOBAL_FILES_DIR",), NEW_GLOBAL_FILES_DIR)
+TEXTBOOK_ATTACHMENT_DIR = select_preferred_dir(("MAIN_TEXTBOOK_ATTACHMENT_DIR",), NEW_TEXTBOOK_ATTACHMENT_DIR)
 FILE_CHUNK_SIZE = 8192
+
+HOMEWORK_SUBMISSIONS_LEGACY_DIRS = legacy_candidates(
+    HOMEWORK_SUBMISSIONS_DIR,
+    (LEGACY_HOMEWORK_SUBMISSIONS_DIR, NEW_HOMEWORK_SUBMISSIONS_DIR),
+)
+GLOBAL_FILES_LEGACY_DIRS = legacy_candidates(
+    GLOBAL_FILES_DIR,
+    (LEGACY_GLOBAL_FILES_DIR, NEW_GLOBAL_FILES_DIR),
+)
+TEXTBOOK_ATTACHMENT_LEGACY_DIRS = legacy_candidates(
+    TEXTBOOK_ATTACHMENT_DIR,
+    (LEGACY_TEXTBOOK_ATTACHMENT_DIR, NEW_TEXTBOOK_ATTACHMENT_DIR),
+)
+SHARE_LEGACY_DIRS = legacy_candidates(SHARE_DIR, (LEGACY_SHARE_DIR, NEW_SHARE_DIR))
 
 # --- Service ---
 HOST = os.getenv("MAIN_HOST", "0.0.0.0")
@@ -138,8 +170,26 @@ MAX_SUBMISSION_TOTAL_BYTES = int(MAX_SUBMISSION_TOTAL_MB * 1024 * 1024)
 
 # --- Chunked uploads ---
 UPLOAD_CHUNK_SIZE_BYTES = 5 * 1024 * 1024
-CHUNKED_UPLOADS_DIR = _read_path_env("MAIN_CHUNKED_UPLOADS_DIR", BASE_DIR / "storage/chunked_uploads")
+CHUNKED_UPLOADS_DIR = select_preferred_dir(("MAIN_CHUNKED_UPLOADS_DIR",), NEW_CHUNKED_UPLOADS_DIR)
 CHUNK_UPLOAD_TIMEOUT_HOURS = 24
+
+RUNTIME_DIRECTORIES = (
+    DATA_DIR,
+    DB_PATH.parent,
+    HOMEWORK_SUBMISSIONS_DIR,
+    SHARE_DIR,
+    ROSTER_DIR,
+    ATTENDANCE_DIR,
+    CHAT_LOG_DIR,
+    GLOBAL_FILES_DIR,
+    TEXTBOOK_ATTACHMENT_DIR,
+    CHUNKED_UPLOADS_DIR,
+)
+
+
+def ensure_runtime_directories() -> None:
+    for directory in RUNTIME_DIRECTORIES:
+        directory.mkdir(parents=True, exist_ok=True)
 
 # --- SQLite ---
 SQLITE_BUSY_TIMEOUT_MS = int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", 30000))

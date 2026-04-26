@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
-from ..config import GLOBAL_FILES_DIR
 from ..database import get_db_connection
 from ..dependencies import get_current_user
+from ..services.file_service import global_file_write_path, resolve_global_file_path
 from ..services.message_center_service import create_app_feedback_notifications, is_super_admin_teacher
 
 router = APIRouter()
@@ -136,12 +136,12 @@ async def upload_feedback_attachment(
     import hashlib
 
     file_hash = hashlib.sha256(content).hexdigest()
-    file_path = GLOBAL_FILES_DIR / file_hash
+    file_path = global_file_write_path(file_hash)
 
     file_size = len(content)
     original_filename = _normalize_upload_filename(file.filename)
 
-    GLOBAL_FILES_DIR.mkdir(parents=True, exist_ok=True)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
     if not file_path.exists():
         file_path.write_bytes(content)
 
@@ -203,8 +203,8 @@ async def serve_feedback_attachment(
     if not attachment or not can_view:
         raise HTTPException(404, "附件不存在。")
 
-    file_path = GLOBAL_FILES_DIR / attachment["file_hash"]
-    if not file_path.exists():
+    file_path = resolve_global_file_path(attachment["file_hash"])
+    if not file_path:
         raise HTTPException(404, "附件文件不存在。")
 
     return FileResponse(

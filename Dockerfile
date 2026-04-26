@@ -20,18 +20,35 @@ RUN python -m pip install --no-cache-dir -r requirements.txt -i "${PIP_INDEX_URL
 COPY deployment/docker/entrypoint.sh /usr/local/bin/lanshare-entrypoint
 RUN chmod +x /usr/local/bin/lanshare-entrypoint
 
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY . .
 
 RUN mkdir -p \
+    /app/data \
+    /app/data/db \
+    /app/data/files/legacy_shared \
+    /app/data/files/submissions \
+    /app/data/files/textbook_attachments \
+    /app/data/imports/attendance \
+    /app/data/imports/rosters \
+    /app/data/logs/chat_logs \
+    /app/data/media/blobs/sha256 \
+    /app/data/runtime \
+    /app/data/tmp/chunked_uploads \
     /app/attendance \
     /app/chat_logs \
-    /app/data \
     /app/homework_submissions \
     /app/logs \
     /app/rosters \
     /app/shared_files \
     /app/storage/chunked_uploads \
-    /app/storage/global_files
+    /app/storage/global_files \
+    /app/storage/textbook_attachments
 
 EXPOSE 8000 8001
 

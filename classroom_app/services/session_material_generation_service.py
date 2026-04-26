@@ -11,8 +11,8 @@ from typing import Any
 import httpx
 from fastapi import HTTPException, UploadFile
 
-from ..config import GLOBAL_FILES_DIR
 from ..core import ai_client
+from .file_service import global_file_write_path, resolve_global_file_path
 from .materials_git_service import refresh_root_git_metadata
 from .materials_service import (
     attach_learning_material_briefs,
@@ -450,8 +450,8 @@ def _load_material_text(conn, material_id: int) -> str:
     if str(row["node_type"] or "") != "file" or str(row["preview_type"] or "") != "markdown" or not row["file_hash"]:
         return ""
 
-    file_path = Path(GLOBAL_FILES_DIR) / str(row["file_hash"])
-    if not file_path.exists():
+    file_path = resolve_global_file_path(str(row["file_hash"]))
+    if not file_path:
         return ""
 
     raw_bytes = file_path.read_bytes()
@@ -910,8 +910,8 @@ def _get_child_row(conn, *, teacher_id: int, parent_id: int | None, name: str):
 def _store_markdown_bytes(content: str) -> tuple[str, int]:
     payload_bytes = content.encode("utf-8")
     file_hash = hashlib.sha256(payload_bytes).hexdigest()
-    GLOBAL_FILES_DIR.mkdir(parents=True, exist_ok=True)
-    target_path = Path(GLOBAL_FILES_DIR) / file_hash
+    target_path = global_file_write_path(file_hash)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
     if not target_path.exists():
         target_path.write_bytes(payload_bytes)
     return file_hash, len(payload_bytes)

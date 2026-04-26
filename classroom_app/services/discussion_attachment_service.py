@@ -8,8 +8,8 @@ from typing import Iterable
 from fastapi import HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 
-from ..config import GLOBAL_FILES_DIR, MAX_UPLOAD_SIZE_BYTES
-from ..services.file_service import save_file_globally
+from ..config import MAX_UPLOAD_SIZE_BYTES
+from ..services.file_service import resolve_global_file_path, save_file_globally
 
 ALLOWED_DISCUSSION_IMAGE_TYPES = {
     "image/png",
@@ -132,8 +132,8 @@ def build_attachment_image_inputs_from_payloads(
         if row is None:
             continue
 
-        file_path = GLOBAL_FILES_DIR / str(row["file_hash"])
-        if not file_path.exists():
+        file_path = resolve_global_file_path(str(row["file_hash"]))
+        if not file_path:
             continue
 
         mime_type = str(row["mime_type"] or "").strip().lower()

@@ -11,8 +11,7 @@ try:
     from classroom_app.app import app
     from classroom_app.config import (
         HOST, PORT, AI_ASSISTANT_URL,
-        ROSTER_DIR, SHARE_DIR, ATTENDANCE_DIR, CHAT_LOG_DIR, DATA_DIR,
-        HOMEWORK_SUBMISSIONS_DIR, CHUNKED_UPLOADS_DIR,
+        ensure_runtime_directories,
         MAIN_BACKLOG, MAIN_LIMIT_CONCURRENCY, MAIN_TIMEOUT_KEEP_ALIVE,
         MAIN_WORKERS, MAIN_WS_PING_INTERVAL, MAIN_WS_PING_TIMEOUT,
     )
@@ -47,8 +46,7 @@ def run_server():
     print("=" * 60)
 
     # 确保所有目录在启动时都存在
-    for d in [DATA_DIR, HOMEWORK_SUBMISSIONS_DIR, SHARE_DIR, ROSTER_DIR, ATTENDANCE_DIR, CHAT_LOG_DIR, CHUNKED_UPLOADS_DIR]:
-        d.mkdir(exist_ok=True)
+    ensure_runtime_directories()
 
     # 在启动时初始化数据库
     print("[SERVER] 正在初始化数据库...")

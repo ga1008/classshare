@@ -13,9 +13,11 @@ x-lanshare-service: &lanshare-service
   env_file:
     - ./docker.env
   volumes:
+    # Canonical runtime data root. Legacy mounts below keep upgrades safe until
+    # `python tools/migrate_data_layout.py --apply --verify` has been run.
+    - ./data:/app/data
     - ./attendance:/app/attendance
     - ./chat_logs:/app/chat_logs
-    - ./data:/app/data
     - ./homework_submissions:/app/homework_submissions
     - ./logs:/app/logs
     - ./rosters:/app/rosters

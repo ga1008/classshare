@@ -8,8 +8,7 @@ from typing import Iterable
 from fastapi import HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 
-from ..config import GLOBAL_FILES_DIR
-from .file_service import save_file_globally
+from .file_service import resolve_global_file_path, save_file_globally
 
 MAX_CUSTOM_EMOJI_BYTES = 5 * 1024 * 1024
 MAX_CUSTOM_EMOJIS_PER_USER = 60
@@ -120,8 +119,8 @@ async def validate_and_store_custom_emoji(file: UploadFile) -> dict:
 
 
 def get_custom_emoji_path(file_hash: str) -> Path:
-    file_path = Path(GLOBAL_FILES_DIR) / file_hash
-    if not file_path.exists():
+    file_path = resolve_global_file_path(file_hash)
+    if not file_path:
         raise HTTPException(404, "表情文件不存在。")
     return file_path
 

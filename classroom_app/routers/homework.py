@@ -51,6 +51,7 @@ from ..services.submission_assets import (
     store_submission_files,
     summarize_allowed_file_types,
 )
+from ..services.submission_file_alignment import resolve_submission_file_path
 
 router = APIRouter(prefix="/api")
 
@@ -916,9 +917,10 @@ async def export_submission_attachments(
         used_folder_names: set[str] = set()
 
         for row in rows:
-            stored_path = Path(row["stored_path"])
-            if not stored_path.exists():
+            resolved_path = resolve_submission_file_path(str(row["stored_path"] or ""))
+            if not resolved_path:
                 continue
+            stored_path = Path(resolved_path)
 
             student_pk_id = int(row["student_pk_id"])
 

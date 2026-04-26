@@ -38,6 +38,7 @@ from ..services.psych_profile_service import (
     load_latest_hidden_profile as load_hidden_profile_snapshot,
 )
 from ..services.academic_service import build_classroom_ai_context
+from ..services.submission_file_alignment import resolve_submission_file_path
 from ..services.prompt_utils import (
     polite_address,
     build_time_context_text,
@@ -124,7 +125,15 @@ async def ai_regrade_submission(submission_id: int, user: dict = Depends(get_cur
         submission_files = [dict(row) for row in files_cursor]
 
     # 检查是否有可批改的内容（文件或JSON答案均可）
-    has_files = bool(submission_files)
+    resolved_submission_files = []
+    for item in submission_files:
+        resolved_path = resolve_submission_file_path(str(item.get("stored_path") or ""))
+        if not resolved_path:
+            continue
+        item["resolved_path"] = str(Path(resolved_path).resolve())
+        resolved_submission_files.append(item)
+
+    has_files = bool(resolved_submission_files)
     has_answers = bool(submission['answers_json'])
     if not has_files and not has_answers:
         raise HTTPException(status_code=400, detail="该提交没有可批改的内容（无文件也无答案）。")
@@ -136,7 +145,7 @@ async def ai_regrade_submission(submission_id: int, user: dict = Depends(get_cur
         "allowed_file_types_json": submission["allowed_file_types_json"],
         "files": [
             {
-                "stored_path": str(Path(item["stored_path"]).resolve()),
+                "stored_path": item["resolved_path"],
                 "original_filename": item.get("original_filename"),
                 "relative_path": item.get("relative_path") or item.get("original_filename"),
                 "mime_type": item.get("mime_type"),
@@ -144,9 +153,9 @@ async def ai_regrade_submission(submission_id: int, user: dict = Depends(get_cur
                 "file_ext": item.get("file_ext"),
                 "file_hash": item.get("file_hash"),
             }
-            for item in submission_files
+            for item in resolved_submission_files
         ] if has_files else [],
-        "file_paths": [str(Path(item["stored_path"]).resolve()) for item in submission_files] if has_files else [],
+        "file_paths": [item["resolved_path"] for item in resolved_submission_files] if has_files else [],
         "answers_json": submission['answers_json'] if has_answers else None,
     }
     try:
