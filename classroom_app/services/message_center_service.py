@@ -1620,7 +1620,7 @@ def create_app_feedback_notifications(conn, feedback_id: int | str) -> int:
             actor_role=actor_role if actor_role in {"student", "teacher"} else "",
             actor_user_pk=actor_user_pk,
             actor_display_name=actor_display_name,
-            link_url="/manage/system#feedback-list",
+            link_url="/manage/system/feedback",
             ref_type=MESSAGE_CATEGORY_APP_FEEDBACK,
             ref_id=str(feedback["id"]),
             metadata={

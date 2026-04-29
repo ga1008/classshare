@@ -60,6 +60,42 @@
         min-height: 260px;
     }
 
+    /* Score range filter chip */
+    .score-range-filter-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px 4px 12px;
+        background: var(--primary-light, #eff6ff);
+        border: 1px solid var(--primary-color, #3b82f6);
+        border-radius: 99px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: var(--primary-color, #2563eb);
+        white-space: nowrap;
+        animation: chipFadeIn 0.2s ease;
+    }
+    .score-range-filter-clear {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px; height: 18px;
+        padding: 0; border: 0;
+        border-radius: 50%;
+        background: transparent;
+        color: var(--primary-color, #3b82f6);
+        font-size: 1rem; line-height: 1;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+    .score-range-filter-clear:hover {
+        background: rgba(59, 130, 246, 0.15);
+    }
+    @keyframes chipFadeIn {
+        from { opacity: 0; transform: scale(0.9); }
+        to { opacity: 1; transform: scale(1); }
+    }
+
     /* Score colors */
     .score-excellent { color: #059669; } .score-good { color: #2563eb; }
     .score-medium { color: #0891b2; } .score-pass { color: #d97706; }
@@ -346,7 +382,7 @@
 {% block body %}
 <header class="assignment-header">
     <div class="header-title-group">
-        <a href="/dashboard" class="back-link">
+        <a href="{{ assignment_back_url }}" class="back-link">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
             返回
         </a>
@@ -540,6 +576,10 @@
             <button class="filter-btn" data-filter="graded" onclick="setFilter('graded', this)">已批改</button>
             <button class="filter-btn" data-filter="unsubmitted" onclick="setFilter('unsubmitted', this)">未提交</button>
             <button class="filter-btn" data-filter="fail" onclick="setFilter('fail', this)">不及格</button>
+            <span class="score-range-filter-chip" id="score-range-filter-chip" style="display:none;">
+                <span id="score-range-filter-label"></span>
+                <button class="score-range-filter-clear" onclick="clearScoreRangeFilter()" title="取消分数筛选">&times;</button>
+            </span>
             <div class="selection-toolbar">
                 <span class="selection-count" id="selection-count">已选 0</span>
                 <button class="btn btn-outline btn-sm text-warning" type="button" onclick="openWithdrawModalForSelected()" id="withdraw-selected-btn" disabled>撤回选中</button>
@@ -805,6 +845,7 @@
     const MAX_FILE_COUNT = {{ max_submission_file_count }};
     let allEntries = [];
     let currentFilter = 'all';
+    let scoreRangeFilter = null;  // null or SCORE_CATEGORIES key
     let currentSort = { key: null, direction: 'asc' };
     let autoRefreshTimer = null;
     let selectedStudentIds = new Set();
@@ -942,6 +983,18 @@
 
         if (!distChartInstance) {
             distChartInstance = echarts.init(container);
+            distChartInstance.on('click', function(params) {
+                if (params.seriesType === 'bar' && params.dataIndex != null) {
+                    const category = SCORE_CATEGORIES[params.dataIndex];
+                    if (category && params.value > 0) {
+                        if (scoreRangeFilter === category.key) {
+                            clearScoreRangeFilter();
+                        } else {
+                            setScoreRangeFilter(category.key);
+                        }
+                    }
+                }
+            });
         }
 
         const labels = SCORE_CATEGORIES.map(c => c.label);
@@ -996,6 +1049,7 @@
             },
             series: [{
                 type: 'bar',
+                cursor: 'pointer',
                 data: counts.map((v, i) => ({
                     value: v,
                     itemStyle: {
@@ -1008,6 +1062,14 @@
                 })),
                 barWidth: '42%',
                 barMaxWidth: 56,
+                emphasis: {
+                    itemStyle: {
+                        shadowBlur: 8,
+                        shadowOffsetX: 0,
+                        shadowOffsetY: 2,
+                        shadowColor: 'rgba(0,0,0,0.15)',
+                    },
+                },
                 label: {
                     show: true,
                     position: 'top',
@@ -1022,6 +1084,14 @@
 
         distChartInstance.setOption(option, true);
         requestAnimationFrame(() => distChartInstance?.resize());
+
+        // Re-apply highlight if a score range filter is active
+        if (scoreRangeFilter) {
+            const activeIdx = SCORE_CATEGORIES.findIndex(c => c.key === scoreRangeFilter);
+            if (activeIdx >= 0) {
+                distChartInstance.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex: activeIdx });
+            }
+        }
 
         // Responsive resize
         if (!container._resizeBound) {
@@ -1039,6 +1109,17 @@
     function isFailingEntry(entry) {
         const score = Number(entry?.score);
         return entry?.score !== null && entry?.score !== undefined && Number.isFinite(score) && score < 60;
+    }
+
+    function getScoreCategory(entry) {
+        if (entry.score === null || entry.score === undefined || entry.score === '') return 'none';
+        const numScore = Number(entry.score);
+        if (!Number.isFinite(numScore)) return 'none';
+        if (numScore < 60) return 'fail';
+        if (numScore < 70) return 'pass';
+        if (numScore < 80) return 'medium';
+        if (numScore < 90) return 'good';
+        return 'excellent';
     }
 
     function matchesCurrentFilter(entry) {
@@ -1095,6 +1176,9 @@
     function getFilteredEntries() {
         const searchText = (document.getElementById('submission-filter')?.value || '').trim().toLowerCase();
         let filtered = allEntries.filter(matchesCurrentFilter);
+        if (scoreRangeFilter) {
+            filtered = filtered.filter(s => getScoreCategory(s) === scoreRangeFilter);
+        }
         if (searchText) {
             filtered = filtered.filter(s => {
                 const name = (s.student_name || '').toLowerCase();
@@ -1234,6 +1318,40 @@
         currentFilter = filter;
         document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+        renderSubmissions();
+    };
+
+    function setScoreRangeFilter(key) {
+        scoreRangeFilter = key;
+        // Highlight the selected bar, dim others
+        if (distChartInstance) {
+            distChartInstance.dispatchAction({ type: 'downplay', seriesIndex: 0 });
+            const idx = SCORE_CATEGORIES.findIndex(c => c.key === key);
+            if (idx >= 0) {
+                distChartInstance.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex: idx });
+            }
+        }
+        // Show the filter chip
+        const category = SCORE_CATEGORIES.find(c => c.key === key);
+        if (category) {
+            document.getElementById('score-range-filter-label').textContent =
+                `分数: ${category.label} (${category.range})`;
+        }
+        document.getElementById('score-range-filter-chip').style.display = '';
+        // Re-render and scroll
+        renderSubmissions();
+        const tableArea = document.querySelector('.table-responsive');
+        if (tableArea) {
+            tableArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+
+    window.clearScoreRangeFilter = function() {
+        scoreRangeFilter = null;
+        if (distChartInstance) {
+            distChartInstance.dispatchAction({ type: 'downplay', seriesIndex: 0 });
+        }
+        document.getElementById('score-range-filter-chip').style.display = 'none';
         renderSubmissions();
     };
 

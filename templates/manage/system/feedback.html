@@ -1,0 +1,276 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}问题反馈{% endblock %}
+
+{% block extra_head %}
+<style>
+    .fb-hero {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--spacing-lg);
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .fb-hero__icon {
+        width: 56px;
+        height: 56px;
+        border-radius: var(--radius-xl);
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(249, 115, 22, 0.1));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        color: #d97706;
+    }
+
+    .fb-hero__text h2 {
+        margin: 0 0 var(--spacing-sm);
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .fb-hero__text p {
+        margin: 0;
+        color: var(--text-muted);
+        line-height: 1.7;
+        font-size: 0.9rem;
+    }
+
+    .fb-list {
+        display: grid;
+        gap: var(--spacing-lg);
+    }
+
+    .fb-card {
+        padding: var(--spacing-xl);
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border-color);
+        background: rgba(255, 255, 255, 0.93);
+        box-shadow: var(--shadow-sm);
+        transition: box-shadow 0.2s ease, transform 0.2s ease;
+    }
+
+    .fb-card:hover {
+        box-shadow: var(--shadow-md);
+        transform: translateY(-1px);
+    }
+
+    .fb-card__header {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        align-items: flex-start;
+        margin-bottom: var(--spacing-sm);
+    }
+
+    .fb-card__title {
+        display: grid;
+        gap: 8px;
+    }
+
+    .fb-card__title h3 {
+        margin: 0;
+        font-size: 1.05rem;
+        color: var(--text-primary);
+        font-weight: 600;
+    }
+
+    .fb-card__badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .fb-card__meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        margin-bottom: var(--spacing-sm);
+    }
+
+    .fb-card__source {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        padding: var(--spacing-sm) 0;
+        border-top: 1px solid var(--border-color);
+        margin-bottom: var(--spacing-md);
+    }
+
+    .fb-card__body {
+        color: var(--text-secondary);
+        line-height: 1.8;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 0.925rem;
+    }
+
+    .fb-card__attachments {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-md);
+    }
+
+    .fb-card__attachments a {
+        display: block;
+        width: 100px;
+        height: 100px;
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        border: 2px solid var(--border-color);
+        background: var(--bg-color);
+        transition: border-color 0.2s ease;
+    }
+
+    .fb-card__attachments a:hover {
+        border-color: var(--primary-color);
+    }
+
+    .fb-card__attachments img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+
+    .fb-empty-state {
+        text-align: center;
+        padding: var(--spacing-xxl) var(--spacing-lg);
+    }
+
+    .fb-empty-state__icon {
+        width: 64px;
+        height: 64px;
+        margin: 0 auto var(--spacing-md);
+        border-radius: var(--radius-full);
+        background: rgba(148, 163, 184, 0.08);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+    }
+
+    .fb-empty-state h3 {
+        margin: 0 0 var(--spacing-sm);
+        color: var(--text-secondary);
+        font-size: 1.1rem;
+    }
+
+    .fb-empty-state p {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 0.9rem;
+    }
+
+    .fb-stats-row {
+        display: flex;
+        gap: var(--spacing-sm);
+        margin-bottom: var(--spacing-lg);
+        flex-wrap: wrap;
+    }
+
+    .fb-stat-chip {
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        font-weight: 500;
+        background: rgba(255, 255, 255, 0.85);
+        border: 1px solid var(--border-color);
+        color: var(--text-secondary);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="fb-hero">
+    <div class="fb-hero__icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+    </div>
+    <div class="fb-hero__text">
+        <h2>问题反馈</h2>
+        <p>查看用户提交的 Bug 修复、新功能建议和举报信息。只有超管教师可以查看完整图文内容。</p>
+    </div>
+</div>
+
+{% if current_teacher_is_super_admin %}
+    {% if feedback_items %}
+    <div class="fb-stats-row">
+        <span class="fb-stat-chip">共 {{ feedback_items|length }} 条反馈</span>
+        {% set bug_count = feedback_items | selectattr('feedback_type', 'equalto', 'bug') | list | length %}
+        {% set feature_count = feedback_items | selectattr('feedback_type', 'equalto', 'feature') | list | length %}
+        {% set report_count = feedback_items | selectattr('feedback_type', 'equalto', 'report') | list | length %}
+        {% if bug_count %}<span class="fb-stat-chip">Bug {{ bug_count }}</span>{% endif %}
+        {% if feature_count %}<span class="fb-stat-chip">建议 {{ feature_count }}</span>{% endif %}
+        {% if report_count %}<span class="fb-stat-chip">举报 {{ report_count }}</span>{% endif %}
+    </div>
+    <div class="fb-list">
+        {% for feedback in feedback_items %}
+        {% set type_label = {'bug': 'Bug 修复', 'feature': '新功能反馈', 'report': '举报'}.get(feedback.feedback_type, '问题反馈') %}
+        <article class="fb-card">
+            <div class="fb-card__header">
+                <div class="fb-card__title">
+                    <div class="fb-card__badges">
+                        {% if feedback.feedback_type == 'report' %}
+                        <span class="badge badge-danger">{{ type_label }}</span>
+                        {% elif feedback.feedback_type == 'feature' %}
+                        <span class="badge badge-primary">{{ type_label }}</span>
+                        {% else %}
+                        <span class="badge badge-warning">{{ type_label }}</span>
+                        {% endif %}
+                        <span class="badge badge-secondary">{{ feedback.status }}</span>
+                    </div>
+                    <h3>{{ feedback.title }}</h3>
+                </div>
+                <div class="fb-card__meta">
+                    <span>{{ feedback.created_at }}</span>
+                    {% if feedback.attachment_count %}<span>{{ feedback.attachment_count }} 张截图</span>{% endif %}
+                </div>
+            </div>
+            <div class="fb-card__source">
+                <span>提交人：{{ feedback.user_name or '未知用户' }}（{{ '教师' if feedback.user_role == 'teacher' else '学生' }}）</span>
+                {% if feedback.section %}<span>板块：{{ feedback.section }}</span>{% endif %}
+            </div>
+            <div class="fb-card__body">{{ feedback.description }}</div>
+            {% if feedback.page_url %}
+            <div class="fb-card__meta" style="margin-top: var(--spacing-sm);">
+                <span>页面：{{ feedback.page_url }}</span>
+            </div>
+            {% endif %}
+            {% set attachments = feedback_attachments.get(feedback.id, []) %}
+            {% if attachments %}
+            <div class="fb-card__attachments">
+                {% for attachment in attachments %}
+                <a href="/api/feedback/{{ feedback.id }}/attachment/{{ attachment.file_hash }}" target="_blank" rel="noopener noreferrer" title="{{ attachment.original_filename }}">
+                    <img src="/api/feedback/{{ feedback.id }}/attachment/{{ attachment.file_hash }}" alt="{{ attachment.original_filename }}" loading="lazy">
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="fb-empty-state">
+        <div class="fb-empty-state__icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+        </div>
+        <h3>暂无问题反馈</h3>
+        <p>用户提交 Bug 修复反馈、新功能反馈或举报后，会显示在这里。</p>
+    </div>
+    {% endif %}
+{% else %}
+<div class="fb-empty-state">
+    <div class="fb-empty-state__icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+    </div>
+    <h3>仅超管教师可查看</h3>
+    <p>问题反馈内容和举报信息只向超管教师开放。如需查看，请联系超管教师进行设置。</p>
+</div>
+{% endif %}
+{% endblock %}

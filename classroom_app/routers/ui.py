@@ -95,6 +95,13 @@ def _enrich_assignment_upload_config(assignment: dict) -> dict:
     return enrich_assignment_runtime_view(assignment)
 
 
+def _assignment_back_url(assignment: dict) -> str:
+    class_offering_id = assignment.get("class_offering_id")
+    if class_offering_id:
+        return f"/classroom/{class_offering_id}"
+    return "/dashboard"
+
+
 def _serialize_submission_file_rows(rows) -> list[dict]:
     files = []
     for row in rows:
@@ -868,6 +875,7 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
             raise HTTPException(404, "Assignment not found")
         assignment_row = refresh_assignment_runtime_status(conn, assignment_row)
         assignment = _enrich_assignment_upload_config(dict(assignment_row))
+        assignment_back_url = _assignment_back_url(assignment)
 
         # 如果是试卷型作业且用户是学生 → 重定向到考试页面
         if assignment.get('exam_paper_id') and user['role'] == 'student':
@@ -918,6 +926,7 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
                 "request": request,
                 "user_info": user,
                 "assignment": assignment,
+                "assignment_back_url": assignment_back_url,
                 "exam_questions": exam_questions,
                 "max_upload_mb": MAX_UPLOAD_SIZE_MB,
                 "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
@@ -933,7 +942,7 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
                     "request": request,
                     "success": False,
                     "message": "该作业尚未发布",
-                    "back_url": "/dashboard",
+                    "back_url": assignment_back_url,
                 },
             )
 
@@ -986,6 +995,7 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
 
     return templates.TemplateResponse(request, "assignment_detail_student.html", {
         "request": request, "user_info": user, "assignment": assignment,
+        "assignment_back_url": assignment_back_url,
         "submission": submission, "submission_files": submission_files,
         "can_withdraw_submission": can_withdraw_submission,
         "can_resubmit_submission": can_resubmit_submission,
@@ -1584,8 +1594,130 @@ async def get_manage_ai_page(request: Request, user: dict = Depends(get_current_
 
 
 @router.get("/manage/system", response_class=HTMLResponse)
-async def get_manage_system_page(request: Request, user: dict = Depends(get_current_teacher)):
-    """显示系统管理页面，用于审核学生找回密码申请。"""
+async def get_manage_system_redirect(request: Request, user: dict = Depends(get_current_teacher)):
+    """重定向旧的系统管理页面到找回密码申请页。"""
+    return RedirectResponse(url="/manage/system/password-resets", status_code=302)
+
+
+@router.get("/manage/system/super-admin", response_class=HTMLResponse)
+async def get_manage_system_super_admin_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """超管教师与反馈接收设置页面。"""
+    with get_db_connection() as conn:
+        teacher_rows = conn.execute(
+            """
+            SELECT id, name, email, COALESCE(is_super_admin, 0) AS is_super_admin
+            FROM teachers
+            ORDER BY COALESCE(is_super_admin, 0) DESC, id ASC
+            """
+        ).fetchall()
+        super_admin_teacher = conn.execute(
+            """
+            SELECT id, name, email
+            FROM teachers
+            WHERE COALESCE(is_super_admin, 0) = 1
+            ORDER BY id ASC
+            LIMIT 1
+            """
+        ).fetchone()
+        super_admin_count = int(
+            conn.execute(
+                "SELECT COUNT(*) AS cnt FROM teachers WHERE COALESCE(is_super_admin, 0) = 1"
+            ).fetchone()["cnt"]
+            or 0
+        )
+        current_teacher_is_super_admin = is_super_admin_teacher(conn, user["id"])
+        can_manage_super_admin = current_teacher_is_super_admin or super_admin_count == 0
+
+    return templates.TemplateResponse(
+        request,
+        "manage/system/super_admin.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="超管与反馈接收",
+            active_page="system_super_admin",
+            extra={
+                "teacher_rows": teacher_rows,
+                "super_admin_teacher": dict(super_admin_teacher) if super_admin_teacher else None,
+                "current_teacher_is_super_admin": current_teacher_is_super_admin,
+                "can_manage_super_admin": can_manage_super_admin,
+            },
+        ),
+    )
+
+
+@router.get("/manage/system/feedback", response_class=HTMLResponse)
+async def get_manage_system_feedback_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """问题反馈查看页面，仅超管教师可查看完整内容。"""
+    with get_db_connection() as conn:
+        current_teacher_is_super_admin = is_super_admin_teacher(conn, user["id"])
+
+        feedback_items = []
+        feedback_attachments = {}
+        if current_teacher_is_super_admin:
+            feedback_items = conn.execute(
+                """
+                SELECT f.id, f.user_id, f.user_role, f.user_name, f.feedback_type,
+                       f.section, f.title, f.description, f.page_url, f.status,
+                       f.created_at, f.updated_at,
+                       COUNT(a.id) AS attachment_count
+                FROM app_feedback f
+                LEFT JOIN app_feedback_attachments a ON a.feedback_id = f.id
+                GROUP BY f.id
+                ORDER BY f.created_at DESC, f.id DESC
+                LIMIT 120
+                """
+            ).fetchall()
+            feedback_ids = [int(row["id"]) for row in feedback_items]
+            if feedback_ids:
+                placeholders = ",".join("?" for _ in feedback_ids)
+                attachment_rows = conn.execute(
+                    f"""
+                    SELECT id, feedback_id, file_hash, original_filename, file_size, mime_type, created_at
+                    FROM app_feedback_attachments
+                    WHERE feedback_id IN ({placeholders})
+                    ORDER BY feedback_id DESC, id ASC
+                    """,
+                    tuple(feedback_ids),
+                ).fetchall()
+                for attachment in attachment_rows:
+                    feedback_attachments.setdefault(int(attachment["feedback_id"]), []).append(dict(attachment))
+
+    return templates.TemplateResponse(
+        request,
+        "manage/system/feedback.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="问题反馈",
+            active_page="system_feedback",
+            extra={
+                "current_teacher_is_super_admin": current_teacher_is_super_admin,
+                "feedback_items": feedback_items,
+                "feedback_attachments": feedback_attachments,
+            },
+        ),
+    )
+
+
+@router.get("/manage/system/diagnostics", response_class=HTMLResponse)
+async def get_manage_system_diagnostics_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """压测与诊断页面，展示后端健康状态、运行时指标和压测工具。"""
+    return templates.TemplateResponse(
+        request,
+        "manage/system/diagnostics.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="压测与诊断",
+            active_page="system_diagnostics",
+        ),
+    )
+
+
+@router.get("/manage/system/password-resets", response_class=HTMLResponse)
+async def get_manage_system_password_resets_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """学生找回密码申请审核页面。"""
     with get_db_connection() as conn:
         system_summary = conn.execute(
             """
@@ -1646,80 +1778,18 @@ async def get_manage_system_page(request: Request, user: dict = Depends(get_curr
             (user["id"],),
         ).fetchall()
 
-        teacher_rows = conn.execute(
-            """
-            SELECT id, name, email, COALESCE(is_super_admin, 0) AS is_super_admin
-            FROM teachers
-            ORDER BY COALESCE(is_super_admin, 0) DESC, id ASC
-            """
-        ).fetchall()
-        super_admin_teacher = conn.execute(
-            """
-            SELECT id, name, email
-            FROM teachers
-            WHERE COALESCE(is_super_admin, 0) = 1
-            ORDER BY id ASC
-            LIMIT 1
-            """
-        ).fetchone()
-        super_admin_count = int(
-            conn.execute(
-                "SELECT COUNT(*) AS cnt FROM teachers WHERE COALESCE(is_super_admin, 0) = 1"
-            ).fetchone()["cnt"]
-            or 0
-        )
-        current_teacher_is_super_admin = is_super_admin_teacher(conn, user["id"])
-        can_manage_super_admin = current_teacher_is_super_admin or super_admin_count == 0
-
-        feedback_items = []
-        feedback_attachments = {}
-        if current_teacher_is_super_admin:
-            feedback_items = conn.execute(
-                """
-                SELECT f.id, f.user_id, f.user_role, f.user_name, f.feedback_type,
-                       f.section, f.title, f.description, f.page_url, f.status,
-                       f.created_at, f.updated_at,
-                       COUNT(a.id) AS attachment_count
-                FROM app_feedback f
-                LEFT JOIN app_feedback_attachments a ON a.feedback_id = f.id
-                GROUP BY f.id
-                ORDER BY f.created_at DESC, f.id DESC
-                LIMIT 120
-                """
-            ).fetchall()
-            feedback_ids = [int(row["id"]) for row in feedback_items]
-            if feedback_ids:
-                placeholders = ",".join("?" for _ in feedback_ids)
-                attachment_rows = conn.execute(
-                    f"""
-                    SELECT id, feedback_id, file_hash, original_filename, file_size, mime_type, created_at
-                    FROM app_feedback_attachments
-                    WHERE feedback_id IN ({placeholders})
-                    ORDER BY feedback_id DESC, id ASC
-                    """,
-                    tuple(feedback_ids),
-                ).fetchall()
-                for attachment in attachment_rows:
-                    feedback_attachments.setdefault(int(attachment["feedback_id"]), []).append(dict(attachment))
-
     return templates.TemplateResponse(
         request,
-        "manage/system.html",
+        "manage/system/password_resets.html",
         _build_manage_template_context(
             request,
             user,
-            page_title="系统管理",
-            active_page="system",
+            page_title="找回密码申请",
+            active_page="system_password_resets",
             extra={
                 "system_summary": dict(system_summary) if system_summary else {},
                 "login_summary": dict(login_summary) if login_summary else {},
                 "reset_requests": reset_requests,
-                "teacher_rows": teacher_rows,
-                "super_admin_teacher": dict(super_admin_teacher) if super_admin_teacher else None,
-                "current_teacher_is_super_admin": current_teacher_is_super_admin,
-                "can_manage_super_admin": can_manage_super_admin,
-                "feedback_items": feedback_items,
-                "feedback_attachments": feedback_attachments,
             },
         ),
     )
@@ -1895,6 +1965,7 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
             raise HTTPException(404, "作业不存在")
         assignment = refresh_assignment_runtime_status(conn, assignment)
         assignment = _enrich_assignment_upload_config(dict(assignment))
+        assignment_back_url = _assignment_back_url(assignment)
 
         if not assignment.get('exam_paper_id'):
             # 不是试卷型作业，跳转到普通作业页
@@ -1902,7 +1973,7 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
 
         if user['role'] == 'student' and assignment['status'] == 'new':
             return templates.TemplateResponse(request, "status.html",
-                {"request": request, "success": False, "message": "该考试尚未发布", "back_url": "/dashboard"})
+                {"request": request, "success": False, "message": "该考试尚未发布", "back_url": assignment_back_url})
 
         paper = conn.execute("SELECT * FROM exam_papers WHERE id = ?", (assignment['exam_paper_id'],)).fetchone()
         if not paper:
@@ -1962,6 +2033,7 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
         "request": request,
         "user_info": user,
         "assignment": assignment,
+        "assignment_back_url": assignment_back_url,
         "paper": dict(paper),
         "submission": submission,
         "submission_files": submission_files,

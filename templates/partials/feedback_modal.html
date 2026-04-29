@@ -1,5 +1,5 @@
 <!-- Feedback Modal -->
-<div class="modal-backdrop feedback-modal" id="feedback-modal">
+<div class="modal-backdrop feedback-modal" id="feedback-modal" data-type="bug">
     <div class="modal modal-lg">
         <!-- Header -->
         <div class="modal-header">
@@ -11,7 +11,18 @@
                 </svg>
                 问题反馈
             </h3>
-            <button type="button" class="btn-close" data-dismiss="modal" aria-label="关闭"></button>
+            <div class="feedback-header-actions">
+                <button type="button" class="fb-my-btn" id="fb-my-feedback-btn" title="我的反馈">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                    </svg>
+                    我的反馈
+                </button>
+                <button type="button" class="btn-close" data-dismiss="modal" aria-label="关闭"></button>
+            </div>
         </div>
 
         <!-- Body -->
@@ -41,19 +52,28 @@
 
             <!-- Success State -->
             <div id="feedback-success" class="feedback-success" hidden>
-                <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg class="fb-success-icon" xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                     <polyline points="22 4 12 14.01 9 11.01"></polyline>
                 </svg>
                 <h3>感谢您的反馈！</h3>
                 <p id="feedback-success-message">您的反馈已成功提交，我们会尽快处理。每一份意见都让平台变得更好。</p>
+                <div class="fb-success-actions">
+                    <button type="button" class="fb-success-btn" id="fb-submit-another-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        再次提交反馈
+                    </button>
+                </div>
             </div>
 
             <!-- Form Panel -->
             <div id="feedback-form-panel">
                 <form id="feedback-form">
                     <div class="feedback-form-body">
-                        <!-- Section field (bug only) -->
+                        <!-- Section field -->
                         <div class="feedback-field" id="feedback-section-group">
                             <label>
                                 所在板块
@@ -87,7 +107,7 @@
                         <div class="feedback-field">
                             <label>上传截图（可选，最多5张）</label>
                             <ol id="feedback-attachment-list" class="feedback-attachment-list"></ol>
-                            <div class="feedback-attachments" style="margin-top: 0.5rem;">
+                            <div style="margin-top: 0.5rem;">
                                 <label class="feedback-upload-trigger" for="feedback-attachment-input">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -102,10 +122,27 @@
                     </div>
                 </form>
             </div>
+
+            <!-- My Feedback Panel -->
+            <div class="fb-my-panel" id="fb-my-panel">
+                <div class="fb-my-header">
+                    <h4>我的反馈</h4>
+                    <button type="button" class="fb-my-back-btn" id="fb-my-back-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="19" y1="12" x2="5" y2="12"></line>
+                            <polyline points="12 19 5 12 12 5"></polyline>
+                        </svg>
+                        返回提交
+                    </button>
+                </div>
+                <div id="fb-my-content">
+                    <div class="fb-my-spinner"><div class="spinner"></div></div>
+                </div>
+            </div>
         </div>
 
         <!-- Footer -->
-        <div class="modal-footer">
+        <div class="modal-footer" id="feedback-footer">
             <span class="feedback-footer-hint">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10"></circle>

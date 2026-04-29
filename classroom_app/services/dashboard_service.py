@@ -284,7 +284,7 @@ def _build_teacher_dashboard_context(
             "mode": "link",
             "label": ui_copy["action_system_label"],
             "description": ui_copy["action_system_description"],
-            "href": "/manage/system",
+            "href": "/manage/system/password-resets",
             "badge": pending_reset_count or None,
         },
     ]
@@ -294,7 +294,7 @@ def _build_teacher_dashboard_context(
         focus_items.append({
             "title": "学生找回密码审核",
             "description": f"当前有 {pending_reset_count} 条申请待处理。",
-            "href": "/manage/system",
+            "href": "/manage/system/password-resets",
             "tone": "danger",
         })
     if unread_total > 0:

@@ -1,6 +1,7 @@
 /**
  * feedback.js
- * Feedback modal logic supporting bug reports and feature requests.
+ * Feedback modal with type-accent colours, proper submit flow,
+ * and a "my feedback" panel for viewing / withdrawing past feedback.
  */
 import { API, apiFetch } from './api.js';
 import { showToast } from './ui.js';
@@ -52,9 +53,13 @@ function guessSectionFromPath() {
     return '';
 }
 
+const TYPE_LABEL_MAP = { bug: 'Bug 修复', feature: '新功能反馈', report: '举报' };
+
 class FeedbackModal {
     constructor() {
         this.modalBackdrop = document.getElementById('feedback-modal');
+        if (!this.modalBackdrop) return;
+
         this.feedbackForm = document.getElementById('feedback-form');
         this.tabBug = document.getElementById('feedback-tab-bug');
         this.tabFeature = document.getElementById('feedback-tab-feature');
@@ -72,25 +77,37 @@ class FeedbackModal {
         this.successPanel = document.getElementById('feedback-success');
         this.successMessage = document.getElementById('feedback-success-message');
         this.formPanel = document.getElementById('feedback-form-panel');
-        this.footerEl = this.modalBackdrop?.querySelector('.modal-footer');
+        this.footerEl = document.getElementById('feedback-footer');
+
+        // My-feedback elements
+        this.myFeedbackBtn = document.getElementById('fb-my-feedback-btn');
+        this.myPanel = document.getElementById('fb-my-panel');
+        this.myContent = document.getElementById('fb-my-content');
+        this.myBackBtn = document.getElementById('fb-my-back-btn');
+        this.submitAnotherBtn = document.getElementById('fb-submit-another-btn');
 
         this.currentType = 'bug';
         this.attachments = [];
         this.emojiPicker = null;
         this.submitting = false;
+        this.feedbackId = null;
+        this.myFeedbackData = null;
+        this.myPanelVisible = false;
 
         this._init();
     }
 
+    /* ============================================================
+     * Initialisation
+     * ============================================================ */
     _init() {
-        if (!this.modalBackdrop) return;
-
         this._bindEvents();
         this._autoDetectSection();
+        this._applyTypeAccent('bug');
     }
 
     _bindEvents() {
-        // Open modal from button
+        // Open modal
         document.addEventListener('click', (e) => {
             const trigger = e.target.closest('[data-open-feedback]');
             if (trigger) {
@@ -101,27 +118,17 @@ class FeedbackModal {
 
         // Close on backdrop click
         this.modalBackdrop.addEventListener('click', (e) => {
-            if (e.target === this.modalBackdrop) {
-                this.close();
-            }
+            if (e.target === this.modalBackdrop) this.close();
         });
 
         // Close button
         const closeBtn = this.modalBackdrop.querySelector('[data-dismiss="modal"]');
-        if (closeBtn) {
-            closeBtn.addEventListener('click', () => this.close());
-        }
+        if (closeBtn) closeBtn.addEventListener('click', () => this.close());
 
         // Tab switching
-        if (this.tabBug) {
-            this.tabBug.addEventListener('click', () => this._switchTab('bug'));
-        }
-        if (this.tabFeature) {
-            this.tabFeature.addEventListener('click', () => this._switchTab('feature'));
-        }
-        if (this.tabReport) {
-            this.tabReport.addEventListener('click', () => this._switchTab('report'));
-        }
+        if (this.tabBug) this.tabBug.addEventListener('click', () => this._switchTab('bug'));
+        if (this.tabFeature) this.tabFeature.addEventListener('click', () => this._switchTab('feature'));
+        if (this.tabReport) this.tabReport.addEventListener('click', () => this._switchTab('report'));
 
         // Emoji toggle
         if (this.emojiToggle && this.descTextarea) {
@@ -130,9 +137,7 @@ class FeedbackModal {
 
         // Attachment input
         if (this.attachmentInput) {
-            this.attachmentInput.addEventListener('change', (e) => {
-                this._handleAttachmentSelect(e);
-            });
+            this.attachmentInput.addEventListener('change', (e) => this._handleAttachmentSelect(e));
         }
 
         // Form submit
@@ -143,14 +148,84 @@ class FeedbackModal {
             });
         }
 
-        // Keyboard shortcut: Esc to close
+        // My feedback button (header)
+        if (this.myFeedbackBtn) {
+            this.myFeedbackBtn.addEventListener('click', () => this._openMyFeedback());
+        }
+
+        // My feedback back button
+        if (this.myBackBtn) {
+            this.myBackBtn.addEventListener('click', () => this._closeMyFeedback());
+        }
+
+        // Submit another button (in success state)
+        if (this.submitAnotherBtn) {
+            this.submitAnotherBtn.addEventListener('click', () => this._submitAnother());
+        }
+
+        // Escape to close
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && this.modalBackdrop.classList.contains('show')) {
-                this.close();
-            }
+            if (e.key === 'Escape' && this.modalBackdrop.classList.contains('show')) this.close();
         });
     }
 
+    /* ============================================================
+     * Type accent
+     * ============================================================ */
+    _applyTypeAccent(type) {
+        if (this.modalBackdrop) {
+            this.modalBackdrop.setAttribute('data-type', type);
+        }
+    }
+
+    /* ============================================================
+     * Open / Close
+     * ============================================================ */
+    open() {
+        if (!this.modalBackdrop) return;
+
+        // Show backdrop FIRST so it is always visible regardless of
+        // any subsequent state manipulation.
+        this.modalBackdrop.classList.add('show');
+        document.body.style.overflow = 'hidden';
+
+        // Now reset internal panels to form view
+        this._ensureFormVisible();
+        this._autoDetectSection();
+    }
+
+    close() {
+        if (!this.modalBackdrop) return;
+
+        // Hide backdrop immediately
+        this.modalBackdrop.classList.remove('show');
+        document.body.style.overflow = '';
+
+        // Close emoji picker if open
+        if (this.emojiPicker && this.emojiPicker.isOpen()) this.emojiPicker.close();
+
+        // Reset panels directly (no helper that might have side effects)
+        if (this.successPanel) this.successPanel.setAttribute('hidden', '');
+        if (this.myPanel) this.myPanel.style.display = 'none';
+        if (this.formPanel) this.formPanel.style.display = '';
+        if (this.footerEl) this.footerEl.style.display = '';
+        this.myPanelVisible = false;
+        this._setSubmitting(false);
+    }
+
+    /** Make sure form is shown (hide success, hide my-panel, show footer). */
+    _ensureFormVisible() {
+        if (this.successPanel) this.successPanel.setAttribute('hidden', '');
+        if (this.formPanel) this.formPanel.style.display = '';
+        if (this.footerEl) this.footerEl.style.display = '';
+        if (this.myPanel) this.myPanel.style.display = 'none';
+        this.myPanelVisible = false;
+        this._setSubmitting(false);
+    }
+
+    /* ============================================================
+     * Auto-detect section
+     * ============================================================ */
     _autoDetectSection() {
         const section = guessSectionFromPath();
         if (section && this.sectionInput) {
@@ -160,10 +235,16 @@ class FeedbackModal {
         }
     }
 
+    /* ============================================================
+     * Tab switching
+     * ============================================================ */
     _switchTab(type) {
         const nextType = TYPE_CONFIG[type] ? type : 'bug';
         const config = TYPE_CONFIG[nextType];
         this.currentType = nextType;
+
+        this._applyTypeAccent(nextType);
+
         [
             [this.tabBug, 'bug'],
             [this.tabFeature, 'feature'],
@@ -174,31 +255,28 @@ class FeedbackModal {
             tab.classList.toggle('is-active', isActive);
             tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
         });
-        if (this.sectionGroup) {
-            this.sectionGroup.style.display = config.showSection ? '' : 'none';
-        }
-        if (this.titleInput) {
-            this.titleInput.placeholder = config.titlePlaceholder;
-        }
-        if (this.descTextarea) {
-            this.descTextarea.placeholder = config.descriptionPlaceholder;
-        }
-        if (this.emojiToggle) {
-            this.emojiToggle.style.visibility = config.showEmoji ? '' : 'hidden';
-        }
+
+        if (this.sectionGroup) this.sectionGroup.style.display = config.showSection ? '' : 'none';
+        if (this.titleInput) this.titleInput.placeholder = config.titlePlaceholder;
+        if (this.descTextarea) this.descTextarea.placeholder = config.descriptionPlaceholder;
+        if (this.emojiToggle) this.emojiToggle.style.visibility = config.showEmoji ? '' : 'hidden';
     }
 
+    /* ============================================================
+     * Emoji picker
+     * ============================================================ */
     _toggleEmojiPicker() {
         if (!this.emojiPicker) {
             this.emojiPicker = createEmojiPicker({ targetInput: this.descTextarea });
             const wrapper = document.getElementById('feedback-emoji-picker-wrap');
-            if (wrapper) {
-                wrapper.appendChild(this.emojiPicker.element);
-            }
+            if (wrapper) wrapper.appendChild(this.emojiPicker.element);
         }
         this.emojiPicker.toggle();
     }
 
+    /* ============================================================
+     * Attachments
+     * ============================================================ */
     _handleAttachmentSelect(e) {
         const files = e.target.files;
         if (!files || !files.length) return;
@@ -209,17 +287,14 @@ class FeedbackModal {
                 showToast(`最多上传 ${MAX_FEEDBACK_ATTACHMENTS} 张截图`, 'warning');
                 break;
             }
-
             if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
                 showToast(`${file.name} 格式不支持，仅支持 PNG、JPEG、GIF、WebP、BMP`, 'warning');
                 continue;
             }
-
             if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
                 showToast(`${file.name} 超过 10MB`, 'warning');
                 continue;
             }
-
             this.attachments.push({
                 file,
                 original_filename: file.name,
@@ -229,25 +304,19 @@ class FeedbackModal {
             added += 1;
         }
 
-        if (added > 0) {
-            this._renderAttachments();
-        }
-
-        // Reset input
+        if (added > 0) this._renderAttachments();
         if (this.attachmentInput) this.attachmentInput.value = '';
     }
 
     async _uploadAttachment(feedbackId, attachment) {
         const formData = new FormData();
         formData.append('file', attachment.file);
-
         const result = await apiFetch(`/api/feedback/${feedbackId}/upload`, {
             method: 'POST',
             body: formData,
             headers: {},
             silent: true,
         });
-
         attachment.uploaded = true;
         attachment.file_hash = result.file_hash;
         attachment.attachment_id = result.attachment_id;
@@ -282,6 +351,9 @@ class FeedbackModal {
         });
     }
 
+    /* ============================================================
+     * Submit
+     * ============================================================ */
     async _submit() {
         if (this.submitting) return;
 
@@ -326,14 +398,21 @@ class FeedbackModal {
                 }
             }
 
-            // Show success
+            // Show success — hide form, show success panel
             if (this.formPanel) this.formPanel.style.display = 'none';
             if (this.successPanel) this.successPanel.removeAttribute('hidden');
             if (this.footerEl) this.footerEl.style.display = 'none';
+            if (this.myPanel) this.myPanel.style.display = 'none';
+            this.myPanelVisible = false;
+
             if (this.successMessage) {
-                this.successMessage.textContent = failedUploads > 0
-                    ? `反馈已提交；${failedUploads} 张截图上传失败，可稍后重新提交截图说明。`
-                    : '您的反馈已成功提交，我们会尽快处理。每一份意见都让平台变得更好。';
+                if (failedUploads > 0) {
+                    this.successMessage.textContent =
+                        `反馈已提交；${failedUploads} 张截图上传失败，可稍后重新提交截图说明。`;
+                } else {
+                    this.successMessage.textContent =
+                        '您的反馈已成功提交，我们会尽快处理。每一份意见都让平台变得更好。';
+                }
             }
 
             if (failedUploads > 0) {
@@ -342,10 +421,9 @@ class FeedbackModal {
                 showToast(result.message || '反馈提交成功！', 'success');
             }
 
-            // Reset after 2.5 seconds
-            setTimeout(() => {
-                this._reset();
-            }, 2500);
+            this._setSubmitting(false);
+            this.submitting = false;
+            // DO NOT auto-reset — user controls when to submit again
         } catch (err) {
             showToast(`提交失败: ${err.message}`, 'error');
             this._setSubmitting(false);
@@ -369,25 +447,21 @@ class FeedbackModal {
         }
     }
 
-    open() {
-        if (!this.modalBackdrop) return;
+    /* ============================================================
+     * "Submit another" button
+     * ============================================================ */
+    _submitAnother() {
+        // Reset form and show it again
+        this._resetForm();
+        if (this.successPanel) this.successPanel.setAttribute('hidden', '');
+        if (this.formPanel) this.formPanel.style.display = '';
+        if (this.footerEl) this.footerEl.style.display = '';
+
+        // Auto-detect section for new form
         this._autoDetectSection();
-        this.modalBackdrop.classList.add('show');
-        document.body.style.overflow = 'hidden';
     }
 
-    close() {
-        if (!this.modalBackdrop) return;
-        this.modalBackdrop.classList.remove('show');
-        document.body.style.overflow = '';
-
-        // Close emoji picker if open
-        if (this.emojiPicker && this.emojiPicker.isOpen()) {
-            this.emojiPicker.close();
-        }
-    }
-
-    _reset() {
+    _resetForm() {
         this.submitting = false;
         this.feedbackId = null;
         this.attachments.forEach((att) => {
@@ -397,24 +471,199 @@ class FeedbackModal {
         this._setSubmitting(false);
 
         if (this.feedbackForm) this.feedbackForm.reset();
-        if (this.formPanel) this.formPanel.style.display = '';
-        if (this.successPanel) this.successPanel.setAttribute('hidden', '');
-        if (this.successMessage) {
-            this.successMessage.textContent = '您的反馈已成功提交，我们会尽快处理。每一份意见都让平台变得更好。';
-        }
-        if (this.footerEl) this.footerEl.style.display = '';
         if (this.attachmentsList) this.attachmentsList.innerHTML = '';
         if (this.attachmentInput) this.attachmentInput.disabled = false;
 
-        this._switchTab('bug');
+        // Keep current tab — user may want to submit another of the same type
         this._autoDetectSection();
+    }
+
+    /* ============================================================
+     * My Feedback panel
+     * ============================================================ */
+    async _openMyFeedback() {
+        if (this.myPanelVisible) return;
+
+        // Hide form/success, show my-panel
+        if (this.formPanel) this.formPanel.style.display = 'none';
+        if (this.successPanel) this.successPanel.setAttribute('hidden', '');
+        if (this.footerEl) this.footerEl.style.display = 'none';
+        if (this.myPanel) this.myPanel.style.display = '';
+        this.myPanelVisible = true;
+
+        // Show loading
+        if (this.myContent) {
+            this.myContent.innerHTML = '<div class="fb-my-spinner"><div class="spinner"></div></div>';
+        }
+
+        try {
+            const data = await API.get('/api/feedback/my');
+            this.myFeedbackData = data.items || [];
+            this._renderMyFeedback();
+        } catch (err) {
+            console.error('Failed to load my feedback:', err);
+            if (this.myContent) {
+                this.myContent.innerHTML =
+                    '<div class="fb-my-empty"><p>加载失败，请稍后重试</p></div>';
+            }
+        }
+    }
+
+    _closeMyFeedback() {
+        this.myPanelVisible = false;
+        if (this.myPanel) this.myPanel.style.display = 'none';
+        if (this.formPanel) this.formPanel.style.display = '';
+        if (this.footerEl) this.footerEl.style.display = '';
+    }
+
+    _renderMyFeedback() {
+        if (!this.myContent) return;
+
+        const items = this.myFeedbackData || [];
+
+        if (items.length === 0) {
+            this.myContent.innerHTML = `
+                <div class="fb-my-empty">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                    </svg>
+                    <p>尚未提交反馈</p>
+                    <p class="fb-my-empty-sub">提交 Bug 反馈、新功能建议或举报内容，帮助平台变得更好</p>
+                </div>`;
+            return;
+        }
+
+        let html = '<div class="fb-my-list">';
+        items.forEach((item) => {
+            const typeLabel = TYPE_LABEL_MAP[item.feedback_type] || item.feedback_type;
+            const isViewed = item.status === 'viewed';
+            const statusLabel = isViewed ? '已查看' : '待处理';
+            const statusCls = isViewed ? 's-viewed' : 's-pending';
+            const timeStr = this._formatTime(item.created_at);
+
+            html += `
+            <div class="fb-my-card" id="fb-card-${item.id}">
+                <div class="fb-my-card-summary" onclick="window.__fbModal._toggleCard(${item.id})">
+                    <span class="fb-my-card-type-badge t-${item.feedback_type}">${typeLabel}</span>
+                    <span class="fb-my-card-title">${this._escapeHtml(item.title)}</span>
+                    <span class="fb-my-card-meta">
+                        <span class="fb-my-card-status ${statusCls}">${statusLabel}</span>
+                        <span>${timeStr}</span>
+                    </span>
+                    <svg class="fb-my-card-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </div>
+                <div class="fb-my-card-detail">
+                    <div class="fb-my-card-detail-meta">
+                        <span>${item.section ? '板块: ' + this._escapeHtml(item.section) : ''}</span>
+                        <span>${item.attachment_count > 0 ? '附件: ' + item.attachment_count + ' 张' : ''}</span>
+                    </div>
+                    <div class="fb-my-card-desc">${this._escapeHtml(item.description)}</div>
+                    <div id="fb-card-att-${item.id}" class="fb-my-card-attachments"></div>
+                    <button type="button" class="fb-withdraw-btn" onclick="event.stopPropagation(); window.__fbModal._withdrawFeedback(${item.id})">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        撤回此反馈
+                    </button>
+                </div>
+            </div>`;
+        });
+        html += '</div>';
+        this.myContent.innerHTML = html;
+    }
+
+    async _toggleCard(feedbackId) {
+        const card = document.getElementById(`fb-card-${feedbackId}`);
+        if (!card) return;
+
+        const isExpanded = card.classList.contains('is-expanded');
+
+        if (isExpanded) {
+            card.classList.remove('is-expanded');
+            return;
+        }
+
+        // Load detail (attachments) if not already loaded
+        const attContainer = document.getElementById(`fb-card-att-${feedbackId}`);
+        if (attContainer && attContainer.children.length === 0 && !attContainer.dataset.loaded) {
+            attContainer.dataset.loaded = '1';
+            try {
+                const data = await API.get(`/api/feedback/${feedbackId}/detail`);
+                if (data.attachments && data.attachments.length > 0) {
+                    attContainer.innerHTML = data.attachments.map(a =>
+                        `<img class="fb-my-card-att-thumb"
+                             src="/api/feedback/${feedbackId}/attachment/${a.file_hash}"
+                             alt="${this._escapeHtml(a.original_filename)}"
+                             loading="lazy"
+                             onclick="event.stopPropagation(); window.open('/api/feedback/${feedbackId}/attachment/${a.file_hash}')"
+                             title="${this._escapeHtml(a.original_filename)}">`
+                    ).join('');
+                }
+            } catch (err) {
+                console.error('Failed to load feedback detail:', err);
+                attContainer.innerHTML = '';
+            }
+        }
+
+        card.classList.add('is-expanded');
+    }
+
+    async _withdrawFeedback(feedbackId) {
+        if (!confirm('确定要撤回此反馈吗？撤回后无法恢复。')) return;
+
+        try {
+            await API.delete(`/api/feedback/${feedbackId}`);
+            showToast('反馈已撤回', 'success');
+
+            // Remove from local data and re-render
+            this.myFeedbackData = (this.myFeedbackData || []).filter(item => item.id !== feedbackId);
+            this._renderMyFeedback();
+        } catch (err) {
+            showToast(`撤回失败: ${err.message}`, 'error');
+        }
+    }
+
+    /* ============================================================
+     * Helpers
+     * ============================================================ */
+    _escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text || '';
+        return div.innerHTML;
+    }
+
+    _formatTime(isoString) {
+        if (!isoString) return '';
+        try {
+            const d = new Date(isoString);
+            const now = new Date();
+            const diffMs = now - d;
+            const diffMin = Math.floor(diffMs / 60000);
+            if (diffMin < 1) return '刚刚';
+            if (diffMin < 60) return `${diffMin} 分钟前`;
+            const diffHours = Math.floor(diffMin / 60);
+            if (diffHours < 24) return `${diffHours} 小时前`;
+            const diffDays = Math.floor(diffHours / 24);
+            if (diffDays < 7) return `${diffDays} 天前`;
+            return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
+        } catch {
+            return isoString.slice(0, 10);
+        }
     }
 }
 
-// Auto-initialize when DOM is ready
+/* ============================================================
+ * Auto-initialise
+ * ============================================================ */
 function initFeedback() {
     if (document.getElementById('feedback-modal')) {
-        new FeedbackModal();
+        const modal = new FeedbackModal();
+        // Expose on window so HTML onclick handlers can call methods
+        window.__fbModal = modal;
     }
 }
 

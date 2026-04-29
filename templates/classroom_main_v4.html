@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="/static/css/feedback.css">
 <link rel="stylesheet" href="/static/css/toast.css">
 <link rel="stylesheet" href="/static/css/ai_chat.css">
-<link rel="stylesheet" href="/static/css/classroom.css?v=top-focus-actions-20260425">
+<link rel="stylesheet" href="/static/css/classroom.css?v=floating-nav-20260427">
 <link rel="stylesheet" href="/static/css/markdown.css">
 <link rel="stylesheet" href="/static/css/materials.css">
 <link rel="stylesheet" href="/static/css/learning_material_selector.css">
@@ -399,10 +399,21 @@
             </section>
             {% endif %}
 
-            <nav class="workspace-hero-nav" aria-label="课堂区域导航">
+            <nav class="workspace-hero-nav workspace-floating-nav" aria-label="课堂快速跳转">
                 {% for item in hero.nav %}
-                <a href="#{{ item.target }}" class="workspace-hero-nav-link" data-workspace-nav>
-                    <span>{{ item.label }}</span>
+                <a href="#{{ item.target }}" class="workspace-hero-nav-link workspace-floating-nav-link" data-workspace-nav aria-label="快速跳转到{{ item.label }}" title="快速跳转到{{ item.label }}" data-tooltip="快速跳转到{{ item.label }}">
+                    <span class="workspace-floating-nav-icon" aria-hidden="true">
+                        {% if item.target == 'assignment-panel' %}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2.5" width="8" height="4" rx="1.2"/><path d="M16 4.5h2a2 2 0 0 1 2 2V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6.5a2 2 0 0 1 2-2h2"/><path d="M8 12h8"/><path d="M8 16h5"/></svg>
+                        {% elif item.target == 'materials-panel' %}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H12v18H6.5A2.5 2.5 0 0 1 4 18.5z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H12v18h5.5a2.5 2.5 0 0 0 2.5-2.5z"/></svg>
+                        {% elif item.target == 'resources-panel' %}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5V6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v1.5"/><path d="M3.4 9.5h17.2a1 1 0 0 1 .98 1.2l-1.42 7.1A2 2 0 0 1 18.2 19.5H5.8a2 2 0 0 1-1.96-1.7l-1.42-7.1a1 1 0 0 1 .98-1.2Z"/></svg>
+                        {% else %}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M21 14a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>
+                        {% endif %}
+                    </span>
+                    <span class="workspace-floating-nav-label">{{ item.label }}</span>
                     <small>{{ item.note }}</small>
                 </a>
                 {% endfor %}
