@@ -1,0 +1,56 @@
+{
+  "title": "试卷标题",
+  "description": "试卷说明，可留空",
+  "pages": [
+    {
+      "name": "第一部分",
+      "questions": [
+        {
+          "id": "p1_q1",
+          "type": "radio",
+          "text": "单选题题干",
+          "options": [
+            "A. 选项一",
+            "B. 选项二",
+            "C. 选项三",
+            "D. 选项四"
+          ],
+          "answer": "A",
+          "explanation": "解析说明，可留空"
+        },
+        {
+          "id": "p1_q2",
+          "type": "checkbox",
+          "text": "多选题题干",
+          "options": [
+            "A. 选项一",
+            "B. 选项二",
+            "C. 选项三",
+            "D. 选项四"
+          ],
+          "answer": [
+            "A",
+            "C"
+          ],
+          "explanation": "解析说明，可留空"
+        },
+        {
+          "id": "p1_q3",
+          "type": "text",
+          "text": "填空题题干",
+          "placeholder": "请输入简短答案",
+          "answer": "参考答案",
+          "explanation": "解析说明，可留空"
+        },
+        {
+          "id": "p1_q4",
+          "type": "textarea",
+          "text": "问答题题干",
+          "placeholder": "请写出完整作答过程",
+          "answer": "参考答案",
+          "explanation": "解析说明，可留空"
+        }
+      ]
+    }
+  ]
+}

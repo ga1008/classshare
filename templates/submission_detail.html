@@ -133,6 +133,38 @@
     }
     .question-card .q-content pre { margin: 8px 0 0 0; }
 
+    .answer-attachments {
+        margin-top: 12px;
+        display: grid;
+        gap: 12px;
+    }
+    .answer-attachment-card {
+        padding: 12px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-color);
+        background: var(--surface-color);
+    }
+    .answer-attachment-meta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 8px;
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    .answer-attachment-card img {
+        display: block;
+        width: 100%;
+        max-height: 420px;
+        object-fit: contain;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-color);
+        background: #fff;
+    }
+
     /* File list */
     .file-list { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); }
     .file-item {
@@ -623,10 +655,12 @@
             if (extraAnswers.length > 0) {
                 html += `<h4 class="text-sm font-semibold text-muted uppercase tracking-wide mt-lg mb-2">其他内容</h4>`;
                 extraAnswers.forEach(([key, val]) => {
+                    const answerText = extractAnswerText(val);
                     html += `<div class="question-card">
                         <div class="q-title">${escapeHtml(String(key))}</div>
                         <div class="q-answer-label">学生答案</div>
-                        <div class="q-content">${val ? formatAnswer(val) : '<span class="empty-answer">(未作答)</span>'}</div>
+                        <div class="q-content">${answerText ? formatAnswer(val) : '<span class="empty-answer">(未作答)</span>'}</div>
+                        ${renderAnswerAttachments(val)}
                     </div>`;
                 });
             }
@@ -640,6 +674,7 @@
                         <div class="q-title">${escapeHtml(String(q))}</div>
                         <div class="q-answer-label">学生答案</div>
                         <div class="q-content">${a ? formatAnswer(a) : '<span class="empty-answer">(未作答)</span>'}</div>
+                        ${renderAnswerAttachments(item)}
                     </div>`;
                 });
             } else if (typeof answers === 'object') {
@@ -648,6 +683,7 @@
                         <div class="q-title">${escapeHtml(String(key))}</div>
                         <div class="q-answer-label">学生答案</div>
                         <div class="q-content">${formatAnswer(value)}</div>
+                        ${renderAnswerAttachments(value)}
                     </div>`;
                 });
             }
@@ -661,7 +697,60 @@
         if (value == null || value === '') return null;
         if (typeof value !== 'object') return String(value);
         // Array-format items: {question_id, question, answer}
-        return String(value.answer ?? value.content ?? value.text ?? JSON.stringify(value));
+        const scalar = value.answer ?? value.content ?? value.text;
+        if (scalar != null) return String(scalar);
+        if (Array.isArray(value.attachments) && value.attachments.length) return '';
+        return String(JSON.stringify(value));
+    }
+
+    function extractAnswerAttachments(value) {
+        if (!value || typeof value !== 'object') return [];
+        return Array.isArray(value.attachments) ? value.attachments : [];
+    }
+
+    function isDrawingAttachment(attachment) {
+        return (attachment?.kind || attachment?.type) === 'drawing'
+            || String(attachment?.relative_path || '').startsWith('exam_drawings/');
+    }
+
+    function findSubmissionFileForAttachment(attachment) {
+        if (!attachment) return null;
+        const keys = [
+            attachment.file_name,
+            attachment.filename,
+            attachment.relative_path,
+            attachment.stored_relative_path,
+        ].filter(Boolean).map(value => String(value).toLowerCase());
+        return submissionFiles.find(file => {
+            const candidates = [
+                file.relative_path,
+                file.display_name,
+                file.original_filename,
+                file.download_url,
+                file.raw_url,
+            ].filter(Boolean).map(value => String(value).toLowerCase());
+            return candidates.some(candidate => keys.some(key => candidate === key || candidate.endsWith(`/${key}`)));
+        }) || null;
+    }
+
+    function renderAnswerAttachments(value) {
+        const attachments = extractAnswerAttachments(value).filter(isDrawingAttachment);
+        if (!attachments.length) return '';
+        return `<div class="answer-attachments">
+            ${attachments.map((attachment) => {
+                const file = findSubmissionFileForAttachment(attachment);
+                const imageUrl = file?.raw_url || file?.download_url || '';
+                const downloadUrl = file?.download_url || imageUrl || '#';
+                const name = attachment.file_name || file?.display_name || file?.original_filename || '题目附图';
+                return `<div class="answer-attachment-card">
+                    <div class="answer-attachment-meta">
+                        <span>${escapeHtml(name)}</span>
+                        ${downloadUrl !== '#' ? `<a class="btn btn-outline btn-sm" href="${downloadUrl}" target="_blank" rel="noopener">查看附图</a>` : ''}
+                    </div>
+                    ${imageUrl ? `<img src="${imageUrl}" alt="${escapeHtml(name)}">` : '<div class="text-muted text-sm">附图文件暂不可预览</div>'}
+                </div>`;
+            }).join('')}
+        </div>`;
     }
 
     function getAnswer(answers, qId, qIndex) {
@@ -669,16 +758,16 @@
         // Array format: [{question_id: "q1", question: "...", answer: "..."}]
         if (Array.isArray(answers)) {
             const item = answers.find(a => a && (a.question_id === qId || a.question === qId));
-            if (item) return extractAnswerText(item);
+            if (item) return item;
             // Fallback: by 1-based index
             if (qIndex > 0 && qIndex <= answers.length) {
-                return extractAnswerText(answers[qIndex - 1]);
+                return answers[qIndex - 1];
             }
             return null;
         }
         // Object/map format: {qId: "answer", ...}
-        if (qId && answers[qId] !== undefined) return extractAnswerText(answers[qId]);
-        if (answers[qIndex] !== undefined) return extractAnswerText(answers[qIndex]);
+        if (qId && answers[qId] !== undefined) return answers[qId];
+        if (answers[qIndex] !== undefined) return answers[qIndex];
         return null;
     }
 
@@ -688,12 +777,13 @@
             // For array answers, return entries whose question_id isn't matched
             return answers
                 .filter(a => a && !matchedIds.has(a.question_id) && !matchedIds.has(a.question))
-                .map(a => [a.question_id || a.question || '?', extractAnswerText(a) || '']);
+                .map(a => [a.question_id || a.question || '?', a]);
         }
         return Object.entries(answers).filter(([key]) => !matchedIds.has(key) && !matchedIds.has(String(key)));
     }
 
     function renderQuestionCard(q, studentAnswer, index) {
+        const answerText = extractAnswerText(studentAnswer);
         let html = `<div class="question-card">`;
         html += `<div class="q-title">${escapeHtml(q.text)}</div>`;
 
@@ -701,7 +791,7 @@
         if (q.options && Array.isArray(q.options)) {
             html += `<ul class="q-options">`;
             q.options.forEach(opt => {
-                const isSelected = studentAnswer === opt;
+                const isSelected = answerText === opt;
                 html += `<li class="${isSelected ? 'selected' : ''}">`;
                 if (isSelected) html += `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="vertical-align:-1px;margin-right:4px"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
                 html += `${escapeHtml(opt)}</li>`;
@@ -711,12 +801,13 @@
 
         html += `<div class="q-answer-label">学生答案</div>`;
 
-        if (studentAnswer != null && studentAnswer !== '') {
+        if (answerText != null && answerText !== '') {
             html += `<div class="q-content">${formatAnswer(studentAnswer)}</div>`;
         } else {
             html += `<div class="q-content"><span class="empty-answer">(未作答)</span></div>`;
         }
 
+        html += renderAnswerAttachments(studentAnswer);
         html += `</div>`;
         return html;
     }

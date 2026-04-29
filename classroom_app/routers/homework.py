@@ -40,6 +40,11 @@ from ..services.assignment_lifecycle_service import (
     refresh_assignment_runtime_status,
     submission_resubmission_accepts,
 )
+from ..services.exam_json_service import (
+    EXAM_JSON_MAX_BYTES,
+    get_exam_json_template_text,
+    parse_exam_json_text,
+)
 from ..services.submission_assets import (
     answers_have_content,
     decode_allowed_file_types_json,
@@ -1385,6 +1390,45 @@ async def update_exam_paper_tags(paper_id: str, request: Request, user: dict = D
         )
         conn.commit()
     return {"status": "success", "tags": tags}
+
+
+@router.get("/exam-papers/json-template")
+async def download_exam_json_template(user: dict = Depends(get_current_teacher)):
+    """下载原生 JSON 试卷模板。"""
+    content = get_exam_json_template_text().encode("utf-8")
+    filename = quote("试卷原生JSON导入模板.json")
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
+
+
+@router.post("/exam-papers/import-json", response_class=JSONResponse)
+async def import_exam_paper_json(file: UploadFile = File(...), user: dict = Depends(get_current_teacher)):
+    """解析原生 JSON 试卷文件，不调用内置 AI。"""
+    filename = Path(str(file.filename or "exam.json")).name
+    if Path(filename).suffix.lower() != ".json":
+        raise HTTPException(400, "请上传 .json 文件")
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(400, "JSON 文件为空")
+    if len(raw) > EXAM_JSON_MAX_BYTES:
+        raise HTTPException(413, "JSON 文件不能超过 2MB")
+
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(400, "JSON 文件必须使用 UTF-8 编码") from exc
+
+    try:
+        imported = parse_exam_json_text(text)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    imported["source_filename"] = filename
+    return {"status": "success", "imported": imported}
 
 
 @router.post("/exam-papers", response_class=JSONResponse)
