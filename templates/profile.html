@@ -1,0 +1,486 @@
+{% extends "base_navbar.html" %}
+
+{% block title %}个人中心 | 课堂平台{% endblock %}
+
+{% block body_class %}page-wrapper profile-page role-{{ profile.role }}{% endblock %}
+
+{% block css %}
+{{ super() }}
+<link rel="stylesheet" href="/static/css/markdown.css">
+<link rel="stylesheet" href="{{ asset_url('css/profile.css') }}">
+{% endblock %}
+
+{% block main_content %}
+{% set current_nav = nav_items | selectattr('active') | map(attribute='label') | first %}
+{% set security_summary = overview.security_summary if overview.security_summary is defined else none %}
+
+<section class="profile-shell" data-profile-root data-active-section="{{ active_section }}" data-profile-role="{{ profile.role }}">
+    <section class="profile-hero profile-reveal">
+        <div class="profile-hero__main">
+            <div class="profile-hero__eyebrow-row">
+                <span class="profile-eyebrow">{{ profile.role_label }} Personal Hub</span>
+                <span class="profile-section-pill">{{ current_nav }}</span>
+            </div>
+            <div class="profile-hero__identity">
+                <span class="profile-hero__avatar-ring">
+                    <img class="profile-hero__avatar profile-identity__avatar" src="{{ profile.avatar_url }}" alt="头像">
+                </span>
+                <div class="profile-hero__copy">
+                    <h1>{{ profile.name }}</h1>
+                    <p data-profile-summary data-empty-text="这里汇总你的课堂、任务、消息和账号状态。">
+                        {{ profile.description or '这里汇总你的课堂、任务、消息和账号状态。' }}
+                    </p>
+                    <div class="profile-chip-row">
+                        <span class="profile-chip profile-chip--role" data-profile-display-role>{{ profile.display_role }}</span>
+                        {% if profile.class_name %}<span class="profile-chip">{{ profile.class_name }}</span>{% endif %}
+                        {% if profile.student_id_number %}<span class="profile-chip">学号 {{ profile.student_id_number }}</span>{% endif %}
+                        <span class="profile-chip">今日心情 <strong data-profile-mood-display>{{ profile.today_mood or '未设置' }}</strong></span>
+                        <span class="profile-chip">资料 <strong data-profile-completion-value>{{ profile.completion.percent }}</strong>%</span>
+                        <a class="profile-chip profile-chip--link" data-profile-homepage-chip href="{{ profile.homepage_url or '#' }}" target="_blank" rel="noopener noreferrer" {% if not profile.homepage_url %}hidden{% endif %}>个人主页</a>
+                    </div>
+                </div>
+            </div>
+            <div class="profile-hero__actions">
+                <a class="btn btn-primary" href="/profile?section={{ 'settings' if active_section == 'overview' else 'overview' }}">{{ '完善资料' if active_section == 'overview' else '回到总览' }}</a>
+                {% if active_section != 'notifications' %}<a class="btn btn-outline" href="/profile?section=notifications">通知</a>{% endif %}
+                {% if active_section != 'private' %}<a class="btn btn-outline" href="/profile?section=private">私信</a>{% endif %}
+            </div>
+        </div>
+        <aside class="profile-hero__signal">
+            <span>资料完整度</span>
+            <div class="profile-hero__signal-value"><strong data-profile-completion-value>{{ profile.completion.percent }}</strong><small>%</small></div>
+            <p>已完善 {{ profile.completion.completed }} / {{ profile.completion.total }} 项</p>
+            <div class="profile-progress"><span data-profile-completion-bar style="width: {{ profile.completion.percent }}%"></span></div>
+            <div class="profile-signal-grid">
+                <div><span>未读通知</span><strong>{{ notification_unread_count }}</strong></div>
+                <div><span>未读私信</span><strong>{{ private_unread_count }}</strong></div>
+                <div><span>头像</span><strong>{{ '已自定义' if profile.avatar_file_hash else '默认' }}</strong></div>
+                <div><span>主页</span><strong>{{ '已填写' if profile.homepage_url else '未填写' }}</strong></div>
+            </div>
+        </aside>
+    </section>
+
+    <section class="profile-workspace">
+        <aside class="profile-sidebar">
+            <nav class="profile-nav profile-band profile-reveal" aria-label="个人中心菜单">
+                {% for item in nav_items %}
+                <a class="profile-nav__link{% if item.active %} is-active{% endif %}" href="{{ item.href }}">
+                    <span class="profile-nav__dot" aria-hidden="true"></span>
+                    <span class="profile-nav__copy">
+                        <strong>{{ item.label }}</strong>
+                        <small>{{ item.short_label }}</small>
+                    </span>
+                    {% if item.badge %}<span class="profile-nav__badge">{{ item.badge if item.badge < 100 else '99+' }}</span>{% endif %}
+                </a>
+                {% endfor %}
+            </nav>
+
+            <section class="profile-band profile-sideband profile-reveal">
+                <div class="profile-band__head">
+                    <div>
+                        <span class="profile-eyebrow">Signal</span>
+                        <h3>当前状态</h3>
+                    </div>
+                </div>
+                <div class="profile-summary-list">
+                    <div class="profile-summary-row"><span>今日心情</span><strong data-profile-mood-display>{{ profile.today_mood or '未设置' }}</strong></div>
+                    <div class="profile-summary-row"><span>身份昵称</span><strong data-profile-display-role>{{ profile.display_role }}</strong></div>
+                    <div class="profile-summary-row"><span>密码更新</span><strong>{{ profile.password_updated_at or '暂无记录' }}</strong></div>
+                </div>
+            </section>
+
+            <section class="profile-band profile-sideband profile-reveal">
+                <div class="profile-band__head">
+                    <div>
+                        <span class="profile-eyebrow">Quick</span>
+                        <h3>快捷入口</h3>
+                    </div>
+                </div>
+                <div class="profile-quick-links">
+                    <a href="/dashboard"><strong>返回首页</strong><span>课堂总入口</span></a>
+                    <a href="/profile?section=settings"><strong>编辑资料</strong><span>头像、昵称、简介</span></a>
+                    <a href="/profile?section=security"><strong>账号安全</strong><span>密码与登录状态</span></a>
+                </div>
+            </section>
+        </aside>
+
+        <section class="profile-main">
+            {% if active_section == 'overview' %}
+            <section class="profile-band profile-section-head profile-reveal">
+                <div>
+                    <span class="profile-eyebrow">Overview</span>
+                    <h2>{{ overview.headline }}</h2>
+                    <p>课堂、任务、互动和通知的个人工作台。</p>
+                </div>
+                <div class="profile-section-head__actions">
+                    <a class="btn btn-outline" href="/profile?section=notifications">处理通知</a>
+                    <a class="btn btn-outline" href="/profile?section=private">进入私信</a>
+                </div>
+            </section>
+
+            <section class="profile-metric-grid">
+                {% for item in overview.metric_cards %}
+                <article class="profile-metric-card profile-reveal" data-tone="{{ loop.index0 }}">
+                    <span>{{ item.label }}</span>
+                    <strong>{{ item.value }}</strong>
+                    <p>{{ item.note }}</p>
+                </article>
+                {% endfor %}
+            </section>
+
+            <section class="profile-overview-grid">
+                <div class="profile-overview-primary">
+                    <section class="profile-chart-grid">
+                        {% for chart in overview.charts %}
+                        <article class="profile-chart-card profile-reveal">
+                            <div class="profile-band__head">
+                                <div>
+                                    <span class="profile-eyebrow">{{ 'Distribution' if chart.type == 'doughnut' else 'Touchpoints' }}</span>
+                                    <h3>{{ chart.title }}</h3>
+                                </div>
+                            </div>
+                            <div class="profile-chart" data-profile-chart="{{ chart.id }}"></div>
+                        </article>
+                        {% endfor %}
+                    </section>
+                    <section class="profile-band profile-activity-band profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <span class="profile-eyebrow">Recent Flow</span>
+                                <h3>近期动态</h3>
+                            </div>
+                        </div>
+                        <div class="profile-activity-list">
+                            {% for item in overview.recent_items %}
+                            <a class="profile-activity-item{% if item.is_unread %} is-unread{% endif %}" href="{{ item.href }}">
+                                <span>{{ item.type }}</span>
+                                <div><strong>{{ item.title }}</strong><p>{{ item.subtitle }}</p></div>
+                                <time>{{ item.created_at | datetime_format }}</time>
+                            </a>
+                            {% else %}
+                            <div class="profile-empty">暂无近期动态。</div>
+                            {% endfor %}
+                        </div>
+                    </section>
+                </div>
+                <aside class="profile-overview-rail">
+                    <section class="profile-band profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <span class="profile-eyebrow">Snapshot</span>
+                                <h3>档案摘要</h3>
+                            </div>
+                        </div>
+                        <div class="profile-summary-list">
+                            <div class="profile-summary-row"><span>姓名</span><strong>{{ profile.name }}</strong></div>
+                            <div class="profile-summary-row"><span>身份</span><strong data-profile-display-role>{{ profile.display_role }}</strong></div>
+                            {% if profile.class_name %}<div class="profile-summary-row"><span>班级</span><strong>{{ profile.class_name }}</strong></div>{% endif %}
+                            <div class="profile-summary-row"><span>今日心情</span><strong data-profile-mood-display>{{ profile.today_mood or '未设置' }}</strong></div>
+                            <div class="profile-summary-row"><span>个人主页</span><strong>{% if profile.homepage_url %}<a href="{{ profile.homepage_url }}" target="_blank" rel="noopener noreferrer">打开</a>{% else %}未填写{% endif %}</strong></div>
+                        </div>
+                    </section>
+                    {% if security_summary %}
+                    <section class="profile-band profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <span class="profile-eyebrow">Security</span>
+                                <h3>登录安全</h3>
+                            </div>
+                        </div>
+                        <div class="profile-summary-list">
+                            <div class="profile-summary-row"><span>累计登录</span><strong>{{ security_summary.total_logins }} 次</strong></div>
+                            {% if security_summary.last_login %}
+                            <div class="profile-summary-row"><span>最近登录</span><strong data-datetime="{{ security_summary.last_login.logged_at }}">{{ security_summary.last_login.logged_at }}</strong></div>
+                            <div class="profile-summary-row"><span>最近设备</span><strong>{{ security_summary.last_login.device_label or '未记录' }}</strong></div>
+                            {% endif %}
+                        </div>
+                    </section>
+                    {% endif %}
+                </aside>
+            </section>
+            {% elif active_section == 'settings' %}
+            <section class="profile-band profile-section-head profile-reveal">
+                <div>
+                    <span class="profile-eyebrow">Settings</span>
+                    <h2>基础信息</h2>
+                    <p>头像、昵称、联系方式和个人介绍会同步到个人中心与 AI 助教上下文。</p>
+                </div>
+            </section>
+
+            <section class="profile-settings-grid">
+                <aside class="profile-settings-rail">
+                    <section class="profile-band profile-avatar-card profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <span class="profile-eyebrow">Avatar</span>
+                                <h3>头像展示</h3>
+                            </div>
+                        </div>
+                        <img id="profile-avatar-preview" src="{{ profile.avatar_url }}" alt="当前头像">
+                        <input id="profile-avatar-input" type="file" accept="image/png,image/jpeg,image/gif" hidden>
+                        <button type="button" class="btn btn-outline" data-profile-avatar-pick>上传头像 / GIF</button>
+                    </section>
+
+                    <section class="profile-band profile-mood-card profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <span class="profile-eyebrow">Mood</span>
+                                <h3>今日心情</h3>
+                            </div>
+                        </div>
+                        <div class="profile-mood-editor">
+                            <div class="profile-mood-options">
+                                {% for mood in ['平静', '专注', '开心', '有点累', '需要鼓励'] %}
+                                <button type="button" class="profile-mood-option{% if profile.today_mood == mood %} is-active{% endif %}" data-profile-mood="{{ mood }}">{{ mood }}</button>
+                                {% endfor %}
+                            </div>
+                            <div class="profile-mood-custom">
+                                <input id="profile-mood-input" class="form-control" value="{{ profile.today_mood }}" maxlength="40" placeholder="自定义今日心情">
+                                <button type="button" id="profile-mood-save" class="btn btn-primary">保存心情</button>
+                            </div>
+                        </div>
+                    </section>
+                </aside>
+
+                <section class="profile-band profile-form-band profile-reveal">
+                    <form id="profile-basic-form" class="profile-form">
+                        <div class="profile-form-section">
+                            <div class="profile-form-section__head">
+                                <span class="profile-eyebrow">Identity</span>
+                                <h3>身份信息</h3>
+                            </div>
+                            <div class="profile-form-grid">
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-name">姓名</label>
+                                    <input id="profile-name" class="form-control" value="{{ profile.name }}" readonly>
+                                </div>
+                                {% if profile.role == 'student' %}
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-student-id">学号</label>
+                                    <input id="profile-student-id" class="form-control" value="{{ profile.student_id_number }}" readonly>
+                                </div>
+                                {% endif %}
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-nickname">身份昵称</label>
+                                    <input id="profile-nickname" name="nickname" class="form-control" value="{{ profile.nickname }}" maxlength="40">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email">邮箱</label>
+                                    <input id="profile-email" name="email" type="email" class="form-control" value="{{ profile.email }}" maxlength="120">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="profile-form-section">
+                            <div class="profile-form-section__head">
+                                <span class="profile-eyebrow">Contact</span>
+                                <h3>联系方式</h3>
+                            </div>
+                            <div class="profile-form-grid">
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-phone">电话</label>
+                                    <input id="profile-phone" name="phone" class="form-control" value="{{ profile.phone }}" maxlength="32">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-wechat">微信</label>
+                                    <input id="profile-wechat" name="wechat" class="form-control" value="{{ profile.wechat }}" maxlength="64">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-qq">QQ</label>
+                                    <input id="profile-qq" name="qq" class="form-control" value="{{ profile.qq }}" maxlength="32">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-homepage">个人主页</label>
+                                    <input id="profile-homepage" name="homepage_url" class="form-control" value="{{ profile.homepage_url }}" maxlength="240" placeholder="https://">
+                                </div>
+                                <div class="form-group profile-form-grid__wide">
+                                    <label class="form-label" for="profile-description">个人简介</label>
+                                    <textarea id="profile-description" name="description" class="form-control" maxlength="600">{{ profile.description }}</textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="profile-form-actions">
+                            <button type="submit" class="btn btn-primary">保存资料</button>
+                        </div>
+                    </form>
+                </section>
+            </section>
+
+            {% elif active_section == 'security' %}
+            <section class="profile-band profile-section-head profile-reveal">
+                <div>
+                    <span class="profile-eyebrow">Security</span>
+                    <h2>账号安全</h2>
+                    <p>更新密码并查看账号的最近安全状态。</p>
+                </div>
+            </section>
+
+            <section class="profile-security-grid">
+                <section class="profile-band profile-reveal">
+                    <div class="profile-band__head">
+                        <div>
+                            <span class="profile-eyebrow">Password</span>
+                            <h3>更新密码</h3>
+                        </div>
+                    </div>
+                    <form id="profile-password-form" class="profile-form profile-password-form">
+                        <div class="profile-form-grid">
+                            <div class="form-group profile-form-grid__wide">
+                                <label class="form-label" for="profile-current-password">当前密码</label>
+                                <input id="profile-current-password" name="current_password" type="password" class="form-control" autocomplete="current-password" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="profile-new-password">新密码</label>
+                                <input id="profile-new-password" name="new_password" type="password" class="form-control" autocomplete="new-password" required>
+                                <span class="form-text">{% if profile.role == 'student' %}至少 8 位，且同时包含字母和数字。{% else %}至少 6 位。{% endif %}</span>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="profile-confirm-password">确认新密码</label>
+                                <input id="profile-confirm-password" name="confirm_password" type="password" class="form-control" autocomplete="new-password" required>
+                            </div>
+                        </div>
+                        <div class="profile-form-actions">
+                            <button type="submit" class="btn btn-primary">更新密码</button>
+                        </div>
+                    </form>
+                </section>
+
+                <aside class="profile-security-rail">
+                    <section class="profile-band profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <span class="profile-eyebrow">Account</span>
+                                <h3>安全状态</h3>
+                            </div>
+                        </div>
+                        <div class="profile-summary-list">
+                            <div class="profile-summary-row"><span>最近密码更新</span><strong>{{ profile.password_updated_at or '暂无记录' }}</strong></div>
+                            <div class="profile-summary-row"><span>账号身份</span><strong>{{ profile.role_label }}</strong></div>
+                            <div class="profile-summary-row"><span>资料完整度</span><strong><span data-profile-completion-value>{{ profile.completion.percent }}</span>%</strong></div>
+                        </div>
+                    </section>
+                    {% if security_summary %}
+                    <section class="profile-band profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <span class="profile-eyebrow">Recent Login</span>
+                                <h3>最近登录</h3>
+                            </div>
+                        </div>
+                        <div class="profile-summary-list">
+                            <div class="profile-summary-row"><span>累计登录</span><strong>{{ security_summary.total_logins }} 次</strong></div>
+                            {% if security_summary.last_login %}
+                            <div class="profile-summary-row"><span>时间</span><strong data-datetime="{{ security_summary.last_login.logged_at }}">{{ security_summary.last_login.logged_at }}</strong></div>
+                            <div class="profile-summary-row"><span>设备</span><strong>{{ security_summary.last_login.device_label or '未记录' }}</strong></div>
+                            <div class="profile-summary-row"><span>IP</span><strong>{{ security_summary.last_login.ip_address or '未记录' }}</strong></div>
+                            {% endif %}
+                        </div>
+                    </section>
+                    {% endif %}
+                </aside>
+            </section>
+
+            {% elif active_section in ['notifications', 'private'] %}
+            <section class="message-center-shell profile-message-center" data-message-center-app data-message-center-mode="{{ 'private' if active_section == 'private' else 'notifications' }}" data-initial-tab="{{ initial_tab }}" data-initial-contact="{{ initial_contact }}" data-initial-scope="{{ initial_scope if initial_scope is not none else '' }}">
+                <section class="profile-band profile-stream-head profile-reveal">
+                    <div>
+                        <span class="profile-eyebrow">{{ 'Private Messages' if active_section == 'private' else 'Notifications' }}</span>
+                        <h2>{{ '私信' if active_section == 'private' else '通知中心' }}</h2>
+                        <p>{{ '和同学、老师或 AI 助教保持一对一沟通。' if active_section == 'private' else '系统通知集中处理，私信保留在独立入口。' }}</p>
+                    </div>
+                    <div class="message-center-hero__stats profile-message-stats">
+                        <div class="message-center-stat"><span class="message-center-stat__label">总未读</span><strong class="message-center-stat__value" id="message-center-unread-total">0</strong></div>
+                        <div class="message-center-stat"><span class="message-center-stat__label">当前分类</span><strong class="message-center-stat__value" id="message-center-current-tab-label">全部</strong></div>
+                        <div class="message-center-stat{% if active_section == 'notifications' %} is-muted{% endif %}"><span class="message-center-stat__label">私信联系人</span><strong class="message-center-stat__value" id="message-center-contact-total">0</strong></div>
+                    </div>
+                </section>
+
+                <section class="message-center-toolbar profile-message-toolbar profile-reveal">
+                    <div class="message-center-tabs" id="message-center-tabs"></div>
+                    <div class="message-center-controls">
+                        <input id="message-center-search" class="message-center-search" type="search" placeholder="搜索关键词">
+                        <select id="message-center-filter" class="message-center-filter"></select>
+                        <button type="button" id="message-center-mark-read" class="btn btn-outline">标记当前已读</button>
+                    </div>
+                </section>
+
+                <section class="message-center-body profile-message-body profile-reveal">
+                    <div id="message-center-feed" class="message-center-feed"></div>
+                    <div id="message-center-private-panel" class="message-center-private-panel" hidden>
+                        <aside class="message-center-sidebar">
+                            <div class="message-center-pane-header">
+                                <h2 class="message-center-pane-title">私信会话</h2>
+                                <p class="message-center-conversation__hint">支持联系本班同学、老师与 AI 助教。</p>
+                            </div>
+                            <div class="message-center-contact-picker">
+                                <label for="message-center-contact-search" class="message-center-conversation__hint">联系人搜索</label>
+                                <input id="message-center-contact-search" class="message-center-search message-center-search--compact" type="search" placeholder="输入姓名、课程、班级关键词">
+                                <label for="message-center-contact-select" class="message-center-conversation__hint">联系人下拉列表</label>
+                                <select id="message-center-contact-select" class="message-center-contact-select"></select>
+                                <div id="message-center-contact-current" class="message-center-contact-current"></div>
+                            </div>
+                            <div class="message-center-blocks">
+                                <div class="message-center-card__actions">
+                                    <h3 class="message-center-pane-title">黑名单</h3>
+                                    <span class="message-center-pill" id="message-center-block-count">0</span>
+                                </div>
+                                <div id="message-center-block-list" class="message-center-block-list"></div>
+                            </div>
+                        </aside>
+                        <section class="message-center-conversation">
+                            <div id="message-center-conversation-header" class="message-center-conversation__header"></div>
+                            <div id="message-center-conversation-body" class="message-center-conversation__body"></div>
+                            <div class="message-center-composer">
+                                <form id="message-center-compose-form" class="message-center-composer__form">
+                                    <div class="message-center-composer__editor">
+                                        <div class="message-center-composer__main">
+                                            <div id="message-center-editor-toolbar" class="message-center-editor-toolbar">
+                                                <button type="button" data-md-insert="heading" title="标题">H</button>
+                                                <button type="button" data-md-insert="bold" title="加粗"><b>B</b></button>
+                                                <button type="button" data-md-insert="italic" title="斜体"><i>I</i></button>
+                                                <button type="button" data-md-insert="code" title="行内代码">&lt;/&gt;</button>
+                                                <button type="button" data-md-insert="codeblock" title="代码块">{ }</button>
+                                                <button type="button" data-md-insert="ul" title="无序列表">&#8226;</button>
+                                                <button type="button" data-md-insert="ol" title="有序列表">1.</button>
+                                                <button type="button" data-md-insert="quote" title="引用">&ldquo;</button>
+                                                <button type="button" data-md-insert="link" title="链接">&#128279;</button>
+                                            </div>
+                                            <textarea id="message-center-compose-input" class="message-center-composer__input" placeholder="输入私信内容（支持 Markdown 语法）"></textarea>
+                                        </div>
+                                        <div class="message-center-composer__actions">
+                                            <div id="message-center-emoji-anchor" class="message-center-emoji-anchor">
+                                                <button type="button" id="message-center-emoji-trigger" class="message-center-composer__action-button message-center-emoji-trigger" title="表情">
+                                                    <span class="message-center-composer__action-icon" aria-hidden="true">&#128522;</span>
+                                                    <span>表情</span>
+                                                </button>
+                                            </div>
+                                            <button type="submit" class="btn btn-primary message-center-compose-submit" data-send-button>
+                                                <span class="message-center-compose-submit__spinner" aria-hidden="true"></span>
+                                                <span class="message-center-compose-submit__label">发送</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </section>
+                    </div>
+                </section>
+            </section>
+            {% endif %}
+        </section>
+    </section>
+</section>
+
+<script type="application/json" id="profile-context-json">{{ profile_context | tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{% include "partials/markdown_assets.html" %}
+<script src="{{ asset_url('js/echarts.min.js') }}"></script>
+<script type="module" src="{{ asset_url('js/profile.js') }}"></script>
+{% if active_section in ['notifications', 'private'] %}
+<script type="module" src="/static/js/message_center.js"></script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,224 @@
+{% extends "base_navbar.html" %}
+
+{% block css %}
+{{ super() }}
+<link rel="stylesheet" href="{{ asset_url('css/blog.css') }}">
+{% endblock %}
+
+{% block body_class %}page-wrapper{% endblock %}
+
+{% block main_content %}
+<div class="blog-shell"
+     data-blog-center
+     data-current-user-identity="{{ user_info.role }}:{{ user_info.id }}"
+     data-current-user-role="{{ user_info.role }}"
+     data-current-user-name="{{ user_info.name }}"
+     data-current-user-nickname="{{ user_info.nickname }}">
+    <!-- Header -->
+    <div class="blog-shell__header">
+        <div class="blog-shell__title-row">
+            <svg class="blog-shell__title-icon" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
+            </svg>
+            <h2>博客中心</h2>
+        </div>
+        <div class="blog-shell__actions">
+            <button class="btn btn-primary btn-sm" data-blog-action="compose" title="写帖子">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                写帖子
+            </button>
+        </div>
+    </div>
+
+    <!-- Feed View -->
+    <div data-blog-view="feed">
+        <!-- Sub-navigation: feed / my posts / bookmarks -->
+        <div class="blog-sidebar-nav">
+            <button class="blog-sidebar-tab is-active" data-blog-nav="feed">全部帖子</button>
+            <button class="blog-sidebar-tab" data-blog-nav="my-posts">我的帖子</button>
+            <button class="blog-sidebar-tab" data-blog-nav="bookmarks">我的收藏</button>
+        </div>
+
+        <!-- Sort bar -->
+        <div class="blog-sort-bar" data-blog-sort-bar>
+            <button class="blog-sort-tab is-active" data-blog-sort="latest">最新</button>
+            <button class="blog-sort-tab" data-blog-sort="hot">热门</button>
+            <button class="blog-sort-tab" data-blog-sort="featured">精华</button>
+            <div class="blog-sort-bar__spacer"></div>
+            <input class="blog-sort-bar__search" type="search" placeholder="搜索标签..." data-blog-search>
+        </div>
+
+        <div class="blog-author-filter" data-blog-author-filter hidden>
+            <span data-blog-author-filter-label></span>
+            <button type="button" class="blog-author-filter__clear" data-blog-clear-author-filter>查看全部帖子</button>
+        </div>
+
+        <!-- Post feed list -->
+        <div class="blog-feed" data-blog-feed></div>
+
+        <!-- Load more -->
+        <div class="blog-load-more" data-blog-load-more hidden>
+            <button class="btn btn-outline btn-sm">加载更多</button>
+        </div>
+    </div>
+
+    <!-- Post Detail View -->
+    <div data-blog-view="detail" hidden>
+        <button class="blog-detail__back" data-blog-action="back-to-feed">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            返回列表
+        </button>
+
+        <article class="blog-detail" data-blog-detail-content></article>
+    </div>
+
+    <!-- My Posts View -->
+    <div data-blog-view="my-posts" hidden>
+        <div class="blog-sort-bar">
+            <button class="blog-sort-tab is-active" data-blog-myposts-filter="all">全部</button>
+            <button class="blog-sort-tab" data-blog-myposts-filter="published">已发布</button>
+            <button class="blog-sort-tab" data-blog-myposts-filter="draft">草稿</button>
+            <button class="blog-sort-tab" data-blog-myposts-filter="moderated">已隐藏</button>
+        </div>
+        <div class="blog-feed" data-blog-my-feed></div>
+        <div class="blog-load-more" data-blog-my-load-more hidden>
+            <button class="btn btn-outline btn-sm">加载更多</button>
+        </div>
+    </div>
+
+    <!-- Bookmarks View -->
+    <div data-blog-view="bookmarks" hidden>
+        <div class="blog-feed" data-blog-bookmarks-feed></div>
+        <div class="blog-load-more" data-blog-bookmarks-load-more hidden>
+            <button class="btn btn-outline btn-sm">加载更多</button>
+        </div>
+    </div>
+
+    <!-- Composer Modal (inside shell for proper event delegation) -->
+    <div class="blog-modal-overlay" data-blog-composer-modal hidden>
+        <div class="blog-modal">
+            <div class="blog-modal__header">
+                <h3 data-blog-composer-title>写帖子</h3>
+                <button class="blog-modal__close" data-blog-action="close-composer">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="blog-modal__body">
+                <div class="blog-composer">
+                    <!-- Title -->
+                    <input class="blog-composer__input" type="text" placeholder="帖子标题..." data-blog-compose-title maxlength="200">
+
+                    <!-- Toolbar -->
+                    <div class="blog-composer__toolbar">
+                        <button class="blog-toolbar-btn" data-toolbar="bold" title="粗体"><b>B</b></button>
+                        <button class="blog-toolbar-btn" data-toolbar="italic" title="斜体"><i>I</i></button>
+                        <button class="blog-toolbar-btn" data-toolbar="code" title="行内代码">&lt;/&gt;</button>
+                        <button class="blog-toolbar-btn" data-toolbar="codeblock" title="代码块">{ }</button>
+                        <button class="blog-toolbar-btn" data-toolbar="quote" title="引用">&ldquo;</button>
+                        <button class="blog-toolbar-btn" data-toolbar="ul" title="无序列表">&bull;</button>
+                        <button class="blog-toolbar-btn" data-toolbar="ol" title="有序列表">1.</button>
+                        <button class="blog-toolbar-btn" data-toolbar="h2" title="标题">H</button>
+                        <button class="blog-toolbar-btn" data-toolbar="link" title="链接">&#128279;</button>
+                        <button class="blog-toolbar-btn" data-toolbar="image" title="插入图片">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                        </button>
+                    </div>
+
+                    <!-- Content -->
+                    <textarea class="blog-composer__input blog-composer__textarea" placeholder="支持 Markdown 格式..." data-blog-compose-content></textarea>
+
+                    <!-- Image previews -->
+                    <div class="blog-image-preview" data-blog-compose-images></div>
+
+                    {% if user_info.role == "student" %}
+                    <div class="blog-composer__options blog-composer__options--author">
+                        <div class="blog-composer__option blog-composer__option--stack">
+                            <label>署名方式</label>
+                            <div class="blog-author-mode-picker" data-blog-compose-author-mode-group>
+                                <label class="blog-author-mode-option">
+                                    <input type="radio" name="blog-author-mode" value="real_name" data-blog-compose-author-mode checked>
+                                    <span>真实名字</span>
+                                </label>
+                                <label class="blog-author-mode-option{% if not user_info.nickname %} is-disabled{% endif %}">
+                                    <input type="radio" name="blog-author-mode" value="nickname" data-blog-compose-author-mode {% if not user_info.nickname %}disabled{% endif %}>
+                                    <span>{% if user_info.nickname %}昵称{% else %}昵称未设置{% endif %}</span>
+                                </label>
+                                <label class="blog-author-mode-option">
+                                    <input type="radio" name="blog-author-mode" value="anonymous" data-blog-compose-author-mode>
+                                    <span>匿名</span>
+                                </label>
+                            </div>
+                            <div class="blog-composer__option-hint" data-blog-compose-author-mode-hint>
+                                默认使用真实名字发布；使用真实名字或昵称时会自动带上班级标签。
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Options -->
+                    <div class="blog-composer__options">
+                        <div class="blog-composer__option">
+                            <label>可见范围</label>
+                            <select class="blog-visibility-select" data-blog-compose-visibility>
+                                <option value="public">全部可见</option>
+                                <option value="class_visible">同班可见</option>
+                                <option value="selected_users">指定用户可见</option>
+                            </select>
+                        </div>
+                        <div class="blog-composer__option" data-blog-compose-class-wrap hidden>
+                            <label>选择班级</label>
+                            <select data-blog-compose-class></select>
+                        </div>
+                        <div class="blog-composer__option">
+                            <label>
+                                <input type="checkbox" data-blog-compose-comments checked>
+                                允许评论
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Selected users (for selected_users visibility) -->
+                    <div class="blog-visibility-config" data-blog-compose-users-config hidden>
+                        <div>指定可见用户</div>
+                        <input class="blog-composer__input" type="text" placeholder="搜索用户..." data-blog-compose-user-search style="margin-top: var(--spacing-sm);">
+                        <div class="blog-user-picker" data-blog-compose-selected-users></div>
+                        <div data-blog-compose-user-results style="margin-top: var(--spacing-sm);"></div>
+                    </div>
+
+                    <!-- Tags -->
+                    <div class="blog-composer__options">
+                        <div class="blog-composer__option">
+                            <label>标签（逗号分隔）</label>
+                            <input class="blog-composer__input" type="text" placeholder="如: 技术, 分享" data-blog-compose-tags style="width: 260px;">
+                        </div>
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="blog-composer__footer">
+                        <div class="blog-composer__image-upload">
+                            <button class="btn btn-ghost btn-sm" data-blog-action="upload-image" title="上传图片">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                                上传图片
+                            </button>
+                            <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" data-blog-compose-file-input hidden multiple>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button class="btn btn-ghost btn-sm" data-blog-action="save-draft">保存草稿</button>
+                            <button class="btn btn-primary btn-sm" data-blog-action="publish">发布</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="blog-user-popover" data-blog-user-popover hidden></div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{% include "partials/markdown_assets.html" %}
+<script type="module" src="{{ asset_url('js/blog.js') }}"></script>
+{% endblock %}

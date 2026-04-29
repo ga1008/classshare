@@ -1,0 +1,54 @@
+<div id="learningMaterialSelectorModal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable modal-dialog-wide">
+        <div class="modal-content learning-material-selector">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title" id="learningMaterialSelectorTitle">选择 Markdown 材料</h3>
+                    <p class="modal-subtitle" id="learningMaterialSelectorSubtitle">按目录进入材料库，选择任意层级下的 Markdown 文档。</p>
+                </div>
+                <button class="modal-close" type="button" id="learningMaterialSelectorCloseBtn" aria-label="关闭">&times;</button>
+            </div>
+
+            <div class="modal-body learning-material-selector-body">
+                <div class="learning-material-selector-toolbar">
+                    <div class="learning-material-selector-nav">
+                        <button type="button" class="btn btn-ghost btn-sm" id="learningMaterialSelectorBackBtn">返回</button>
+                        <button type="button" class="btn btn-ghost btn-sm" id="learningMaterialSelectorUpBtn">上一级</button>
+                        <button type="button" class="btn btn-ghost btn-sm" id="learningMaterialSelectorRefreshBtn">刷新</button>
+                    </div>
+                    <label class="learning-material-selector-search" for="learningMaterialSelectorSearch">
+                        <input id="learningMaterialSelectorSearch" class="form-control" type="search" placeholder="搜索文件夹名称、路径或 Markdown 文档">
+                    </label>
+                </div>
+
+                <div class="learning-material-selector-meta">
+                    <div class="learning-material-selector-breadcrumbs" id="learningMaterialSelectorBreadcrumbs">
+                        <span>材料库</span>
+                    </div>
+                    <div class="learning-material-selector-current" id="learningMaterialSelectorCurrent">正在读取材料目录...</div>
+                </div>
+
+                <div class="learning-material-selector-list">
+                    <div class="learning-material-selector-rows" id="learningMaterialSelectorList">
+                        <div class="learning-material-selector-empty">正在加载材料...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer learning-material-selector-footer">
+                <div class="learning-material-selector-footer-copy">
+                    <div class="learning-material-selector-selected is-empty" id="learningMaterialSelectorSelected">
+                        <strong id="learningMaterialSelectorSelectedName">尚未选择文档</strong>
+                        <span id="learningMaterialSelectorSelectedPath">单击列表中的 Markdown 文件后确认</span>
+                    </div>
+                    <p class="course-modal-footer-note" id="learningMaterialSelectorFooterNote">仅支持绑定 Markdown 文档。单击文件选中，双击文件夹继续进入。</p>
+                </div>
+                <div class="academic-action-group">
+                    <button class="btn btn-ghost" type="button" id="learningMaterialSelectorClearBtn" hidden>清空当前文档</button>
+                    <button class="btn btn-outline" type="button" id="learningMaterialSelectorCancelBtn">取消</button>
+                    <button class="btn btn-primary" type="button" id="learningMaterialSelectorConfirmBtn" disabled>使用该文档</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

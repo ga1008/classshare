@@ -1,0 +1,336 @@
+{% extends "base_navbar.html" %}
+
+{% block title %}{{ dashboard_hero.title }} - 课堂平台{% endblock %}
+
+{% block body_class %}page-wrapper dashboard-page role-{{ dashboard_theme }}{% endblock %}
+
+{% block css %}
+{{ super() }}
+<link rel="stylesheet" href="/static/css/dashboard.css">
+<link rel="stylesheet" href="/static/css/semester_calendar.css">
+{% endblock %}
+
+{% block navbar_actions %}
+{{ super() }}
+{% if user_info.role == 'teacher' %}
+<a href="/manage/offerings" class="btn btn-primary btn-sm">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+    开设新课堂
+</a>
+{% endif %}
+{% endblock %}
+
+{% block main_content %}
+<section
+    class="dashboard-shell"
+    data-dashboard-root
+    data-initial-filter="{{ dashboard_initial_filter }}"
+    data-initial-search="{{ dashboard_initial_search }}"
+>
+    <section class="dashboard-hero">
+        <div class="dashboard-hero__content">
+            <span class="dashboard-hero__eyebrow">{{ dashboard_hero.eyebrow }}</span>
+            <h1 class="dashboard-hero__title">{{ dashboard_hero.title }}</h1>
+            <p class="dashboard-hero__subtitle">{{ dashboard_hero.subtitle }}</p>
+            <div class="dashboard-hero__chips">
+                {% for chip in dashboard_hero.chips %}
+                <span class="dashboard-chip">{{ chip }}</span>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="dashboard-hero__aside">
+            <section class="dashboard-hero__stats" aria-label="首页概览">
+                {% for stat in dashboard_stats %}
+                <article class="dashboard-stat-card dashboard-stat-card--compact dashboard-reveal">
+                    <span class="dashboard-stat-card__label">{{ stat.label }}</span>
+                    <strong class="dashboard-stat-card__value">{{ stat.value }}</strong>
+                    <p class="dashboard-stat-card__note">{{ stat.note }}</p>
+                </article>
+                {% endfor %}
+            </section>
+
+            <div class="dashboard-hero__spotlight">
+                <span class="dashboard-spotlight__label">{{ dashboard_hero.spotlight.label }}</span>
+                <div class="dashboard-spotlight__value-wrap">
+                    <strong class="dashboard-spotlight__value">{{ dashboard_hero.spotlight.value }}</strong>
+                    <span class="dashboard-spotlight__suffix">{{ dashboard_hero.spotlight.suffix }}</span>
+                </div>
+                <p class="dashboard-spotlight__note">{{ dashboard_hero.spotlight.note }}</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="dashboard-main">
+        <div class="dashboard-main__primary">
+            <section class="dashboard-panel dashboard-panel--primary dashboard-reveal">
+                <div class="dashboard-panel__header dashboard-panel__header--spread">
+                    <div>
+                        <h2>课堂列表</h2>
+                        <p>你加入的所有课堂。支持按提醒、进度和关键词快速筛选。</p>
+                    </div>
+                    {% if class_offerings %}
+                    <span class="dashboard-section-pill">共 {{ class_offerings|length }} 个课堂</span>
+                    {% endif %}
+                </div>
+
+                {% if class_offerings %}
+                <div class="dashboard-toolbar">
+                    <div class="dashboard-toolbar__filters" role="tablist" aria-label="首页筛选">
+                        {% for filter in dashboard_filters %}
+                        <a
+                            href="{{ filter.href }}"
+                            class="dashboard-filter-btn{% if filter.value == dashboard_initial_filter %} is-active{% endif %}"
+                            data-filter-value="{{ filter.value }}"
+                            data-filter-label="{{ filter.label }}"
+                            role="tab"
+                            aria-selected="{{ 'true' if filter.value == dashboard_initial_filter else 'false' }}"
+                        >
+                            {{ filter.label }}
+                            <span>{{ filter.count }}</span>
+                        </a>
+                        {% endfor %}
+                    </div>
+
+                    <form method="get" action="/dashboard" class="dashboard-toolbar__search" data-dashboard-search-form>
+                        <input type="hidden" name="filter" value="{{ dashboard_initial_filter }}" data-dashboard-filter-field>
+                        <label class="sr-only" for="dashboard-search">搜索课堂</label>
+                        <div class="dashboard-search-shell">
+                            <input
+                                id="dashboard-search"
+                                type="search"
+                                name="q"
+                                class="dashboard-search-input"
+                                placeholder="{{ dashboard_search_placeholder }}"
+                                value="{{ dashboard_initial_search }}"
+                                data-dashboard-search
+                            >
+                            <button type="submit" class="dashboard-search-submit">搜索</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="dashboard-results-bar">
+                    <span>当前显示 <strong data-visible-count>{{ dashboard_initial_visible_count }}</strong> 个课堂</span>
+                    <span class="dashboard-results-bar__summary" data-results-summary aria-live="polite">{{ dashboard_initial_results_summary }}</span>
+                    <button
+                        type="button"
+                        class="dashboard-reset-link"
+                        data-reset-search
+                        {% if dashboard_initial_filter == 'all' and not dashboard_initial_search %}hidden{% endif %}
+                    >
+                        清除筛选
+                    </button>
+                </div>
+
+                <div class="dashboard-offering-grid" data-offering-list{% if dashboard_initial_visible_count == 0 %} hidden{% endif %}>
+                    {% for offering in class_offerings %}
+                    <article
+                        class="dashboard-offering-card dashboard-reveal"
+                        data-offering-card
+                        data-attention="{{ 'true' if offering.needs_attention else 'false' }}"
+                        data-recent="{{ 'true' if offering.has_recent_activity else 'false' }}"
+                        data-progress="{{ 'true' if offering.has_progress else 'false' }}"
+                        data-search-text="{{ offering.search_text }}"
+                        aria-hidden="{{ 'false' if offering.initially_visible else 'true' }}"
+                        {% if not offering.initially_visible %}hidden{% endif %}
+                    >
+                        <div class="dashboard-offering-card__top">
+                            <div class="dashboard-offering-card__copy">
+                                <span class="dashboard-offering-card__eyebrow">{{ offering.class_name }}</span>
+                                <h2 class="dashboard-offering-card__title">{{ offering.course_name }}</h2>
+                            </div>
+                            <a href="/classroom/{{ offering.id }}" class="btn btn-primary btn-sm dashboard-offering-card__enter">进入课堂</a>
+                        </div>
+
+                        {% if offering.meta %}
+                        <div class="dashboard-offering-card__meta">
+                            {% for item in offering.meta %}
+                            <span>{{ item }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        {% if offering.badges %}
+                        <div class="dashboard-offering-card__badges">
+                            {% for badge in offering.badges %}
+                            <span class="dashboard-badge dashboard-badge--{{ badge.tone }}">{{ badge.label }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <div class="dashboard-offering-card__metrics">
+                            {% for metric in offering.metrics[:3] %}
+                            <div class="dashboard-mini-stat">
+                                <span class="dashboard-mini-stat__label">{{ metric.label }}</span>
+                                <strong class="dashboard-mini-stat__value">{{ metric.value }}</strong>
+                                <span class="dashboard-mini-stat__note">{{ metric.note }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                        <div class="dashboard-offering-card__bottom">
+                            <div class="dashboard-offering-card__activity">
+                                <span>最近更新</span>
+                                {% if offering.last_activity_at %}
+                                <strong data-datetime="{{ offering.last_activity_at }}">{{ offering.last_activity_at }}</strong>
+                                {% else %}
+                                <strong>暂无更新</strong>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+
+                <div class="dashboard-empty-search" data-empty-search{% if dashboard_initial_visible_count > 0 %} hidden{% endif %}>
+                    <h3>没有匹配的课堂</h3>
+                    <p>可以清空搜索词，或切换筛选查看其他课堂。</p>
+                </div>
+                {% else %}
+                <div class="dashboard-empty-state dashboard-empty-state--embedded">
+                    <div class="dashboard-empty-state__icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                    </div>
+                    <h3>{{ dashboard_empty_state.title }}</h3>
+                    <p>{{ dashboard_empty_state.description }}</p>
+                    <a href="{{ dashboard_empty_state.action_href }}" class="btn btn-primary">{{ dashboard_empty_state.action_label }}</a>
+                </div>
+                {% endif %}
+            </section>
+
+            <section class="dashboard-semester-section dashboard-reveal">
+                {% with
+                    semester_calendar_panel_title='学期日历',
+                    semester_calendar_panel_subtitle='查看完整学期周历、当前周次与节假日安排。',
+                    semester_calendar_panel_hint='提示：可拖动滚动条或按住表格左右拖动浏览；当前周与今天会自动高亮。',
+                    semester_calendar_panel_class='dashboard-semester-calendar',
+                    semester_calendar_empty_title='暂无可展示的学期日历',
+                    semester_calendar_empty_description='教师创建学期并绑定课堂后，这里会自动显示对应学期周历。'
+                %}
+                    {% include "partials/semester_calendar_panel.html" %}
+                {% endwith %}
+            </section>
+        </div>
+
+        <aside class="dashboard-main__rail">
+            <section class="dashboard-panel dashboard-reveal">
+                <div class="dashboard-panel__header">
+                    <h2>{{ dashboard_sections.quick_actions.title }}</h2>
+                    <p>{{ dashboard_sections.quick_actions.subtitle }}</p>
+                </div>
+                <div class="dashboard-quick-actions">
+                    {% for action in dashboard_quick_actions %}
+                    {% if action.mode == 'link' %}
+                    <a href="{{ action.href }}" class="dashboard-quick-action">
+                        <div>
+                            <strong>{{ action.label }}</strong>
+                            <p>{{ action.description }}</p>
+                        </div>
+                        {% if action.badge %}
+                        <span class="dashboard-quick-action__badge">{{ action.badge }}</span>
+                        {% endif %}
+                    </a>
+                    {% else %}
+                    <button type="button" class="dashboard-quick-action dashboard-quick-action--button"{% for attr, value in action.button_attrs.items() %} {{ attr }}="{{ value }}"{% endfor %}>
+                        <div>
+                            <strong>{{ action.label }}</strong>
+                            <p>{{ action.description }}</p>
+                        </div>
+                        {% if action.badge %}
+                        <span class="dashboard-quick-action__badge">{{ action.badge }}</span>
+                        {% endif %}
+                    </button>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="dashboard-panel dashboard-reveal">
+                <div class="dashboard-panel__header">
+                    <h2>{{ dashboard_focus.title }}</h2>
+                    <p>{{ dashboard_focus.subtitle }}</p>
+                </div>
+                <div class="dashboard-list">
+                    {% for item in dashboard_focus["items"] %}
+                    <a href="{{ item.href }}" class="dashboard-list-item">
+                        <span class="dashboard-list-item__tone dashboard-list-item__tone--{{ item.tone }}"></span>
+                        <div class="dashboard-list-item__content">
+                            <strong>{{ item.title }}</strong>
+                            <p>{{ item.description }}</p>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="dashboard-panel dashboard-reveal">
+                <div class="dashboard-panel__header">
+                    <h2>{{ dashboard_activity.title }}</h2>
+                    <p>{{ dashboard_activity.subtitle }}</p>
+                </div>
+                {% if dashboard_activity["items"] %}
+                <div class="dashboard-activity-list">
+                    {% for item in dashboard_activity["items"] %}
+                    <a href="{{ item.href }}" class="dashboard-activity-item">
+                        <div class="dashboard-activity-item__top">
+                            <span class="dashboard-badge dashboard-badge--{{ item.tone }}">{{ item.label }}</span>
+                            {% if item.is_unread %}
+                            <span class="dashboard-activity-item__unread">未读</span>
+                            {% endif %}
+                        </div>
+                        <strong>{{ item.title }}</strong>
+                        <p>{{ item.description }}</p>
+                        <span class="dashboard-activity-item__time" data-datetime="{{ item.created_at }}">{{ item.created_at }}</span>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="dashboard-panel__placeholder">最近没有新的动态提醒。</div>
+                {% endif %}
+            </section>
+
+            {% if student_security_summary %}
+            <section class="dashboard-panel dashboard-reveal">
+                <div class="dashboard-panel__header">
+                    <h2>登录安全</h2>
+                    <p>帮助你确认最近一次登录设备与时间。</p>
+                </div>
+                <div class="dashboard-security-card">
+                    <div class="dashboard-security-card__row">
+                        <span>累计登录</span>
+                        <strong>{{ student_security_summary.total_logins }} 次</strong>
+                    </div>
+                    {% if student_security_summary.last_login %}
+                    <div class="dashboard-security-card__row">
+                        <span>最近登录</span>
+                        <strong data-datetime="{{ student_security_summary.last_login.logged_at }}">{{ student_security_summary.last_login.logged_at }}</strong>
+                    </div>
+                    <div class="dashboard-security-card__row">
+                        <span>登录方式</span>
+                        <strong>{{ '密码登录' if student_security_summary.last_login.login_method == 'password' else '首次设置 / 身份验证' }}</strong>
+                    </div>
+                    <div class="dashboard-security-card__row">
+                        <span>最近设备</span>
+                        <strong>{{ student_security_summary.last_login.device_label or '未记录' }}</strong>
+                    </div>
+                    <div class="dashboard-security-card__row">
+                        <span>最近 IP</span>
+                        <strong>{{ student_security_summary.last_login.ip_address or '未记录' }}</strong>
+                    </div>
+                    {% endif %}
+                </div>
+            </section>
+            {% endif %}
+        </aside>
+    </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    window.DASHBOARD_SEMESTER_CALENDAR = {{ dashboard_semester_calendar | tojson }};
+</script>
+<script type="module" src="/static/js/dashboard.js"></script>
+{% endblock %}

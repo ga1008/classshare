@@ -1,0 +1,345 @@
+﻿{% extends "manage/layout.html" %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/manage_academic.css">
+<style>
+    .textbook-description {
+        display: -webkit-box;
+        -webkit-line-clamp: 4;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .textbook-catalog-preview {
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: rgba(248, 250, 252, 0.88);
+        color: var(--text-secondary);
+        font-size: 0.88rem;
+        line-height: 1.7;
+    }
+
+    .textbook-attachment-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 12px 14px;
+        border-radius: 16px;
+        border: 1px dashed rgba(148, 163, 184, 0.28);
+        background: rgba(248, 250, 252, 0.72);
+    }
+
+    .textbook-file-note {
+        margin-top: 8px;
+        color: var(--text-muted);
+        font-size: 0.8rem;
+    }
+
+    .textbook-intro-catalog-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .textbook-intro-catalog-status {
+        align-items: center;
+        gap: 8px;
+        color: var(--text-secondary);
+        font-size: 0.88rem;
+    }
+
+    .textbook-intro-catalog-status:not([hidden]) {
+        display: inline-flex;
+    }
+
+    .textbook-intro-catalog-status::before {
+        content: "";
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(14, 165, 233, 0.3);
+        border-top-color: #0ea5e9;
+        border-radius: 50%;
+        animation: textbook-spin 0.8s linear infinite;
+    }
+
+    .textbook-intro-catalog-status[hidden]::before {
+        display: none;
+    }
+
+    @keyframes textbook-spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .textbook-formatted-result[hidden] {
+        display: none;
+    }
+
+    .textbook-formatted-result:not([hidden]) {
+        margin-top: 14px;
+        padding: 18px;
+        border-radius: 18px;
+        border: 1px solid rgba(34, 197, 94, 0.22);
+        background: linear-gradient(135deg, rgba(240, 253, 244, 0.7), rgba(248, 250, 252, 0.9));
+    }
+
+    .textbook-formatted-section {
+        margin-bottom: 16px;
+    }
+
+    .textbook-formatted-section:last-of-type {
+        margin-bottom: 12px;
+    }
+
+    .textbook-formatted-label {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #15803d;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 8px;
+    }
+
+    .textbook-formatted-content {
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.88);
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        line-height: 1.8;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 320px;
+        overflow-y: auto;
+    }
+
+    .textbook-intro-catalog-backdrop {
+        z-index: 1300;
+    }
+</style>
+{% endblock %}
+
+{% block header_actions %}
+<button type="button" class="btn btn-primary" id="openTextbookCreateBtn">新增教材</button>
+{% endblock %}
+
+{% block content %}
+<div class="academic-shell">
+    <section class="academic-hero">
+        <div class="academic-eyebrow">Textbook Library</div>
+        <h2>教材管理</h2>
+        <p>
+            统一管理教材信息，包括名称、作者、出版社、简介、目录和附件。开设课堂时可直接引用已录入的教材。
+        </p>
+        <div class="academic-hero-actions">
+            <button type="button" class="btn btn-primary" id="heroTextbookCreateBtn">新建教材</button>
+            <span class="academic-badge is-success">教材可直接绑定课堂</span>
+            <span class="academic-badge is-accent">简介和目录用于课堂参考</span>
+            <span class="academic-badge">附件仅提供下载</span>
+        </div>
+    </section>
+
+    <section class="academic-stat-grid">
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">教材总数</div>
+            <div class="academic-stat-value">{{ textbooks|length }}</div>
+            <div class="academic-stat-help">当前教师名下已创建的教材数量。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">出版社</div>
+            <div class="academic-stat-value">{{ textbooks|map(attribute='publisher')|reject('equalto', '')|list|length }}</div>
+            <div class="academic-stat-help">至少填写过一次的出版社记录总数。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">带附件</div>
+            <div class="academic-stat-value">{{ textbooks|selectattr('has_attachment')|list|length }}</div>
+            <div class="academic-stat-help">已上传附件的教材数量。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">最近维护</div>
+            <div class="academic-stat-value" style="font-size: 1.08rem;">{{ textbooks[0].updated_at if textbooks else '暂无' }}</div>
+            <div class="academic-stat-help">最近一次更新教材的时间。</div>
+        </article>
+    </section>
+
+    <section class="academic-card">
+        <div class="academic-card-header">
+            <div>
+                <h3 class="academic-card-title">教材卡片库</h3>
+                <p class="academic-card-subtitle">支持按关键词、出版社、标签和附件状态快速筛选。</p>
+            </div>
+        </div>
+        <div class="academic-card-body">
+            <div class="academic-toolbar academic-toolbar-between" style="margin-bottom: 14px;">
+                <label class="academic-search" for="textbookSearchInput">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+                    <input type="search" id="textbookSearchInput" class="form-control" placeholder="搜索教材名称、作者、出版社、简介、目录或标签">
+                </label>
+                <button type="button" class="btn btn-outline" id="textbookClearFiltersBtn">清空筛选</button>
+            </div>
+            <div class="academic-filter-row" style="margin-bottom: 18px;">
+                <label class="academic-filter-field">
+                    <span>出版社</span>
+                    <select id="textbookPublisherFilter" class="form-control">
+                        <option value="">全部出版社</option>
+                    </select>
+                </label>
+                <label class="academic-filter-field">
+                    <span>标签</span>
+                    <select id="textbookTagFilter" class="form-control">
+                        <option value="">全部标签</option>
+                    </select>
+                </label>
+                <label class="academic-filter-field">
+                    <span>附件状态</span>
+                    <select id="textbookAttachmentFilter" class="form-control">
+                        <option value="">全部</option>
+                        <option value="has">仅看有附件</option>
+                        <option value="none">仅看无附件</option>
+                    </select>
+                </label>
+            </div>
+            <div class="academic-card-grid" id="textbookCardGrid"></div>
+            <div class="academic-empty" id="textbookEmptyState" hidden>
+                <strong>没有匹配的教材</strong>
+                可以清空筛选条件，或者直接新建一本教材。
+            </div>
+        </div>
+    </section>
+</div>
+
+<div class="academic-modal-backdrop" id="textbookModalBackdrop">
+    <div class="academic-modal" role="dialog" aria-modal="true" aria-labelledby="textbookModalTitle">
+        <div class="academic-modal-header">
+            <div>
+                <h3 class="academic-modal-title" id="textbookModalTitle">新增教材</h3>
+                <p class="academic-modal-subtitle">填写教材信息后保存即可。</p>
+            </div>
+            <button type="button" class="academic-modal-close" id="textbookModalCloseBtn" aria-label="关闭">&times;</button>
+        </div>
+        <form id="textbookForm" action="/api/manage/textbooks/save" method="post" enctype="multipart/form-data">
+            <div class="academic-modal-body">
+                <input type="hidden" name="textbook_id" id="textbookIdInput">
+                <input type="hidden" name="authors_json" id="textbookAuthorsJsonInput" value="[]">
+                <input type="hidden" name="tags_json" id="textbookTagsJsonInput" value="[]">
+                <input type="hidden" name="remove_attachment" id="textbookRemoveAttachmentInput" value="false">
+
+                <div class="academic-form-grid two-col">
+                    <div class="academic-field">
+                        <label for="textbookTitleInput">教材名称</label>
+                        <input type="text" id="textbookTitleInput" name="title" class="form-control" required maxlength="120" placeholder="例如：Python 程序设计基础">
+                    </div>
+                    <div class="academic-field">
+                        <label for="textbookPublisherInput">出版社</label>
+                        <input type="text" id="textbookPublisherInput" name="publisher" class="form-control" maxlength="80" placeholder="例如：高等教育出版社">
+                    </div>
+                    <div class="academic-field" style="grid-column: 1 / -1;">
+                        <label>作者（可多个）</label>
+                        <div class="academic-chip-list" id="textbookAuthorChipList"></div>
+                        <div class="academic-chip-input-row">
+                            <input type="text" id="textbookAuthorInput" class="form-control" maxlength="30" placeholder="输入作者后回车或点击添加">
+                            <button type="button" class="btn btn-outline" id="textbookAuthorAddBtn">添加作者</button>
+                        </div>
+                    </div>
+                    <div class="academic-field">
+                        <label for="textbookPublicationDateInput">出版年份 / 日期</label>
+                        <input type="date" id="textbookPublicationDateInput" name="publication_date" class="form-control">
+                        <div class="academic-hint">填写出版日期后，系统会自动提取年份。</div>
+                    </div>
+                    <div class="academic-field" style="grid-column: 1 / -1;">
+                        <label>自定义标签</label>
+                        <div class="academic-chip-list" id="textbookTagChipList"></div>
+                        <div class="academic-chip-input-row">
+                            <input type="text" id="textbookTagInput" class="form-control" maxlength="12" placeholder="例如：主教材、实验课、必修">
+                            <button type="button" class="btn btn-outline" id="textbookTagAddBtn">添加标签</button>
+                        </div>
+                    </div>
+                    <div class="academic-field" style="grid-column: 1 / -1;">
+                        <label>教材简介与目录</label>
+                        <div class="textbook-intro-catalog-row">
+                            <button type="button" class="btn btn-primary" id="textbookOpenIntroCatalogBtn">简介与目录</button>
+                            <span class="textbook-intro-catalog-status" id="textbookIntroCatalogStatus" hidden>AI 正在整理...</span>
+                        </div>
+                        <input type="hidden" name="introduction" id="textbookIntroductionInput" value="">
+                        <input type="hidden" name="catalog_text" id="textbookCatalogInput" value="">
+                        <div class="textbook-formatted-result" id="textbookFormattedResult" hidden>
+                            <div class="textbook-formatted-section" id="textbookFormattedIntroSection">
+                                <div class="textbook-formatted-label">简介</div>
+                                <div class="textbook-formatted-content" id="textbookFormattedIntro"></div>
+                            </div>
+                            <div class="textbook-formatted-section" id="textbookFormattedCatalogSection">
+                                <div class="textbook-formatted-label">目录</div>
+                                <div class="textbook-formatted-content" id="textbookFormattedCatalog"></div>
+                            </div>
+                            <button type="button" class="btn btn-outline btn-sm" id="textbookReformatBtn">重新整理</button>
+                        </div>
+                    </div>
+                    <div class="academic-field" style="grid-column: 1 / -1;">
+                        <label for="textbookAttachmentInput">附件（可选）</label>
+                        <input type="file" id="textbookAttachmentInput" name="attachment" class="form-control">
+                        <div class="textbook-file-note">支持上传教材样章、说明文档等，支持 PDF、Word 等常见格式。</div>
+                        <div class="textbook-attachment-row" id="textbookExistingAttachmentRow" hidden>
+                            <div>
+                                <strong id="textbookExistingAttachmentName">当前附件</strong>
+                                <div class="academic-hint" id="textbookExistingAttachmentHint">可以直接保留，或改为上传新的附件。</div>
+                            </div>
+                            <div class="academic-action-group">
+                                <a href="#" class="btn btn-outline btn-sm" id="textbookAttachmentDownloadLink" target="_blank" rel="noopener">下载附件</a>
+                                <button type="button" class="btn btn-danger btn-sm" id="textbookRemoveAttachmentBtn">移除附件</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="academic-modal-footer">
+                <button type="button" class="btn btn-ghost" id="textbookModalCancelBtn">取消</button>
+                <button type="submit" class="btn btn-primary" id="textbookSubmitBtn">保存教材</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="academic-modal-backdrop textbook-intro-catalog-backdrop" id="textbookIntroCatalogBackdrop">
+    <div class="academic-modal" role="dialog" aria-modal="true" aria-labelledby="textbookIntroCatalogModalTitle">
+        <div class="academic-modal-header">
+            <div>
+                <h3 class="academic-modal-title" id="textbookIntroCatalogModalTitle">简介与目录</h3>
+                <p class="academic-modal-subtitle">粘贴教材简介、目录等内容，AI 将自动整理格式。支持各种格式的粘贴内容。</p>
+            </div>
+            <button type="button" class="academic-modal-close" id="textbookIntroCatalogCloseBtn" aria-label="关闭">&times;</button>
+        </div>
+        <div class="academic-modal-body">
+            <div class="academic-form-grid">
+                <div class="academic-field">
+                    <label for="textbookRawIntroInput">教材简介</label>
+                    <textarea id="textbookRawIntroInput" class="form-control" rows="5" placeholder="粘贴或填写教材简介，支持任意格式。"></textarea>
+                </div>
+                <div class="academic-field">
+                    <label for="textbookRawCatalogInput">教材目录</label>
+                    <textarea id="textbookRawCatalogInput" class="form-control" rows="12" placeholder="粘贴完整的教材目录，支持任意格式。内容不会丢失。"></textarea>
+                </div>
+                <div class="academic-field">
+                    <label for="textbookCustomRequirementsInput">自定义要求 <span style="font-weight:normal;color:var(--text-muted)">（可选）</span></label>
+                    <textarea id="textbookCustomRequirementsInput" class="form-control" rows="3" placeholder="对 AI 整理的额外要求，如"保留原文风格"、"突出实践内容"等。"></textarea>
+                </div>
+            </div>
+        </div>
+        <div class="academic-modal-footer">
+            <button type="button" class="btn btn-ghost" id="textbookIntroCatalogCancelBtn">取消</button>
+            <button type="button" class="btn btn-primary" id="textbookIntroCatalogConfirmBtn">确定</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.TEXTBOOK_MANAGE_DATA = {
+        textbooks: {{ textbooks_json | tojson }}
+    };
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/manage_textbooks.js"></script>
+{% endblock %}

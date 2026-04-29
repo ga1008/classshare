@@ -1,0 +1,88 @@
+import os
+import sys
+import uvicorn
+from dotenv import load_dotenv
+
+# 加载 .env 文件
+load_dotenv()
+
+# --- 从新包中导入 app 实例 ---
+try:
+    from classroom_app.app import app
+    from classroom_app.config import (
+        HOST, PORT, AI_ASSISTANT_URL,
+        ensure_runtime_directories,
+        MAIN_BACKLOG, MAIN_LIMIT_CONCURRENCY, MAIN_TIMEOUT_KEEP_ALIVE,
+        MAIN_WORKERS, MAIN_WS_PING_INTERVAL, MAIN_WS_PING_TIMEOUT,
+    )
+    from classroom_app.database import init_database
+except ImportError as e:
+    print(f"CRITICAL: 导入错误: {e}")
+    print("请确保 'classroom_app' 包已正确创建并包含所有模块 (app.py, config.py, etc.)")
+    sys.exit(1)
+
+
+def _configure_stdio_encoding() -> None:
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None or not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+        except Exception:
+            pass
+
+
+def run_server():
+    """
+    初始化数据库并启动 Uvicorn 服务器。
+    不再需要 tkinter GUI。
+    """
+
+    _configure_stdio_encoding()
+
+    print("=" * 60)
+    print("===      欢迎使用课堂管理平台 V4.0 (Multi-Tenant)      ===")
+    print("=" * 60)
+
+    # 确保所有目录在启动时都存在
+    ensure_runtime_directories()
+
+    # 在启动时初始化数据库
+    print("[SERVER] 正在初始化数据库...")
+    init_database()
+    print("[SERVER] 数据库初始化完成。")
+
+    print(f"\n[SERVER] 课堂服务即将运行于: http://{HOST}:{PORT}")
+    print(f"[SERVER] AI 助手服务应运行于: {AI_ASSISTANT_URL}")
+    print(f"\n[SERVER] 教师请访问: http://127.0.0.1:{PORT}/teacher/login")
+    print(f"[SERVER] 学生请访问: http://127.0.0.1:{PORT}/student/login")
+    print("\n[SERVER] 按下 CTRL+C 即可停止服务器。")
+    print("-" * 60)
+
+    effective_workers = 1
+    if MAIN_WORKERS > 1:
+        print("[SERVER] 检测到 MAIN_WORKERS > 1，但当前课堂聊天室仍使用进程内房间广播。")
+        print("[SERVER] 为避免不同 worker 之间聊天室和在线列表分裂，主服务将继续以单 worker 运行。")
+
+    try:
+        # 运行 Uvicorn 服务器
+        uvicorn.run(
+            "classroom_app.app:app",
+            host=HOST,
+            port=PORT,
+            log_level="info",
+            reload=False,  # reload=True 需要 multiprocessing，当前 venv 基础路径缺失时无法使用
+            workers=effective_workers,
+            backlog=MAIN_BACKLOG,
+            limit_concurrency=MAIN_LIMIT_CONCURRENCY or None,
+            timeout_keep_alive=MAIN_TIMEOUT_KEEP_ALIVE,
+            ws_ping_interval=MAIN_WS_PING_INTERVAL,
+            ws_ping_timeout=MAIN_WS_PING_TIMEOUT,
+        )
+    except Exception as e:
+        print(f"[ERROR] 服务器启动失败: {e}")
+
+
+if __name__ == "__main__":
+    run_server()

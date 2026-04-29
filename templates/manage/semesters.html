@@ -1,0 +1,160 @@
+﻿{% extends "manage/layout.html" %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/manage_academic.css">
+<link rel="stylesheet" href="/static/css/semester_calendar.css">
+{% endblock %}
+
+{% block header_actions %}
+<button type="button" class="btn btn-primary" id="openSemesterCreateBtn">新增学期</button>
+{% endblock %}
+
+{% block content %}
+<div class="academic-shell semester-layout">
+    <section class="academic-hero">
+        <div class="academic-eyebrow">Academic Calendar</div>
+        <h2>学期管理</h2>
+        <p>
+            管理学期时间范围与校历，系统自动计算周次并标注法定假期。日历视图直观展示每个教学日的安排。
+        </p>
+        <div class="academic-hero-actions">
+            <button type="button" class="btn btn-primary" id="heroSemesterCreateBtn">新建学期</button>
+            <span class="academic-badge is-accent">广西法定假期标注</span>
+            <span class="academic-badge is-success">周次自动计算</span>
+            <span class="academic-badge">横向拖拽浏览</span>
+        </div>
+    </section>
+
+    <section class="academic-stat-grid">
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">学期数量</div>
+            <div class="academic-stat-value">{{ semesters|length }}</div>
+            <div class="academic-stat-help">当前教师已配置的学期总数。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">进行中</div>
+            <div class="academic-stat-value">{{ semesters|selectattr('is_current')|list|length }}</div>
+            <div class="academic-stat-help">当前日期落入学期区间的学期数量。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">累计周数</div>
+            <div class="academic-stat-value">{{ semesters|sum(attribute='week_count') }}</div>
+            <div class="academic-stat-help">所有学期自动计算后的总周次。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">默认草稿</div>
+            <div class="academic-stat-value" style="font-size: 1.1rem;">{{ semester_defaults.name }}</div>
+            <div class="academic-stat-help">建议时间：{{ semester_defaults.start_date }} 至 {{ semester_defaults.end_date }}</div>
+        </article>
+    </section>
+
+    <section class="academic-content-grid two-column">
+        <article class="academic-card">
+            <div class="academic-card-header">
+                <div>
+                    <h3 class="academic-card-title">学期列表</h3>
+                    <p class="academic-card-subtitle">支持搜索、编辑和删除。选择任意学期后，下方会同步渲染完整日历。</p>
+                </div>
+            </div>
+            <div class="academic-card-body">
+                <div class="academic-toolbar academic-toolbar-between">
+                    <label class="academic-search" for="semesterSearchInput">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+                        <input type="search" id="semesterSearchInput" class="form-control" placeholder="搜索学期名称、日期或周数">
+                    </label>
+                    <button type="button" class="btn btn-outline" id="semesterClearSearchBtn">清空</button>
+                </div>
+                <div class="academic-list" id="semesterList"></div>
+                <div class="academic-empty" id="semesterListEmpty" hidden>
+                    <strong>没有匹配的学期</strong>
+                    可以换个关键词，或者直接新增一个新的学期。
+                </div>
+            </div>
+        </article>
+
+        <article class="academic-card">
+            <div class="academic-card-header">
+                <div>
+                    <h3 class="academic-card-title">当前焦点</h3>
+                    <p class="academic-card-subtitle">这里会展示当前选中学期的核心信息和使用建议。</p>
+                </div>
+            </div>
+            <div class="academic-card-body semester-summary-grid">
+                <div class="academic-context-block">
+                    <h4>学期摘要</h4>
+                    <pre id="semesterSummaryText">请选择一个学期。</pre>
+                </div>
+                <div class="academic-context-block">
+                    <h4>管理建议</h4>
+                    <pre id="semesterAdviceText">开设课堂、排课和考试发布前建议先创建学期，以确保时间信息统一。</pre>
+                </div>
+                <div class="academic-context-block">
+                    <h4>图例说明</h4>
+                    <div class="semester-chip-line">
+                        <span class="semester-mini-tag">普通教学日</span>
+                        <span class="semester-mini-tag holiday">法定假期</span>
+                        <span class="semester-mini-tag workday">调休上课</span>
+                        <span class="semester-mini-tag">周末</span>
+                    </div>
+                </div>
+            </div>
+        </article>
+    </section>
+
+    {% include "partials/semester_calendar_panel.html" %}
+</div>
+
+<div class="academic-modal-backdrop" id="semesterModalBackdrop">
+    <div class="academic-modal slim" role="dialog" aria-modal="true" aria-labelledby="semesterModalTitle">
+        <div class="academic-modal-header">
+            <div>
+                <h3 class="academic-modal-title" id="semesterModalTitle">新增学期</h3>
+                <p class="academic-modal-subtitle">留空时系统将自动生成学期名称，保存后仍可修改。</p>
+            </div>
+            <button type="button" class="academic-modal-close" id="semesterModalCloseBtn" aria-label="关闭">&times;</button>
+        </div>
+        <form id="semesterForm" action="/api/manage/semesters/save" method="post">
+            <div class="academic-modal-body">
+                <input type="hidden" name="semester_id" id="semesterIdInput">
+                <div class="academic-form-grid two-col">
+                    <div class="academic-field">
+                        <label for="semesterNameInput">学期名称</label>
+                        <input type="text" id="semesterNameInput" name="name" class="form-control" placeholder="例如：2025-2026 第一学期">
+                        <div class="academic-hint">根据所选日期自动生成，保存后可随时修改。</div>
+                    </div>
+                    <div class="academic-field">
+                        <label>自动周数</label>
+                        <div class="academic-context-block">
+                            <h4 id="semesterWeekCountValue">0 周</h4>
+                            <p id="semesterWeekCountHint">选择开始和结束日期后自动计算。</p>
+                        </div>
+                    </div>
+                    <div class="academic-field">
+                        <label for="semesterStartInput">开始日期</label>
+                        <input type="date" id="semesterStartInput" name="start_date" class="form-control" required>
+                    </div>
+                    <div class="academic-field">
+                        <label for="semesterEndInput">结束日期</label>
+                        <input type="date" id="semesterEndInput" name="end_date" class="form-control" required>
+                    </div>
+                </div>
+            </div>
+            <div class="academic-modal-footer">
+                <button type="button" class="btn btn-ghost" id="semesterModalCancelBtn">取消</button>
+                <button type="submit" class="btn btn-primary" id="semesterSubmitBtn">保存学期</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    window.SEMESTER_MANAGE_DATA = {
+        semesterCalendar: {{ semester_calendar | tojson }},
+        defaults: {{ semester_defaults | tojson }}
+    };
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/manage_semesters.js"></script>
+{% endblock %}

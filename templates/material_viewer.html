@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block title %}{{ material.name }} | 课程材料预览{% endblock %}
+
+{% block css %}
+<link rel="stylesheet" href="/static/css/layout.css">
+<link rel="stylesheet" href="/static/css/buttons.css">
+<link rel="stylesheet" href="/static/css/cards.css">
+<link rel="stylesheet" href="/static/css/toast.css">
+<link rel="stylesheet" href="/static/css/markdown.css">
+<link rel="stylesheet" href="/static/css/materials.css">
+{% if user_info.role == 'teacher' %}
+<link rel="stylesheet" href="{{ asset_url('css/teacher_whiteboard.css') }}">
+{% endif %}
+{% endblock %}
+
+{% block head %}
+{% set include_mermaid = true %}
+{% include "partials/markdown_assets.html" %}
+<script>
+    window.MATERIAL_VIEWER = {{ material | tojson }};
+    window.MATERIAL_VIEWER_CONTEXT = {
+        userId: {{ user_info.id | tojson }},
+        userRole: {{ user_info.role | tojson }},
+        materialId: {{ material.id | tojson }},
+        materialName: {{ material.name | tojson }}
+    };
+</script>
+{% endblock %}
+
+{% block body %}
+<div class="materials-viewer">
+    <aside class="materials-viewer-sidebar">
+        <div class="materials-section">
+            <div class="text-muted text-sm">当前材料</div>
+            <h2 style="margin: 6px 0 8px;">{{ material.name }}</h2>
+            <div class="text-muted text-sm">{{ material.material_path }}</div>
+            <div class="materials-viewer-summary">
+                <div class="text-muted text-sm">预览模式</div>
+                <strong id="viewer-variant-label">{{ '优化稿' if material.preview_variant == 'optimized' else '原稿' }}</strong>
+            </div>
+        </div>
+
+        <div class="materials-section">
+            <div class="materials-section-header">
+                <h3>文档目录</h3>
+                <span class="text-muted text-sm" id="viewer-toc-count">0 节</span>
+            </div>
+            <div id="viewer-toc" class="materials-viewer-toc">
+                <div class="materials-viewer-empty">目录将在 Markdown 渲染后显示。</div>
+            </div>
+        </div>
+
+        <div class="materials-section" id="viewer-ai-summary">
+            <div class="materials-section-header">
+                <h3>AI 解析</h3>
+            </div>
+            {% if material.ai_parse_result %}
+            <div class="text-muted text-sm mb-2">{{ material.ai_parse_result.summary or '暂无摘要。' }}</div>
+            {% if material.ai_parse_result.keywords %}
+            <div class="text-muted text-sm">关键词：{{ material.ai_parse_result.keywords | join('、') }}</div>
+            {% endif %}
+            {% else %}
+            <div class="materials-viewer-empty">当前材料还没有 AI 解析结果。</div>
+            {% endif %}
+        </div>
+    </aside>
+
+    <main class="materials-viewer-main">
+        <div class="materials-viewer-topbar">
+            <div class="materials-toolbar-group">
+                <button type="button" class="btn btn-ghost" onclick="history.length > 1 ? history.back() : (window.location.href='/dashboard')">返回</button>
+                <div>
+                    <div class="text-muted text-sm">课程材料预览</div>
+                    <strong>{{ material.name }}</strong>
+                </div>
+            </div>
+            <div class="materials-viewer-actions">
+                {% if material.can_edit_source %}
+                <button type="button" class="btn btn-outline" id="viewer-edit-source-btn">编辑源码</button>
+                {% endif %}
+                {% if material.optimized_available %}
+                <a href="{{ material.viewer_url }}?variant={{ 'original' if material.preview_variant == 'optimized' else 'optimized' }}" class="btn btn-outline">
+                    {{ '查看原稿' if material.preview_variant == 'optimized' else '查看优化稿' }}
+                </a>
+                {% endif %}
+                <a href="{{ material.download_url }}" class="btn btn-primary">下载材料</a>
+            </div>
+        </div>
+
+        <section class="materials-viewer-article">
+            <div id="viewer-content"></div>
+        </section>
+    </main>
+</div>
+
+{% if material.can_edit_source %}
+<div id="viewer-source-editor" class="materials-editor-backdrop" hidden aria-hidden="true">
+    <div class="materials-editor-shell" role="dialog" aria-modal="true" aria-labelledby="viewer-editor-title">
+        <div class="materials-editor-toolbar">
+            <div class="materials-editor-copy">
+                <div class="text-muted text-sm">文本源码编辑</div>
+                <strong id="viewer-editor-title">{{ material.name }}</strong>
+                <div class="text-muted text-sm">{{ material.material_path }}</div>
+            </div>
+            <div class="materials-toolbar-group">
+                <div class="materials-editor-encoding" id="viewer-editor-encoding">编码检测中</div>
+                <button type="button" class="btn btn-ghost" id="viewer-editor-cancel-btn">取消</button>
+                <button type="button" class="btn btn-primary" id="viewer-editor-save-btn">保存</button>
+            </div>
+        </div>
+        <div class="materials-editor-body">
+            <textarea id="viewer-editor-textarea" class="materials-editor-textarea" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div id="viewer-image-lightbox" class="materials-lightbox" hidden aria-hidden="true">
+    <div class="materials-lightbox-shell">
+        <div class="materials-lightbox-toolbar">
+            <div class="materials-lightbox-copy">
+                <div class="text-muted text-sm">图片预览</div>
+                <strong id="viewer-image-lightbox-title">大图查看</strong>
+            </div>
+            <div class="materials-lightbox-actions">
+                <span class="materials-lightbox-scale" id="viewer-image-lightbox-scale">100%</span>
+                <button type="button" class="btn btn-ghost btn-sm" id="viewer-image-zoom-out-btn">缩小</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="viewer-image-zoom-in-btn">放大</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="viewer-image-fullscreen-btn">全屏</button>
+                <button type="button" class="btn btn-primary btn-sm" id="viewer-image-close-btn">关闭</button>
+            </div>
+        </div>
+        <div class="materials-lightbox-stage" id="viewer-image-lightbox-stage">
+            <img id="viewer-image-lightbox-img" alt="预览大图">
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/material_viewer.js') }}"></script>
+{% if user_info.role == 'teacher' %}
+<script type="module" src="{{ asset_url('js/teacher_whiteboard.js') }}"></script>
+{% endif %}
+{% endblock %}

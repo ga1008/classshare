@@ -1,0 +1,376 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}压测与诊断{% endblock %}
+
+{% block extra_head %}
+<style>
+    .dg-hero {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--spacing-lg);
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .dg-hero__icon {
+        width: 56px;
+        height: 56px;
+        border-radius: var(--radius-xl);
+        background: linear-gradient(135deg, rgba(14, 165, 233, 0.15), rgba(6, 182, 212, 0.1));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        color: #0ea5e9;
+    }
+
+    .dg-hero__text h2 {
+        margin: 0 0 var(--spacing-sm);
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .dg-hero__text p {
+        margin: 0;
+        color: var(--text-muted);
+        line-height: 1.7;
+        font-size: 0.9rem;
+    }
+
+    .dg-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--spacing-lg);
+    }
+
+    .dg-card {
+        padding: var(--spacing-xl);
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border-color);
+        background: linear-gradient(160deg, rgba(12, 74, 110, 0.05), rgba(255, 255, 255, 0.97));
+        box-shadow: var(--shadow-sm);
+    }
+
+    .dg-card__header {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        align-items: center;
+        margin-bottom: var(--spacing-sm);
+    }
+
+    .dg-card__header h3 {
+        margin: 0;
+        font-size: 1.05rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .dg-card__desc {
+        margin: 0 0 var(--spacing-md);
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        line-height: 1.6;
+    }
+
+    .dg-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 12px;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .dg-pill.loading {
+        background: rgba(148, 163, 184, 0.12);
+        color: var(--text-muted);
+    }
+
+    .dg-pill.healthy {
+        background: rgba(22, 163, 74, 0.1);
+        color: #166534;
+    }
+
+    .dg-pill.error {
+        background: rgba(220, 38, 38, 0.1);
+        color: #991b1b;
+    }
+
+    .dg-pill.warn {
+        background: rgba(245, 158, 11, 0.1);
+        color: #92400e;
+    }
+
+    .dg-stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--spacing-sm);
+    }
+
+    .dg-stat {
+        padding: var(--spacing-md);
+        border-radius: var(--radius-lg);
+        background: rgba(255, 255, 255, 0.85);
+        border: 1px solid var(--border-color);
+    }
+
+    .dg-stat span {
+        display: block;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-bottom: 4px;
+    }
+
+    .dg-stat strong {
+        color: var(--text-primary);
+        word-break: break-word;
+    }
+
+    .dg-top-route {
+        margin-top: var(--spacing-md);
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        line-height: 1.7;
+        padding: var(--spacing-md);
+        border-radius: var(--radius-lg);
+        background: rgba(255, 255, 255, 0.5);
+        border: 1px solid var(--border-color);
+    }
+
+    .dg-top-route code {
+        font-family: Consolas, "Courier New", monospace;
+        background: rgba(79, 70, 229, 0.06);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.82rem;
+    }
+
+    .dg-command-card {
+        margin-top: var(--spacing-lg);
+        padding: var(--spacing-xl);
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border-color);
+        background: linear-gradient(160deg, rgba(12, 74, 110, 0.05), rgba(255, 255, 255, 0.97));
+        box-shadow: var(--shadow-sm);
+    }
+
+    .dg-command-card__header {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        align-items: center;
+        margin-bottom: var(--spacing-sm);
+    }
+
+    .dg-command-card__header h3 {
+        margin: 0;
+        font-size: 1.05rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .dg-command-card__desc {
+        margin: 0 0 var(--spacing-md);
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        line-height: 1.6;
+    }
+
+    .dg-command {
+        padding: var(--spacing-lg);
+        border-radius: var(--radius-lg);
+        background: #0f172a;
+        color: #e2e8f0;
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 0.875rem;
+        overflow-x: auto;
+        white-space: nowrap;
+        position: relative;
+    }
+
+    .dg-actions {
+        display: flex;
+        gap: var(--spacing-sm);
+        flex-wrap: wrap;
+        margin-top: var(--spacing-md);
+    }
+
+    @media (max-width: 768px) {
+        .dg-grid,
+        .dg-stats {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dg-hero">
+    <div class="dg-hero__icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"></path><path d="M18 20V4"></path><path d="M6 20v-4"></path></svg>
+    </div>
+    <div class="dg-hero__text">
+        <h2>压测与诊断</h2>
+        <p>查看后端健康状态、运行时指标与推荐压测命令。可先确认系统稳定性后再发起性能测试。</p>
+    </div>
+</div>
+
+<div class="dg-grid">
+    <section class="dg-card">
+        <div class="dg-card__header">
+            <h3>后端健康状态</h3>
+            <span class="dg-pill loading" id="dg-health-pill">检测中</span>
+        </div>
+        <p class="dg-card__desc">展示主后端的实时健康状态、数据库位置、线程池与行为写队列信息。</p>
+        <div class="dg-stats">
+            <div class="dg-stat">
+                <span>数据库位置</span>
+                <strong id="dg-db-path">-</strong>
+            </div>
+            <div class="dg-stat">
+                <span>线程池令牌</span>
+                <strong id="dg-threadpool">-</strong>
+            </div>
+            <div class="dg-stat">
+                <span>行为队列深度</span>
+                <strong id="dg-behavior-queue">-</strong>
+            </div>
+            <div class="dg-stat">
+                <span>行为写线程</span>
+                <strong id="dg-behavior-worker">-</strong>
+            </div>
+        </div>
+    </section>
+
+    <section class="dg-card">
+        <div class="dg-card__header">
+            <h3>运行时指标</h3>
+            <span class="dg-pill loading" id="dg-metrics-pill">收集中</span>
+        </div>
+        <p class="dg-card__desc">HTTP 总请求量、WebSocket 活跃连接和热点路由，适合在压测前后对照。</p>
+        <div class="dg-stats">
+            <div class="dg-stat">
+                <span>HTTP 总请求</span>
+                <strong id="dg-http-total">-</strong>
+            </div>
+            <div class="dg-stat">
+                <span>HTTP 活跃请求</span>
+                <strong id="dg-http-active">-</strong>
+            </div>
+            <div class="dg-stat">
+                <span>WS 活跃连接</span>
+                <strong id="dg-ws-active">-</strong>
+            </div>
+            <div class="dg-stat">
+                <span>课堂房间数</span>
+                <strong id="dg-room-count">-</strong>
+            </div>
+        </div>
+        <div class="dg-top-route" id="dg-top-route">热点路由：-</div>
+    </section>
+</div>
+
+<section class="dg-command-card">
+    <div class="dg-command-card__header">
+        <h3>推荐压测命令</h3>
+        <span class="badge badge-primary">隔离数据库</span>
+    </div>
+    <p class="dg-command-card__desc">使用项目自带的全链路压测脚本。它会复制当前数据库、自动插入测试学生、启动主后端与 AI mock、执行登录/课堂/材料/私信/助教/WebSocket/作业链路，并在结束后自动清理临时库与日志。</p>
+    <div class="dg-command" id="dg-command-text">venv\Scripts\python.exe tools\full_stack_load_test.py --student-count 100 --ai-mode mock</div>
+    <div class="dg-actions">
+        <button type="button" class="btn btn-primary btn-sm" id="dg-copy-command">复制命令</button>
+        <button type="button" class="btn btn-outline btn-sm" id="dg-refresh">刷新状态</button>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (() => {
+        const healthPill = document.getElementById('dg-health-pill');
+        const metricsPill = document.getElementById('dg-metrics-pill');
+
+        function setPillState(el, state) {
+            el.className = 'dg-pill ' + state;
+            const labels = { healthy: '正常', error: '异常', loading: '检测中', warn: '警告' };
+            el.textContent = labels[state] || state;
+        }
+
+        function formatNum(n) {
+            if (n == null || isNaN(n)) return '-';
+            return Number(n).toLocaleString();
+        }
+
+        async function fetchHealth() {
+            try {
+                const res = await fetch('/api/internal/health');
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+
+                document.getElementById('dg-db-path').textContent = data.database_path || '-';
+                document.getElementById('dg-threadpool').textContent = data.threadpool_tokens != null ? data.threadpool_tokens : '-';
+                document.getElementById('dg-behavior-queue').textContent = data.behavior_write_queue_depth != null
+                    ? `${data.behavior_write_queue_depth} / ${data.behavior_write_queue_capacity || '?'}`
+                    : '-';
+                document.getElementById('dg-behavior-worker').textContent = data.behavior_write_worker_alive != null
+                    ? (data.behavior_write_worker_alive ? '运行中' : '已停止')
+                    : '-';
+
+                setPillState(healthPill, data.status === 'ok' ? 'healthy' : 'error');
+            } catch {
+                setPillState(healthPill, 'error');
+            }
+        }
+
+        async function fetchMetrics() {
+            try {
+                const res = await fetch('/api/internal/metrics');
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+
+                const runtime = data.runtime || {};
+                const http = runtime.http || {};
+                const ws = runtime.websocket || {};
+
+                document.getElementById('dg-http-total').textContent = formatNum(http.total_requests);
+                document.getElementById('dg-http-active').textContent = formatNum(http.active_requests);
+                document.getElementById('dg-ws-active').textContent = formatNum(ws.active_connections);
+                document.getElementById('dg-room-count').textContent = formatNum(ws.rooms ? ws.rooms.length : 0);
+
+                const topRoutes = http.top_routes || [];
+                if (topRoutes.length) {
+                    const top = topRoutes[0];
+                    document.getElementById('dg-top-route').innerHTML =
+                        `热点路由：<code>${top.method} ${top.route_path}</code> — ${top.count} 次请求，平均 ${top.avg_duration_ms}ms`;
+                }
+
+                setPillState(metricsPill, 'healthy');
+            } catch {
+                setPillState(metricsPill, 'error');
+            }
+        }
+
+        function refreshAll() {
+            setPillState(healthPill, 'loading');
+            setPillState(metricsPill, 'loading');
+            Promise.all([fetchHealth(), fetchMetrics()]);
+        }
+
+        document.getElementById('dg-refresh').addEventListener('click', refreshAll);
+        document.getElementById('dg-copy-command').addEventListener('click', async () => {
+            const cmd = document.getElementById('dg-command-text').textContent;
+            try {
+                await navigator.clipboard.writeText(cmd);
+                showMessage('压测命令已复制到剪贴板。', 'success');
+            } catch {
+                showMessage('复制失败，请手动选择命令文本。', 'error');
+            }
+        });
+
+        refreshAll();
+    })();
+</script>
+{% endblock %}

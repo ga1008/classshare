@@ -1,0 +1,131 @@
+<div id="sessionMaterialAiModal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable modal-dialog-wide">
+        <div class="modal-content session-material-ai-modal">
+            <div class="modal-header session-material-ai-modal-header">
+                <div>
+                    <h3 class="modal-title">AI 助教生成课堂文档</h3>
+                    <p class="modal-subtitle">把“我有明确要求”和“帮我沿着前面的课继续写”拆成两条独立流程，避免自动生成和定制生成互相干扰。</p>
+                </div>
+                <button class="modal-close" type="button" id="sessionMaterialAiCloseBtn" aria-label="Close">&times;</button>
+            </div>
+
+            <div class="modal-body session-material-ai-body">
+                <section class="session-material-ai-hero">
+                    <div class="session-material-ai-hero-copy">
+                        <span class="session-material-ai-kicker" id="sessionMaterialAiSessionNumber">当前课时</span>
+                        <strong id="sessionMaterialAiSessionTitle">请选择时间轴中的课时</strong>
+                        <p id="sessionMaterialAiSessionMeta">系统会在生成完成后自动绑定到当前课时材料入口。</p>
+                    </div>
+                    <div class="session-material-ai-hero-badges">
+                        <span class="session-material-ai-badge" id="sessionMaterialAiReferenceHint">会参考前序课时已绑定文档</span>
+                        <span class="session-material-ai-badge is-soft" id="sessionMaterialAiExistingMaterialHint">当前未绑定学习文档</span>
+                    </div>
+                </section>
+
+                <section class="session-material-ai-grid">
+                    <article class="session-material-ai-flow-card">
+                        <div class="session-material-ai-flow-head">
+                            <span class="session-material-ai-flow-eyebrow">定制生成</span>
+                            <strong>确认生成</strong>
+                            <p id="sessionMaterialAiGuidedHint">适合你已经有明确的课堂目标、内容结构或参考样例时使用。</p>
+                        </div>
+
+                        <label class="form-group">
+                            <span class="form-label">文档类型</span>
+                            <input
+                                id="sessionMaterialAiGuidedDocumentType"
+                                class="form-control"
+                                type="text"
+                                maxlength="80"
+                                placeholder="例如：课堂学习文档、实验指导、案例讲义、复习提纲"
+                            >
+                        </label>
+
+                        <label class="form-group">
+                            <span class="form-label">具体要求</span>
+                            <textarea
+                                id="sessionMaterialAiGuidedRequirementText"
+                                class="form-control"
+                                rows="7"
+                                maxlength="4000"
+                                placeholder="补充本次文档需要强调的教学目标、重点难点、输出结构、板书节奏、练习安排等。"
+                            ></textarea>
+                        </label>
+
+                        <div class="session-material-ai-upload-card">
+                            <div class="session-material-ai-upload-copy">
+                                <strong>上传示例文档</strong>
+                                <p>可上传 Markdown、文本、Word、PPT、Excel 或 PDF。AI 会提取文本作为参考，不会覆盖原材料库。</p>
+                            </div>
+                            <input
+                                id="sessionMaterialAiFileInput"
+                                type="file"
+                                accept=".md,.markdown,.txt,.json,.yaml,.yml,.csv,.log,.html,.htm,.xml,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.pdf"
+                                multiple
+                                hidden
+                            >
+                            <button type="button" class="btn btn-outline btn-sm" id="sessionMaterialAiPickFilesBtn">选择示例文档</button>
+                            <div class="session-material-ai-file-list" id="sessionMaterialAiFileList">
+                                <div class="session-material-ai-empty">未选择示例文档</div>
+                            </div>
+                        </div>
+
+                        <div class="session-material-ai-flow-foot">
+                            <div class="session-material-ai-flow-note">会优先遵循你的要求和示例，同时兼顾已有课时的命名与存放结构。</div>
+                            <button class="btn btn-primary" type="button" id="sessionMaterialAiGuidedSubmitBtn">确认生成</button>
+                        </div>
+                    </article>
+
+                    <article class="session-material-ai-flow-card is-auto">
+                        <div class="session-material-ai-flow-head">
+                            <span class="session-material-ai-flow-eyebrow">自动续写</span>
+                            <strong>一键生成</strong>
+                            <p id="sessionMaterialAiAutoHint">适合前面课时材料已经成型，只需要延续最近几课的节奏、结构和命名逻辑时使用。</p>
+                        </div>
+
+                        <label class="form-group">
+                            <span class="form-label">本次文档类型</span>
+                            <input
+                                id="sessionMaterialAiAutoDocumentType"
+                                class="form-control"
+                                type="text"
+                                maxlength="80"
+                                placeholder="留空则由系统自动判断"
+                            >
+                        </label>
+
+                        <label class="form-group">
+                            <span class="form-label">补充偏好（可选）</span>
+                            <textarea
+                                id="sessionMaterialAiAutoRequirementText"
+                                class="form-control"
+                                rows="5"
+                                maxlength="2000"
+                                placeholder="可补充本次课想强调的教学重点、课堂活动或文档风格；不填则按课程上下文自动生成。"
+                            ></textarea>
+                        </label>
+
+                        <div class="session-material-ai-tip-card session-material-ai-auto-summary">
+                            <strong>自动参考范围</strong>
+                            <p id="sessionMaterialAiAutoScopeHint">系统会优先收集最近几篇已绑定文档，而不是把整个学期的历史材料一次性全部送给 AI。</p>
+                        </div>
+
+                        <div class="session-material-ai-flow-foot">
+                            <div class="session-material-ai-flow-note">不需要上传示例文档，系统会自动整理课程信息、班级信息和最近课时材料。</div>
+                            <button class="btn btn-ghost" type="button" id="sessionMaterialAiAutoBtn">一键生成</button>
+                        </div>
+                    </article>
+                </section>
+            </div>
+
+            <div class="modal-footer session-material-ai-footer">
+                <div class="session-material-ai-footer-copy" id="sessionMaterialAiFooterCopy">
+                    生成完成后，系统会创建新材料文件并自动绑定到当前课时，原有文档不会被删除。
+                </div>
+                <div class="academic-action-group session-material-ai-actions">
+                    <button class="btn btn-outline" type="button" id="sessionMaterialAiCancelBtn">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

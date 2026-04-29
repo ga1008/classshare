@@ -1,0 +1,2 @@
+# Keep Docker and local runtime on the same locked dependency set.
+-r requirements.lock.txt

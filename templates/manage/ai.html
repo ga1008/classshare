@@ -1,0 +1,170 @@
+﻿{% extends "manage/layout.html" %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/manage_academic.css">
+<style>
+    .ai-textarea {
+        min-height: 220px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        line-height: 1.72;
+    }
+
+    .ai-context-columns {
+        display: grid;
+        gap: 16px;
+    }
+
+    .ai-material-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+</style>
+{% endblock %}
+
+{% block header_actions %}
+<a href="/manage/offerings" class="btn btn-outline">开设课堂</a>
+<a href="/manage/textbooks" class="btn btn-primary">教材管理</a>
+{% endblock %}
+
+{% block content %}
+<div class="academic-shell">
+    <section class="academic-hero">
+        <div class="academic-eyebrow">AI Configuration</div>
+        <h2>课堂 AI 助教配置</h2>
+        <p>
+            为每个课堂配置独立的 AI 系统提示词和课程大纲，绑定教材后 AI 将自动关联教材信息作为辅助参考。
+        </p>
+        <div class="academic-hero-actions">
+            <span class="academic-badge is-success">教材信息自动关联</span>
+            <span class="academic-badge">课堂信息自动填充</span>
+            <span class="academic-badge is-accent">支持手动重新生成</span>
+        </div>
+    </section>
+
+    <section class="academic-stat-grid">
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">可配置课堂</div>
+            <div class="academic-stat-value">{{ my_offerings|length }}</div>
+            <div class="academic-stat-help">只有已经开设的课堂才能拥有独立 AI 配置。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">教材候选</div>
+            <div class="academic-stat-value">{{ my_textbooks|length }}</div>
+            <div class="academic-stat-help">教材变更后建议重新生成提示词。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">系统提示词</div>
+            <div class="academic-stat-value">课堂级</div>
+            <div class="academic-stat-help">每个课堂独立维护，不会互相覆盖。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">知识依据</div>
+            <div class="academic-stat-value">大纲 + 教材</div>
+            <div class="academic-stat-help">可包含课程大纲、章节结构和考核要求。</div>
+        </article>
+    </section>
+
+    {% if my_offerings %}
+    <section class="academic-content-grid two-column">
+        <article class="academic-card">
+            <div class="academic-card-header">
+                <div>
+                    <h3 class="academic-card-title">课堂 AI 配置</h3>
+                    <p class="academic-card-subtitle">选择课堂后，配置其 AI 提示词和教材绑定。</p>
+                </div>
+            </div>
+            <div class="academic-card-body">
+                <form id="aiConfigForm" action="/api/manage/ai/configure" method="post" class="academic-form-grid">
+                    <div class="academic-field">
+                        <label for="aiOfferingSelect">课堂</label>
+                        <select id="aiOfferingSelect" name="class_offering_id" class="form-control" required>
+                            <option value="">请选择课堂</option>
+                            {% for offering in my_offerings %}
+                            <option value="{{ offering.id }}" data-textbook-id="{{ offering.textbook_id or '' }}">{{ offering.course_name }} / {{ offering.class_name }}{% if offering.semester %} · {{ offering.semester }}{% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="academic-field">
+                        <label for="aiTextbookSelect">教材绑定</label>
+                        <div class="academic-split-field">
+                            <select id="aiTextbookSelect" name="textbook_id" class="form-control">
+                                <option value="">暂不绑定教材</option>
+                                {% for textbook in my_textbooks %}
+                                <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
+                                {% endfor %}
+                            </select>
+                            <a href="/manage/textbooks?open=new" class="academic-link-btn">新增教材</a>
+                        </div>
+                    </div>
+                    <div class="academic-action-group" style="justify-content: space-between;">
+                        <div style="display: flex; gap: 8px;">
+                            <button type="button" class="btn btn-outline" id="aiRegenerateBtn">重新生成默认草稿</button>
+                            <button type="button" class="btn btn-accent" id="aiGenerateBtn">AI 生成</button>
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="aiConfigSubmitBtn">保存 AI 配置</button>
+                    </div>
+                    <div class="academic-field">
+                        <label for="aiSystemPromptInput">系统提示词</label>
+                        <textarea id="aiSystemPromptInput" name="system_prompt" class="form-control ai-textarea" placeholder="选择课堂后自动加载已有配置，也可点击"重新生成默认草稿"自动填充。"></textarea>
+                    </div>
+                    <div class="academic-field">
+                        <label for="aiSyllabusInput">课程大纲 / 知识依据</label>
+                        <textarea id="aiSyllabusInput" name="syllabus" class="form-control ai-textarea" placeholder="填写课程目标、章节安排、知识点和考核方式等。"></textarea>
+                    </div>
+                </form>
+            </div>
+        </article>
+
+        <article class="academic-card">
+            <div class="academic-card-header">
+                <div>
+                    <h3 class="academic-card-title">课堂信息预览</h3>
+                    <p class="academic-card-subtitle">展示当前课堂的基本信息、教材内容和课堂材料，供配置时参考。</p>
+                </div>
+            </div>
+            <div class="academic-card-body ai-context-columns">
+                <div class="academic-context-block">
+                    <h4>课堂摘要</h4>
+                    <pre id="aiClassroomSummary">请选择课堂后加载。</pre>
+                </div>
+                <div class="academic-context-block">
+                    <h4>教材摘要</h4>
+                    <pre id="aiTextbookSummary">当前课堂尚未加载教材信息。</pre>
+                </div>
+                <div class="academic-context-block">
+                    <h4>最近课堂材料</h4>
+                    <div class="ai-material-list" id="aiMaterialList">
+                        <span class="academic-badge is-muted">暂无数据</span>
+                    </div>
+                </div>
+            </div>
+        </article>
+    </section>
+    {% else %}
+    <section class="academic-card">
+        <div class="academic-card-body">
+            <div class="academic-empty">
+                <strong>还没有可配置的课堂</strong>
+                先到“开设课堂”页面创建至少一个课堂实例，再回来配置课堂 AI。
+                <div class="academic-hero-actions" style="justify-content: center; margin-top: 16px;">
+                    <a href="/manage/offerings" class="btn btn-primary">前往开设课堂</a>
+                </div>
+            </div>
+        </div>
+    </section>
+    {% endif %}
+</div>
+
+<script>
+    window.MANAGE_AI_DATA = {
+        offerings: {{ my_offerings | tojson }},
+        textbooks: {{ my_textbooks | tojson }},
+        teacherName: {{ user_info.name | tojson }}
+    };
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/manage_ai.js') }}"></script>
+{% endblock %}

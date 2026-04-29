@@ -1,0 +1,876 @@
+{% extends "base.html" %}
+
+{% block title %}{{ submission.student_name }} - {{ assignment.title }} | 课堂平台{% endblock %}
+
+{% block css %}
+<link rel="stylesheet" href="/static/css/layout.css">
+<link rel="stylesheet" href="/static/css/buttons.css">
+<link rel="stylesheet" href="/static/css/cards.css">
+<link rel="stylesheet" href="/static/css/forms.css">
+<link rel="stylesheet" href="/static/css/tables.css">
+<link rel="stylesheet" href="/static/css/modals.css">
+<link rel="stylesheet" href="/static/css/feedback.css">
+<link rel="stylesheet" href="/static/css/toast.css">
+<link rel="stylesheet" href="/static/css/markdown.css">
+<link rel="stylesheet" href="/static/css/materials.css">
+<style>
+    .detail-header {
+        background: var(--surface-color);
+        border-bottom: 1px solid var(--border-color);
+        padding: var(--spacing-md) var(--spacing-xl);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        box-shadow: var(--shadow-sm);
+    }
+    .header-title-group { display: flex; align-items: center; gap: var(--spacing-md); }
+    .back-link {
+        display: inline-flex; align-items: center; gap: 6px;
+        color: var(--text-muted); text-decoration: none;
+        font-size: 0.9rem; font-weight: 500; transition: color 0.2s;
+    }
+    .back-link:hover { color: var(--primary-color); }
+
+    .detail-container {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: var(--spacing-xl) var(--spacing-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-lg);
+    }
+
+    /* Student info grid */
+    .info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: var(--spacing-md);
+    }
+    .info-item {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: var(--spacing-sm) var(--spacing-md);
+        background: var(--bg-color);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-color);
+    }
+    .info-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+    .info-value { font-size: 1rem; color: var(--text-primary); font-weight: 500; }
+
+    /* Score badge */
+    .score-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        font-weight: 700;
+        padding: var(--spacing-xs) var(--spacing-md);
+        border-radius: var(--radius-md);
+        min-width: 60px;
+    }
+    .score-excellent { color: #059669; background: linear-gradient(135deg, #d1fae5, #a7f3d0); }
+    .score-good { color: #2563eb; background: linear-gradient(135deg, #dbeafe, #bfdbfe); }
+    .score-medium { color: #0891b2; background: linear-gradient(135deg, #cffafe, #a5f3fc); }
+    .score-pass { color: #d97706; background: linear-gradient(135deg, #fef3c7, #fde68a); }
+    .score-fail { color: #dc2626; background: linear-gradient(135deg, #fee2e2, #fecaca); }
+    .score-none { color: #94a3b8; background: #f1f5f9; }
+
+    /* Score display with grade label */
+    .score-detail-display { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .score-grade-tag {
+        font-size: 0.75rem; font-weight: 600; padding: 2px 8px;
+        border-radius: 4px; line-height: 1.3;
+    }
+    .status-card {
+        padding: var(--spacing-md);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-color);
+        background: var(--bg-color);
+    }
+    .status-card.warning {
+        border-color: rgba(245, 158, 11, 0.35);
+        background: var(--warning-light);
+        color: var(--text-primary);
+    }
+
+    /* Answer cards */
+    .question-card {
+        background: var(--bg-color);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-md);
+        margin-bottom: var(--spacing-md);
+        border-left: 4px solid var(--primary-color);
+    }
+    .question-card .q-title {
+        font-weight: 600;
+        font-size: 0.9rem;
+        color: var(--text-primary);
+        margin-bottom: 8px;
+    }
+    .question-card .q-options {
+        margin-bottom: 10px;
+        padding-left: 16px;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+    .question-card .q-options li { margin-bottom: 4px; }
+    .question-card .q-options li.selected { color: var(--primary-color); font-weight: 600; }
+    .question-card .q-answer-label { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; font-weight: 600; }
+    .question-card .q-content {
+        font-size: 0.95rem;
+        color: var(--text-secondary);
+        line-height: 1.7;
+        white-space: pre-wrap;
+        word-break: break-word;
+        padding: 8px 12px;
+        background: var(--surface-color);
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-color);
+    }
+    .question-card .q-content pre { margin: 8px 0 0 0; }
+
+    /* File list */
+    .file-list { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); }
+    .file-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        background: var(--bg-color);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        font-size: 0.85rem;
+        color: var(--text-primary);
+        text-decoration: none;
+        transition: all 0.2s;
+    }
+    .file-item:hover {
+        border-color: var(--primary-color);
+        color: var(--primary-color);
+        background: var(--surface-color);
+    }
+    .file-item-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+    }
+    .file-item-name {
+        word-break: break-all;
+    }
+    .file-item-meta {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+
+    .submission-preview-layout {
+        display: grid;
+        grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+        gap: var(--spacing-lg);
+    }
+    .submission-preview-sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+    .submission-preview-file-btn {
+        width: 100%;
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px 14px;
+        text-align: left;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        background: var(--bg-color);
+        cursor: pointer;
+        transition: border-color 0.2s, background 0.2s, transform 0.2s;
+    }
+    .submission-preview-file-btn:hover,
+    .submission-preview-file-btn.is-active {
+        border-color: var(--primary-color);
+        background: var(--surface-color);
+        transform: translateY(-1px);
+    }
+    .submission-preview-file-copy {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+    .submission-preview-file-copy strong {
+        word-break: break-all;
+    }
+    .submission-preview-type {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: rgba(59, 130, 246, 0.10);
+        color: var(--primary-color);
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .submission-preview-main {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+        min-width: 0;
+    }
+    .submission-preview-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: var(--spacing-md);
+        flex-wrap: wrap;
+    }
+    .submission-preview-actions {
+        display: flex;
+        gap: var(--spacing-sm);
+        flex-wrap: wrap;
+    }
+    .submission-preview-canvas {
+        min-height: 320px;
+        border-radius: 24px;
+        border: 1px solid rgba(148, 163, 184, 0.20);
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 18px 44px rgba(15, 23, 42, 0.06);
+        padding: clamp(16px, 3vw, 28px);
+    }
+    .submission-preview-meta {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+    }
+    .submission-preview-empty {
+        padding: var(--spacing-xl);
+        text-align: center;
+        color: var(--text-muted);
+    }
+
+    @media (max-width: 900px) {
+        .submission-preview-layout {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    /* Grading form */
+    .grading-section {
+        background: var(--surface-color);
+        border: 2px solid var(--primary-color);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+    }
+    .grading-header {
+        padding: var(--spacing-md) var(--spacing-lg);
+        background: var(--primary-color);
+        color: white;
+        font-weight: 600;
+        font-size: 1rem;
+    }
+    .grading-body {
+        padding: var(--spacing-lg);
+        display: flex;
+        gap: var(--spacing-lg);
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+    .grading-score-group {
+        flex: 0 0 200px;
+        text-align: center;
+    }
+    .grading-score-group label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; }
+    .score-input-wrapper {
+        display: flex;
+        align-items: baseline;
+        justify-content: center;
+        gap: 4px;
+    }
+    .score-input-wrapper input {
+        width: 80px;
+        font-size: 2rem;
+        font-weight: 700;
+        text-align: center;
+        border: 2px solid var(--border-color);
+        border-radius: var(--radius-md);
+        padding: 8px;
+        outline: none;
+        transition: border-color 0.2s;
+    }
+    .score-input-wrapper input:focus { border-color: var(--primary-color); }
+    .score-input-wrapper span { font-size: 1.2rem; color: var(--text-muted); }
+    .grading-feedback-group { flex: 1; min-width: 250px; }
+    .grading-feedback-group label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; }
+    .grading-actions {
+        width: 100%;
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--spacing-sm);
+        padding-top: var(--spacing-md);
+        border-top: 1px solid var(--border-color);
+        margin-top: var(--spacing-md);
+    }
+
+    /* Empty answer */
+    .empty-answer {
+        color: var(--text-muted);
+        font-style: italic;
+        font-size: 0.9rem;
+    }
+
+    @media (max-width: 768px) {
+        .grading-body { flex-direction: column; }
+        .grading-score-group { flex: none; width: 100%; }
+    }
+</style>
+{% endblock %}
+
+{% block body_class %}page-wrapper{% endblock %}
+
+{% block body %}
+<header class="detail-header">
+    <div class="header-title-group">
+        <a href="/assignment/{{ assignment.id }}" class="back-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            返回作业
+        </a>
+        <h1 class="text-lg font-bold m-0">{{ submission.student_name }} - {{ assignment.title }}</h1>
+    </div>
+    <div class="flex items-center gap-2">
+        {% include "partials/message_center_bell.html" %}
+        {% include "partials/feedback_button.html" %}
+        {% include "partials/profile_button.html" %}
+    </div>
+</header>
+
+{% include "partials/feedback_modal.html" %}
+
+<main class="detail-container">
+    <!-- Student Info Card -->
+    <div class="card">
+        <div class="card-body">
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">学生姓名</span>
+                    <span class="info-value">{{ submission.student_name }}</span>
+                </div>
+                {% if submission.student_id_number %}
+                <div class="info-item">
+                    <span class="info-label">学号</span>
+                    <span class="info-value">{{ submission.student_id_number }}</span>
+                </div>
+                {% endif %}
+                <div class="info-item">
+                    <span class="info-label">提交状态</span>
+                    <span class="info-value">
+                        <span class="badge
+                            {% if submission.resubmission_allowed %}badge-warning
+                            {% elif submission.status == 'graded' %}badge-success
+                            {% elif submission.status == 'grading' %}badge-warning
+                            {% elif submission.status == 'submitted' %}badge-primary
+                            {% else %}badge-secondary{% endif %}">
+                            {% if submission.resubmission_allowed %}待重交
+                            {% elif submission.status == 'graded' %}已批改
+                            {% elif submission.status == 'grading' %}批改中
+                            {% elif submission.status == 'submitted' %}已提交
+                            {% else %}{{ submission.status }}{% endif %}
+                        </span>
+                    </span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">提交时间</span>
+                    <span class="info-value" id="submit-time">{{ submission.submitted_at or '-' }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">得分</span>
+                    <span class="info-value">
+                        {% if submission.score != None %}
+                        <div class="score-detail-display">
+                            <span class="score-badge
+                                {% if submission.score >= 90 %}score-excellent
+                                {% elif submission.score >= 80 %}score-good
+                                {% elif submission.score >= 70 %}score-medium
+                                {% elif submission.score >= 60 %}score-pass
+                                {% else %}score-fail{% endif %}">
+                                {{ submission.score }}
+                            </span>
+                            <span class="score-grade-tag"
+                                style="background:
+                                {% if submission.score >= 90 %}#d1fae5;color:#059669
+                                {% elif submission.score >= 80 %}#dbeafe;color:#2563eb
+                                {% elif submission.score >= 70 %}#cffafe;color:#0891b2
+                                {% elif submission.score >= 60 %}#fef3c7;color:#d97706
+                                {% else %}#fee2e2;color:#dc2626{% endif %}">
+                                {% if submission.score >= 90 %}极好
+                                {% elif submission.score >= 80 %}优秀
+                                {% elif submission.score >= 70 %}良好
+                                {% elif submission.score >= 60 %}及格
+                                {% else %}不及格{% endif %}
+                            </span>
+                        </div>
+                        {% else %}
+                        <div class="score-detail-display">
+                            <span class="score-badge score-none">-</span>
+                            <span class="score-grade-tag" style="background:#f1f5f9;color:#94a3b8">无成绩</span>
+                        </div>
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Teacher Feedback Section (shown if graded) -->
+    {% if submission.feedback_md %}
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title text-base m-0">教师评语</h2>
+        </div>
+        <div class="card-body">
+            <div class="md-content" id="teacher-feedback"></div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Answers Section -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title text-base m-0">答题内容</h2>
+        </div>
+        <div class="card-body" id="answers-container">
+            <div class="spinner mx-auto"></div>
+        </div>
+    </div>
+
+    <!-- Submission Files Section -->
+    {% if submission_files and submission_files|length > 0 %}
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title text-base m-0">附件文件</h2>
+        </div>
+        <div class="card-body">
+            <div class="submission-preview-layout">
+                <div class="submission-preview-sidebar" id="submission-preview-file-list">
+                    {% for f in submission_files %}
+                    <button type="button" class="submission-preview-file-btn{% if loop.first %} is-active{% endif %}" data-file-id="{{ f.id }}" title="{{ f.display_name }}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                        <span class="submission-preview-file-copy">
+                            <strong>{{ f.display_name }}</strong>
+                            <span class="submission-preview-type">
+                                {% if f.preview_supported %}{{ f.type_label }} 可预览{% else %}{{ f.type_label }} 下载查看{% endif %}
+                            </span>
+                            <span class="file-item-meta">
+                                {% if f.file_size %}{{ '%.1f'|format(f.file_size / 1024 / 1024) }} MB{% else %}大小未知{% endif %}
+                            </span>
+                        </span>
+                    </button>
+                    {% endfor %}
+                </div>
+                <div class="submission-preview-main">
+                    <div class="submission-preview-toolbar">
+                        <div>
+                            <div class="text-muted text-sm">附件预览</div>
+                            <strong id="submission-preview-title">选择文件</strong>
+                            <div class="submission-preview-meta" id="submission-preview-meta">支持文本、Markdown、图片在线预览</div>
+                        </div>
+                        <div class="submission-preview-actions">
+                            <a class="btn btn-outline" id="submission-preview-open-btn" href="#" target="_blank" rel="noopener" hidden>新窗口打开</a>
+                            <a class="btn btn-primary" id="submission-preview-download-btn" href="#" hidden>下载文件</a>
+                        </div>
+                    </div>
+                    <div class="materials-section" id="submission-preview-toc-section" hidden>
+                        <div class="materials-section-header">
+                            <h3>文档目录</h3>
+                            <span class="text-muted text-sm" id="submission-preview-toc-count">0 节</span>
+                        </div>
+                        <div id="submission-preview-toc" class="materials-viewer-toc">
+                            <div class="materials-viewer-empty">目录将在渲染后显示。</div>
+                        </div>
+                    </div>
+                    <div class="submission-preview-canvas" id="submission-preview-content">
+                        <div class="submission-preview-empty">正在加载预览...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Grading Section (teacher only) -->
+    {% if user_info.role == 'teacher' %}
+    {% if submission.resubmission_allowed %}
+    <div class="card">
+        <div class="card-body">
+            <div class="status-card warning">
+                <strong>该提交已被撤回，正在等待学生重交。</strong>
+                <p class="text-muted mt-2">原提交内容仅供查看，重交截止时间：{{ submission.resubmission_due_at or '未设置' }}。</p>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="grading-section">
+        <div class="grading-header">
+            批改作业
+        </div>
+        <div class="grading-body">
+            <div class="grading-score-group">
+                <label>评分</label>
+                <div class="score-input-wrapper">
+                    <input type="number" id="grade-score" min="0" max="100"
+                           value="{{ submission.score if submission.score != None else '' }}"
+                           placeholder="--">
+                    <span>/ 100</span>
+                </div>
+            </div>
+            <div class="grading-feedback-group">
+                <label>评语 (支持 Markdown)</label>
+                <textarea id="grade-feedback" class="form-control" rows="5"
+                          placeholder="输入评语，给出具体反馈...">{{ submission.feedback_md or '' }}</textarea>
+            </div>
+            <div class="grading-actions">
+                <button class="btn btn-outline" onclick="history.back()">取消</button>
+                <button class="btn btn-primary" onclick="submitGrade()">提交批改结果</button>
+                {% if submission.status != 'grading' %}
+                <button class="btn btn-outline text-warning" onclick="aiRegrade()">AI 辅助批改</button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% endif %}
+</main>
+
+{% include "partials/markdown_assets.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/feedback.js"></script>
+<script type="module">
+    import { apiFetch } from '{{ asset_url("js/api.js") }}';
+    import { renderFilePreview } from '{{ asset_url("js/file_preview.js") }}';
+    import { showToast, openModal, closeModal, renderMarkdown, escapeHtml } from '{{ asset_url("js/ui.js") }}';
+
+    const submissionId = {{ submission.id }};
+    const assignmentId = "{{ assignment.id }}";
+    const answersJsonRaw = {{ submission.answers_json | tojson }};
+    const examQuestions = {{ exam_questions | tojson if exam_questions else 'null' }};
+    const submissionFiles = {{ submission_files | tojson }};
+
+    // Format submit time
+    const submitTimeEl = document.getElementById('submit-time');
+    if (submitTimeEl && submitTimeEl.textContent !== '-') {
+        try {
+            const d = new Date(submitTimeEl.textContent.trim());
+            if (!isNaN(d.getTime())) {
+                submitTimeEl.textContent = d.toLocaleString('zh-CN', {
+                    year: 'numeric', month: '2-digit', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit'
+                });
+            }
+        } catch {}
+    }
+
+    // Render teacher feedback markdown
+    {% if submission.feedback_md %}
+    renderMarkdown('teacher-feedback', {{ submission.feedback_md | tojson }});
+    {% endif %}
+
+    // Parse answers JSON
+    function parseAnswersJson() {
+        if (!answersJsonRaw) return null;
+        try {
+            const data = typeof answersJsonRaw === 'string' ? JSON.parse(answersJsonRaw) : answersJsonRaw;
+            return data.answers || data;
+        } catch {
+            return { 'raw': answersJsonRaw };
+        }
+    }
+
+    // Render answers
+    function renderAnswers() {
+        const container = document.getElementById('answers-container');
+        const answers = parseAnswersJson();
+
+        if (!answers || (typeof answers === 'object' && Object.keys(answers).length === 0)) {
+            container.innerHTML = '<p class="text-muted text-center p-xl">暂无答题内容</p>';
+            return;
+        }
+
+        let html = '';
+
+        // If we have exam questions, render with question text
+        if (examQuestions && examQuestions.pages) {
+            let qIndex = 0;
+            examQuestions.pages.forEach(page => {
+                html += `<h4 class="text-sm font-semibold text-muted uppercase tracking-wide mt-md mb-2">${escapeHtml(page.name)}</h4>`;
+                page.questions.forEach(q => {
+                    qIndex++;
+                    const studentAnswer = getAnswer(answers, q.id, qIndex);
+                    html += renderQuestionCard(q, studentAnswer, qIndex);
+                });
+            });
+            // Render any remaining answers not matched to questions
+            const matchedIds = new Set();
+            examQuestions.pages.forEach(p => p.questions.forEach(q => {
+                matchedIds.add(q.id);
+            }));
+            const extraAnswers = getExtraAnswers(answers, matchedIds);
+            if (extraAnswers.length > 0) {
+                html += `<h4 class="text-sm font-semibold text-muted uppercase tracking-wide mt-lg mb-2">其他内容</h4>`;
+                extraAnswers.forEach(([key, val]) => {
+                    html += `<div class="question-card">
+                        <div class="q-title">${escapeHtml(String(key))}</div>
+                        <div class="q-answer-label">学生答案</div>
+                        <div class="q-content">${val ? formatAnswer(val) : '<span class="empty-answer">(未作答)</span>'}</div>
+                    </div>`;
+                });
+            }
+        } else {
+            // No exam questions, render raw answers
+            if (Array.isArray(answers)) {
+                answers.forEach((item, i) => {
+                    const q = item.question || item.question_id || `第 ${i + 1} 题`;
+                    const a = extractAnswerText(item);
+                    html += `<div class="question-card">
+                        <div class="q-title">${escapeHtml(String(q))}</div>
+                        <div class="q-answer-label">学生答案</div>
+                        <div class="q-content">${a ? formatAnswer(a) : '<span class="empty-answer">(未作答)</span>'}</div>
+                    </div>`;
+                });
+            } else if (typeof answers === 'object') {
+                Object.entries(answers).forEach(([key, value]) => {
+                    html += `<div class="question-card">
+                        <div class="q-title">${escapeHtml(String(key))}</div>
+                        <div class="q-answer-label">学生答案</div>
+                        <div class="q-content">${formatAnswer(value)}</div>
+                    </div>`;
+                });
+            }
+        }
+
+        container.innerHTML = html || '<p class="text-muted text-center p-xl">暂无答题内容</p>';
+    }
+
+    /** Extract a scalar answer value from any storage format */
+    function extractAnswerText(value) {
+        if (value == null || value === '') return null;
+        if (typeof value !== 'object') return String(value);
+        // Array-format items: {question_id, question, answer}
+        return String(value.answer ?? value.content ?? value.text ?? JSON.stringify(value));
+    }
+
+    function getAnswer(answers, qId, qIndex) {
+        if (!answers) return null;
+        // Array format: [{question_id: "q1", question: "...", answer: "..."}]
+        if (Array.isArray(answers)) {
+            const item = answers.find(a => a && (a.question_id === qId || a.question === qId));
+            if (item) return extractAnswerText(item);
+            // Fallback: by 1-based index
+            if (qIndex > 0 && qIndex <= answers.length) {
+                return extractAnswerText(answers[qIndex - 1]);
+            }
+            return null;
+        }
+        // Object/map format: {qId: "answer", ...}
+        if (qId && answers[qId] !== undefined) return extractAnswerText(answers[qId]);
+        if (answers[qIndex] !== undefined) return extractAnswerText(answers[qIndex]);
+        return null;
+    }
+
+    function getExtraAnswers(answers, matchedIds) {
+        if (!answers || typeof answers !== 'object') return [];
+        if (Array.isArray(answers)) {
+            // For array answers, return entries whose question_id isn't matched
+            return answers
+                .filter(a => a && !matchedIds.has(a.question_id) && !matchedIds.has(a.question))
+                .map(a => [a.question_id || a.question || '?', extractAnswerText(a) || '']);
+        }
+        return Object.entries(answers).filter(([key]) => !matchedIds.has(key) && !matchedIds.has(String(key)));
+    }
+
+    function renderQuestionCard(q, studentAnswer, index) {
+        let html = `<div class="question-card">`;
+        html += `<div class="q-title">${escapeHtml(q.text)}</div>`;
+
+        // Render options for radio/checkbox questions
+        if (q.options && Array.isArray(q.options)) {
+            html += `<ul class="q-options">`;
+            q.options.forEach(opt => {
+                const isSelected = studentAnswer === opt;
+                html += `<li class="${isSelected ? 'selected' : ''}">`;
+                if (isSelected) html += `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="vertical-align:-1px;margin-right:4px"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+                html += `${escapeHtml(opt)}</li>`;
+            });
+            html += `</ul>`;
+        }
+
+        html += `<div class="q-answer-label">学生答案</div>`;
+
+        if (studentAnswer != null && studentAnswer !== '') {
+            html += `<div class="q-content">${formatAnswer(studentAnswer)}</div>`;
+        } else {
+            html += `<div class="q-content"><span class="empty-answer">(未作答)</span></div>`;
+        }
+
+        html += `</div>`;
+        return html;
+    }
+
+    function formatAnswer(value) {
+        const text = extractAnswerText(value);
+        if (!text) return '<span class="empty-answer">(未作答)</span>';
+        const isCode = text.includes('\n') && (text.includes('def ') || text.includes('import ') ||
+            text.includes('function ') || text.includes('class ') || text.includes('```'));
+        if (isCode) return `<pre><code>${escapeHtml(text)}</code></pre>`;
+        return escapeHtml(text);
+    }
+
+    const previewCache = new Map();
+    const previewFileListEl = document.getElementById('submission-preview-file-list');
+    const previewContentEl = document.getElementById('submission-preview-content');
+    const previewTitleEl = document.getElementById('submission-preview-title');
+    const previewMetaEl = document.getElementById('submission-preview-meta');
+    const previewDownloadBtn = document.getElementById('submission-preview-download-btn');
+    const previewOpenBtn = document.getElementById('submission-preview-open-btn');
+    const previewTocSectionEl = document.getElementById('submission-preview-toc-section');
+    const previewTocEl = document.getElementById('submission-preview-toc');
+    const previewTocCountEl = document.getElementById('submission-preview-toc-count');
+
+    async function fetchSubmissionFilePreview(fileId) {
+        if (previewCache.has(fileId)) {
+            return previewCache.get(fileId);
+        }
+        const result = await apiFetch(`/api/submission-files/${fileId}/preview`, { silent: true });
+        previewCache.set(fileId, result.file);
+        return result.file;
+    }
+
+    function setActivePreviewFile(fileId) {
+        previewFileListEl?.querySelectorAll('[data-file-id]').forEach((button) => {
+            button.classList.toggle('is-active', Number(button.dataset.fileId) === Number(fileId));
+        });
+    }
+
+    function updatePreviewHeader(file) {
+        if (previewTitleEl) {
+            previewTitleEl.textContent = file.display_name || file.name || '未命名文件';
+        }
+        if (previewMetaEl) {
+            const parts = [file.type_label || '文件'];
+            if (file.content_encoding) {
+                parts.push(`编码 ${file.content_encoding}`);
+            }
+            parts.push(file.preview_supported ? '已加载在线预览' : '当前仅支持下载查看');
+            previewMetaEl.textContent = parts.join(' · ');
+        }
+        if (previewDownloadBtn) {
+            previewDownloadBtn.href = file.download_url || '#';
+            previewDownloadBtn.hidden = !file.download_url;
+        }
+        if (previewOpenBtn) {
+            previewOpenBtn.href = file.raw_url || '#';
+            previewOpenBtn.hidden = !file.raw_url;
+        }
+        if (previewTocSectionEl) {
+            previewTocSectionEl.hidden = !file.is_markdown;
+        }
+    }
+
+    async function selectSubmissionFile(fileId) {
+        if (!previewContentEl) return;
+        setActivePreviewFile(fileId);
+        previewContentEl.innerHTML = '<div class="spinner mx-auto"></div>';
+
+        try {
+            const file = await fetchSubmissionFilePreview(fileId);
+            updatePreviewHeader(file);
+            await renderFilePreview({
+                file,
+                contentEl: previewContentEl,
+                tocEl: previewTocEl,
+                tocCountEl: previewTocCountEl,
+                buildFallbackActionHtml: (currentFile) => {
+                    if (!currentFile.download_url) return '';
+                    return `<a class="btn btn-primary" href="${currentFile.download_url}">下载原文件</a>`;
+                },
+            });
+        } catch (error) {
+            if (previewTocSectionEl) {
+                previewTocSectionEl.hidden = true;
+            }
+            previewContentEl.innerHTML = `<div class="materials-viewer-empty">预览失败：${escapeHtml(error.message || '未知错误')}</div>`;
+            showToast(error.message || '加载附件预览失败', 'error');
+        }
+    }
+
+    function initSubmissionPreview() {
+        if (!previewFileListEl || !submissionFiles.length) return;
+
+        previewFileListEl.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-file-id]');
+            if (!button) return;
+            selectSubmissionFile(Number(button.dataset.fileId));
+        });
+
+        selectSubmissionFile(Number(submissionFiles[0].id));
+    }
+
+    // Submit grading
+    window.submitGrade = async function() {
+        const scoreEl = document.getElementById('grade-score');
+        const feedbackEl = document.getElementById('grade-feedback');
+        if (!scoreEl || !feedbackEl) return;
+
+        const score = scoreEl.value;
+        if (score === '' || score < 0 || score > 100) {
+            showToast('请输入有效得分 (0-100)', 'warning');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/submissions/${submissionId}/grade`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ score: parseInt(score), feedback_md: feedbackEl.value })
+            });
+            if (response.ok) {
+                showToast('批改成功', 'success');
+                setTimeout(() => window.location.href = `/assignment/${assignmentId}`, 800);
+            } else {
+                const data = await response.json();
+                throw new Error(data.detail || '批改失败');
+            }
+        } catch (error) {
+            showToast(error.message || '批改失败', 'error');
+        }
+    };
+
+    // AI Regrade
+    window.aiRegrade = async function() {
+        if (!confirm('确定要使用 AI 辅助批改此作业吗？')) return;
+        try {
+            const response = await fetch(`/api/submissions/${submissionId}/regrade`, { method: 'POST' });
+            const data = await response.json();
+            if (response.ok) {
+                showToast(data.status === 'already_grading' ? '正在批改中' : 'AI 批改任务已提交', 'success');
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                throw new Error(data.detail || 'AI批改失败');
+            }
+        } catch (error) {
+            showToast(error.message, 'error');
+        }
+    };
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+        renderAnswers();
+        initSubmissionPreview();
+    });
+</script>
+{% endblock %}

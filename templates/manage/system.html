@@ -1,0 +1,830 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}系统管理{% endblock %}
+
+{% block extra_head %}
+<style>
+    .system-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: var(--spacing-md);
+    }
+
+    .system-summary-card {
+        padding: var(--spacing-lg);
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border-color);
+        background: linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(255, 255, 255, 0.96));
+        box-shadow: var(--shadow-sm);
+    }
+
+    .system-summary-card span {
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        margin-bottom: 6px;
+    }
+
+    .system-summary-card strong {
+        font-size: 1.35rem;
+        color: var(--text-primary);
+    }
+
+    .system-actions-cell {
+        text-align: right;
+    }
+
+    .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .detail-card {
+        padding: var(--spacing-md);
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border-color);
+        background: var(--bg-color);
+    }
+
+    .detail-card h4 {
+        margin: 0 0 var(--spacing-sm);
+        font-size: 0.95rem;
+    }
+
+    .detail-list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+    }
+
+    .detail-list-row {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        font-size: 0.875rem;
+    }
+
+    .detail-list-row span {
+        color: var(--text-muted);
+        flex-shrink: 0;
+    }
+
+    .detail-list-row strong {
+        text-align: right;
+        color: var(--text-primary);
+        word-break: break-word;
+    }
+
+    .system-history-table {
+        width: 100%;
+    }
+
+    .system-history-empty {
+        padding: var(--spacing-lg);
+        text-align: center;
+        color: var(--text-muted);
+    }
+
+    .diagnostic-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--spacing-md);
+    }
+
+    .diagnostic-card {
+        padding: var(--spacing-lg);
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border-color);
+        background:
+            linear-gradient(160deg, rgba(12, 74, 110, 0.06), rgba(255, 255, 255, 0.98)),
+            var(--bg-color);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .diagnostic-card h3 {
+        margin: 0 0 var(--spacing-sm);
+        font-size: 1rem;
+    }
+
+    .diagnostic-card p {
+        margin: 0;
+        color: var(--text-muted);
+        line-height: 1.6;
+    }
+
+    .diagnostic-stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-md);
+    }
+
+    .diagnostic-stat {
+        padding: var(--spacing-sm) var(--spacing-md);
+        border-radius: var(--radius-lg);
+        background: rgba(255, 255, 255, 0.85);
+        border: 1px solid var(--border-color);
+    }
+
+    .diagnostic-stat span {
+        display: block;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-bottom: 4px;
+    }
+
+    .diagnostic-stat strong {
+        color: var(--text-primary);
+        word-break: break-word;
+    }
+
+    .diagnostic-status-row {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        align-items: center;
+        margin-bottom: var(--spacing-sm);
+    }
+
+    .diagnostic-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        background: rgba(148, 163, 184, 0.15);
+        color: var(--text-muted);
+    }
+
+    .diagnostic-pill.is-success {
+        background: rgba(22, 163, 74, 0.12);
+        color: #166534;
+    }
+
+    .diagnostic-pill.is-error {
+        background: rgba(220, 38, 38, 0.12);
+        color: #991b1b;
+    }
+
+    .diagnostic-meta {
+        margin-top: var(--spacing-md);
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        line-height: 1.7;
+    }
+
+    .diagnostic-command {
+        margin-top: var(--spacing-md);
+        padding: var(--spacing-md);
+        border-radius: var(--radius-lg);
+        background: #0f172a;
+        color: #e2e8f0;
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 0.875rem;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+
+    .diagnostic-actions {
+        display: flex;
+        gap: var(--spacing-sm);
+        flex-wrap: wrap;
+        margin-top: var(--spacing-md);
+    }
+
+    .super-admin-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+        gap: var(--spacing-lg);
+        align-items: start;
+    }
+
+    .super-admin-current {
+        display: grid;
+        gap: var(--spacing-sm);
+    }
+
+    .super-admin-current strong {
+        color: var(--text-primary);
+        font-size: 1.05rem;
+    }
+
+    .super-admin-current span,
+    .super-admin-help {
+        color: var(--text-muted);
+        line-height: 1.6;
+        font-size: 0.875rem;
+    }
+
+    .super-admin-form {
+        display: grid;
+        gap: var(--spacing-sm);
+    }
+
+    .feedback-list {
+        display: grid;
+        gap: var(--spacing-md);
+    }
+
+    .feedback-card {
+        padding: var(--spacing-lg);
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border-color);
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .feedback-card__top {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        align-items: flex-start;
+        margin-bottom: var(--spacing-sm);
+    }
+
+    .feedback-card__title {
+        display: grid;
+        gap: 6px;
+    }
+
+    .feedback-card__title h3 {
+        margin: 0;
+        font-size: 1rem;
+        color: var(--text-primary);
+    }
+
+    .feedback-card__meta,
+    .feedback-card__source {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        color: var(--text-muted);
+        font-size: 0.82rem;
+    }
+
+    .feedback-card__body {
+        margin: var(--spacing-md) 0;
+        color: var(--text-secondary);
+        line-height: 1.7;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .feedback-card__attachments {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-sm);
+    }
+
+    .feedback-card__attachments a {
+        display: block;
+        width: 96px;
+        height: 96px;
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        border: 1px solid var(--border-color);
+        background: var(--bg-color);
+    }
+
+    .feedback-card__attachments img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+
+    @media (max-width: 1080px) {
+        .system-summary-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 768px) {
+        .system-summary-grid,
+        .detail-grid,
+        .diagnostic-grid,
+        .super-admin-grid,
+        .diagnostic-stats {
+            grid-template-columns: 1fr;
+        }
+
+        .system-actions-cell {
+            text-align: left;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="system-summary-grid">
+    <div class="system-summary-card">
+        <span>待审核申请</span>
+        <strong>{{ system_summary.pending_count or 0 }}</strong>
+    </div>
+    <div class="system-summary-card">
+        <span>已通过申请</span>
+        <strong>{{ system_summary.approved_count or 0 }}</strong>
+    </div>
+    <div class="system-summary-card">
+        <span>已完成重置</span>
+        <strong>{{ system_summary.completed_count or 0 }}</strong>
+    </div>
+    <div class="system-summary-card">
+        <span>已拒绝申请</span>
+        <strong>{{ system_summary.rejected_count or 0 }}</strong>
+    </div>
+    <div class="system-summary-card">
+        <span>学生累计登录</span>
+        <strong>{{ login_summary.total_logins or 0 }}</strong>
+    </div>
+    <div class="system-summary-card">
+        <span>今日学生登录</span>
+        <strong>{{ login_summary.today_logins or 0 }}</strong>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <h2>超管教师与反馈接收</h2>
+    </div>
+    <div class="panel-body">
+        <div class="super-admin-grid">
+            <section class="super-admin-current">
+                <span>当前超管教师</span>
+                {% if super_admin_teacher %}
+                <strong>{{ super_admin_teacher.name }}</strong>
+                <span>{{ super_admin_teacher.email }}</span>
+                {% else %}
+                <strong>尚未设置</strong>
+                <span>设置后，Bug 修复反馈、新功能反馈和举报会只通知超管教师。</span>
+                {% endif %}
+                <p class="super-admin-help">
+                    超管教师会在通知区域收到所有问题反馈，并可在本页查看完整图文内容。普通教师不会收到这些反馈通知。
+                </p>
+            </section>
+
+            <form class="super-admin-form" id="super-admin-form">
+                <label class="form-label" for="super-admin-teacher-id">设置超管教师</label>
+                <select class="form-control" id="super-admin-teacher-id" name="teacher_id" {% if not can_manage_super_admin %}disabled{% endif %}>
+                    {% for teacher in teacher_rows %}
+                    <option value="{{ teacher.id }}" {% if teacher.is_super_admin %}selected{% endif %}>
+                        {{ teacher.name }}{% if teacher.email %}（{{ teacher.email }}）{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-primary" {% if not can_manage_super_admin %}disabled{% endif %}>保存超管设置</button>
+                {% if not can_manage_super_admin %}
+                <p class="super-admin-help">只有当前超管教师可以调整此设置。</p>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="panel" id="feedback-list">
+    <div class="panel-header">
+        <h2>问题反馈</h2>
+    </div>
+    <div class="panel-body">
+        {% if current_teacher_is_super_admin %}
+            {% if feedback_items %}
+            <div class="feedback-list">
+                {% for feedback in feedback_items %}
+                {% set type_label = {'bug': 'Bug 修复', 'feature': '新功能反馈', 'report': '举报'}.get(feedback.feedback_type, '问题反馈') %}
+                <article class="feedback-card">
+                    <div class="feedback-card__top">
+                        <div class="feedback-card__title">
+                            <div>
+                                {% if feedback.feedback_type == 'report' %}
+                                <span class="badge badge-danger">{{ type_label }}</span>
+                                {% elif feedback.feedback_type == 'feature' %}
+                                <span class="badge badge-primary">{{ type_label }}</span>
+                                {% else %}
+                                <span class="badge badge-warning">{{ type_label }}</span>
+                                {% endif %}
+                                <span class="badge badge-secondary">{{ feedback.status }}</span>
+                            </div>
+                            <h3>{{ feedback.title }}</h3>
+                        </div>
+                        <div class="feedback-card__meta">
+                            <span>{{ feedback.created_at }}</span>
+                            {% if feedback.attachment_count %}<span>{{ feedback.attachment_count }} 张截图</span>{% endif %}
+                        </div>
+                    </div>
+                    <div class="feedback-card__source">
+                        <span>提交人：{{ feedback.user_name or '未知用户' }}（{{ '教师' if feedback.user_role == 'teacher' else '学生' }}）</span>
+                        {% if feedback.section %}<span>板块：{{ feedback.section }}</span>{% endif %}
+                    </div>
+                    <div class="feedback-card__body">{{ feedback.description }}</div>
+                    {% if feedback.page_url %}
+                    <div class="feedback-card__source">
+                        <span>页面：{{ feedback.page_url }}</span>
+                    </div>
+                    {% endif %}
+                    {% set attachments = feedback_attachments.get(feedback.id, []) %}
+                    {% if attachments %}
+                    <div class="feedback-card__attachments">
+                        {% for attachment in attachments %}
+                        <a href="/api/feedback/{{ feedback.id }}/attachment/{{ attachment.file_hash }}" target="_blank" rel="noopener noreferrer" title="{{ attachment.original_filename }}">
+                            <img src="/api/feedback/{{ feedback.id }}/attachment/{{ attachment.file_hash }}" alt="{{ attachment.original_filename }}" loading="lazy">
+                        </a>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="card text-center p-xl">
+                <h3 class="text-muted mb-1">暂无问题反馈</h3>
+                <p class="text-muted">用户提交 Bug 修复反馈、新功能反馈或举报后，会显示在这里。</p>
+            </div>
+            {% endif %}
+        {% else %}
+            <div class="card text-center p-xl">
+                <h3 class="text-muted mb-1">仅超管教师可查看</h3>
+                <p class="text-muted">问题反馈内容和举报信息只向超管教师开放。</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <h2>压测与诊断</h2>
+    </div>
+    <div class="panel-body">
+        <div class="diagnostic-grid">
+            <section class="diagnostic-card">
+                <div class="diagnostic-status-row">
+                    <h3>当前后端状态</h3>
+                    <span class="diagnostic-pill" id="diagnostic-health-pill">加载中</span>
+                </div>
+                <p>这里展示主后端的实时健康状态、运行数据库位置、线程池与行为写队列信息，便于先确认系统本身是否稳定，再发起压测。</p>
+                <div class="diagnostic-stats">
+                    <div class="diagnostic-stat">
+                        <span>数据库</span>
+                        <strong id="diagnostic-db-path">-</strong>
+                    </div>
+                    <div class="diagnostic-stat">
+                        <span>线程池令牌</span>
+                        <strong id="diagnostic-threadpool">-</strong>
+                    </div>
+                    <div class="diagnostic-stat">
+                        <span>行为队列深度</span>
+                        <strong id="diagnostic-behavior-queue">-</strong>
+                    </div>
+                    <div class="diagnostic-stat">
+                        <span>行为写线程</span>
+                        <strong id="diagnostic-behavior-worker">-</strong>
+                    </div>
+                </div>
+            </section>
+
+            <section class="diagnostic-card">
+                <div class="diagnostic-status-row">
+                    <h3>运行时指标</h3>
+                    <span class="diagnostic-pill" id="diagnostic-metrics-pill">加载中</span>
+                </div>
+                <p>这里聚合了 HTTP 总请求量、WebSocket 活跃连接和最近热点路由，适合在压测前后对照看有没有异常放大。</p>
+                <div class="diagnostic-stats">
+                    <div class="diagnostic-stat">
+                        <span>HTTP 总请求</span>
+                        <strong id="diagnostic-http-total">-</strong>
+                    </div>
+                    <div class="diagnostic-stat">
+                        <span>HTTP 活跃请求</span>
+                        <strong id="diagnostic-http-active">-</strong>
+                    </div>
+                    <div class="diagnostic-stat">
+                        <span>WebSocket 活跃连接</span>
+                        <strong id="diagnostic-ws-active">-</strong>
+                    </div>
+                    <div class="diagnostic-stat">
+                        <span>课堂房间数</span>
+                        <strong id="diagnostic-room-count">-</strong>
+                    </div>
+                </div>
+                <div class="diagnostic-meta" id="diagnostic-top-route">热点路由：-</div>
+            </section>
+        </div>
+
+        <section class="diagnostic-card" style="margin-top: var(--spacing-lg);">
+            <div class="diagnostic-status-row">
+                <h3>推荐压测命令</h3>
+                <span class="badge badge-primary">隔离数据库</span>
+            </div>
+            <p>推荐直接使用项目自带的全链路压测脚本。它会复制当前数据库、自动插入 100 个测试学生、启动主后端与 AI mock、执行登录/课堂/材料/私信/助教/WebSocket/作业链路，并在结束后自动清理临时库与日志。</p>
+            <div class="diagnostic-command" id="diagnostic-command">venv\Scripts\python.exe tools\full_stack_load_test.py --student-count 100 --ai-mode mock</div>
+            <div class="diagnostic-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="diagnostic-copy-command">复制命令</button>
+                <button type="button" class="btn btn-outline btn-sm" id="diagnostic-refresh">刷新状态</button>
+            </div>
+        </section>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <h2>学生找回密码申请</h2>
+    </div>
+    <div class="panel-body">
+        {% if reset_requests %}
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>学生</th>
+                        <th>班级</th>
+                        <th>状态</th>
+                        <th>提交时间</th>
+                        <th>累计登录</th>
+                        <th>最近登录</th>
+                        <th class="system-actions-cell">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in reset_requests %}
+                    <tr>
+                        <td>
+                            <strong>{{ row.student_name }}</strong>
+                            <div class="text-muted text-sm">{{ row.student_id_number }}</div>
+                        </td>
+                        <td>{{ row.class_name }}</td>
+                        <td>
+                            {% if row.status == 'pending' %}
+                            <span class="badge badge-warning">待审核</span>
+                            {% elif row.status == 'approved' %}
+                            <span class="badge badge-primary">已通过</span>
+                            {% elif row.status == 'completed' %}
+                            <span class="badge badge-success">已完成</span>
+                            {% else %}
+                            <span class="badge badge-danger">已拒绝</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ row.submitted_at }}</td>
+                        <td>{{ row.total_logins or 0 }} 次</td>
+                        <td>{{ row.last_login_at or '暂无' }}</td>
+                        <td class="system-actions-cell">
+                            <button
+                                type="button"
+                                class="btn btn-outline btn-sm"
+                                data-open-reset-detail
+                                data-request-id="{{ row.id }}"
+                            >
+                                查看详情
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="card text-center p-xl">
+            <h3 class="text-muted mb-1">暂无找回密码申请</h3>
+            <p class="text-muted">学生提交申请后，这里会显示待审核记录和历史登录信息。</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="modal-backdrop" id="system-reset-detail-modal">
+    <div class="modal modal-lg">
+        <div class="modal-header">
+            <h3 class="modal-title">找回密码申请详情</h3>
+            <button type="button" class="btn-close" data-dismiss="modal" aria-label="关闭"></button>
+        </div>
+        <div class="modal-body">
+            <div id="system-reset-detail-loading" class="system-history-empty">正在加载详情...</div>
+            <div id="system-reset-detail-content" hidden>
+                <div class="detail-grid">
+                    <div class="detail-card">
+                        <h4>申请信息</h4>
+                        <div class="detail-list" id="request-detail-list"></div>
+                    </div>
+                    <div class="detail-card">
+                        <h4>账号与登录概览</h4>
+                        <div class="detail-list" id="security-detail-list"></div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="system-review-note">审核备注（可选）</label>
+                    <textarea id="system-review-note" class="form-control" rows="3" placeholder="可填写审核说明"></textarea>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <h3>历史登录记录</h3>
+                    </div>
+                    <div class="panel-body">
+                        <div class="table-responsive">
+                            <table class="table system-history-table">
+                                <thead>
+                                    <tr>
+                                        <th>第几次</th>
+                                        <th>登录方式</th>
+                                        <th>账号输入</th>
+                                        <th>IP</th>
+                                        <th>设备</th>
+                                        <th>时间</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="system-login-history-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">关闭</button>
+            <button type="button" class="btn btn-danger" id="system-reject-btn">拒绝</button>
+            <button type="button" class="btn btn-primary" id="system-approve-btn">通过</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (() => {
+        const superAdminForm = document.getElementById('super-admin-form');
+        if (superAdminForm) {
+            superAdminForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const submitBtn = superAdminForm.querySelector('button[type="submit"]');
+                const formData = new FormData(superAdminForm);
+                if (submitBtn) submitBtn.disabled = true;
+                try {
+                    const result = await window.apiFetch('/api/manage/system/super-admin', {
+                        method: 'POST',
+                        body: formData,
+                    });
+                    showMessage(result.message || '超管教师设置已保存。', 'success');
+                    window.setTimeout(() => window.location.reload(), 500);
+                } catch (error) {
+                    showMessage(error.message || '保存超管教师设置失败。', 'error');
+                    if (submitBtn) submitBtn.disabled = false;
+                }
+            });
+        }
+
+        const modalId = 'system-reset-detail-modal';
+        const loadingEl = document.getElementById('system-reset-detail-loading');
+        const contentEl = document.getElementById('system-reset-detail-content');
+        const requestDetailList = document.getElementById('request-detail-list');
+        const securityDetailList = document.getElementById('security-detail-list');
+        const loginHistoryBody = document.getElementById('system-login-history-body');
+        const reviewNoteInput = document.getElementById('system-review-note');
+        const approveBtn = document.getElementById('system-approve-btn');
+        const rejectBtn = document.getElementById('system-reject-btn');
+
+        let activeRequestId = null;
+        let activeStatus = null;
+
+        function renderRows(container, rows) {
+            container.innerHTML = rows.map((row) => `
+                <div class="detail-list-row">
+                    <span>${window.UI.escapeHtml(row.label)}</span>
+                    <strong>${window.UI.escapeHtml(row.value || '-')}</strong>
+                </div>
+            `).join('');
+        }
+
+        function getStatusLabel(status) {
+            if (status === 'pending') return '待审核';
+            if (status === 'approved') return '已通过';
+            if (status === 'completed') return '已完成';
+            return '已拒绝';
+        }
+
+        function getLoginMethodLabel(method) {
+            if (method === 'password') return '密码登录';
+            if (method === 'first_time_setup') return '首次设密';
+            if (method === 'password_reset_setup') return '重置设密';
+            return method || '-';
+        }
+
+        function getIdentifierTypeLabel(type) {
+            if (type === 'student_id_number') return '学号';
+            if (type === 'name') return '姓名';
+            if (type === 'name_and_student_id_number') return '姓名 + 学号';
+            return type || '-';
+        }
+
+        function setActionState(disabled) {
+            approveBtn.disabled = disabled;
+            rejectBtn.disabled = disabled;
+            reviewNoteInput.disabled = disabled;
+        }
+
+        async function loadRequestDetail(requestId) {
+            activeRequestId = requestId;
+            activeStatus = null;
+            loadingEl.hidden = false;
+            contentEl.hidden = true;
+            requestDetailList.innerHTML = '';
+            securityDetailList.innerHTML = '';
+            loginHistoryBody.innerHTML = '';
+            reviewNoteInput.value = '';
+            setActionState(true);
+
+            window.UI.openModal(modalId);
+
+            try {
+                const result = await window.apiFetch(`/api/manage/system/password-resets/${requestId}`);
+                const detail = result.request;
+                const securitySummary = result.security_summary || {};
+                const loginHistory = result.login_history || [];
+
+                activeStatus = detail.status;
+
+                renderRows(requestDetailList, [
+                    { label: '学生姓名', value: detail.student_name },
+                    { label: '学号', value: detail.student_id_number },
+                    { label: '班级', value: detail.current_class_name || detail.request_class_name },
+                    { label: '申请状态', value: getStatusLabel(detail.status) },
+                    { label: '提交时间', value: detail.submitted_at },
+                    { label: '申请设备', value: detail.requester_device_label || '-' },
+                    { label: '申请IP', value: detail.requester_ip || '-' },
+                    { label: '审核教师', value: detail.reviewer_name || '-' },
+                    { label: '审核时间', value: detail.reviewed_at || '-' },
+                    { label: '完成时间', value: detail.completed_at || '-' },
+                ]);
+
+                renderRows(securityDetailList, [
+                    { label: '是否已设密码', value: detail.has_password ? '是' : '否' },
+                    { label: '是否允许身份重登', value: detail.password_reset_required ? '是' : '否' },
+                    { label: '密码更新时间', value: detail.password_updated_at || '-' },
+                    { label: '累计登录次数', value: `${securitySummary.total_logins || 0} 次` },
+                    { label: '最近登录时间', value: securitySummary.last_login?.logged_at || '-' },
+                    { label: '最近登录设备', value: securitySummary.last_login?.device_label || '-' },
+                ]);
+
+                if (loginHistory.length) {
+                    loginHistoryBody.innerHTML = loginHistory.map((row) => `
+                        <tr>
+                            <td>${row.login_sequence}</td>
+                            <td>${window.UI.escapeHtml(getLoginMethodLabel(row.login_method))}</td>
+                            <td>${window.UI.escapeHtml(`${getIdentifierTypeLabel(row.identifier_type)} / ${row.identifier_value || '-'}`)}</td>
+                            <td>${window.UI.escapeHtml(row.ip_address || '-')}</td>
+                            <td>${window.UI.escapeHtml(row.device_label || '-')}</td>
+                            <td>${window.UI.escapeHtml(row.logged_at || '-')}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    loginHistoryBody.innerHTML = '<tr><td colspan="6" class="system-history-empty">暂无历史登录记录</td></tr>';
+                }
+
+                const canReview = detail.status === 'pending';
+                setActionState(!canReview);
+                loadingEl.hidden = true;
+                contentEl.hidden = false;
+            } catch (error) {
+                loadingEl.textContent = error.message || '加载详情失败。';
+                showMessage(error.message || '加载详情失败。', 'error');
+            }
+        }
+
+        async function reviewRequest(action) {
+            if (!activeRequestId || activeStatus !== 'pending') {
+                return;
+            }
+
+            const endpoint = action === 'approve'
+                ? `/api/manage/system/password-resets/${activeRequestId}/approve`
+                : `/api/manage/system/password-resets/${activeRequestId}/reject`;
+
+            const formData = new FormData();
+            formData.append('review_note', reviewNoteInput.value || '');
+
+            setActionState(true);
+            try {
+                const result = await window.apiFetch(endpoint, { method: 'POST', body: formData });
+                showMessage(result.message || '操作成功。', 'success');
+                window.UI.closeModal(modalId);
+                window.setTimeout(() => window.location.reload(), 500);
+            } catch (error) {
+                showMessage(error.message || '操作失败。', 'error');
+                setActionState(false);
+            }
+        }
+
+        document.querySelectorAll('[data-open-reset-detail]').forEach((button) => {
+            button.addEventListener('click', () => {
+                loadRequestDetail(button.dataset.requestId);
+            });
+        });
+
+        approveBtn.addEventListener('click', () => reviewRequest('approve'));
+        rejectBtn.addEventListener('click', () => reviewRequest('reject'));
+    })();
+</script>
+{% endblock %}

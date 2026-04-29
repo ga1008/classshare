@@ -1,0 +1,124 @@
+{% extends "manage/layout.html" %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/manage_academic.css">
+<link rel="stylesheet" href="/static/css/manage_workflow.css">
+{% endblock %}
+
+{% block header_actions %}
+<a href="/manage/offerings" class="btn btn-outline">直接开设课堂</a>
+<a href="/manage/semesters?open=new" class="btn btn-primary">新建学期</a>
+{% endblock %}
+
+{% block content %}
+<div class="academic-shell workflow-shell">
+    <section class="academic-hero workflow-hero">
+        <div class="workflow-hero-copy">
+            <div class="academic-eyebrow">Teaching Workflow</div>
+            <h2>先准备基础资源，再推进学期、课堂和 AI 助手配置</h2>
+            <p>
+                这里按真实教学流程组织管理中心。先选定当前阶段，再在下方直接处理对应表单和已创建内容，
+                避免在多个页面之间反复寻找入口。
+            </p>
+        </div>
+
+        <aside class="workflow-hero-side">
+            <article class="workflow-hero-panel">
+                <span>推荐下一步</span>
+                <strong id="workflowRecommendedLabel">加载中</strong>
+                <p id="workflowRecommendedHelp">系统会根据当前准备情况给出下一步建议。</p>
+            </article>
+        </aside>
+    </section>
+
+    <section class="workflow-stage-rail" aria-label="教学流程导航">
+        <div class="workflow-stage-track" id="workflowStageTrack" role="tablist" aria-orientation="horizontal">
+            {% for step in workflow_snapshot.steps %}
+            <button
+                type="button"
+                class="workflow-step"
+                data-stage-id="{{ step.id }}"
+                data-stage-index="{{ loop.index0 }}"
+                role="tab"
+                aria-selected="false"
+            >
+                <span class="workflow-step-index">{{ loop.index }}</span>
+                <div class="workflow-step-copy">
+                    <strong>{{ step.title }}</strong>
+                    <p>{{ step.description }}</p>
+                </div>
+                <span class="workflow-status-badge">{{ step.badge_text }}</span>
+            </button>
+            {% if not loop.last %}
+            <div class="workflow-step-arrow" data-arrow-after-stage="{{ step.id }}" aria-hidden="true">
+                <span></span>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="academic-card workflow-focus-card">
+        <div class="academic-card-body workflow-focus-body">
+            <div class="workflow-focus-main">
+                <div class="workflow-stage-eyebrow" id="workflowStageEyebrow">流程阶段</div>
+                <h3 class="workflow-focus-title" id="workflowStageTitle">加载中</h3>
+                <p class="workflow-focus-description" id="workflowStageDescription">正在准备当前阶段说明。</p>
+
+                <div class="workflow-focus-callout">
+                    <strong>当前阶段重点</strong>
+                    <p id="workflowStageSummaryText">正在整理当前阶段摘要。</p>
+                </div>
+
+                <div class="workflow-prep-tabs" id="workflowPrepTabs" hidden>
+                    {% for resource in workflow_snapshot.prep_resources %}
+                    <button type="button" class="workflow-prep-tab" data-prep-id="{{ resource.id }}">
+                        <span>{{ resource.title }}</span>
+                        <em>{{ resource.count }}</em>
+                    </button>
+                    {% endfor %}
+                </div>
+
+                <div class="workflow-stage-actions">
+                    <button type="button" class="btn btn-outline" id="workflowPrevBtn">上一步</button>
+                    <button type="button" class="btn btn-outline" id="workflowNextBtn">下一步</button>
+                    <a id="workflowOpenPageLink" href="/manage" class="btn btn-primary">在独立页面打开</a>
+                </div>
+            </div>
+
+            <aside class="workflow-focus-side">
+                <article class="workflow-focus-side-panel">
+                    <h4>下一步建议</h4>
+                    <p id="workflowStageAdviceText">正在整理当前建议。</p>
+                </article>
+
+                <article class="workflow-focus-side-panel">
+                    <h4>当前情况</h4>
+                    <div class="workflow-stage-checklist" id="workflowChecklist"></div>
+                </article>
+            </aside>
+        </div>
+    </section>
+
+    <section class="workflow-frame-shell">
+        <div class="workflow-frame-toolbar">
+            <div class="workflow-frame-toolbar-copy">
+                <strong id="workflowFrameTitle">加载中</strong>
+                <span id="workflowFrameSubtitle">正在准备当前工作区。</span>
+            </div>
+        </div>
+        <div class="workflow-frame-loading is-visible" id="workflowFrameLoading">
+            <span><span class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></span> 正在加载当前阶段内容...</span>
+        </div>
+        <iframe id="workflowContentFrame" class="workflow-content-frame" title="教师管理中心流程内容" loading="lazy"></iframe>
+    </section>
+</div>
+
+<script>
+    window.MANAGE_WORKFLOW_DATA = {{ workflow_snapshot | tojson }};
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/manage_workflow.js"></script>
+{% endblock %}

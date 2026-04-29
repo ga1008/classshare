@@ -1,0 +1,679 @@
+{% extends "manage/layout.html" %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/manage_academic.css">
+<link rel="stylesheet" href="/static/css/learning_material_selector.css">
+<style>
+    .course-page-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+    }
+
+    .course-info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 14px;
+    }
+
+    .course-info-tile {
+        padding: 18px 20px;
+        border-radius: 22px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.9));
+        box-shadow: var(--shadow-sm);
+    }
+
+    .course-info-tile span {
+        display: block;
+        font-size: 0.78rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }
+
+    .course-info-tile strong {
+        display: block;
+        margin-top: 8px;
+        font-size: 1.2rem;
+        color: var(--text-primary);
+    }
+
+    .course-info-tile p {
+        margin: 8px 0 0;
+        color: var(--text-secondary);
+        line-height: 1.6;
+    }
+
+    .course-card {
+        position: relative;
+        min-height: 100%;
+    }
+
+    .course-card::after {
+        content: "";
+        position: absolute;
+        inset: auto 18px 18px;
+        height: 3px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(249, 115, 22, 0.68), rgba(14, 165, 233, 0.78));
+        opacity: 0;
+        transform: scaleX(0.6);
+        transform-origin: left center;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    .course-card:hover::after {
+        opacity: 1;
+        transform: scaleX(1);
+    }
+
+    .course-card-main {
+        display: grid;
+        gap: 12px;
+    }
+
+    .course-meta-grid {
+        display: grid;
+        gap: 10px;
+    }
+
+    .course-meta-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 10px;
+        border-bottom: 1px dashed rgba(148, 163, 184, 0.28);
+    }
+
+    .course-meta-row:last-child {
+        padding-bottom: 0;
+        border-bottom: none;
+    }
+
+    .course-meta-row span {
+        color: var(--text-muted);
+        font-size: 0.84rem;
+    }
+
+    .course-meta-row strong {
+        color: var(--text-primary);
+        text-align: right;
+    }
+
+    .course-lesson-mini-list {
+        display: grid;
+        gap: 10px;
+    }
+
+    .course-lesson-mini-item {
+        display: grid;
+        gap: 4px;
+        padding: 12px 14px;
+        border-radius: 18px;
+        background: rgba(248, 250, 252, 0.88);
+        border: 1px solid rgba(148, 163, 184, 0.18);
+    }
+
+    .course-lesson-mini-item strong {
+        color: var(--text-primary);
+    }
+
+    .course-lesson-mini-item span {
+        color: var(--text-secondary);
+        line-height: 1.55;
+        font-size: 0.88rem;
+    }
+
+    .course-lesson-mini-item em {
+        font-style: normal;
+        color: #0369a1;
+        font-size: 0.78rem;
+        font-weight: 600;
+    }
+
+    .course-result-summary {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 14px 16px;
+        border-radius: 18px;
+        background: rgba(248, 250, 252, 0.9);
+        color: var(--text-secondary);
+        border: 1px solid rgba(148, 163, 184, 0.18);
+    }
+
+    .course-result-summary strong {
+        color: var(--text-primary);
+    }
+
+    .course-toolbar-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .course-modal-body {
+        display: grid;
+        gap: 24px;
+    }
+
+    .course-form-grid {
+        display: grid;
+        gap: 18px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .course-form-grid .full-span {
+        grid-column: 1 / -1;
+    }
+
+    .course-ai-panel {
+        display: grid;
+        gap: 16px;
+        padding: 18px;
+        border-radius: 22px;
+        border: 1px solid rgba(14, 165, 233, 0.2);
+        background:
+            radial-gradient(circle at top right, rgba(14, 165, 233, 0.16), transparent 34%),
+            linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.88));
+    }
+
+    .course-ai-grid {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+
+    .course-ai-meta {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 10px 14px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px dashed rgba(14, 165, 233, 0.28);
+        color: var(--text-secondary);
+    }
+
+    .course-ai-meta strong {
+        color: #0f172a;
+    }
+
+    .course-lessons-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .course-lessons-container {
+        display: grid;
+        gap: 14px;
+    }
+
+    .course-lesson-editor {
+        display: grid;
+        gap: 14px;
+        padding: 18px;
+        border-radius: 22px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: rgba(248, 250, 252, 0.92);
+    }
+
+    .course-lesson-editor-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .course-lesson-editor-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .course-lesson-index {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 999px;
+        background: rgba(79, 70, 229, 0.12);
+        color: var(--primary-color);
+        font-size: 0.84rem;
+    }
+
+    .course-lesson-editor-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: minmax(0, 1fr) 132px;
+    }
+
+    .course-lesson-editor-grid .full-span {
+        grid-column: 1 / -1;
+    }
+
+    .course-lesson-material {
+        display: grid;
+        gap: 12px;
+        padding: 14px 16px;
+        border-radius: 18px;
+        border: 1px dashed rgba(14, 165, 233, 0.28);
+        background: linear-gradient(135deg, rgba(239, 246, 255, 0.9), rgba(255, 255, 255, 0.96));
+    }
+
+    .course-lesson-material.is-empty {
+        border-color: rgba(148, 163, 184, 0.2);
+        background: rgba(248, 250, 252, 0.9);
+    }
+
+    .course-lesson-material-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .course-lesson-material-copy {
+        display: grid;
+        gap: 4px;
+    }
+
+    .course-lesson-material-copy strong {
+        color: var(--text-primary);
+    }
+
+    .course-lesson-material-copy span {
+        color: var(--text-muted);
+        font-size: 0.88rem;
+        word-break: break-all;
+    }
+
+    .course-lesson-material-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .course-modal-footer-note {
+        color: var(--text-muted);
+        font-size: 0.88rem;
+        line-height: 1.6;
+    }
+
+    @media (max-width: 960px) {
+        .course-form-grid,
+        .course-lesson-editor-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block header_actions %}
+<button type="button" class="btn btn-primary" id="openCourseCreateBtn">新增课程</button>
+{% endblock %}
+
+{% block content %}
+<div class="academic-shell course-page-shell">
+    <section class="academic-hero">
+        <div class="academic-eyebrow">Course Studio</div>
+        <h2>课程管理与课堂模板</h2>
+        <p>
+            在这里统一维护课程简介、学分学时和课堂拆分模板。每门课程都可以沉淀成可复用的教学结构，后续开设课堂时直接继承并生成时间轴。
+        </p>
+        <div class="academic-hero-actions">
+            <button type="button" class="btn btn-primary" id="heroCourseCreateBtn">新增课程</button>
+            <span class="academic-badge is-success">支持 AI 拆课</span>
+            <span class="academic-badge">卡片式检索</span>
+            <span class="academic-badge is-accent">模板复用到课堂排期</span>
+        </div>
+    </section>
+
+    <section class="academic-stat-grid">
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">课程总数</div>
+            <div class="academic-stat-value">{{ course_stats.course_count }}</div>
+            <div class="academic-stat-help">当前教师已创建的课程模板数量。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">已开设课堂</div>
+            <div class="academic-stat-value">{{ course_stats.active_course_count }}</div>
+            <div class="academic-stat-help">已被课堂复用的课程模板数量。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">课堂设置</div>
+            <div class="academic-stat-value">{{ course_stats.lesson_count }}</div>
+            <div class="academic-stat-help">所有课程累计配置的课堂条目数。</div>
+        </article>
+        <article class="academic-stat-card">
+            <div class="academic-stat-label">总学时</div>
+            <div class="academic-stat-value">{{ course_stats.total_hours }}</div>
+            <div class="academic-stat-help">课程模板中显式登记的课程总学时。</div>
+        </article>
+    </section>
+
+    <section class="academic-card">
+        <div class="academic-card-header">
+            <div>
+                <h3 class="academic-card-title">信息归集</h3>
+                <p class="academic-card-subtitle">聚合查看课程模板完整度、教学结构和后续开课状态。</p>
+            </div>
+        </div>
+        <div class="academic-card-body">
+            <div class="course-info-grid">
+                <article class="course-info-tile">
+                    <span>模板复用</span>
+                    <strong>{{ course_stats.active_course_count }} 门课程已用于课堂开设</strong>
+                    <p>当课程模板完善后，开设课堂时会自动生成对应的排课时间轴和任务列表。</p>
+                </article>
+                <article class="course-info-tile">
+                    <span>结构质量</span>
+                    <strong>{{ my_courses | selectattr('coverage_status', 'equalto', 'complete') | list | length }} 门课程结构完整</strong>
+                    <p>课程总学时与课堂设置合计小节数一致时，可直接无缝用于后续开课。</p>
+                </article>
+                <article class="course-info-tile">
+                    <span>AI 拆课</span>
+                    <strong>{{ textbooks_json|length }} 本教材可作为拆课依据</strong>
+                    <p>选择教材后可调用思考模型自动生成课堂设置，再按需做人工微调。</p>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <section class="academic-card">
+        <div class="academic-card-header">
+            <div>
+                <h3 class="academic-card-title">已创建课程</h3>
+                <p class="academic-card-subtitle">支持按课程名称、简介、课堂标题和内容进行搜索，并按状态快速筛选。</p>
+            </div>
+        </div>
+        <div class="academic-card-body">
+            <div class="academic-toolbar academic-toolbar-between">
+                <label class="academic-search" for="courseSearchInput">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="m21 21-4.35-4.35"></path>
+                    </svg>
+                    <input id="courseSearchInput" class="form-control" type="search" placeholder="搜索课程名称、简介或课堂设置">
+                </label>
+                <div class="course-toolbar-actions">
+                    <label class="academic-filter-field" for="courseFilterSelect">
+                        <span>状态筛选</span>
+                        <select id="courseFilterSelect" class="form-control">
+                            <option value="all">全部课程</option>
+                            <option value="active">已开设课堂</option>
+                            <option value="complete">结构完整</option>
+                            <option value="pending">待完善</option>
+                            <option value="idle">未开课</option>
+                        </select>
+                    </label>
+                    <button type="button" class="btn btn-outline" id="toolbarCourseCreateBtn">新增课程</button>
+                </div>
+            </div>
+
+            <div class="course-result-summary" id="courseResultSummary">
+                <span>当前共归集 <strong>{{ my_courses|length }}</strong> 门课程模板。</span>
+                <span>建议优先完善“待完善”的课程，以便后续直接生成开课时间轴。</span>
+            </div>
+
+            <div class="academic-card-grid" id="courseCardGrid">
+                {% for course in my_courses %}
+                <article
+                    class="academic-resource-card course-card"
+                    data-course-id="{{ course.id }}"
+                    data-filter-state="{{ 'active' if course.is_in_use else 'idle' }}"
+                    data-coverage-state="{{ course.coverage_status }}"
+                    data-search="{{ course.search_blob }}"
+                >
+                    <div class="academic-card-topline">
+                        <span class="academic-card-kicker">{{ course.coverage_label }}</span>
+                        <div class="academic-badge-row">
+                            <span class="academic-badge">{{ course.total_hours }} 学时</span>
+                            <span class="academic-badge is-success">{{ course.lesson_count }} 次课</span>
+                            <span class="academic-badge {% if course.is_in_use %}is-accent{% else %}is-muted{% endif %}">
+                                {{ course.offering_count }} 个课堂
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="course-card-main">
+                        <div class="academic-card-main">
+                            <h3>{{ course.name }}</h3>
+                            <p>
+                                {% if course.description_preview %}
+                                {{ course.description_preview }}
+                                {% else %}
+                                暂未填写课程简介，建议补充课程定位、目标和使用环境，便于后续 AI 拆课和课堂复用。
+                                {% endif %}
+                            </p>
+                        </div>
+
+                        <div class="course-meta-grid">
+                            <div class="course-meta-row">
+                                <span>学分</span>
+                                <strong>{{ course.credits }}</strong>
+                            </div>
+                            <div class="course-meta-row">
+                                <span>课堂设置合计</span>
+                                <strong>{{ course.planned_section_count }} 小节</strong>
+                            </div>
+                            <div class="course-meta-row">
+                                <span>学时匹配</span>
+                                <strong>
+                                    {% if course.hour_gap == 0 %}
+                                    已对齐
+                                    {% elif course.hour_gap > 0 %}
+                                    还差 {{ course.hour_gap }} 小节
+                                    {% else %}
+                                    超出 {{ course.hour_gap | abs }} 小节
+                                    {% endif %}
+                                </strong>
+                            </div>
+                            <div class="course-meta-row">
+                                <span>已配文档</span>
+                                <strong>{{ course.material_lesson_count }} 次课</strong>
+                            </div>
+                        </div>
+
+                        {% if course.lesson_preview %}
+                        <div class="course-lesson-mini-list">
+                            {% for lesson in course.lesson_preview %}
+                            <div class="course-lesson-mini-item">
+                                <strong>{{ lesson.title }}</strong>
+                                <span>{{ lesson.content_preview }}</span>
+                                <em>
+                                    {{ lesson.section_count }} 小节
+                                    {% if lesson.learning_material_name %}
+                                    · {{ lesson.learning_material_name }}
+                                    {% endif %}
+                                </em>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="academic-empty">
+                            <strong>还没有配置课堂设置</strong>
+                            点击“编辑”或“新增课程”，填写至少一条课堂设置后即可用于开课。
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="academic-card-actions">
+                        <div class="academic-action-group">
+                            <button type="button" class="btn btn-outline btn-sm" data-action="edit-course" data-course-id="{{ course.id }}">编辑</button>
+                            <a href="/manage/offerings?course_id={{ course.id }}" class="btn btn-ghost btn-sm">去开课</a>
+                        </div>
+                        <button
+                            type="button"
+                            class="btn btn-danger btn-sm"
+                            data-action="delete-course"
+                            data-course-id="{{ course.id }}"
+                            data-course-name="{{ course.name }}"
+                        >
+                            删除
+                        </button>
+                    </div>
+                </article>
+                {% else %}
+                <div class="academic-empty" id="courseEmptyState">
+                    <strong>还没有创建课程模板</strong>
+                    先新增课程，再补充课堂设置，后续开设课堂时就能直接生成排课时间轴。
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+</div>
+
+<div id="courseModal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable modal-dialog-wide">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title" id="courseModalTitle">新增课程</h3>
+                    <p class="modal-subtitle">维护课程基础信息和课堂模板，后续开设课堂时可直接生成时间轴。</p>
+                </div>
+                <button class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body course-modal-body">
+                <input type="hidden" id="courseIdInput">
+
+                <section class="course-form-grid">
+                    <div class="form-group">
+                        <label class="form-label required" for="courseNameInput">课程名称</label>
+                        <input id="courseNameInput" class="form-control" type="text" placeholder="例如：动态 Web 程序设计实验">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="courseCreditsInput">学分</label>
+                        <input id="courseCreditsInput" class="form-control" type="number" min="0" max="100" step="0.5" value="0">
+                    </div>
+                    <div class="form-group full-span">
+                        <label class="form-label" for="courseDescriptionInput">课程简介</label>
+                        <textarea id="courseDescriptionInput" class="form-control" rows="5" placeholder="补充课程定位、教学目标、授课环境和必要说明"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="courseTotalHoursInput">学时</label>
+                        <input id="courseTotalHoursInput" class="form-control" type="number" min="0" max="512" step="1" value="0">
+                    </div>
+                </section>
+
+                <section class="course-ai-panel">
+                    <div>
+                        <h4 class="academic-card-title">AI 生成课堂设置</h4>
+                        <p class="academic-card-subtitle">选择教材、课程总学时和每次课小节数后，调用思考模型自动拆出完整课堂设置。生成后仍可继续手工微调。</p>
+                    </div>
+                    <div class="course-ai-grid">
+                        <div class="form-group">
+                            <label class="form-label" for="courseAiTextbookSelect">教材</label>
+                            <select id="courseAiTextbookSelect" class="form-control">
+                                <option value="">请选择教材</option>
+                                {% for textbook in textbooks_json %}
+                                <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="courseAiSectionCountInput">每次课小节数</label>
+                            <input id="courseAiSectionCountInput" class="form-control" type="number" min="1" max="12" step="1" value="2">
+                        </div>
+                    </div>
+                    <div class="course-ai-meta" id="courseAiMeta">
+                        <span>预计生成 <strong id="courseAiSessionCount">0</strong> 次课</span>
+                        <span id="courseAiMetaHint">请先填写课程总学时，并保证能被每次课小节数整除。</span>
+                    </div>
+                    <div class="academic-action-group">
+                        <button type="button" class="btn btn-primary" id="courseAiGenerateBtn">AI 生成课堂设置</button>
+                    </div>
+                </section>
+
+                <section class="course-lessons-section">
+                    <div class="course-lessons-head">
+                        <div>
+                            <h4 class="academic-card-title">课堂设置</h4>
+                            <p class="academic-card-subtitle">默认保留一行，可按需增删。每条课堂设置会直接参与后续课堂排期和时间轴生成。</p>
+                        </div>
+                        <span class="academic-badge is-muted" id="courseLessonCounter">0 条课堂设置</span>
+                    </div>
+                    <div class="course-lessons-container" id="courseLessonsContainer"></div>
+
+                    <button type="button" class="btn btn-outline" id="courseAddLessonBtn">新增一课</button>
+                </section>
+            </div>
+            <div class="modal-footer">
+                <p class="course-modal-footer-note">保存时会校验“课程总学时”和“课堂设置合计小节数”是否一致，避免后续排课出现错位。</p>
+                <div class="academic-action-group">
+                    <button class="btn btn-outline" data-dismiss="modal">取消</button>
+                    <button class="btn btn-primary" type="button" id="courseSaveBtn">保存课程</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<template id="courseLessonRowTemplate">
+    <article class="course-lesson-editor" data-lesson-row>
+        <div class="course-lesson-editor-head">
+            <div class="course-lesson-editor-title">
+                <span class="course-lesson-index" data-lesson-index>1</span>
+                <span data-lesson-heading>课堂设置</span>
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm text-danger" data-action="remove-lesson">删除</button>
+        </div>
+        <div class="course-lesson-editor-grid">
+            <div class="form-group">
+                <label class="form-label">名称</label>
+                <input class="form-control" type="text" data-field="title" placeholder="例如：Servlet 生命周期与请求响应流程">
+            </div>
+            <div class="form-group">
+                <label class="form-label">小节数</label>
+                <input class="form-control" type="number" min="1" max="12" step="1" value="2" data-field="section_count">
+            </div>
+            <div class="form-group full-span">
+                <label class="form-label">上课内容</label>
+                <textarea class="form-control" rows="4" data-field="content" placeholder="说明本次课要讲的知识点、实验内容或案例任务"></textarea>
+            </div>
+            <div class="form-group full-span">
+                <label class="form-label">课程材料</label>
+                <div class="course-lesson-material is-empty" data-role="lesson-material">
+                    <input type="hidden" data-field="learning_material_id">
+                    <div class="course-lesson-material-head">
+                        <div class="course-lesson-material-copy">
+                            <strong data-role="material-summary">未绑定课堂文档</strong>
+                            <span data-role="material-path">可选择课程材料库中的 Markdown 文档，后续开设课堂会自动继承。</span>
+                        </div>
+                        <div class="course-lesson-material-actions">
+                            <button type="button" class="btn btn-outline btn-sm" data-action="pick-material">选择材料</button>
+                            <button type="button" class="btn btn-ghost btn-sm" data-action="preview-material" disabled>预览文档</button>
+                            <button type="button" class="btn btn-ghost btn-sm" data-action="clear-material" disabled>清除</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </article>
+</template>
+
+{% include "partials/learning_material_selector.html" %}
+
+<script>
+    window.COURSE_PAGE_DATA = {
+        courses: {{ courses_json | tojson }},
+        textbooks: {{ textbooks_json | tojson }}
+    };
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/manage_courses.js"></script>
+{% endblock %}

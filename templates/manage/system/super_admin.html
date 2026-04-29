@@ -1,0 +1,222 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}超管设置{% endblock %}
+
+{% block extra_head %}
+<style>
+    .sa-hero {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--spacing-lg);
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .sa-hero__icon {
+        width: 56px;
+        height: 56px;
+        border-radius: var(--radius-xl);
+        background: linear-gradient(135deg, rgba(79, 70, 229, 0.15), rgba(14, 165, 233, 0.1));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        color: var(--primary-color);
+    }
+
+    .sa-hero__text h2 {
+        margin: 0 0 var(--spacing-sm);
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .sa-hero__text p {
+        margin: 0;
+        color: var(--text-muted);
+        line-height: 1.7;
+        font-size: 0.9rem;
+    }
+
+    .sa-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+        gap: var(--spacing-xl);
+        align-items: start;
+    }
+
+    .sa-info-card {
+        padding: var(--spacing-xl);
+        border-radius: var(--radius-xl);
+        background: linear-gradient(160deg, rgba(79, 70, 229, 0.06), rgba(255, 255, 255, 0.97));
+        border: 1px solid var(--border-color);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .sa-info-card__label {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-muted);
+        margin-bottom: var(--spacing-sm);
+    }
+
+    .sa-info-card__name {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: var(--spacing-xs);
+    }
+
+    .sa-info-card__email {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        margin-bottom: var(--spacing-md);
+    }
+
+    .sa-info-card__badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        font-weight: 600;
+    }
+
+    .sa-info-card__badge.is-active {
+        background: rgba(22, 163, 74, 0.1);
+        color: #166534;
+    }
+
+    .sa-info-card__badge.is-empty {
+        background: rgba(148, 163, 184, 0.12);
+        color: var(--text-muted);
+    }
+
+    .sa-info-card__hint {
+        margin-top: var(--spacing-md);
+        padding: var(--spacing-md);
+        border-radius: var(--radius-lg);
+        background: rgba(79, 70, 229, 0.05);
+        border: 1px dashed rgba(79, 70, 229, 0.2);
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        line-height: 1.7;
+    }
+
+    .sa-form-card {
+        padding: var(--spacing-xl);
+        border-radius: var(--radius-xl);
+        background: rgba(255, 255, 255, 0.94);
+        border: 1px solid var(--border-color);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .sa-form-card__title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0 0 var(--spacing-md);
+    }
+
+    .sa-form-card .form-label {
+        display: block;
+        margin-bottom: var(--spacing-sm);
+        font-weight: 500;
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+    }
+
+    .sa-form-card .form-control {
+        margin-bottom: var(--spacing-md);
+    }
+
+    .sa-form-card .super-admin-help {
+        margin-top: var(--spacing-sm);
+        font-size: 0.82rem;
+        color: var(--text-muted);
+        line-height: 1.6;
+    }
+
+    @media (max-width: 768px) {
+        .sa-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sa-hero">
+    <div class="sa-hero__icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+    </div>
+    <div class="sa-hero__text">
+        <h2>超管教师与反馈接收</h2>
+        <p>设置唯一超级管理员教师。超管教师会在通知区域收到所有问题反馈，并可在问题反馈页查看完整图文内容。普通教师不会收到这些反馈通知。</p>
+    </div>
+</div>
+
+<div class="sa-grid">
+    <section class="sa-info-card">
+        <div class="sa-info-card__label">当前超管教师</div>
+        {% if super_admin_teacher %}
+        <div class="sa-info-card__name">{{ super_admin_teacher.name }}</div>
+        <div class="sa-info-card__email">{{ super_admin_teacher.email }}</div>
+        <span class="sa-info-card__badge is-active">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            已激活
+        </span>
+        {% else %}
+        <div class="sa-info-card__name">尚未设置</div>
+        <span class="sa-info-card__badge is-empty">待设置</span>
+        {% endif %}
+        <div class="sa-info-card__hint">
+            设置超管教师后，所有 Bug 修复反馈、新功能反馈和举报将只通知超管教师。建议选择对系统功能最熟悉的教师担任。
+        </div>
+    </section>
+
+    <form class="sa-form-card" id="super-admin-form">
+        <div class="sa-form-card__title">调整超管设置</div>
+        <label class="form-label" for="super-admin-teacher-id">选择教师</label>
+        <select class="form-control" id="super-admin-teacher-id" name="teacher_id" {% if not can_manage_super_admin %}disabled{% endif %}>
+            {% for teacher in teacher_rows %}
+            <option value="{{ teacher.id }}" {% if teacher.is_super_admin %}selected{% endif %}>
+                {{ teacher.name }}{% if teacher.email %}（{{ teacher.email }}）{% endif %}
+            </option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary" {% if not can_manage_super_admin %}disabled{% endif %}>保存超管设置</button>
+        {% if not can_manage_super_admin %}
+        <p class="super-admin-help">只有当前超管教师可以调整此设置。</p>
+        {% endif %}
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (() => {
+        const form = document.getElementById('super-admin-form');
+        if (!form) return;
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const formData = new FormData(form);
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+                const result = await window.apiFetch('/api/manage/system/super-admin', {
+                    method: 'POST',
+                    body: formData,
+                });
+                showMessage(result.message || '超管教师设置已保存。', 'success');
+                window.setTimeout(() => window.location.reload(), 500);
+            } catch (error) {
+                showMessage(error.message || '保存超管教师设置失败。', 'error');
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        });
+    })();
+</script>
+{% endblock %}

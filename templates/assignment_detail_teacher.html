@@ -1,0 +1,1933 @@
+{% extends "base.html" %}
+
+{% block title %}作业管理 - {{ assignment.title }} | 课堂平台{% endblock %}
+
+{% block css %}
+<link rel="stylesheet" href="/static/css/layout.css">
+<link rel="stylesheet" href="/static/css/buttons.css">
+<link rel="stylesheet" href="/static/css/cards.css">
+<link rel="stylesheet" href="/static/css/forms.css">
+<link rel="stylesheet" href="/static/css/tables.css">
+<link rel="stylesheet" href="/static/css/modals.css">
+<link rel="stylesheet" href="/static/css/feedback.css">
+<link rel="stylesheet" href="/static/css/toast.css">
+<link rel="stylesheet" href="/static/css/markdown.css">
+<style>
+    /* Header */
+    .assignment-header {
+        background: var(--surface-color);
+        border-bottom: 1px solid var(--border-color);
+        padding: var(--spacing-md) var(--spacing-xl);
+        display: flex; justify-content: space-between; align-items: center;
+        position: sticky; top: 0; z-index: 40;
+        box-shadow: var(--shadow-sm); flex-wrap: wrap; gap: var(--spacing-sm);
+    }
+    .header-title-group { display: flex; align-items: center; gap: var(--spacing-md); }
+    .back-link {
+        display: inline-flex; align-items: center; gap: 6px;
+        color: var(--text-muted); text-decoration: none;
+        font-size: 0.9rem; font-weight: 500; transition: color 0.2s;
+    }
+    .back-link:hover { color: var(--primary-color); }
+
+    /* Main layout - single column */
+    .workspace-container {
+        max-width: 1200px; margin: 0 auto;
+        padding: var(--spacing-lg) var(--spacing-md);
+        display: flex; flex-direction: column; gap: var(--spacing-lg);
+    }
+
+    /* Stats grid */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: var(--spacing-sm);
+        margin-bottom: var(--spacing-md);
+    }
+    @media (max-width: 768px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } }
+    .stat-card {
+        background: var(--bg-color); padding: var(--spacing-sm) var(--spacing-md);
+        border-radius: var(--radius-md); text-align: center;
+        border: 1px solid var(--border-color);
+    }
+    .stat-value { font-size: 1.4rem; font-weight: 700; color: var(--text-primary); line-height: 1.3; }
+    .stat-label { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+
+    /* Score distribution chart */
+    #dist-chart {
+        width: 100%;
+        height: 320px;
+        min-height: 260px;
+    }
+
+    /* Score range filter chip */
+    .score-range-filter-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px 4px 12px;
+        background: var(--primary-light, #eff6ff);
+        border: 1px solid var(--primary-color, #3b82f6);
+        border-radius: 99px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: var(--primary-color, #2563eb);
+        white-space: nowrap;
+        animation: chipFadeIn 0.2s ease;
+    }
+    .score-range-filter-clear {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px; height: 18px;
+        padding: 0; border: 0;
+        border-radius: 50%;
+        background: transparent;
+        color: var(--primary-color, #3b82f6);
+        font-size: 1rem; line-height: 1;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+    .score-range-filter-clear:hover {
+        background: rgba(59, 130, 246, 0.15);
+    }
+    @keyframes chipFadeIn {
+        from { opacity: 0; transform: scale(0.9); }
+        to { opacity: 1; transform: scale(1); }
+    }
+
+    /* Score colors */
+    .score-excellent { color: #059669; } .score-good { color: #2563eb; }
+    .score-medium { color: #0891b2; } .score-pass { color: #d97706; }
+    .score-fail { color: #dc2626; } .score-none { color: #94a3b8; }
+
+    /* Score display in table */
+    .score-cell { display: flex; flex-direction: column; gap: 3px; min-width: 90px; }
+    .score-badge-inline {
+        display: inline-block; padding: 2px 10px; border-radius: var(--radius-sm);
+        font-weight: 700; font-size: 0.85rem; text-align: center; min-width: 36px;
+        transition: transform 0.15s;
+    }
+    .score-badge-inline:hover { transform: scale(1.08); }
+    .score-grade-label {
+        font-size: 0.7rem; font-weight: 600; padding: 1px 6px;
+        border-radius: 3px; display: inline-block; line-height: 1.3;
+    }
+    .sb-excellent { background: linear-gradient(135deg, #d1fae5, #a7f3d0); color: #059669; }
+    .sb-good { background: linear-gradient(135deg, #dbeafe, #bfdbfe); color: #2563eb; }
+    .sb-medium { background: linear-gradient(135deg, #cffafe, #a5f3fc); color: #0891b2; }
+    .sb-pass { background: linear-gradient(135deg, #fef3c7, #fde68a); color: #d97706; }
+    .sb-fail { background: linear-gradient(135deg, #fee2e2, #fecaca); color: #dc2626; }
+    .sb-none { background: #f1f5f9; color: #94a3b8; }
+    .score-progress-bar {
+        height: 4px; border-radius: 2px; background: var(--border-color); width: 100%; margin-top: 2px; overflow: hidden;
+    }
+    .score-progress-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease-out; }
+
+    /* Dropdown */
+    .dropdown { position: relative; display: inline-block; }
+    .dropdown-menu {
+        display: none; position: absolute; background: var(--surface-color);
+        border: 1px solid var(--border-color); border-radius: var(--radius-md);
+        box-shadow: var(--shadow-lg); z-index: 1000; min-width: 180px;
+        top: 100%; right: 0; margin-top: 4px; overflow: hidden;
+    }
+    .dropdown-item {
+        display: block; width: 100%; padding: 10px 16px; border: none;
+        background: none; text-align: left; cursor: pointer;
+        font-size: 0.9rem; color: var(--text-primary); transition: background 0.15s;
+    }
+    .dropdown-item:hover { background: var(--bg-color); }
+    .dropdown-item svg { width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px; }
+
+    /* Filter bar */
+    .filter-bar {
+        display: flex; align-items: center; gap: var(--spacing-sm);
+        padding: var(--spacing-sm) var(--spacing-md);
+        border-bottom: 1px solid var(--border-color); background: var(--bg-color);
+        flex-wrap: wrap;
+    }
+    .filter-bar .filter-input {
+        flex: 1; min-width: 120px; padding: 6px 10px;
+        border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+        font-size: 0.85rem; outline: none; transition: border-color var(--transition-fast);
+    }
+    .filter-bar .filter-input:focus { border-color: var(--primary-color); }
+    .submission-header-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+    .filter-btn {
+        padding: 5px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+        background: var(--surface-color); font-size: 0.8rem; cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+    .filter-btn:hover, .filter-btn.active {
+        background: var(--primary-color); color: white; border-color: var(--primary-color);
+    }
+    .submissions-table {
+        min-width: 900px;
+    }
+    .sort-header {
+        width: 100%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 4px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-weight: 700;
+        text-align: left;
+        cursor: pointer;
+    }
+    .sort-header:hover { color: var(--primary-color); }
+    .sort-indicator {
+        width: 1em;
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        line-height: 1;
+    }
+    .sort-header.is-active .sort-indicator { color: var(--primary-color); }
+    .sort-header.is-asc .sort-indicator::before { content: "▲"; }
+    .sort-header.is-desc .sort-indicator::before { content: "▼"; }
+    .absence-score-note {
+        color: #dc2626;
+        font-size: 0.68rem;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+
+    /* Clickable table row */
+    .table-clickable tbody tr { cursor: pointer; transition: background 0.15s; }
+    .table-clickable tbody tr:hover { background: var(--primary-light); }
+    .table-clickable tbody tr.unsubmitted-row { opacity: 0.6; }
+    .table-clickable tbody tr.unsubmitted-row:hover { opacity: 0.85; background: var(--surface-hover); }
+
+    /* Requirements section */
+    .req-section {
+        margin-top: var(--spacing-md);
+        padding-top: var(--spacing-md);
+        border-top: 1px solid var(--border-color);
+    }
+    .req-section h3 {
+        font-size: 0.85rem; font-weight: 600; color: var(--text-muted);
+        text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: var(--spacing-sm);
+    }
+
+    /* Auto-refresh indicator */
+    .refresh-indicator {
+        display: inline-flex; align-items: center; gap: 4px;
+        font-size: 0.75rem; color: var(--text-muted);
+    }
+
+    /* Action buttons in table */
+    .action-btns { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+    .submission-checkbox { width: 16px; height: 16px; cursor: pointer; }
+    .selection-toolbar {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        margin-left: auto;
+        flex-wrap: wrap;
+    }
+    .selection-count {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        min-width: 4.5em;
+    }
+    .status-subtext {
+        display: block;
+        margin-top: 4px;
+        font-size: 0.72rem;
+        color: var(--text-muted);
+    }
+    .offline-modal-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 0.85fr);
+        gap: var(--spacing-lg);
+    }
+    .offline-answer-area,
+    .offline-upload-panel {
+        min-width: 0;
+    }
+    .offline-question-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+        max-height: 56vh;
+        overflow-y: auto;
+        padding-right: 4px;
+    }
+    .offline-question {
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-md);
+        background: var(--bg-color);
+    }
+    .offline-question-label {
+        display: flex;
+        gap: var(--spacing-sm);
+        align-items: flex-start;
+        margin-bottom: var(--spacing-sm);
+        font-weight: 600;
+        line-height: 1.5;
+    }
+    .offline-option-list {
+        display: grid;
+        gap: 0.45rem;
+    }
+    .offline-option-list label {
+        display: flex;
+        gap: 0.5rem;
+        align-items: flex-start;
+        padding: 0.45rem 0.6rem;
+        border-radius: var(--radius-sm);
+        background: var(--surface-color);
+        border: 1px solid var(--border-color);
+    }
+    .upload-dropzone {
+        border: 2px dashed var(--border-color);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-lg);
+        text-align: center;
+        cursor: pointer;
+        background: var(--bg-color);
+        transition: all 0.2s;
+    }
+    .upload-dropzone:hover,
+    .upload-dropzone.dragover {
+        border-color: var(--primary-color);
+        background: var(--primary-light);
+    }
+    .file-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: var(--spacing-md);
+    }
+    .file-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--surface-color);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-sm);
+        padding: 5px 10px;
+        font-size: 0.85rem;
+        transition: border-color 0.2s, background 0.2s;
+    }
+    .file-chip:hover {
+        background: var(--surface-hover);
+    }
+
+    /* Export overlay animation */
+    .export-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+        z-index: 9999;
+        justify-content: center;
+        align-items: center;
+        animation: fadeIn 0.2s ease-out;
+    }
+    .export-overlay.active { display: flex; }
+    .export-dialog {
+        background: var(--surface-color);
+        border-radius: var(--radius-lg);
+        padding: var(--spacing-xl) var(--spacing-2xl);
+        box-shadow: var(--shadow-lg);
+        text-align: center;
+        min-width: 280px;
+        animation: scaleIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .export-spinner {
+        width: 44px; height: 44px;
+        border: 3px solid var(--border-color);
+        border-top-color: var(--primary-color);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin: 0 auto var(--spacing-md);
+    }
+    .export-checkmark {
+        width: 44px; height: 44px;
+        border-radius: 50%;
+        background: var(--success-color);
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto var(--spacing-md);
+        animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .export-checkmark svg { stroke: white; }
+    .export-dialog p { margin: 0; font-size: 0.95rem; color: var(--text-primary); }
+    .export-dialog .text-muted { font-size: 0.82rem; margin-top: 6px; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes scaleIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes popIn { 0% { opacity: 0; transform: scale(0.3); } 60% { transform: scale(1.1); } 100% { opacity: 1; transform: scale(1); } }
+
+    @media (max-width: 900px) {
+        .offline-modal-grid { grid-template-columns: 1fr; }
+        .selection-toolbar { width: 100%; margin-left: 0; }
+        .submission-header-actions { width: 100%; justify-content: flex-start; }
+        .filter-bar .filter-input { flex-basis: 100%; }
+    }
+</style>
+{% endblock %}
+
+{% block body_class %}page-wrapper{% endblock %}
+
+{% block body %}
+<header class="assignment-header">
+    <div class="header-title-group">
+        <a href="{{ assignment_back_url }}" class="back-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            返回
+        </a>
+        <h1 class="text-lg font-bold m-0">{{ assignment.title }}</h1>
+    </div>
+    <div class="flex items-center gap-2">
+        {% include "partials/message_center_bell.html" %}
+        {% include "partials/feedback_button.html" %}
+        {% include "partials/profile_button.html" %}
+        <button class="btn btn-outline btn-sm" onclick="openEditModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+            编辑作业
+        </button>
+        <div class="dropdown">
+            <button class="btn btn-primary btn-sm" onclick="toggleStatusDropdown()" id="status-btn">
+                状态: {% if assignment.status == 'new' %}草稿{% elif assignment.status == 'published' %}进行中{% elif assignment.status == 'closed' %}已截止{% else %}{{ assignment.status }}{% endif %}
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-1"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            <div class="dropdown-menu" id="status-dropdown">
+                <button class="dropdown-item" onclick="changeStatus('new')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg> 草稿</button>
+                <button class="dropdown-item" onclick="changeStatus('published')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg> 进行中 (发布给学生)</button>
+                <button class="dropdown-item" onclick="changeStatus('closed')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg> 已截止</button>
+            </div>
+        </div>
+        <button class="btn btn-outline btn-sm text-danger" onclick="openDeleteModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+            删除
+        </button>
+        <button class="btn btn-success btn-sm" onclick="exportGrades()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            导出成绩
+        </button>
+        <button class="btn btn-outline btn-sm" onclick="exportAttachments()" id="export-attachments-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+            导出附件
+        </button>
+    </div>
+</header>
+
+{% include "partials/feedback_modal.html" %}
+
+<main class="workspace-container">
+    <!-- ====== 作业信息板块 (上方) ====== -->
+    <div class="card">
+        <div class="card-header flex justify-between items-center">
+            <h2 class="card-title text-base m-0">作业信息</h2>
+            <span class="badge {% if assignment.status == 'new' %}badge-warning{% elif assignment.status == 'published' %}badge-success{% else %}badge-danger{% endif %}">
+                {% if assignment.status == 'new' %}草稿
+                {% elif assignment.status == 'published' %}进行中
+                {% elif assignment.status == 'closed' %}已截止
+                {% else %}{{ assignment.status }}{% endif %}
+            </span>
+        </div>
+        <div class="card-body">
+            <!-- Row 1: People stats -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-total-students">-</div>
+                    <div class="stat-label">总人数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-primary" id="stat-submitted">-</div>
+                    <div class="stat-label">已提交</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-warning" id="stat-unsubmitted">-</div>
+                    <div class="stat-label">未提交</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-success" id="stat-graded">-</div>
+                    <div class="stat-label">已批改</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color:#f59e0b" id="stat-pending">-</div>
+                    <div class="stat-label">待批改</div>
+                </div>
+            </div>
+            <!-- Row 2: Score stats -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-avg">-</div>
+                    <div class="stat-label">平均分</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value score-excellent" id="stat-max">-</div>
+                    <div class="stat-label">最高分</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value score-fail" id="stat-min">-</div>
+                    <div class="stat-label">最低分</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value score-good" id="stat-pass-rate">-</div>
+                    <div class="stat-label">及格率</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-muted" id="stat-grading">-</div>
+                    <div class="stat-label">批改中</div>
+                </div>
+            </div>
+
+            <!-- Score Distribution -->
+            <div id="dist-section" style="display:none;">
+                <div class="req-section" style="border-top:none; padding-top:0;">
+                    <h3>分数分布</h3>
+                </div>
+                <div id="dist-chart"></div>
+            </div>
+
+            <!-- Requirements -->
+            <div class="req-section">
+                <h3>作业要求</h3>
+                <div class="md-content" id="assignment-requirements">
+                    <div class="spinner mx-auto"></div>
+                </div>
+            </div>
+
+            {% if assignment.rubric_md %}
+            <div class="req-section">
+                <h3>评分标准</h3>
+                <div class="md-content" id="assignment-rubric">
+                    <div class="spinner mx-auto"></div>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="req-section">
+                <h3>时间设置</h3>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="badge badge-outline">{{ assignment.availability_mode_label or '长期有效' }}</span>
+                    {% if assignment.status == 'published' %}
+                    <span class="badge badge-success">允许提交</span>
+                    {% elif assignment.status == 'closed' %}
+                    <span class="badge badge-danger">已截止（只读）</span>
+                    {% else %}
+                    <span class="badge badge-warning">未开始</span>
+                    {% endif %}
+                </div>
+                <p class="text-sm text-muted mt-2">
+                    {% if assignment.due_at %}
+                    截止时间：{{ assignment.due_at[:16] | replace('T', ' ') }}
+                    {% else %}
+                    截止时间：长期有效
+                    {% endif %}
+                </p>
+                {% if assignment.availability_mode == 'countdown' %}
+                <p class="text-sm text-muted mt-1">
+                    倒计时：{{ assignment.duration_minutes or '-' }} 分钟
+                    {% if assignment.starts_at %}，开始时间：{{ assignment.starts_at[:16] | replace('T', ' ') }}{% endif %}
+                </p>
+                {% endif %}
+            </div>
+
+            <div class="req-section">
+                <h3>附件提交</h3>
+                <p class="text-sm text-muted">学生可在提交时上传一次文件或文件夹，后端会按当前作业配置过滤不符合类型要求的文件。</p>
+                <div class="mt-2">
+                    {% if assignment.allowed_file_types %}
+                    <span class="badge badge-outline">{{ assignment.allowed_file_types_label }}</span>
+                    {% else %}
+                    <span class="badge badge-outline">不限类型</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====== 学生提交板块 (下方) ====== -->
+    <div class="card">
+        <div class="card-header flex justify-between items-center">
+            <h2 class="card-title text-base m-0">学生提交</h2>
+            <div class="submission-header-actions flex items-center gap-2">
+                <span class="refresh-indicator" id="refresh-indicator">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    自动刷新
+                </span>
+                <button class="btn btn-outline btn-sm text-danger" type="button" onclick="zeroUnsubmittedScores()" id="zero-unsubmitted-btn" disabled>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"></path><path d="M7 15h10"></path><path d="M8 11h8"></path><path d="M12 5v6"></path></svg>
+                    未提交记 0
+                </button>
+                <button class="btn btn-outline btn-sm text-primary" onclick="aiGradeAll()" id="ai-grade-all-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                    AI 批量批改
+                </button>
+            </div>
+        </div>
+        <div class="filter-bar">
+            <input type="text" class="filter-input" id="submission-filter" placeholder="搜索学生姓名 / 学号..." oninput="filterSubmissions()">
+            <button class="filter-btn active" data-filter="all" onclick="setFilter('all', this)">全部</button>
+            <button class="filter-btn" data-filter="submitted" onclick="setFilter('submitted', this)">待批改</button>
+            <button class="filter-btn" data-filter="graded" onclick="setFilter('graded', this)">已批改</button>
+            <button class="filter-btn" data-filter="unsubmitted" onclick="setFilter('unsubmitted', this)">未提交</button>
+            <button class="filter-btn" data-filter="fail" onclick="setFilter('fail', this)">不及格</button>
+            <span class="score-range-filter-chip" id="score-range-filter-chip" style="display:none;">
+                <span id="score-range-filter-label"></span>
+                <button class="score-range-filter-clear" onclick="clearScoreRangeFilter()" title="取消分数筛选">&times;</button>
+            </span>
+            <div class="selection-toolbar">
+                <span class="selection-count" id="selection-count">已选 0</span>
+                <button class="btn btn-outline btn-sm text-warning" type="button" onclick="openWithdrawModalForSelected()" id="withdraw-selected-btn" disabled>撤回选中</button>
+                <button class="btn btn-outline btn-sm text-warning" type="button" onclick="openWithdrawModalForAll()">全部撤回</button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover table-clickable submissions-table">
+                <thead>
+                    <tr>
+                        <th style="width:36px;"><input type="checkbox" class="submission-checkbox" id="select-all-submissions" onchange="toggleSelectAll(this)"></th>
+                        <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="student_id_number" onclick="setSubmissionSort('student_id_number')">学号<span class="sort-indicator" aria-hidden="true"></span></button></th>
+                        <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="student_name" onclick="setSubmissionSort('student_name')">学生姓名<span class="sort-indicator" aria-hidden="true"></span></button></th>
+                        <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="status" onclick="setSubmissionSort('status')">状态<span class="sort-indicator" aria-hidden="true"></span></button></th>
+                        <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="score" onclick="setSubmissionSort('score')">得分<span class="sort-indicator" aria-hidden="true"></span></button></th>
+                        <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="submitted_at" onclick="setSubmissionSort('submitted_at')">提交时间<span class="sort-indicator" aria-hidden="true"></span></button></th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="submissions-list">
+                    <tr><td colspan="7" class="text-center p-xl"><div class="spinner"></div></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</main>
+
+<!-- 导出附件进度遮罩 -->
+<div class="export-overlay" id="export-overlay">
+    <div class="export-dialog">
+        <div class="export-spinner" id="export-spinner-icon"></div>
+        <p id="export-overlay-text">正在打包附件...</p>
+        <p class="text-muted" id="export-overlay-sub">请勿关闭页面</p>
+    </div>
+</div>
+
+<!-- 编辑作业模态框 -->
+<div class="modal-backdrop" id="edit-modal">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">编辑作业</h3>
+                <button class="modal-close" onclick="closeEditModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-assignment-form">
+                    <div class="form-group">
+                        <label class="form-label required">作业标题</label>
+                        <input type="text" id="edit-title" class="form-control" value="{{ assignment.title }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label required">作业要求 (Markdown)</label>
+                        <textarea id="edit-requirements" class="form-control" rows="8">{{ assignment.requirements_md }}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">评分标准 (Markdown)</label>
+                        <textarea id="edit-rubric" class="form-control" rows="4">{{ assignment.rubric_md }}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">批改模式</label>
+                        <select id="edit-grading-mode" class="form-select">
+                            <option value="manual" {{ 'selected' if assignment.grading_mode == 'manual' else '' }}>手动批改</option>
+                            <option value="ai" {{ 'selected' if assignment.grading_mode in ['ai', 'auto', 'mixed'] else '' }}>AI 辅助批改</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">允许附件类型</label>
+                        <input
+                            type="text"
+                            id="edit-allowed-file-types"
+                            class="form-control"
+                            value="{{ assignment.allowed_file_types | join(', ') }}"
+                            placeholder="例如：.pdf,.docx,image/*"
+                        >
+                        <p class="text-xs text-muted mt-1">支持扩展名或 MIME 类型，多个值用逗号分隔；留空表示不限制。</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="edit-availability-mode">答题时间策略</label>
+                        <select id="edit-availability-mode" class="form-select">
+                            <option value="permanent" {{ 'selected' if assignment.availability_mode == 'permanent' else '' }}>长期有效</option>
+                            <option value="deadline" {{ 'selected' if assignment.availability_mode == 'deadline' else '' }}>截止时间</option>
+                            <option value="countdown" {{ 'selected' if assignment.availability_mode == 'countdown' else '' }}>倒计时</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="edit-deadline-group">
+                        <label class="form-label" for="edit-due-at">截止时间</label>
+                        <input
+                            type="datetime-local"
+                            id="edit-due-at"
+                            class="form-control"
+                            value="{{ assignment.due_at[:16] if assignment.due_at else '' }}"
+                        >
+                    </div>
+                    <div id="edit-countdown-group">
+                        <div class="form-group">
+                            <label class="form-label" for="edit-duration-minutes">倒计时（分钟）</label>
+                            <input
+                                type="number"
+                                id="edit-duration-minutes"
+                                class="form-control"
+                                min="1"
+                                step="1"
+                                value="{{ assignment.duration_minutes or '' }}"
+                                placeholder="例如：90"
+                            >
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="edit-starts-at">开始时间（可选）</label>
+                            <input
+                                type="datetime-local"
+                                id="edit-starts-at"
+                                class="form-control"
+                                value="{{ assignment.starts_at[:16] if assignment.starts_at else '' }}"
+                            >
+                            <p class="text-xs text-muted mt-1">留空表示发布后从当前时间开始计时。</p>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-2 mt-4">
+                        <button type="button" class="btn btn-outline" onclick="closeEditModal()">取消</button>
+                        <button type="submit" class="btn btn-primary">保存修改</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 删除确认模态框 -->
+<div class="modal-backdrop" id="delete-modal">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title text-danger flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                    确认删除
+                </h3>
+                <button class="modal-close" onclick="closeDeleteModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>确定要删除作业 "<strong>{{ assignment.title }}</strong>" 吗？</p>
+                <p class="text-sm text-danger mt-2 bg-danger-light p-2 rounded border border-danger-light">
+                    此操作不可逆，将会删除所有相关的学生提交记录和文件！
+                </p>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button class="btn btn-outline" onclick="closeDeleteModal()">取消</button>
+                    <button class="btn btn-danger" onclick="confirmDelete()">确认删除</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 撤回提交模态框 -->
+<div class="modal-backdrop" id="withdraw-submissions-modal">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">撤回提交</h3>
+                <button class="modal-close" onclick="closeWithdrawModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="withdraw-modal-summary" class="text-sm text-muted mb-md">将撤回选中的提交。</p>
+                <div class="form-group">
+                    <label class="form-label" for="withdraw-resubmission-due-at">重交截止时间</label>
+                    <input type="datetime-local" id="withdraw-resubmission-due-at" class="form-control">
+                    <p class="text-xs text-muted mt-1">留空时按下方延后时间自动计算。</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="withdraw-extension-minutes">延后时间（分钟）</label>
+                    <input type="number" id="withdraw-extension-minutes" class="form-control" min="1" step="1" value="120">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="withdraw-reason">备注（可选）</label>
+                    <textarea id="withdraw-reason" class="form-control" rows="3" placeholder="例如：线下补交、网络异常、需要重新提交附件"></textarea>
+                </div>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button class="btn btn-outline" onclick="closeWithdrawModal()">取消</button>
+                    <button class="btn btn-warning" onclick="confirmWithdrawSubmissions()" id="confirm-withdraw-btn">确认撤回</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 教师线下代交模态框 -->
+<div class="modal-backdrop" id="offline-submit-modal">
+    <div class="modal-dialog" style="max-width: 980px;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">线下代交</h3>
+                <button class="modal-close" onclick="closeOfflineSubmitModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="flex items-center justify-between gap-2 flex-wrap mb-md">
+                    <div>
+                        <div class="text-xs text-muted">当前学生</div>
+                        <div class="font-semibold" id="offline-target-student">-</div>
+                    </div>
+                    <span class="badge badge-outline" id="offline-target-status">线下提交</span>
+                </div>
+                <div class="offline-modal-grid">
+                    <div class="offline-answer-area">
+                        <label class="form-label mb-2 block">答案</label>
+                        <div id="offline-answer-area" class="offline-question-list"></div>
+                    </div>
+                    <div class="offline-upload-panel">
+                        <label class="form-label mb-2 block">附件上传 <span class="text-muted font-normal">(可选)</span></label>
+                        <div class="flex items-center gap-2 mb-2 flex-wrap">
+                            <button type="button" class="btn btn-outline btn-sm" id="offline-pick-files-btn">选择文件</button>
+                            <button type="button" class="btn btn-outline btn-sm" id="offline-pick-folder-btn">选择文件夹</button>
+                            <span class="text-xs text-muted" id="offline-upload-summary">未选择文件</span>
+                        </div>
+                        <div class="upload-dropzone" id="offline-drop-zone">
+                            <p class="mb-1 text-primary font-medium">拖拽文件或文件夹到此处</p>
+                            <p class="text-xs text-muted">
+                                支持同时选择多个文件，单文件不超过 {{ max_per_file_mb | int }}MB，总大小不超过 {{ max_total_mb | int }}MB，最多 {{ max_submission_file_count }} 个文件
+                                {% if assignment.allowed_file_types %}，允许类型: {{ assignment.allowed_file_types_label }}{% endif %}
+                            </p>
+                        </div>
+                        <input type="file" id="offline-file-input" class="hidden" multiple>
+                        <input type="file" id="offline-folder-input" class="hidden" webkitdirectory directory multiple>
+                        <div class="file-chips" id="offline-file-chips"></div>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button class="btn btn-outline" onclick="closeOfflineSubmitModal()">取消</button>
+                    <button class="btn btn-primary" onclick="confirmOfflineSubmit()" id="confirm-offline-submit-btn">提交</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% include "partials/markdown_assets.html" %}
+<script src="{{ asset_url('js/echarts.min.js') }}"></script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/feedback.js"></script>
+<script type="module">
+    import { showToast, openModal, closeModal, renderMarkdown, escapeHtml } from '{{ asset_url("js/ui.js") }}';
+    import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
+
+    window.openEditModal = () => openModal('edit-modal');
+    window.closeEditModal = () => closeModal('edit-modal');
+    window.openDeleteModal = () => openModal('delete-modal');
+    window.closeDeleteModal = () => closeModal('delete-modal');
+    window.closeWithdrawModal = () => closeModal('withdraw-submissions-modal');
+    window.closeOfflineSubmitModal = () => closeModal('offline-submit-modal');
+
+    const currentAssignmentId = "{{ assignment.id }}";
+    const currentClassOfferingId = {{ assignment.class_offering_id | tojson }};
+    const currentAllowedFileTypes = {{ assignment.allowed_file_types | tojson }};
+    const currentAvailabilityMode = {{ assignment.availability_mode | default('permanent') | tojson }};
+    const currentDueAt = {{ assignment.due_at | tojson }};
+    const currentDurationMinutes = {{ assignment.duration_minutes | tojson }};
+    const currentStartsAt = {{ assignment.starts_at | tojson }};
+    const currentAutoClose = {{ assignment.auto_close | default(1) | tojson }};
+    const OFFLINE_EXAM_QUESTIONS = {{ exam_questions | tojson if exam_questions else 'null' }};
+    const MAX_UPLOAD_MB = {{ max_upload_mb }};
+    const MAX_UPLOAD_BYTES = {{ max_total_mb }} * 1024 * 1024;
+    const MAX_PER_FILE_BYTES = {{ max_per_file_mb }} * 1024 * 1024;
+    const MAX_FILE_COUNT = {{ max_submission_file_count }};
+    let allEntries = [];
+    let currentFilter = 'all';
+    let scoreRangeFilter = null;  // null or SCORE_CATEGORIES key
+    let currentSort = { key: null, direction: 'asc' };
+    let autoRefreshTimer = null;
+    let selectedStudentIds = new Set();
+    let withdrawScope = { scope: 'selected', studentPkIds: [] };
+    let offlineUploadManager = null;
+    let offlineTargetStudent = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        renderMarkdown('assignment-requirements', {{ assignment.requirements_md | tojson }});
+        renderMarkdown('assignment-rubric', {{ assignment.rubric_md | tojson }});
+        loadSubmissions();
+        syncEditScheduleMode();
+
+        autoRefreshTimer = setInterval(() => {
+            if (allEntries.some(s => s.status === 'grading')) {
+                loadSubmissions();
+            }
+        }, 30000);
+
+        document.addEventListener('click', function(event) {
+            const dd = document.getElementById('status-dropdown');
+            if (!event.target.closest('.dropdown')) dd.style.display = 'none';
+        });
+    });
+
+    function syncEditScheduleMode() {
+        const mode = document.getElementById('edit-availability-mode')?.value || 'permanent';
+        const deadlineGroup = document.getElementById('edit-deadline-group');
+        const countdownGroup = document.getElementById('edit-countdown-group');
+        if (deadlineGroup) {
+            deadlineGroup.style.display = mode === 'deadline' ? '' : 'none';
+        }
+        if (countdownGroup) {
+            countdownGroup.style.display = mode === 'countdown' ? '' : 'none';
+        }
+    }
+
+    document.getElementById('edit-availability-mode')?.addEventListener('change', syncEditScheduleMode);
+
+    function buildScheduleFromEditForm() {
+        const mode = (document.getElementById('edit-availability-mode')?.value || 'permanent').trim();
+        const dueAt = (document.getElementById('edit-due-at')?.value || '').trim();
+        const durationRaw = (document.getElementById('edit-duration-minutes')?.value || '').trim();
+        const startsAt = (document.getElementById('edit-starts-at')?.value || '').trim();
+
+        if (mode === 'deadline' && !dueAt) {
+            throw new Error('请设置截止时间');
+        }
+        if (mode === 'countdown') {
+            if (!durationRaw) {
+                throw new Error('请设置倒计时分钟数');
+            }
+            const duration = Number(durationRaw);
+            if (!Number.isFinite(duration) || duration <= 0) {
+                throw new Error('倒计时分钟数必须大于 0');
+            }
+        }
+
+        return {
+            availability_mode: mode,
+            due_at: mode === 'deadline' ? dueAt : null,
+            duration_minutes: mode === 'countdown' ? Number(durationRaw) : null,
+            starts_at: mode === 'countdown' && startsAt ? startsAt : null,
+        };
+    }
+
+    // ==================== Data Loading ====================
+    async function loadSubmissions() {
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}/submissions`);
+            const data = await response.json();
+            if (data.status === 'success') {
+                allEntries = (data.submissions || []).map((entry, index) => ({ ...entry, __rowIndex: index }));
+                renderSubmissions();
+                updateStats(data.stats);
+            }
+        } catch (error) {
+            console.error('加载数据失败:', error);
+            showToast('加载数据失败', 'error');
+            document.getElementById('submissions-list').innerHTML =
+                '<tr><td colspan="7" class="text-center text-danger p-lg">加载失败</td></tr>';
+        }
+    }
+
+    // ==================== Statistics ====================
+    let distChartInstance = null;
+
+    const SCORE_CATEGORIES = [
+        { key: 'none',       label: '无成绩', range: '未提交',  color: '#94a3b8', badgeCls: 'sb-none' },
+        { key: 'fail',       label: '不及格', range: '0-59',   color: '#ef4444', badgeCls: 'sb-fail' },
+        { key: 'pass',       label: '及格',   range: '60-69',  color: '#f59e0b', badgeCls: 'sb-pass' },
+        { key: 'medium',     label: '良好',   range: '70-79',  color: '#06b6d4', badgeCls: 'sb-medium' },
+        { key: 'good',       label: '优秀',   range: '80-89',  color: '#3b82f6', badgeCls: 'sb-good' },
+        { key: 'excellent',  label: '极好',   range: '90-100', color: '#10b981', badgeCls: 'sb-excellent' },
+    ];
+
+    // Cleanup ECharts on page unload
+    window.addEventListener('beforeunload', () => {
+        if (distChartInstance) { distChartInstance.dispose(); distChartInstance = null; }
+    });
+
+    function updateStats(stats) {
+        document.getElementById('stat-total-students').textContent = stats.total_students ?? '-';
+        document.getElementById('stat-submitted').textContent = stats.total_submissions ?? 0;
+        document.getElementById('stat-unsubmitted').textContent = stats.unsubmitted_count ?? 0;
+        document.getElementById('stat-graded').textContent = stats.graded_count ?? 0;
+        document.getElementById('stat-pending').textContent = Math.max(0, (stats.submitted_count ?? 0) - (stats.returned_count ?? 0));
+        document.getElementById('stat-avg').textContent = stats.average_score ?? '-';
+        document.getElementById('stat-max').textContent = stats.max_score ?? '-';
+        document.getElementById('stat-min').textContent = stats.min_score ?? '-';
+        document.getElementById('stat-pass-rate').textContent = stats.pass_rate != null ? stats.pass_rate + '%' : '-';
+        document.getElementById('stat-grading').textContent = stats.grading_count ?? 0;
+
+        // Score distribution chart
+        const dist = stats.score_distribution;
+        const distSection = document.getElementById('dist-section');
+        const hasDistributionData = dist && Object.values(dist).some(value => Number(value || 0) > 0);
+        if (hasDistributionData) {
+            distSection.style.display = '';
+            requestAnimationFrame(() => renderScoreChart(dist, stats.total_students));
+        } else {
+            distSection.style.display = 'none';
+        }
+    }
+
+    function renderScoreChart(dist, totalStudents, retryCount = 0) {
+        const container = document.getElementById('dist-chart');
+        if (!container || typeof echarts === 'undefined') return;
+        if (container.clientWidth <= 0) {
+            if (retryCount < 8) {
+                requestAnimationFrame(() => renderScoreChart(dist, totalStudents, retryCount + 1));
+            }
+            return;
+        }
+
+        if (!distChartInstance) {
+            distChartInstance = echarts.init(container);
+            distChartInstance.on('click', function(params) {
+                if (params.seriesType === 'bar' && params.dataIndex != null) {
+                    const category = SCORE_CATEGORIES[params.dataIndex];
+                    if (category && params.value > 0) {
+                        if (scoreRangeFilter === category.key) {
+                            clearScoreRangeFilter();
+                        } else {
+                            setScoreRangeFilter(category.key);
+                        }
+                    }
+                }
+            });
+        }
+
+        const labels = SCORE_CATEGORIES.map(c => c.label);
+        const ranges = SCORE_CATEGORIES.map(c => c.range);
+        const counts = SCORE_CATEGORIES.map(c => dist[c.key] || 0);
+        const colors = SCORE_CATEGORIES.map(c => c.color);
+
+        const option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function(params) {
+                    const p = params[0];
+                    const idx = p.dataIndex;
+                    const pct = totalStudents > 0 ? (p.value / totalStudents * 100).toFixed(1) : 0;
+                    return `<strong>${labels[idx]}</strong> (${ranges[idx]})<br/>` +
+                           `人数: <strong>${p.value}</strong><br/>` +
+                           `占比: ${pct}%`;
+                },
+                backgroundColor: 'rgba(255,255,255,0.96)',
+                borderColor: '#e2e8f0',
+                borderWidth: 1,
+                textStyle: { color: '#334155', fontSize: 13 },
+                padding: [10, 14],
+            },
+            grid: {
+                left: 48, right: 20, top: 30, bottom: 46,
+                containLabel: false,
+            },
+            xAxis: {
+                type: 'category',
+                data: labels,
+                axisTick: { show: false },
+                axisLine: { lineStyle: { color: '#e2e8f0' } },
+                axisLabel: {
+                    color: '#475569',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    margin: 12,
+                    formatter: function(val, idx) { return val + '\n' + ranges[idx]; },
+                },
+            },
+            yAxis: {
+                type: 'value',
+                name: '人数',
+                nameTextStyle: { color: '#94a3b8', fontSize: 11 },
+                minInterval: 1,
+                axisLine: { show: false },
+                axisTick: { show: false },
+                splitLine: { lineStyle: { color: '#f1f5f9', type: 'dashed' } },
+                axisLabel: { color: '#94a3b8', fontSize: 11 },
+            },
+            series: [{
+                type: 'bar',
+                cursor: 'pointer',
+                data: counts.map((v, i) => ({
+                    value: v,
+                    itemStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: colors[i] },
+                            { offset: 1, color: colors[i] + '88' },
+                        ]),
+                        borderRadius: [4, 4, 0, 0],
+                    },
+                })),
+                barWidth: '42%',
+                barMaxWidth: 56,
+                emphasis: {
+                    itemStyle: {
+                        shadowBlur: 8,
+                        shadowOffsetX: 0,
+                        shadowOffsetY: 2,
+                        shadowColor: 'rgba(0,0,0,0.15)',
+                    },
+                },
+                label: {
+                    show: true,
+                    position: 'top',
+                    color: '#475569',
+                    fontWeight: 700,
+                    fontSize: 13,
+                },
+                animationDuration: 600,
+                animationEasing: 'cubicOut',
+            }],
+        };
+
+        distChartInstance.setOption(option, true);
+        requestAnimationFrame(() => distChartInstance?.resize());
+
+        // Re-apply highlight if a score range filter is active
+        if (scoreRangeFilter) {
+            const activeIdx = SCORE_CATEGORIES.findIndex(c => c.key === scoreRangeFilter);
+            if (activeIdx >= 0) {
+                distChartInstance.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex: activeIdx });
+            }
+        }
+
+        // Responsive resize
+        if (!container._resizeBound) {
+            container._resizeBound = true;
+            const ro = new ResizeObserver(() => distChartInstance?.resize());
+            ro.observe(container);
+        }
+    }
+
+    // ==================== Render Submissions Table ====================
+    function isAbsenceScore(entry) {
+        return Number(entry?.is_absence_score || 0) === 1;
+    }
+
+    function isFailingEntry(entry) {
+        const score = Number(entry?.score);
+        return entry?.score !== null && entry?.score !== undefined && Number.isFinite(score) && score < 60;
+    }
+
+    function getScoreCategory(entry) {
+        if (entry.score === null || entry.score === undefined || entry.score === '') return 'none';
+        const numScore = Number(entry.score);
+        if (!Number.isFinite(numScore)) return 'none';
+        if (numScore < 60) return 'fail';
+        if (numScore < 70) return 'pass';
+        if (numScore < 80) return 'medium';
+        if (numScore < 90) return 'good';
+        return 'excellent';
+    }
+
+    function matchesCurrentFilter(entry) {
+        if (currentFilter === 'all') return true;
+        if (currentFilter === 'fail') return isFailingEntry(entry);
+        if (currentFilter === 'submitted') {
+            return entry.status === 'submitted' && Number(entry.resubmission_allowed || 0) !== 1;
+        }
+        return entry.status === currentFilter;
+    }
+
+    function getSortValue(entry, key) {
+        if (key === 'student_id_number') return String(entry.student_id_number || '');
+        if (key === 'student_name') return String(entry.student_name || '');
+        if (key === 'status') {
+            if (Number(entry.resubmission_allowed || 0) === 1) return 2.5;
+            const order = { unsubmitted: 1, submitted: 2, grading: 3, graded: 4 };
+            return order[entry.status] || 99;
+        }
+        if (key === 'score') {
+            return entry.score === null || entry.score === undefined ? null : Number(entry.score);
+        }
+        if (key === 'submitted_at') {
+            if (!entry.submitted_at || entry.status === 'unsubmitted') return null;
+            const timestamp = new Date(entry.submitted_at).getTime();
+            return Number.isFinite(timestamp) ? timestamp : null;
+        }
+        return '';
+    }
+
+    function sortEntries(entries) {
+        if (!currentSort.key) return entries;
+        const direction = currentSort.direction === 'desc' ? -1 : 1;
+        return [...entries].sort((a, b) => {
+            const av = getSortValue(a, currentSort.key);
+            const bv = getSortValue(b, currentSort.key);
+            const aEmpty = av === null || av === undefined || av === '';
+            const bEmpty = bv === null || bv === undefined || bv === '';
+            if (aEmpty || bEmpty) {
+                if (aEmpty && bEmpty) return (a.__rowIndex || 0) - (b.__rowIndex || 0);
+                return aEmpty ? 1 : -1;
+            }
+            if (typeof av === 'number' && typeof bv === 'number') {
+                return av === bv ? (a.__rowIndex || 0) - (b.__rowIndex || 0) : (av - bv) * direction;
+            }
+            const result = String(av).localeCompare(String(bv), 'zh-Hans-CN', {
+                numeric: true,
+                sensitivity: 'base',
+            });
+            return result === 0 ? (a.__rowIndex || 0) - (b.__rowIndex || 0) : result * direction;
+        });
+    }
+
+    function getFilteredEntries() {
+        const searchText = (document.getElementById('submission-filter')?.value || '').trim().toLowerCase();
+        let filtered = allEntries.filter(matchesCurrentFilter);
+        if (scoreRangeFilter) {
+            filtered = filtered.filter(s => getScoreCategory(s) === scoreRangeFilter);
+        }
+        if (searchText) {
+            filtered = filtered.filter(s => {
+                const name = (s.student_name || '').toLowerCase();
+                const sid = (s.student_id_number || '').toLowerCase();
+                return name.includes(searchText) || sid.includes(searchText);
+            });
+        }
+        return sortEntries(filtered);
+    }
+
+    function updateSortHeaders() {
+        document.querySelectorAll('.sort-header[data-sort-key]').forEach(button => {
+            const isActive = button.dataset.sortKey === currentSort.key;
+            button.classList.toggle('is-active', isActive);
+            button.classList.toggle('is-asc', isActive && currentSort.direction === 'asc');
+            button.classList.toggle('is-desc', isActive && currentSort.direction === 'desc');
+            const th = button.closest('th');
+            if (th) {
+                th.setAttribute(
+                    'aria-sort',
+                    isActive ? (currentSort.direction === 'asc' ? 'ascending' : 'descending') : 'none',
+                );
+            }
+        });
+    }
+
+    function renderSubmissions() {
+        const tbody = document.getElementById('submissions-list');
+        const filtered = getFilteredEntries();
+        updateSortHeaders();
+        updateZeroUnsubmittedButton();
+
+        tbody.innerHTML = '';
+        if (filtered.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted p-xl">
+                ${allEntries.length === 0 ? '暂无学生数据' : '没有匹配的记录'}
+            </td></tr>`;
+            syncSelectionToolbar();
+            return;
+        }
+
+        filtered.forEach(sub => {
+            const row = document.createElement('tr');
+            const isUnsubmitted = sub.status === 'unsubmitted';
+            const absenceScore = isAbsenceScore(sub);
+            const isReturned = Number(sub.resubmission_allowed || 0) === 1;
+            if (isUnsubmitted) row.classList.add('unsubmitted-row');
+
+            // Status badge
+            const statusMap = {
+                'submitted': { cls: 'badge-primary', text: '已提交' },
+                'grading': { cls: 'badge-warning', text: '批改中' },
+                'graded': { cls: 'badge-success', text: '已批改' },
+                'unsubmitted': { cls: 'badge-secondary', text: '未提交' },
+            };
+            const st = isReturned
+                ? { cls: 'badge-warning', text: '待重交' }
+                : (statusMap[sub.status] || { cls: 'badge-secondary', text: sub.status || '-' });
+            const statusSubtext = isReturned && sub.resubmission_due_at
+                ? `<span class="status-subtext">截止 ${fmtDate(sub.resubmission_due_at)}</span>`
+                : '';
+            const channelBadge = sub.submission_channel === 'offline'
+                ? `<span class="badge badge-outline ml-1">线下</span>`
+                : absenceScore
+                    ? `<span class="badge badge-outline ml-1">缺交记0</span>`
+                : '';
+
+            // Score display with color and grade label
+            const scoreInfo = getScoreInfo(sub.score, sub.status);
+            const scoreDisplay = sub.score != null
+                ? `<div class="score-cell">
+                     <span class="score-badge-inline ${scoreInfo.badgeCls}">${sub.score}</span>
+                     <span class="score-grade-label" style="background:${scoreInfo.bgColor};color:${scoreInfo.color}">${absenceScore ? '缺交' : scoreInfo.label}</span>
+                     ${absenceScore ? '<div class="absence-score-note">未提交记 0</div>' : ''}
+                     <div class="score-progress-bar"><div class="score-progress-fill" style="width:${sub.score}%;background:${scoreInfo.color}"></div></div>
+                   </div>`
+                : `<div class="score-cell"><span class="text-muted">-</span></div>`;
+
+            const selectable = !isUnsubmitted && !!sub.id;
+            const selected = selectedStudentIds.has(Number(sub.student_pk_id));
+            const canOfflineSubmit = isUnsubmitted || isReturned;
+            const offlineTitle = canOfflineSubmit ? '线下代交' : '已有正式提交，需先撤回';
+            const aiDisabled = sub.status === 'grading' || isReturned;
+            const withdrawButton = selectable && !isReturned
+                ? `<button class="btn btn-outline btn-sm text-warning" onclick="event.stopPropagation(); openWithdrawModalForOne(${sub.student_pk_id})" title="撤回后开放重交">撤回</button>`
+                : '';
+
+            row.innerHTML = `
+                <td>
+                    ${selectable ? `<input type="checkbox" class="submission-checkbox" ${selected ? 'checked' : ''} onclick="event.stopPropagation();" onchange="toggleSubmissionSelection(${sub.student_pk_id}, this.checked)">` : ''}
+                </td>
+                <td class="text-sm text-muted">${escapeHtml(sub.student_id_number || '-')}</td>
+                <td class="font-medium">${escapeHtml(sub.student_name || '-')}</td>
+                <td><span class="badge ${st.cls}">${st.text}</span>${channelBadge}${statusSubtext}</td>
+                <td>${scoreDisplay}</td>
+                <td class="text-sm text-muted">${isUnsubmitted ? '-' : fmtDate(sub.submitted_at)}</td>
+                <td>
+                    <div class="action-btns">
+                        ${!isUnsubmitted ? `
+                        <button class="btn btn-ghost btn-sm text-primary" onclick="event.stopPropagation(); goDetail(${sub.id})" title="查看详情">详情</button>
+                        <button class="btn btn-outline btn-sm text-warning" onclick="event.stopPropagation(); aiRegrade(${sub.id})"
+                            ${aiDisabled ? `disabled title="${isReturned ? '待重交提交不能批改' : '批改中'}"` : 'title="AI 辅助批改"'}>AI</button>
+                        ${withdrawButton}
+                        ` : ''}
+                        <button class="btn btn-outline btn-sm text-primary" onclick="event.stopPropagation(); openOfflineSubmit(${sub.student_pk_id})"
+                            ${canOfflineSubmit ? `title="${offlineTitle}"` : `disabled title="${offlineTitle}"`}>线下</button>
+                    </div>
+                </td>
+            `;
+
+            // Click row to go to detail
+            if (!isUnsubmitted && sub.id) {
+                row.onclick = () => goDetail(sub.id);
+            }
+
+            tbody.appendChild(row);
+        });
+        syncSelectionToolbar();
+    }
+
+    function getScoreInfo(score, status) {
+        if (score == null) return { label: '无成绩', color: '#94a3b8', bgColor: '#f1f5f9', badgeCls: 'sb-none' };
+        if (score >= 90) return { label: '极好', color: '#059669', bgColor: '#d1fae5', badgeCls: 'sb-excellent' };
+        if (score >= 80) return { label: '优秀', color: '#2563eb', bgColor: '#dbeafe', badgeCls: 'sb-good' };
+        if (score >= 70) return { label: '良好', color: '#0891b2', bgColor: '#cffafe', badgeCls: 'sb-medium' };
+        if (score >= 60) return { label: '及格', color: '#d97706', bgColor: '#fef3c7', badgeCls: 'sb-pass' };
+        return { label: '不及格', color: '#dc2626', bgColor: '#fee2e2', badgeCls: 'sb-fail' };
+    }
+
+    // ==================== Navigation ====================
+    window.goDetail = function(subId) {
+        window.location.href = `/submission/${subId}`;
+    };
+
+    // ==================== Filters ====================
+    window.setFilter = function(filter, btn) {
+        currentFilter = filter;
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderSubmissions();
+    };
+
+    function setScoreRangeFilter(key) {
+        scoreRangeFilter = key;
+        // Highlight the selected bar, dim others
+        if (distChartInstance) {
+            distChartInstance.dispatchAction({ type: 'downplay', seriesIndex: 0 });
+            const idx = SCORE_CATEGORIES.findIndex(c => c.key === key);
+            if (idx >= 0) {
+                distChartInstance.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex: idx });
+            }
+        }
+        // Show the filter chip
+        const category = SCORE_CATEGORIES.find(c => c.key === key);
+        if (category) {
+            document.getElementById('score-range-filter-label').textContent =
+                `分数: ${category.label} (${category.range})`;
+        }
+        document.getElementById('score-range-filter-chip').style.display = '';
+        // Re-render and scroll
+        renderSubmissions();
+        const tableArea = document.querySelector('.table-responsive');
+        if (tableArea) {
+            tableArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+
+    window.clearScoreRangeFilter = function() {
+        scoreRangeFilter = null;
+        if (distChartInstance) {
+            distChartInstance.dispatchAction({ type: 'downplay', seriesIndex: 0 });
+        }
+        document.getElementById('score-range-filter-chip').style.display = 'none';
+        renderSubmissions();
+    };
+
+    window.filterSubmissions = function() {
+        renderSubmissions();
+    };
+
+    window.setSubmissionSort = function(key) {
+        if (currentSort.key === key) {
+            currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+            currentSort = { key, direction: 'asc' };
+        }
+        renderSubmissions();
+    };
+
+    function getSelectableEntries(entries = allEntries) {
+        return entries.filter(s => s.id && s.status !== 'unsubmitted');
+    }
+
+    function getZeroUnsubmittedCandidates() {
+        return allEntries.filter(s => s.status === 'unsubmitted' && !isAbsenceScore(s));
+    }
+
+    function updateZeroUnsubmittedButton() {
+        const btn = document.getElementById('zero-unsubmitted-btn');
+        if (!btn) return;
+        const count = getZeroUnsubmittedCandidates().length;
+        btn.disabled = count === 0;
+        btn.title = count > 0
+            ? `将 ${count} 名未提交学生标记为缺交 0 分`
+            : '当前没有需要记 0 的未提交学生';
+    }
+
+    function syncSelectionToolbar() {
+        const selectable = getSelectableEntries();
+        const visibleSelectable = getSelectableEntries(getFilteredEntries());
+        const validIds = new Set(selectable.map(s => Number(s.student_pk_id)));
+        selectedStudentIds = new Set([...selectedStudentIds].filter(id => validIds.has(Number(id))));
+        const count = selectedStudentIds.size;
+        const countEl = document.getElementById('selection-count');
+        const btn = document.getElementById('withdraw-selected-btn');
+        const selectAll = document.getElementById('select-all-submissions');
+        if (countEl) countEl.textContent = `已选 ${count}`;
+        if (btn) btn.disabled = count === 0;
+        if (selectAll) {
+            const visibleSelectedCount = visibleSelectable.filter(s => selectedStudentIds.has(Number(s.student_pk_id))).length;
+            selectAll.checked = visibleSelectable.length > 0 && visibleSelectedCount === visibleSelectable.length;
+            selectAll.indeterminate = visibleSelectedCount > 0 && visibleSelectedCount < visibleSelectable.length;
+        }
+    }
+
+    window.toggleSubmissionSelection = function(studentPkId, checked) {
+        const id = Number(studentPkId);
+        if (checked) selectedStudentIds.add(id);
+        else selectedStudentIds.delete(id);
+        syncSelectionToolbar();
+    };
+
+    window.toggleSelectAll = function(input) {
+        const selectable = getSelectableEntries(getFilteredEntries());
+        if (input.checked) {
+            selectable.forEach(s => selectedStudentIds.add(Number(s.student_pk_id)));
+        } else {
+            selectable.forEach(s => selectedStudentIds.delete(Number(s.student_pk_id)));
+        }
+        renderSubmissions();
+    };
+
+    // ==================== Actions ====================
+    window.zeroUnsubmittedScores = async function() {
+        const candidates = getZeroUnsubmittedCandidates();
+        if (candidates.length === 0) {
+            showToast('当前没有需要记 0 的未提交学生', 'info');
+            updateZeroUnsubmittedButton();
+            return;
+        }
+        if (!confirm(`确定将 ${candidates.length} 名未提交学生的成绩标记为 0 分吗？\n\n这会保留“未提交”状态，并用“缺交记0”与真正提交后得 0 分区分。`)) {
+            return;
+        }
+
+        const btn = document.getElementById('zero-unsubmitted-btn');
+        const originalHtml = btn?.innerHTML;
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner spinner-sm mr-2"></div> 记 0 中...';
+        }
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}/submissions/zero-unsubmitted`, {
+                method: 'POST',
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || data.message || '未提交记 0 失败');
+            const count = Number(data.updated_count || 0);
+            showToast(count > 0 ? `已将 ${count} 名未提交学生记为 0 分` : (data.message || '没有需要更新的未提交学生'), count > 0 ? 'success' : 'info');
+            await loadSubmissions();
+        } catch (error) {
+            showToast(error.message || '未提交记 0 失败', 'error');
+        } finally {
+            if (btn) {
+                btn.innerHTML = originalHtml;
+                updateZeroUnsubmittedButton();
+            }
+        }
+    };
+
+    window.aiRegrade = async function(subId) {
+        if (!confirm('确定要使用 AI 重新批改此作业吗？')) return;
+        try {
+            const response = await fetch(`/api/submissions/${subId}/regrade`, { method: 'POST' });
+            const data = await response.json();
+            if (response.ok) {
+                showToast(data.status === 'already_grading' ? '正在批改中' : 'AI 批改任务已提交', 'success');
+                await loadSubmissions();
+            } else {
+                throw new Error(data.detail || 'AI批改失败');
+            }
+        } catch (error) {
+            showToast(error.message, 'error');
+        }
+    };
+
+    window.aiGradeAll = async function() {
+        const ungraded = allEntries.filter(s => s.status === 'submitted' && !Number(s.resubmission_allowed || 0));
+        if (ungraded.length === 0) { showToast('没有需要批改的作业', 'info'); return; }
+        if (!confirm(`确定要对 ${ungraded.length} 份未批改作业进行 AI 批量批改吗？`)) return;
+
+        const btn = document.getElementById('ai-grade-all-btn');
+        btn.disabled = true;
+        let processed = 0, errors = 0;
+
+        for (const sub of ungraded) {
+            try {
+                const r = await fetch(`/api/submissions/${sub.id}/regrade`, { method: 'POST' });
+                if (!r.ok) errors++;
+                processed++;
+                btn.innerHTML = `<div class="spinner spinner-sm mr-2"></div> 批改中 (${processed}/${ungraded.length})`;
+                await new Promise(r => setTimeout(r, 500));
+            } catch { errors++; processed++; }
+        }
+
+        btn.disabled = false;
+        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg> AI 批量批改`;
+        showToast(errors === 0 ? `成功提交 ${processed} 份` : `${processed} 份提交，${errors} 份失败`, errors === 0 ? 'success' : 'warning');
+        await loadSubmissions();
+    };
+
+    function toDatetimeLocalValue(date) {
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    function openWithdrawModal(scope, studentPkIds) {
+        const targetCount = scope === 'all' ? getSelectableEntries().length : studentPkIds.length;
+        if (targetCount <= 0) {
+            showToast('没有可撤回的提交', 'info');
+            return;
+        }
+        withdrawScope = { scope, studentPkIds };
+        const dueInput = document.getElementById('withdraw-resubmission-due-at');
+        const minutesInput = document.getElementById('withdraw-extension-minutes');
+        const reasonInput = document.getElementById('withdraw-reason');
+        if (minutesInput) minutesInput.value = '120';
+        if (dueInput) dueInput.value = toDatetimeLocalValue(new Date(Date.now() + 2 * 60 * 60 * 1000));
+        if (reasonInput) reasonInput.value = '';
+        document.getElementById('withdraw-modal-summary').textContent =
+            scope === 'all'
+                ? `将撤回当前作业的 ${targetCount} 条已提交记录，并开放重交。`
+                : `将撤回选中的 ${targetCount} 条提交记录，并开放重交。`;
+        openModal('withdraw-submissions-modal');
+    }
+
+    window.openWithdrawModalForSelected = function() {
+        openWithdrawModal('selected', [...selectedStudentIds]);
+    };
+
+    window.openWithdrawModalForAll = function() {
+        openWithdrawModal('all', []);
+    };
+
+    window.openWithdrawModalForOne = function(studentPkId) {
+        openWithdrawModal('selected', [Number(studentPkId)]);
+    };
+
+    window.confirmWithdrawSubmissions = async function() {
+        const btn = document.getElementById('confirm-withdraw-btn');
+        const dueAt = (document.getElementById('withdraw-resubmission-due-at')?.value || '').trim();
+        const minutesRaw = (document.getElementById('withdraw-extension-minutes')?.value || '120').trim();
+        const reason = (document.getElementById('withdraw-reason')?.value || '').trim();
+        const body = {
+            scope: withdrawScope.scope === 'all' ? 'all' : 'selected',
+            extension_minutes: Number(minutesRaw || 120),
+            reason,
+        };
+        if (withdrawScope.scope !== 'all') body.student_pk_ids = withdrawScope.studentPkIds;
+        if (dueAt) body.resubmission_due_at = dueAt;
+
+        btn.disabled = true;
+        btn.innerHTML = '<div class="spinner spinner-sm mr-2"></div> 撤回中...';
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}/submissions/withdraw`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || '撤回失败');
+            showToast(`已撤回 ${data.updated_count || 0} 条提交`, 'success');
+            selectedStudentIds.clear();
+            closeWithdrawModal();
+            await loadSubmissions();
+        } catch (error) {
+            showToast(error.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '确认撤回';
+        }
+    };
+
+    function initOfflineUpload() {
+        if (offlineUploadManager) {
+            offlineUploadManager.clear();
+            return;
+        }
+        offlineUploadManager = new SubmissionUploadManager({
+            dropZoneId: 'offline-drop-zone',
+            fileInputId: 'offline-file-input',
+            folderInputId: 'offline-folder-input',
+            listId: 'offline-file-chips',
+            summaryId: 'offline-upload-summary',
+            allowedFileTypes: currentAllowedFileTypes,
+            maxBytes: MAX_UPLOAD_BYTES,
+            maxPerFileBytes: MAX_PER_FILE_BYTES,
+            maxFiles: MAX_FILE_COUNT,
+            notify: showToast,
+        });
+        offlineUploadManager.init();
+        document.getElementById('offline-pick-files-btn')?.addEventListener('click', () => offlineUploadManager.openFilePicker());
+        document.getElementById('offline-pick-folder-btn')?.addEventListener('click', () => offlineUploadManager.openFolderPicker());
+    }
+
+    window.openOfflineSubmit = function(studentPkId) {
+        const entry = allEntries.find(s => Number(s.student_pk_id) === Number(studentPkId));
+        if (!entry) {
+            showToast('未找到学生记录', 'error');
+            return;
+        }
+        const canOfflineSubmit = entry.status === 'unsubmitted' || Number(entry.resubmission_allowed || 0) === 1;
+        if (!canOfflineSubmit) {
+            showToast('该学生已有正式提交，请先撤回后再线下重交', 'warning');
+            return;
+        }
+        offlineTargetStudent = entry;
+        document.getElementById('offline-target-student').textContent =
+            `${entry.student_name || '-'}（${entry.student_id_number || '无学号'}）`;
+        document.getElementById('offline-target-status').textContent =
+            entry.status === 'unsubmitted' ? '首次线下提交' : '撤回后重交';
+        renderOfflineAnswerArea();
+        openModal('offline-submit-modal');
+        initOfflineUpload();
+    };
+
+    function renderOfflineAnswerArea() {
+        const area = document.getElementById('offline-answer-area');
+        if (!area) return;
+        const examPages = OFFLINE_EXAM_QUESTIONS?.pages || [];
+        const questions = [];
+        if (examPages.length) {
+            examPages.forEach((page, pageIndex) => {
+                (page.questions || []).forEach((q, qIndex) => {
+                    questions.push({
+                        id: q.id || `${pageIndex + 1}-${qIndex + 1}`,
+                        text: q.text || `第 ${questions.length + 1} 题`,
+                        type: q.type || 'textarea',
+                        options: q.options || [],
+                    });
+                });
+            });
+        } else {
+            extractQuestions({{ assignment.requirements_md | tojson }}).forEach((text, index) => {
+                questions.push({ id: `q${index + 1}`, text, type: 'textarea', options: [] });
+            });
+            if (!questions.length) {
+                questions.push({ id: 'answer', text: '综合答题区', type: 'textarea', options: [] });
+            }
+        }
+
+        area.innerHTML = questions.map((q, index) => {
+            const question = escapeHtml(q.text || '');
+            const qid = escapeHtml(String(q.id || `q${index + 1}`));
+            if (q.type === 'radio' && q.options?.length) {
+                return `
+                    <div class="offline-question" data-offline-question data-question-id="${qid}" data-question="${question}" data-type="radio">
+                        <div class="offline-question-label"><span class="badge badge-outline">${index + 1}</span><span>${question}</span></div>
+                        <div class="offline-option-list">
+                            ${q.options.map((opt, optIndex) => `
+                                <label><input type="radio" name="offline_${qid}" value="${escapeHtml(opt)}"> <span>${escapeHtml(opt)}</span></label>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            if (q.type === 'checkbox' && q.options?.length) {
+                return `
+                    <div class="offline-question" data-offline-question data-question-id="${qid}" data-question="${question}" data-type="checkbox">
+                        <div class="offline-question-label"><span class="badge badge-outline">${index + 1}</span><span>${question}</span></div>
+                        <div class="offline-option-list">
+                            ${q.options.map((opt) => `
+                                <label><input type="checkbox" value="${escapeHtml(opt)}"> <span>${escapeHtml(opt)}</span></label>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            if (q.type === 'text') {
+                return `
+                    <div class="offline-question" data-offline-question data-question-id="${qid}" data-question="${question}" data-type="text">
+                        <div class="offline-question-label"><span class="badge badge-outline">${index + 1}</span><span>${question}</span></div>
+                        <input type="text" class="form-control" placeholder="输入答案">
+                    </div>
+                `;
+            }
+            return `
+                <div class="offline-question" data-offline-question data-question-id="${qid}" data-question="${question}" data-type="textarea">
+                    <div class="offline-question-label"><span class="badge badge-outline">${index + 1}</span><span>${question}</span></div>
+                    <textarea class="form-control" rows="5" placeholder="输入答案"></textarea>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function extractQuestions(md) {
+        const questions = [];
+        const lines = String(md || '').split('\n');
+        let currentQuestion = '';
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            const headingMatch = trimmed.match(/^(#{1,4})\s+(.+)/);
+            if (headingMatch) {
+                if (currentQuestion) questions.push(currentQuestion);
+                currentQuestion = headingMatch[2].trim();
+                continue;
+            }
+            if (/^\d+[\.\)]\s*/.test(trimmed) && trimmed.length < 120) {
+                if (currentQuestion) questions.push(currentQuestion);
+                currentQuestion = trimmed;
+                continue;
+            }
+            if (/^Question/i.test(trimmed)) {
+                if (currentQuestion) questions.push(currentQuestion);
+                currentQuestion = trimmed;
+                continue;
+            }
+            if (currentQuestion && currentQuestion.length < 80) currentQuestion += ` ${trimmed}`;
+        }
+        if (currentQuestion) questions.push(currentQuestion);
+        return questions.filter(question => !/^(assignment|requirements|rubric|deadline|note|submit)/i.test(question) && question.length > 1);
+    }
+
+    function collectOfflineAnswers() {
+        return [...document.querySelectorAll('[data-offline-question]')].map((node, index) => {
+            const type = node.dataset.type || 'textarea';
+            let answer = '';
+            if (type === 'radio') {
+                answer = node.querySelector('input[type="radio"]:checked')?.value || '';
+            } else if (type === 'checkbox') {
+                answer = [...node.querySelectorAll('input[type="checkbox"]:checked')].map(input => input.value).join('|||');
+            } else {
+                answer = node.querySelector('textarea, input[type="text"]')?.value || '';
+            }
+            return {
+                question_id: node.dataset.questionId || `q${index + 1}`,
+                question: node.dataset.question || `第 ${index + 1} 题`,
+                answer,
+            };
+        });
+    }
+
+    window.confirmOfflineSubmit = async function() {
+        if (!offlineTargetStudent) return;
+        const answers = collectOfflineAnswers();
+        const hasText = answers.some(item => String(item.answer || '').trim());
+        const hasFiles = offlineUploadManager?.hasFiles() ?? false;
+        if (!hasText && !hasFiles) {
+            showToast('请填写答案或上传附件', 'warning');
+            return;
+        }
+
+        const btn = document.getElementById('confirm-offline-submit-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<div class="spinner spinner-sm mr-2"></div> 提交中...';
+        const formData = offlineUploadManager ? offlineUploadManager.buildFormData() : new FormData();
+        formData.append('student_pk_id', String(offlineTargetStudent.student_pk_id));
+        formData.append('answers_json', JSON.stringify({ answers }));
+
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}/submissions/offline`, {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || '线下提交失败');
+            const dropped = Number(data.dropped_file_count || 0);
+            showToast(dropped > 0 ? `提交成功，已过滤 ${dropped} 个不符合要求的文件` : '线下提交成功', dropped > 0 ? 'warning' : 'success');
+            closeOfflineSubmitModal();
+            await loadSubmissions();
+        } catch (error) {
+            showToast(error.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '提交';
+        }
+    };
+
+    window.exportGrades = async function() {
+        if (!currentClassOfferingId) {
+            showToast('此作业未关联班级课堂，无法导出成绩', 'warning');
+            return;
+        }
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}/export/${currentClassOfferingId}`);
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `成绩_${currentAssignmentId}.xlsx`;
+                document.body.appendChild(a); a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                showToast('导出成功', 'success');
+            } else { throw new Error('导出失败'); }
+        } catch (error) { showToast('导出成绩失败', 'error'); }
+    };
+
+    window.exportAttachments = async function() {
+        if (!currentClassOfferingId) {
+            showToast('此作业未关联班级课堂，无法导出附件', 'warning');
+            return;
+        }
+        const btn = document.getElementById('export-attachments-btn');
+        const overlay = document.getElementById('export-overlay');
+        const overlayText = document.getElementById('export-overlay-text');
+        const overlaySub = document.getElementById('export-overlay-sub');
+        const spinnerIcon = document.getElementById('export-spinner-icon');
+
+        // Show overlay with spinner
+        btn.disabled = true;
+        overlayText.textContent = '正在打包附件...';
+        overlaySub.textContent = '请勿关闭页面';
+        spinnerIcon.className = 'export-spinner';
+        spinnerIcon.innerHTML = '';
+        overlay.classList.add('active');
+
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}/export-attachments/${currentClassOfferingId}`);
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.detail || '导出失败');
+            }
+            const blob = await response.blob();
+
+            // Extract filename from Content-Disposition header
+            const disposition = response.headers.get('Content-Disposition') || '';
+            let filename = `附件_${currentAssignmentId}.zip`;
+            const utf8Match = disposition.match(/filename\*=UTF-8''(.+)/i);
+            if (utf8Match) {
+                filename = decodeURIComponent(utf8Match[1]);
+            } else {
+                const plainMatch = disposition.match(/filename="?([^";\n]+)"?/);
+                if (plainMatch) filename = plainMatch[1];
+            }
+
+            // Show success state
+            spinnerIcon.className = 'export-checkmark';
+            spinnerIcon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+            overlayText.textContent = '打包完成';
+            const sizeMB = (blob.size / 1024 / 1024).toFixed(1);
+            overlaySub.textContent = `${filename}（${sizeMB} MB）`;
+
+            // Trigger download after brief success display
+            await new Promise(r => setTimeout(r, 600));
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            showToast(`附件导出成功（${sizeMB} MB）`, 'success');
+        } catch (error) {
+            showToast(error.message || '导出附件失败', 'error');
+        } finally {
+            overlay.classList.remove('active');
+            btn.disabled = false;
+        }
+    };
+
+    // ==================== Status Dropdown ====================
+    window.toggleStatusDropdown = function() {
+        const dd = document.getElementById('status-dropdown');
+        dd.style.display = dd.style.display === 'block' ? 'none' : 'block';
+    };
+
+    window.changeStatus = async function(newStatus) {
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: {{ assignment.title | tojson }},
+                    requirements_md: {{ assignment.requirements_md | tojson }},
+                    rubric_md: {{ assignment.rubric_md | tojson }},
+                    grading_mode: {{ assignment.grading_mode | tojson }},
+                    status: newStatus,
+                    allowed_file_types: currentAllowedFileTypes,
+                    availability_mode: currentAvailabilityMode,
+                    due_at: currentDueAt,
+                    duration_minutes: currentDurationMinutes,
+                    starts_at: currentStartsAt,
+                    auto_close: currentAutoClose,
+                })
+            });
+            if (response.ok) {
+                showToast(`状态已更新为: ${getStatusText(newStatus)}`, 'success');
+                document.getElementById('status-dropdown').style.display = 'none';
+                setTimeout(() => location.reload(), 800);
+            } else { throw new Error('状态更新失败'); }
+        } catch (error) { showToast('更新状态失败', 'error'); }
+    };
+
+    // ==================== Edit Form ====================
+    document.getElementById('edit-assignment-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        try {
+            const schedulePayload = buildScheduleFromEditForm();
+            const response = await fetch(`/api/assignments/${currentAssignmentId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: document.getElementById('edit-title').value,
+                    requirements_md: document.getElementById('edit-requirements').value,
+                    rubric_md: document.getElementById('edit-rubric').value,
+                    grading_mode: document.getElementById('edit-grading-mode').value,
+                    status: {{ assignment.status | tojson }},
+                    allowed_file_types: document.getElementById('edit-allowed-file-types').value,
+                    ...schedulePayload,
+                })
+            });
+            if (response.ok) {
+                showToast('作业更新成功', 'success');
+                closeEditModal();
+                setTimeout(() => location.reload(), 800);
+            } else { throw new Error('更新失败'); }
+        } catch (error) { showToast('更新失败', 'error'); }
+    });
+
+    // ==================== Delete ====================
+    window.confirmDelete = async function() {
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}`, { method: 'DELETE' });
+            if (response.ok) {
+                showToast('删除成功', 'success');
+                setTimeout(() => window.location.href = '/dashboard', 1000);
+            } else { throw new Error('删除失败'); }
+        } catch (error) { showToast('删除失败', 'error'); closeDeleteModal(); }
+    };
+
+    // ==================== Utilities ====================
+    function fmtDate(s) {
+        if (!s) return '-';
+        try { return new Date(s).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+        catch { return s; }
+    }
+
+    function getStatusText(status) {
+        return { 'new': '草稿', 'published': '进行中', 'closed': '已截止', 'submitted': '已提交', 'grading': '批改中', 'graded': '已批改', 'unsubmitted': '未提交' }[status] || status;
+    }
+</script>
+{% endblock %}

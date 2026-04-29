@@ -1,0 +1,138 @@
+INFO:     172.22.131.109:53000 - "POST /api/classrooms/5/behavior/batch HTTP/1.1" 200 OK
+INFO:     172.22.131.113:52094 - "POST /api/classrooms/5/behavior/batch HTTP/1.1" 200 OK
+[BEHAVIOR_PROFILE] 更新失败: All connection attempts failed
+INFO:     172.22.131.124:51855 - "POST /api/classrooms/5/behavior/batch HTTP/1.1" 200 OK
+INFO:     172.22.131.124:51856 - "GET /api/classrooms/5/discussion-mood HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55855 - "POST /api/classrooms/5/behavior/batch HTTP/1.1" 200 OK
+INFO:     172.22.131.158:51689 - "GET /api/message-center/summary HTTP/1.1" 200 OK
+INFO:     172.22.131.130:51546 - "POST /api/classrooms/5/behavior/batch HTTP/1.1" 200 OK
+INFO:     172.22.131.130:51547 - "GET /api/classrooms/5/discussion-mood HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55855 - "GET /api/classrooms/5/discussion-mood HTTP/1.1" 200 OK
+INFO:     172.22.131.172:52063 - "POST /api/classrooms/5/behavior/batch HTTP/1.1" 200 OK
+INFO:     172.22.131.172:52062 - "GET /api/classrooms/5/discussion-mood HTTP/1.1" 200 OK
+INFO:     172.22.131.156:52115 - "POST /api/classrooms/5/behavior/batch HTTP/1.1" 200 OK
+INFO:     172.22.131.115:51975 - "POST /api/classrooms/5/behavior/batch HTTP/1.1" 200 OK
+INFO:     172.22.131.115:51974 - "GET /api/message-center/summary HTTP/1.1" 200 OK
+INFO:     172.22.131.115:51976 - "GET /api/classrooms/5/discussion-mood HTTP/1.1" 200 OK
+INFO:     172.22.131.115:51974 - "GET /api/message-center/summary HTTP/1.1" 200 OK
+INFO:     172.22.131.171:52218 - "POST /api/classrooms/5/behavior/batch HTTP/1.1" 200 OK
+INFO:     172.22.131.171:52219 - "GET /api/classrooms/5/discussion-mood HTTP/1.1" 200 OK
+INFO:     172.22.131.170:52806 - "POST /api/classrooms/5/behavior/batch HTTP/1.1" 200 OK
+INFO:     172.22.131.170:52807 - "GET /api/classrooms/5/discussion-mood HTTP/1.1" 200 OK
+INFO:     172.22.131.118:51947 - "POST /api/classrooms/5/behavior/batch HTTP/1.1" 200 OK
+INFO:     172.22.131.118:51948 - "GET /api/classrooms/5/discussion-mood HTTP/1.1" 200 OK
+INFO:     172.22.131.134:51618 - "POST /api/classrooms/5/behavior/batch HTTP/1.1" 200 OK
+INFO:     172.22.131.134:51619 - "GET /api/classrooms/5/discussion-mood HTTP/1.1" 200 OK
+INFO:     172.22.131.116:53447 - "GET /api/classrooms/5/discussion-mood HTTP/1.1" 200 OK
+INFO:     172.22.131.116:53448 - "POST /api/classrooms/5/behavior/batch HTTP/1.1" 200 OK
+INFO:     172.22.131.107:51591 - "POST /api/student/password/setup HTTP/1.1" 500 Internal Server Error
+[ERROR] 发生未捕获的异常: database is locked
+Traceback (most recent call last):
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\fastapi\routing.py", line 123, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\fastapi\routing.py", line 109, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\fastapi\routing.py", line 389, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\fastapi\routing.py", line 288, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\lanshare\classroom_app\routers\ui.py", line 364, in api_student_password_setup
+    invalidate_session_for_user(str(student_row["id"]), "student")
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\lanshare\classroom_app\dependencies.py", line 432, in invalidate_session_for_user
+    removed_count = delete_user_sessions(raw_user_id, normalized_role)
+  File "G:\lanshare\classroom_app\database.py", line 222, in delete_user_sessions
+    cursor = conn.execute(
+        "DELETE FROM user_sessions WHERE user_id = ? AND role = ?",
+        (normalized_user_id, normalized_role),
+    )
+sqlite3.OperationalError: database is locked
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 409, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\fastapi\applications.py", line 1133, in __call__
+    await super().__call__(scope, receive, send)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\applications.py", line 113, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\fastapi\routing.py", line 123, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\fastapi\routing.py", line 109, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\fastapi\routing.py", line 389, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "G:\lanshare\dist\installer\package\lanshare-app\python_runtime\Lib\site-packages\fastapi\routing.py", line 288, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\lanshare\classroom_app\routers\ui.py", line 364, in api_student_password_setup
+    invalidate_session_for_user(str(student_row["id"]), "student")
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\lanshare\classroom_app\dependencies.py", line 432, in invalidate_session_for_user
+    removed_count = delete_user_sessions(raw_user_id, normalized_role)
+  File "G:\lanshare\classroom_app\database.py", line 222, in delete_user_sessions
+    cursor = conn.execute(
+        "DELETE FROM user_sessions WHERE user_id = ? AND role = ?",
+        (normalized_user_id, normalized_role),
+    )
+sqlite3.OperationalError: database is locked

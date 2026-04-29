@@ -1,0 +1,27 @@
+{% if site_record and (site_record.icp_number or site_record.owner_statement) %}
+<footer class="site-record-footer" aria-label="备案信息与网站所有权声明">
+    {% if site_record.icp_number %}
+    <div class="site-record-footer__meta">
+        <a
+            class="site-record-footer__record"
+            href="{{ site_record.lookup_url }}"
+            target="_blank"
+            rel="noopener noreferrer"
+        >
+            {{ site_record.icp_number }}
+        </a>
+        {% if site_record.approved_at %}
+        <span>审核通过日期：{{ site_record.approved_at }}</span>
+        {% endif %}
+        {% if site_record.notice_source %}
+        <span>来源：{{ site_record.notice_source }}</span>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if site_record.owner_statement %}
+    <p class="site-record-footer__statement">
+        网站所有权声明：{{ site_record.owner_statement }}
+    </p>
+    {% endif %}
+</footer>
+{% endif %}

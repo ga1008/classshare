@@ -1,0 +1,735 @@
+{% extends "base.html" %}
+
+{% block title %}{{ assignment.title }} | 课堂平台{% endblock %}
+
+{% block css %}
+<link rel="stylesheet" href="/static/css/layout.css">
+<link rel="stylesheet" href="/static/css/buttons.css">
+<link rel="stylesheet" href="/static/css/cards.css">
+<link rel="stylesheet" href="/static/css/forms.css">
+<link rel="stylesheet" href="/static/css/toast.css">
+<link rel="stylesheet" href="/static/css/feedback.css">
+<link rel="stylesheet" href="/static/css/markdown.css">
+<style>
+    .assignment-header {
+        background: var(--surface-color);
+        border-bottom: 1px solid var(--border-color);
+        padding: var(--spacing-md) var(--spacing-xl);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        box-shadow: var(--shadow-sm);
+    }
+    .header-title-group {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+    }
+    .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--text-muted);
+        text-decoration: none;
+        font-size: 0.9rem;
+        font-weight: 500;
+        transition: color 0.2s;
+    }
+    .back-link:hover { color: var(--primary-color); }
+    .workspace-container {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: var(--spacing-xl) var(--spacing-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-lg);
+    }
+
+    /* Status Cards */
+    .status-card {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+        border-left: 4px solid transparent;
+    }
+    .status-card.success { background: var(--success-light); border-left-color: var(--success-color); }
+    .status-card.warning { background: var(--warning-light); border-left-color: var(--warning-color); }
+    .status-card.info { background: var(--primary-light); border-left-color: var(--primary-color); }
+    .status-card.error { background: var(--danger-light); border-left-color: var(--danger-color); }
+    .status-card-header {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+    .score-display {
+        font-size: 2.5rem;
+        font-weight: 800;
+        color: var(--success-color);
+        line-height: 1;
+    }
+
+    /* Answer Form */
+    .answer-form-container {
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        box-shadow: var(--shadow-md);
+        background: var(--surface-color);
+    }
+    .answer-form-header {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+        color: white;
+        padding: var(--spacing-md) var(--spacing-lg);
+    }
+    .answer-form-header h2 {
+        color: white;
+        margin: 0;
+        font-size: 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+    }
+    .answer-group {
+        padding: var(--spacing-lg);
+        border-bottom: 1px solid var(--border-color);
+    }
+    .answer-group:last-child { border-bottom: none; }
+    .question-label {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        font-weight: 600;
+        margin-bottom: var(--spacing-sm);
+        color: var(--text-primary);
+    }
+    .question-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        background: var(--primary-color);
+        color: white;
+        border-radius: var(--radius-full);
+        font-size: 0.75rem;
+        font-weight: 700;
+    }
+
+    /* Drag & Drop */
+    .upload-dropzone {
+        border: 2px dashed var(--border-color);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-xl);
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s;
+        background: var(--bg-color);
+    }
+    .upload-dropzone:hover, .upload-dropzone.dragover {
+        border-color: var(--primary-color);
+        background: var(--primary-light);
+    }
+    .file-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: var(--spacing-md);
+    }
+    .file-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--bg-color);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-sm);
+        padding: 5px 10px;
+        font-size: 0.85rem;
+        transition: border-color 0.2s, background 0.2s;
+    }
+    .file-chip:hover {
+        background: var(--surface-hover);
+    }
+    .submit-action-bar {
+        background: var(--bg-color);
+        padding: var(--spacing-md) var(--spacing-lg);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid var(--border-color);
+    }
+    .submitted-answer-item {
+        background: var(--bg-color);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-md);
+        margin-bottom: var(--spacing-md);
+    }
+    .info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: var(--spacing-md);
+    }
+    .info-cell {
+        background: var(--bg-color);
+        padding: var(--spacing-md);
+        border-radius: var(--radius-md);
+        text-align: center;
+    }
+</style>
+{% endblock %}
+
+{% block body_class %}page-wrapper{% endblock %}
+
+{% block body %}
+<header class="assignment-header">
+    <div class="header-title-group">
+        <a href="{{ assignment_back_url }}" class="back-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            返回
+        </a>
+        <h1 class="text-lg font-bold m-0">{{ assignment.title }}</h1>
+    </div>
+    <div class="flex items-center gap-2">
+        {% include "partials/message_center_bell.html" %}
+        {% include "partials/feedback_button.html" %}
+        {% include "partials/profile_button.html" %}
+        {% if assignment.status == 'published' %}
+            <span class="badge badge-success text-sm">进行中</span>
+        {% elif assignment.status == 'closed' %}
+            <span class="badge badge-danger text-sm">已截止</span>
+        {% else %}
+            <span class="badge badge-warning text-sm">草稿</span>
+        {% endif %}
+    </div>
+</header>
+
+{% include "partials/feedback_modal.html" %}
+
+{% macro submission_form(form_title, action_hint, button_text) %}
+<div class="answer-form-container">
+    <div class="answer-form-header">
+        <h2>
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+            {{ form_title }}
+        </h2>
+    </div>
+    <div id="answer-area">
+        <div class="p-xl text-center text-muted">
+            <div class="spinner mx-auto mb-2"></div>
+            正在分析题目...
+        </div>
+    </div>
+    <div class="p-lg border-t">
+        <label class="form-label mb-2 block">
+            附件上传 <span class="text-muted font-normal">(可选)</span>
+        </label>
+        <div class="flex items-center gap-2 mb-2 flex-wrap">
+            <button type="button" class="btn btn-outline btn-sm" id="pick-files-btn">选择文件</button>
+            <button type="button" class="btn btn-outline btn-sm" id="pick-folder-btn">选择文件夹</button>
+            <span class="text-xs text-muted" id="upload-summary">未选择文件</span>
+        </div>
+        <div class="upload-dropzone" id="drop-zone">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-primary mx-auto mb-2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <p class="mb-1 text-primary font-medium">拖拽文件或文件夹到此处</p>
+            <p class="text-xs text-muted">
+                支持同时选择多个文件或文件夹，单文件不超过 {{ max_per_file_mb | int }}MB，总大小不超过 {{ max_total_mb | int }}MB，最多 {{ max_submission_file_count }} 个文件
+                {% if assignment.allowed_file_types %}
+                ，允许类型: {{ assignment.allowed_file_types_label }}
+                {% endif %}
+            </p>
+        </div>
+        <input type="file" id="file-input" class="hidden" multiple>
+        <input type="file" id="folder-input" class="hidden" webkitdirectory directory multiple>
+        <div class="file-chips" id="file-chips"></div>
+    </div>
+    <div class="submit-action-bar">
+        <span class="text-sm text-muted">{{ action_hint }}</span>
+        <button class="btn btn-primary btn-lg" id="submit-btn" onclick="submitAnswers()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"></path><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            {{ button_text }}
+        </button>
+    </div>
+</div>
+{% endmacro %}
+
+<main class="workspace-container">
+    <!-- Requirements Card -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title text-base">作业要求</h2>
+        </div>
+        <div class="card-body">
+            <div class="md-content" id="requirements-content">
+                <div class="spinner text-primary mx-auto"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rubric Card (If exists) -->
+    {% if assignment.rubric_md %}
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title text-base">评分标准</h2>
+        </div>
+        <div class="card-body">
+            <div class="md-content" id="rubric-content">
+                <div class="spinner text-primary mx-auto"></div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Submission / Results Area -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title text-base">我的提交</h2>
+        </div>
+        <div class="card-body">
+            {% if submission %}
+                {% if submission.status == 'graded' %}
+                    <div class="status-card success card-body rounded-lg mb-lg">
+                        <div class="status-card-header text-success">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                            已批改
+                        </div>
+                        <div class="score-display">{{ submission.score or 0 }}<span class="text-lg text-muted font-normal ml-1">/ 100</span></div>
+                        {% if submission.feedback_md %}
+                            <div class="mt-md pt-md border-t">
+                                <h4 class="text-sm font-semibold mb-2" style="color: var(--success-color);">教师/AI 评语:</h4>
+                                <div class="md-content" id="feedback-content"></div>
+                            </div>
+                        {% endif %}
+                    </div>
+                {% elif submission.status == 'grading' %}
+                    <div class="status-card warning card-body rounded-lg mb-lg">
+                        <div class="status-card-header" style="color: var(--warning-color);">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                            批改中
+                        </div>
+                        <p class="text-muted">AI 正在批改您的作业，请稍后刷新查看结果。</p>
+                    </div>
+                {% else %}
+                    <div class="status-card info card-body rounded-lg mb-lg">
+                        <div class="status-card-header text-primary">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                            已提交
+                        </div>
+                        <p class="text-muted">作业已成功提交，等待教师批改。</p>
+                        <p class="text-sm text-muted mt-1">提交时间: <span class="format-date">{{ submission.submitted_at }}</span></p>
+                        {% if assignment.status == 'closed' %}
+                        <p class="text-sm text-danger mt-2">作业已截止，当前只能查看，无法撤回修改。</p>
+                        {% endif %}
+                        {% if assignment.status == 'new' %}
+                        <p class="text-sm text-warning mt-2">作业尚未开始，当前无法撤回提交。</p>
+                        {% endif %}
+                        {% if can_withdraw_submission %}
+                        <button class="btn btn-outline btn-sm text-warning mt-md" onclick="withdrawSubmission()">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                            撤回作业
+                        </button>
+                        {% endif %}
+                    </div>
+                {% endif %}
+
+                {% if submission.answers_json %}
+                <div class="mt-lg">
+                    <h3 class="text-base font-semibold mb-md">提交的答案</h3>
+                    <div id="submitted-answers-container"></div>
+                </div>
+                {% endif %}
+
+                {% if submission_files %}
+                <div class="mt-lg">
+                    <h3 class="text-base font-semibold mb-sm">附件</h3>
+                    <div class="space-y-sm">
+                        {% for file in submission_files %}
+                        <div class="flex items-center justify-between p-sm rounded-md" style="background: var(--bg-color); border: 1px solid var(--border-color);">
+                            <div class="flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                                <div>
+                                    <div class="text-sm">{{ file.display_name }}</div>
+                                    {% if file.file_size %}
+                                    <div class="text-xs text-muted">{{ '%.1f'|format(file.file_size / 1024 / 1024) }} MB</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <a href="/submissions/download/{{ file.id }}" class="btn btn-ghost btn-sm">下载</a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if can_resubmit_submission %}
+                <div class="status-card warning card-body rounded-lg mt-lg mb-lg">
+                    <div class="status-card-header" style="color: var(--warning-color);">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-15-6.7L3 13"></path></svg>
+                        教师已撤回批改结果
+                    </div>
+                    <p class="text-muted">
+                        旧提交仍可查看和下载。请在
+                        <span class="format-date">{{ resubmission_due_at }}</span>
+                        前重新提交，新的提交会替换当前版本。
+                    </p>
+                </div>
+                {{ submission_form('重新提交作业', '重新提交会替换当前答案和附件', '确认重新提交') }}
+                {% endif %}
+
+            {% elif assignment.status == 'published' %}
+                <!-- Answer Form -->
+                {{ submission_form('开始答题', '提交后不可修改，请仔细检查', '确认提交作业') }}
+            {% else %}
+                {% if assignment.status == 'closed' %}
+                    <div class="status-card error card-body rounded-lg">
+                        <div class="status-card-header text-danger">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                            作业已截止
+                        </div>
+                        <p class="text-muted">抱歉，您未能在截止时间前提交作业。</p>
+                    </div>
+                {% else %}
+                    <div class="status-card info card-body rounded-lg">
+                        <div class="status-card-header text-primary">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                            尚未发布
+                        </div>
+                        <p class="text-muted">教师暂未发布此作业，目前无法提交。</p>
+                    </div>
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Meta Info -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title text-base">作业信息</h2>
+        </div>
+        <div class="card-body">
+            <div class="info-grid">
+                <div class="info-cell">
+                    <div class="text-xs text-muted mb-1">当前状态</div>
+                    <div class="font-medium">
+                        {% if assignment.status == 'published' %}进行中
+                        {% elif assignment.status == 'closed' %}已截止
+                        {% else %}草稿{% endif %}
+                    </div>
+                </div>
+                <div class="info-cell">
+                    <div class="text-xs text-muted mb-1">批改模式</div>
+                    <div class="font-medium">
+                        {% if assignment.grading_mode == 'manual' %}教师手动批改
+                        {% elif assignment.grading_mode in ['ai', 'auto'] %}AI 辅助批改
+                        {% else %}混合批改{% endif %}
+                    </div>
+                </div>
+                <div class="info-cell">
+                    <div class="text-xs text-muted mb-1">创建时间</div>
+                    <div class="font-medium format-date">{{ assignment.created_at or '未知' }}</div>
+                </div>
+                <div class="info-cell">
+                    <div class="text-xs text-muted mb-1">允许附件类型</div>
+                    <div class="font-medium">
+                        {% if assignment.allowed_file_types %}
+                        {{ assignment.allowed_file_types_label }}
+                        {% else %}
+                        不限制
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="info-cell">
+                    <div class="text-xs text-muted mb-1">时间策略</div>
+                    <div class="font-medium">{{ assignment.availability_mode_label or '长期有效' }}</div>
+                </div>
+                <div class="info-cell">
+                    <div class="text-xs text-muted mb-1">截止时间</div>
+                    <div class="font-medium">
+                        {% if assignment.due_at %}
+                        <span class="format-date">{{ assignment.due_at }}</span>
+                        {% else %}
+                        长期有效
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+{% include "partials/markdown_assets.html" %}
+<script src="/static/js/behavior_tracker.js"></script>
+<script type="module" src="/static/js/feedback.js"></script>
+<script type="module">
+    import { showToast, renderMarkdown, formatDateLocal } from '{{ asset_url("js/ui.js") }}';
+    import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
+
+    const MAX_SIZE = {{ max_total_mb }} * 1024 * 1024;
+    const MAX_PER_FILE = {{ max_per_file_mb }} * 1024 * 1024;
+    const MAX_FILES = {{ max_submission_file_count }};
+    const ASSIGNMENT_ID = "{{ assignment.id }}";
+    const ALLOWED_FILE_TYPES = {{ assignment.allowed_file_types | tojson }};
+    const CAN_RESUBMIT_SUBMISSION = {{ can_resubmit_submission | tojson }};
+    let uploadManager = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        if (window.BehaviorTracker && {{ assignment.class_offering_id or 'null' }} ) {
+            window.behaviorTracker = new window.BehaviorTracker({
+                classOfferingId: {{ assignment.class_offering_id or 'null' }},
+                pageKey: 'assignment_detail'
+            }).start();
+        }
+
+        // Render Markdown
+        renderMarkdown('requirements-content', {{ assignment.requirements_md | tojson }});
+        {% if assignment.rubric_md %}
+        renderMarkdown('rubric-content', {{ assignment.rubric_md | tojson }});
+        {% endif %}
+        {% if submission and submission.feedback_md %}
+        renderMarkdown('feedback-content', {{ submission.feedback_md | tojson }});
+        {% endif %}
+
+        // Format dates
+        document.querySelectorAll('.format-date').forEach(el => {
+            const dateStr = el.textContent.trim();
+            if (dateStr && dateStr !== '未知') {
+                const formatted = formatDateLocal(dateStr);
+                if (formatted !== '-') el.textContent = formatted;
+            }
+        });
+
+        // Render submitted answers or init answer form
+        {% if submission and submission.answers_json %}
+        renderSubmittedAnswers({{ submission.answers_json | tojson }});
+        {% endif %}
+        {% if (not submission and assignment.status == 'published') or can_resubmit_submission %}
+        initAnswerArea();
+        initSubmissionUpload();
+        {% endif %}
+    });
+
+    function escapeHtml(text) {
+        const d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+    }
+
+    function initAnswerArea() {
+        const area = document.getElementById('answer-area');
+        if (!area) return;
+        const requirementsMd = {{ assignment.requirements_md | tojson }} || '';
+        const questions = extractQuestions(requirementsMd);
+
+        if (questions.length > 0) {
+            area.innerHTML = '';
+            questions.forEach((q, i) => {
+                const group = document.createElement('div');
+                group.className = 'answer-group';
+                group.innerHTML = `
+                    <div class="question-label">
+                        <span class="question-badge">${i + 1}</span>
+                        <span>${escapeHtml(q)}</span>
+                    </div>
+                    <textarea class="form-control answer-textarea" data-question="${escapeHtml(q)}"
+                        rows="4" placeholder="请在此输入第 ${i + 1} 题的答案..."></textarea>
+                `;
+                area.appendChild(group);
+            });
+        } else {
+            area.innerHTML = `
+                <div class="answer-group">
+                    <div class="question-label">
+                        <span class="question-badge"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></span>
+                        <span>综合答题区</span>
+                    </div>
+                    <textarea class="form-control answer-textarea" data-question="完整答案"
+                        rows="10" placeholder="请在此输入你的完整答案..."></textarea>
+                </div>
+            `;
+        }
+    }
+
+    function extractQuestions(md) {
+        const questions = [];
+        const lines = String(md || '').split('\n');
+        let currentQuestion = '';
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            const headingMatch = trimmed.match(/^(#{1,4})\s+(.+)/);
+            if (headingMatch) {
+                if (currentQuestion) questions.push(currentQuestion);
+                currentQuestion = headingMatch[2].trim();
+                continue;
+            }
+
+            if (/^\d+[\.\)]\s*/.test(trimmed) && trimmed.length < 120) {
+                if (currentQuestion) questions.push(currentQuestion);
+                currentQuestion = trimmed;
+                continue;
+            }
+
+            if (/^Question/i.test(trimmed)) {
+                if (currentQuestion) questions.push(currentQuestion);
+                currentQuestion = trimmed;
+                continue;
+            }
+
+            if (currentQuestion && currentQuestion.length < 80) {
+                currentQuestion += ` ${trimmed}`;
+            }
+        }
+
+        if (currentQuestion) questions.push(currentQuestion);
+        return questions.filter((question) => !/^(assignment|requirements|rubric|deadline|note|submit)/i.test(question) && question.length > 1);
+    }
+
+    function renderSubmittedAnswers(jsonStr) {
+        const container = document.getElementById('submitted-answers-container');
+        if (!container || !jsonStr) return;
+
+        container.innerHTML = '';
+        try {
+            const data = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
+            const answers = data.answers || data;
+
+            /** Extract a scalar string from any answer value */
+            function toText(v) {
+                if (v == null || v === '') return '(No answer)';
+                if (typeof v !== 'object') return String(v);
+                return String(v.answer ?? v.content ?? v.text ?? JSON.stringify(v));
+            }
+
+            if (Array.isArray(answers)) {
+                container.innerHTML = answers.map((item, index) => {
+                    const question = item.question || item.question_id || `Question ${index + 1}`;
+                    const answer = toText(item);
+                    return `
+                        <div class="submitted-answer-item">
+                            <div class="font-semibold text-sm mb-2 text-primary">${escapeHtml(String(question))}</div>
+                            <div class="text-sm whitespace-pre-wrap">${escapeHtml(answer)}</div>
+                        </div>
+                    `;
+                }).join('');
+                return;
+            }
+
+            if (answers && typeof answers === 'object') {
+                container.innerHTML = Object.entries(answers).map(([key, value]) => `
+                    <div class="submitted-answer-item">
+                        <div class="font-semibold text-sm mb-2 text-primary">${escapeHtml(String(key))}</div>
+                        <div class="text-sm whitespace-pre-wrap">${escapeHtml(toText(value))}</div>
+                    </div>
+                `).join('');
+                return;
+            }
+
+            container.innerHTML = `<div class="submitted-answer-item"><div class="text-sm whitespace-pre-wrap">${escapeHtml(String(jsonStr))}</div></div>`;
+        } catch (e) {
+            container.innerHTML = `<div class="submitted-answer-item"><div class="text-sm whitespace-pre-wrap">${escapeHtml(String(jsonStr))}</div></div>`;
+        }
+    }
+
+    function initSubmissionUpload() {
+        uploadManager = new SubmissionUploadManager({
+            dropZoneId: 'drop-zone',
+            fileInputId: 'file-input',
+            folderInputId: 'folder-input',
+            listId: 'file-chips',
+            summaryId: 'upload-summary',
+            allowedFileTypes: ALLOWED_FILE_TYPES,
+            maxBytes: MAX_SIZE,
+            maxPerFileBytes: MAX_PER_FILE,
+            maxFiles: MAX_FILES,
+            notify: showToast,
+            onChange: (entries) => {
+                window.behaviorTracker?.log('assignment_file_select', `选择 ${entries.length} 个作业文件`, {
+                    file_count: entries.length
+                }, 'assignment_detail');
+            }
+        });
+        uploadManager.init();
+        document.getElementById('pick-files-btn')?.addEventListener('click', () => uploadManager.openFilePicker());
+        document.getElementById('pick-folder-btn')?.addEventListener('click', () => uploadManager.openFolderPicker());
+    }
+
+    window.submitAnswers = async function() {
+        const textareas = document.querySelectorAll('.answer-textarea');
+        const answers = [];
+        let hasContent = false;
+        textareas.forEach(ta => {
+            const question = ta.dataset.question || 'Answer';
+            const answer = ta.value.trim();
+            if (answer) hasContent = true;
+            answers.push({ question, answer });
+        });
+
+        const hasFiles = uploadManager?.hasFiles() ?? false;
+        if (!hasContent && !hasFiles) { showToast('Please enter an answer or upload files.', 'warning'); return; }
+        window.behaviorTracker?.log('assignment_submit_attempt', '尝试提交作业', {
+            answer_count: answers.length,
+            has_text_answers: hasContent,
+            has_files: hasFiles
+        }, 'assignment_detail');
+
+        const submitBtn = document.getElementById('submit-btn');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<div class="spinner spinner-sm mr-2"></div> 提交中...';
+
+        const formData = uploadManager ? uploadManager.buildFormData() : new FormData();
+        formData.append('answers_json', JSON.stringify({ answers }));
+
+        try {
+            const response = await fetch(`/api/assignments/${ASSIGNMENT_ID}/submit`, {
+                method: 'POST',
+                body: formData
+            });
+
+            let payload = {};
+            try {
+                payload = await response.json();
+            } catch {}
+
+            if (!response.ok) {
+                throw new Error(payload.detail || 'Submit failed');
+            }
+
+            const droppedCount = Number(payload.dropped_file_count || 0);
+            const successMessage = droppedCount > 0
+                ? `${droppedCount} filtered file(s) were ignored during submission.`
+                : 'Submission completed.';
+            showToast(successMessage, droppedCount > 0 ? 'warning' : 'success');
+            setTimeout(() => location.reload(), 1200);
+        } catch (e) {
+            showToast('Submit failed: ' + e.message, 'error');
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = CAN_RESUBMIT_SUBMISSION ? '确认重新提交' : '确认提交作业';
+        }
+    }
+
+    window.withdrawSubmission = async function() {
+        if (!confirm('确定要撤回此作业吗？撤回后可以重新提交。')) return;
+        window.behaviorTracker?.log('assignment_withdraw_attempt', '尝试撤回作业', {
+            assignment_id: ASSIGNMENT_ID
+        }, 'assignment_detail');
+        try {
+            const response = await fetch(`/api/assignments/${ASSIGNMENT_ID}/withdraw`, { method: 'DELETE' });
+            if (response.ok) {
+                showToast('作业已撤回', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                const err = await response.json();
+                throw new Error(err.detail || '撤回失败');
+            }
+        } catch (e) {
+            showToast('撤回失败: ' + e.message, 'error');
+        }
+    }
+</script>
+{% endblock %}

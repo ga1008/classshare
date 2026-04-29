@@ -1,0 +1,22 @@
+{
+  "es2022_polyfills": {
+    "path": "vendor/runtime/es2022-polyfills.js",
+    "version": "1.0.0",
+    "type": "script"
+  },
+  "marked": {
+    "path": "js/marked.min.js",
+    "version": "15.0.12",
+    "type": "script",
+    "source": "https://github.com/markedjs/marked"
+  },
+  "markdown_runtime": {
+    "path": "js/markdown_runtime.js",
+    "version": "1.0.0",
+    "type": "script"
+  },
+  "mermaid": {
+    "path": "vendor/mermaid.min.js",
+    "type": "script"
+  }
+}

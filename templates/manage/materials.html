@@ -1,0 +1,362 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}课程材料{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/modals.css">
+<link rel="stylesheet" href="/static/css/materials.css">
+{% endblock %}
+
+{% block header_actions %}
+<div class="materials-toolbar-group materials-header-actions">
+    <button type="button" class="btn btn-outline" id="materials-refresh-btn">刷新</button>
+    <button type="button" class="btn btn-outline" id="materials-upload-folder-btn">上传文件夹</button>
+    <button type="button" class="btn btn-primary" id="materials-upload-file-btn">上传文件</button>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="materials-overview">
+    <div class="materials-overview-copy">
+        <div class="materials-overview-eyebrow">教师管理中心 / 课程材料</div>
+        <h2>统一管理课程资料、文档目录与 Git 教学仓库</h2>
+        <p>
+            支持批量上传、目录化浏览、模糊搜索、按名称/创建时间/更新时间排序，
+            并保留课堂分配、AI 解析、源文件编辑、仓库同步等现有能力。
+        </p>
+        <div class="materials-overview-pills">
+            <span class="materials-overview-pill">README 文档视图</span>
+            <span class="materials-overview-pill">AI 解析与优化</span>
+            <span class="materials-overview-pill">Git 仓库同步</span>
+        </div>
+        <div class="materials-overview-updated">
+            最近更新：
+            <strong id="materials-latest-updated">{{ material_stats.latest_updated_at or '暂无记录' }}</strong>
+        </div>
+    </div>
+
+    <div class="materials-stat-grid materials-stat-grid--overview">
+        <article class="materials-stat-card">
+            <div class="materials-stat-label">根目录</div>
+            <div class="materials-stat-value" id="materials-root-count">{{ material_stats.root_count }}</div>
+            <div class="materials-stat-help">顶层材料入口数</div>
+        </article>
+        <article class="materials-stat-card">
+            <div class="materials-stat-label">材料总数</div>
+            <div class="materials-stat-value" id="materials-total-count">{{ material_stats.total_count }}</div>
+            <div class="materials-stat-help" id="materials-folder-file-summary">
+                文件夹 {{ material_stats.folder_count }} / 文件 {{ material_stats.file_count }}
+            </div>
+        </article>
+        <article class="materials-stat-card">
+            <div class="materials-stat-label">已分配材料</div>
+            <div class="materials-stat-value" id="materials-assignment-count">{{ material_stats.assigned_material_count }}</div>
+            <div class="materials-stat-help" id="materials-classroom-count">
+                覆盖 {{ material_stats.classroom_count }} 个课堂
+            </div>
+        </article>
+        <article class="materials-stat-card">
+            <div class="materials-stat-label">总容量</div>
+            <div class="materials-stat-value" id="materials-total-size">{{ material_stats.total_size or 0 }} B</div>
+            <div class="materials-stat-help">自动汇总全部文件体积</div>
+        </article>
+    </div>
+</section>
+
+<div class="materials-shell materials-shell--single">
+    <section class="materials-card materials-library-card materials-library-card--expanded">
+        <div class="materials-toolbar materials-library-nav">
+            <div class="materials-toolbar-group">
+                <button type="button" class="btn btn-ghost btn-sm" id="materials-back-btn">返回</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="materials-up-btn">上一级</button>
+                <button type="button" class="btn btn-outline btn-sm" id="materials-repository-btn" hidden>仓库</button>
+            </div>
+            <div class="materials-breadcrumbs" id="materials-breadcrumbs">
+                <span class="text-muted">材料库根目录</span>
+            </div>
+        </div>
+
+        <div class="materials-library-controls">
+            <label class="materials-search-box" for="materials-search-input">
+                <span class="materials-search-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="7"></circle>
+                        <path d="m20 20-3.5-3.5"></path>
+                    </svg>
+                </span>
+                <input
+                    type="search"
+                    id="materials-search-input"
+                    class="form-control"
+                    placeholder="按名称或路径模糊搜索当前范围内的材料"
+                    autocomplete="off"
+                >
+                <button type="button" class="btn btn-ghost btn-sm" id="materials-search-clear-btn" hidden>清空</button>
+            </label>
+
+            <div class="materials-sort-controls">
+                <label class="materials-inline-field">
+                    <span>排序字段</span>
+                    <select id="materials-sort-by" class="form-control">
+                        <option value="name">名称</option>
+                        <option value="created_at">创建时间</option>
+                        <option value="updated_at">更新时间</option>
+                    </select>
+                </label>
+                <label class="materials-inline-field">
+                    <span>排序方向</span>
+                    <select id="materials-sort-order" class="form-control">
+                        <option value="asc">升序</option>
+                        <option value="desc">降序</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+
+        <div class="materials-library-summary" id="materials-library-summary">
+            <div class="materials-library-summary-main">
+                <div class="materials-library-summary-label">当前范围</div>
+                <strong id="materials-scope-name">材料库根目录</strong>
+                <div class="text-muted text-sm" id="materials-scope-path">/</div>
+                <div class="text-muted text-sm" id="materials-scope-description">正在加载材料列表...</div>
+            </div>
+            <div class="materials-library-summary-chips">
+                <span class="materials-summary-chip" id="materials-result-count">0 项</span>
+                <span class="materials-summary-chip" id="materials-sort-summary">按名称升序</span>
+                <span class="materials-summary-chip" id="materials-search-summary" hidden>未启用搜索</span>
+            </div>
+        </div>
+
+        <div class="materials-selection-bar" id="materials-selection-bar" hidden>
+            <div>已选择 <strong id="materials-selection-count">0</strong> 项</div>
+            <div class="materials-toolbar-group">
+                <button type="button" class="btn btn-outline btn-sm" id="materials-selection-download-btn">下载选中</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="materials-selection-clear-btn">清空选择</button>
+            </div>
+        </div>
+
+        <div class="materials-list materials-manage-list">
+            <div class="materials-list-header materials-manage-list-header">
+                <div>
+                    <input type="checkbox" id="materials-select-all">
+                </div>
+                <div>材料信息</div>
+                <div>时间信息</div>
+                <div>操作</div>
+            </div>
+            <div id="materials-list-body" class="materials-list-body">
+                <div class="materials-empty">正在加载课程材料...</div>
+            </div>
+        </div>
+    </section>
+
+    <aside class="materials-card materials-detail-card">
+        <div class="materials-detail" id="materials-detail">
+            <div class="materials-empty">选择一项材料后，这里会显示详情、AI 摘要与课堂分配状态。</div>
+        </div>
+    </aside>
+</div>
+
+<input type="file" id="materials-file-input" class="hidden" multiple>
+<input type="file" id="materials-folder-input" class="hidden" webkitdirectory directory multiple>
+
+<div id="materials-assign-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">分配课程材料</h3>
+                    <p class="modal-subtitle">将当前材料发布到一个或多个课堂，学生加入对应课堂后即可查看与下载。</p>
+                </div>
+                <button class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="materials-section">
+                    <div class="text-muted text-sm">当前材料</div>
+                    <strong id="materials-assign-name">-</strong>
+                </div>
+                <div class="materials-section">
+                    <div class="materials-section-header">
+                        <h3>选择目标课堂</h3>
+                        <span class="text-muted text-sm">可多选</span>
+                    </div>
+                    <div class="materials-modal-options" id="materials-assign-options">
+                        {% if offerings %}
+                            {% for offering in offerings %}
+                            <label class="materials-modal-option">
+                                <input type="checkbox" value="{{ offering.id }}">
+                                <div>
+                                    <strong>{{ offering.course_name }} / {{ offering.class_name }}</strong>
+                                    <div class="text-muted text-sm">{{ offering.semester if offering.semester else '未填写学期' }}</div>
+                                </div>
+                            </label>
+                            {% endfor %}
+                        {% else %}
+                            <div class="materials-empty">暂无可分配课堂，请先在“开设课堂”中创建课堂。</div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="materials-ai-assign-result" id="materials-ai-assign-result" hidden>
+                    <div class="materials-section-header">
+                        <h3>AI 匹配结果</h3>
+                        <span class="text-muted text-sm" id="materials-ai-assign-summary"></span>
+                    </div>
+                    <div class="materials-ai-assign-list-scroll" id="materials-ai-assign-list"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-outline" id="materials-assign-ai-btn">
+                    <span class="materials-ai-btn-content">AI 智能分配</span>
+                    <span class="materials-ai-btn-loading" hidden>AI 分析中...</span>
+                </button>
+                <button type="button" class="btn btn-primary" id="materials-assign-save-btn">保存分配</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="materials-repository-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">Git 仓库</h3>
+                    <p class="modal-subtitle">执行常用同步操作，或直接输入 `git ...` 命令处理更复杂的场景。</p>
+                </div>
+                <button class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="materials-repo-summary">
+                    <div class="materials-repo-card">
+                        <div class="materials-repo-card-label">仓库</div>
+                        <strong id="materials-repository-name">-</strong>
+                        <div class="text-muted text-sm" id="materials-repository-path">-</div>
+                    </div>
+                    <div class="materials-repo-card">
+                        <div class="materials-repo-card-label">远程</div>
+                        <strong id="materials-repository-provider">-</strong>
+                        <div class="text-muted text-sm" id="materials-repository-remote-name">-</div>
+                    </div>
+                    <div class="materials-repo-card">
+                        <div class="materials-repo-card-label">默认分支</div>
+                        <strong id="materials-repository-branch">-</strong>
+                        <div class="text-muted text-sm" id="materials-repository-protocol">-</div>
+                    </div>
+                    <div class="materials-repo-card">
+                        <div class="materials-repo-card-label">凭据</div>
+                        <strong id="materials-repository-credential-state">-</strong>
+                        <div class="text-muted text-sm" id="materials-repository-credential-user">-</div>
+                    </div>
+                </div>
+
+                <div class="materials-section">
+                    <div class="materials-section-header">
+                        <h3>快捷操作</h3>
+                        <span class="text-muted text-sm" id="materials-repository-status">就绪</span>
+                    </div>
+                    <div class="materials-repo-actions">
+                        <button type="button" class="btn btn-primary" id="materials-repository-update-btn">更新</button>
+                        <button type="button" class="btn btn-outline" id="materials-repository-push-btn">提交 + 推送</button>
+                        <button type="button" class="btn btn-ghost" id="materials-repository-auth-btn">登录 / 凭据</button>
+                    </div>
+                    <div class="materials-repo-command-preview" id="materials-repository-command-preview">-</div>
+                </div>
+
+                <div class="materials-section">
+                    <div class="materials-section-header">
+                        <h3>命令行</h3>
+                        <span class="text-muted text-sm">仅支持 git 命令</span>
+                    </div>
+                    <div class="materials-repo-command-line">
+                        <input type="text" id="materials-repository-command-input" class="form-control" placeholder="例如：git status -sb">
+                        <button type="button" class="btn btn-outline" id="materials-repository-command-run-btn">执行</button>
+                    </div>
+                </div>
+
+                <div class="materials-section">
+                    <div class="materials-section-header">
+                        <h3>执行输出</h3>
+                        <span class="text-muted text-sm" id="materials-repository-sync-summary">等待执行</span>
+                    </div>
+                    <pre class="materials-repo-output" id="materials-repository-output">暂无输出</pre>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="materials-repository-credential-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">仓库登录</h3>
+                    <p class="modal-subtitle">凭据会按当前教师与远程地址持久保存，下次更新、推送时会自动使用。</p>
+                </div>
+                <button class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="materials-section">
+                    <div class="text-muted text-sm">远程地址</div>
+                    <strong id="materials-repository-credential-remote">-</strong>
+                    <div class="text-muted text-sm" id="materials-repository-credential-host">-</div>
+                </div>
+                <div class="materials-section">
+                    <label class="materials-form-field">
+                        <span>用户名</span>
+                        <input type="text" id="materials-repository-credential-username" class="form-control" placeholder="例如：teacher">
+                    </label>
+                    <label class="materials-form-field">
+                        <span>密码 / Token</span>
+                        <input type="password" id="materials-repository-credential-secret" class="form-control" placeholder="HTTPS 仓库可输入密码或访问令牌">
+                    </label>
+                    <label class="materials-form-field">
+                        <span>凭据类型</span>
+                        <select id="materials-repository-credential-auth-mode" class="form-control">
+                            <option value="password">密码 / Token</option>
+                            <option value="token">Token</option>
+                        </select>
+                    </label>
+                    <div class="text-muted text-sm" id="materials-repository-credential-hint">仅支持 HTTP / HTTPS 远程仓库的表单凭据。</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="materials-repository-credential-save-btn">保存凭据</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="materials-detail-modal" class="modal-backdrop materials-detail-modal" style="display:none;" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable modal-xl materials-detail-dialog">
+        <div class="modal-content materials-detail-modal-content">
+            <div class="modal-header materials-detail-modal-header">
+                <div class="materials-detail-modal-copy">
+                    <div class="materials-detail-modal-label" id="materials-detail-modal-label">&#26448;&#26009;&#35814;&#24773;</div>
+                    <h3 class="modal-title" id="materials-detail-modal-title">&#26448;&#26009;&#35814;&#24773;</h3>
+                    <div class="text-muted text-sm" id="materials-detail-modal-path">/</div>
+                </div>
+                <button class="modal-close" id="materials-detail-modal-close-btn" aria-label="&#20851;&#38381;">&times;</button>
+            </div>
+            <div class="modal-body materials-detail-modal-body" id="materials-detail-modal-body"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.MATERIALS_MANAGE_CONFIG = {
+        offerings: {{ offerings | tojson }},
+        canAssign: {{ 'true' if offerings else 'false' }},
+        userIdentityHints: {{ [user_info.name, user_info.email] | tojson }}
+    };
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/materials_manage.js"></script>
+{% endblock %}

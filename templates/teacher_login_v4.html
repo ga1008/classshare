@@ -1,0 +1,37 @@
+{% extends "base_centered.html" %}
+
+{% block title %}教师登录 - 课堂平台{% endblock %}
+
+{% block bg_gradient %}background: linear-gradient(135deg, var(--bg-color) 0%, var(--success-light) 100%);{% endblock %}
+
+{% block card_content %}
+<div class="login-card">
+    <div class="login-logo logo-teacher">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+        </svg>
+    </div>
+    <h2>教师登录</h2>
+    <p class="subtitle">管理您的课堂、资源与作业</p>
+
+    <form action="/teacher/login" method="post">
+        <input type="hidden" name="next" value="{{ next_url }}">
+        <div class="form-group text-left">
+            <label class="form-label" for="email">邮箱</label>
+            <input type="email" id="email" name="email" class="form-control" placeholder="请输入教师邮箱" required autofocus>
+        </div>
+        <div class="form-group text-left">
+            <label class="form-label" for="password">密码</label>
+            <input type="password" id="password" name="password" class="form-control" placeholder="请输入密码" required>
+        </div>
+        <button type="submit" class="btn btn-success w-full btn-lg">登录</button>
+    </form>
+
+    <div class="footer-links row-links">
+        <a href="/teacher/register">注册账户</a>
+    </div>
+    <div class="footer-links footer-links-subtle">
+        <a href="{{ student_entry_url }}">学生入口</a>
+    </div>
+</div>
+{% endblock %}

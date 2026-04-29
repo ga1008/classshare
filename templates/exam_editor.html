@@ -1,0 +1,1506 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if paper %}编辑试卷{% else %}新建试卷{% endif %} | 试卷编辑器</title>
+
+    <!-- Core modern CSS system -->
+    <link rel="stylesheet" href="/static/css/core.css">
+    <link rel="stylesheet" href="/static/css/buttons.css">
+    <link rel="stylesheet" href="/static/css/forms.css">
+    <link rel="stylesheet" href="/static/css/toast.css">
+
+    <style>
+        :root {
+            --editor-header-height: 64px;
+            --sidebar-width: 280px;
+            --preview-width: 400px;
+        }
+
+        body {
+            background: var(--bg-color);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Editor Header */
+        .editor-header {
+            height: var(--editor-header-height);
+            background: var(--surface-color);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 var(--spacing-lg);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+            z-index: 40;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        /* Main Layout */
+        .editor-layout {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar Panel */
+        .sidebar-panel {
+            width: var(--sidebar-width);
+            background: var(--surface-color);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .sidebar-section {
+            padding: var(--spacing-md);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .sidebar-section:last-child {
+            border-bottom: none;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .section-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: var(--spacing-sm);
+        }
+
+        /* Page List */
+        .page-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .page-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+            color: var(--text-secondary);
+        }
+        .page-item:hover {
+            background: var(--bg-color);
+        }
+        .page-item.active {
+            background: var(--primary-light);
+            color: var(--primary-dark);
+            border-color: var(--primary-color);
+            font-weight: 600;
+        }
+        .page-name {
+            flex: 1;
+            font-size: 0.9rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .page-item[contenteditable="true"] {
+            cursor: text;
+            background: white;
+            outline: none;
+            border-color: var(--primary-color);
+        }
+        .page-count {
+            font-size: 0.75rem;
+            background: var(--bg-color);
+            padding: 2px 6px;
+            border-radius: var(--radius-full);
+            color: var(--text-muted);
+        }
+        .page-item.active .page-count {
+            background: white;
+            color: var(--primary-color);
+        }
+        .page-delete {
+            opacity: 0;
+            color: var(--danger-color);
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 2px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.2s, background 0.2s;
+        }
+        .page-item:hover .page-delete {
+            opacity: 1;
+        }
+        .page-delete:hover {
+            background: var(--danger-light);
+        }
+
+        /* Main Editing Area */
+        .main-panel {
+            flex: 1;
+            background: var(--bg-color);
+            overflow-y: auto;
+            padding: var(--spacing-xl);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .editor-content-wrapper {
+            width: 100%;
+            max-width: 800px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        /* Question Cards */
+        .question-card {
+            background: var(--surface-color);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-lg);
+            margin-bottom: var(--spacing-md);
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border-color);
+            position: relative;
+            transition: box-shadow 0.2s, border-color 0.2s;
+        }
+        .question-card:hover, .question-card:focus-within {
+            box-shadow: var(--shadow-md);
+            border-color: var(--primary-light);
+        }
+
+        .q-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--spacing-md);
+        }
+        .q-badge {
+            background: var(--primary-light);
+            color: var(--primary-color);
+            padding: 4px 12px;
+            border-radius: var(--radius-full);
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+        .q-actions {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .q-type-select {
+            padding: 4px 8px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+            background: var(--surface-color);
+            color: var(--text-secondary);
+            outline: none;
+        }
+        .q-type-select:focus {
+            border-color: var(--primary-color);
+        }
+
+        .q-title-input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid transparent;
+            border-radius: var(--radius-md);
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--text-primary);
+            background: var(--bg-color);
+            margin-bottom: var(--spacing-md);
+            transition: all 0.2s;
+        }
+        .q-title-input:focus, .q-title-input:hover {
+            border-color: var(--border-color);
+            background: var(--surface-color);
+            outline: none;
+        }
+
+        .q-id-input {
+            width: auto;
+            min-width: 120px;
+            padding: 4px 8px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            background: transparent;
+            border: 1px dashed transparent;
+            border-radius: var(--radius-sm);
+        }
+        .q-id-input:focus, .q-id-input:hover {
+            border-color: var(--border-color);
+            background: var(--bg-color);
+            outline: none;
+        }
+
+        /* Options List (Radio/Checkbox) */
+        .option-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: var(--spacing-sm);
+        }
+        .option-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .option-marker {
+            width: 16px;
+            height: 16px;
+            border: 1.5px solid var(--text-muted);
+            display: inline-block;
+            flex-shrink: 0;
+        }
+        .option-marker.radio { border-radius: 50%; }
+        .option-marker.checkbox { border-radius: 3px; }
+
+        .option-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 0.9rem;
+            transition: border-color 0.2s;
+        }
+        .option-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        /* Text Input Preview */
+        .text-preview-input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px dashed var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            background: transparent;
+        }
+        .text-preview-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            border-style: solid;
+        }
+
+        .add-question-bar {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            padding: var(--spacing-lg);
+            background: transparent;
+            border-radius: var(--radius-lg);
+            border: 2px dashed var(--border-color);
+            margin-top: var(--spacing-lg);
+            transition: all 0.2s;
+        }
+        .add-question-bar:hover {
+            border-color: var(--primary-color);
+            background: var(--primary-light);
+        }
+
+        /* Preview Panel */
+        .preview-panel {
+            width: var(--preview-width);
+            background: var(--surface-color);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .preview-header {
+            padding: var(--spacing-md);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .preview-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: var(--spacing-md);
+            background: var(--bg-color);
+        }
+
+        .preview-q {
+            background: var(--surface-color);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-md);
+            margin-bottom: var(--spacing-sm);
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+        }
+        .preview-q-title {
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-bottom: var(--spacing-sm);
+            color: var(--text-primary);
+        }
+        .preview-q-options {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .preview-q-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        .preview-q-input {
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 8px 12px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            width: 100%;
+        }
+
+        /* Media Queries for smaller screens */
+        @media (max-width: 1200px) {
+            .preview-panel { display: none; }
+        }
+
+        /* AI生成模态框样式 */
+        .progress-bar {
+            height: 8px;
+            background: var(--bg-color);
+            border-radius: var(--radius-full);
+            overflow: hidden;
+            margin: 8px 0;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary-color), var(--primary-light));
+            border-radius: var(--radius-full);
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        .modal-overlay.active {
+            display: flex;
+            opacity: 1;
+        }
+        .modal-box {
+            background: var(--surface-color);
+            border-radius: 20px;
+            width: 90%;
+            max-width: 720px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            transform: translateY(30px) scale(0.95);
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            max-height: 92vh;
+        }
+        .modal-overlay.active .modal-box {
+            transform: translateY(0) scale(1);
+        }
+        .modal-header {
+            padding: 24px 28px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(135deg, var(--primary-light) 0%, rgba(255,255,255,0) 100%);
+        }
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin: 0;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 8px;
+            border-radius: var(--radius-full);
+            transition: all 0.2s;
+        }
+        .modal-close:hover {
+            background: var(--bg-color);
+            color: var(--text-primary);
+            transform: rotate(90deg);
+        }
+        .modal-body {
+            padding: 28px;
+            overflow-y: auto;
+        }
+        .modal-footer {
+            padding: 20px 28px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            background: var(--bg-color);
+        }
+        .hidden {
+            display: none !important;
+        }
+        .alert {
+            padding: 16px 20px;
+            border-radius: 16px;
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+            backdrop-filter: blur(8px);
+        }
+        .alert-info {
+            background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%);
+            color: #0c4a6e;
+            border: 1px solid #bae6fd;
+            box-shadow: 0 2px 8px rgba(56, 189, 248, 0.1);
+        }
+        .alert-info svg {
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.025em;
+        }
+        .badge-primary {
+            background: var(--primary-light);
+            color: var(--primary-color);
+        }
+        .badge-success {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .badge-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .badge-danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .form-section {
+            margin-bottom: 24px;
+            padding: 20px;
+            background: var(--bg-color);
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+        }
+        .form-section-title {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .form-section-title::before {
+            content: '';
+            width: 4px;
+            height: 16px;
+            background: var(--primary-color);
+            border-radius: 2px;
+        }
+        .task-status-card {
+            background: linear-gradient(135deg, var(--primary-light) 0%, rgba(255,255,255,0.8) 100%);
+            border: 1px solid var(--primary-light);
+            border-radius: 16px;
+            padding: 20px;
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.2); }
+            50% { box-shadow: 0 0 0 8px rgba(79, 70, 229, 0); }
+        }
+    </style>
+</head>
+<body>
+    <header class="editor-header">
+        <div class="header-title">
+            <div class="p-1 bg-primary-light text-primary rounded border border-primary-light flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
+            </div>
+            {% if paper %}{{ paper.title }} - 编辑{% else %}新建试卷{% endif %}
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="/manage/exams" class="btn btn-ghost btn-sm text-muted">取消</a>
+            <button class="btn btn-outline btn-sm" onclick="previewExam()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                全屏预览
+            </button>
+            <button class="btn btn-secondary btn-sm ml-2" onclick="openAIGenerateModal()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 0-2 2v5H4a2 2 0 0 0-2 2v2c0 1.1.9 2 2 2h6v5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-5h6a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-6V4a2 2 0 0 0-2-2h-2Z"></path></svg>
+                AI出题
+            </button>
+            <button class="btn btn-primary btn-sm ml-2" onclick="saveExam()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 0-2-2V5a2 2 0 0 0 2-2h11l5 5v11a2 2 0 0 0 2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                保存试卷
+            </button>
+        </div>
+    </header>
+
+    <div class="editor-layout">
+        <!-- 左侧：设置与页面列表 -->
+        <aside class="sidebar-panel">
+            <div class="sidebar-section">
+                <h3 class="section-title">基本设置</h3>
+                <div class="form-group mb-sm">
+                    <label class="form-label text-xs text-muted mb-1">试卷标题</label>
+                    <input type="text" id="exam-title" class="form-control form-control-sm" value="{{ paper.title if paper else '' }}" placeholder="例如：期中测试卷">
+                </div>
+                <div class="form-group mb-0">
+                    <label class="form-label text-xs text-muted mb-1">试卷说明</label>
+                    <textarea id="exam-desc" class="form-control form-control-sm" rows="3" placeholder="填写注意事项或考试说明...">{{ paper.description if paper and paper.description else '' }}</textarea>
+                </div>
+            </div>
+
+            <div class="sidebar-section flex flex-col min-h-0">
+                <div class="flex justify-between items-center mb-sm">
+                    <h3 class="section-title m-0">页面 / 题组</h3>
+                    <button class="btn btn-ghost btn-sm p-1 h-auto text-primary" onclick="addPage()" title="添加新页">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    </button>
+                </div>
+                <div class="page-list overflow-y-auto flex-1 pr-1" id="page-list">
+                    <!-- Pages rendered by JS -->
+                </div>
+            </div>
+        </aside>
+
+        <!-- 中间：题目编辑 -->
+        <main class="main-panel" id="main-panel">
+            <div class="editor-content-wrapper" id="question-editor">
+                <div class="empty-state">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-3 opacity-50"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    <p>正在初始化编辑器...</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- 右侧：实时预览 -->
+        <aside class="preview-panel">
+            <div class="preview-header">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                实时预览
+            </div>
+            <div class="preview-content" id="preview-content">
+                <!-- Preview rendered by JS -->
+            </div>
+        </aside>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- AI生成试卷模态框 -->
+    <div class="modal-overlay" id="ai-exam-modal" style="display: none;">
+        <div class="modal-box" style="max-width: 700px;">
+            <div class="modal-header">
+                <h3 class="modal-title">AI智能出题</h3>
+                <button class="modal-close" onclick="closeAIGenerateModal()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                    <div>
+                        <strong>AI出题说明：</strong> 请填写出题要求和范围，AI将自动生成试卷题目。出题范围是必填项，建议先点击"推荐出题范围"获取建议。
+                        <br><small>生成过程可能需要几分钟，请耐心等待。生成期间可以随时中断。</small>
+                    </div>
+                </div>
+
+                <form id="ai-exam-form">
+                    <div class="form-group mb-4">
+                        <label class="form-label">试卷标题 *</label>
+                        <input type="text" id="ai-exam-title" class="form-control" required placeholder="例如：期中测试卷">
+                    </div>
+
+                    <div class="form-group mb-4">
+                        <div class="flex justify-between items-center mb-2">
+                            <label class="form-label">出题范围 *</label>
+                            <button type="button" class="btn btn-outline btn-sm" onclick="suggestTopics()" id="suggest-topics-btn">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
+                                推荐出题范围
+                            </button>
+                        </div>
+                        <textarea id="ai-exam-scope" class="form-control" rows="4" required placeholder="请详细描述出题范围，例如：计算机网络基础、TCP/IP协议栈、HTTP协议等。可以包含具体知识点、章节或教学目标。"></textarea>
+                        <div class="text-xs text-muted mt-1">出题范围越具体，AI生成的题目越精准。</div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div class="form-group">
+                            <label class="form-label">难度</label>
+                            <select id="ai-exam-difficulty" class="form-control">
+                                <option value="easy">简单</option>
+                                <option value="medium" selected>中等</option>
+                                <option value="hard">困难</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">总题数</label>
+                            <input type="number" id="ai-exam-total" class="form-control" min="1" max="50" value="10">
+                        </div>
+                    </div>
+
+                    <div class="form-group mb-4">
+                        <label class="form-label">题型分布（可选）</label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="flex items-center gap-2">
+                                <label class="text-sm text-muted flex-1">单选题</label>
+                                <input type="number" id="ai-exam-radio" class="form-control form-control-sm w-16" min="0" value="5">
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="text-sm text-muted flex-1">多选题</label>
+                                <input type="number" id="ai-exam-checkbox" class="form-control form-control-sm w-16" min="0" value="3">
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="text-sm text-muted flex-1">填空题</label>
+                                <input type="number" id="ai-exam-text" class="form-control form-control-sm w-16" min="0" value="1">
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="text-sm text-muted flex-1">问答题</label>
+                                <input type="number" id="ai-exam-textarea" class="form-control form-control-sm w-16" min="0" value="1">
+                            </div>
+                        </div>
+                        <div class="text-xs text-muted mt-1">如果不指定题型分布，AI将自动分配。</div>
+                    </div>
+
+                    <div class="form-group mb-4">
+                        <label class="form-label">关联课堂（可选）</label>
+                        <select id="ai-exam-offering" class="form-control">
+                            <option value="">不关联特定课堂</option>
+                            {% for offering in offerings %}
+                            <option value="{{ offering.id }}">{{ offering.course_name }} - {{ offering.class_name }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="text-xs text-muted mt-1">关联课堂后，AI会参考该课堂的课程大纲和教材信息。</div>
+                    </div>
+
+                    <!-- 任务状态显示区域 -->
+                    <div id="ai-task-status" class="hidden">
+                        <div class="border border-border rounded-lg p-4 mb-4 bg-surface">
+                            <div class="flex items-center justify-between mb-2">
+                                <h4 class="font-medium text-primary">生成进度</h4>
+                                <span id="ai-task-status-badge" class="badge badge-primary">准备中</span>
+                            </div>
+                            <div class="mb-3">
+                                <div class="flex justify-between text-sm mb-1">
+                                    <span>AI正在出题中...</span>
+                                    <span id="ai-task-time">0秒</span>
+                                </div>
+                                <div class="progress-bar">
+                                    <div id="ai-task-progress" class="progress-bar-fill" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            <div id="ai-task-message" class="text-sm text-muted mb-3">正在初始化任务...</div>
+                            <div class="flex gap-2">
+                                <button type="button" class="btn btn-outline btn-sm flex-1" onclick="cancelAITask()" id="cancel-ai-task-btn">
+                                    中断生成
+                                </button>
+                                <button type="button" class="btn btn-ghost btn-sm" onclick="refreshTaskStatus()">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 16h5v5"></path></svg>
+                                    刷新状态
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeAIGenerateModal()">取消</button>
+                <button class="btn btn-primary" onclick="startAIGeneration()" id="start-ai-generate-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 0-2 2v5H4a2 2 0 0 0-2 2v2c0 1.1.9 2 2 2h6v5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-5h6a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-6V4a2 2 0 0 0-2-2h-2Z"></path></svg>
+                    开始生成
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/static/js/auth.js"></script>
+    <script type="module">
+        import { showToast } from '/static/js/ui.js';
+
+        // Expose to window for inline onclick handlers
+        window.showToast = showToast;
+
+        const EXAM_ID = "{{ paper.id if paper else '' }}";
+        let examData = { pages: [] };
+        let currentPageIdx = -1;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            {% if paper and paper.questions_json %}
+            try {
+                const loaded = JSON.parse({{ paper.questions_json | tojson }});
+                if (loaded.pages) examData.pages = loaded.pages;
+            } catch(e) { console.error('解析试卷数据失败', e); }
+            {% endif %}
+
+            if (examData.pages.length === 0) {
+                window.addPage();
+            } else {
+                window.renderPageList();
+                window.selectPage(0);
+            }
+        });
+
+        // === 页面管理 ===
+        window.addPage = function() {
+            examData.pages.push({
+                name: `第${examData.pages.length + 1}部分`,
+                questions: []
+            });
+            window.renderPageList();
+            window.selectPage(examData.pages.length - 1);
+        }
+
+        window.removePage = function(idx) {
+            if (examData.pages.length <= 1) { showToast('试卷至少需要保留一个页面/部分', 'warning'); return; }
+            if (!confirm('确定删除此页面及其包含的所有题目吗？')) return;
+            examData.pages.splice(idx, 1);
+            if (currentPageIdx >= examData.pages.length) currentPageIdx = examData.pages.length - 1;
+            window.renderPageList();
+            if (currentPageIdx >= 0) window.selectPage(currentPageIdx);
+        }
+
+        window.renderPageList = function() {
+            const list = document.getElementById('page-list');
+            list.innerHTML = examData.pages.map((p, i) => `
+                <div class="page-item ${i === currentPageIdx ? 'active' : ''}" onclick="window.selectPage(${i})">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-50"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+                    <span class="page-name" contenteditable="${i === currentPageIdx}"
+                          onblur="window.renamePage(${i}, this.textContent)"
+                          onclick="event.stopPropagation()"
+                          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
+                        ${escapeHtml(p.name)}
+                    </span>
+                    <span class="page-count">${(p.questions||[]).length}题</span>
+                    <button class="page-delete" onclick="event.stopPropagation(); window.removePage(${i})" title="删除">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        window.renamePage = function(idx, newName) {
+            examData.pages[idx].name = newName.trim() || `第${idx+1}部分`;
+            window.renderPreview();
+        }
+
+        window.selectPage = function(idx) {
+            currentPageIdx = idx;
+            window.renderPageList();
+            window.renderQuestionEditor();
+            window.renderPreview();
+        }
+
+        // === 题目编辑器 ===
+        window.renderQuestionEditor = function() {
+            const page = examData.pages[currentPageIdx];
+            if (!page) return;
+            const editor = document.getElementById('question-editor');
+            const questions = page.questions || [];
+
+            let html = `
+                <div class="flex items-center justify-between mb-lg">
+                    <h2 class="text-lg font-bold text-primary m-0">${escapeHtml(page.name)}</h2>
+                    <span class="text-sm text-muted">共 ${questions.length} 题</span>
+                </div>
+            `;
+
+            questions.forEach((q, i) => {
+                html += renderQuestionCard(q, i);
+            });
+
+            html += `
+                <div class="add-question-bar">
+                    <span class="text-sm text-muted font-medium mr-2">添加题目:</span>
+                    <button class="btn btn-outline btn-sm bg-surface" onclick="window.addQuestion('radio')">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>单选题
+                    </button>
+                    <button class="btn btn-outline btn-sm bg-surface" onclick="window.addQuestion('checkbox')">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><polyline points="9 12 12 15 15 9"></polyline></svg>多选题
+                    </button>
+                    <button class="btn btn-outline btn-sm bg-surface" onclick="window.addQuestion('text')">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>填空题
+                    </button>
+                    <button class="btn btn-outline btn-sm bg-surface" onclick="window.addQuestion('textarea')">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="17" y2="21"></line><path d="M12 8h8"></path><path d="M12 12h8"></path><path d="M12 16h8"></path><path d="M4 4h4"></path><path d="M4 8h4"></path><path d="M4 12h4"></path><path d="M4 16h4"></path><path d="M4 20h4"></path></svg>问答题
+                    </button>
+                </div>
+            `;
+
+            editor.innerHTML = html;
+        }
+
+        function renderQuestionCard(q, idx) {
+            const isChoice = q.type === 'radio' || q.type === 'checkbox';
+            const typeLabels = {radio:'单选', checkbox:'多选', text:'填空', textarea:'问答'};
+
+            let html = `
+            <div class="question-card group">
+                <div class="q-header">
+                    <div class="flex items-center gap-3">
+                        <span class="q-badge">第 ${idx+1} 题</span>
+                        <div class="flex items-center border border-border rounded-md px-2 py-1 bg-bg group-hover:border-primary-light transition-colors">
+                            <span class="text-xs text-muted mr-1">ID:</span>
+                            <input class="q-id-input" value="${escapeHtml(q.id||'')}" placeholder="唯一标识" oninput="window.updateQId(${idx}, this.value)">
+                        </div>
+                    </div>
+                    <div class="q-actions opacity-50 group-hover:opacity-100 transition-opacity">
+                        <select class="q-type-select" onchange="window.changeQType(${idx}, this.value)">
+                            <option value="radio" ${q.type==='radio'?'selected':''}>单选题</option>
+                            <option value="checkbox" ${q.type==='checkbox'?'selected':''}>多选题</option>
+                            <option value="text" ${q.type==='text'?'selected':''}>填空题</option>
+                            <option value="textarea" ${q.type==='textarea'?'selected':''}>问答题</option>
+                        </select>
+                        <div class="flex bg-surface border border-border rounded-md overflow-hidden ml-1">
+                            <button class="btn btn-ghost btn-sm p-1 rounded-none border-r border-border text-muted h-auto ${idx === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:text-primary'}" onclick="window.moveQ(${idx},-1)" ${idx === 0 ? 'disabled' : ''} title="上移">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                            </button>
+                            <button class="btn btn-ghost btn-sm p-1 rounded-none text-muted h-auto ${idx === (examData.pages[currentPageIdx].questions||[]).length-1 ? 'opacity-30 cursor-not-allowed' : 'hover:text-primary'}" onclick="window.moveQ(${idx},1)" ${idx === (examData.pages[currentPageIdx].questions||[]).length-1 ? 'disabled' : ''} title="下移">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </button>
+                        </div>
+                        <button class="btn btn-ghost btn-sm p-1 ml-1 text-danger h-auto hover:bg-danger-light rounded-md" onclick="window.removeQ(${idx})" title="删除该题">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <input class="q-title-input" value="${escapeHtml(q.text||'')}" placeholder="在此输入题目内容..." oninput="window.updateQText(${idx}, this.value)">
+            `;
+
+            if (isChoice) {
+                html += `<div class="option-list pl-1">`;
+                (q.options || []).forEach((opt, oi) => {
+                    html += `
+                    <div class="option-item group/opt">
+                        <div class="option-marker ${q.type}"></div>
+                        <input class="option-input" value="${escapeHtml(opt)}" placeholder="选项 ${oi+1}" oninput="window.updateOption(${idx},${oi},this.value)">
+                        <button class="btn btn-ghost btn-sm p-1 h-auto text-muted hover:text-danger opacity-0 group-hover/opt:opacity-100 transition-opacity" onclick="window.removeOption(${idx},${oi})" title="移除选项">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                    </div>`;
+                });
+                html += `</div>
+                <button class="btn btn-ghost btn-sm text-primary pl-1 flex items-center gap-1 hover:bg-primary-light mt-2" onclick="window.addOption(${idx})">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    添加选项
+                </button>`;
+            } else {
+                if (q.type === 'text') {
+                    html += `<input class="text-preview-input" value="${escapeHtml(q.placeholder||'')}" placeholder="提示文本 (例如: 请输入函数名)" oninput="window.updatePlaceholder(${idx}, this.value)">`;
+                } else {
+                    html += `<textarea class="text-preview-input" rows="3" placeholder="提示文本 (例如: 请详细说明...)" oninput="window.updatePlaceholder(${idx}, this.value)">${escapeHtml(q.placeholder||'')}</textarea>`;
+                }
+            }
+
+            html += `</div>`;
+            return html;
+        }
+
+        // Questions Actions
+        window.addQuestion = function(type) {
+            const page = examData.pages[currentPageIdx];
+            if (!page.questions) page.questions = [];
+            const qNum = page.questions.length + 1;
+            const qId = `p${currentPageIdx+1}_q${qNum}`;
+            const newQ = { id: qId, type: type, text: '', placeholder: '' };
+            if (type === 'radio' || type === 'checkbox') newQ.options = ['', '', '', ''];
+            page.questions.push(newQ);
+            window.renderQuestionEditor();
+            window.renderPreview();
+            window.renderPageList();
+
+            // Scroll to bottom
+            setTimeout(() => {
+                const editor = document.getElementById('main-panel');
+                editor.scrollTo({ top: editor.scrollHeight, behavior: 'smooth' });
+            }, 50);
+        }
+
+        window.removeQ = function(idx) {
+            if(!confirm('确定删除此题吗？')) return;
+            examData.pages[currentPageIdx].questions.splice(idx, 1);
+            window.renderQuestionEditor();
+            window.renderPreview();
+            window.renderPageList();
+        }
+
+        window.moveQ = function(idx, dir) {
+            const qs = examData.pages[currentPageIdx].questions;
+            const newIdx = idx + dir;
+            if (newIdx < 0 || newIdx >= qs.length) return;
+            [qs[idx], qs[newIdx]] = [qs[newIdx], qs[idx]];
+            window.renderQuestionEditor();
+            window.renderPreview();
+        }
+
+        window.changeQType = function(idx, newType) {
+            const q = examData.pages[currentPageIdx].questions[idx];
+            q.type = newType;
+            if ((newType === 'radio' || newType === 'checkbox') && !q.options) {
+                q.options = ['', '', '', ''];
+            }
+            if (newType === 'text' || newType === 'textarea') {
+                delete q.options;
+                if (!q.placeholder) q.placeholder = '';
+            }
+            window.renderQuestionEditor();
+            window.renderPreview();
+        }
+
+        window.updateQText = function(idx, val) { examData.pages[currentPageIdx].questions[idx].text = val; window.renderPreview(); }
+        window.updateQId = function(idx, val) { examData.pages[currentPageIdx].questions[idx].id = val; }
+        window.updatePlaceholder = function(idx, val) { examData.pages[currentPageIdx].questions[idx].placeholder = val; window.renderPreview(); }
+        window.updateOption = function(qIdx, optIdx, val) { examData.pages[currentPageIdx].questions[qIdx].options[optIdx] = val; window.renderPreview(); }
+        window.addOption = function(qIdx) { examData.pages[currentPageIdx].questions[qIdx].options.push(''); window.renderQuestionEditor(); window.renderPreview(); }
+        window.removeOption = function(qIdx, optIdx) { examData.pages[currentPageIdx].questions[qIdx].options.splice(optIdx, 1); window.renderQuestionEditor(); window.renderPreview(); }
+
+        // === 预览 ===
+        window.renderPreview = function() {
+            const page = examData.pages[currentPageIdx];
+            if (!page) return;
+            const container = document.getElementById('preview-content');
+            const questions = page.questions || [];
+
+            let html = `<div class="text-sm font-semibold text-primary mb-3">${escapeHtml(page.name)}</div>`;
+
+            if (questions.length === 0) {
+                container.innerHTML = html + '<p class="text-center text-muted text-sm py-4 border border-dashed border-border rounded">本页暂无题目</p>';
+                return;
+            }
+
+            questions.forEach((q, i) => {
+                html += `
+                <div class="preview-q">
+                    <div class="preview-q-title"><span class="text-muted mr-1">${i+1}.</span> ${escapeHtml(q.text || '(未填写题干)')}</div>`;
+
+                if ((q.type === 'radio' || q.type === 'checkbox') && q.options) {
+                    html += `<div class="preview-q-options">`;
+                    const inputType = q.type === 'radio' ? 'radio' : 'checkbox';
+                    q.options.forEach(opt => {
+                        html += `
+                        <label class="preview-q-option">
+                            <input type="${inputType}" disabled class="cursor-not-allowed">
+                            <span>${escapeHtml(opt || '(空)')}</span>
+                        </label>`;
+                    });
+                    html += `</div>`;
+                } else if (q.type === 'text') {
+                    html += `<input type="text" class="preview-q-input cursor-not-allowed" disabled placeholder="${escapeHtml(q.placeholder || '填空答案')}">`;
+                } else {
+                    html += `<textarea class="preview-q-input cursor-not-allowed" rows="3" disabled placeholder="${escapeHtml(q.placeholder || '问答作答区域...')}"></textarea>`;
+                }
+                html += `</div>`;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // === 保存 ===
+        window.saveExam = async function() {
+            const title = document.getElementById('exam-title').value.trim();
+            if (!title) { showToast('请输入试卷标题', 'warning'); return; }
+
+            const payload = {
+                title: title,
+                description: document.getElementById('exam-desc').value,
+                questions: examData,
+                status: 'draft'
+            };
+
+            try {
+                const url = EXAM_ID ? `/api/exam-papers/${EXAM_ID}` : '/api/exam-papers';
+                const method = EXAM_ID ? 'PUT' : 'POST';
+                const resp = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    showToast('试卷保存成功', 'success');
+                    if (!EXAM_ID && data.paper_id) {
+                        setTimeout(() => window.location.href = `/exam/${data.paper_id}/edit`, 800);
+                    }
+                } else {
+                    throw new Error(data.detail || '保存失败');
+                }
+            } catch(e) {
+                showToast('保存失败: ' + e.message, 'error');
+            }
+        }
+
+        window.previewExam = function() {
+            const title = document.getElementById('exam-title').value || '试卷预览';
+            const desc = document.getElementById('exam-desc').value || '';
+            let allQuestions = [];
+            examData.pages.forEach(page => {
+                (page.questions || []).forEach(q => allQuestions.push({...q, pageName: page.name}));
+            });
+
+            let questionsHtml = '';
+            allQuestions.forEach((q, i) => {
+                questionsHtml += `<div style="background:#fff;border-radius:12px;padding:24px;box-shadow:0 1px 3px rgba(0,0,0,0.1);border:1px solid #E5E7EB;margin-bottom:20px;">`;
+                questionsHtml += `<div style="font-weight:600;font-size:1.05rem;margin-bottom:16px;display:flex;align-items:baseline;gap:8px;color:#111827;">`;
+                questionsHtml += `<span style="background:#EEF2FF;color:#4F46E5;padding:4px 10px;border-radius:20px;font-size:0.8rem;font-weight:700;">${i+1}</span>`;
+                questionsHtml += `<span>${escapeHtml(q.text || '(未填写题目)')}</span></div>`;
+
+                if (q.type === 'radio' && q.options) {
+                    q.options.forEach(opt => {
+                        questionsHtml += `<label style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:12px;border:1px solid #E5E7EB;border-radius:8px;font-size:0.95rem;color:#374151;">`;
+                        questionsHtml += `<input type="radio" disabled style="width:16px;height:16px;"> ${escapeHtml(opt || '(空)')}</label>`;
+                    });
+                } else if (q.type === 'checkbox' && q.options) {
+                    q.options.forEach(opt => {
+                        questionsHtml += `<label style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:12px;border:1px solid #E5E7EB;border-radius:8px;font-size:0.95rem;color:#374151;">`;
+                        questionsHtml += `<input type="checkbox" disabled style="width:16px;height:16px;"> ${escapeHtml(opt || '(空)')}</label>`;
+                    });
+                } else if (q.type === 'text') {
+                    questionsHtml += `<input type="text" disabled placeholder="${escapeHtml(q.placeholder || '请输入答案')}" style="width:100%;padding:12px 16px;border:2px solid #E5E7EB;border-radius:8px;font-size:0.95rem;background:#F9FAFB;">`;
+                } else {
+                    questionsHtml += `<textarea disabled rows="5" placeholder="${escapeHtml(q.placeholder || '请在此作答...')}" style="width:100%;padding:12px 16px;border:2px solid #E5E7EB;border-radius:8px;font-size:0.95rem;background:#F9FAFB;resize:vertical;"></textarea>`;
+                }
+                questionsHtml += `</div>`;
+            });
+
+            const previewHtml = `<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>${escapeHtml(title)} - 预览</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background-color:#F3F4F6;font-family:'Segoe UI','Microsoft YaHei UI','Microsoft YaHei','PingFang SC','Hiragino Sans GB','Noto Sans CJK SC',-apple-system,BlinkMacSystemFont,sans-serif;color:#111827;padding:40px 20px;}
+.exam-container{max-width:800px;margin:0 auto;}
+.exam-header{background:#fff;border-radius:16px;padding:32px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);margin-bottom:24px;border-top:6px solid #4F46E5;}
+.exam-header h1{font-size:1.75rem;font-weight:700;margin-bottom:12px;}
+.exam-desc{font-size:0.95rem;color:#4B5563;line-height:1.6;}
+.preview-badge{display:inline-block;background:#FEF3C7;color:#92400E;padding:6px 14px;border-radius:20px;font-size:0.85rem;font-weight:600;margin-bottom:24px;border:1px solid #FDE68A;}
+footer{text-align:center;padding:30px;font-size:0.85rem;color:#9CA3AF;}
+</style></head><body>
+<div class="exam-container">
+<div class="preview-badge">👀 教师全屏预览模式 (共 ${allQuestions.length} 题)</div>
+<div class="exam-header"><h1>${escapeHtml(title)}</h1>${desc ? '<div class="exam-desc">' + escapeHtml(desc).replace(/\n/g, '<br>') + '</div>' : ''}</div>
+<div class="page-content">
+${questionsHtml || '<div style="background:#fff;border-radius:12px;padding:40px;text-align:center;color:#6B7280;">暂无题目</div>'}
+</div>
+<footer>这仅是教师端题目渲染预览，非学生真实考试环境交互界面</footer>
+</div></body></html>`;
+
+            const blob = new Blob([previewHtml], {type: 'text/html'});
+            const url = URL.createObjectURL(blob);
+            window.open(url, '_blank');
+        }
+
+        // Utility
+        function escapeHtml(s) {
+            if(!s) return '';
+            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        // === AI出题功能 ===
+        let aiTaskInterval = null;
+        let currentTaskId = null;
+
+        window.openAIGenerateModal = function() {
+            const modal = document.getElementById('ai-exam-modal');
+            if (modal) {
+                modal.style.display = 'flex';
+                setTimeout(() => modal.classList.add('active'), 10);
+                // 重置表单
+                document.getElementById('ai-exam-form').reset();
+                document.getElementById('ai-exam-title').value = document.getElementById('exam-title').value || '';
+                // 隐藏任务状态区域
+                document.getElementById('ai-task-status').classList.add('hidden');
+                // 重置按钮状态
+                document.getElementById('start-ai-generate-btn').disabled = false;
+                document.getElementById('start-ai-generate-btn').innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 0-2 2v5H4a2 2 0 0 0-2 2v2c0 1.1.9 2 2 2h6v5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-5h6a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-6V4a2 2 0 0 0-2-2h-2Z"></path></svg>
+                    开始生成
+                `;
+                // 停止任何现有的轮询
+                if (aiTaskInterval) {
+                    clearInterval(aiTaskInterval);
+                    aiTaskInterval = null;
+                }
+                currentTaskId = null;
+            }
+        };
+
+        window.closeAIGenerateModal = function() {
+            const modal = document.getElementById('ai-exam-modal');
+            if (modal) {
+                modal.classList.remove('active');
+                setTimeout(() => modal.style.display = 'none', 200);
+                // 停止轮询
+                if (aiTaskInterval) {
+                    clearInterval(aiTaskInterval);
+                    aiTaskInterval = null;
+                }
+                currentTaskId = null;
+            }
+        };
+
+        window.suggestTopics = async function() {
+            const btn = document.getElementById('suggest-topics-btn');
+            const originalText = btn.innerHTML;
+            const offeringSelect = document.getElementById('ai-exam-offering');
+            const classOfferingId = offeringSelect.value;
+
+            if (!classOfferingId) {
+                showToast('请先选择一个关联课堂', 'warning');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+                </svg>
+                推荐中...
+            `;
+
+            try {
+                const response = await fetch('/api/ai/exam/suggest-topics', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ class_offering_id: parseInt(classOfferingId) })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    const scopeTextarea = document.getElementById('ai-exam-scope');
+                    let suggestedText = '推荐出题范围：\n\n';
+
+                    if (data.topics) {
+                        suggestedText += data.topics + '\n\n';
+                    }
+
+                    if (data.course_context) {
+                        suggestedText += `课程：${data.course_context.course_name}\n`;
+                        suggestedText += `班级：${data.course_context.class_name}\n`;
+                        suggestedText += `大纲要点：${data.course_context.syllabus_preview}\n\n`;
+                    }
+
+                    suggestedText += '请根据以上推荐，结合您的具体需求调整出题范围。';
+                    scopeTextarea.value = suggestedText;
+                    showToast('出题范围推荐已生成', 'success');
+                } else {
+                    throw new Error(data.detail || '推荐失败');
+                }
+            } catch (error) {
+                console.error('推荐出题范围失败:', error);
+                showToast(`推荐失败: ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        };
+
+        window.startAIGeneration = async function() {
+            const form = document.getElementById('ai-exam-form');
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+
+            const title = document.getElementById('ai-exam-title').value.trim();
+            const scope = document.getElementById('ai-exam-scope').value.trim();
+            const difficulty = document.getElementById('ai-exam-difficulty').value;
+            const totalQuestions = parseInt(document.getElementById('ai-exam-total').value) || 10;
+            const offeringSelect = document.getElementById('ai-exam-offering');
+            const classOfferingId = offeringSelect.value ? parseInt(offeringSelect.value) : null;
+
+            // 题型分布
+            const questionTypes = {};
+            const radioCount = parseInt(document.getElementById('ai-exam-radio').value) || 0;
+            const checkboxCount = parseInt(document.getElementById('ai-exam-checkbox').value) || 0;
+            const textCount = parseInt(document.getElementById('ai-exam-text').value) || 0;
+            const textareaCount = parseInt(document.getElementById('ai-exam-textarea').value) || 0;
+
+            if (radioCount > 0) questionTypes.radio = radioCount;
+            if (checkboxCount > 0) questionTypes.checkbox = checkboxCount;
+            if (textCount > 0) questionTypes.text = textCount;
+            if (textareaCount > 0) questionTypes.textarea = textareaCount;
+
+            const startBtn = document.getElementById('start-ai-generate-btn');
+            const originalBtnHtml = startBtn.innerHTML;
+
+            startBtn.disabled = true;
+            startBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+                </svg>
+                正在提交...
+            `;
+
+            try {
+                const response = await fetch('/api/ai/exam/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title,
+                        scope,
+                        difficulty,
+                        total_questions: totalQuestions,
+                        question_types: questionTypes,
+                        class_offering_id: classOfferingId
+                    })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    showToast('AI出题任务已提交，正在跳转到试卷库...', 'success');
+                    // Short delay to let user see the toast, then redirect
+                    setTimeout(() => {
+                        window.location.href = '/manage/exams';
+                    }, 800);
+                } else {
+                    throw new Error(data.detail || '启动生成任务失败');
+                }
+            } catch (error) {
+                console.error('启动AI生成失败:', error);
+                showToast(`启动失败: ${error.message}`, 'error');
+                startBtn.disabled = false;
+                startBtn.innerHTML = originalBtnHtml;
+            }
+        };
+
+        function startTaskPolling(taskId) {
+            if (aiTaskInterval) {
+                clearInterval(aiTaskInterval);
+            }
+
+            const startTime = Date.now();
+            let elapsedSeconds = 0;
+
+            // 立即查询一次状态
+            checkTaskStatus(taskId, startTime);
+
+            // 每5秒轮询一次
+            aiTaskInterval = setInterval(() => {
+                elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+                document.getElementById('ai-task-time').textContent = `${elapsedSeconds}秒`;
+                checkTaskStatus(taskId, startTime);
+            }, 5000);
+        }
+
+        async function checkTaskStatus(taskId, startTime) {
+            try {
+                const response = await fetch(`/api/ai/exam/task/${taskId}/status`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    const task = data.task;
+                    const status = task.status;
+                    const badgeEl = document.getElementById('ai-task-status-badge');
+                    const progressEl = document.getElementById('ai-task-progress');
+                    const messageEl = document.getElementById('ai-task-message');
+
+                    badgeEl.textContent = status === 'pending' ? '准备中' :
+                                        status === 'running' ? '生成中' :
+                                        status === 'completed' ? '已完成' :
+                                        status === 'failed' ? '失败' :
+                                        status === 'cancelled' ? '已取消' : status;
+
+                    // 更新进度条（模拟进度）
+                    if (status === 'pending') {
+                        progressEl.style.width = '10%';
+                        messageEl.textContent = '任务排队中，等待AI处理...';
+                    } else if (status === 'running') {
+                        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                        const progress = Math.min(10 + Math.floor(elapsed / 3), 90);
+                        progressEl.style.width = `${progress}%`;
+                        messageEl.textContent = `AI正在生成试卷题目中... (已用时${elapsed}秒)`;
+                    } else if (status === 'completed') {
+                        progressEl.style.width = '100%';
+                        messageEl.textContent = '试卷生成完成！';
+
+                        // 停止轮询
+                        if (aiTaskInterval) {
+                            clearInterval(aiTaskInterval);
+                            aiTaskInterval = null;
+                        }
+
+                        // 显示导入按钮
+                        setTimeout(() => {
+                            if (task.exam_data) {
+                                messageEl.innerHTML = `
+                                    试卷生成完成！
+                                    <button class="btn btn-primary btn-sm mt-2" onclick="importAIGeneratedExam('${taskId}')">
+                                        导入到编辑器
+                                    </button>
+                                `;
+                            }
+                        }, 1000);
+
+                    } else if (status === 'failed') {
+                        progressEl.style.width = '100%';
+                        progressEl.style.background = 'var(--danger-color)';
+                        messageEl.textContent = `生成失败: ${task.error || '未知错误'}`;
+
+                        if (aiTaskInterval) {
+                            clearInterval(aiTaskInterval);
+                            aiTaskInterval = null;
+                        }
+                    } else if (status === 'cancelled') {
+                        progressEl.style.width = '100%';
+                        progressEl.style.background = 'var(--warning-color)';
+                        messageEl.textContent = '生成任务已被取消';
+
+                        if (aiTaskInterval) {
+                            clearInterval(aiTaskInterval);
+                            aiTaskInterval = null;
+                        }
+                    }
+
+                    // 更新状态徽章颜色
+                    const statusColors = {
+                        'pending': 'var(--warning-color)',
+                        'running': 'var(--primary-color)',
+                        'completed': 'var(--success-color)',
+                        'failed': 'var(--danger-color)',
+                        'cancelled': 'var(--warning-color)'
+                    };
+                    badgeEl.style.backgroundColor = statusColors[status] || 'var(--muted-color)';
+
+                } else {
+                    throw new Error(data.detail || '获取任务状态失败');
+                }
+            } catch (error) {
+                console.error('查询任务状态失败:', error);
+                document.getElementById('ai-task-message').textContent = `状态查询失败: ${error.message}`;
+            }
+        }
+
+        window.cancelAITask = async function() {
+            if (!currentTaskId) {
+                showToast('没有正在运行的任务', 'warning');
+                return;
+            }
+
+            const btn = document.getElementById('cancel-ai-task-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '取消中...';
+
+            try {
+                const response = await fetch(`/api/ai/exam/task/${currentTaskId}/cancel`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    showToast('已请求取消生成任务', 'info');
+                    document.getElementById('ai-task-message').textContent = '正在取消任务...';
+                } else {
+                    throw new Error(data.detail || '取消请求失败');
+                }
+            } catch (error) {
+                console.error('取消任务失败:', error);
+                showToast(`取消失败: ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        };
+
+        window.refreshTaskStatus = function() {
+            if (currentTaskId) {
+                checkTaskStatus(currentTaskId, Date.now());
+                showToast('状态已刷新', 'info');
+            } else {
+                showToast('没有正在运行的任务', 'warning');
+            }
+        };
+
+        window.importAIGeneratedExam = async function(taskId) {
+            try {
+                const response = await fetch(`/api/ai/exam/task/${taskId}/status`);
+                const data = await response.json();
+
+                if (response.ok && data.task && data.task.status === 'completed' && data.task.exam_data) {
+                    const aiExamData = data.task.exam_data;
+
+                    // 验证数据结构
+                    if (aiExamData.pages && Array.isArray(aiExamData.pages)) {
+                        // 更新编辑器中的试卷数据
+                        examData.pages = aiExamData.pages;
+                        window.renderPageList();
+                        if (examData.pages.length > 0) {
+                            window.selectPage(0);
+                        }
+
+                        // 更新试卷标题和描述
+                        document.getElementById('exam-title').value = data.task.title || 'AI生成的试卷';
+                        if (aiExamData.description) {
+                            document.getElementById('exam-desc').value = aiExamData.description;
+                        }
+
+                        showToast('AI生成的试卷已导入编辑器', 'success');
+                        window.closeAIGenerateModal();
+                    } else {
+                        throw new Error('AI返回的数据格式不正确');
+                    }
+                } else {
+                    throw new Error('任务未完成或没有数据');
+                }
+            } catch (error) {
+                console.error('导入AI生成的试卷失败:', error);
+                showToast(`导入失败: ${error.message}`, 'error');
+            }
+        };
+    </script>
+</body>
+</html>

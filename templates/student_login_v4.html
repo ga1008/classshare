@@ -1,0 +1,325 @@
+{% extends "base_centered.html" %}
+
+{% block title %}学生登录 - 课堂平台{% endblock %}
+
+{% block css %}
+{{ super() }}
+<link rel="stylesheet" href="/static/css/modals.css">
+<style>
+    .login-card {
+        max-width: 520px;
+    }
+
+    .login-panel {
+        text-align: left;
+    }
+
+    .login-panel[hidden] {
+        display: none;
+    }
+
+    .login-panel-copy {
+        margin: 0 0 var(--spacing-lg);
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        line-height: 1.6;
+    }
+
+    .login-tip-box {
+        margin-bottom: var(--spacing-lg);
+        padding: var(--spacing-md);
+        border-radius: var(--radius-lg);
+        border: 1px solid rgba(79, 70, 229, 0.16);
+        background: rgba(79, 70, 229, 0.06);
+        color: var(--text-secondary);
+        font-size: 0.8125rem;
+        line-height: 1.6;
+    }
+
+    .login-inline-links {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        margin-top: var(--spacing-md);
+        flex-wrap: wrap;
+    }
+
+    .link-button {
+        border: 0;
+        background: transparent;
+        padding: 0;
+        color: var(--primary-color);
+        font-size: 0.875rem;
+        cursor: pointer;
+        transition: color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
+    }
+
+    .link-button:hover {
+        text-decoration: underline;
+    }
+
+    .identity-entry-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0.375rem 0.625rem;
+        border-radius: 999px;
+        color: var(--text-secondary);
+    }
+
+    .identity-entry-link::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(79, 70, 229, 0.3);
+        transition: background-color var(--transition-fast), transform var(--transition-fast);
+    }
+
+    .identity-entry-link:hover {
+        text-decoration: none;
+        color: var(--primary-color);
+        background: rgba(79, 70, 229, 0.08);
+    }
+
+    .identity-entry-link.is-attention {
+        color: #8a2d12;
+        background: linear-gradient(135deg, rgba(249, 115, 22, 0.22), rgba(234, 179, 8, 0.26));
+        box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.25), 0 10px 24px rgba(249, 115, 22, 0.16);
+        animation: identity-entry-pulse 3s ease-in-out 1;
+    }
+
+    .identity-entry-link.is-attention::before {
+        background: #f97316;
+        transform: scale(1.2);
+    }
+
+    .identity-panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-md);
+    }
+
+    .identity-panel-title {
+        margin: 0;
+        font-size: 1rem;
+        color: var(--text-primary);
+    }
+
+    .identity-panel-note {
+        margin-bottom: var(--spacing-lg);
+        padding: var(--spacing-md);
+        border-radius: var(--radius-lg);
+        border: 1px dashed rgba(79, 70, 229, 0.24);
+        background: rgba(79, 70, 229, 0.04);
+        color: var(--text-secondary);
+        font-size: 0.8125rem;
+        line-height: 1.6;
+    }
+
+    @keyframes identity-entry-pulse {
+        0% {
+            transform: translateY(0) scale(1);
+            box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.15), 0 0 0 rgba(249, 115, 22, 0);
+        }
+        18% {
+            transform: translateY(-1px) scale(1.04);
+            box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.28), 0 14px 28px rgba(249, 115, 22, 0.18);
+        }
+        36% {
+            transform: translateY(0) scale(1);
+            box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.2), 0 8px 18px rgba(249, 115, 22, 0.1);
+        }
+        54% {
+            transform: translateY(-1px) scale(1.03);
+            box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.28), 0 14px 26px rgba(249, 115, 22, 0.16);
+        }
+        100% {
+            transform: translateY(0) scale(1);
+            box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.22), 0 10px 24px rgba(249, 115, 22, 0.16);
+        }
+    }
+
+    .student-identity-summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: var(--spacing-sm);
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .student-identity-chip {
+        padding: var(--spacing-sm);
+        border-radius: var(--radius-md);
+        background: var(--bg-color);
+        border: 1px solid var(--border-color);
+    }
+
+    .student-identity-chip span {
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        margin-bottom: 4px;
+    }
+
+    .student-identity-chip strong {
+        display: block;
+        color: var(--text-primary);
+        word-break: break-word;
+        font-size: 0.875rem;
+    }
+
+    @media (max-width: 640px) {
+        .student-identity-summary {
+            grid-template-columns: 1fr;
+        }
+
+        .login-inline-links {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block bg_gradient %}background: linear-gradient(135deg, var(--bg-color) 0%, var(--primary-light) 100%);{% endblock %}
+
+{% block card_content %}
+<div class="login-card" data-student-login-root data-default-mode="password">
+    <div class="login-logo logo-student">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+        </svg>
+    </div>
+    <h2>学生登录</h2>
+    <p class="subtitle">首次登录需先设置密码，后续使用“姓名或学号 + 密码”登录</p>
+
+    <section class="login-panel" data-login-panel="password">
+        <form id="student-password-login-form">
+            <input type="hidden" name="next" value="{{ next_url }}">
+            <div class="form-group">
+                <label class="form-label" for="identifier">姓名或学号</label>
+                <input type="text" id="identifier" name="identifier" class="form-control" placeholder="请输入姓名或学号" required autofocus>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="password">密码</label>
+                <input type="password" id="password" name="password" class="form-control" placeholder="请输入密码" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn btn-primary w-full btn-lg">登录</button>
+        </form>
+
+        <div class="login-inline-links">
+            <button type="button" class="link-button identity-entry-link" id="first-login-switch" data-switch-mode="identity">首次登录 / 重置后登录</button>
+            <button type="button" class="link-button" id="forgot-password-trigger">忘记密码？</button>
+        </div>
+    </section>
+
+    <section class="login-panel" data-login-panel="identity" hidden>
+        <div class="identity-panel-header">
+            <h3 class="identity-panel-title">姓名 + 学号身份核验</h3>
+            <button type="button" class="link-button" data-switch-mode="password">返回密码登录</button>
+        </div>
+
+        <div class="identity-panel-note">
+            仅限以下场景使用：
+            <br>
+            1. 首次登录，尚未设置密码。
+            <br>
+            2. 教师已通过您的“忘记密码”申请，允许重新使用姓名和学号登录。
+        </div>
+
+        <form id="student-identity-login-form">
+            <input type="hidden" name="next" value="{{ next_url }}">
+            <div class="form-group">
+                <label class="form-label" for="identity-name">姓名</label>
+                <input type="text" id="identity-name" name="name" class="form-control" placeholder="请输入姓名" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="identity-student-id">学号</label>
+                <input type="text" id="identity-student-id" name="student_id_number" class="form-control" placeholder="请输入学号" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-full btn-lg">验证身份并设置密码</button>
+        </form>
+
+    </section>
+
+    <div class="footer-links footer-links-subtle">
+        <a href="{{ teacher_entry_url }}" class="text-muted">教师入口</a>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="student-password-setup-modal">
+    <div class="modal modal-sm">
+        <div class="modal-header">
+            <h3 class="modal-title" id="setup-flow-title">首次设置密码</h3>
+            <button type="button" class="btn-close" data-dismiss="modal" aria-label="关闭"></button>
+        </div>
+        <div class="modal-body">
+            <p class="login-panel-copy" id="setup-flow-copy">首次登录需要先设置密码，后续请使用“姓名/学号 + 密码”登录。</p>
+
+            <div class="student-identity-summary">
+                <div class="student-identity-chip">
+                    <span>姓名</span>
+                    <strong id="setup-student-name">-</strong>
+                </div>
+                <div class="student-identity-chip">
+                    <span>学号</span>
+                    <strong id="setup-student-id">-</strong>
+                </div>
+                <div class="student-identity-chip">
+                    <span>班级</span>
+                    <strong id="setup-student-class">-</strong>
+                </div>
+            </div>
+
+            <form id="student-password-setup-form">
+                <input type="hidden" id="setup-token" name="setup_token" value="">
+                <input type="hidden" id="setup-next" name="next" value="{{ next_url }}">
+                <div class="form-group">
+                    <label class="form-label" for="setup-password">设置密码</label>
+                    <input type="password" id="setup-password" name="password" class="form-control" placeholder="请输入新密码" required autocomplete="new-password">
+                    <span class="form-text">{{ password_policy_hint }}</span>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="setup-confirm-password">确认密码</label>
+                    <input type="password" id="setup-confirm-password" name="confirm_password" class="form-control" placeholder="请再次输入新密码" required autocomplete="new-password">
+                </div>
+                <button type="submit" class="btn btn-primary w-full">确认并进入课堂</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="forgot-password-modal">
+    <div class="modal modal-sm">
+        <div class="modal-header">
+            <h3 class="modal-title">忘记密码</h3>
+            <button type="button" class="btn-close" data-dismiss="modal" aria-label="关闭"></button>
+        </div>
+        <div class="modal-body">
+            <p class="login-panel-copy">请填写身份信息提交给教师审核。审核通过后，您可以重新使用姓名和学号登录，并再次设置密码。</p>
+
+            <form id="student-forgot-password-form">
+                <div class="form-group">
+                    <label class="form-label" for="forgot-name">姓名</label>
+                    <input type="text" id="forgot-name" name="name" class="form-control" placeholder="请输入姓名" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="forgot-student-id">学号</label>
+                    <input type="text" id="forgot-student-id" name="student_id_number" class="form-control" placeholder="请输入学号" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="forgot-class-name">班级名称</label>
+                    <input type="text" id="forgot-class-name" name="class_name" class="form-control" placeholder="请输入班级名称" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-full">提交申请</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/student_login.js"></script>
+{% endblock %}

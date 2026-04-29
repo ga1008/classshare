@@ -1,0 +1,385 @@
+.teacher-whiteboard-root,
+.teacher-whiteboard-root * {
+    box-sizing: border-box;
+}
+
+.teacher-whiteboard-root {
+    --teacher-whiteboard-bg-alpha: 0.78;
+    --teacher-whiteboard-ink-alpha: 1;
+    --teacher-whiteboard-pan-x: 0px;
+    --teacher-whiteboard-pan-y: 0px;
+    --teacher-whiteboard-grid-size: 40px;
+    --teacher-whiteboard-major-grid-size: 200px;
+    position: fixed;
+    inset: 0;
+    z-index: 2400;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+}
+
+.teacher-whiteboard-root.is-open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.teacher-whiteboard-root[hidden] {
+    display: none;
+}
+
+.teacher-whiteboard-stage {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+.teacher-whiteboard-stage::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    opacity: var(--teacher-whiteboard-bg-alpha);
+    background-color: #f8fafc;
+    background-image:
+        linear-gradient(rgba(71, 85, 105, 0.12) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(71, 85, 105, 0.12) 1px, transparent 1px),
+        linear-gradient(rgba(14, 116, 144, 0.16) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(14, 116, 144, 0.16) 1px, transparent 1px);
+    background-size:
+        var(--teacher-whiteboard-grid-size) var(--teacher-whiteboard-grid-size),
+        var(--teacher-whiteboard-grid-size) var(--teacher-whiteboard-grid-size),
+        var(--teacher-whiteboard-major-grid-size) var(--teacher-whiteboard-major-grid-size),
+        var(--teacher-whiteboard-major-grid-size) var(--teacher-whiteboard-major-grid-size);
+    background-position:
+        var(--teacher-whiteboard-pan-x) var(--teacher-whiteboard-pan-y),
+        var(--teacher-whiteboard-pan-x) var(--teacher-whiteboard-pan-y),
+        var(--teacher-whiteboard-pan-x) var(--teacher-whiteboard-pan-y),
+        var(--teacher-whiteboard-pan-x) var(--teacher-whiteboard-pan-y);
+    pointer-events: none;
+}
+
+.teacher-whiteboard-root[data-tool="hand"] .teacher-whiteboard-stage {
+    cursor: grab;
+}
+
+.teacher-whiteboard-root.is-panning .teacher-whiteboard-stage {
+    cursor: grabbing;
+}
+
+.teacher-whiteboard-root[data-tool="text"] .teacher-whiteboard-stage {
+    cursor: text;
+}
+
+.teacher-whiteboard-root[data-tool="shape"] .teacher-whiteboard-stage {
+    cursor: crosshair;
+}
+
+.teacher-whiteboard-canvas-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    opacity: var(--teacher-whiteboard-ink-alpha);
+}
+
+.teacher-whiteboard-canvas-layer canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.teacher-whiteboard-toolbar {
+    position: fixed;
+    top: max(16px, calc(env(safe-area-inset-top) + 12px));
+    left: max(16px, calc(env(safe-area-inset-left) + 12px));
+    right: max(100px, calc(env(safe-area-inset-right) + 92px));
+    z-index: 2420;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 66px;
+    padding: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 18px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.88)),
+        radial-gradient(circle at top left, rgba(20, 184, 166, 0.12), transparent 34%);
+    box-shadow: 0 22px 42px -28px rgba(15, 23, 42, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.78);
+    backdrop-filter: blur(18px) saturate(140%);
+    transform: translateY(-10px);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 180ms ease, opacity 180ms ease;
+}
+
+.teacher-whiteboard-root.is-open .teacher-whiteboard-toolbar {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.teacher-whiteboard-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 7px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.58);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.teacher-whiteboard-group.is-board {
+    min-width: min(340px, 36vw);
+    flex: 1 1 320px;
+}
+
+.teacher-whiteboard-group.is-tools,
+.teacher-whiteboard-group.is-actions {
+    flex: 0 0 auto;
+}
+
+.teacher-whiteboard-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+}
+
+.teacher-whiteboard-control span {
+    color: #475569;
+    font-size: 0.76rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.teacher-whiteboard-select,
+.teacher-whiteboard-name {
+    min-width: 0;
+    height: 34px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.92);
+    color: #0f172a;
+    font: inherit;
+    font-size: 0.86rem;
+    outline: none;
+    box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.teacher-whiteboard-select {
+    width: min(170px, 100%);
+    padding: 0 10px;
+}
+
+.teacher-whiteboard-name {
+    flex: 1 1 120px;
+    width: 100%;
+    padding: 0 11px;
+}
+
+.teacher-whiteboard-select:focus,
+.teacher-whiteboard-name:focus {
+    border-color: rgba(14, 116, 144, 0.42);
+    box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.14);
+}
+
+.teacher-whiteboard-btn {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: transparent;
+    color: #334155;
+    cursor: pointer;
+    transition: transform 160ms ease, background-color 160ms ease, color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.teacher-whiteboard-btn svg {
+    width: 18px;
+    height: 18px;
+    stroke-width: 2.1;
+}
+
+.teacher-whiteboard-btn:hover,
+.teacher-whiteboard-btn:focus-visible {
+    background: rgba(14, 116, 144, 0.1);
+    color: #0f766e;
+    border-color: rgba(20, 184, 166, 0.2);
+    transform: translateY(-1px);
+}
+
+.teacher-whiteboard-btn.is-active {
+    background: linear-gradient(180deg, rgba(20, 184, 166, 0.18), rgba(14, 165, 233, 0.12));
+    color: #0f766e;
+    border-color: rgba(20, 184, 166, 0.32);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 10px 18px -16px rgba(15, 118, 110, 0.7);
+}
+
+.teacher-whiteboard-btn:disabled {
+    opacity: 0.42;
+    cursor: not-allowed;
+    transform: none;
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+}
+
+.teacher-whiteboard-color {
+    width: 34px;
+    height: 34px;
+    padding: 3px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+}
+
+.teacher-whiteboard-range {
+    width: 92px;
+    accent-color: #0f766e;
+}
+
+.teacher-whiteboard-value {
+    min-width: 36px;
+    color: #334155;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-align: right;
+}
+
+.teacher-whiteboard-fab {
+    position: fixed;
+    top: max(18px, calc(env(safe-area-inset-top) + 12px));
+    right: max(20px, calc(env(safe-area-inset-right) + 14px));
+    z-index: 2440;
+    width: 62px;
+    height: 62px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.36);
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.52), transparent 34%),
+        linear-gradient(135deg, #0f766e, #0ea5e9 62%, #f59e0b);
+    color: #fff;
+    box-shadow: 0 24px 42px -24px rgba(15, 23, 42, 0.62), 0 10px 22px -18px rgba(14, 116, 144, 0.9);
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+    transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.teacher-whiteboard-fab:hover,
+.teacher-whiteboard-fab:focus-visible {
+    transform: translateY(-2px) scale(1.04);
+    box-shadow: 0 30px 48px -24px rgba(15, 23, 42, 0.68), 0 14px 26px -18px rgba(14, 116, 144, 0.92);
+}
+
+.teacher-whiteboard-fab.is-dragging {
+    cursor: grabbing;
+    transform: scale(1.02);
+}
+
+.teacher-whiteboard-fab.is-open {
+    background:
+        radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.48), transparent 34%),
+        linear-gradient(135deg, #ef4444, #f97316);
+}
+
+.teacher-whiteboard-fab svg {
+    width: 27px;
+    height: 27px;
+    stroke-width: 2.2;
+}
+
+.teacher-whiteboard-text-editor {
+    position: absolute;
+    z-index: 3;
+    min-width: 180px;
+    min-height: 46px;
+    max-width: min(520px, calc(100vw - 40px));
+    padding: 8px 10px;
+    border: 1px solid rgba(14, 116, 144, 0.36);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.9);
+    color: #0f172a;
+    font-family: var(--font-family-sans);
+    line-height: 1.32;
+    resize: both;
+    box-shadow: 0 16px 34px -24px rgba(15, 23, 42, 0.52);
+    outline: none;
+}
+
+.teacher-whiteboard-text-editor:focus {
+    box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.16), 0 16px 34px -24px rgba(15, 23, 42, 0.52);
+}
+
+@media (max-width: 1180px) {
+    .teacher-whiteboard-toolbar {
+        right: max(90px, calc(env(safe-area-inset-right) + 82px));
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: thin;
+    }
+
+    .teacher-whiteboard-group {
+        flex-shrink: 0;
+    }
+
+    .teacher-whiteboard-group.is-board {
+        min-width: 300px;
+        flex-basis: 300px;
+    }
+}
+
+@media (max-width: 760px) {
+    .teacher-whiteboard-toolbar {
+        top: max(82px, calc(env(safe-area-inset-top) + 72px));
+        left: 10px;
+        right: 10px;
+        min-height: 58px;
+        padding: 8px;
+        border-radius: 16px;
+    }
+
+    .teacher-whiteboard-group {
+        min-height: 40px;
+        padding: 6px;
+    }
+
+    .teacher-whiteboard-group.is-board {
+        min-width: 260px;
+        flex-basis: 260px;
+    }
+
+    .teacher-whiteboard-range {
+        width: 78px;
+    }
+
+    .teacher-whiteboard-btn,
+    .teacher-whiteboard-color,
+    .teacher-whiteboard-select,
+    .teacher-whiteboard-name {
+        height: 32px;
+    }
+
+    .teacher-whiteboard-btn {
+        width: 32px;
+        flex-basis: 32px;
+    }
+
+    .teacher-whiteboard-fab {
+        width: 56px;
+        height: 56px;
+    }
+}

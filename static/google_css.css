@@ -1,0 +1,11 @@
+@font-face {
+  font-family: 'Noto Sans SC Local';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('fonts/k3kXo84MPvpLmixcA63oeALhLOCT-xWNm8Hqd37g1OkDRZe7lR4sg1IzSy-MNbE9VH8V.109.woff2') format('woff2');
+}
+
+:root {
+  --font-family-cjk-local: 'Noto Sans SC Local', 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', sans-serif;
+}
