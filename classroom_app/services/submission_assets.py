@@ -57,6 +57,9 @@ TEXT_LIKE_MIME_TYPES = {
     "application/xml",
     "image/svg+xml",
 }
+EXAM_DRAWING_PREFIX = "exam_drawings/"
+EXAM_DRAWING_EXTENSIONS = {".png"}
+EXAM_DRAWING_MIME_TYPES = {"image/png", "image/x-png"}
 
 
 @dataclass(slots=True)
@@ -230,6 +233,9 @@ def answers_have_content(payload: Any) -> bool:
 
 
 def is_allowed_submission_file(relative_path: str, content_type: str | None, allowed_file_types: Sequence[str]) -> bool:
+    if is_exam_drawing_file(relative_path, content_type):
+        return True
+
     normalized_types = normalize_allowed_file_types(list(allowed_file_types))
     if not normalized_types:
         return True
@@ -248,6 +254,19 @@ def is_allowed_submission_file(relative_path: str, content_type: str | None, all
         if normalized_path.endswith(token):
             return True
     return False
+
+
+def is_exam_drawing_file(relative_path: str, content_type: str | None = None) -> bool:
+    normalized_path = str(relative_path or "").replace("\\", "/").strip().lower()
+    if not normalized_path.startswith(EXAM_DRAWING_PREFIX):
+        return False
+    suffix = Path(normalized_path).suffix.lower()
+    normalized_content_type = str(content_type or mimetypes.guess_type(normalized_path)[0] or "").lower()
+    return suffix in EXAM_DRAWING_EXTENSIONS and (
+        not normalized_content_type
+        or normalized_content_type in EXAM_DRAWING_MIME_TYPES
+        or normalized_content_type.startswith("image/")
+    )
 
 
 def is_text_like_file(relative_path: str, content_type: str | None = None) -> bool:

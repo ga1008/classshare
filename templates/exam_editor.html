@@ -49,6 +49,33 @@
             color: var(--text-primary);
         }
 
+        .editor-action-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .editor-assist-btn {
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.32);
+            background: rgba(255, 255, 255, 0.86);
+            color: var(--text-primary);
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+        }
+        .editor-assist-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1);
+        }
+        .editor-assist-btn.is-ai {
+            border-color: rgba(79, 70, 229, 0.28);
+            color: #3730a3;
+        }
+        .editor-assist-btn.is-json {
+            border-color: rgba(13, 148, 136, 0.34);
+            color: #0f766e;
+        }
+
         /* Main Layout */
         .editor-layout {
             display: flex;
@@ -427,7 +454,7 @@
         }
         .modal-box {
             background: var(--surface-color);
-            border-radius: 20px;
+            border-radius: 18px;
             width: 90%;
             max-width: 720px;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
@@ -446,7 +473,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: linear-gradient(135deg, var(--primary-light) 0%, rgba(255,255,255,0) 100%);
+            background: linear-gradient(135deg, rgba(248, 250, 252, 0.98), rgba(239, 246, 255, 0.8));
         }
         .modal-title {
             font-size: 1.25rem;
@@ -503,6 +530,149 @@
         .alert-info svg {
             flex-shrink: 0;
             margin-top: 2px;
+        }
+        .assist-modal-title {
+            display: grid;
+            gap: 4px;
+        }
+        .assist-modal-kicker {
+            font-size: 0.72rem;
+            font-weight: 800;
+            color: var(--text-muted);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .assist-modal-title h3 {
+            margin: 0;
+            font-size: 1.25rem;
+            color: var(--text-primary);
+        }
+        .assist-intro-band {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: var(--spacing-md);
+            padding: 18px 20px;
+            border-radius: 14px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            background: rgba(248, 250, 252, 0.94);
+            margin-bottom: var(--spacing-lg);
+        }
+        .assist-intro-copy {
+            display: grid;
+            gap: 4px;
+        }
+        .assist-intro-copy strong {
+            color: var(--text-primary);
+            font-size: 0.98rem;
+        }
+        .assist-intro-copy span {
+            color: var(--text-muted);
+            font-size: 0.88rem;
+            line-height: 1.55;
+        }
+        .assist-path-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex: 0 0 auto;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 0.76rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .assist-path-badge.is-ai {
+            background: #eef2ff;
+            color: #3730a3;
+        }
+        .assist-path-badge.is-json {
+            background: #ccfbf1;
+            color: #0f766e;
+        }
+        .assist-form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: var(--spacing-md);
+        }
+        .assist-section {
+            padding: 16px;
+            border-radius: 14px;
+            border: 1px solid var(--border-color);
+            background: var(--surface-color);
+            margin-bottom: var(--spacing-md);
+        }
+        .assist-section-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: var(--spacing-sm);
+            margin-bottom: var(--spacing-sm);
+        }
+        .assist-section-head strong {
+            color: var(--text-primary);
+        }
+        .assist-section-head small {
+            color: var(--text-muted);
+        }
+        .source-lane {
+            border-radius: 14px;
+            border: 1px dashed rgba(79, 70, 229, 0.34);
+            background: #f8fafc;
+            padding: 14px;
+        }
+        .json-dropzone {
+            display: grid;
+            place-items: center;
+            min-height: 150px;
+            padding: 22px;
+            border-radius: 14px;
+            border: 1px dashed rgba(13, 148, 136, 0.42);
+            background: linear-gradient(135deg, rgba(240, 253, 250, 0.86), rgba(255, 255, 255, 0.94));
+            text-align: center;
+        }
+        .json-dropzone.is-dragover {
+            border-color: #0f766e;
+            background: #ccfbf1;
+        }
+        .json-file-chip,
+        .import-summary {
+            display: none;
+            margin-top: var(--spacing-sm);
+            padding: 10px 12px;
+            border-radius: 10px;
+            font-size: 0.86rem;
+        }
+        .json-file-chip {
+            background: #f1f5f9;
+            color: var(--text-secondary);
+        }
+        .import-summary {
+            background: #ecfdf5;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+        .import-summary.is-error {
+            display: block;
+            background: #fef2f2;
+            color: #991b1b;
+            border-color: #fecaca;
+        }
+        .json-template-actions {
+            display: flex;
+            gap: var(--spacing-sm);
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: var(--spacing-md);
+        }
+        @media (max-width: 760px) {
+            .assist-form-grid {
+                grid-template-columns: 1fr;
+            }
+            .assist-intro-band {
+                flex-direction: column;
+            }
         }
         .badge {
             display: inline-flex;
@@ -573,17 +743,21 @@
             </div>
             {% if paper %}{{ paper.title }} - 编辑{% else %}新建试卷{% endif %}
         </div>
-        <div class="flex items-center gap-2">
+        <div class="editor-action-group">
             <a href="/manage/exams" class="btn btn-ghost btn-sm text-muted">取消</a>
             <button class="btn btn-outline btn-sm" onclick="previewExam()">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                 全屏预览
             </button>
-            <button class="btn btn-secondary btn-sm ml-2" onclick="openAIGenerateModal()">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 0-2 2v5H4a2 2 0 0 0-2 2v2c0 1.1.9 2 2 2h6v5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-5h6a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-6V4a2 2 0 0 0-2-2h-2Z"></path></svg>
-                AI出题
+            <button class="btn btn-sm editor-assist-btn is-ai" onclick="openAIGenerateModal()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 9.6 8.4 4 11l5.6 2.6L12 19l2.4-5.4L20 11l-5.6-2.6Z"/><path d="M19 3v4"/><path d="M21 5h-4"/></svg>
+                AI 辅助出题
             </button>
-            <button class="btn btn-primary btn-sm ml-2" onclick="saveExam()">
+            <button class="btn btn-sm editor-assist-btn is-json" onclick="openNativeJsonImportModal()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m10 13-2 2 2 2"/><path d="m14 17 2-2-2-2"/></svg>
+                导入 JSON
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="saveExam()">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 0-2-2V5a2 2 0 0 0 2-2h11l5 5v11a2 2 0 0 0 2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
                 保存试卷
             </button>
@@ -642,89 +816,98 @@
 
     <div id="toast-container" class="toast-container"></div>
 
-    <!-- AI生成试卷模态框 -->
+    <!-- AI 辅助出题模态框 -->
     <div class="modal-overlay" id="ai-exam-modal" style="display: none;">
-        <div class="modal-box" style="max-width: 700px;">
+        <div class="modal-box" style="max-width: 760px;">
             <div class="modal-header">
-                <h3 class="modal-title">AI智能出题</h3>
+                <div class="assist-modal-title">
+                    <span class="assist-modal-kicker">Built-in AI</span>
+                    <h3>AI 辅助出题</h3>
+                </div>
                 <button class="modal-close" onclick="closeAIGenerateModal()">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
             <div class="modal-body">
-                <div class="alert alert-info mb-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                    <div>
-                        <strong>AI出题说明：</strong> 请填写出题要求和范围，AI将自动生成试卷题目。出题范围是必填项，建议先点击"推荐出题范围"获取建议。
-                        <br><small>生成过程可能需要几分钟，请耐心等待。生成期间可以随时中断。</small>
+                <div class="assist-intro-band">
+                    <div class="assist-intro-copy">
+                        <strong>由内置 AI 生成试卷草稿</strong>
+                        <span>上传的参考文件会交给 AI 助手解析；已有结构化 JSON 请使用独立的 JSON 导入口。</span>
                     </div>
+                    <span class="assist-path-badge is-ai">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 9.6 8.4 4 11l5.6 2.6L12 19l2.4-5.4L20 11l-5.6-2.6Z"/></svg>
+                        调用 AI 助手
+                    </span>
                 </div>
 
                 <form id="ai-exam-form">
-                    <div class="form-group mb-4">
-                        <label class="form-label">试卷标题 *</label>
-                        <input type="text" id="ai-exam-title" class="form-control" required placeholder="例如：期中测试卷">
+                    <div class="assist-section">
+                        <div class="assist-section-head">
+                            <strong>试卷基础信息</strong>
+                            <small>标题必填</small>
+                        </div>
+                        <div class="assist-form-grid">
+                            <div class="form-group mb-0">
+                                <label class="form-label">试卷标题 *</label>
+                                <input type="text" id="ai-exam-title" class="form-control" required placeholder="例如：期中测试卷">
+                            </div>
+                            <div class="form-group mb-0">
+                                <label class="form-label">关联课堂（可选）</label>
+                                <select id="ai-exam-offering" class="form-control">
+                                    <option value="">不关联特定课堂</option>
+                                    {% for offering in offerings %}
+                                    <option value="{{ offering.id }}">{{ offering.course_name }} - {{ offering.class_name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="form-group mb-4">
-                        <div class="flex justify-between items-center mb-2">
-                            <label class="form-label">出题范围 *</label>
+                    <div class="assist-section">
+                        <div class="assist-section-head">
+                            <strong>生成依据</strong>
                             <button type="button" class="btn btn-outline btn-sm" onclick="suggestTopics()" id="suggest-topics-btn">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
-                                推荐出题范围
+                                推荐范围
                             </button>
                         </div>
-                        <textarea id="ai-exam-scope" class="form-control" rows="4" required placeholder="请详细描述出题范围，例如：计算机网络基础、TCP/IP协议栈、HTTP协议等。可以包含具体知识点、章节或教学目标。"></textarea>
-                        <div class="text-xs text-muted mt-1">出题范围越具体，AI生成的题目越精准。</div>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-4 mb-4">
                         <div class="form-group">
-                            <label class="form-label">难度</label>
-                            <select id="ai-exam-difficulty" class="form-control">
-                                <option value="easy">简单</option>
-                                <option value="medium" selected>中等</option>
-                                <option value="hard">困难</option>
-                            </select>
+                            <label class="form-label">出题范围</label>
+                            <textarea id="ai-exam-scope" class="form-control" rows="4" placeholder="例如：计算机网络基础、TCP/IP协议栈、HTTP协议等。上传参考文件时可填写补充要求。"></textarea>
+                            <div class="text-xs text-muted mt-1">未上传参考文件时需要填写出题范围。</div>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label">总题数</label>
-                            <input type="number" id="ai-exam-total" class="form-control" min="1" max="50" value="10">
+                        <div class="source-lane">
+                            <label class="form-label">参考文件（由内置 AI 解析）</label>
+                            <input type="file" id="ai-exam-files" class="form-control" multiple accept=".pdf,.txt,.md,.markdown,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx">
+                            <div class="text-xs text-muted mt-1">支持 PDF、TXT、Markdown、Word、Excel、PPT 等格式，最多 5 个文件。</div>
                         </div>
                     </div>
 
-                    <div class="form-group mb-4">
-                        <label class="form-label">题型分布（可选）</label>
+                    <div class="assist-section">
+                        <div class="assist-section-head">
+                            <strong>题目配置</strong>
+                            <small>留空则自动分配</small>
+                        </div>
+                        <div class="assist-form-grid">
+                            <div class="form-group">
+                                <label class="form-label">难度</label>
+                                <select id="ai-exam-difficulty" class="form-control">
+                                    <option value="easy">简单</option>
+                                    <option value="medium" selected>中等</option>
+                                    <option value="hard">困难</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">总题数</label>
+                                <input type="number" id="ai-exam-total" class="form-control" min="1" max="50" placeholder="自动">
+                            </div>
+                        </div>
                         <div class="grid grid-cols-2 gap-3">
-                            <div class="flex items-center gap-2">
-                                <label class="text-sm text-muted flex-1">单选题</label>
-                                <input type="number" id="ai-exam-radio" class="form-control form-control-sm w-16" min="0" value="5">
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <label class="text-sm text-muted flex-1">多选题</label>
-                                <input type="number" id="ai-exam-checkbox" class="form-control form-control-sm w-16" min="0" value="3">
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <label class="text-sm text-muted flex-1">填空题</label>
-                                <input type="number" id="ai-exam-text" class="form-control form-control-sm w-16" min="0" value="1">
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <label class="text-sm text-muted flex-1">问答题</label>
-                                <input type="number" id="ai-exam-textarea" class="form-control form-control-sm w-16" min="0" value="1">
-                            </div>
+                            <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">单选题</label><input type="number" id="ai-exam-radio" class="form-control form-control-sm w-16" min="0" placeholder="自动"></div>
+                            <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">多选题</label><input type="number" id="ai-exam-checkbox" class="form-control form-control-sm w-16" min="0" placeholder="自动"></div>
+                            <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">填空题</label><input type="number" id="ai-exam-text" class="form-control form-control-sm w-16" min="0" placeholder="自动"></div>
+                            <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">问答题</label><input type="number" id="ai-exam-textarea" class="form-control form-control-sm w-16" min="0" placeholder="自动"></div>
                         </div>
-                        <div class="text-xs text-muted mt-1">如果不指定题型分布，AI将自动分配。</div>
-                    </div>
-
-                    <div class="form-group mb-4">
-                        <label class="form-label">关联课堂（可选）</label>
-                        <select id="ai-exam-offering" class="form-control">
-                            <option value="">不关联特定课堂</option>
-                            {% for offering in offerings %}
-                            <option value="{{ offering.id }}">{{ offering.course_name }} - {{ offering.class_name }}</option>
-                            {% endfor %}
-                        </select>
-                        <div class="text-xs text-muted mt-1">关联课堂后，AI会参考该课堂的课程大纲和教材信息。</div>
                     </div>
 
                     <!-- 任务状态显示区域 -->
@@ -767,6 +950,62 @@
         </div>
     </div>
 
+    <!-- 原生 JSON 导入模态框 -->
+    <div class="modal-overlay" id="json-exam-modal" style="display: none;">
+        <div class="modal-box" style="max-width: 680px;">
+            <div class="modal-header">
+                <div class="assist-modal-title">
+                    <span class="assist-modal-kicker">Native JSON</span>
+                    <h3>导入原生 JSON</h3>
+                </div>
+                <button class="modal-close" onclick="closeNativeJsonImportModal()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="assist-intro-band">
+                    <div class="assist-intro-copy">
+                        <strong>按模板字段直接解析为试卷</strong>
+                        <span>这一路径不调用内置 AI，适合导入手写或外部 AI 生成的结构化 JSON。</span>
+                    </div>
+                    <span class="assist-path-badge is-json">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 13-2 2 2 2"/><path d="m14 17 2-2-2-2"/></svg>
+                        逻辑解析
+                    </span>
+                </div>
+
+                <div class="json-dropzone" id="json-import-dropzone">
+                    <div>
+                        <input type="file" id="json-exam-file" accept=".json,application/json" hidden>
+                        <button type="button" class="btn btn-outline" onclick="chooseNativeJsonFile()">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>
+                            选择 JSON 文件
+                        </button>
+                        <div class="text-sm text-muted mt-3">支持四种题型：radio、checkbox、text、textarea</div>
+                    </div>
+                </div>
+                <div class="json-file-chip" id="json-file-chip"></div>
+                <div class="import-summary" id="json-import-summary"></div>
+
+                <div class="json-template-actions">
+                    <a class="btn btn-ghost btn-sm" href="/api/exam-papers/json-template" download>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                        下载 JSON 模板
+                    </a>
+                    <button type="button" class="btn btn-outline btn-sm" onclick="closeNativeJsonImportModal(); openAIGenerateModal();">
+                        改用 AI 辅助出题
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeNativeJsonImportModal()">取消</button>
+                <button class="btn btn-primary" onclick="importNativeJsonExam()" id="import-json-btn" disabled>
+                    导入到编辑器
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script type="module" src="/static/js/auth.js"></script>
     <script type="module">
         import { showToast } from '/static/js/ui.js';
@@ -777,6 +1016,14 @@
         const EXAM_ID = "{{ paper.id if paper else '' }}";
         let examData = { pages: [] };
         let currentPageIdx = -1;
+        let nativeJsonFile = null;
+
+        const typeLabels = {
+            radio: '单选题',
+            checkbox: '多选题',
+            text: '填空题',
+            textarea: '问答题'
+        };
 
         document.addEventListener('DOMContentLoaded', () => {
             {% if paper and paper.questions_json %}
@@ -792,7 +1039,49 @@
                 window.renderPageList();
                 window.selectPage(0);
             }
+
+            initNativeJsonImport();
         });
+
+        function hasExistingQuestions() {
+            return examData.pages.some(page => (page.questions || []).length > 0);
+        }
+
+        function applyImportedExamToEditor(imported, sourceLabel) {
+            const questions = imported.questions || imported.exam_data || imported;
+            if (!questions || !Array.isArray(questions.pages)) {
+                throw new Error('导入结果缺少 pages 数组');
+            }
+
+            if (hasExistingQuestions() && !confirm('导入会替换当前编辑器中的题目，是否继续？')) {
+                return false;
+            }
+
+            examData.pages = questions.pages;
+            if (examData.pages.length === 0) {
+                window.addPage();
+            } else {
+                window.renderPageList();
+                window.selectPage(0);
+            }
+
+            const title = imported.title || imported.name || '';
+            const desc = imported.description || questions.description || '';
+            if (title) document.getElementById('exam-title').value = title;
+            if (desc) document.getElementById('exam-desc').value = desc;
+
+            showToast(`${sourceLabel}已导入编辑器`, 'success');
+            return true;
+        }
+
+        function formatImportStats(stats) {
+            if (!stats) return '';
+            const byType = stats.by_type || {};
+            const parts = ['radio', 'checkbox', 'text', 'textarea']
+                .filter(type => Number(byType[type] || 0) > 0)
+                .map(type => `${typeLabels[type]} ${byType[type]}`);
+            return `${stats.pages || 0} 个部分，${stats.questions || 0} 题${parts.length ? '（' + parts.join('，') + '）' : ''}`;
+        }
 
         // === 页面管理 ===
         window.addPage = function() {
@@ -1149,11 +1438,131 @@ ${questionsHtml || '<div style="background:#fff;border-radius:12px;padding:40px;
             return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         }
 
+        // === 原生 JSON 导入 ===
+        function initNativeJsonImport() {
+            const fileInput = document.getElementById('json-exam-file');
+            const dropzone = document.getElementById('json-import-dropzone');
+            if (!fileInput || !dropzone) return;
+
+            fileInput.addEventListener('change', () => {
+                setNativeJsonFile(fileInput.files && fileInput.files[0] ? fileInput.files[0] : null);
+            });
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropzone.addEventListener(eventName, (event) => {
+                    event.preventDefault();
+                    dropzone.classList.add('is-dragover');
+                });
+            });
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropzone.addEventListener(eventName, (event) => {
+                    event.preventDefault();
+                    dropzone.classList.remove('is-dragover');
+                });
+            });
+            dropzone.addEventListener('drop', (event) => {
+                const file = event.dataTransfer?.files?.[0] || null;
+                setNativeJsonFile(file);
+            });
+        }
+
+        function setNativeJsonFile(file) {
+            nativeJsonFile = file;
+            const chip = document.getElementById('json-file-chip');
+            const summary = document.getElementById('json-import-summary');
+            const importBtn = document.getElementById('import-json-btn');
+            if (summary) {
+                summary.style.display = 'none';
+                summary.classList.remove('is-error');
+                summary.textContent = '';
+            }
+            if (chip) {
+                if (file) {
+                    chip.style.display = 'block';
+                    chip.textContent = `${file.name} · ${(file.size / 1024).toFixed(1)} KB`;
+                } else {
+                    chip.style.display = 'none';
+                    chip.textContent = '';
+                }
+            }
+            if (importBtn) importBtn.disabled = !file;
+        }
+
+        function showJsonImportSummary(message, type = 'success') {
+            const summary = document.getElementById('json-import-summary');
+            if (!summary) return;
+            summary.textContent = message;
+            summary.style.display = 'block';
+            summary.classList.toggle('is-error', type === 'error');
+        }
+
+        window.openNativeJsonImportModal = function() {
+            const modal = document.getElementById('json-exam-modal');
+            if (!modal) return;
+            modal.style.display = 'flex';
+            setTimeout(() => modal.classList.add('active'), 10);
+            setNativeJsonFile(null);
+            const fileInput = document.getElementById('json-exam-file');
+            if (fileInput) fileInput.value = '';
+        };
+
+        window.closeNativeJsonImportModal = function() {
+            const modal = document.getElementById('json-exam-modal');
+            if (!modal) return;
+            modal.classList.remove('active');
+            setTimeout(() => modal.style.display = 'none', 200);
+        };
+
+        window.chooseNativeJsonFile = function() {
+            document.getElementById('json-exam-file')?.click();
+        };
+
+        window.importNativeJsonExam = async function() {
+            if (!nativeJsonFile) {
+                showToast('请先选择 JSON 文件', 'warning');
+                return;
+            }
+
+            const importBtn = document.getElementById('import-json-btn');
+            const originalText = importBtn.textContent;
+            importBtn.disabled = true;
+            importBtn.textContent = '解析中...';
+
+            try {
+                const formData = new FormData();
+                formData.append('file', nativeJsonFile, nativeJsonFile.name);
+                const response = await fetch('/api/exam-papers/import-json', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.detail || 'JSON 解析失败');
+                }
+
+                const imported = data.imported;
+                const statsText = formatImportStats(imported.stats);
+                showJsonImportSummary(statsText ? `解析完成：${statsText}` : '解析完成');
+                const applied = applyImportedExamToEditor(imported, '原生 JSON');
+                if (applied) {
+                    window.closeNativeJsonImportModal();
+                }
+            } catch (error) {
+                console.error('导入原生 JSON 失败:', error);
+                showJsonImportSummary(error.message, 'error');
+                showToast(`导入失败: ${error.message}`, 'error');
+            } finally {
+                importBtn.disabled = !nativeJsonFile;
+                importBtn.textContent = originalText;
+            }
+        };
+
         // === AI出题功能 ===
         let aiTaskInterval = null;
         let currentTaskId = null;
 
         window.openAIGenerateModal = function() {
+            window.closeNativeJsonImportModal();
             const modal = document.getElementById('ai-exam-modal');
             if (modal) {
                 modal.style.display = 'flex';
@@ -1258,21 +1667,48 @@ ${questionsHtml || '<div style="background:#fff;border-radius:12px;padding:40px;
             const title = document.getElementById('ai-exam-title').value.trim();
             const scope = document.getElementById('ai-exam-scope').value.trim();
             const difficulty = document.getElementById('ai-exam-difficulty').value;
-            const totalQuestions = parseInt(document.getElementById('ai-exam-total').value) || 10;
+            const filesInput = document.getElementById('ai-exam-files');
+            const sourceFiles = Array.from(filesInput?.files || []);
+            const totalRaw = document.getElementById('ai-exam-total').value.trim();
+            const totalQuestions = totalRaw ? parseInt(totalRaw, 10) : null;
             const offeringSelect = document.getElementById('ai-exam-offering');
             const classOfferingId = offeringSelect.value ? parseInt(offeringSelect.value) : null;
 
+            if (!scope && sourceFiles.length === 0) {
+                showToast('请填写出题范围，或上传一份出题参考文件', 'warning');
+                return;
+            }
+            if (totalRaw && (!Number.isInteger(totalQuestions) || totalQuestions < 1 || totalQuestions > 50)) {
+                showToast('总题数必须是 1-50 之间的整数', 'warning');
+                return;
+            }
+
             // 题型分布
             const questionTypes = {};
-            const radioCount = parseInt(document.getElementById('ai-exam-radio').value) || 0;
-            const checkboxCount = parseInt(document.getElementById('ai-exam-checkbox').value) || 0;
-            const textCount = parseInt(document.getElementById('ai-exam-text').value) || 0;
-            const textareaCount = parseInt(document.getElementById('ai-exam-textarea').value) || 0;
+            const readOptionalCount = (id, label) => {
+                const raw = document.getElementById(id).value.trim();
+                if (!raw) return null;
+                const value = parseInt(raw, 10);
+                if (!Number.isInteger(value) || value < 0 || value > 100) {
+                    throw new Error(`${label}数量必须是 0-100 之间的整数`);
+                }
+                return value;
+            };
 
-            if (radioCount > 0) questionTypes.radio = radioCount;
-            if (checkboxCount > 0) questionTypes.checkbox = checkboxCount;
-            if (textCount > 0) questionTypes.text = textCount;
-            if (textareaCount > 0) questionTypes.textarea = textareaCount;
+            try {
+                const radioCount = readOptionalCount('ai-exam-radio', '单选题');
+                const checkboxCount = readOptionalCount('ai-exam-checkbox', '多选题');
+                const textCount = readOptionalCount('ai-exam-text', '填空题');
+                const textareaCount = readOptionalCount('ai-exam-textarea', '问答题');
+
+                if (radioCount > 0) questionTypes.radio = radioCount;
+                if (checkboxCount > 0) questionTypes.checkbox = checkboxCount;
+                if (textCount > 0) questionTypes.text = textCount;
+                if (textareaCount > 0) questionTypes.textarea = textareaCount;
+            } catch (error) {
+                showToast(error.message, 'warning');
+                return;
+            }
 
             const startBtn = document.getElementById('start-ai-generate-btn');
             const originalBtnHtml = startBtn.innerHTML;
@@ -1286,17 +1722,22 @@ ${questionsHtml || '<div style="background:#fff;border-radius:12px;padding:40px;
             `;
 
             try {
+                const payload = new FormData();
+                payload.append('title', title);
+                payload.append('scope', scope);
+                payload.append('difficulty', difficulty);
+                if (totalQuestions !== null) {
+                    payload.append('total_questions', String(totalQuestions));
+                }
+                if (classOfferingId !== null) {
+                    payload.append('class_offering_id', String(classOfferingId));
+                }
+                payload.append('question_types', JSON.stringify(questionTypes));
+                sourceFiles.forEach(file => payload.append('source_files', file));
+
                 const response = await fetch('/api/ai/exam/generate', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        title,
-                        scope,
-                        difficulty,
-                        total_questions: totalQuestions,
-                        question_types: questionTypes,
-                        class_offering_id: classOfferingId
-                    })
+                    body: payload
                 });
 
                 const data = await response.json();
@@ -1471,27 +1912,13 @@ ${questionsHtml || '<div style="background:#fff;border-radius:12px;padding:40px;
                 const data = await response.json();
 
                 if (response.ok && data.task && data.task.status === 'completed' && data.task.exam_data) {
-                    const aiExamData = data.task.exam_data;
-
-                    // 验证数据结构
-                    if (aiExamData.pages && Array.isArray(aiExamData.pages)) {
-                        // 更新编辑器中的试卷数据
-                        examData.pages = aiExamData.pages;
-                        window.renderPageList();
-                        if (examData.pages.length > 0) {
-                            window.selectPage(0);
-                        }
-
-                        // 更新试卷标题和描述
-                        document.getElementById('exam-title').value = data.task.title || 'AI生成的试卷';
-                        if (aiExamData.description) {
-                            document.getElementById('exam-desc').value = aiExamData.description;
-                        }
-
-                        showToast('AI生成的试卷已导入编辑器', 'success');
+                    const applied = applyImportedExamToEditor({
+                        title: data.task.title || 'AI生成的试卷',
+                        description: data.task.exam_data.description || '',
+                        questions: data.task.exam_data
+                    }, 'AI 生成结果');
+                    if (applied) {
                         window.closeAIGenerateModal();
-                    } else {
-                        throw new Error('AI返回的数据格式不正确');
                     }
                 } else {
                     throw new Error('任务未完成或没有数据');

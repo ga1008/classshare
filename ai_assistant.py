@@ -222,6 +222,8 @@ class ExamGenerationRequest(BaseModel):
     task_type: str = "exam_generation"
     teacher_id: Optional[int] = None
     class_offering_id: Optional[int] = None
+    source_type: Literal["manual", "document"] = "manual"
+    force_platform: Optional[Literal["volcengine"]] = None
 
 
 class GradingFile(BaseModel):
@@ -691,19 +693,57 @@ def _extract_answers_text(answers_json: str | None) -> str:
                 if isinstance(item, dict):
                     question = item.get("question", f"第{i}题")
                     answer = item.get("answer", item.get("content", item.get("text", "")))
+                    attachments = item.get("attachments") if isinstance(item.get("attachments"), list) else []
                 else:
                     question = f"第{i}题"
                     answer = item
+                    attachments = []
                 lines.append(f"\n### {question}\n{answer}")
+                attachment_lines = _format_answer_attachment_lines(attachments)
+                if attachment_lines:
+                    lines.append(attachment_lines)
             return "\n".join(lines)
         if isinstance(answers, dict):
             lines = ["【学生文字答案】"]
             for key, value in answers.items():
-                lines.append(f"\n### {key}\n{value}")
+                if isinstance(value, dict):
+                    answer = value.get("answer", value.get("content", value.get("text", "")))
+                    attachments = value.get("attachments") if isinstance(value.get("attachments"), list) else []
+                else:
+                    answer = value
+                    attachments = []
+                lines.append(f"\n### {key}\n{answer}")
+                attachment_lines = _format_answer_attachment_lines(attachments)
+                if attachment_lines:
+                    lines.append(attachment_lines)
             return "\n".join(lines)
         return f"【学生文字答案】\n{answers}"
     except (json.JSONDecodeError, AttributeError, TypeError):
         return f"【学生文字答案】\n{answers_json}"
+
+
+def _format_answer_attachment_lines(attachments: list[Any]) -> str:
+    if not attachments:
+        return ""
+    lines = ["\n【本题附件】"]
+    for attachment in attachments:
+        if not isinstance(attachment, dict):
+            continue
+        kind = str(attachment.get("kind") or attachment.get("type") or "attachment")
+        file_name = str(attachment.get("file_name") or attachment.get("filename") or "附件")
+        relative_path = str(attachment.get("relative_path") or "")
+        question_id = str(attachment.get("question_id") or "")
+        question = str(attachment.get("question") or "")
+        label = "题目附图" if kind == "drawing" or relative_path.startswith("exam_drawings/") else "附件"
+        if question_id:
+            label = f"第{question_id}题{label}"
+        details = [label, file_name]
+        if relative_path:
+            details.append(f"relative_path={relative_path}")
+        if question:
+            details.append(f"question={question[:80]}")
+        lines.append("- " + "；".join(details))
+    return "\n".join(lines) if len(lines) > 1 else ""
 
 
 def _human_size(num_bytes: int | None) -> str:
@@ -941,14 +981,11 @@ def _read_text_file_excerpt(file_path: Path, max_bytes: int = AI_GRADING_MAX_RAW
     return raw.decode("utf-8", errors="replace"), truncated
 
 
-def _robust_parse_grading_json(raw_text: str) -> dict[str, Any]:
-    """从 AI 响应中解析批改结果 JSON，支持多种异常格式的兜底解析。"""
+def _strip_json_code_fence(raw_text: str) -> str:
     if not raw_text or not raw_text.strip():
         raise ValueError("AI 返回了空内容")
 
     text = raw_text.strip()
-
-    # 策略 1: 去除 markdown 代码块包裹
     if text.startswith("```"):
         first_nl = text.find("\n")
         if first_nl != -1:
@@ -956,23 +993,39 @@ def _robust_parse_grading_json(raw_text: str) -> dict[str, Any]:
         if text.endswith("```"):
             text = text[:-3]
         text = text.strip()
+    return text
 
-    # 策略 2: 直接解析
+
+def _robust_parse_json_value(raw_text: str, *, purpose: str = "JSON", allow_array: bool = False) -> Any:
+    """从 AI 响应中提取 JSON 值，不绑定具体业务字段。"""
+    text = _strip_json_code_fence(raw_text)
+
+    def accept_root(value: Any) -> bool:
+        return isinstance(value, dict) or (allow_array and isinstance(value, list))
+
     try:
         result = json.loads(text)
-        if isinstance(result, dict):
+        if accept_root(result):
             return result
     except json.JSONDecodeError:
         pass
 
-    # 策略 3: 定位 JSON 对象边界 { ... }
+    candidates: list[str] = []
     first_brace = text.find("{")
     last_brace = text.rfind("}")
     if first_brace != -1 and last_brace > first_brace:
-        candidate = text[first_brace:last_brace + 1]
+        candidates.append(text[first_brace:last_brace + 1])
+
+    if allow_array:
+        first_bracket = text.find("[")
+        last_bracket = text.rfind("]")
+        if first_bracket != -1 and last_bracket > first_bracket:
+            candidates.append(text[first_bracket:last_bracket + 1])
+
+    for candidate in candidates:
         try:
             result = json.loads(candidate)
-            if isinstance(result, dict):
+            if accept_root(result):
                 return result
         except json.JSONDecodeError:
             pass
@@ -980,10 +1033,31 @@ def _robust_parse_grading_json(raw_text: str) -> dict[str, Any]:
         try:
             fixed = candidate.replace("'", '"')
             result = json.loads(fixed)
-            if isinstance(result, dict):
+            if accept_root(result):
                 return result
         except json.JSONDecodeError:
             pass
+
+    raise ValueError(f"无法从 AI 响应中解析出有效的{purpose}。原始内容前200字: {text[:200]}")
+
+
+def _robust_parse_json_object(raw_text: str, *, purpose: str = "JSON") -> dict[str, Any]:
+    result = _robust_parse_json_value(raw_text, purpose=purpose, allow_array=False)
+    if not isinstance(result, dict):
+        raise ValueError(f"无法从 AI 响应中解析出有效的{purpose}对象")
+    return result
+
+
+def _robust_parse_grading_json(raw_text: str) -> dict[str, Any]:
+    """从 AI 响应中解析批改结果 JSON，支持多种异常格式的兜底解析。"""
+    try:
+        result = _robust_parse_json_object(raw_text, purpose="批改结果 JSON")
+        if "score" in result or "feedback_md" in result:
+            return result
+    except ValueError:
+        pass
+
+    text = _strip_json_code_fence(raw_text)
 
     # 策略 5: 正则兜底提取 score 和 feedback_md
     score_match = _re.search(r'"score"\s*:\s*(\d+)', text)
@@ -995,6 +1069,216 @@ def _robust_parse_grading_json(raw_text: str) -> dict[str, Any]:
         }
 
     raise ValueError(f"无法从 AI 响应中解析出有效的批改结果。原始内容前200字: {text[:200]}")
+
+
+_EXAM_WRAPPER_KEYS = ("exam_data", "exam", "paper", "test", "quiz", "data", "result")
+
+
+def _unwrap_exam_generation_payload(value: Any) -> Any:
+    current = value
+    for _ in range(4):
+        if not isinstance(current, dict):
+            return current
+        if "pages" in current or "questions" in current:
+            return current
+        next_value = None
+        for key in _EXAM_WRAPPER_KEYS:
+            candidate = current.get(key)
+            if isinstance(candidate, (dict, list)):
+                next_value = candidate
+                break
+        if next_value is None:
+            return current
+        current = next_value
+    return current
+
+
+def _looks_like_exam_question(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if not isinstance(value, dict):
+        return False
+    return any(
+        key in value
+        for key in (
+            "text", "question", "question_text", "title", "stem", "content",
+            "题目", "题干", "options", "choices", "answer", "correct_answer",
+        )
+    )
+
+
+def _normalize_exam_question_type(raw_type: Any, options: list[str], answer: Any) -> str:
+    normalized = str(raw_type or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "radio": {"radio", "single", "single_choice", "choice", "单选", "单选题", "选择题"},
+        "checkbox": {"checkbox", "multiple", "multi", "multiple_select", "multi_choice", "多选", "多选题"},
+        "text": {"text", "fill", "fill_blank", "blank", "completion", "填空", "填空题"},
+        "textarea": {"textarea", "essay", "short_answer", "qa", "question_answer", "问答", "问答题", "简答", "简答题", "主观题", "论述题"},
+    }
+    for question_type, values in aliases.items():
+        if normalized in values:
+            return question_type
+
+    if normalized == "multiple_choice":
+        return "checkbox" if isinstance(answer, list) else "radio"
+    if options:
+        return "checkbox" if isinstance(answer, list) and len(answer) > 1 else "radio"
+    return "textarea"
+
+
+def _coerce_exam_options(raw_options: Any) -> list[str]:
+    if isinstance(raw_options, dict):
+        options = []
+        for key, value in raw_options.items():
+            key_text = str(key).strip()
+            value_text = str(value).strip()
+            options.append(f"{key_text}. {value_text}" if key_text and value_text else value_text or key_text)
+        return [option for option in options if option]
+    if isinstance(raw_options, list):
+        return [str(option).strip() for option in raw_options if str(option).strip()]
+    return []
+
+
+def _first_non_empty_text(source: dict[str, Any], keys: tuple[str, ...], default: str = "") -> str:
+    for key in keys:
+        value = source.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return default
+
+
+def _normalize_exam_question(raw_question: Any, ordinal: int) -> dict[str, Any] | None:
+    if isinstance(raw_question, str):
+        text = raw_question.strip()
+        if not text:
+            return None
+        return {
+            "id": f"q{ordinal}",
+            "type": "textarea",
+            "text": text,
+            "answer": "",
+            "explanation": "",
+        }
+
+    if not isinstance(raw_question, dict):
+        return None
+
+    options = _coerce_exam_options(raw_question.get("options") or raw_question.get("choices") or raw_question.get("选项"))
+    answer = (
+        raw_question.get("answer")
+        if "answer" in raw_question
+        else raw_question.get("correct_answer", raw_question.get("correctAnswer", raw_question.get("答案", "")))
+    )
+    question_type = _normalize_exam_question_type(
+        raw_question.get("type") or raw_question.get("question_type") or raw_question.get("题型"),
+        options,
+        answer,
+    )
+    if question_type in {"radio", "checkbox"} and len(options) < 2:
+        question_type = "textarea"
+
+    question = dict(raw_question)
+    question["id"] = str(question.get("id") or question.get("question_id") or f"q{ordinal}")
+    question["type"] = question_type
+    question["text"] = _first_non_empty_text(
+        raw_question,
+        ("text", "question", "question_text", "title", "stem", "content", "题目", "题干"),
+        "题目内容未生成",
+    )
+    if options:
+        question["options"] = options
+    if "answer" not in question:
+        question["answer"] = answer
+    if "explanation" not in question:
+        question["explanation"] = _first_non_empty_text(raw_question, ("explanation", "analysis", "解析"), "")
+    if question_type in {"text", "textarea"} and "placeholder" not in question:
+        placeholder = _first_non_empty_text(raw_question, ("placeholder", "hint", "提示"), "")
+        if placeholder:
+            question["placeholder"] = placeholder
+    return question
+
+
+def _normalize_exam_generation_result(raw_result: Any) -> dict[str, Any]:
+    result = _unwrap_exam_generation_payload(raw_result)
+
+    description = ""
+    raw_pages: Any
+    if isinstance(result, list):
+        raw_pages = [{"name": "试卷题目", "questions": result}]
+    elif isinstance(result, dict):
+        description = _first_non_empty_text(result, ("description", "desc", "说明"))
+        if "pages" in result:
+            raw_pages = result["pages"]
+        elif "questions" in result:
+            raw_pages = [{
+                "name": _first_non_empty_text(result, ("name", "title", "section"), "试卷题目"),
+                "questions": result["questions"],
+            }]
+        else:
+            raise HTTPException(status_code=502, detail="AI返回的数据缺少 pages/questions 字段")
+    else:
+        raise HTTPException(status_code=502, detail="AI返回的数据格式不是可识别的试卷JSON")
+
+    if isinstance(raw_pages, dict):
+        if "questions" in raw_pages:
+            page_items = [raw_pages]
+        else:
+            page_items = [{"name": str(name), "questions": questions} for name, questions in raw_pages.items()]
+    elif isinstance(raw_pages, list):
+        if raw_pages and all(_looks_like_exam_question(item) for item in raw_pages):
+            page_items = [{"name": "试卷题目", "questions": raw_pages}]
+        else:
+            page_items = raw_pages
+    else:
+        raise HTTPException(status_code=502, detail="AI返回的 pages 字段格式不正确")
+
+    pages: list[dict[str, Any]] = []
+    question_ordinal = 1
+    for page_index, raw_page in enumerate(page_items, start=1):
+        if isinstance(raw_page, list):
+            page_name = f"第{page_index}部分"
+            raw_questions = raw_page
+        elif isinstance(raw_page, dict):
+            if _looks_like_exam_question(raw_page) and "questions" not in raw_page:
+                page_name = f"第{page_index}部分"
+                raw_questions = [raw_page]
+            else:
+                page_name = _first_non_empty_text(raw_page, ("name", "title", "section", "部分"), f"第{page_index}部分")
+                raw_questions = (
+                    raw_page.get("questions")
+                    or raw_page.get("items")
+                    or raw_page.get("problems")
+                    or raw_page.get("题目")
+                    or []
+                )
+        else:
+            continue
+
+        if isinstance(raw_questions, dict):
+            raw_questions = list(raw_questions.values())
+        if not isinstance(raw_questions, list):
+            raw_questions = []
+
+        questions: list[dict[str, Any]] = []
+        for raw_question in raw_questions:
+            question = _normalize_exam_question(raw_question, question_ordinal)
+            if question:
+                questions.append(question)
+                question_ordinal += 1
+
+        if questions:
+            pages.append({"name": str(page_name), "questions": questions})
+
+    if not pages:
+        raise HTTPException(status_code=502, detail="AI返回的数据中没有可用题目")
+
+    normalized = {"pages": pages}
+    if description:
+        normalized["description"] = description
+    return normalized
 
 
 def _build_text_grading_message(
@@ -1119,6 +1403,12 @@ def _build_volcengine_responses_input(
             image_url = embedded_url or _build_data_url(file_info["path"], file_info["mime_type"])
             content_items.append(
                 {
+                    "type": "input_text",
+                    "text": f"\n--- 图片文件: {file_info['display_name']} ({_human_size(file_info['size'])}) ---\n请将紧随其后的图片作为该文件内容处理；若文件名标注了题号，请按对应题目评分。",
+                }
+            )
+            content_items.append(
+                {
                     "type": "input_image",
                     "image_url": image_url,
                 }
@@ -1184,10 +1474,17 @@ async def _call_volcengine_responses_api(
     return _robust_parse_grading_json(output_text)
 
 
-def build_vision_messages(rubric: str, files: List[Path], platform_type: str,
+def build_vision_messages(rubric: str, files: List[Any], platform_type: str,
                           requirements_md: str = "", answers_json: str = None) -> List[Dict[str, Any]]:
     """构建视觉消息 (支持文件 + JSON 答案混合)"""
     answers_text = _extract_answers_text(answers_json)
+
+    def _coerce_file_item(file_item: Any) -> tuple[Path, str]:
+        if isinstance(file_item, dict):
+            file_path = Path(file_item["path"])
+            return file_path, str(file_item.get("display_name") or file_item.get("relative_path") or file_path.name)
+        file_path = Path(file_item)
+        return file_path, file_path.name
 
     def _read_file_text_safe(fp: Path) -> str:
         """安全读取文件文本：先尝试直接读取，失败则用文档提取。"""
@@ -1210,17 +1507,18 @@ def build_vision_messages(rubric: str, files: List[Path], platform_type: str,
         if answers_text:
             text_content += answers_text + "\n"
         text_content += "【学生提交文件】\n"
-        for file_path in files:
+        for file_item in files:
+            file_path, display_name = _coerce_file_item(file_item)
             if is_image_file(file_path):
-                text_content += f"- 图片文件: {file_path.name}\n"
+                text_content += f"- 图片文件: {display_name}\n"
                 b64_url = file_to_base64_url(file_path)
                 if b64_url: content.append({"type": "image_url", "image_url": {"url": b64_url}})
             else:
                 file_text = _read_file_text_safe(file_path)
                 if file_text:
-                    text_content += f"\n--- {file_path.name} ---\n```\n{file_text}\n```\n"
+                    text_content += f"\n--- {display_name} ---\n```\n{file_text}\n```\n"
                 else:
-                    text_content += f"\n--- {file_path.name} (无法读取) ---\n"
+                    text_content += f"\n--- {display_name} (无法读取) ---\n"
         content.append({"type": "text", "text": text_content})
         return [{"role": "user", "content": content}]
     else:  # OpenAI compatible format
@@ -1232,7 +1530,8 @@ def build_vision_messages(rubric: str, files: List[Path], platform_type: str,
             header_text += answers_text + "\n"
         header_text += "【学生提交文件】\n请根据以上内容进行评分:"
         content = [{"type": "text", "text": header_text}]
-        for file_path in files:
+        for file_item in files:
+            file_path, display_name = _coerce_file_item(file_item)
             if is_image_file(file_path):
                 b64_url = file_to_base64_url(file_path)
                 if b64_url: content.append({"type": "image_url", "image_url": {"url": b64_url}})
@@ -1240,14 +1539,28 @@ def build_vision_messages(rubric: str, files: List[Path], platform_type: str,
                 file_text = _read_file_text_safe(file_path)
                 if file_text:
                     content.append(
-                        {"type": "text", "text": f"\n--- 文件: {file_path.name} ---\n```\n{file_text}\n```\n"})
+                        {"type": "text", "text": f"\n--- 文件: {display_name} ---\n```\n{file_text}\n```\n"})
                 else:
-                    content.append({"type": "text", "text": f"\n--- 文件: {file_path.name} (无法读取) ---\n"})
+                    content.append({"type": "text", "text": f"\n--- 文件: {display_name} (无法读取) ---\n"})
         return [{"role": "user", "content": content}]
 
 
 # --- 平台选择与调用 (保持 V3.3.2 的 JSON 逻辑) ---
-def _get_selected_platform_config(capability: Literal["standard", "thinking", "vision"]) -> Optional[Dict]:
+def _get_selected_platform_config(
+        capability: Literal["standard", "thinking", "vision"],
+        preferred_platform: Optional[str] = None,
+) -> Optional[Dict]:
+    if preferred_platform:
+        config = PLATFORMS_CONFIG.get(preferred_platform)
+        if (
+            config
+            and config["enabled"]
+            and preferred_platform in ENABLED_PLATFORMS
+            and config["models"].get(capability)
+        ):
+            return {"name": preferred_platform, **config}
+        return None
+
     for platform_name in ENABLED_PLATFORMS:
         config = PLATFORMS_CONFIG[platform_name]
         if config["models"].get(capability):
@@ -1259,11 +1572,15 @@ async def _call_ai_platform(
         messages: List[Dict],
         capability: Literal["standard", "thinking", "vision"] = "standard",
         require_json_output: bool = False,
+        allow_json_array: bool = False,
         task_priority: str = "default",
         task_label: Optional[str] = None,
-) -> Dict[str, Any]:
-    selected_platform_config = _get_selected_platform_config(capability)
+        preferred_platform: Optional[str] = None,
+) -> Any:
+    selected_platform_config = _get_selected_platform_config(capability, preferred_platform=preferred_platform)
     if not selected_platform_config:
+        if preferred_platform:
+            raise HTTPException(500, f"没有找到已启用且支持 '{capability}' 能力的 {preferred_platform} AI 平台。")
         raise HTTPException(500, f"没有找到支持 '{capability}' 能力的已启用AI平台。")
 
     platform_name = selected_platform_config["name"]
@@ -1316,12 +1633,20 @@ async def _call_ai_platform(
 
             if require_json_output:
                 try:
-                    return _robust_parse_grading_json(response_content)
+                    return _robust_parse_json_value(
+                        response_content,
+                        purpose="JSON",
+                        allow_array=allow_json_array,
+                    )
                 except ValueError as e:
                     raise HTTPException(500, str(e)) from e
             else:
                 try:
-                    return _robust_parse_grading_json(response_content)
+                    return _robust_parse_json_value(
+                        response_content,
+                        purpose="JSON",
+                        allow_array=allow_json_array,
+                    )
                 except ValueError:
                     return {"text": response_content}
             # --- 解析结束 ---
@@ -1781,35 +2106,13 @@ async def generate_exam_task(req: ExamGenerationRequest):
         messages,
         capability=req.model_type,  # 使用thinking模型
         require_json_output=True,
+        allow_json_array=True,
         task_priority="default",
         task_label="generate_exam",
+        preferred_platform=req.force_platform if req.source_type == "document" else None,
     )
 
-    # 验证返回的数据结构
-    if not isinstance(result, dict):
-        raise HTTPException(status_code=500, detail="AI返回的数据格式不正确")
-
-    # 确保有pages字段
-    if "pages" not in result:
-        # 尝试转换不同的格式
-        if "questions" in result:
-            # 如果是单个问题列表，转换为pages结构
-            result = {"pages": [{"name": "试卷题目", "questions": result["questions"]}]}
-        else:
-            raise HTTPException(status_code=500, detail="AI返回的数据缺少'pages'字段")
-
-    # 验证每个问题的结构
-    for page in result["pages"]:
-        if "questions" not in page:
-            page["questions"] = []
-        for question in page["questions"]:
-            # 确保每个问题都有必需的字段
-            if "id" not in question:
-                question["id"] = f"q{hash(str(question)) % 10000}"  # 生成一个简单的ID
-            if "type" not in question:
-                question["type"] = "radio"  # 默认类型
-            if "text" not in question:
-                question["text"] = "题目内容未生成"
+    result = _normalize_exam_generation_result(result)
 
     return {
         "status": "success",
@@ -1915,8 +2218,7 @@ async def get_software_info(req: SoftwareInfoRequest):
         if not raw_text or not raw_text.strip():
             return {"status": "success", "description": "", "download_url": ""}
 
-        # 复用已有的健壮 JSON 解析器
-        parsed = _robust_parse_grading_json(raw_text)
+        parsed = _robust_parse_json_object(raw_text, purpose="软件信息 JSON")
 
         description = str(parsed.get("description", ""))[:5000]
         download_url = str(parsed.get("download_url", "")).strip()
@@ -2093,11 +2395,10 @@ async def run_grading_job(job: GradingJob):
         else:
             messages = [{"role": "system", "content": GRADING_SYSTEM_PROMPT}]
             if execution["mode"] == "vision_messages" and has_files:
-                file_paths = [file_info["path"] for file_info in grading_files]
                 messages.extend(
                     build_vision_messages(
                         job.rubric_md,
-                        file_paths,
+                        grading_files,
                         selected_platform["type"],
                         job.requirements_md,
                         job.answers_json,
@@ -2121,6 +2422,9 @@ async def run_grading_job(job: GradingJob):
                 task_priority="default",
                 task_label=f"grading:{job.submission_id}",
             )
+
+        if not isinstance(result, dict) or ("score" not in result and "feedback_md" not in result):
+            raise ValueError(f"AI 返回的批改结果缺少 score/feedback_md 字段：{str(result)[:200]}")
 
         callback_data = {
             "submission_id": job.submission_id, "status": "graded",

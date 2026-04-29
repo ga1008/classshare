@@ -65,6 +65,94 @@ _exam_gen_tasks_lock = asyncio.Lock()
 PSYCH_PROFILE_HISTORY_LIMIT = 24
 
 
+def _extract_ai_service_http_error(exc: httpx.HTTPStatusError) -> str:
+    response = exc.response
+    detail: Any = ""
+    try:
+        payload = response.json()
+        if isinstance(payload, dict):
+            detail = payload.get("detail") or payload.get("message") or payload.get("error") or ""
+        else:
+            detail = payload
+    except Exception:
+        detail = (response.text or "").strip()
+
+    if isinstance(detail, (dict, list)):
+        detail_text = json.dumps(detail, ensure_ascii=False)
+    else:
+        detail_text = str(detail or "").strip()
+
+    prefix = f"AI助手服务返回 {response.status_code}"
+    if detail_text:
+        return f"{prefix}: {detail_text[:1200]}"
+    return f"{prefix}: {str(exc)}"
+
+
+def _extract_answer_attachment_context(answers_json: str | None) -> dict[str, dict[str, str]]:
+    if not answers_json:
+        return {}
+    try:
+        payload = json.loads(answers_json) if isinstance(answers_json, str) else answers_json
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    answers = payload.get("answers", payload) if isinstance(payload, dict) else payload
+    if isinstance(answers, dict):
+        answer_items = []
+        for key, value in answers.items():
+            if isinstance(value, dict):
+                item = {"question_id": key, **value}
+            else:
+                item = {"question_id": key, "answer": value}
+            answer_items.append(item)
+    elif isinstance(answers, list):
+        answer_items = [item for item in answers if isinstance(item, dict)]
+    else:
+        return {}
+
+    result: dict[str, dict[str, str]] = {}
+    for index, item in enumerate(answer_items, start=1):
+        question_id = str(item.get("question_id") or item.get("question_no") or index)
+        question_text = str(item.get("question") or item.get("title") or f"第{index}题")
+        attachments = item.get("attachments") if isinstance(item.get("attachments"), list) else []
+        for attachment in attachments:
+            if not isinstance(attachment, dict):
+                continue
+            kind = str(attachment.get("kind") or attachment.get("type") or "").lower()
+            relative_path = str(attachment.get("relative_path") or attachment.get("stored_relative_path") or "").strip()
+            file_name = str(attachment.get("file_name") or attachment.get("filename") or "").strip()
+            if kind != "drawing" and not relative_path.startswith("exam_drawings/"):
+                continue
+            label = f"第{question_id}题附图"
+            if question_text:
+                label = f"{label} - {question_text[:80]}"
+            context = {
+                "question_id": question_id,
+                "question": question_text,
+                "label": label,
+                "file_name": file_name,
+                "relative_path": relative_path,
+            }
+            for key in {file_name, relative_path, relative_path.split("/")[-1] if relative_path else ""}:
+                normalized_key = str(key or "").strip().lower()
+                if normalized_key:
+                    result[normalized_key] = context
+    return result
+
+
+def _apply_attachment_context_to_file(item: dict[str, Any], context_by_file: dict[str, dict[str, str]]) -> dict[str, Any]:
+    keys = {
+        str(item.get("relative_path") or "").strip().lower(),
+        str(item.get("original_filename") or "").strip().lower(),
+    }
+    context = next((context_by_file[key] for key in keys if key and key in context_by_file), None)
+    if not context:
+        return item
+    label = context.get("label") or f"第{context.get('question_id') or ''}题附图"
+    original = item.get("relative_path") or item.get("original_filename") or ""
+    item["relative_path"] = f"{label} | {original}"
+    return item
+
+
 @router.post("/ai/generate_assignment", response_class=JSONResponse)
 async def ai_generate_assignment(request: Request, user: dict = Depends(get_current_teacher)):
     """向 AI 助手服务请求生成作业"""
@@ -137,6 +225,12 @@ async def ai_regrade_submission(submission_id: int, user: dict = Depends(get_cur
     has_answers = bool(submission['answers_json'])
     if not has_files and not has_answers:
         raise HTTPException(status_code=400, detail="该提交没有可批改的内容（无文件也无答案）。")
+
+    attachment_context_by_file = _extract_answer_attachment_context(submission['answers_json'] if has_answers else None)
+    resolved_submission_files = [
+        _apply_attachment_context_to_file(item, attachment_context_by_file)
+        for item in resolved_submission_files
+    ]
 
     job_data = {
         "submission_id": submission_id,
@@ -260,9 +354,14 @@ _TEXT_EXTENSIONS = {
     ".json", ".xml", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
     ".c", ".cpp", ".h", ".hpp", ".java", ".kt", ".rs", ".go", ".rb", ".php",
     ".sh", ".bat", ".ps1", ".sql", ".r", ".lua", ".vue", ".svg", ".csv",
-    ".log", ".env", ".dart", ".swift", ".tex", ".scss", ".less", ".md",
+    ".log", ".env", ".dart", ".swift", ".tex", ".scss", ".less", ".md", ".markdown", ".rtf",
 }
 _DOCUMENT_EXTENSIONS = {".docx", ".pptx", ".xlsx", ".xls", ".doc", ".ppt", ".pdf"}
+_EXAM_SOURCE_EXTENSIONS = _TEXT_EXTENSIONS | _DOCUMENT_EXTENSIONS
+_EXAM_SOURCE_MAX_FILES = 5
+_EXAM_SOURCE_MAX_FILE_BYTES = 20 * 1024 * 1024
+_EXAM_SOURCE_MAX_EXTRACT_BYTES = 2 * 1024 * 1024
+_EXAM_SOURCE_MAX_TOTAL_CHARS = 80000
 
 
 async def _process_chat_file(file: UploadFile) -> dict:
@@ -329,6 +428,143 @@ async def _process_chat_file(file: UploadFile) -> dict:
         pass
 
     raise HTTPException(status_code=400, detail=f"不支持的文件类型: {filename}")
+
+
+async def _extract_exam_source_files(files: list[UploadFile]) -> list[dict[str, Any]]:
+    """Extract teacher-uploaded source files for AI exam generation."""
+    source_files = [
+        file for file in files
+        if getattr(file, "filename", None) and str(file.filename or "").strip()
+    ]
+    if not source_files:
+        return []
+    if len(source_files) > _EXAM_SOURCE_MAX_FILES:
+        raise HTTPException(status_code=400, detail=f"最多上传 {_EXAM_SOURCE_MAX_FILES} 个出题参考文件")
+
+    extracted_items: list[dict[str, Any]] = []
+    total_chars = 0
+    for file in source_files:
+        filename = Path(str(file.filename or "source")).name
+        ext = Path(filename).suffix.lower()
+        if ext not in _EXAM_SOURCE_EXTENSIONS:
+            raise HTTPException(status_code=400, detail=f"不支持的出题参考文件类型: {filename}")
+
+        contents = await file.read()
+        if not contents:
+            continue
+        if len(contents) > _EXAM_SOURCE_MAX_FILE_BYTES:
+            raise HTTPException(status_code=413, detail=f"文件 {filename} 超过 20MB 限制")
+
+        text = ""
+        truncated = False
+        if ext in _TEXT_EXTENSIONS:
+            raw = contents[:_EXAM_SOURCE_MAX_EXTRACT_BYTES + 1]
+            truncated = len(raw) > _EXAM_SOURCE_MAX_EXTRACT_BYTES
+            text = _decode_bytes_with_detection(raw[:_EXAM_SOURCE_MAX_EXTRACT_BYTES])
+        else:
+            from ai_assistant_doc_extract import extract_document_text
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                tmp.write(contents)
+                tmp_path = tmp.name
+            try:
+                result = extract_document_text(
+                    Path(tmp_path),
+                    ext,
+                    max_bytes=_EXAM_SOURCE_MAX_EXTRACT_BYTES,
+                )
+                text = result.text or ""
+                truncated = bool(result.truncated)
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+        text = text.strip()
+        if not text:
+            extracted_items.append({
+                "name": filename,
+                "content": "",
+                "truncated": truncated,
+                "empty": True,
+            })
+            continue
+
+        remaining = max(0, _EXAM_SOURCE_MAX_TOTAL_CHARS - total_chars)
+        if remaining <= 0:
+            extracted_items.append({
+                "name": filename,
+                "content": "",
+                "truncated": True,
+                "empty": True,
+            })
+            continue
+        if len(text) > remaining:
+            text = text[:remaining]
+            truncated = True
+        total_chars += len(text)
+        extracted_items.append({
+            "name": filename,
+            "content": text,
+            "truncated": truncated,
+            "empty": False,
+        })
+
+    if source_files and not any(item.get("content") for item in extracted_items):
+        raise HTTPException(status_code=400, detail="未能从上传文件中提取可用于出题的文本内容")
+
+    return extracted_items
+
+
+def _build_exam_source_context(source_files: list[dict[str, Any]]) -> str:
+    if not source_files:
+        return ""
+
+    parts = ["\n上传文档内容（可能是题库，也可能是知识点范围）："]
+    for item in source_files:
+        name = item.get("name") or "未命名文件"
+        content = str(item.get("content") or "").strip()
+        if not content:
+            parts.append(f"\n--- 文件：{name} ---\n[未提取到可用文本]")
+            continue
+        suffix = "\n[系统说明] 该文件内容已截断，仅使用前部可提取文本。" if item.get("truncated") else ""
+        parts.append(f"\n--- 文件：{name} ---\n{content}{suffix}")
+    return "\n".join(parts)
+
+
+async def _parse_exam_generation_request(request: Request) -> tuple[dict[str, Any], list[UploadFile]]:
+    content_type = str(request.headers.get("content-type") or "").lower()
+    if "multipart/form-data" not in content_type:
+        return await request.json(), []
+
+    form = await request.form()
+    data: dict[str, Any] = {}
+    for key in (
+        "title",
+        "scope",
+        "difficulty",
+        "total_questions",
+        "class_offering_id",
+        "question_types",
+    ):
+        value = form.get(key)
+        if value is not None:
+            data[key] = value
+
+    question_types_raw = data.get("question_types")
+    if isinstance(question_types_raw, str) and question_types_raw.strip():
+        try:
+            data["question_types"] = json.loads(question_types_raw)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="题型分布格式错误")
+    elif "question_types" in data:
+        data["question_types"] = {}
+
+    files = []
+    for item in form.getlist("source_files"):
+        if hasattr(item, "read") and hasattr(item, "filename"):
+            files.append(item)
+    return data, files
 
 
 def _ensure_classroom_access(conn, class_offering_id: int, user_pk: int, user_role: str) -> sqlite3.Row:
@@ -1472,7 +1708,7 @@ def get_course_context_for_offering(class_offering_id: int, teacher_id: int) -> 
         classroom_context = build_classroom_ai_context(conn, class_offering_id)
         ai_config = fetch_ai_class_config(conn, class_offering_id)
         materials = conn.execute(
-            """SELECT file_name as title, description, stored_path as file_path
+            """SELECT file_name as title, description, file_hash, file_size, uploaded_at
                FROM course_files
                WHERE course_id = ?
                ORDER BY uploaded_at DESC
@@ -1496,7 +1732,14 @@ def get_course_context_for_offering(class_offering_id: int, teacher_id: int) -> 
         }
 
 
-async def generate_exam_questions_async(task_id: str, prompt: str, teacher_id: int, class_offering_id: Optional[int]):
+async def generate_exam_questions_async(
+    task_id: str,
+    prompt: str,
+    teacher_id: int,
+    class_offering_id: Optional[int],
+    force_platform: Optional[str] = None,
+    source_type: str = "manual",
+):
     """异步生成试卷题目（调用高级模型）"""
     paper_id = None
     try:
@@ -1530,8 +1773,11 @@ async def generate_exam_questions_async(task_id: str, prompt: str, teacher_id: i
             "model_type": "thinking",  # 使用高级模型
             "task_type": "exam_generation",
             "teacher_id": teacher_id,
-            "class_offering_id": class_offering_id
+            "class_offering_id": class_offering_id,
+            "source_type": source_type,
         }
+        if force_platform:
+            payload["force_platform"] = force_platform
 
         print(f"[AI_GEN] 开始调用AI生成试卷 (Task: {task_id}, Paper: {paper_id})")
 
@@ -1600,6 +1846,29 @@ async def generate_exam_questions_async(task_id: str, prompt: str, teacher_id: i
                     print(f"[WARN] 更新数据库失败状态失败: {e}")
 
             print(f"[AI_GEN] AI返回失败 (Task: {task_id}): {error_msg}")
+
+    except httpx.HTTPStatusError as e:
+        error_msg = _extract_ai_service_http_error(e)
+        print(f"[AI_GEN] AI助手返回错误 (Task: {task_id}): {error_msg}")
+        async with _exam_gen_tasks_lock:
+            if task_id in _exam_gen_tasks and _exam_gen_tasks[task_id]['status'] != ExamGenTaskStatus.CANCELLED:
+                _exam_gen_tasks[task_id]['status'] = ExamGenTaskStatus.FAILED
+                _exam_gen_tasks[task_id]['error'] = error_msg
+                _exam_gen_tasks[task_id]['completed_at'] = datetime.now().isoformat()
+                paper_id = _exam_gen_tasks[task_id].get('paper_id')
+
+        if paper_id:
+            try:
+                with get_db_connection() as conn:
+                    conn.execute(
+                        """UPDATE exam_papers
+                           SET ai_gen_status = 'failed', ai_gen_error = ?, updated_at = ?
+                           WHERE id = ?""",
+                        (error_msg, datetime.now().isoformat(), paper_id)
+                    )
+                    conn.commit()
+            except Exception as db_e:
+                print(f"[WARN] 更新数据库AI助手错误状态失败: {db_e}")
 
     except httpx.TimeoutException:
         async with _exam_gen_tasks_lock:
@@ -1750,10 +2019,10 @@ async def ai_suggest_exam_topics(request: Request, user: dict = Depends(get_curr
 async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, user: dict = Depends(get_current_teacher)):
     """启动AI生成试卷任务（调用高级模型，异步）"""
     try:
-        data = await request.json()
+        data, uploaded_source_files = await _parse_exam_generation_request(request)
 
         # 验证必填字段
-        required_fields = ['scope', 'title']
+        required_fields = ['title']
         for field in required_fields:
             if field not in data or data.get(field) is None:
                 raise HTTPException(status_code=400, detail=f"缺少必填字段: {field}")
@@ -1765,13 +2034,16 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
         if len(title) > 200:
             raise HTTPException(status_code=400, detail="试卷标题不能超过200个字符")
 
-        # 出题范围必填
-        scope = data['scope'].strip() if isinstance(data['scope'], str) else ''
-        if not scope:
-            raise HTTPException(status_code=400, detail="出题范围不能为空")
-        if len(scope) < 10:
+        source_files = await _extract_exam_source_files(uploaded_source_files)
+        has_source_files = bool(source_files)
+
+        # 出题范围：无上传文档时必填；有文档时可作为补充要求
+        scope = data.get('scope', '').strip() if isinstance(data.get('scope'), str) else ''
+        if not scope and not has_source_files:
+            raise HTTPException(status_code=400, detail="请填写出题范围，或上传一份可解析的出题参考文件")
+        if scope and not has_source_files and len(scope) < 10:
             raise HTTPException(status_code=400, detail="出题范围描述太短，请提供更详细的内容（至少10个字符）")
-        if len(scope) > 5000:
+        if scope and len(scope) > 5000:
             raise HTTPException(status_code=400, detail="出题范围描述过长，请控制在5000个字符以内")
 
         # 验证难度
@@ -1780,26 +2052,36 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
             raise HTTPException(status_code=400, detail="难度必须是: easy, medium, hard")
 
         # 验证总题数
-        total_questions = data.get('total_questions', 10)
-        try:
-            total_questions = int(total_questions)
-            if total_questions < 1 or total_questions > 100:
-                raise ValueError()
-        except (ValueError, TypeError):
-            raise HTTPException(status_code=400, detail="总题数必须是1-100之间的整数")
+        total_questions_raw = data.get('total_questions')
+        total_questions: Optional[int] = None
+        if total_questions_raw not in (None, ""):
+            try:
+                total_questions = int(total_questions_raw)
+                if total_questions < 1 or total_questions > 100:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail="总题数必须是1-100之间的整数")
 
         # 验证题型分布
-        question_types = data.get('question_types', {})
+        question_types = data.get('question_types') or {}
+        if not isinstance(question_types, dict):
+            raise HTTPException(status_code=400, detail="题型分布格式错误")
         valid_types = ['radio', 'checkbox', 'text', 'textarea']
+        normalized_question_types = {}
         for qtype, count in question_types.items():
             if qtype not in valid_types:
                 raise HTTPException(status_code=400, detail=f"无效的题型: {qtype}")
+            if count in (None, ""):
+                continue
             try:
                 count = int(count)
                 if count < 0 or count > 100:
                     raise ValueError()
             except (ValueError, TypeError):
                 raise HTTPException(status_code=400, detail=f"题型 {qtype} 的数量必须是0-100之间的整数")
+            if count > 0:
+                normalized_question_types[qtype] = count
+        question_types = normalized_question_types
 
         # 验证并处理课堂ID
         class_offering_id = data.get('class_offering_id')
@@ -1829,15 +2111,25 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
             "difficulty": difficulty,
             "total_questions": total_questions,
             "question_types": question_types,
-            "class_offering_id": class_offering_id
+            "class_offering_id": class_offering_id,
+            "source_type": "document" if has_source_files else "manual",
+            "source_files": [
+                {
+                    "name": item.get("name"),
+                    "truncated": bool(item.get("truncated")),
+                    "empty": bool(item.get("empty")),
+                }
+                for item in source_files
+            ],
         }, ensure_ascii=False)
+        description_scope = scope[:100] if scope else "上传文档解析"
 
         with get_db_connection() as conn:
             conn.execute(
                 """INSERT INTO exam_papers
                    (id, teacher_id, title, description, questions_json, exam_config_json, status, ai_gen_task_id, ai_gen_status, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (paper_id, user['id'], title, f"AI正在生成中，出题范围：{scope[:100]}...",
+                (paper_id, user['id'], title, f"AI正在生成中，出题来源：{description_scope}...",
                  empty_questions, exam_config, 'generating', task_id, 'pending', now, now)
             )
             conn.commit()
@@ -1852,6 +2144,8 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
                 'created_at': now,
                 'title': title,
                 'scope': scope,
+                'source_type': "document" if has_source_files else "manual",
+                'source_files': [item.get("name") for item in source_files],
                 'class_offering_id': class_offering_id,
                 'question_types': question_types,
                 'difficulty': difficulty,
@@ -1865,10 +2159,17 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
         # 构建生成提示词
         prompt_parts = [
             f"请生成一份试卷，标题：{title}",
-            f"出题范围：{scope}",
             f"难度：{difficulty}",
-            f"总题数：{total_questions}"
         ]
+        if scope:
+            prompt_parts.append(f"教师补充出题要求/范围：{scope}")
+        elif has_source_files:
+            prompt_parts.append("出题范围：请从上传文档中自动识别。")
+
+        if total_questions is not None:
+            prompt_parts.append(f"总题数：{total_questions}")
+        else:
+            prompt_parts.append("总题数：教师未指定，请根据上传文档内容、难度和题型要求合理决定。")
 
         # 添加题型分布
         if question_types:
@@ -1879,6 +2180,11 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
                     type_desc.append(f"{type_labels.get(qtype, qtype)}: {count}题")
             if type_desc:
                 prompt_parts.append(f"题型分布：{', '.join(type_desc)}")
+        else:
+            prompt_parts.append("题型分布：教师未指定，请根据文档内容和难度自动分配单选、多选、填空、问答题。")
+
+        if has_source_files:
+            prompt_parts.append(_build_exam_source_context(source_files))
 
         # 添加课程上下文（如果有课堂）
         if class_offering_id:
@@ -1914,9 +2220,20 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
         prompt += "\n8. 确保题目覆盖出题范围的所有主要知识点"
         prompt += "\n9. 返回格式必须为JSON，包含pages数组，每个page对象包含name和questions数组"
         prompt += "\n10. 不要包含任何额外的解释或代码块标记，只返回JSON数据"
+        if has_source_files:
+            prompt += "\n11. 如果上传文档本身是题库，请优先解析并整理其中已有题目，必要时补全答案和解析；如果文档是知识点、章节、大纲或复习范围，请据此原创生成题目。"
+            prompt += "\n12. 文档模式必须以上传文档为主要依据，不要脱离文档主题随意扩展。"
 
         # 在后台启动生成任务
-        background_tasks.add_task(generate_exam_questions_async, task_id, prompt, user['id'], class_offering_id)
+        background_tasks.add_task(
+            generate_exam_questions_async,
+            task_id,
+            prompt,
+            user['id'],
+            class_offering_id,
+            "volcengine" if has_source_files else None,
+            "document" if has_source_files else "manual",
+        )
 
         return {
             "status": "success",

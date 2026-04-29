@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/static/css/forms.css">
     <link rel="stylesheet" href="/static/css/cards.css">
     <link rel="stylesheet" href="/static/css/toast.css">
+    <link rel="stylesheet" href="/static/css/teacher_whiteboard.css">
     <style>
         body {
             background-color: var(--bg-color);
@@ -395,6 +396,115 @@
             padding-left: calc(var(--spacing-3) + 35px);
         }
 
+        .drawing-answer-panel {
+            margin-top: var(--spacing-3);
+            padding: var(--spacing-3);
+            border: 1px dashed var(--border-color);
+            border-radius: var(--radius-md);
+            background: var(--bg-color);
+        }
+
+        .drawing-answer-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: var(--spacing-2);
+            margin-bottom: var(--spacing-2);
+        }
+
+        .drawing-answer-status {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .drawing-preview {
+            display: none;
+            gap: var(--spacing-3);
+            align-items: flex-start;
+            padding: var(--spacing-2);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-color);
+            background: var(--surface-color);
+        }
+
+        .drawing-preview.has-drawing {
+            display: flex;
+        }
+
+        .drawing-preview img {
+            width: min(180px, 44vw);
+            aspect-ratio: 4 / 3;
+            object-fit: contain;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color);
+            background: #fff;
+        }
+
+        .drawing-preview-meta {
+            min-width: 0;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            line-height: 1.5;
+            word-break: break-all;
+        }
+
+        .readonly-answer-attachments {
+            margin-left: calc(var(--spacing-3) + 35px);
+            margin-top: var(--spacing-3);
+            display: grid;
+            gap: var(--spacing-3);
+        }
+
+        .answer-attachment-card {
+            padding: var(--spacing-3);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            background: var(--surface-color);
+        }
+
+        .answer-attachment-card img {
+            display: block;
+            width: 100%;
+            max-height: 360px;
+            object-fit: contain;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color);
+            background: #fff;
+        }
+
+        .answer-attachment-meta {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--spacing-2);
+            margin-bottom: var(--spacing-2);
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .exam-drawing-whiteboard-root .teacher-whiteboard-toolbar {
+            right: max(16px, calc(env(safe-area-inset-right) + 16px));
+        }
+
+        .exam-drawing-whiteboard-root .exam-drawing-title {
+            flex: 1 1 280px;
+            min-width: min(320px, 42vw);
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+        }
+
+        .exam-drawing-whiteboard-root .exam-drawing-title span {
+            max-width: 100%;
+            color: #64748b;
+            font-size: 0.75rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         /* Navigation Footer */
         .paper-footer {
             display: flex;
@@ -608,6 +718,15 @@
             .q-options { padding-left: 0; margin-top: var(--spacing-3); }
             .q-text-input { padding-left: 0; margin-top: var(--spacing-3); }
             .readonly-answer { margin-left: 0; margin-top: var(--spacing-3); }
+            .readonly-answer-attachments { margin-left: 0; }
+            .exam-drawing-whiteboard-root .teacher-whiteboard-toolbar {
+                left: 8px;
+                right: 8px;
+                gap: 6px;
+            }
+            .exam-drawing-whiteboard-root .exam-drawing-title {
+                flex-basis: 100%;
+            }
         }
     </style>
 </head>
@@ -692,9 +811,11 @@
     import { showMessage } from '/static/js/ui.js';
     import { apiFetch } from '/static/js/api.js';
     import { SubmissionUploadManager } from '/static/js/submission_upload.js';
+    import { initExamDrawingWhiteboard } from '/static/js/teacher_whiteboard.js';
 
     // Global configurations injected by Jinja2
     const ASSIGNMENT_ID = "{{ assignment.id }}";
+    const PAPER_TITLE = {{ paper.title | tojson }};
     const USER_ROLE = "{{ user_info.role }}";
     const MAX_UPLOAD_MB = {{ max_upload_mb }};
     const MAX_UPLOAD_BYTES = {{ max_total_mb }} * 1024 * 1024;
@@ -732,11 +853,14 @@
         pages: EXAM_PAGES.pages || [],
         currentPageIdx: 0,
         answers: {},
+        drawings: {},
         activeQuestionId: null,
         totalQuestions: 0
     };
     let uploadManager = null;
+    let drawingBoard = null;
     let isEditingResubmission = false;
+    let localSaveWarningShown = false;
 
     // DOM Elements
     const elements = {
@@ -772,6 +896,7 @@
         state.totalQuestions = state.pages.reduce((acc, page) => acc + (page.questions ? page.questions.length : 0), 0);
 
         setupEventListeners();
+        drawingBoard = initExamDrawingWhiteboard();
 
         if (SUBMISSION_EXISTS) {
             renderSubmittedView();
@@ -784,10 +909,21 @@
     // --- Data Persistence ---
     function saveToLocal() {
         if (SUBMISSION_EXISTS && !isEditingResubmission) return;
-        localStorage.setItem(`exam_${ASSIGNMENT_ID}`, JSON.stringify({
-            answers: state.answers,
-            currentPage: state.currentPageIdx
-        }));
+        try {
+            localStorage.setItem(`exam_${ASSIGNMENT_ID}`, JSON.stringify({
+                answers: state.answers,
+                drawings: state.drawings,
+                currentPage: state.currentPageIdx
+            }));
+            localSaveWarningShown = false;
+        } catch (error) {
+            console.warn('Failed to save exam draft locally:', error);
+            if (!localSaveWarningShown) {
+                localSaveWarningShown = true;
+                showMessage('本地自动保存空间不足，文字答案仍可提交；请尽快交卷或减少附图后重试。', 'warning');
+            }
+            return;
+        }
 
         // Visual indicator
         if(elements.saveStatus) {
@@ -806,6 +942,7 @@
             if (raw) {
                 const d = JSON.parse(raw);
                 state.answers = d.answers || {};
+                state.drawings = d.drawings || {};
                 if (typeof d.currentPage === 'number' && d.currentPage < state.pages.length) {
                     state.currentPageIdx = d.currentPage;
                 }
@@ -822,6 +959,100 @@
         }
     }
 
+    function isDrawingQuestion(q) {
+        const type = String(q?.type || '').toLowerCase();
+        if (type === 'radio' || type === 'checkbox' || type === 'text') return false;
+        return ['textarea', 'essay', 'short_answer', 'short-answer', 'shortanswer', 'subjective', 'open', '简答', '简答题', '问答题'].includes(type) || !type;
+    }
+
+    function hasDrawing(qId) {
+        const drawing = state.drawings?.[qId];
+        return Boolean(drawing && (drawing.dataUrl || drawing.sourceUrl || drawing.relativePath));
+    }
+
+    function answerHasContent(q) {
+        return Boolean(String(state.answers[q.id] || '').trim() || hasDrawing(q.id));
+    }
+
+    function sanitizeFileSegment(value, fallback) {
+        const cleaned = String(value || '')
+            .replace(/[\\/:*?"<>|\x00-\x1f]/g, '_')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 48);
+        return cleaned || fallback;
+    }
+
+    function makeDrawingFileName(q, index) {
+        const paperName = sanitizeFileSegment(PAPER_TITLE || '试卷', '试卷');
+        const questionLabel = sanitizeFileSegment(`${q.id || `第${index}题`}_${truncate(q.text || '', 24)}`, `第${index}题`);
+        return `${paperName}_${questionLabel}_附图.png`;
+    }
+
+    function getQuestionIndex(qId) {
+        let index = 0;
+        for (const page of state.pages) {
+            for (const question of (page.questions || [])) {
+                index++;
+                if (question.id === qId) return index;
+            }
+        }
+        return 0;
+    }
+
+    function findSubmissionFileForAttachment(attachment) {
+        if (!attachment) return null;
+        const keys = [
+            attachment.file_name,
+            attachment.filename,
+            attachment.relative_path,
+            attachment.stored_relative_path,
+        ].filter(Boolean).map(value => String(value).toLowerCase());
+        return SUBMISSION_FILES.find(file => {
+            const candidates = [
+                file.relative_path,
+                file.display_name,
+                file.original_filename,
+                file.download_url,
+                file.raw_url,
+            ].filter(Boolean).map(value => String(value).toLowerCase());
+            return candidates.some(candidate => keys.some(key => candidate === key || candidate.endsWith(`/${key}`)));
+        }) || null;
+    }
+
+    function normalizeAnswerRecord(item) {
+        if (item == null) return { text: '', attachments: [] };
+        if (typeof item !== 'object') return { text: String(item || ''), attachments: [] };
+        return {
+            text: String(item.answer ?? item.content ?? item.text ?? ''),
+            attachments: Array.isArray(item.attachments) ? item.attachments : [],
+        };
+    }
+
+    function renderSubmittedAttachments(attachments) {
+        const drawingAttachments = (attachments || []).filter(att => (att.kind || att.type) === 'drawing' || String(att.relative_path || '').startsWith('exam_drawings/'));
+        if (!drawingAttachments.length) return '';
+        return `
+            <div class="readonly-answer-attachments">
+                ${drawingAttachments.map((attachment) => {
+                    const file = findSubmissionFileForAttachment(attachment);
+                    const imageUrl = file?.raw_url || file?.download_url || '';
+                    const downloadUrl = file?.download_url || imageUrl || '#';
+                    const name = attachment.file_name || file?.display_name || file?.original_filename || '题目附图';
+                    return `
+                        <div class="answer-attachment-card">
+                            <div class="answer-attachment-meta">
+                                <span>${esc(name)}</span>
+                                ${downloadUrl !== '#' ? `<a href="${downloadUrl}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">查看附图</a>` : ''}
+                            </div>
+                            ${imageUrl ? `<img src="${imageUrl}" alt="${esc(name)}">` : `<div class="text-sm text-muted">附图文件暂不可预览</div>`}
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
     // --- UI Rendering ---
 
     function renderSidebar() {
@@ -829,7 +1060,7 @@
 
         let answeredCount = 0;
         state.pages.forEach(p => (p.questions || []).forEach(q => {
-            if (state.answers[q.id] && String(state.answers[q.id]).trim()) answeredCount++;
+            if (answerHasContent(q)) answeredCount++;
         }));
 
         elements.answeredCount.textContent = answeredCount;
@@ -855,7 +1086,7 @@
 
         (page.questions || []).forEach((q) => {
             const val = state.answers[q.id] || '';
-            const isDone = val && String(val).trim();
+            const isDone = answerHasContent(q);
             const isActive = state.activeQuestionId === q.id;
 
             html += `
@@ -878,7 +1109,7 @@
             otherPages.forEach(({ page: op, idx }) => {
                 const oq = op.questions || [];
                 let oDone = 0;
-                oq.forEach(q => { if (state.answers[q.id] && String(state.answers[q.id]).trim()) oDone++; });
+                oq.forEach(q => { if (answerHasContent(q)) oDone++; });
 
                 html += `
                     <div class="exam-section" style="opacity: 0.7;">
@@ -913,7 +1144,7 @@
 
         (page.questions || []).forEach((q) => {
             const val = state.answers[q.id] || '';
-            const isAnswered = val && String(val).trim() !== '';
+            const isAnswered = answerHasContent(q);
 
             html += `
                 <div class="question-card ${isAnswered ? 'answered' : ''}" id="q-${q.id}">
@@ -957,9 +1188,28 @@
                     </div>
                 `;
             } else {
+                const drawing = state.drawings[q.id];
+                const drawingSrc = drawing?.dataUrl || drawing?.sourceUrl || '';
+                const drawingName = drawing?.fileName || makeDrawingFileName(q, getQuestionIndex(q.id));
                 html += `
                     <div class="q-text-input">
                         <textarea class="form-control" rows="5" placeholder="${esc(q.placeholder || '请在此作答...')}" data-text-input="${q.id}">${esc(val)}</textarea>
+                        ${isDrawingQuestion(q) ? `
+                            <div class="drawing-answer-panel" data-drawing-panel="${q.id}">
+                                <div class="drawing-answer-actions">
+                                    <button type="button" class="btn btn-outline btn-sm" data-open-drawing="${q.id}">绘图作答</button>
+                                    <button type="button" class="btn btn-ghost btn-sm text-danger" data-remove-drawing="${q.id}" ${drawingSrc ? '' : 'hidden'}>移除附图</button>
+                                    <span class="drawing-answer-status" data-drawing-status="${q.id}">${drawingSrc ? '已保存题目附图' : '可在此题补充手写图、结构图或示意图'}</span>
+                                </div>
+                                <div class="drawing-preview ${drawingSrc ? 'has-drawing' : ''}" data-drawing-preview="${q.id}">
+                                    ${drawingSrc ? `<img src="${drawingSrc}" alt="${esc(drawingName)}">` : ''}
+                                    <div class="drawing-preview-meta">
+                                        <div class="font-medium">${esc(drawingName)}</div>
+                                        <div class="text-muted">提交时会作为本题附图上传，AI 批改会按题号识别。</div>
+                                    </div>
+                                </div>
+                            </div>
+                        ` : ''}
                     </div>
                 `;
             }
@@ -1113,7 +1363,8 @@
 
                 const card = document.getElementById(`q-${qId}`);
                 if(card) {
-                    if(val.trim()) card.classList.add('answered');
+                    const question = findQuestionById(qId);
+                    if(question && answerHasContent(question)) card.classList.add('answered');
                     else card.classList.remove('answered');
                 }
 
@@ -1125,10 +1376,105 @@
             });
         });
 
+        document.querySelectorAll('[data-open-drawing]').forEach(button => {
+            button.addEventListener('click', () => openDrawingForQuestion(button.dataset.openDrawing));
+        });
+
+        document.querySelectorAll('[data-remove-drawing]').forEach(button => {
+            button.addEventListener('click', () => removeDrawingForQuestion(button.dataset.removeDrawing));
+        });
+
         // Submit button
         const submitBtn = document.getElementById('submitExamBtn');
         if (submitBtn) {
             submitBtn.addEventListener('click', handleSubmission);
+        }
+    }
+
+    function findQuestionById(qId) {
+        for (const page of state.pages) {
+            const found = (page.questions || []).find(question => question.id === qId);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    async function openDrawingForQuestion(qId) {
+        const question = findQuestionById(qId);
+        if (!question || !drawingBoard) return;
+        const index = getQuestionIndex(qId);
+        const existing = state.drawings[qId] || {};
+        const fileName = existing.fileName || makeDrawingFileName(question, index);
+        const result = await drawingBoard.open({
+            questionId: question.id,
+            questionText: question.text,
+            paperTitle: PAPER_TITLE,
+            fileName,
+            dataUrl: existing.dataUrl || '',
+            imageUrl: existing.sourceUrl || '',
+        });
+        if (!result?.dataUrl) return;
+        state.drawings[qId] = {
+            kind: 'drawing',
+            question_id: question.id,
+            question: question.text,
+            fileName,
+            relativePath: `exam_drawings/${fileName}`,
+            mimeType: 'image/png',
+            dataUrl: result.dataUrl,
+            updatedAt: new Date().toISOString(),
+        };
+        updateDrawingPanel(qId);
+        updateQuestionAnsweredState(qId);
+        saveToLocal();
+        renderSidebar();
+    }
+
+    function removeDrawingForQuestion(qId) {
+        if (!state.drawings[qId]) return;
+        delete state.drawings[qId];
+        updateDrawingPanel(qId);
+        updateQuestionAnsweredState(qId);
+        saveToLocal();
+        renderSidebar();
+    }
+
+    function updateQuestionAnsweredState(qId) {
+        const question = findQuestionById(qId);
+        const card = document.getElementById(`q-${qId}`);
+        if (!question || !card) return;
+        card.classList.toggle('answered', answerHasContent(question));
+    }
+
+    function drawingSelectorValue(value) {
+        return window.CSS?.escape ? CSS.escape(String(value)) : String(value).replace(/"/g, '\\"');
+    }
+
+    function updateDrawingPanel(qId) {
+        const question = findQuestionById(qId);
+        if (!question) return;
+        const index = getQuestionIndex(qId);
+        const drawing = state.drawings[qId];
+        const drawingSrc = drawing?.dataUrl || drawing?.sourceUrl || '';
+        const drawingName = drawing?.fileName || makeDrawingFileName(question, index);
+        const selectorValue = drawingSelectorValue(qId);
+        const preview = document.querySelector(`[data-drawing-preview="${selectorValue}"]`);
+        const status = document.querySelector(`[data-drawing-status="${selectorValue}"]`);
+        const removeButton = document.querySelector(`[data-remove-drawing="${selectorValue}"]`);
+        if (status) status.textContent = drawingSrc ? '已保存题目附图' : '可在此题补充手写图、结构图或示意图';
+        if (removeButton) removeButton.hidden = !drawingSrc;
+        if (preview) {
+            preview.classList.toggle('has-drawing', Boolean(drawingSrc));
+            preview.innerHTML = drawingSrc
+                ? `<img src="${drawingSrc}" alt="${esc(drawingName)}">
+                    <div class="drawing-preview-meta">
+                        <div class="font-medium">${esc(drawingName)}</div>
+                        <div class="text-muted">提交时会作为本题附图上传，AI 批改会按题号识别。</div>
+                    </div>`
+                : `<div class="drawing-preview-meta">
+                        <div class="font-medium">${esc(drawingName)}</div>
+                        <div class="text-muted">提交时会作为本题附图上传，AI 批改会按题号识别。</div>
+                    </div>`;
         }
     }
 
@@ -1167,13 +1513,61 @@
         closeMobileSidebar();
     }
 
+    async function dataUrlToFile(dataUrl, fileName) {
+        const response = await fetch(dataUrl);
+        const blob = await response.blob();
+        return new File([blob], fileName, { type: 'image/png', lastModified: Date.now() });
+    }
+
+    async function sourceUrlToFile(sourceUrl, fileName) {
+        const response = await fetch(sourceUrl, { credentials: 'same-origin' });
+        const blob = await response.blob();
+        return new File([blob], fileName, { type: blob.type || 'image/png', lastModified: Date.now() });
+    }
+
+    async function appendDrawingFiles(formData, allQuestions) {
+        let manifest = [];
+        const currentManifest = formData.get('manifest');
+        if (currentManifest) {
+            try { manifest = JSON.parse(currentManifest) || []; } catch { manifest = []; }
+        }
+        const drawingEntries = [];
+        for (const q of allQuestions) {
+            const drawing = state.drawings[q.id];
+            if (!drawing || (!drawing.dataUrl && !drawing.sourceUrl)) continue;
+            const fileName = drawing.fileName || makeDrawingFileName(q, getQuestionIndex(q.id));
+            const relativePath = drawing.relativePath || `exam_drawings/${fileName}`;
+            const file = drawing.dataUrl
+                ? await dataUrlToFile(drawing.dataUrl, fileName)
+                : await sourceUrlToFile(drawing.sourceUrl, fileName);
+            formData.append('files', file, fileName);
+            manifest.push({
+                relative_path: relativePath,
+                content_type: 'image/png',
+                kind: 'exam_drawing',
+                question_id: q.id,
+                question: q.text,
+            });
+            drawingEntries.push({
+                kind: 'drawing',
+                file_name: fileName,
+                relative_path: relativePath,
+                mime_type: 'image/png',
+                question_id: q.id,
+                question: q.text,
+            });
+        }
+        formData.set('manifest', JSON.stringify(manifest));
+        return drawingEntries;
+    }
+
     async function handleSubmission() {
         const allQuestions = [];
         state.pages.forEach(p => (p.questions || []).forEach(q => allQuestions.push(q)));
 
-        const unanswered = allQuestions.filter(q => !state.answers[q.id] || !state.answers[q.id].trim());
-        const hasAnswered = allQuestions.some(q => String(state.answers[q.id] || '').trim());
-        const hasFiles = uploadManager?.hasFiles() ?? false;
+        const unanswered = allQuestions.filter(q => !answerHasContent(q));
+        const hasAnswered = allQuestions.some(q => answerHasContent(q));
+        const hasFiles = (uploadManager?.hasFiles() ?? false) || allQuestions.some(q => hasDrawing(q.id));
         window.behaviorTracker?.log('exam_submit_attempt', '尝试提交试卷', {
             total_questions: allQuestions.length,
             unanswered_count: unanswered.length,
@@ -1199,16 +1593,22 @@
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;margin-right:8px;"></span> 提交中...';
 
-        const answersList = allQuestions.map(q => ({
-            question_id: q.id,
-            question: q.text,
-            answer: state.answers[q.id] || ''
-        }));
-
-        const formData = uploadManager ? uploadManager.buildFormData() : new FormData();
-        formData.append('answers_json', JSON.stringify({ answers: answersList }));
-
         try {
+            const formData = uploadManager ? uploadManager.buildFormData() : new FormData();
+            const drawingEntries = await appendDrawingFiles(formData, allQuestions);
+            const drawingMap = new Map(drawingEntries.map(entry => [entry.question_id, entry]));
+            const answersList = allQuestions.map(q => {
+                const attachments = drawingMap.has(q.id) ? [drawingMap.get(q.id)] : [];
+                return {
+                    question_id: q.id,
+                    question: q.text,
+                    type: q.type || '',
+                    answer: state.answers[q.id] || '',
+                    attachments,
+                };
+            });
+            formData.append('answers_json', JSON.stringify({ answers: answersList }));
+
             const resp = await apiFetch(`/api/assignments/${ASSIGNMENT_ID}/submit`, {
                 method: 'POST',
                 body: formData
@@ -1311,7 +1711,11 @@
             if (Array.isArray(ansList)) {
                 ansList.forEach(item => {
                     const key = item.question_id || item.question;
-                    if (key) submittedAnswers[key] = item.answer || '';
+                    if (key) submittedAnswers[key] = normalizeAnswerRecord(item);
+                });
+            } else if (typeof ansList === 'object') {
+                Object.entries(ansList).forEach(([key, value]) => {
+                    submittedAnswers[key] = normalizeAnswerRecord(value);
                 });
             }
         }
@@ -1327,8 +1731,10 @@
         `;
 
         allQuestions.forEach((q) => {
-            const ans = submittedAnswers[q.id];
-            const hasAns = ans && ans.trim() !== '';
+            const record = submittedAnswers[q.id] || { text: '', attachments: [] };
+            const ans = record.text || '';
+            const hasAns = Boolean(ans.trim());
+            const attachmentsHtml = renderSubmittedAttachments(record.attachments);
 
             html += `
                 <div class="question-card" id="q-${q.id}">
@@ -1339,6 +1745,7 @@
                     <div class="readonly-answer ${!hasAns ? 'empty' : ''}">
                         ${hasAns ? esc(ans) : '(未作答)'}
                     </div>
+                    ${attachmentsHtml}
                 </div>
             `;
         });
@@ -1386,6 +1793,34 @@
         return submittedAnswers;
     }
 
+    function extractSubmittedDrawings() {
+        const drawings = {};
+        if (!SUBMISSION_DATA) return drawings;
+        const ansList = SUBMISSION_DATA.answers || SUBMISSION_DATA;
+        const items = Array.isArray(ansList)
+            ? ansList
+            : Object.entries(ansList || {}).map(([key, value]) => ({ question_id: key, ...(typeof value === 'object' ? value : { answer: value }) }));
+        items.forEach((item) => {
+            const qId = item?.question_id || item?.question;
+            if (!qId || !Array.isArray(item.attachments)) return;
+            const attachment = item.attachments.find(att => (att.kind || att.type) === 'drawing' || String(att.relative_path || '').startsWith('exam_drawings/'));
+            if (!attachment) return;
+            const file = findSubmissionFileForAttachment(attachment);
+            const fileName = attachment.file_name || file?.display_name || file?.original_filename || `${qId}_附图.png`;
+            drawings[qId] = {
+                kind: 'drawing',
+                question_id: qId,
+                question: item.question || '',
+                fileName,
+                relativePath: attachment.relative_path || file?.relative_path || `exam_drawings/${fileName}`,
+                mimeType: attachment.mime_type || file?.mime_type || 'image/png',
+                sourceUrl: file?.raw_url || file?.download_url || '',
+                updatedAt: new Date().toISOString(),
+            };
+        });
+        return drawings;
+    }
+
     function restoreExamEditingShell() {
         elements.dynamicArea.innerHTML = `
             <div class="exam-progress" id="progressContainer">
@@ -1427,6 +1862,7 @@
         if (!CAN_RESUBMIT_SUBMISSION) return;
         isEditingResubmission = true;
         state.answers = extractSubmittedAnswers();
+        state.drawings = extractSubmittedDrawings();
         for (const page of state.pages) {
             for (const q of (page.questions || [])) {
                 if (state.answers[q.id] === undefined) state.answers[q.id] = '';
@@ -1445,7 +1881,8 @@
 
         let done = 0;
         allQuestions.forEach(q => {
-            if (submittedAnswers[q.id] && submittedAnswers[q.id].trim() !== '') done++;
+            const record = normalizeAnswerRecord(submittedAnswers[q.id]);
+            if ((record.text && record.text.trim() !== '') || (record.attachments && record.attachments.length)) done++;
         });
 
         elements.answeredCount.textContent = done;
@@ -1460,8 +1897,8 @@
         `;
 
         allQuestions.forEach(q => {
-            const ans = submittedAnswers[q.id];
-            const answered = ans && ans.trim() !== '';
+            const record = normalizeAnswerRecord(submittedAnswers[q.id]);
+            const answered = (record.text && record.text.trim() !== '') || (record.attachments && record.attachments.length);
             html += `
                 <div class="q-nav-item" onclick="document.getElementById('q-${q.id}').scrollIntoView({behavior:'smooth', block:'center'})">
                     <div class="q-status-indicator ${answered ? 'answered' : 'unanswered'}">
