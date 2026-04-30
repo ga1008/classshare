@@ -56,7 +56,10 @@ from ..services.course_planning_service import (
     serialize_course_row,
 )
 from ..services.materials_service import attach_home_learning_material_briefs, attach_learning_material_briefs
-from ..services.message_center_service import is_super_admin_teacher
+from ..services.message_center_service import (
+    create_password_reset_request_notification,
+    is_super_admin_teacher,
+)
 from ..services.session_material_generation_service import attach_generation_tasks
 from ..services.student_auth_service import (
     PASSWORD_POLICY_HINT,
@@ -445,6 +448,7 @@ def api_student_password_forgot(
                 requester_ip=get_client_ip(request),
                 requester_user_agent=request.headers.get("user-agent", ""),
             )
+            create_password_reset_request_notification(conn, request_id)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

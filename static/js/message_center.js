@@ -450,6 +450,7 @@ if (app) {
             grading_result: '查看批改结果',
             ai_feedback: '查看 AI 反馈',
             app_feedback: '查看反馈',
+            password_reset_request: '审核申请',
             private_message: '查看私信',
         };
         return actionMap[item.category] || '查看详情';

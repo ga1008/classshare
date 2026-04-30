@@ -32,6 +32,7 @@ MESSAGE_CATEGORY_AI_FEEDBACK = "ai_feedback"
 MESSAGE_CATEGORY_BLOG_COMMENT = "blog_comment"
 MESSAGE_CATEGORY_BLOG_HOT = "blog_hot"
 MESSAGE_CATEGORY_APP_FEEDBACK = "app_feedback"
+MESSAGE_CATEGORY_PASSWORD_RESET = "password_reset_request"
 
 AI_ASSISTANT_ROLE = "assistant"
 AI_ASSISTANT_LABEL = "AI助教"
@@ -58,6 +59,7 @@ ALL_NOTIFICATION_CATEGORIES = (
     MESSAGE_CATEGORY_BLOG_COMMENT,
     MESSAGE_CATEGORY_BLOG_HOT,
     MESSAGE_CATEGORY_APP_FEEDBACK,
+    MESSAGE_CATEGORY_PASSWORD_RESET,
 )
 
 VISIBLE_NOTIFICATION_CATEGORIES = {
@@ -79,6 +81,7 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_BLOG_COMMENT,
         MESSAGE_CATEGORY_BLOG_HOT,
         MESSAGE_CATEGORY_APP_FEEDBACK,
+        MESSAGE_CATEGORY_PASSWORD_RESET,
     ),
 }
 
@@ -93,6 +96,7 @@ CATEGORY_LABELS = {
     MESSAGE_CATEGORY_BLOG_COMMENT: "博客评论",
     MESSAGE_CATEGORY_BLOG_HOT: "博客热度",
     MESSAGE_CATEGORY_APP_FEEDBACK: "问题反馈",
+    MESSAGE_CATEGORY_PASSWORD_RESET: "找回申请",
 }
 
 APP_FEEDBACK_TYPE_LABELS = {
@@ -1635,6 +1639,82 @@ def create_app_feedback_notifications(conn, feedback_id: int | str) -> int:
         )
         inserted_count += 1 if _insert_notification_if_allowed(conn, payload) else 0
     return inserted_count
+
+
+def create_password_reset_request_notification(conn, request_id: int | str) -> int:
+    request_row = conn.execute(
+        """
+        SELECT r.id, r.student_id, r.class_id, r.teacher_id, r.status,
+               r.request_name, r.request_student_id_number, r.request_class_name,
+               r.requester_ip, r.requester_device_label, r.submitted_at
+        FROM student_password_reset_requests r
+        JOIN teachers t ON t.id = r.teacher_id
+        WHERE r.id = ?
+        LIMIT 1
+        """,
+        (request_id,),
+    ).fetchone()
+    if not request_row or request_row["status"] != "pending":
+        return 0
+
+    student_name = str(request_row["request_name"] or "").strip() or build_actor_display_name("", "student")
+    student_number = str(request_row["request_student_id_number"] or "").strip()
+    class_name = str(request_row["request_class_name"] or "").strip()
+    device_label = str(request_row["requester_device_label"] or "").strip()
+    requester_ip = str(request_row["requester_ip"] or "").strip()
+
+    preview_parts = [item for item in (class_name, f"学号 {student_number}" if student_number else "", device_label) if item]
+    if requester_ip:
+        preview_parts.append(f"IP {requester_ip}")
+
+    payload = _build_notification_payload(
+        recipient_role="teacher",
+        recipient_user_pk=int(request_row["teacher_id"]),
+        category=MESSAGE_CATEGORY_PASSWORD_RESET,
+        title=f"{student_name} 提交了找回密码申请",
+        body_preview=" | ".join(preview_parts),
+        actor_role="student",
+        actor_user_pk=_safe_int(request_row["student_id"]),
+        actor_display_name=student_name,
+        link_url=f"/manage/system/password-resets?request_id={int(request_row['id'])}",
+        ref_type=MESSAGE_CATEGORY_PASSWORD_RESET,
+        ref_id=str(request_row["id"]),
+        metadata={
+            "request_id": int(request_row["id"]),
+            "student_id": int(request_row["student_id"]),
+            "class_id": int(request_row["class_id"]),
+            "status": str(request_row["status"] or ""),
+        },
+        created_at=str(request_row["submitted_at"] or _now_iso()),
+    )
+    return 1 if _insert_notification_if_allowed(conn, payload) else 0
+
+
+def mark_password_reset_request_notification_read(conn, request_id: int | str, teacher_id: int | str) -> int:
+    normalized_request_id = _safe_int(request_id)
+    normalized_teacher_id = _safe_int(teacher_id)
+    if normalized_request_id is None or normalized_teacher_id is None:
+        return 0
+
+    cursor = conn.execute(
+        """
+        UPDATE message_center_notifications
+        SET read_at = COALESCE(read_at, ?)
+        WHERE recipient_role = 'teacher'
+          AND recipient_user_pk = ?
+          AND category = ?
+          AND ref_type = ?
+          AND ref_id = ?
+        """,
+        (
+            _now_iso(),
+            normalized_teacher_id,
+            MESSAGE_CATEGORY_PASSWORD_RESET,
+            MESSAGE_CATEGORY_PASSWORD_RESET,
+            str(normalized_request_id),
+        ),
+    )
+    return int(cursor.rowcount or 0)
 
 
 def create_private_message(

@@ -6,7 +6,7 @@ import pandas as pd
 import sqlite3
 from urllib.parse import quote
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, List
 from fastapi import APIRouter, Request, Form, HTTPException, Depends, UploadFile, File
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
@@ -67,6 +67,10 @@ def _build_assignment_storage_dir(course_id: int, assignment_id: int | str):
 
 def _build_submission_storage_dir(course_id: int, assignment_id: int | str, student_pk_id: int | str):
     return _build_assignment_storage_dir(course_id, assignment_id) / str(student_pk_id)
+
+
+def _build_submission_file_path(submission_dir: Path, relative_path: str) -> Path:
+    return submission_dir.joinpath(*PurePosixPath(relative_path).parts)
 
 
 def _get_allowed_file_types(data: dict, assignment_row=None) -> list[str]:
@@ -204,8 +208,9 @@ def _parse_answers_payload(answers_json: str) -> Any:
     return answers_data.get("answers", answers_data) if isinstance(answers_data, dict) else answers_data
 
 
-def _restore_submission_dir(submission_dir, backup_dir) -> None:
-    delete_storage_tree(submission_dir)
+def _restore_submission_dir(submission_dir, backup_dir, *, remove_current: bool = True) -> None:
+    if remove_current:
+        delete_storage_tree(submission_dir)
     if backup_dir and backup_dir.exists():
         backup_dir.rename(submission_dir)
 
@@ -256,14 +261,37 @@ async def _save_submission_payload(
     full_submission_json = json.dumps(full_submission, ensure_ascii=False)
 
     submission_dir = _build_submission_storage_dir(assignment["course_id"], assignment["id"], student_pk_id)
+    staging_dir = submission_dir.with_name(f"{submission_dir.name}.__staging__{uuid.uuid4().hex}")
     backup_dir = None
+    staging_moved_to_final = False
     is_replacement = bool(existing_submission)
-    if is_replacement and submission_dir.exists():
-        backup_dir = submission_dir.with_name(f"{submission_dir.name}.__backup__{uuid.uuid4().hex}")
-        submission_dir.rename(backup_dir)
 
     try:
+        storage_result = await store_submission_files(staging_dir, prepared_entries, allowed_file_types)
+        if not storage_result.stored_files and not has_text_answers:
+            expected_types = summarize_allowed_file_types(allowed_file_types)
+            raise HTTPException(400, f"没有符合要求的文件可提交，允许类型: {expected_types}")
+        for file_info in storage_result.stored_files:
+            file_info.stored_path = str(_build_submission_file_path(submission_dir, file_info.relative_path))
+    except Exception:
+        delete_storage_tree(staging_dir)
+        raise
+
+    try:
+        conn.execute("BEGIN IMMEDIATE")
         cursor = conn.cursor()
+        current_submission = cursor.execute(
+            "SELECT id FROM submissions WHERE assignment_id = ? AND student_pk_id = ? LIMIT 1",
+            (assignment["id"], student_pk_id),
+        ).fetchone()
+        if not existing_submission and current_submission:
+            raise sqlite3.IntegrityError("duplicate submission")
+        if submission_dir.exists():
+            backup_dir = submission_dir.with_name(f"{submission_dir.name}.__backup__{uuid.uuid4().hex}")
+            submission_dir.rename(backup_dir)
+        if storage_result.stored_files:
+            staging_dir.rename(submission_dir)
+            staging_moved_to_final = True
         if existing_submission:
             submission_id = int(existing_submission["id"])
             cursor.execute("DELETE FROM submission_files WHERE submission_id = ?", (submission_id,))
@@ -322,11 +350,6 @@ async def _save_submission_payload(
             )
             submission_id = cursor.lastrowid
 
-        storage_result = await store_submission_files(submission_dir, prepared_entries, allowed_file_types)
-        if not storage_result.stored_files and not has_text_answers:
-            expected_types = summarize_allowed_file_types(allowed_file_types)
-            raise HTTPException(400, f"没有符合要求的文件可提交，允许类型: {expected_types}")
-
         for file_info in storage_result.stored_files:
             cursor.execute(
                 """
@@ -357,15 +380,30 @@ async def _save_submission_payload(
             delete_storage_tree(backup_dir)
     except sqlite3.IntegrityError:
         conn.rollback()
-        _restore_submission_dir(submission_dir, backup_dir)
+        _restore_submission_dir(
+            submission_dir,
+            backup_dir,
+            remove_current=staging_moved_to_final or backup_dir is not None,
+        )
+        delete_storage_tree(staging_dir)
         raise HTTPException(400, "该学生已经提交过此作业")
     except HTTPException:
         conn.rollback()
-        _restore_submission_dir(submission_dir, backup_dir)
+        _restore_submission_dir(
+            submission_dir,
+            backup_dir,
+            remove_current=staging_moved_to_final or backup_dir is not None,
+        )
+        delete_storage_tree(staging_dir)
         raise
     except Exception as e:
         conn.rollback()
-        _restore_submission_dir(submission_dir, backup_dir)
+        _restore_submission_dir(
+            submission_dir,
+            backup_dir,
+            remove_current=staging_moved_to_final or backup_dir is not None,
+        )
+        delete_storage_tree(staging_dir)
         print(f"[ERROR] Submission failed: {e}")
         raise HTTPException(500, f"数据库错误: {e}")
 
