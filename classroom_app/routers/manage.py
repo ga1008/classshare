@@ -45,7 +45,10 @@ from ..services.materials_service import (
     get_learning_material_brief_map,
     sync_classroom_learning_material_assignments,
 )
-from ..services.message_center_service import is_super_admin_teacher
+from ..services.message_center_service import (
+    is_super_admin_teacher,
+    mark_password_reset_request_notification_read,
+)
 from ..services.roster_handler import parse_excel_to_students
 from ..services.student_auth_service import build_student_security_summary, list_student_login_history
 from ..services.submission_file_alignment import run_full_alignment
@@ -1902,6 +1905,7 @@ async def api_approve_password_reset_request(
             """,
             (request_row["student_id"],),
         )
+        mark_password_reset_request_notification_read(conn, request_id, user["id"])
         conn.commit()
 
     invalidate_session_for_user(str(request_row["student_id"]), "student")
@@ -1940,6 +1944,7 @@ async def api_reject_password_reset_request(
             """,
             (datetime.now().isoformat(), user["id"], review_note.strip(), request_id),
         )
+        mark_password_reset_request_notification_read(conn, request_id, user["id"])
         conn.commit()
 
     return {"status": "success", "message": "已拒绝该找回密码申请。"}

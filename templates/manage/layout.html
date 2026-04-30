@@ -430,6 +430,24 @@
         window.showMessage = showMessage;
         window.apiFetch = apiFetch;
 
+        const centerActiveManageNavItem = () => {
+            const nav = document.querySelector('.manage-nav');
+            const activeItem = nav?.querySelector('.manage-nav-item.active');
+            if (!nav || !activeItem) {
+                return;
+            }
+
+            window.requestAnimationFrame(() => {
+                const navRect = nav.getBoundingClientRect();
+                const itemRect = activeItem.getBoundingClientRect();
+                const targetTop = nav.scrollTop + itemRect.top - navRect.top - (nav.clientHeight / 2) + (itemRect.height / 2);
+                const maxScrollTop = Math.max(nav.scrollHeight - nav.clientHeight, 0);
+                nav.scrollTop = Math.min(Math.max(targetTop, 0), maxScrollTop);
+            });
+        };
+
+        centerActiveManageNavItem();
+
         window.handleFormSubmit = async function(event, successCallback) {
             event.preventDefault();
             const form = event.target;

@@ -18,18 +18,19 @@ bidisync.py - Windows 本地项目 <-> Ubuntu 远程服务器项目 双向增量
 6. 失败重试、日志记录、失败清单记录。
 7. 传输后哈希校验，并尽量对齐 mtime，避免反复同步。
 8. 删除默认进入 .sync_trash，不直接永久删除。
-9. 支持远程 Docker Compose 自动编排：上传数据库前先 down，同步后再 up -d --build；
-   若只是上传代码/资源，则先同步，再 down + up -d --build。
-10. 对 SQLite 给出明确保护：默认按文件同步，建议同步前停服务；可按需开启快照，但文件级镜像不推荐。
+9. 支持远程 Docker Compose 自动编排：数据库上传前先 down，同步后 up -d --build；非数据库上传则同步成功后再重建启动。
+10. 支持 Flask Web 控制台：双栏目录差异视图、方向箭头、勾选式选择同步、Web 输入 SSH 密码和进度条。
+11. 对 SQLite 给出明确保护：默认按文件同步，建议同步前停服务；可按需开启快照，但文件级镜像不推荐。
 
 依赖安装：
-    pip install paramiko tqdm
+    pip install flask paramiko tqdm
 
 首次使用：
     1. 修改脚本顶部 CONFIG 区域：REMOTE_HOST、REMOTE_PROJECT_ROOT。
     2. 把本脚本放到本地项目根目录。
-    3. 先试运行：python bidisync.py --dry-run
-    4. 确认无误：python bidisync.py
+    3. 命令行试运行：python bidisync.py --dry-run
+    4. 命令行同步：python bidisync.py
+    5. Web 控制台：python bidisync.py --web，然后打开 http://127.0.0.1:8765
 
 重要提醒：
 - 这是“文件级同步器”，不是数据库行级合并器。如果本地和远程 SQLite 在两边同时被用户修改，
@@ -38,7 +39,7 @@ bidisync.py - Windows 本地项目 <-> Ubuntu 远程服务器项目 双向增量
   同步完成后重新执行 docker compose up -d --build。
 - 如果只上传代码/模板/静态资源等非数据库文件，脚本会先完成同步，再重建并后台启动容器，
   尽量缩短服务中断时间。
-- SQLite 仍然是文件级同步。如果本地和远程数据库同时被写入，脚本无法做行级合并。
+- Web 控制台的 SSH 密码由用户在页面输入，后端只在当前请求/同步线程内存中使用，不写入配置、日志或同步清单。
 """
 
 from __future__ import annotations
@@ -62,6 +63,7 @@ import tempfile
 import threading
 import time
 import traceback
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -70,7 +72,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set,
 try:
     import paramiko
 except ImportError as exc:  # pragma: no cover
-    print("缺少依赖 paramiko，请先执行：pip install paramiko tqdm", file=sys.stderr)
+    print("缺少依赖 paramiko，请先执行：pip install flask paramiko tqdm", file=sys.stderr)
     raise
 
 try:
@@ -82,10 +84,10 @@ except ImportError:  # pragma: no cover
 # =========================
 # CONFIG：按你的服务器修改
 # =========================
-REMOTE_HOST = "106.53.153.171"              # 远程服务器 IP，示例："123.123.123.123"
+REMOTE_HOST = "192.168.1.100"              # 远程服务器 IP，示例："123.123.123.123"
 REMOTE_PORT = 22
 REMOTE_USER = "root"
-REMOTE_PROJECT_ROOT = "/lanshare"  # 远程项目绝对路径
+REMOTE_PROJECT_ROOT = "/root/your_flask_project"  # 远程项目绝对路径
 
 # 脚本所在目录即本地项目根目录
 LOCAL_PROJECT_ROOT = Path(__file__).resolve().parent
@@ -98,7 +100,9 @@ REMOTE_SCAN_WORKERS = min(16, (os.cpu_count() or 4) * 2)
 # 传输重试
 RETRY_TIMES = 3
 RETRY_BASE_SLEEP = 1.5
-CONNECT_TIMEOUT = 12
+CONNECT_TIMEOUT = 20
+SSH_BANNER_TIMEOUT = 35
+SSH_AUTH_TIMEOUT = 20
 COMMAND_TIMEOUT = 60 * 60
 
 # 哈希与进度参数
@@ -115,23 +119,28 @@ TIE_BREAKER = "skip"
 # SQLite 文件扩展名。默认不启用 sqlite backup 快照，因为 backup 生成的文件通常不是 bitwise identical，
 # 会破坏“文件镜像 + 哈希对齐”的语义。强烈建议同步前停服务或启用维护模式。
 SQLITE_EXTENSIONS = {".db", ".sqlite", ".sqlite3"}
+USE_SQLITE_BACKUP_SNAPSHOT = False
+
+# SQLite side-car 文件；SQLite WAL 模式下可能同时存在，需要和主库一起处理。
 SQLITE_SIDE_CAR_SUFFIXES = (
     ".db-wal", ".db-shm",
     ".sqlite-wal", ".sqlite-shm",
     ".sqlite3-wal", ".sqlite3-shm",
 )
-USE_SQLITE_BACKUP_SNAPSHOT = False
 
 # Docker Compose 自动编排。
-# 规则：
-# - 只要有“上传数据库到远程”的动作：先 docker compose down，再同步，再 docker compose up -d --build。
-# - 如果没有数据库上传，但有代码/资源上传或远程删除/建目录：先同步，再 down + up -d --build。
-# - 如果只是从远程下载到本地，不动远程项目：不执行 Docker Compose。
+# - 上传 SQLite 数据库或 WAL/SHM 到服务器：先 down，再同步，再 up -d --build。
+# - 只上传代码/模板/静态资源等非数据库文件：先同步，再 down + up -d --build。
+# - 只下载远程变化到本地：不重启远程服务。
 DOCKER_COMPOSE_ENABLED = True
-DOCKER_COMPOSE_PROJECT_DIR = REMOTE_PROJECT_ROOT  # docker-compose.yml 所在目录；默认等于远程项目根目录
+DOCKER_COMPOSE_PROJECT_DIR = REMOTE_PROJECT_ROOT
 DOCKER_COMPOSE_DOWN_COMMAND = "docker compose down"
 DOCKER_COMPOSE_UP_COMMAND = "docker compose up -d --build"
 DOCKER_COMPOSE_TIMEOUT = 60 * 20
+
+# Web 控制台默认监听本机。生产环境建议仅在可信局域网使用，或通过 SSH 隧道访问。
+WEB_HOST = "127.0.0.1"
+WEB_PORT = 8765
 
 # 同步器自身目录，必须排除，避免清单/日志被同步或引发递归
 SYNC_DIR_NAME = ".sync_state"
@@ -265,9 +274,13 @@ class SyncConfig:
     no_delete: bool = False
     only: str = "all"  # all/upload/download
     docker_enabled: bool = DOCKER_COMPOSE_ENABLED
-    docker_compose_dir: str = DOCKER_COMPOSE_PROJECT_DIR
+    docker_project_dir: str = DOCKER_COMPOSE_PROJECT_DIR
     docker_down_cmd: str = DOCKER_COMPOSE_DOWN_COMMAND
     docker_up_cmd: str = DOCKER_COMPOSE_UP_COMMAND
+    docker_timeout: int = DOCKER_COMPOSE_TIMEOUT
+    web: bool = False
+    web_host: str = WEB_HOST
+    web_port: int = WEB_PORT
 
 
 # =========================
@@ -331,11 +344,10 @@ def sha256_file(path: Path) -> str:
 
 
 def is_sqlite_path(path_str: str) -> bool:
-    pp = PurePosixPath(path_str)
-    name = pp.name.lower()
-    if pp.suffix.lower() in SQLITE_EXTENSIONS:
+    lower = path_str.lower()
+    if PurePosixPath(lower).suffix in SQLITE_EXTENSIONS:
         return True
-    return name.endswith(SQLITE_SIDE_CAR_SUFFIXES)
+    return any(lower.endswith(suffix) for suffix in SQLITE_SIDE_CAR_SUFFIXES)
 
 
 def mtime_diff_seconds(a_ns: int, b_ns: int) -> float:
@@ -453,6 +465,98 @@ def record_failure(local_root: Path, action: Action, exc: BaseException) -> None
 # SSH / SFTP 客户端
 # =========================
 
+class SSHConnectionError(RuntimeError):
+    """带中文诊断信息的 SSH 连接错误。"""
+
+
+def probe_ssh_banner(cfg: SyncConfig, timeout: float = 5.0) -> Dict[str, Any]:
+    """
+    只做 TCP + SSH banner 预检，不验证密码。
+    SSH 服务正常时，连接建立后服务端会先发类似：SSH-2.0-OpenSSH_xxx。
+    """
+    result: Dict[str, Any] = {
+        "host": cfg.remote_host,
+        "port": cfg.remote_port,
+        "tcp_ok": False,
+        "ssh_banner_ok": False,
+        "banner": "",
+        "error": "",
+    }
+    sock: Optional[socket.socket] = None
+    try:
+        sock = socket.create_connection((cfg.remote_host, cfg.remote_port), timeout=timeout)
+        result["tcp_ok"] = True
+        sock.settimeout(timeout)
+        data = sock.recv(256)
+        banner = data.decode("utf-8", errors="replace").strip()
+        result["banner"] = banner
+        result["ssh_banner_ok"] = banner.startswith("SSH-")
+        if not result["ssh_banner_ok"]:
+            result["error"] = "端口可连接，但返回内容不是 SSH 协议横幅。"
+    except socket.timeout:
+        result["error"] = "TCP 可连接但等待 SSH 协议横幅超时。" if result["tcp_ok"] else "连接服务器超时。"
+    except OSError as exc:
+        result["error"] = f"TCP 连接失败：{exc}"
+    except Exception as exc:  # noqa: BLE001
+        result["error"] = f"SSH 预检失败：{exc}"
+    finally:
+        if sock is not None:
+            try:
+                sock.close()
+            except Exception:
+                pass
+    return result
+
+
+def format_ssh_exception(cfg: SyncConfig, exc: BaseException) -> str:
+    raw = str(exc) or exc.__class__.__name__
+    lower = raw.lower()
+    prefix = f"无法连接 SSH：{cfg.remote_user}@{cfg.remote_host}:{cfg.remote_port}。"
+
+    if isinstance(exc, paramiko.AuthenticationException):
+        return prefix + "认证失败，请检查用户名、密码，以及服务器是否允许该用户使用密码登录。"
+    if isinstance(exc, paramiko.BadHostKeyException):
+        return prefix + "服务器主机密钥校验失败。"
+    if isinstance(exc, (socket.timeout, TimeoutError)):
+        return prefix + "连接或握手超时，请检查 IP、端口、防火墙和服务器负载。"
+    if isinstance(exc, OSError):
+        return prefix + f"TCP 连接失败：{raw}"
+
+    if "error reading ssh protocol banner" in lower or "banner" in lower or "eof" in lower:
+        probe = probe_ssh_banner(cfg, timeout=5.0)
+        tips = [
+            prefix + "服务器在 SSH 握手阶段没有返回有效的 SSH 协议横幅。",
+            f"预检结果：TCP={'正常' if probe.get('tcp_ok') else '失败'}；SSH横幅={'正常' if probe.get('ssh_banner_ok') else '异常'}。",
+        ]
+        if probe.get("banner"):
+            shown = str(probe["banner"]).replace("\n", " ")[:160]
+            tips.append(f"该端口返回：{shown!r}。这通常说明端口填成了网站/应用/Docker 服务端口，而不是 SSH 端口。")
+        if probe.get("error"):
+            tips.append(f"预检说明：{probe['error']}")
+        tips.append("请优先检查：远程 IP 是否正确、端口是否为 SSH 端口（通常是 22）、云服务器安全组/防火墙是否放行、sshd 是否运行、root 是否允许密码登录。")
+        return "\n".join(tips)
+
+    return prefix + raw
+
+
+def test_ssh_connection(cfg: SyncConfig, password: str) -> Dict[str, Any]:
+    """Web 控制台使用的连接测试：先读 SSH banner，再执行一个极轻量命令。"""
+    probe = probe_ssh_banner(cfg, timeout=5.0)
+    if not probe.get("tcp_ok") or not probe.get("ssh_banner_ok"):
+        return {"ok": False, "stage": "banner", **probe}
+    ctx: Optional[SSHContext] = None
+    try:
+        ctx = SSHContext(cfg, password)
+        code, out, err = ctx.exec("printf __BIDISYNC_SSH_OK__", timeout=15)
+        ok = code == 0 and "__BIDISYNC_SSH_OK__" in out
+        return {"ok": ok, "stage": "auth_exec", "banner": probe.get("banner", ""), "code": code, "stdout": out.strip(), "stderr": err.strip()}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "stage": "auth_exec", "banner": probe.get("banner", ""), "error": str(exc)}
+    finally:
+        if ctx is not None:
+            ctx.close()
+
+
 class SSHContext:
     def __init__(self, cfg: SyncConfig, password: str):
         self.cfg = cfg
@@ -462,18 +566,28 @@ class SSHContext:
     def _connect(self) -> "paramiko.SSHClient":
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(
-            hostname=self.cfg.remote_host,
-            port=self.cfg.remote_port,
-            username=self.cfg.remote_user,
-            password=self.password,
-            timeout=CONNECT_TIMEOUT,
-            banner_timeout=CONNECT_TIMEOUT,
-            auth_timeout=CONNECT_TIMEOUT,
-            look_for_keys=False,
-            allow_agent=False,
-        )
-        return client
+        try:
+            client.connect(
+                hostname=self.cfg.remote_host,
+                port=self.cfg.remote_port,
+                username=self.cfg.remote_user,
+                password=self.password,
+                timeout=CONNECT_TIMEOUT,
+                banner_timeout=SSH_BANNER_TIMEOUT,
+                auth_timeout=SSH_AUTH_TIMEOUT,
+                look_for_keys=False,
+                allow_agent=False,
+                compress=True,
+            )
+            transport = client.get_transport()
+            if transport is not None:
+                transport.set_keepalive(30)
+            return client
+        except Exception as exc:  # noqa: BLE001
+            try:
+                client.close()
+            finally:
+                raise SSHConnectionError(format_ssh_exception(self.cfg, exc)) from exc
 
     def sftp(self) -> "paramiko.SFTPClient":
         return self.client.open_sftp()
@@ -1079,89 +1193,6 @@ def human_bytes(n: int) -> str:
 
 
 # =========================
-# Docker Compose 编排
-# =========================
-
-REMOTE_MUTATING_KINDS = {"upload", "delete_remote", "mkdir_remote", "rmdir_remote"}
-
-
-def db_upload_actions(actions: Sequence[Action]) -> List[Action]:
-    return [a for a in actions if a.kind == "upload" and is_sqlite_path(a.rel)]
-
-
-def remote_mutation_actions(actions: Sequence[Action]) -> List[Action]:
-    return [a for a in actions if a.kind in REMOTE_MUTATING_KINDS]
-
-
-def docker_needed(actions: Sequence[Action], cfg: SyncConfig) -> bool:
-    return cfg.docker_enabled and bool(remote_mutation_actions(actions))
-
-
-def docker_strategy(actions: Sequence[Action], cfg: SyncConfig) -> str:
-    if not docker_needed(actions, cfg):
-        return "none"
-    if db_upload_actions(actions):
-        return "down_before_sync"
-    return "restart_after_sync"
-
-
-def print_docker_plan(actions: List[Action], cfg: SyncConfig) -> None:
-    strategy = docker_strategy(actions, cfg)
-    print("\n========== Docker Compose 计划 ==========")
-    if not cfg.docker_enabled:
-        print("Docker Compose 自动编排：已禁用。")
-        print("========================================\n")
-        return
-    if strategy == "none":
-        print("远程项目无文件级变更：不执行 docker compose。")
-        print("========================================\n")
-        return
-
-    print(f"Compose 目录 : {cfg.docker_compose_dir}")
-    print(f"停止命令    : {cfg.docker_down_cmd}")
-    print(f"启动命令    : {cfg.docker_up_cmd}")
-    db_uploads = db_upload_actions(actions)
-    if strategy == "down_before_sync":
-        print("执行顺序    : 先 docker compose down -> 同步文件 -> docker compose up -d --build")
-        print(f"触发原因    : 检测到 {len(db_uploads)} 个数据库/SQLite sidecar 文件将上传到服务器。")
-    else:
-        print("执行顺序    : 先同步文件 -> docker compose down -> docker compose up -d --build")
-        print("触发原因    : 远程代码/资源会变化，但没有数据库上传；尽量缩短停机窗口。")
-    print("========================================\n")
-
-
-class DockerComposeManager:
-    def __init__(self, cfg: SyncConfig, password: str):
-        self.cfg = cfg
-        self.password = password
-
-    def _run_compose(self, label: str, compose_command: str) -> None:
-        ctx = SSHContext(self.cfg, self.password)
-        try:
-            workdir = self.cfg.docker_compose_dir or self.cfg.remote_root
-            command = f"cd {remote_quote(workdir)} && {compose_command}"
-            logging.info("Docker Compose %s：%s", label, command)
-            print(f"\n[Docker] {label}: {command}")
-            code, out, err = ctx.exec(f"bash -lc {remote_quote(command)}", timeout=DOCKER_COMPOSE_TIMEOUT)
-            if out.strip():
-                logging.info("Docker %s stdout:\n%s", label, out.strip())
-                print(out.strip())
-            if err.strip():
-                logging.warning("Docker %s stderr:\n%s", label, err.strip())
-                print(err.strip(), file=sys.stderr)
-            if code != 0:
-                raise RuntimeError(f"docker compose {label} 失败，exit={code}")
-        finally:
-            ctx.close()
-
-    def down(self) -> None:
-        self._run_compose("down", self.cfg.docker_down_cmd)
-
-    def up(self) -> None:
-        self._run_compose("up -d --build", self.cfg.docker_up_cmd)
-
-
-# =========================
 # 传输与文件操作
 # =========================
 
@@ -1174,7 +1205,13 @@ class TransferEngine:
         self.conflict_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.trash_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    def execute(self, actions: List[Action]) -> List[Tuple[Action, Optional[BaseException]]]:
+    def execute(
+        self,
+        actions: List[Action],
+        progress_callback: Optional[Callable[[int], None]] = None,
+        event_callback: Optional[Callable[[str, Action, Optional[BaseException]], None]] = None,
+        use_tqdm: bool = True,
+    ) -> List[Tuple[Action, Optional[BaseException]]]:
         if not actions:
             return []
 
@@ -1182,27 +1219,43 @@ class TransferEngine:
         results: List[Tuple[Action, Optional[BaseException]]] = []
         result_lock = threading.Lock()
 
-        with make_progress(max(total_bytes, 1), "同步传输", unit="B") as pbar:
-            def progress(delta: int) -> None:
-                if delta <= 0:
-                    return
-                with self.progress_lock:
-                    pbar.update(delta)
+        pbar_cm = make_progress(max(total_bytes, 1), "同步传输", unit="B") if use_tqdm else None
 
-            def run_one(a: Action) -> None:
-                try:
-                    self._execute_one(a, progress)
-                    with result_lock:
-                        results.append((a, None))
-                except Exception as exc:  # noqa: BLE001
-                    logging.error("执行失败 [%s] %s: %s", a.kind, a.rel, exc)
-                    record_failure(self.cfg.local_root, a, exc)
-                    with result_lock:
-                        results.append((a, exc))
+        def progress(delta: int) -> None:
+            if delta <= 0:
+                return
+            with self.progress_lock:
+                if pbar_cm is not None:
+                    pbar_cm.update(delta)
+                if progress_callback is not None:
+                    progress_callback(delta)
+
+        def run_one(a: Action) -> None:
+            if event_callback is not None:
+                event_callback("start", a, None)
+            try:
+                self._execute_one(a, progress)
+                if event_callback is not None:
+                    event_callback("ok", a, None)
+                with result_lock:
+                    results.append((a, None))
+            except Exception as exc:  # noqa: BLE001
+                logging.error("执行失败 [%s] %s: %s", a.kind, a.rel, exc)
+                record_failure(self.cfg.local_root, a, exc)
+                if event_callback is not None:
+                    event_callback("error", a, exc)
+                with result_lock:
+                    results.append((a, exc))
+
+        try:
+            if pbar_cm is not None:
+                pbar_cm.__enter__()
 
             immediate = [a for a in actions if a.kind == "conflict_skip"]
             for a in immediate:
                 logging.warning("跳过冲突：%s - %s", a.rel, a.reason)
+                if event_callback is not None:
+                    event_callback("skip", a, None)
                 results.append((a, None))
 
             todo = [a for a in actions if a.kind != "conflict_skip"]
@@ -1212,7 +1265,13 @@ class TransferEngine:
                     fut.result()
 
             if total_bytes == 0:
-                pbar.update(1)
+                if pbar_cm is not None:
+                    pbar_cm.update(1)
+                if progress_callback is not None:
+                    progress_callback(1)
+        finally:
+            if pbar_cm is not None:
+                pbar_cm.__exit__(None, None, None)
         return results
 
     def _execute_one(self, a: Action, progress: Callable[[int], None]) -> None:
@@ -1413,6 +1472,451 @@ def unique_local_path(path: Path) -> Path:
 
 
 # =========================
+# Docker Compose 编排
+# =========================
+
+REMOTE_COMPOSE_RUNNER_PY = r"""
+import os, subprocess, sys
+workdir = sys.argv[1]
+cmd = sys.argv[2]
+timeout = int(sys.argv[3])
+if not os.path.isdir(workdir):
+    print(f"compose workdir not found: {workdir}", file=sys.stderr)
+    sys.exit(2)
+proc = subprocess.run(cmd, shell=True, cwd=workdir, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
+if proc.stdout:
+    print(proc.stdout, end="")
+if proc.stderr:
+    print(proc.stderr, end="", file=sys.stderr)
+sys.exit(proc.returncode)
+"""
+
+
+class DockerComposeManager:
+    def __init__(self, cfg: SyncConfig, password: str, log_callback: Optional[Callable[[str], None]] = None):
+        self.cfg = cfg
+        self.password = password
+        self.log_callback = log_callback
+
+    def _log(self, msg: str) -> None:
+        logging.info(msg)
+        if self.log_callback:
+            self.log_callback(msg)
+
+    def run(self, command: str, label: str) -> None:
+        if not self.cfg.docker_enabled:
+            return
+        self._log(f"Docker Compose {label}: cd {self.cfg.docker_project_dir} && {command}")
+        ctx = SSHContext(self.cfg, self.password)
+        try:
+            code, out, err = run_remote_python(
+                ctx,
+                REMOTE_COMPOSE_RUNNER_PY,
+                [self.cfg.docker_project_dir, command, str(self.cfg.docker_timeout)],
+                timeout=self.cfg.docker_timeout + 30,
+            )
+            if out.strip():
+                self._log(out.strip()[-4000:])
+            if err.strip():
+                self._log(err.strip()[-4000:])
+            if code != 0:
+                raise RuntimeError(f"Docker Compose {label} 失败，退出码 {code}")
+        finally:
+            ctx.close()
+
+    def down(self) -> None:
+        self.run(self.cfg.docker_down_cmd, "down")
+
+    def up(self) -> None:
+        self.run(self.cfg.docker_up_cmd, "up")
+
+
+def action_mutates_remote(a: Action) -> bool:
+    return a.kind in {"upload", "delete_remote", "mkdir_remote", "rmdir_remote", "align_mtime_remote"}
+
+
+def action_uploads_database(a: Action) -> bool:
+    return a.kind == "upload" and is_sqlite_path(a.rel)
+
+
+def docker_plan_for_actions(actions: List[Action], cfg: SyncConfig) -> str:
+    if not cfg.docker_enabled:
+        return "disabled"
+    if any(action_uploads_database(a) for a in actions):
+        return "down_before_sync_then_up"
+    if any(action_mutates_remote(a) for a in actions):
+        return "sync_then_restart"
+    return "no_remote_change"
+
+
+def execute_actions_with_docker(
+    cfg: SyncConfig,
+    password: str,
+    actions: List[Action],
+    progress_callback: Optional[Callable[[int], None]] = None,
+    event_callback: Optional[Callable[[str, Action, Optional[BaseException]], None]] = None,
+    log_callback: Optional[Callable[[str], None]] = None,
+    use_tqdm: bool = True,
+) -> List[Tuple[Action, Optional[BaseException]]]:
+    plan = docker_plan_for_actions(actions, cfg)
+    docker = DockerComposeManager(cfg, password, log_callback=log_callback) if cfg.docker_enabled else None
+
+    def log(msg: str) -> None:
+        logging.info(msg)
+        if log_callback:
+            log_callback(msg)
+
+    if plan == "down_before_sync_then_up" and docker:
+        log("检测到数据库文件将上传到服务器：先停止远程 Docker Compose。")
+        docker.down()
+        try:
+            engine = TransferEngine(cfg, password)
+            return engine.execute(actions, progress_callback=progress_callback, event_callback=event_callback, use_tqdm=use_tqdm)
+        finally:
+            log("恢复远程 Docker Compose：执行重建并后台启动。")
+            docker.up()
+
+    engine = TransferEngine(cfg, password)
+    results = engine.execute(actions, progress_callback=progress_callback, event_callback=event_callback, use_tqdm=use_tqdm)
+
+    failed = [exc for _, exc in results if exc is not None]
+    if plan == "sync_then_restart" and docker:
+        if failed:
+            log("存在同步失败项，跳过 Docker Compose 重启，避免部署半成品。")
+        else:
+            log("远程文件已变更：同步完成后重建并后台启动 Docker Compose。")
+            docker.down()
+            docker.up()
+    return results
+
+
+# =========================
+# Web 控制台
+# =========================
+
+SCAN_CACHE: Dict[str, Dict[str, Any]] = {}
+JOB_CACHE: Dict[str, Dict[str, Any]] = {}
+CACHE_LOCK = threading.RLock()
+
+
+def meta_to_web(meta: Optional[FileMeta]) -> Optional[Dict[str, Any]]:
+    if meta is None:
+        return None
+    return {
+        "size": meta.size,
+        "mtime_ns": meta.mtime_ns,
+        "mtime": datetime.fromtimestamp(meta.mtime_s).strftime("%Y-%m-%d %H:%M:%S"),
+        "sha256": meta.sha256,
+    }
+
+
+def action_id(index: int, a: Action) -> str:
+    return f"{index}:{a.kind}:{a.rel}"
+
+
+def action_to_web(index: int, a: Action) -> Dict[str, Any]:
+    arrow = {
+        "upload": "→", "download": "←", "delete_remote": "→ 删除远程", "delete_local": "← 删除本地",
+        "mkdir_remote": "→ 建目录", "mkdir_local": "← 建目录", "rmdir_remote": "→ 删目录", "rmdir_local": "← 删目录",
+        "align_mtime_remote": "→ 对齐时间", "align_mtime_local": "← 对齐时间", "conflict_skip": "⚠",
+    }.get(a.kind, "•")
+    depth = max(0, len(PurePosixPath(a.rel).parts) - 1)
+    return {
+        "id": action_id(index, a), "index": index, "kind": a.kind, "rel": a.rel,
+        "name": PurePosixPath(a.rel).name, "depth": depth, "arrow": arrow, "reason": a.reason,
+        "bytes": a.bytes, "bytes_human": human_bytes(a.bytes) if a.bytes else "",
+        "local": meta_to_web(a.local), "remote": meta_to_web(a.remote),
+        "is_conflict": a.kind == "conflict_skip", "is_db_upload": action_uploads_database(a),
+        "default_selected": a.kind != "conflict_skip",
+    }
+
+
+def summarize_actions(actions: List[Action]) -> Dict[str, Any]:
+    counts: Dict[str, int] = {}
+    bytes_total = 0
+    for a in actions:
+        counts[a.kind] = counts.get(a.kind, 0) + 1
+        bytes_total += a.bytes
+    return {
+        "total": len(actions), "counts": counts, "bytes": bytes_total, "bytes_human": human_bytes(bytes_total),
+        "db_upload_count": sum(1 for a in actions if action_uploads_database(a)),
+        "remote_mutation_count": sum(1 for a in actions if action_mutates_remote(a)),
+    }
+
+
+def cfg_from_web_payload(data: Dict[str, Any], base: SyncConfig) -> SyncConfig:
+    def as_int(value: Any, default: int) -> int:
+        try:
+            return int(value)
+        except Exception:
+            return default
+    return SyncConfig(
+        remote_host=str(data.get("remote_host") or base.remote_host).strip(),
+        remote_port=as_int(data.get("remote_port"), base.remote_port),
+        remote_user=str(data.get("remote_user") or base.remote_user).strip(),
+        remote_root=str(data.get("remote_root") or base.remote_root).strip(),
+        local_root=base.local_root,
+        scan_workers=base.scan_workers,
+        transfer_workers=max(1, as_int(data.get("workers"), base.transfer_workers)),
+        remote_scan_workers=base.remote_scan_workers,
+        dry_run=False,
+        yes=True,
+        no_delete=bool(data.get("no_delete", base.no_delete)),
+        only=str(data.get("only") or base.only),
+        docker_enabled=bool(data.get("docker_enabled", base.docker_enabled)),
+        docker_project_dir=str(data.get("docker_project_dir") or base.docker_project_dir).strip(),
+        docker_down_cmd=str(data.get("docker_down_cmd") or base.docker_down_cmd).strip(),
+        docker_up_cmd=str(data.get("docker_up_cmd") or base.docker_up_cmd).strip(),
+        docker_timeout=base.docker_timeout,
+        web=True,
+        web_host=base.web_host,
+        web_port=base.web_port,
+    )
+
+
+def run_scan_for_web(cfg: SyncConfig, password: str) -> Dict[str, Any]:
+    preflight(cfg)
+    local_manifest = read_local_manifest(cfg.local_root)
+    remote_manifest = read_remote_manifest(cfg, password)
+    baseline = choose_manifest(local_manifest, remote_manifest)
+    with cf.ThreadPoolExecutor(max_workers=2) as ex:
+        fut_local = ex.submit(scan_local, cfg.local_root, cfg.scan_workers)
+        fut_remote = ex.submit(scan_remote, cfg, password)
+        local_snap = fut_local.result()
+        remote_snap = fut_remote.result()
+    actions = plan_sync(local_snap, remote_snap, baseline, cfg)
+    scan_id = uuid.uuid4().hex
+    with CACHE_LOCK:
+        SCAN_CACHE[scan_id] = {"cfg": cfg, "baseline": baseline, "local_snap": local_snap, "remote_snap": remote_snap, "actions": actions, "created_at": time.time()}
+        if len(SCAN_CACHE) > 10:
+            old_ids = sorted(SCAN_CACHE, key=lambda k: SCAN_CACHE[k]["created_at"])[:-10]
+            for old_id in old_ids:
+                SCAN_CACHE.pop(old_id, None)
+    return {
+        "scan_id": scan_id,
+        "local_root": str(cfg.local_root),
+        "remote": f"{cfg.remote_user}@{cfg.remote_host}:{cfg.remote_root}",
+        "baseline_saved_at": baseline.saved_at,
+        "actions": [action_to_web(i, a) for i, a in enumerate(actions)],
+        "summary": summarize_actions(actions),
+        "docker_plan": docker_plan_for_actions(actions, cfg),
+    }
+
+
+def start_web_sync_job(scan_id: str, selected_ids: List[str], password: str) -> str:
+    with CACHE_LOCK:
+        scan = SCAN_CACHE.get(scan_id)
+        if not scan:
+            raise KeyError("扫描结果已过期，请重新扫描。")
+        cfg: SyncConfig = scan["cfg"]
+        baseline: Manifest = scan["baseline"]
+        local_snap: Snapshot = scan["local_snap"]
+        remote_snap: Snapshot = scan["remote_snap"]
+        actions: List[Action] = scan["actions"]
+        by_id = {action_id(i, a): a for i, a in enumerate(actions)}
+        selected = [by_id[x] for x in selected_ids if x in by_id]
+
+    job_id = uuid.uuid4().hex
+    job = {"id": job_id, "status": "queued", "created_at": now_utc_iso(), "updated_at": now_utc_iso(),
+           "total_bytes": max(1, sum(a.bytes for a in selected if a.kind in {"upload", "download"})),
+           "done_bytes": 0, "total_items": len(selected), "done_items": 0, "failed_items": 0,
+           "logs": [], "error": None, "docker_plan": docker_plan_for_actions(selected, cfg)}
+    with CACHE_LOCK:
+        JOB_CACHE[job_id] = job
+
+    def log(msg: str) -> None:
+        with CACHE_LOCK:
+            job["logs"].append(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+            job["logs"] = job["logs"][-500:]
+            job["updated_at"] = now_utc_iso()
+
+    def add_progress(delta: int) -> None:
+        with CACHE_LOCK:
+            job["done_bytes"] = min(job["total_bytes"], int(job["done_bytes"]) + max(0, int(delta)))
+            job["updated_at"] = now_utc_iso()
+
+    def on_event(state: str, action: Action, exc: Optional[BaseException]) -> None:
+        if state == "start":
+            log(f"开始 {action.kind}: {action.rel}")
+        elif state in {"ok", "skip"}:
+            with CACHE_LOCK:
+                job["done_items"] += 1
+            log(("完成" if state == "ok" else "跳过冲突") + f" {action.kind}: {action.rel}")
+        elif state == "error":
+            with CACHE_LOCK:
+                job["done_items"] += 1
+                job["failed_items"] += 1
+            log(f"失败 {action.kind}: {action.rel} - {exc}")
+
+    def worker() -> None:
+        try:
+            with CACHE_LOCK:
+                job["status"] = "running"
+                job["updated_at"] = now_utc_iso()
+            if not selected:
+                log("没有选择任何同步项。")
+                with CACHE_LOCK:
+                    job["status"] = "done"
+                return
+            log(f"开始执行选中同步项：{len(selected)} 项；Docker 策略：{job['docker_plan']}")
+            results = execute_actions_with_docker(cfg, password, selected, progress_callback=add_progress, event_callback=on_event, log_callback=log, use_tqdm=False)
+            failed_rels = {a.rel for a, exc in results if exc is not None}
+            new_manifest = build_new_manifest(local_snap, remote_snap, baseline, selected, failed_rels)
+            write_local_manifest(cfg.local_root, new_manifest)
+            write_remote_manifest(cfg, password, new_manifest)
+            with CACHE_LOCK:
+                job["status"] = "failed" if failed_rels else "done"
+                job["error"] = f"{len(failed_rels)} 项失败" if failed_rels else None
+                job["updated_at"] = now_utc_iso()
+            log(f"同步结束：成功 {len(results) - len(failed_rels)} 项，失败 {len(failed_rels)} 项。")
+        except Exception as exc:  # noqa: BLE001
+            logging.exception("Web 同步任务失败：%s", exc)
+            with CACHE_LOCK:
+                job["status"] = "failed"
+                job["error"] = str(exc)
+                job["updated_at"] = now_utc_iso()
+            log(f"任务异常：{exc}")
+
+    threading.Thread(target=worker, name=f"web-sync-{job_id[:8]}", daemon=True).start()
+    return job_id
+
+
+WEB_HTML = r"""
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>bidisync 可视化同步控制台</title>
+<style>
+:root{--bg:#0f172a;--panel:#111827;--line:#243044;--text:#e5e7eb;--muted:#94a3b8;--blue:#60a5fa;--green:#34d399;--yellow:#fbbf24}*{box-sizing:border-box}body{margin:0;background:linear-gradient(135deg,#0f172a,#111827 60%,#172036);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Microsoft YaHei",Arial,sans-serif;font-size:14px}header{padding:22px 28px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;background:rgba(15,23,42,.86);position:sticky;top:0;z-index:5}h1{font-size:20px;margin:0}.sub{color:var(--muted);font-size:12px;margin-top:4px}main{padding:22px;display:grid;gap:16px}.card{background:rgba(17,24,39,.94);border:1px solid var(--line);border-radius:18px;box-shadow:0 18px 60px rgba(0,0,0,.25);overflow:hidden}.card h2{font-size:15px;margin:0;padding:14px 18px;border-bottom:1px solid var(--line)}.form{display:grid;grid-template-columns:repeat(12,1fr);gap:12px;padding:16px 18px}.field{display:flex;flex-direction:column;gap:6px;grid-column:span 3}.w2{grid-column:span 2}.w4{grid-column:span 4}.w5{grid-column:span 5}.w12{grid-column:span 12}label{color:var(--muted);font-size:12px}input,select{width:100%;background:#0b1220;color:var(--text);border:1px solid #263449;border-radius:10px;padding:10px 11px;outline:none}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.btn{background:#2563eb;border:0;color:white;border-radius:11px;padding:10px 15px;cursor:pointer;font-weight:700}.btn.secondary{background:#334155}.btn.green{background:#059669}.btn:disabled{opacity:.55;cursor:not-allowed}.check{display:flex;align-items:center;gap:8px}.stats{display:flex;gap:10px;flex-wrap:wrap;padding:14px 18px;border-top:1px solid var(--line)}.pill{background:#0b1220;border:1px solid var(--line);border-radius:999px;padding:7px 10px;color:var(--muted)}.pill b{color:white}.toolbar{display:flex;gap:10px;justify-content:space-between;align-items:center;padding:12px 18px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:#0b1220}.toolbar input{max-width:360px}.diff-head,.diff-row{display:grid;grid-template-columns:minmax(280px,1fr) 110px minmax(280px,1fr) 250px;align-items:center}.diff-head{position:sticky;top:72px;z-index:3;background:#111827;color:var(--muted);border-bottom:1px solid var(--line);font-size:12px}.diff-head div{padding:10px 14px}.diff-list{max-height:60vh;overflow:auto}.diff-row{border-bottom:1px solid rgba(36,48,68,.72)}.diff-row:hover{background:rgba(96,165,250,.07)}.cell{padding:8px 14px;min-width:0}.path{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.name{font-family:Consolas,"JetBrains Mono",monospace}.muted{color:var(--muted)}.arrow{text-align:center;font-size:18px;font-weight:900}.arrow.upload{color:var(--green)}.arrow.download{color:var(--blue)}.arrow.warn{color:var(--yellow)}.kind{font-size:12px;border:1px solid var(--line);padding:4px 7px;border-radius:8px;color:var(--muted)}.db{color:var(--yellow);font-weight:800}.reason{font-size:12px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.progress{height:14px;background:#0b1220;border:1px solid var(--line);border-radius:999px;overflow:hidden}.bar{height:100%;width:0;background:linear-gradient(90deg,#2563eb,#34d399);transition:width .25s}.log{background:#020617;color:#cbd5e1;font-family:Consolas,monospace;font-size:12px;line-height:1.55;padding:14px;height:230px;overflow:auto;white-space:pre-wrap}@media(max-width:980px){.field,.w2,.w4,.w5{grid-column:span 12}.diff-head,.diff-row{grid-template-columns:1fr 70px 1fr}.diff-head div:nth-child(4),.diff-row .meta{display:none}}
+</style>
+</head>
+<body>
+<header><div><h1>bidisync 可视化同步控制台</h1><div class="sub">左侧本地项目，右侧云服务器项目；只比较文件状态、路径、mtime、size 和 SHA-256。</div></div><div class="pill">SSH 密码仅内存使用</div></header>
+<main>
+<section class="card"><h2>连接与同步配置</h2><div class="form">
+<div class="field"><label>远程 IP</label><input id="remote_host" value="{{ remote_host }}"></div><div class="field w2"><label>端口</label><input id="remote_port" value="{{ remote_port }}"></div><div class="field w2"><label>用户</label><input id="remote_user" value="{{ remote_user }}"></div><div class="field w5"><label>远程项目路径</label><input id="remote_root" value="{{ remote_root }}"></div>
+<div class="field w4"><label>SSH 密码</label><input id="password" type="password" autocomplete="current-password" placeholder="在这里输入服务器密码"></div><div class="field w2"><label>方向过滤</label><select id="only"><option value="all">全部</option><option value="upload">只看上传</option><option value="download">只看下载</option></select></div><div class="field w2"><label>并发传输</label><input id="workers" type="number" min="1" max="32" value="{{ workers }}"></div><div class="field w4"><label>选项</label><div class="row"><label class="check"><input id="no_delete" type="checkbox">不执行删除传播</label><label class="check"><input id="docker_enabled" type="checkbox" checked>启用 Docker Compose</label></div></div>
+<div class="field w4"><label>Docker Compose 目录</label><input id="docker_project_dir" value="{{ docker_project_dir }}"></div><div class="field w4"><label>down 命令</label><input id="docker_down_cmd" value="{{ docker_down_cmd }}"></div><div class="field w4"><label>up 命令</label><input id="docker_up_cmd" value="{{ docker_up_cmd }}"></div>
+<div class="field w12"><div class="row"><button class="btn secondary" id="testBtn">测试 SSH 连接</button><button class="btn" id="scanBtn">扫描差异</button><button class="btn green" id="syncBtn" disabled>同步选中项</button><button class="btn secondary" id="selectAllBtn" disabled>全选</button><button class="btn secondary" id="selectNoneBtn" disabled>全不选</button><span class="muted" id="status">等待扫描</span></div></div>
+</div><div class="stats" id="stats"></div></section>
+<section class="card"><h2>差异对比</h2><div class="toolbar"><input id="filter" placeholder="过滤路径，例如 templates、.py、db"><div class="muted" id="selectedInfo">未选择</div></div><div class="diff-head"><div>本地 Local</div><div class="arrow">操作</div><div>云服务器 Remote</div><div>状态</div></div><div class="diff-list" id="diffList"></div></section>
+<section class="card"><h2>同步进度</h2><div style="padding:16px 18px;display:grid;gap:12px"><div class="progress"><div class="bar" id="bar"></div></div><div class="muted" id="progressText">尚未开始</div><div class="log" id="log"></div></div></section>
+</main>
+<script>
+let scanId=null,actions=[],selected=new Set(),currentJob=null;const $=id=>document.getElementById(id);
+function payload(){return{remote_host:$('remote_host').value.trim(),remote_port:$('remote_port').value.trim(),remote_user:$('remote_user').value.trim(),remote_root:$('remote_root').value.trim(),password:$('password').value,only:$('only').value,workers:$('workers').value,no_delete:$('no_delete').checked,docker_enabled:$('docker_enabled').checked,docker_project_dir:$('docker_project_dir').value.trim(),docker_down_cmd:$('docker_down_cmd').value.trim(),docker_up_cmd:$('docker_up_cmd').value.trim()};}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function setBusy(b,msg){$('testBtn').disabled=b;$('scanBtn').disabled=b;$('syncBtn').disabled=b||!scanId||selected.size===0;$('status').textContent=msg||'';}
+function renderStats(summary,dockerPlan){const c=summary.counts||{};$('stats').innerHTML=[`<span class="pill">总差异 <b>${summary.total}</b></span>`,`<span class="pill">上传 <b>${c.upload||0}</b></span>`,`<span class="pill">下载 <b>${c.download||0}</b></span>`,`<span class="pill">冲突 <b>${c.conflict_skip||0}</b></span>`,`<span class="pill">传输量 <b>${summary.bytes_human}</b></span>`,`<span class="pill">数据库上传 <b>${summary.db_upload_count}</b></span>`,`<span class="pill">Docker 策略 <b>${dockerPlan}</b></span>`].join('');}
+function renderActions(){const q=$('filter').value.trim().toLowerCase(),box=$('diffList');let html='',shown=0;for(const a of actions){if(q&&!a.rel.toLowerCase().includes(q))continue;shown++;const checked=selected.has(a.id)?'checked':'';const cls=a.kind==='upload'?'upload':(a.kind==='download'?'download':(a.kind==='conflict_skip'?'warn':''));const indent=a.depth*18;const lm=a.local?`${esc(a.local.mtime)} · ${esc(a.bytes_human||'')}`:'不存在';const rm=a.remote?`${esc(a.remote.mtime)} · ${esc(a.bytes_human||'')}`:'不存在';html+=`<div class="diff-row" title="${esc(a.reason)}"><div class="cell"><label class="row" style="gap:8px"><input type="checkbox" data-id="${esc(a.id)}" ${checked}><span class="path name" style="padding-left:${indent}px">${esc(a.rel)}</span></label><div class="reason">${lm}</div></div><div class="cell arrow ${cls}">${esc(a.arrow)}</div><div class="cell"><div class="path name" style="padding-left:${indent}px">${esc(a.rel)}</div><div class="reason">${rm}</div></div><div class="cell meta"><span class="kind">${esc(a.kind)}</span> ${a.is_db_upload?'<span class="db">DB</span>':''}<div class="reason">${esc(a.reason)}</div></div></div>`}box.innerHTML=html||'<div class="cell muted">没有匹配的差异。</div>';box.querySelectorAll('input[type=checkbox]').forEach(cb=>cb.onchange=()=>{cb.checked?selected.add(cb.dataset.id):selected.delete(cb.dataset.id);updateSelectedInfo();});updateSelectedInfo(shown);}
+function updateSelectedInfo(shown){$('selectedInfo').textContent=`已选 ${selected.size} 项${shown!==undefined?'，当前显示 '+shown+' 项':''}`;$('syncBtn').disabled=!scanId||selected.size===0;$('selectAllBtn').disabled=!scanId;$('selectNoneBtn').disabled=!scanId;}
+$('filter').oninput=renderActions;$('selectAllBtn').onclick=()=>{actions.forEach(a=>{if(a.kind!=='conflict_skip')selected.add(a.id)});renderActions()};$('selectNoneBtn').onclick=()=>{selected.clear();renderActions()};
+$('testBtn').onclick=async()=>{if(!$('password').value){alert('请先输入 SSH 密码');return}setBusy(true,'正在测试 SSH 连接...');$('log').textContent='';try{const r=await fetch('/api/test-ssh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload())});const data=await r.json();if(!r.ok||!data.ok)throw new Error(data.error||data.message||'SSH 连接测试失败');$('status').textContent='SSH 连接正常';$('log').textContent=`SSH 连接正常\nBanner: ${data.banner||''}`;}catch(e){$('status').textContent='SSH 连接失败';$('log').textContent=e.message;alert(e.message)}finally{setBusy(false,$('status').textContent)}};
+$('scanBtn').onclick=async()=>{if(!$('password').value){alert('请先输入 SSH 密码');return}setBusy(true,'正在扫描本地和远程...');$('log').textContent='';try{const r=await fetch('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload())});const data=await r.json();if(!r.ok)throw new Error(data.error||'扫描失败');scanId=data.scan_id;actions=data.actions;selected=new Set(actions.filter(a=>a.default_selected).map(a=>a.id));renderStats(data.summary,data.docker_plan);renderActions();$('status').textContent=`扫描完成：${actions.length} 项差异`}catch(e){$('status').textContent='扫描失败';alert(e.message)}finally{setBusy(false,$('status').textContent)}};
+$('syncBtn').onclick=async()=>{if(!scanId){alert('请先扫描');return}if(!$('password').value){alert('请先输入 SSH 密码');return}if(selected.size===0){alert('没有选择同步项');return}if(!confirm(`确认同步选中的 ${selected.size} 项？`))return;setBusy(true,'正在创建同步任务...');$('bar').style.width='0%';$('progressText').textContent='任务已提交';$('log').textContent='';try{const body=payload();body.scan_id=scanId;body.selected_ids=[...selected];const r=await fetch('/api/start-sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw new Error(data.error||'启动失败');currentJob=data.job_id;pollJob()}catch(e){alert(e.message);setBusy(false,'同步启动失败')}};
+async function pollJob(){if(!currentJob)return;const r=await fetch('/api/job/'+currentJob);const j=await r.json();const pct=Math.min(100,Math.round((j.done_bytes||0)/(j.total_bytes||1)*100));$('bar').style.width=pct+'%';$('progressText').textContent=`状态：${j.status}；文件 ${j.done_items||0}/${j.total_items||0}；失败 ${j.failed_items||0}；传输 ${pct}%`+(j.error?`；${j.error}`:'');$('log').textContent=(j.logs||[]).join('\n');$('log').scrollTop=$('log').scrollHeight;if(j.status==='running'||j.status==='queued')setTimeout(pollJob,1000);else setBusy(false,j.status==='done'?'同步完成':'同步失败')}
+</script>
+</body></html>
+"""
+
+
+def run_web_server(base_cfg: SyncConfig) -> int:
+    try:
+        from flask import Flask, jsonify, render_template_string, request
+    except ImportError:
+        print("缺少依赖 flask，请先执行：pip install flask paramiko tqdm", file=sys.stderr)
+        return 1
+
+    preflight(base_cfg)
+    setup_logging(base_cfg.local_root)
+    app = Flask(__name__)
+
+    @app.get("/")
+    def index():
+        return render_template_string(
+            WEB_HTML,
+            remote_host=base_cfg.remote_host,
+            remote_port=base_cfg.remote_port,
+            remote_user=base_cfg.remote_user,
+            remote_root=base_cfg.remote_root,
+            workers=base_cfg.transfer_workers,
+            docker_project_dir=base_cfg.docker_project_dir,
+            docker_down_cmd=base_cfg.docker_down_cmd,
+            docker_up_cmd=base_cfg.docker_up_cmd,
+        )
+
+    @app.post("/api/test-ssh")
+    def api_test_ssh():
+        try:
+            data = request.get_json(force=True) or {}
+            password = str(data.get("password") or "")
+            if not password:
+                return jsonify(ok=False, error="请在页面输入 SSH 密码。"), 400
+            cfg = cfg_from_web_payload(data, base_cfg)
+            result = test_ssh_connection(cfg, password)
+            if result.get("ok"):
+                return jsonify(ok=True, message="SSH 连接正常。", banner=result.get("banner", ""))
+            message = result.get("error") or result.get("message") or "SSH 连接测试失败。"
+            if result.get("stage") == "banner":
+                message = format_ssh_exception(cfg, paramiko.SSHException("Error reading SSH protocol banner"))
+            return jsonify(ok=False, error=message, detail=result), 400
+        except Exception as exc:  # noqa: BLE001
+            logging.exception("Web SSH 测试失败：%s", exc)
+            return jsonify(ok=False, error=str(exc)), 500
+
+    @app.post("/api/scan")
+    def api_scan():
+        try:
+            data = request.get_json(force=True) or {}
+            password = str(data.get("password") or "")
+            if not password:
+                return jsonify(error="请在页面输入 SSH 密码。"), 400
+            cfg = cfg_from_web_payload(data, base_cfg)
+            result = run_scan_for_web(cfg, password)
+            return jsonify(result)
+        except SSHConnectionError as exc:
+            logging.warning("Web 扫描 SSH 连接失败：%s", exc)
+            return jsonify(error=str(exc)), 400
+        except Exception as exc:  # noqa: BLE001
+            logging.exception("Web 扫描失败：%s", exc)
+            return jsonify(error=str(exc)), 500
+
+    @app.post("/api/start-sync")
+    def api_start_sync():
+        try:
+            data = request.get_json(force=True) or {}
+            password = str(data.get("password") or "")
+            if not password:
+                return jsonify(error="请在页面输入 SSH 密码。"), 400
+            scan_id = str(data.get("scan_id") or "")
+            selected_ids = list(data.get("selected_ids") or [])
+            with CACHE_LOCK:
+                if scan_id in SCAN_CACHE:
+                    SCAN_CACHE[scan_id]["cfg"] = cfg_from_web_payload(data, base_cfg)
+            job_id = start_web_sync_job(scan_id, selected_ids, password)
+            return jsonify(job_id=job_id)
+        except SSHConnectionError as exc:
+            logging.warning("Web 同步 SSH 连接失败：%s", exc)
+            return jsonify(error=str(exc)), 400
+        except Exception as exc:  # noqa: BLE001
+            logging.exception("Web 同步启动失败：%s", exc)
+            return jsonify(error=str(exc)), 500
+
+    @app.get("/api/job/<job_id>")
+    def api_job(job_id: str):
+        with CACHE_LOCK:
+            job = JOB_CACHE.get(job_id)
+            if not job:
+                return jsonify(error="任务不存在或已过期"), 404
+            return jsonify(dict(job))
+
+    print(f"\nWeb 控制台已启动：http://{base_cfg.web_host}:{base_cfg.web_port}")
+    print("注意：Web 页面会让你输入 SSH 密码；密码只在请求内存中使用，不写入文件。\n")
+    app.run(host=base_cfg.web_host, port=base_cfg.web_port, debug=False, threaded=True)
+    return 0
+
+# =========================
 # 同步后清单生成
 # =========================
 
@@ -1509,10 +2013,13 @@ def parse_args() -> SyncConfig:
     p.add_argument("--remote-root", default=REMOTE_PROJECT_ROOT, help="覆盖脚本内 REMOTE_PROJECT_ROOT")
     p.add_argument("--remote-user", default=REMOTE_USER, help="覆盖脚本内 REMOTE_USER")
     p.add_argument("--remote-port", type=int, default=REMOTE_PORT, help="覆盖脚本内 REMOTE_PORT")
-    p.add_argument("--no-docker", action="store_true", help="禁用远程 Docker Compose 自动 down/up")
-    p.add_argument("--docker-dir", default=None, help="远程 docker-compose.yml 所在目录；默认使用 --remote-root")
-    p.add_argument("--docker-down-cmd", default=DOCKER_COMPOSE_DOWN_COMMAND, help="远程停止命令，默认：docker compose down")
-    p.add_argument("--docker-up-cmd", default=DOCKER_COMPOSE_UP_COMMAND, help="远程启动/重建命令，默认：docker compose up -d --build")
+    p.add_argument("--no-docker", action="store_true", help="禁用远程 Docker Compose 自动编排")
+    p.add_argument("--docker-dir", default=DOCKER_COMPOSE_PROJECT_DIR, help="远程 docker compose 执行目录")
+    p.add_argument("--docker-down-cmd", default=DOCKER_COMPOSE_DOWN_COMMAND, help="远程停止命令")
+    p.add_argument("--docker-up-cmd", default=DOCKER_COMPOSE_UP_COMMAND, help="远程重建启动命令")
+    p.add_argument("--web", action="store_true", help="启动 Flask Web 控制台")
+    p.add_argument("--web-host", default=WEB_HOST, help="Web 控制台监听地址")
+    p.add_argument("--web-port", type=int, default=WEB_PORT, help="Web 控制台监听端口")
     args = p.parse_args()
 
     return SyncConfig(
@@ -1527,18 +2034,20 @@ def parse_args() -> SyncConfig:
         no_delete=args.no_delete,
         only=args.only,
         docker_enabled=not args.no_docker,
-        docker_compose_dir=args.docker_dir or args.remote_root,
+        docker_project_dir=args.docker_dir,
         docker_down_cmd=args.docker_down_cmd,
         docker_up_cmd=args.docker_up_cmd,
+        web=args.web,
+        web_host=args.web_host,
+        web_port=args.web_port,
     )
-
 
 def preflight(cfg: SyncConfig) -> None:
     if not cfg.local_root.exists():
         raise RuntimeError(f"本地根目录不存在：{cfg.local_root}")
     if not cfg.remote_root.startswith("/"):
         raise RuntimeError("远程项目路径必须是 Ubuntu 绝对路径，例如 /root/app")
-    if cfg.docker_enabled and not cfg.docker_compose_dir.startswith("/"):
+    if cfg.docker_enabled and not cfg.docker_project_dir.startswith("/"):
         raise RuntimeError("DOCKER_COMPOSE_PROJECT_DIR / --docker-dir 必须是 Ubuntu 绝对路径，例如 /root/app")
     if DELETE_MODE not in {"trash", "delete"}:
         raise RuntimeError("DELETE_MODE 只能是 trash 或 delete")
@@ -1559,18 +2068,18 @@ def warn_sqlite_actions(actions: List[Action]) -> None:
     db_actions = [a for a in actions if a.kind in {"upload", "download"} and is_sqlite_path(a.rel)]
     if not db_actions:
         return
-    print("\n注意：同步计划中包含 SQLite 数据库或 WAL/SHM sidecar 文件：")
+    print("\n注意：同步计划中包含 SQLite 数据库文件：")
     for a in db_actions[:20]:
         print(f"  - {a.kind}: {a.rel}")
     if len(db_actions) > 20:
-        print(f"  ... 其余 {len(db_actions) - 20} 个数据库相关文件省略")
-    if db_upload_actions(actions):
-        print("检测到数据库将上传到服务器：启用 Docker 编排时，会先 down 再同步，最后 up -d --build。")
-    print("提醒：这是文件级同步，不能合并两边 SQLite 中不同的业务记录。\n")
+        print(f"  ... 其余 {len(db_actions) - 20} 个数据库文件省略")
+    print("建议先停止 Flask/Gunicorn/后台任务，或确认数据库没有写入，再执行同步。\n")
 
 
 def main() -> int:
     cfg = parse_args()
+    if cfg.web:
+        return run_web_server(cfg)
     preflight(cfg)
     log_file = setup_logging(cfg.local_root)
 
@@ -1581,7 +2090,7 @@ def main() -> int:
     print(f"传输并发  : {cfg.transfer_workers}")
     print(f"Docker编排: {'启用' if cfg.docker_enabled else '禁用'}")
     if cfg.docker_enabled:
-        print(f"Compose目录: {cfg.docker_compose_dir}")
+        print(f"Compose目录: {cfg.docker_project_dir}")
     print(f"日志文件  : {log_file}")
     print("==================================\n")
 
@@ -1601,7 +2110,6 @@ def main() -> int:
 
         actions = plan_sync(local_snap, remote_snap, baseline, cfg)
         print_plan(actions)
-        print_docker_plan(actions, cfg)
         warn_sqlite_actions(actions)
 
         conflict_skips = [a for a in actions if a.kind == "conflict_skip"]
@@ -1620,41 +2128,11 @@ def main() -> int:
             write_remote_manifest(cfg, password, new_manifest)
             return 0
 
-        engine = TransferEngine(cfg, password)
-        docker = DockerComposeManager(cfg, password) if docker_needed(actions, cfg) else None
-        strategy = docker_strategy(actions, cfg)
-        docker_error: Optional[BaseException] = None
-
-        if strategy == "down_before_sync":
-            assert docker is not None
-            docker.down()
-            try:
-                results = engine.execute(actions)
-            finally:
-                try:
-                    docker.up()
-                except Exception as exc:  # noqa: BLE001
-                    docker_error = exc
-                    logging.error("同步后 Docker Compose 启动失败：%s", exc)
-        else:
-            results = engine.execute(actions)
-
+        logging.info("Docker Compose 策略：%s", docker_plan_for_actions(actions, cfg))
+        results = execute_actions_with_docker(cfg, password, actions, use_tqdm=True)
         failed_rels = {a.rel for a, exc in results if exc is not None}
         failed_count = len(failed_rels)
         ok_count = len(results) - failed_count
-
-        if strategy == "restart_after_sync":
-            assert docker is not None
-            if failed_count:
-                logging.warning("同步存在失败项，为避免部署半成品，跳过 Docker Compose 重启。")
-                print("\n同步存在失败项：已跳过 docker compose down/up，避免部署半成品。")
-            else:
-                try:
-                    docker.down()
-                    docker.up()
-                except Exception as exc:  # noqa: BLE001
-                    docker_error = exc
-                    logging.error("Docker Compose 重启失败：%s", exc)
 
         if failed_count:
             logging.warning("同步完成但有失败：成功 %d，失败 %d。失败详情见 %s", ok_count, failed_count, cfg.local_root / SYNC_DIR_NAME / FAILURES_NAME)
@@ -1665,14 +2143,10 @@ def main() -> int:
         write_local_manifest(cfg.local_root, new_manifest)
         write_remote_manifest(cfg, password, new_manifest)
         print(f"\n同步完成：成功 {ok_count} 项，失败 {failed_count} 项。")
-        if docker_error:
-            print(f"Docker Compose 操作失败：{docker_error}")
-            return 4
         if failed_count:
             print(f"失败详情：{cfg.local_root / SYNC_DIR_NAME / FAILURES_NAME}")
             return 2
         return 0
-
 
     except KeyboardInterrupt:
         print("\n用户中断。")
