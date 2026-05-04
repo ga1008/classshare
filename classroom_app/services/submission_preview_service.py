@@ -116,11 +116,13 @@ def ensure_submission_access(conn, submission_id: int, user: dict | None) -> dic
             a.course_id,
             a.class_offering_id,
             c.created_by_teacher_id,
-            o.teacher_id AS offering_teacher_id
+            o.teacher_id AS offering_teacher_id,
+            lsea.id AS personal_stage_attempt_id
         FROM submissions s
         JOIN assignments a ON a.id = s.assignment_id
         JOIN courses c ON c.id = a.course_id
         LEFT JOIN class_offerings o ON o.id = a.class_offering_id
+        LEFT JOIN learning_stage_exam_attempts lsea ON lsea.assignment_id = a.id
         WHERE s.id = ?
         LIMIT 1
         """,
@@ -138,6 +140,8 @@ def ensure_submission_access(conn, submission_id: int, user: dict | None) -> dic
     if role == "teacher":
         if not _can_teacher_access_submission(row, user_id):
             raise HTTPException(403, "Permission denied")
+        if row["personal_stage_attempt_id"] is not None:
+            raise HTTPException(404, "Submission not found")
         return dict(row)
 
     raise HTTPException(403, "Permission denied")
@@ -154,12 +158,14 @@ def ensure_submission_file_access(conn, file_id: int, user: dict | None) -> dict
             a.course_id,
             a.class_offering_id,
             c.created_by_teacher_id,
-            o.teacher_id AS offering_teacher_id
+            o.teacher_id AS offering_teacher_id,
+            lsea.id AS personal_stage_attempt_id
         FROM submission_files sf
         JOIN submissions s ON s.id = sf.submission_id
         JOIN assignments a ON a.id = s.assignment_id
         JOIN courses c ON c.id = a.course_id
         LEFT JOIN class_offerings o ON o.id = a.class_offering_id
+        LEFT JOIN learning_stage_exam_attempts lsea ON lsea.assignment_id = a.id
         WHERE sf.id = ?
         LIMIT 1
         """,
@@ -175,6 +181,8 @@ def ensure_submission_file_access(conn, file_id: int, user: dict | None) -> dict
     elif role == "teacher":
         if not _can_teacher_access_submission(row, user_id):
             raise HTTPException(403, "Permission denied")
+        if row["personal_stage_attempt_id"] is not None:
+            raise HTTPException(404, "File not found")
     else:
         raise HTTPException(403, "Permission denied")
 

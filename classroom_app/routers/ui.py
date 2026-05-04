@@ -59,6 +59,12 @@ from ..services.materials_service import attach_home_learning_material_briefs, a
 from ..services.learning_progress_service import (
     build_class_learning_overview,
     build_student_global_cultivation_profile,
+    get_learning_level,
+    get_learning_stage_options,
+    is_personal_stage_exam_assignment,
+    is_personal_stage_exam_paper,
+    personal_stage_assignment_filter_sql,
+    public_level_payload,
     serialize_student_learning_progress,
     student_can_access_assignment,
 )
@@ -67,6 +73,8 @@ from ..services.message_center_service import (
     is_super_admin_teacher,
 )
 from ..services.session_material_generation_service import attach_generation_tasks
+from ..services.student_insight_service import build_teacher_student_insight
+from ..services.todo_service import build_classroom_todo_overview
 from ..services.student_auth_service import (
     PASSWORD_POLICY_HINT,
     build_password_setup_token,
@@ -101,6 +109,9 @@ def _enrich_assignment_upload_config(assignment: dict) -> dict:
     allowed_file_types = decode_allowed_file_types_json(assignment.get("allowed_file_types_json"))
     assignment["allowed_file_types"] = allowed_file_types
     assignment["allowed_file_types_label"] = summarize_allowed_file_types(allowed_file_types)
+    stage_key = assignment.get("learning_stage_key")
+    stage_level = get_learning_level(stage_key) if stage_key else None
+    assignment["learning_stage"] = public_level_payload(stage_level) if stage_level else None
     return enrich_assignment_runtime_view(assignment)
 
 
@@ -765,11 +776,17 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
         files_info = [{"id": row['id'], "name": row['file_name'], "size": format_size(row['file_size'])} for row in files_cursor]
 
         close_overdue_assignments(conn)
+        teacher_assignment_filter = (
+            f"AND {personal_stage_assignment_filter_sql('assignments')}"
+            if user["role"] == "teacher"
+            else ""
+        )
         assignments_cursor = conn.execute(
-            """
+            f"""
             SELECT *
             FROM assignments
             WHERE course_id = ? AND class_offering_id = ?
+            {teacher_assignment_filter}
             ORDER BY created_at DESC
             """,
             (course_id, class_offering_id)
@@ -847,6 +864,12 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
             shared_files=files_info,
         )
         classroom_page["teaching_plan"] = teaching_plan
+        classroom_page["todo_overview"] = build_classroom_todo_overview(
+            conn,
+            class_offering_id=class_offering_id,
+            user=user,
+            teaching_plan=teaching_plan,
+        )
         if user["role"] == "student":
             classroom_page["learning_progress"] = serialize_student_learning_progress(
                 conn,
@@ -894,6 +917,7 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
         "shared_files": files_info,
         "assignments": assignments,
         "student_security_summary": student_security_summary,
+        "learning_stage_options": get_learning_stage_options(),
     })
 
 # ============================
@@ -913,6 +937,18 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
         assignment_back_url = _assignment_back_url(assignment)
         if user["role"] == "student" and not student_can_access_assignment(conn, assignment_id, int(user["id"])):
             raise HTTPException(403, "该破境试炼只对指定学生开放")
+        if user["role"] == "teacher" and is_personal_stage_exam_assignment(conn, assignment_id):
+            return templates.TemplateResponse(
+                request,
+                "status.html",
+                {
+                    "request": request,
+                    "success": False,
+                    "message": "学生个人试炼不进入教师作业与考试明细，请在班级修行统计中查看汇总情况。",
+                    "back_url": assignment_back_url,
+                },
+                status_code=404,
+            )
 
         # 如果是试卷型作业且用户是学生 → 重定向到考试页面
         if assignment.get('exam_paper_id') and user['role'] == 'student':
@@ -965,6 +1001,7 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
                 "assignment": assignment,
                 "assignment_back_url": assignment_back_url,
                 "exam_questions": exam_questions,
+                "learning_stage_options": get_learning_stage_options(),
                 "max_upload_mb": MAX_UPLOAD_SIZE_MB,
                 "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
                 "max_per_file_mb": MAX_SUBMISSION_PER_FILE_MB,
@@ -1084,6 +1121,13 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
             (user['id'],)
         )
         my_classes = [dict(row) for row in my_classes_cursor.fetchall()]
+        students_by_class = _load_teacher_class_student_rows(
+            conn,
+            int(user["id"]),
+            [int(item["id"]) for item in my_classes],
+        )
+        for class_item in my_classes:
+            class_item["students"] = students_by_class.get(int(class_item["id"]), [])
 
     class_stats = {
         "class_count": len(my_classes),
@@ -1102,6 +1146,34 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
             extra={
                 "my_classes": my_classes,
                 "class_stats": class_stats,
+            },
+        ),
+    )
+
+
+@router.get("/manage/students/{student_id}", response_class=HTMLResponse)
+async def get_manage_student_detail_page(
+    request: Request,
+    student_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        insight = build_teacher_student_insight(conn, int(user["id"]), int(student_id))
+        if not insight:
+            raise HTTPException(status_code=404, detail="学生不存在或无权查看")
+        conn.commit()
+
+    student = insight.get("student") or {}
+    return templates.TemplateResponse(
+        request,
+        "manage/student_detail.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title=f"{student.get('name') or '学生'} · 学生洞察",
+            active_page="classes",
+            extra={
+                "insight": insight,
             },
         ),
     )
@@ -1182,12 +1254,43 @@ def _safe_parse_json_list(raw_value):
     return parsed if isinstance(parsed, list) else []
 
 
+def _load_teacher_class_student_rows(conn, teacher_id: int, class_ids: list[int]) -> dict[int, list[dict]]:
+    normalized_ids = sorted({int(item) for item in class_ids if int(item or 0) > 0})
+    if not normalized_ids:
+        return {}
+    placeholders = ",".join("?" for _ in normalized_ids)
+    rows = conn.execute(
+        f"""
+        SELECT s.id,
+               s.class_id,
+               s.name,
+               s.nickname,
+               s.student_id_number,
+               s.email,
+               s.created_at
+        FROM students s
+        JOIN classes c ON c.id = s.class_id
+        WHERE c.created_by_teacher_id = ?
+          AND s.class_id IN ({placeholders})
+        ORDER BY s.class_id, s.student_id_number, s.id
+        """,
+        [int(teacher_id), *normalized_ids],
+    ).fetchall()
+    grouped: dict[int, list[dict]] = {class_id: [] for class_id in normalized_ids}
+    for row in rows:
+        item = dict(row)
+        item["display_name"] = item.get("nickname") or item.get("name") or "学生"
+        grouped.setdefault(int(item["class_id"]), []).append(item)
+    return grouped
+
+
 def _load_teacher_course_rows(conn, teacher_id: int):
     rows = conn.execute(
         """
         SELECT c.id,
                c.name,
                c.description,
+               c.sect_name,
                c.credits,
                c.total_hours,
                c.created_at,
@@ -1198,7 +1301,7 @@ def _load_teacher_course_rows(conn, teacher_id: int):
             ON o.course_id = c.id
            AND o.teacher_id = c.created_by_teacher_id
         WHERE c.created_by_teacher_id = ?
-        GROUP BY c.id, c.name, c.description, c.credits, c.total_hours, c.created_at, c.created_by_teacher_id
+        GROUP BY c.id, c.name, c.description, c.sect_name, c.credits, c.total_hours, c.created_at, c.created_by_teacher_id
         ORDER BY c.created_at DESC, c.name
         """,
         (teacher_id,),
@@ -1237,6 +1340,7 @@ def _load_teacher_offering_rows(conn, teacher_id: int):
                COALESCE(s.name, o.semester) AS semester,
                c.name AS class_name,
                co.name AS course_name,
+               co.sect_name AS course_sect_name,
                co.description,
                co.credits,
                tb.title AS textbook_title,
@@ -1261,6 +1365,7 @@ def _load_teacher_offering_rows(conn, teacher_id: int):
                  s.name,
                  c.name,
                  co.name,
+                 co.sect_name,
                  co.description,
                  co.credits,
                  tb.title
@@ -1850,9 +1955,19 @@ async def manage_exams_page(request: Request, user: dict = Depends(get_current_t
 
         papers_cursor = conn.execute(
             """SELECT ep.*,
-                      (SELECT COUNT(*) FROM assignments WHERE exam_paper_id = ep.id) as assigned_count
+                      (SELECT COUNT(*)
+                       FROM assignments a
+                       WHERE a.exam_paper_id = ep.id
+                         AND NOT EXISTS (
+                             SELECT 1 FROM learning_stage_exam_attempts lsea
+                             WHERE lsea.assignment_id = a.id
+                         )) as assigned_count
                FROM exam_papers ep
                WHERE ep.teacher_id = ?
+                 AND NOT EXISTS (
+                     SELECT 1 FROM learning_stage_exam_attempts lsea
+                     WHERE lsea.exam_paper_id = ep.id
+                 )
                ORDER BY ep.updated_at DESC""",
             (user['id'],)
         )
@@ -1894,6 +2009,7 @@ async def manage_exams_page(request: Request, user: dict = Depends(get_current_t
             active_page="exams",
             extra={
                 "papers": papers,
+                "learning_stage_options": get_learning_stage_options(),
             },
         ),
     )
@@ -1909,6 +2025,8 @@ async def exam_editor_page(request: Request, exam_id: str, user: dict = Depends(
         ).fetchone()
         if not paper:
             raise HTTPException(404, "试卷不存在")
+        if is_personal_stage_exam_paper(conn, exam_id):
+            raise HTTPException(404, "学生个人试炼不进入教师试卷库")
 
         # 获取教师所有课堂（用于分配）
         offerings = conn.execute(

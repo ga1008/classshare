@@ -7,6 +7,8 @@ from datetime import datetime
 from typing import Any, Optional
 from urllib.parse import quote
 
+from .learning_progress_service import build_student_public_cultivation_badge
+
 
 POST_STATUS_DRAFT = "draft"
 POST_STATUS_PUBLISHED = "published"
@@ -350,6 +352,34 @@ def _merge_post_tags(system_tags: Any, custom_tags: Any) -> list[str]:
         if len(merged) >= MAX_TAGS + 2:
             break
     return merged
+
+
+def _load_public_cultivation_badge(conn, student_id: Any) -> dict[str, Any] | None:
+    normalized_id = _safe_int(student_id)
+    if normalized_id is None:
+        return None
+    try:
+        return build_student_public_cultivation_badge(conn, normalized_id)
+    except Exception as exc:
+        print(f"[BLOG] 公开修为称号加载失败 student_id={normalized_id}: {exc}")
+        return None
+
+
+def _build_author_cultivation_badge_map(conn, rows: list[dict]) -> dict[str, dict]:
+    student_ids: set[int] = set()
+    for row in rows:
+        role = str(row.get("author_role") or "").strip().lower()
+        display_mode = str(row.get("author_display_mode") or "").strip().lower()
+        user_pk = _safe_int(row.get("author_user_pk"))
+        if role == "student" and display_mode != AUTHOR_DISPLAY_ANONYMOUS and user_pk is not None:
+            student_ids.add(user_pk)
+
+    badge_map: dict[str, dict] = {}
+    for student_id in student_ids:
+        badge = _load_public_cultivation_badge(conn, student_id)
+        if badge:
+            badge_map[_build_identity("student", student_id)] = badge
+    return badge_map
 
 
 def _build_post_author_snapshot(conn, user: dict, *, author_display_mode: Any = None) -> dict[str, Any]:
@@ -835,7 +865,16 @@ def list_posts(
         params + [limit, offset],
     ).fetchall()
 
-    posts = [_serialize_post_summary(dict(row), viewer_identity=identity) for row in rows]
+    row_items = [dict(row) for row in rows]
+    cultivation_badge_map = _build_author_cultivation_badge_map(conn, row_items)
+    posts = [
+        _serialize_post_summary(
+            row,
+            viewer_identity=identity,
+            cultivation_badge_map=cultivation_badge_map,
+        )
+        for row in row_items
+    ]
     return {
         "posts": posts,
         "total": total,
@@ -859,12 +898,14 @@ def get_post_detail(conn, user: dict, post_id: int) -> dict:
     conn.execute("UPDATE blog_posts SET view_count = view_count + 1 WHERE id = ?", (post_id,))
     post_row["view_count"] = new_view_count
 
+    cultivation_badge_map = _build_author_cultivation_badge_map(conn, [post_row])
     return _serialize_post_detail(
         post_row,
         user=user,
         viewer_identity=identity,
         is_liked=_is_liked(conn, identity, TARGET_TYPE_POST, post_id),
         is_bookmarked=_is_bookmarked(conn, identity, post_id),
+        cultivation_badge_map=cultivation_badge_map,
     )
 
 
@@ -904,7 +945,16 @@ def get_my_posts(
         """,
         params + [limit, offset],
     ).fetchall()
-    posts = [_serialize_post_summary(dict(row), viewer_identity=identity) for row in rows]
+    row_items = [dict(row) for row in rows]
+    cultivation_badge_map = _build_author_cultivation_badge_map(conn, row_items)
+    posts = [
+        _serialize_post_summary(
+            row,
+            viewer_identity=identity,
+            cultivation_badge_map=cultivation_badge_map,
+        )
+        for row in row_items
+    ]
     return {"posts": posts, "total": total, "page": page, "limit": limit, "has_more": offset + limit < total}
 
 
@@ -950,9 +1000,15 @@ def get_bookmarked_posts(conn, user: dict, *, page: int = 1, limit: int = POSTS_
         [identity, identity, *visibility_params, limit, offset],
     ).fetchall()
 
+    row_items = [dict(row) for row in rows]
+    cultivation_badge_map = _build_author_cultivation_badge_map(conn, row_items)
     posts = []
-    for row in rows:
-        post = _serialize_post_summary(dict(row), viewer_identity=identity)
+    for row in row_items:
+        post = _serialize_post_summary(
+            row,
+            viewer_identity=identity,
+            cultivation_badge_map=cultivation_badge_map,
+        )
         post["is_bookmarked"] = True
         post["is_liked"] = bool(row["is_liked"])
         posts.append(post)
@@ -1785,6 +1841,7 @@ def _load_comment_avatar_map(conn, rows: list[dict]) -> dict[str, dict]:
             result[key] = {
                 "avatar_hash": avatar_hash,
                 "avatar_url": _build_avatar_url("student", row["id"], avatar_hash),
+                "cultivation_badge": _load_public_cultivation_badge(conn, int(row["id"])),
             }
     return result
 
@@ -1894,7 +1951,12 @@ def _log_moderation(conn, post_id: int, moderator_identity: str, moderator_role:
     )
 
 
-def _serialize_post_summary(row: dict, *, viewer_identity: str) -> dict:
+def _serialize_post_summary(
+    row: dict,
+    *,
+    viewer_identity: str,
+    cultivation_badge_map: dict[str, dict] | None = None,
+) -> dict:
     system_tags = _safe_json_loads(row.get("system_tags_json"), [])
     custom_tags = _safe_json_loads(row.get("tags_json"), [])
     tags = _merge_post_tags(system_tags, custom_tags)
@@ -1902,15 +1964,20 @@ def _serialize_post_summary(row: dict, *, viewer_identity: str) -> dict:
     author_user_pk = _safe_int(row.get("author_user_pk"))
     avatar_hash = str(row.get("author_avatar_hash") or "")
     author_display_mode = str(row.get("author_display_mode") or AUTHOR_DISPLAY_REAL)
+    author_identity = str(row.get("author_identity") or "")
+    cultivation_badge = None
+    if author_display_mode != AUTHOR_DISPLAY_ANONYMOUS:
+        cultivation_badge = (cultivation_badge_map or {}).get(author_identity)
     return {
         "id": int(row["id"]),
         "author": {
-            "identity": str(row.get("author_identity") or ""),
+            "identity": author_identity,
             "role": author_role,
             "user_pk": author_user_pk,
             "display_name": str(row.get("author_display_name") or ""),
             "display_mode": author_display_mode,
             "is_anonymous": author_display_mode == AUTHOR_DISPLAY_ANONYMOUS,
+            "cultivation_badge": cultivation_badge,
             "avatar_url": _build_post_author_avatar_url(
                 author_role,
                 author_user_pk,
@@ -1938,7 +2005,7 @@ def _serialize_post_summary(row: dict, *, viewer_identity: str) -> dict:
         "created_at": str(row.get("created_at") or ""),
         "edited_at": str(row.get("edited_at") or "") or None,
         "updated_at": str(row.get("updated_at") or ""),
-        "is_author": str(row.get("author_identity") or "") == viewer_identity,
+        "is_author": author_identity == viewer_identity,
     }
 
 
@@ -1949,8 +2016,13 @@ def _serialize_post_detail(
     viewer_identity: str,
     is_liked: bool,
     is_bookmarked: bool,
+    cultivation_badge_map: dict[str, dict] | None = None,
 ) -> dict:
-    result = _serialize_post_summary(row, viewer_identity=viewer_identity)
+    result = _serialize_post_summary(
+        row,
+        viewer_identity=viewer_identity,
+        cultivation_badge_map=cultivation_badge_map,
+    )
     try:
         visible_user_identities = _safe_json_loads(row.get("visible_user_identities_json"), [])
     except Exception:
@@ -2001,6 +2073,7 @@ def _serialize_comment(
             "user_pk": author_user_pk,
             "display_name": str(row.get("author_display_name") or ""),
             "avatar_url": avatar_entry.get("avatar_url") or _build_avatar_url(author_role, author_user_pk),
+            "cultivation_badge": avatar_entry.get("cultivation_badge") if author_role == "student" else None,
         },
         "content_md": str(row.get("content_md") or ""),
         "custom_emojis": emojis if isinstance(emojis, list) else [],

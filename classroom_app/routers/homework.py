@@ -60,13 +60,20 @@ from ..services.submission_assets import (
 from ..services.submission_file_alignment import resolve_submission_file_path
 from ..services.learning_progress_service import (
     get_stage_exam_target,
+    handle_assignment_stage_grading_complete,
     handle_stage_exam_grading_complete,
+    is_personal_stage_exam_assignment,
+    is_personal_stage_exam_paper,
     mark_stage_submission_saved,
+    normalize_assignment_stage_key,
+    personal_stage_assignment_filter_sql,
     student_can_access_assignment,
     submit_stage_exam_for_ai_grading,
 )
 
 router = APIRouter(prefix="/api")
+
+PERSONAL_STAGE_TEACHER_HIDDEN_MESSAGE = "学生个人试炼属于学生资产，不在教师作业与考试中展示；请查看班级修行统计。"
 
 
 def _build_assignment_storage_dir(course_id: int, assignment_id: int | str):
@@ -91,6 +98,17 @@ def _get_allowed_file_types(data: dict, assignment_row=None) -> list[str]:
     return []
 
 
+def _get_learning_stage_key(data: dict, *, class_offering_id: Any = None) -> str | None:
+    raw_stage_key = data.get("learning_stage_key", data.get("stage_key"))
+    try:
+        stage_key = normalize_assignment_stage_key(raw_stage_key)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if stage_key and not class_offering_id:
+        raise HTTPException(400, "仅课堂内作业或考试可以设定为阶段试炼")
+    return stage_key
+
+
 def _ensure_accepting_submission(assignment: dict[str, Any]) -> None:
     if assignment_accepts_submissions(assignment):
         return
@@ -107,16 +125,34 @@ def _teacher_can_access_assignment(assignment: dict[str, Any], teacher_id: int) 
     return teacher_id in {owner_id, offering_teacher_id}
 
 
+def _hide_personal_stage_asset() -> None:
+    raise HTTPException(404, PERSONAL_STAGE_TEACHER_HIDDEN_MESSAGE)
+
+
+def _get_exam_paper_for_teacher(conn, paper_id: str, teacher_id: int) -> dict[str, Any]:
+    paper = conn.execute("SELECT * FROM exam_papers WHERE id = ?", (paper_id,)).fetchone()
+    if not paper:
+        raise HTTPException(404, "试卷不存在")
+    paper_dict = dict(paper)
+    if int(paper_dict.get("teacher_id") or 0) != int(teacher_id):
+        raise HTTPException(403, "无权操作此试卷")
+    if is_personal_stage_exam_paper(conn, paper_id):
+        _hide_personal_stage_asset()
+    return paper_dict
+
+
 def _get_assignment_for_teacher(conn, assignment_id: str, teacher_id: int) -> dict[str, Any]:
     assignment = conn.execute(
         """
         SELECT a.*,
                c.created_by_teacher_id,
                o.teacher_id AS offering_teacher_id,
-               o.class_id AS offering_class_id
+               o.class_id AS offering_class_id,
+               lsea.id AS personal_stage_attempt_id
         FROM assignments a
         JOIN courses c ON c.id = a.course_id
         LEFT JOIN class_offerings o ON o.id = a.class_offering_id
+        LEFT JOIN learning_stage_exam_attempts lsea ON lsea.assignment_id = a.id
         WHERE a.id = ?
         LIMIT 1
         """,
@@ -127,6 +163,8 @@ def _get_assignment_for_teacher(conn, assignment_id: str, teacher_id: int) -> di
     assignment_dict = refresh_assignment_runtime_status(conn, assignment)
     if not _teacher_can_access_assignment(assignment_dict, int(teacher_id)):
         raise HTTPException(403, "无权操作该作业")
+    if assignment_dict.get("personal_stage_attempt_id") is not None:
+        _hide_personal_stage_asset()
     return assignment_dict
 
 
@@ -138,11 +176,13 @@ def _get_submission_for_teacher(conn, submission_id: int, teacher_id: int) -> di
                a.class_offering_id,
                a.title AS assignment_title,
                c.created_by_teacher_id,
-               o.teacher_id AS offering_teacher_id
+               o.teacher_id AS offering_teacher_id,
+               lsea.id AS personal_stage_attempt_id
         FROM submissions s
         JOIN assignments a ON a.id = s.assignment_id
         JOIN courses c ON c.id = a.course_id
         LEFT JOIN class_offerings o ON o.id = a.class_offering_id
+        LEFT JOIN learning_stage_exam_attempts lsea ON lsea.assignment_id = a.id
         WHERE s.id = ?
         LIMIT 1
         """,
@@ -153,6 +193,8 @@ def _get_submission_for_teacher(conn, submission_id: int, teacher_id: int) -> di
     submission_dict = dict(submission)
     if not _teacher_can_access_assignment(submission_dict, int(teacher_id)):
         raise HTTPException(403, "无权操作该提交")
+    if submission_dict.get("personal_stage_attempt_id") is not None:
+        _hide_personal_stage_asset()
     return submission_dict
 
 
@@ -432,6 +474,7 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
     created_at = datetime.now().isoformat()
     class_offering_id = data.get('class_offering_id')
     allowed_file_types_json = encode_allowed_file_types_json(_get_allowed_file_types(data))
+    learning_stage_key = _get_learning_stage_key(data, class_offering_id=class_offering_id)
     try:
         schedule_fields = build_assignment_schedule_fields(
             data,
@@ -464,8 +507,9 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
             INSERT INTO assignments (
                 course_id, title, status, requirements_md, rubric_md, grading_mode,
                 class_offering_id, created_at, allowed_file_types_json,
-                availability_mode, starts_at, due_at, duration_minutes, auto_close, closed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                availability_mode, starts_at, due_at, duration_minutes, auto_close, closed_at,
+                learning_stage_key
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 actual_course_id,
@@ -483,6 +527,7 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
                 schedule_fields["duration_minutes"],
                 schedule_fields["auto_close"],
                 schedule_fields["closed_at"],
+                learning_stage_key,
             )
         )
         new_id = cursor.lastrowid
@@ -519,11 +564,20 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
             raise HTTPException(404, "作业不存在")
         if assignment['created_by_teacher_id'] != user['id']:
             raise HTTPException(403, "无权修改该作业")
+        if is_personal_stage_exam_assignment(conn, assignment_id):
+            _hide_personal_stage_asset()
         assignment_dict = dict(assignment)
         assignment_dict = refresh_assignment_runtime_status(conn, assignment_dict)
 
         previous_status = str(assignment_dict['status'] or '')
         allowed_file_types_json = encode_allowed_file_types_json(_get_allowed_file_types(data, assignment_dict))
+        if "learning_stage_key" in data or "stage_key" in data:
+            learning_stage_key = _get_learning_stage_key(
+                data,
+                class_offering_id=assignment_dict.get("class_offering_id"),
+            )
+        else:
+            learning_stage_key = assignment_dict.get("learning_stage_key")
         try:
             schedule_fields = build_assignment_schedule_fields(
                 data,
@@ -537,7 +591,8 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
             UPDATE assignments
             SET title = ?, requirements_md = ?, rubric_md = ?, grading_mode = ?,
                 status = ?, allowed_file_types_json = ?,
-                availability_mode = ?, starts_at = ?, due_at = ?, duration_minutes = ?, auto_close = ?, closed_at = ?
+                availability_mode = ?, starts_at = ?, due_at = ?, duration_minutes = ?, auto_close = ?, closed_at = ?,
+                learning_stage_key = ?
             WHERE id = ?
             """,
             (
@@ -553,6 +608,7 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
                 schedule_fields["duration_minutes"],
                 schedule_fields["auto_close"],
                 schedule_fields["closed_at"],
+                learning_stage_key,
                 assignment_id,
             )
         )
@@ -584,6 +640,8 @@ async def delete_assignment(assignment_id: str, user: dict = Depends(get_current
             raise HTTPException(404, "作业不存在")
         if assignment['created_by_teacher_id'] != user['id']:
             raise HTTPException(403, "无权删除该作业")
+        if is_personal_stage_exam_assignment(conn, assignment_id):
+            _hide_personal_stage_asset()
 
         conn.execute("DELETE FROM assignments WHERE id = ?", (assignment_id,))
         conn.commit()
@@ -904,6 +962,10 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
             handle_stage_exam_grading_complete(conn, submission_id)
         except Exception as exc:
             print(f"[LEARNING_PROGRESS] manual grading stage handling failed: {exc}")
+        try:
+            handle_assignment_stage_grading_complete(conn, submission_id)
+        except Exception as exc:
+            print(f"[LEARNING_PROGRESS] manual grading teacher-stage handling failed: {exc}")
         conn.commit()
     return {"status": "success", "graded_submission_id": submission_id}
 
@@ -1107,6 +1169,7 @@ async def submit_assignment(assignment_id: str,
         assignment = enrich_assignment_runtime_view(assignment)
         if not student_can_access_assignment(conn, assignment_id, int(user["id"])):
             raise HTTPException(403, "该破境试炼只对指定学生开放")
+        personal_stage_target = get_stage_exam_target(conn, assignment_id)
 
         submission = conn.execute(
             "SELECT * FROM submissions WHERE assignment_id = ? AND student_pk_id = ?",
@@ -1135,7 +1198,7 @@ async def submit_assignment(assignment_id: str,
             actor_user_pk=int(user["id"]),
             channel="online",
             existing_submission=existing_submission,
-            notify_teacher=True,
+            notify_teacher=personal_stage_target is None,
         )
         try:
             stage_attempt = mark_stage_submission_saved(conn, result["submission_id"])
@@ -1427,9 +1490,19 @@ async def list_exam_papers(user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         cursor = conn.execute(
             """SELECT ep.*,
-                      (SELECT COUNT(*) FROM assignments WHERE exam_paper_id = ep.id) as assigned_count
+                      (SELECT COUNT(*)
+                       FROM assignments a
+                       WHERE a.exam_paper_id = ep.id
+                         AND NOT EXISTS (
+                             SELECT 1 FROM learning_stage_exam_attempts lsea
+                             WHERE lsea.assignment_id = a.id
+                         )) as assigned_count
                FROM exam_papers ep
                WHERE ep.teacher_id = ?
+                 AND NOT EXISTS (
+                     SELECT 1 FROM learning_stage_exam_attempts lsea
+                     WHERE lsea.exam_paper_id = ep.id
+                 )
                ORDER BY ep.updated_at DESC""",
             (user['id'],)
         )
@@ -1450,11 +1523,7 @@ async def update_exam_paper_tags(paper_id: str, request: Request, user: dict = D
 
     now = datetime.now().isoformat()
     with get_db_connection() as conn:
-        existing = conn.execute("SELECT teacher_id FROM exam_papers WHERE id = ?", (paper_id,)).fetchone()
-        if not existing:
-            raise HTTPException(404, "试卷不存在")
-        if existing['teacher_id'] != user['id']:
-            raise HTTPException(403, "无权修改此试卷")
+        _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]))
         conn.execute(
             "UPDATE exam_papers SET tags_json = ?, updated_at = ? WHERE id = ?",
             (json.dumps(tags, ensure_ascii=False), now, paper_id)
@@ -1525,14 +1594,10 @@ async def create_exam_paper(request: Request, user: dict = Depends(get_current_t
 @router.get("/exam-papers/{paper_id}", response_class=JSONResponse)
 async def get_exam_paper(paper_id: str, user: dict = Depends(get_current_user)):
     """获取试卷详情"""
+    if str(user.get("role") or "").lower() != "teacher":
+        raise HTTPException(403, "无权查看此试卷")
     with get_db_connection() as conn:
-        paper = conn.execute(
-            "SELECT * FROM exam_papers WHERE id = ? AND teacher_id = ?",
-            (paper_id, user['id'])
-        ).fetchone()
-        if not paper:
-            raise HTTPException(404, "试卷不存在")
-        result = dict(paper)
+        result = _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]))
         # 获取已分配的课堂列表
         assignments = conn.execute(
             """SELECT a.id, a.status, a.title, o.id as offering_id, c.name as course_name, cl.name as class_name
@@ -1540,7 +1605,11 @@ async def get_exam_paper(paper_id: str, user: dict = Depends(get_current_user)):
                LEFT JOIN class_offerings o ON a.class_offering_id = o.id
                LEFT JOIN courses c ON o.course_id = c.id
                LEFT JOIN classes cl ON o.class_id = cl.id
-               WHERE a.exam_paper_id = ?""",
+               WHERE a.exam_paper_id = ?
+                 AND NOT EXISTS (
+                     SELECT 1 FROM learning_stage_exam_attempts lsea
+                     WHERE lsea.assignment_id = a.id
+                 )""",
             (paper_id,)
         ).fetchall()
         result['assignments'] = [dict(row) for row in assignments]
@@ -1554,11 +1623,7 @@ async def update_exam_paper(paper_id: str, request: Request, user: dict = Depend
     now = datetime.now().isoformat()
 
     with get_db_connection() as conn:
-        existing = conn.execute("SELECT teacher_id FROM exam_papers WHERE id = ?", (paper_id,)).fetchone()
-        if not existing:
-            raise HTTPException(404, "试卷不存在")
-        if existing['teacher_id'] != user['id']:
-            raise HTTPException(403, "无权修改此试卷")
+        _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]))
 
         conn.execute(
             """UPDATE exam_papers
@@ -1577,13 +1642,17 @@ async def update_exam_paper(paper_id: str, request: Request, user: dict = Depend
 async def delete_exam_paper(paper_id: str, user: dict = Depends(get_current_teacher)):
     """删除试卷"""
     with get_db_connection() as conn:
-        existing = conn.execute("SELECT teacher_id FROM exam_papers WHERE id = ?", (paper_id,)).fetchone()
-        if not existing:
-            raise HTTPException(404, "试卷不存在")
-        if existing['teacher_id'] != user['id']:
-            raise HTTPException(403, "无权删除此试卷")
+        _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]))
         # 检查是否已被分配
-        assigned = conn.execute("SELECT COUNT(*) FROM assignments WHERE exam_paper_id = ?", (paper_id,)).fetchone()[0]
+        assigned = conn.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM assignments a
+            WHERE a.exam_paper_id = ?
+              AND {personal_stage_assignment_filter_sql('a')}
+            """,
+            (paper_id,),
+        ).fetchone()[0]
         if assigned > 0:
             raise HTTPException(400, f"该试卷已被分配给 {assigned} 个作业，请先删除相关作业")
         conn.execute("DELETE FROM exam_papers WHERE id = ?", (paper_id,))
@@ -1620,6 +1689,7 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
     class_offering_id = data.get('class_offering_id')
     if not class_offering_id:
         raise HTTPException(400, "请指定课堂")
+    learning_stage_key = _get_learning_stage_key(data, class_offering_id=class_offering_id)
     try:
         schedule_fields = build_assignment_schedule_fields(
             data,
@@ -1630,9 +1700,7 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
 
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
-        paper = conn.execute("SELECT * FROM exam_papers WHERE id = ?", (paper_id,)).fetchone()
-        if not paper:
-            raise HTTPException(404, "试卷不存在")
+        paper = _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]))
 
         # 获取课堂信息
         offering = conn.execute(
@@ -1657,9 +1725,10 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
             INSERT INTO assignments (
                 course_id, title, status, requirements_md, rubric_md, grading_mode,
                 exam_paper_id, class_offering_id, created_at, allowed_file_types_json,
-                availability_mode, starts_at, due_at, duration_minutes, auto_close, closed_at
+                availability_mode, starts_at, due_at, duration_minutes, auto_close, closed_at,
+                learning_stage_key
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(offering['course_id']),
@@ -1678,6 +1747,7 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
                 schedule_fields["duration_minutes"],
                 schedule_fields["auto_close"],
                 schedule_fields["closed_at"],
+                learning_stage_key,
             )
         )
         new_assignment_id = cursor.lastrowid

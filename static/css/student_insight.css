@@ -1,0 +1,467 @@
+.student-insight-shell {
+    display: grid;
+    gap: 22px;
+}
+
+.student-insight-hero {
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.7fr);
+    gap: 24px;
+    padding: 28px;
+    border-radius: 28px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background:
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.16), transparent 32%),
+        radial-gradient(circle at bottom left, rgba(249, 115, 22, 0.14), transparent 28%),
+        linear-gradient(140deg, rgba(255, 255, 255, 0.97), rgba(248, 250, 252, 0.94));
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+    animation: insight-rise 0.42s ease-out both;
+}
+
+.student-insight-identity {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    min-width: 0;
+}
+
+.student-insight-avatar {
+    width: 88px;
+    height: 88px;
+    border-radius: 28px;
+    object-fit: cover;
+    border: 4px solid rgba(255, 255, 255, 0.88);
+    box-shadow: 0 16px 28px rgba(15, 23, 42, 0.16);
+}
+
+.student-insight-copy {
+    min-width: 0;
+}
+
+.student-insight-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: #0369a1;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.student-insight-eyebrow::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f97316, #0ea5e9);
+}
+
+.student-insight-copy h2 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: clamp(1.7rem, 2.2vw, 2.28rem);
+    line-height: 1.12;
+}
+
+.student-insight-copy p {
+    margin: 10px 0 0;
+    color: var(--text-secondary);
+    line-height: 1.65;
+}
+
+.student-insight-tags,
+.student-insight-actions,
+.student-insight-metric-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.student-insight-tags {
+    margin-top: 16px;
+}
+
+.student-insight-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    background: rgba(255, 255, 255, 0.75);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.student-insight-tag.is-cultivation {
+    border-color: rgba(249, 115, 22, 0.24);
+    background: rgba(255, 247, 237, 0.88);
+    color: #c2410c;
+}
+
+.student-insight-hero-panel {
+    display: grid;
+    align-content: center;
+    gap: 12px;
+    padding: 18px;
+    border-radius: 22px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(255, 255, 255, 0.76);
+    backdrop-filter: blur(8px);
+}
+
+.student-insight-hero-panel span {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.student-insight-hero-panel strong {
+    color: var(--text-primary);
+    font-size: 1.2rem;
+}
+
+.student-insight-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+}
+
+.student-insight-stat {
+    padding: 18px 20px;
+    border-radius: 22px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: var(--shadow-sm);
+    animation: insight-rise 0.45s ease-out both;
+}
+
+.student-insight-stat span {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.student-insight-stat strong {
+    display: block;
+    margin-top: 8px;
+    color: var(--text-primary);
+    font-size: 1.9rem;
+}
+
+.student-insight-stat p {
+    margin: 8px 0 0;
+    color: var(--text-secondary);
+    font-size: 0.86rem;
+}
+
+.student-insight-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+    gap: 20px;
+}
+
+.student-insight-band {
+    display: grid;
+    gap: 18px;
+    padding: 22px;
+    border-radius: 24px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+    animation: insight-rise 0.5s ease-out both;
+}
+
+.student-insight-band__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.student-insight-band__head h3 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 1.14rem;
+}
+
+.student-insight-band__head p {
+    margin: 6px 0 0;
+    color: var(--text-secondary);
+    line-height: 1.55;
+}
+
+.student-course-list {
+    display: grid;
+    gap: 14px;
+}
+
+.student-course-card {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.92), rgba(255, 255, 255, 0.96));
+    color: inherit;
+    text-decoration: none;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.student-course-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(14, 165, 233, 0.34);
+    box-shadow: 0 18px 30px rgba(14, 165, 233, 0.1);
+}
+
+.student-course-card__top,
+.student-course-score,
+.student-task-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.student-course-card h4 {
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.student-course-card small,
+.student-course-score span,
+.student-task-row small {
+    color: var(--text-muted);
+}
+
+.student-sect-badge {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    max-width: 100%;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: rgba(249, 115, 22, 0.12);
+    color: #c2410c;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.student-progress-bar,
+.student-mini-bar {
+    overflow: hidden;
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.18);
+}
+
+.student-progress-bar span,
+.student-mini-bar span {
+    display: block;
+    height: 100%;
+    width: var(--value, 0%);
+    border-radius: inherit;
+    background: linear-gradient(90deg, #0ea5e9, #22c55e, #f97316);
+    animation: insight-bar 0.8s ease-out both;
+}
+
+.student-course-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.student-course-metrics div {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+.student-course-metrics span {
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.student-radar-wrap {
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr);
+    gap: 18px;
+    align-items: center;
+}
+
+.student-radar {
+    width: 180px;
+    height: 180px;
+}
+
+.student-radar-grid {
+    fill: none;
+    stroke: rgba(148, 163, 184, 0.36);
+    stroke-width: 1;
+}
+
+.student-radar-fill {
+    fill: rgba(14, 165, 233, 0.22);
+    stroke: #0ea5e9;
+    stroke-width: 3;
+    filter: drop-shadow(0 8px 14px rgba(14, 165, 233, 0.18));
+    animation: insight-radar 0.7s ease-out both;
+}
+
+.student-radar-axis-list {
+    display: grid;
+    gap: 10px;
+}
+
+.student-radar-axis {
+    display: grid;
+    gap: 6px;
+}
+
+.student-radar-axis div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.student-task-layout {
+    display: grid;
+    grid-template-columns: 150px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+}
+
+.student-task-donut {
+    --value: 0;
+    display: grid;
+    place-items: center;
+    width: 138px;
+    height: 138px;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle, #fff 0 54%, transparent 55%),
+        conic-gradient(#0ea5e9 calc(var(--value) * 1%), rgba(148, 163, 184, 0.18) 0);
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.16);
+}
+
+.student-task-donut strong {
+    color: var(--text-primary);
+    font-size: 1.5rem;
+}
+
+.student-task-lists {
+    display: grid;
+    gap: 14px;
+}
+
+.student-task-list {
+    display: grid;
+    gap: 8px;
+}
+
+.student-task-list h4 {
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.student-task-row {
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(248, 250, 252, 0.82);
+}
+
+.student-activity-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.student-activity-card {
+    padding: 14px;
+    border-radius: 18px;
+    background: rgba(248, 250, 252, 0.88);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.student-activity-card span {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
+.student-activity-card strong {
+    display: block;
+    margin-top: 6px;
+    color: var(--text-primary);
+    font-size: 1.35rem;
+}
+
+@keyframes insight-rise {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes insight-bar {
+    from { width: 0; }
+    to { width: var(--value, 0%); }
+}
+
+@keyframes insight-radar {
+    from {
+        opacity: 0;
+        transform: scale(0.86);
+        transform-origin: center;
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+        transform-origin: center;
+    }
+}
+
+@media (max-width: 1080px) {
+    .student-insight-hero,
+    .student-insight-grid,
+    .student-radar-wrap,
+    .student-task-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 680px) {
+    .student-insight-hero,
+    .student-insight-band {
+        padding: 18px;
+        border-radius: 22px;
+    }
+
+    .student-insight-identity,
+    .student-course-card__top,
+    .student-course-score {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .student-course-metrics,
+    .student-activity-grid {
+        grid-template-columns: 1fr;
+    }
+}

@@ -513,6 +513,9 @@
                 <h3>时间设置</h3>
                 <div class="flex items-center gap-2 flex-wrap">
                     <span class="badge badge-outline">{{ assignment.availability_mode_label or '长期有效' }}</span>
+                    {% if assignment.learning_stage %}
+                    <span class="badge badge-primary">试炼 · {{ assignment.learning_stage.level_name }}</span>
+                    {% endif %}
                     {% if assignment.status == 'published' %}
                     <span class="badge badge-success">允许提交</span>
                     {% elif assignment.status == 'closed' %}
@@ -644,6 +647,16 @@
                             <option value="manual" {{ 'selected' if assignment.grading_mode == 'manual' else '' }}>手动批改</option>
                             <option value="ai" {{ 'selected' if assignment.grading_mode in ['ai', 'auto', 'mixed'] else '' }}>AI 辅助批改</option>
                         </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">试炼阶段</label>
+                        <select id="edit-learning-stage-key" class="form-select">
+                            <option value="">普通经验，不绑定境界试炼</option>
+                            {% for stage in learning_stage_options %}
+                            <option value="{{ stage.key }}" {{ 'selected' if assignment.learning_stage_key == stage.key else '' }}>{{ stage.level_name }} · 通过后点亮至此境界</option>
+                            {% endfor %}
+                        </select>
+                        <p class="text-xs text-muted mt-1">学生批改达到 80 分后，会自动获得该阶段及之前缺失的证书。</p>
                     </div>
                     <div class="form-group">
                         <label class="form-label">允许附件类型</label>
@@ -1867,6 +1880,7 @@
                     grading_mode: {{ assignment.grading_mode | tojson }},
                     status: newStatus,
                     allowed_file_types: currentAllowedFileTypes,
+                    learning_stage_key: {{ assignment.learning_stage_key | default('') | tojson }},
                     availability_mode: currentAvailabilityMode,
                     due_at: currentDueAt,
                     duration_minutes: currentDurationMinutes,
@@ -1897,6 +1911,7 @@
                     grading_mode: document.getElementById('edit-grading-mode').value,
                     status: {{ assignment.status | tojson }},
                     allowed_file_types: document.getElementById('edit-allowed-file-types').value,
+                    learning_stage_key: document.getElementById('edit-learning-stage-key').value,
                     ...schedulePayload,
                 })
             });

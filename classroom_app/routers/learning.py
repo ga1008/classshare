@@ -12,10 +12,18 @@ from ..services.learning_progress_service import (
     build_student_global_cultivation_profile,
     build_class_learning_overview,
     create_personal_stage_exam,
+    delete_personal_stage_exam,
     record_material_learning_progress,
     serialize_student_learning_progress,
 )
 from ..services.materials_service import ensure_user_material_access, get_nearest_assignment_anchor
+from ..services.todo_service import (
+    TodoValidationError,
+    build_classroom_todo_overview,
+    create_manual_todo,
+    delete_manual_todo,
+    update_manual_todo,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -28,6 +36,20 @@ class MaterialProgressPayload(BaseModel):
     scroll_ratio: float = 0.0
     completed: bool = False
     page_key: str = "material_viewer"
+
+
+class ManualTodoPayload(BaseModel):
+    title: Optional[str] = None
+    notes: Optional[str] = None
+    start_at: Optional[str] = None
+    due_at: Optional[str] = None
+    completed: Optional[bool] = None
+
+
+def _payload_to_dict(payload: BaseModel) -> dict:
+    if hasattr(payload, "model_dump"):
+        return payload.model_dump(exclude_unset=True)
+    return payload.dict(exclude_unset=True)
 
 
 def _ensure_classroom_access(conn, class_offering_id: int, user: dict) -> dict:
@@ -111,6 +133,102 @@ async def get_learning_progress(class_offering_id: int, user: dict = Depends(get
         return {"status": "success", "progress": progress}
 
 
+@router.get("/classrooms/{class_offering_id}/todos", response_class=JSONResponse)
+async def get_classroom_todos(class_offering_id: int, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        _ensure_classroom_access(conn, class_offering_id, user)
+        overview = build_classroom_todo_overview(
+            conn,
+            class_offering_id=class_offering_id,
+            user=user,
+        )
+        return {"status": "success", "todo_overview": overview}
+
+
+@router.post("/classrooms/{class_offering_id}/todos", response_class=JSONResponse)
+async def create_classroom_todo(
+    class_offering_id: int,
+    payload: ManualTodoPayload,
+    user: dict = Depends(get_current_user),
+):
+    with get_db_connection() as conn:
+        _ensure_classroom_access(conn, class_offering_id, user)
+        try:
+            result = create_manual_todo(
+                conn,
+                class_offering_id=class_offering_id,
+                user=user,
+                payload=_payload_to_dict(payload),
+            )
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except TodoValidationError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        conn.commit()
+        overview = build_classroom_todo_overview(
+            conn,
+            class_offering_id=class_offering_id,
+            user=user,
+        )
+        return {"status": "success", **result, "todo_overview": overview}
+
+
+@router.patch("/classrooms/{class_offering_id}/todos/{todo_id}", response_class=JSONResponse)
+async def update_classroom_todo(
+    class_offering_id: int,
+    todo_id: int,
+    payload: ManualTodoPayload,
+    user: dict = Depends(get_current_user),
+):
+    with get_db_connection() as conn:
+        _ensure_classroom_access(conn, class_offering_id, user)
+        try:
+            result = update_manual_todo(
+                conn,
+                class_offering_id=class_offering_id,
+                todo_id=todo_id,
+                user=user,
+                payload=_payload_to_dict(payload),
+            )
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except TodoValidationError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        conn.commit()
+        overview = build_classroom_todo_overview(
+            conn,
+            class_offering_id=class_offering_id,
+            user=user,
+        )
+        return {"status": "success", **result, "todo_overview": overview}
+
+
+@router.delete("/classrooms/{class_offering_id}/todos/{todo_id}", response_class=JSONResponse)
+async def delete_classroom_todo(
+    class_offering_id: int,
+    todo_id: int,
+    user: dict = Depends(get_current_user),
+):
+    with get_db_connection() as conn:
+        _ensure_classroom_access(conn, class_offering_id, user)
+        try:
+            result = delete_manual_todo(
+                conn,
+                class_offering_id=class_offering_id,
+                todo_id=todo_id,
+                user=user,
+            )
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        conn.commit()
+        overview = build_classroom_todo_overview(
+            conn,
+            class_offering_id=class_offering_id,
+            user=user,
+        )
+        return {"status": "success", **result, "todo_overview": overview}
+
+
 @router.post("/classrooms/{class_offering_id}/learning/material-progress", response_class=JSONResponse)
 async def post_material_progress(
     class_offering_id: int,
@@ -158,3 +276,21 @@ async def create_learning_stage_exam(
         raise HTTPException(400, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(502, str(exc)) from exc
+
+
+@router.delete("/classrooms/{class_offering_id}/learning/stages/{stage_key}/exam", response_class=JSONResponse)
+async def delete_learning_stage_exam(
+    class_offering_id: int,
+    stage_key: str,
+    user: dict = Depends(get_current_user),
+):
+    if user["role"] != "student":
+        raise HTTPException(403, "仅学生可以删除自己的个人破境试炼")
+    with get_db_connection() as conn:
+        _ensure_classroom_access(conn, class_offering_id, user)
+    try:
+        return delete_personal_stage_exam(class_offering_id, int(user["id"]), stage_key)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc

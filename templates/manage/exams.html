@@ -918,6 +918,17 @@
             </div>
 
             <div class="form-group">
+                <label class="form-label" for="assign-learning-stage-key">试炼阶段</label>
+                <select id="assign-learning-stage-key" class="form-select">
+                    <option value="">普通考试，不绑定境界试炼</option>
+                    {% for stage in learning_stage_options %}
+                    <option value="{{ stage.key }}">{{ stage.level_name }} · 通过后点亮至此境界</option>
+                    {% endfor %}
+                </select>
+                <p class="text-xs text-muted mt-1">绑定后，学生该考试批改达到 80 分，会自动获得该阶段及之前缺失的证书。</p>
+            </div>
+
+            <div class="form-group">
                 <label class="form-label" for="assign-availability-mode">答题时间策略</label>
                 <select id="assign-availability-mode" class="form-select">
                     <option value="permanent">长期有效</option>
@@ -1397,10 +1408,12 @@
         const dueEl = document.getElementById('assign-due-at');
         const durationEl = document.getElementById('assign-duration-minutes');
         const startsEl = document.getElementById('assign-starts-at');
+        const stageEl = document.getElementById('assign-learning-stage-key');
         if (modeEl) modeEl.value = DEFAULT_ASSIGN_MODE;
         if (dueEl) dueEl.value = '';
         if (durationEl) durationEl.value = '';
         if (startsEl) startsEl.value = '';
+        if (stageEl) stageEl.value = '';
         syncAssignScheduleFields();
     }
 
@@ -1703,6 +1716,7 @@
                     method: 'POST',
                     body: JSON.stringify({
                         class_offering_id: parseInt(cb.value),
+                        learning_stage_key: (document.getElementById('assign-learning-stage-key')?.value || '').trim(),
                         ...schedulePayload
                     }),
                     headers: { 'Content-Type': 'application/json' }

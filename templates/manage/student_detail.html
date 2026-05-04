@@ -1,0 +1,196 @@
+{% extends "manage/layout.html" %}
+
+{% set student = insight.student %}
+{% set task_summary = insight.task_summary %}
+{% set activity = insight.activity_summary %}
+{% set public_badge = insight.public_badge %}
+{% set best_course = insight.best_course %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/manage_academic.css">
+<link rel="stylesheet" href="/static/css/student_insight.css">
+{% endblock %}
+
+{% block header_actions %}
+<a class="btn btn-outline btn-sm" href="/manage/classes">返回学生名单</a>
+{% endblock %}
+
+{% block content %}
+<div class="student-insight-shell">
+    <section class="student-insight-hero">
+        <div class="student-insight-identity">
+            <img class="student-insight-avatar" src="{{ student.avatar_url }}" alt="{{ student.name }}头像">
+            <div class="student-insight-copy">
+                <span class="student-insight-eyebrow">Student Insight</span>
+                <h2>{{ student.name }}</h2>
+                <p>
+                    {{ student.class_name }} · 学号 {{ student.student_id_number }}
+                    {% if student.nickname %} · 昵称 {{ student.nickname }}{% endif %}
+                </p>
+                <div class="student-insight-tags">
+                    {% if public_badge %}
+                    <span class="student-insight-tag is-cultivation">{{ public_badge.label }}</span>
+                    {% endif %}
+                    <span class="student-insight-tag">{{ student.class_name }}</span>
+                    {% if student.email %}<span class="student-insight-tag">{{ student.email }}</span>{% endif %}
+                </div>
+            </div>
+        </div>
+        <aside class="student-insight-hero-panel">
+            <span>当前最强科目</span>
+            {% if best_course %}
+            <strong>{{ best_course.sect_level_label }}</strong>
+            <p>{{ best_course.course_name }} · 修为 {{ best_course.score }} · {{ best_course.progress_percent }}%</p>
+            <div class="student-progress-bar"><span style="--value: {{ best_course.progress_percent }}%;"></span></div>
+            {% else %}
+            <strong>尚未形成课程修为</strong>
+            <p>该学生当前还没有在你的课堂中产生可统计的修炼进度。</p>
+            {% endif %}
+        </aside>
+    </section>
+
+    <section class="student-insight-stat-grid">
+        {% for item in insight.hero_stats %}
+        <article class="student-insight-stat" style="animation-delay: {{ loop.index0 * 50 }}ms;">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value }}{{ item.suffix }}</strong>
+            <p>{{ item.note }}</p>
+        </article>
+        {% endfor %}
+    </section>
+
+    <section class="student-insight-grid">
+        <article class="student-insight-band">
+            <div class="student-insight-band__head">
+                <div>
+                    <h3>各科宗门修为</h3>
+                    <p>每一门课都按独立课堂进度计算，宗门称号只用于展示，不混用不同课程的数据。</p>
+                </div>
+            </div>
+            <div class="student-course-list">
+                {% for course in insight.courses %}
+                <a class="student-course-card" href="/classroom/{{ course.class_offering_id }}">
+                    <div class="student-course-card__top">
+                        <div>
+                            <h4>{{ course.course_name }}</h4>
+                            <small>{{ course.semester_name or course.class_name }} · {{ course.teacher_name }}</small>
+                        </div>
+                        <span class="student-sect-badge">{{ course.sect_level_label }}</span>
+                    </div>
+                    <div class="student-course-score">
+                        <span>修为 {{ course.score }} · {{ course.current_level.level_name }}</span>
+                        <strong>{{ course.progress_percent }}%</strong>
+                    </div>
+                    <div class="student-progress-bar"><span style="--value: {{ course.progress_percent }}%;"></span></div>
+                    <div class="student-course-metrics">
+                        <div>
+                            <span>材料 {{ course.material_completed_count }}/{{ course.material_required_count }}</span>
+                            <div class="student-mini-bar"><span style="--value: {{ ((course.material_completed_count / course.material_required_count * 100) | round(0)) if course.material_required_count else 0 }}%;"></span></div>
+                        </div>
+                        <div>
+                            <span>任务 {{ course.submitted_count }}/{{ course.assignment_count }}</span>
+                            <div class="student-mini-bar"><span style="--value: {{ course.task_completion_percent }}%;"></span></div>
+                        </div>
+                        <div>
+                            <span>互动 {{ course.interaction_percent }}%</span>
+                            <div class="student-mini-bar"><span style="--value: {{ course.interaction_percent }}%;"></span></div>
+                        </div>
+                    </div>
+                </a>
+                {% else %}
+                <div class="academic-empty">
+                    <strong>暂无课堂进度</strong>
+                    当前教师名下还没有与该学生所在班级绑定的课堂。
+                </div>
+                {% endfor %}
+            </div>
+        </article>
+
+        <aside class="student-insight-band">
+            <div class="student-insight-band__head">
+                <div>
+                    <h3>六边形能力雷达</h3>
+                    <p>综合材料研读、任务执行、成绩质量、互动表达、稳定投入和修为推进。</p>
+                </div>
+            </div>
+            <div class="student-radar-wrap">
+                <svg class="student-radar" viewBox="0 0 168 168" role="img" aria-label="学生能力雷达图">
+                    {% for points in insight.radar.grid_points %}
+                    <polygon class="student-radar-grid" points="{{ points }}"></polygon>
+                    {% endfor %}
+                    <line x1="84" y1="18" x2="84" y2="150" stroke="rgba(148,163,184,.24)"></line>
+                    <line x1="26.8" y1="51" x2="141.2" y2="117" stroke="rgba(148,163,184,.24)"></line>
+                    <line x1="141.2" y1="51" x2="26.8" y2="117" stroke="rgba(148,163,184,.24)"></line>
+                    <polygon class="student-radar-fill" points="{{ insight.radar.points }}"></polygon>
+                </svg>
+                <div class="student-radar-axis-list">
+                    {% for axis in insight.radar.axes %}
+                    <div class="student-radar-axis">
+                        <div><span>{{ axis.label }}</span><strong>{{ axis.score }}%</strong></div>
+                        <div class="student-mini-bar"><span style="--value: {{ axis.score }}%;"></span></div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </aside>
+    </section>
+
+    <section class="student-insight-grid">
+        <article class="student-insight-band">
+            <div class="student-insight-band__head">
+                <div>
+                    <h3>作业与考试完成情况</h3>
+                    <p>这里只统计教师生成和分配的练习、作业与考试，不包含学生个人破境试炼。</p>
+                </div>
+                <span class="student-sect-badge">均分 {{ task_summary.average_score if task_summary.average_score is not none else '-' }}</span>
+            </div>
+            <div class="student-task-layout">
+                <div class="student-task-donut" style="--value: {{ task_summary.completion_percent }};">
+                    <strong>{{ task_summary.completion_percent }}%</strong>
+                </div>
+                <div class="student-task-lists">
+                    <div class="student-task-list">
+                        <h4>待完成</h4>
+                        {% for item in task_summary.unfinished_items %}
+                        <div class="student-task-row">
+                            <span>{{ item.title }}</span>
+                            <small>{{ item.sect_name }} · {{ item.type_label }}</small>
+                        </div>
+                        {% else %}
+                        <div class="student-task-row"><span>当前没有未完成任务</span><small>保持得不错</small></div>
+                        {% endfor %}
+                    </div>
+                    <div class="student-task-list">
+                        <h4>近期完成</h4>
+                        {% for item in task_summary.completed_items %}
+                        <div class="student-task-row">
+                            <span>{{ item.title }}</span>
+                            <small>{{ item.status_label }}{% if item.score is not none %} · {{ item.score }} 分{% endif %}</small>
+                        </div>
+                        {% else %}
+                        <div class="student-task-row"><span>暂无已完成任务</span><small>等待首次提交</small></div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </article>
+
+        <aside class="student-insight-band">
+            <div class="student-insight-band__head">
+                <div>
+                    <h3>互动与学习活跃</h3>
+                    <p>从课堂互动、行为事件、在线投入和发言情况中归集。</p>
+                </div>
+            </div>
+            <div class="student-activity-grid">
+                <div class="student-activity-card"><span>课堂互动</span><strong>{{ activity.event_count }}</strong></div>
+                <div class="student-activity-card"><span>活跃天数</span><strong>{{ activity.active_days }}</strong></div>
+                <div class="student-activity-card"><span>聊天发言</span><strong>{{ activity.chat_message_count }}</strong></div>
+                <div class="student-activity-card"><span>AI 提问</span><strong>{{ activity.ai_question_count }}</strong></div>
+                <div class="student-activity-card"><span>在线分钟</span><strong>{{ activity.online_minutes }}</strong></div>
+                <div class="student-activity-card"><span>专注分钟</span><strong>{{ activity.focus_minutes }}</strong></div>
+            </div>
+        </aside>
+    </section>
+</div>
+{% endblock %}

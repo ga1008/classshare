@@ -533,6 +533,9 @@ def init_database():
                                      NULL,
                              description
                                  TEXT,
+                             sect_name
+                                 TEXT
+                                 DEFAULT '',
                              credits
                                  FLOAT,
                              created_by_teacher_id
@@ -554,6 +557,13 @@ def init_database():
                 conn.execute(
                     "ALTER TABLE courses "
                     "ADD COLUMN total_hours INTEGER NOT NULL DEFAULT 0"
+                )
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute(
+                    "ALTER TABLE courses "
+                    "ADD COLUMN sect_name TEXT DEFAULT ''"
                 )
             except sqlite3.OperationalError:
                 pass
@@ -976,6 +986,33 @@ def init_database():
                 conn.execute("ALTER TABLE submission_files ADD COLUMN file_hash TEXT")
             except sqlite3.OperationalError:
                 pass  # 列已存在
+
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS classroom_todos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    class_offering_id INTEGER NOT NULL,
+                    owner_role TEXT NOT NULL,
+                    owner_user_pk INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    notes TEXT DEFAULT '',
+                    start_at TEXT,
+                    due_at TEXT,
+                    completed_at TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TEXT,
+                    metadata_json TEXT DEFAULT '{}',
+                    FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE
+                )
+            ''')
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classroom_todos_owner "
+                "ON classroom_todos (class_offering_id, owner_role, owner_user_pk, deleted_at, due_at, start_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classroom_todos_due "
+                "ON classroom_todos (due_at, completed_at, deleted_at)"
+            )
 
             # 分块上传跟踪表
             conn.execute('''
@@ -2268,6 +2305,14 @@ def init_database():
                 conn.execute("ALTER TABLE exam_papers ADD COLUMN tags_json TEXT DEFAULT '[]'")
             except sqlite3.OperationalError:
                 pass  # 列已存在
+            try:
+                conn.execute("ALTER TABLE assignments ADD COLUMN learning_stage_key TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_assignments_learning_stage "
+                "ON assignments (class_offering_id, learning_stage_key)"
+            )
 
             # 15. 课程材料库
             conn.execute('''

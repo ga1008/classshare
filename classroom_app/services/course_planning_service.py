@@ -8,6 +8,7 @@ from heapq import heappop, heappush
 from typing import Any, Iterable
 
 from .academic_service import china_today, parse_date_input, truncate_text
+from .learning_progress_service import normalize_course_sect_name
 
 
 MAX_COURSE_LESSON_COUNT = 120
@@ -385,6 +386,7 @@ def serialize_course_row(
         coverage_label = "待完善"
 
     item["description"] = description
+    item["sect_name"] = normalize_course_sect_name(item.get("sect_name"), course_name=item.get("name"))
     item["credits"] = float(item.get("credits") or 0)
     item["total_hours"] = total_hours
     item["lesson_count"] = len(lesson_list)
@@ -412,6 +414,7 @@ def serialize_course_row(
             None,
             [
                 str(item.get("name") or "").strip(),
+                str(item.get("sect_name") or "").strip(),
                 description,
                 " ".join(lesson_titles),
                 " ".join(

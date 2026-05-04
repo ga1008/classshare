@@ -336,6 +336,7 @@
             <button type="button" class="btn btn-primary" id="heroCourseCreateBtn">新增课程</button>
             <span class="academic-badge is-success">支持 AI 拆课</span>
             <span class="academic-badge">卡片式检索</span>
+            <span class="academic-badge is-accent">宗门称号隔离到课程</span>
             <span class="academic-badge is-accent">模板复用到课堂排期</span>
         </div>
     </section>
@@ -440,6 +441,7 @@
                         <span class="academic-card-kicker">{{ course.coverage_label }}</span>
                         <div class="academic-badge-row">
                             <span class="academic-badge">{{ course.total_hours }} 学时</span>
+                            <span class="academic-badge is-accent">{{ course.sect_name }}</span>
                             <span class="academic-badge is-success">{{ course.lesson_count }} 次课</span>
                             <span class="academic-badge {% if course.is_in_use %}is-accent{% else %}is-muted{% endif %}">
                                 {{ course.offering_count }} 个课堂
@@ -460,6 +462,10 @@
                         </div>
 
                         <div class="course-meta-grid">
+                            <div class="course-meta-row">
+                                <span>宗门名称</span>
+                                <strong>{{ course.sect_name }}</strong>
+                            </div>
                             <div class="course-meta-row">
                                 <span>学分</span>
                                 <strong>{{ course.credits }}</strong>
@@ -553,6 +559,11 @@
                     <div class="form-group">
                         <label class="form-label required" for="courseNameInput">课程名称</label>
                         <input id="courseNameInput" class="form-control" type="text" placeholder="例如：动态 Web 程序设计实验">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="courseSectNameInput">宗门名称</label>
+                        <input id="courseSectNameInput" class="form-control" type="text" maxlength="18" placeholder="例如：计网宗">
+                        <div class="academic-hint">用于学生公开修为称号，留空时会按课程名自动生成。</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="courseCreditsInput">学分</label>

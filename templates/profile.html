@@ -13,6 +13,8 @@
 {% block main_content %}
 {% set current_nav = nav_items | selectattr('active') | map(attribute='label') | first %}
 {% set security_summary = overview.security_summary if overview.security_summary is defined else none %}
+{% set cultivation = overview.cultivation if overview.cultivation is defined else none %}
+{% set hero_stats = overview.hero_stats if overview.hero_stats is defined else overview.metric_cards[:4] %}
 
 <section class="profile-shell" data-profile-root data-active-section="{{ active_section }}" data-profile-role="{{ profile.role }}">
     <section class="profile-hero profile-reveal">
@@ -27,9 +29,14 @@
                 </span>
                 <div class="profile-hero__copy">
                     <h1>{{ profile.name }}</h1>
-                    <p data-profile-summary data-empty-text="这里汇总你的课堂、任务、消息和账号状态。">
-                        {{ profile.description or '这里汇总你的课堂、任务、消息和账号状态。' }}
-                    </p>
+                    <div class="profile-hero__stats" aria-label="个人统计">
+                        {% for item in hero_stats %}
+                        <span class="profile-hero__stat">
+                            <strong>{{ item.value }}{% if item.suffix %}<small>{{ item.suffix }}</small>{% endif %}</strong>
+                            <em>{{ item.label }}</em>
+                        </span>
+                        {% endfor %}
+                    </div>
                     <div class="profile-chip-row">
                         <span class="profile-chip profile-chip--role" data-profile-display-role>{{ profile.display_role }}</span>
                         {% if profile.class_name %}<span class="profile-chip">{{ profile.class_name }}</span>{% endif %}
@@ -47,6 +54,18 @@
             </div>
         </div>
         <aside class="profile-hero__signal">
+            {% if profile.role == 'student' and cultivation %}
+            <span>修炼概览</span>
+            <div class="profile-hero__signal-value"><strong>{{ cultivation.score }}</strong><small>修为</small></div>
+            <p>{{ cultivation.highest_level.level_name }} · {{ cultivation.course_count }} 门课堂</p>
+            <div class="profile-progress"><span style="width: {{ cultivation.progress_percent }}%"></span></div>
+            <div class="profile-signal-grid">
+                <div><span>可破境课堂</span><strong>{{ cultivation.breakthrough_course_count }}</strong></div>
+                <div><span>已获道印</span><strong>{{ cultivation.certificate_count }}</strong></div>
+                <div><span>未读通知</span><strong>{{ notification_unread_count }}</strong></div>
+                <div><span>未读私信</span><strong>{{ private_unread_count }}</strong></div>
+            </div>
+            {% else %}
             <span>资料完整度</span>
             <div class="profile-hero__signal-value"><strong data-profile-completion-value>{{ profile.completion.percent }}</strong><small>%</small></div>
             <p>已完善 {{ profile.completion.completed }} / {{ profile.completion.total }} 项</p>
@@ -57,6 +76,7 @@
                 <div><span>头像</span><strong>{{ '已自定义' if profile.avatar_file_hash else '默认' }}</strong></div>
                 <div><span>主页</span><strong>{{ '已填写' if profile.homepage_url else '未填写' }}</strong></div>
             </div>
+            {% endif %}
         </aside>
     </section>
 
@@ -98,7 +118,7 @@
                 </div>
                 <div class="profile-quick-links">
                     <a href="/dashboard"><strong>返回首页</strong><span>课堂总入口</span></a>
-                    <a href="/profile?section=settings"><strong>编辑资料</strong><span>头像、昵称、简介</span></a>
+                    <a href="/profile?section=settings"><strong>编辑资料</strong><span>头像、昵称、联系方式</span></a>
                     <a href="/profile?section=security"><strong>账号安全</strong><span>密码与登录状态</span></a>
                 </div>
             </section>
@@ -127,6 +147,50 @@
                 </article>
                 {% endfor %}
             </section>
+
+            {% if profile.role == 'student' and cultivation and cultivation.courses %}
+            <section class="profile-band profile-cultivation-band profile-reveal">
+                <div class="profile-band__head">
+                    <div>
+                        <span class="profile-eyebrow">Cultivation</span>
+                        <h3>各课堂修炼进度</h3>
+                    </div>
+                    <a class="btn btn-outline btn-sm" href="/dashboard">查看课堂</a>
+                </div>
+                <div class="profile-cultivation-grid">
+                    {% for course in cultivation.courses %}
+                    <a class="profile-cultivation-card" href="/classroom/{{ course.class_offering_id }}" data-theme="{{ course.current_level.theme }}">
+                        <div class="profile-cultivation-card__top">
+                            <div>
+                                <strong>{{ course.course_name }}</strong>
+                                <span>{{ course.class_name }} · {{ course.teacher_name }}</span>
+                            </div>
+                            <b>{{ course.sect_level_label or course.current_level.short_name }}</b>
+                        </div>
+                        <div class="profile-cultivation-score">
+                            <span>修为 {{ course.score }}</span>
+                            <span>{{ course.progress_percent }}%</span>
+                        </div>
+                        <div class="profile-cultivation-bar"><span style="width: {{ course.progress_percent }}%"></span></div>
+                        <div class="profile-cultivation-stages" aria-label="{{ course.course_name }} 修炼阶段">
+                            {% for stage in course.stages %}
+                            <span class="is-{{ stage.status }}" title="{{ stage.short_name }} · {{ stage.progress_percent }}%">{{ stage.short_name }}</span>
+                            {% endfor %}
+                        </div>
+                        <small>
+                            {% if course.eligible_stage %}
+                            可破境 · {{ course.eligible_stage.name }}
+                            {% elif course.next_stage %}
+                            下一境界 · {{ course.next_stage.name }}
+                            {% else %}
+                            全部境界已点亮
+                            {% endif %}
+                        </small>
+                    </a>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
 
             <section class="profile-overview-grid">
                 <div class="profile-overview-primary">
@@ -293,10 +357,12 @@
                                     <label class="form-label" for="profile-homepage">个人主页</label>
                                     <input id="profile-homepage" name="homepage_url" class="form-control" value="{{ profile.homepage_url }}" maxlength="240" placeholder="https://">
                                 </div>
+                                {% if profile.role != 'student' %}
                                 <div class="form-group profile-form-grid__wide">
                                     <label class="form-label" for="profile-description">个人简介</label>
                                     <textarea id="profile-description" name="description" class="form-control" maxlength="600">{{ profile.description }}</textarea>
                                 </div>
+                                {% endif %}
                             </div>
                         </div>
 
