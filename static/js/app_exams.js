@@ -158,6 +158,10 @@ export async function loadExamPapers() {
     if (allowedTypesEl) {
         allowedTypesEl.value = '';
     }
+    const stageEl = document.getElementById('exam-learning-stage-key');
+    if (stageEl) {
+        stageEl.value = '';
+    }
     resetScheduleFields('exam');
 
     setExamAssignFeedback(null, '');
@@ -248,6 +252,7 @@ export async function confirmExamAssign() {
                 paper_id: paperId,
                 class_offering_id: config.classOfferingId,
                 allowed_file_types: getTrimmedInputValue('exam-allowed-file-types'),
+                learning_stage_key: getTrimmedInputValue('exam-learning-stage-key'),
                 ...scheduleResult.payload,
             },
             silent: true
@@ -306,6 +311,7 @@ export async function saveAssignment() {
         grading_mode: modeEl ? modeEl.value : 'manual',
         class_offering_id: config.classOfferingId,
         allowed_file_types: getTrimmedInputValue('assignment-allowed-file-types'),
+        learning_stage_key: getTrimmedInputValue('assignment-learning-stage-key'),
         ...scheduleResult.payload,
     };
 
@@ -347,6 +353,7 @@ export function editAssignment(
     gradingMode,
     allowedFileTypes = '',
     schedule = null,
+    learningStageKey = '',
 ) {
     const idEl = document.getElementById('assignment-id');
     const titleEl = document.getElementById('assignment-title');
@@ -354,6 +361,7 @@ export function editAssignment(
     const rubricEl = document.getElementById('assignment-rubric');
     const modeEl = document.getElementById('assignment-grading-mode');
     const allowedTypesEl = document.getElementById('assignment-allowed-file-types');
+    const stageEl = document.getElementById('assignment-learning-stage-key');
     const scheduleModeEl = document.getElementById('assignment-availability-mode');
     const dueAtEl = document.getElementById('assignment-due-at');
     const durationEl = document.getElementById('assignment-duration-minutes');
@@ -365,6 +373,7 @@ export function editAssignment(
     if (rubricEl) rubricEl.value = rubric || '';
     if (modeEl) modeEl.value = gradingMode || 'manual';
     if (allowedTypesEl) allowedTypesEl.value = allowedFileTypes || '';
+    if (stageEl) stageEl.value = learningStageKey || '';
     if (scheduleModeEl) scheduleModeEl.value = schedule?.availability_mode || DEFAULT_SCHEDULE_MODE;
     if (dueAtEl) dueAtEl.value = toDateTimeLocalValue(schedule?.due_at);
     if (durationEl) durationEl.value = schedule?.duration_minutes || '';
@@ -378,5 +387,5 @@ export function editAssignment(
 }
 
 export function newAssignment() {
-    editAssignment('', '', '', '', 'manual', '', { availability_mode: DEFAULT_SCHEDULE_MODE });
+    editAssignment('', '', '', '', 'manual', '', { availability_mode: DEFAULT_SCHEDULE_MODE }, '');
 }

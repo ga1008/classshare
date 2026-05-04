@@ -873,15 +873,15 @@ class BlogCenter {
         if (!hint) return;
         if (mode === 'nickname') {
             hint.textContent = this.userNickname
-                ? `将以昵称“${this.userNickname}”发帖，并自动附带班级标签。`
+                ? `将以昵称“${this.userNickname}”发帖，并自动附带班级标签和最高宗门修为。`
                 : '当前还没有设置昵称，无法使用昵称发帖。';
             return;
         }
         if (mode === 'anonymous') {
-            hint.textContent = '将以匿名身份发帖，帖子不会自动附带班级标签，头像也会隐藏为默认样式。';
+            hint.textContent = '将以匿名身份发帖，帖子不会自动附带班级或修为标签，头像也会隐藏为默认样式。';
             return;
         }
-        hint.textContent = '默认使用真实名字发布；使用真实名字或昵称时会自动带上班级标签。';
+        hint.textContent = '默认使用真实名字发布；使用真实名字或昵称时会自动带上班级标签和最高宗门修为。';
     }
 
     async savePost(status) {
@@ -1558,6 +1558,15 @@ class BlogCenter {
         return `<button type="button" class="blog-user-link blog-user-link--name ${escapeHtml(className)}" ${this.userMenuAttrs(author)}>${name}</button>`;
     }
 
+    authorCultivationBadgeHtml(author = {}, className = '') {
+        const badge = author?.cultivation_badge || null;
+        const label = String(badge?.label || '').trim();
+        if (!label || author?.is_anonymous) return '';
+        const theme = String(badge?.theme || 'mortal').replace(/[^a-z0-9_-]/gi, '') || 'mortal';
+        const title = `${label} · 修为 ${badge?.score ?? 0}`;
+        return `<span class="blog-author-cultivation ${escapeHtml(className)}" data-theme="${escapeHtml(theme)}" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
+    }
+
     postCardHtml(post, { ownView = false } = {}) {
         const badges = [];
         if (post.is_pinned) badges.push('<span class="blog-badge blog-badge--pin">置顶</span>');
@@ -1580,6 +1589,7 @@ class BlogCenter {
                     <div class="blog-post-card__author">
                         ${this.authorAvatarHtml(post.author, 'blog-post-card__avatar')}
                         ${this.authorNameHtml(post.author, 'blog-post-card__author-name')}
+                        ${this.authorCultivationBadgeHtml(post.author)}
                         <span class="blog-post-card__author-role">${escapeHtml(ROLE_LABELS[post.author?.role] || '')}</span>
                         <span class="blog-post-card__time">${escapeHtml(timeAgo(post.created_at))}</span>
                     </div>
@@ -1633,6 +1643,7 @@ class BlogCenter {
                         ${this.authorAvatarHtml(post.author, 'blog-detail__avatar')}
                         <div class="blog-detail__author-info">
                             ${this.authorNameHtml(post.author, 'blog-detail__author-name')}
+                            ${this.authorCultivationBadgeHtml(post.author, 'blog-author-cultivation--detail')}
                             <div class="blog-detail__author-meta">
                                 <span>${escapeHtml(ROLE_LABELS[post.author?.role] || '')}</span>
                                 <span>·</span>
@@ -1726,6 +1737,7 @@ class BlogCenter {
                 <div class="blog-comment__body">
                     <div class="blog-comment__author">
                         ${this.authorNameHtml(comment.author, 'blog-comment__author-name')}
+                        ${this.authorCultivationBadgeHtml(comment.author, 'blog-author-cultivation--comment')}
                         <span class="blog-comment__author-role">${escapeHtml(ROLE_LABELS[comment.author?.role] || '')}</span>
                         <span class="blog-comment__time">${escapeHtml(timeAgo(comment.created_at))}</span>
                     </div>

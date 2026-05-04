@@ -9,6 +9,7 @@ from .message_center_service import (
     MESSAGE_CATEGORY_PRIVATE,
     build_user_identity,
 )
+from .learning_progress_service import build_student_global_cultivation_profile
 from .student_auth_service import build_student_security_summary
 
 PROFILE_SECTIONS = ("overview", "settings", "security", "notifications", "private")
@@ -126,7 +127,7 @@ def _serialize_profile(row, *, role: str) -> dict[str, Any]:
         "qq": str(item.get("qq") or ""),
         "homepage_url": str(item.get("homepage_url") or ""),
         "nickname": str(item.get("nickname") or ""),
-        "description": str(item.get("description") or ""),
+        "description": str(item.get("description") or "") if role == "teacher" else "",
         "profile_info": str(item.get("profile_info") or ""),
         "created_at": str(item.get("created_at") or ""),
         "password_updated_at": str(item.get("password_updated_at") or ""),
@@ -149,10 +150,11 @@ def _calculate_profile_completion(profile: dict[str, Any]) -> dict[str, Any]:
         "wechat",
         "qq",
         "homepage_url",
-        "description",
         "avatar_file_hash",
         "today_mood",
     ]
+    if profile.get("role") == "teacher":
+        weighted_fields.append("description")
     completed = [field for field in weighted_fields if str(profile.get(field) or "").strip()]
     percent = round(len(completed) / len(weighted_fields) * 100) if weighted_fields else 0
     return {
@@ -298,8 +300,12 @@ def _load_teacher_recent_items(conn, teacher_id: int, role: str) -> list[dict[st
         FROM submissions s
         JOIN assignments a ON a.id = s.assignment_id
         LEFT JOIN class_offerings o ON o.id = a.class_offering_id
-        WHERE o.teacher_id = ?
-           OR a.course_id IN (SELECT id FROM courses WHERE created_by_teacher_id = ?)
+        WHERE (o.teacher_id = ?
+           OR a.course_id IN (SELECT id FROM courses WHERE created_by_teacher_id = ?))
+          AND NOT EXISTS (
+              SELECT 1 FROM learning_stage_exam_attempts lsea
+              WHERE lsea.assignment_id = a.id
+          )
         ORDER BY s.submitted_at DESC, s.id DESC
         LIMIT 4
         """,
@@ -320,8 +326,12 @@ def _load_teacher_recent_items(conn, teacher_id: int, role: str) -> list[dict[st
         SELECT a.id, a.title, a.status, a.created_at
         FROM assignments a
         LEFT JOIN class_offerings o ON o.id = a.class_offering_id
-        WHERE o.teacher_id = ?
-           OR a.course_id IN (SELECT id FROM courses WHERE created_by_teacher_id = ?)
+        WHERE (o.teacher_id = ?
+           OR a.course_id IN (SELECT id FROM courses WHERE created_by_teacher_id = ?))
+          AND NOT EXISTS (
+              SELECT 1 FROM learning_stage_exam_attempts lsea
+              WHERE lsea.assignment_id = a.id
+          )
         ORDER BY a.created_at DESC, a.id DESC
         LIMIT 3
         """,
@@ -354,6 +364,11 @@ def _load_student_recent_items(conn, student_id: int, role: str) -> list[dict[st
         LEFT JOIN submissions sub ON sub.assignment_id = a.id AND sub.student_pk_id = stu.id
         WHERE stu.id = ?
           AND a.status IN ('published', 'closed')
+          AND NOT EXISTS (
+              SELECT 1 FROM learning_stage_exam_attempts lsea
+              WHERE lsea.assignment_id = a.id
+                AND lsea.student_id != stu.id
+          )
         ORDER BY COALESCE(a.due_at, a.created_at) DESC, a.id DESC
         LIMIT 5
         """,
@@ -407,8 +422,12 @@ def _build_teacher_overview(conn, profile: dict[str, Any], user: dict) -> dict[s
                SUM(CASE WHEN a.status = 'closed' THEN 1 ELSE 0 END) AS closed_count
         FROM assignments a
         LEFT JOIN class_offerings o ON o.id = a.class_offering_id
-        WHERE o.teacher_id = ?
-           OR a.course_id IN (SELECT id FROM courses WHERE created_by_teacher_id = ?)
+        WHERE (o.teacher_id = ?
+           OR a.course_id IN (SELECT id FROM courses WHERE created_by_teacher_id = ?))
+          AND NOT EXISTS (
+              SELECT 1 FROM learning_stage_exam_attempts lsea
+              WHERE lsea.assignment_id = a.id
+          )
         """,
         (teacher_id, teacher_id),
     ).fetchone()
@@ -420,8 +439,12 @@ def _build_teacher_overview(conn, profile: dict[str, Any], user: dict) -> dict[s
         FROM submissions s
         JOIN assignments a ON a.id = s.assignment_id
         LEFT JOIN class_offerings o ON o.id = a.class_offering_id
-        WHERE o.teacher_id = ?
-           OR a.course_id IN (SELECT id FROM courses WHERE created_by_teacher_id = ?)
+        WHERE (o.teacher_id = ?
+           OR a.course_id IN (SELECT id FROM courses WHERE created_by_teacher_id = ?))
+          AND NOT EXISTS (
+              SELECT 1 FROM learning_stage_exam_attempts lsea
+              WHERE lsea.assignment_id = a.id
+          )
         """,
         (teacher_id, teacher_id),
     ).fetchone()
@@ -567,14 +590,28 @@ def _build_student_overview(conn, profile: dict[str, Any], user: dict) -> dict[s
     activity_count = int(behavior_row["activity_count"] or 0) if behavior_row else 0
     focus_minutes = round(int(behavior_row["focus_seconds"] or 0) / 60) if behavior_row else 0
     notification_unread = _notification_unread_count(conn, role=role, user_id=student_id)
+    cultivation = build_student_global_cultivation_profile(conn, student_id)
+    cultivation_courses = cultivation.get("courses") or []
+    breakthrough_count = sum(1 for item in cultivation_courses if item.get("eligible_stage"))
+    cultivation_level = (cultivation.get("highest_level") or {}).get("level_name") or "凡阶"
 
     return {
         "headline": "学习情况总览",
+        "hero_stats": [
+            {"label": "参与课堂", "value": offering_count, "suffix": "门"},
+            {"label": "待完成", "value": pending_count, "suffix": "项"},
+            {
+                "label": "平均分",
+                "value": round(float(avg_score), 1) if avg_score is not None else "-",
+                "suffix": "",
+            },
+            {"label": "当前修为", "value": cultivation.get("score", 0), "suffix": ""},
+        ],
         "metric_cards": [
             {"label": "待完成", "value": pending_count, "note": f"全部任务 {total} 项"},
             {"label": "已提交", "value": submitted_count, "note": f"批改中 {grading_count} 项"},
             {"label": "平均分", "value": round(float(avg_score), 1) if avg_score is not None else "-", "note": f"已批改 {graded_count} 项"},
-            {"label": "课堂互动", "value": activity_count, "note": f"专注约 {focus_minutes} 分钟"},
+            {"label": "修炼进度", "value": cultivation.get("score", 0), "note": f"{cultivation_level} · 可破境 {breakthrough_count} 门"},
         ],
         "charts": [
             {
@@ -599,6 +636,12 @@ def _build_student_overview(conn, profile: dict[str, Any], user: dict) -> dict[s
         ],
         "recent_items": _load_student_recent_items(conn, student_id, role),
         "security_summary": security_summary,
+        "cultivation": cultivation,
+        "activity_summary": {
+            "activity_count": activity_count,
+            "focus_minutes": focus_minutes,
+            "notification_unread": notification_unread,
+        },
     }
 
 
@@ -628,6 +671,10 @@ def update_basic_profile(conn, user: dict, payload: dict[str, Any]) -> dict[str,
     user_id = _safe_int(user.get("id"))
     data = _normalize_profile_payload(payload, role=role)
     table_name = "teachers" if role == "teacher" else "students"
+    description_value = data["description"]
+    if role == "student":
+        existing = conn.execute(f"SELECT description FROM {table_name} WHERE id = ?", (user_id,)).fetchone()
+        description_value = str(existing["description"] or "") if existing else ""
     conn.execute(
         f"""
         UPDATE {table_name}
@@ -647,7 +694,7 @@ def update_basic_profile(conn, user: dict, payload: dict[str, Any]) -> dict[str,
             data["wechat"],
             data["qq"],
             data["homepage_url"],
-            data["description"],
+            description_value,
             user_id,
         ),
     )

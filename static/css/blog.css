@@ -367,6 +367,34 @@
     color: var(--text-primary);
 }
 
+.blog-author-cultivation {
+    display: inline-flex;
+    align-items: center;
+    max-width: 12rem;
+    padding: 0.08rem 0.45rem;
+    border-radius: var(--radius-full);
+    border: 1px solid rgba(14, 165, 233, 0.2);
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(249, 115, 22, 0.1));
+    color: #075985;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.blog-author-cultivation--detail {
+    width: fit-content;
+    max-width: min(100%, 18rem);
+    margin-top: 0.16rem;
+}
+
+.blog-author-cultivation--comment {
+    font-size: 0.64rem;
+    max-width: 10rem;
+}
+
 .blog-post-card__author-role {
     font-size: 0.6875rem;
     color: var(--text-muted);

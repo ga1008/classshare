@@ -40,6 +40,7 @@ from ..services.course_planning_service import (
 )
 from ..services.file_handler import save_upload_file
 from ..services.file_service import save_file_globally
+from ..services.learning_progress_service import normalize_course_sect_name
 from ..services.materials_service import (
     attach_learning_material_briefs,
     get_learning_material_brief_map,
@@ -194,6 +195,7 @@ def _prepare_course_payload(
 ) -> dict[str, Any]:
     name = str(data.get("name") or "").strip()
     description = str(data.get("description") or "").strip()
+    sect_name = normalize_course_sect_name(data.get("sect_name"), course_name=name)
     course_id = _parse_optional_int(data.get("course_id"))
     credits = _parse_nonnegative_float(data.get("credits"), field_name="学分", default=0.0)
     total_hours = normalize_total_hours(data.get("total_hours"))
@@ -216,6 +218,7 @@ def _prepare_course_payload(
         "course_id": course_id,
         "name": name,
         "description": description,
+        "sect_name": sect_name,
         "credits": credits,
         "total_hours": total_hours,
         "lessons": lessons,
@@ -441,12 +444,13 @@ async def api_save_course(
                 conn.execute(
                     """
                     UPDATE courses
-                    SET name = ?, description = ?, credits = ?, total_hours = ?
+                    SET name = ?, description = ?, sect_name = ?, credits = ?, total_hours = ?
                     WHERE id = ? AND created_by_teacher_id = ?
                     """,
                     (
                         payload["name"],
                         payload["description"],
+                        payload["sect_name"],
                         payload["credits"],
                         payload["total_hours"],
                         payload["course_id"],
@@ -458,12 +462,13 @@ async def api_save_course(
             else:
                 cursor = conn.execute(
                     """
-                    INSERT INTO courses (name, description, credits, total_hours, created_by_teacher_id)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO courses (name, description, sect_name, credits, total_hours, created_by_teacher_id)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
                     (
                         payload["name"],
                         payload["description"],
+                        payload["sect_name"],
                         payload["credits"],
                         payload["total_hours"],
                         user["id"],
@@ -606,6 +611,7 @@ async def api_create_course(
         request: Request,
         name: str = Form(...),  # 改为必填
         description: str = Form(default=""),  # 明确指定默认值
+        sect_name: str = Form(default=""),
         credits: float = Form(default=0.0),  # 明确指定默认值
         user: dict = Depends(get_current_teacher)
 ):
@@ -616,8 +622,8 @@ async def api_create_course(
 
         with get_db_connection() as conn:
             conn.execute(
-                "INSERT INTO courses (name, description, credits, created_by_teacher_id) VALUES (?, ?, ?, ?)",
-                (name.strip(), description, credits, user['id'])
+                "INSERT INTO courses (name, description, sect_name, credits, created_by_teacher_id) VALUES (?, ?, ?, ?, ?)",
+                (name.strip(), description, normalize_course_sect_name(sect_name, course_name=name), credits, user['id'])
             )
             conn.commit()
     except sqlite3.IntegrityError:

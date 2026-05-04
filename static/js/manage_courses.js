@@ -17,6 +17,7 @@ const elements = {
     modalTitle: document.getElementById('courseModalTitle'),
     courseIdInput: document.getElementById('courseIdInput'),
     nameInput: document.getElementById('courseNameInput'),
+    sectNameInput: document.getElementById('courseSectNameInput'),
     creditsInput: document.getElementById('courseCreditsInput'),
     descriptionInput: document.getElementById('courseDescriptionInput'),
     totalHoursInput: document.getElementById('courseTotalHoursInput'),
@@ -143,6 +144,7 @@ function resetForm() {
     if (elements.modalTitle) elements.modalTitle.textContent = '新增课程';
     if (elements.courseIdInput) elements.courseIdInput.value = '';
     if (elements.nameInput) elements.nameInput.value = '';
+    if (elements.sectNameInput) elements.sectNameInput.value = '';
     if (elements.creditsInput) elements.creditsInput.value = '0';
     if (elements.descriptionInput) elements.descriptionInput.value = '';
     if (elements.totalHoursInput) elements.totalHoursInput.value = '0';
@@ -161,6 +163,7 @@ function populateForm(course) {
     if (elements.modalTitle) elements.modalTitle.textContent = '编辑课程';
     if (elements.courseIdInput) elements.courseIdInput.value = String(course.id || '');
     if (elements.nameInput) elements.nameInput.value = course.name || '';
+    if (elements.sectNameInput) elements.sectNameInput.value = course.sect_name || '';
     if (elements.creditsInput) elements.creditsInput.value = String(course.credits ?? 0);
     if (elements.descriptionInput) elements.descriptionInput.value = course.description || '';
     if (elements.totalHoursInput) elements.totalHoursInput.value = String(course.total_hours || 0);
@@ -288,6 +291,7 @@ async function handleSaveCourse() {
     const payload = {
         course_id: elements.courseIdInput?.value || '',
         name: elements.nameInput?.value || '',
+        sect_name: elements.sectNameInput?.value || '',
         description: elements.descriptionInput?.value || '',
         credits: Number(elements.creditsInput?.value || 0),
         total_hours: Number(elements.totalHoursInput?.value || 0),

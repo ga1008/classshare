@@ -9,8 +9,10 @@ from typing import Any, Optional
 
 import httpx
 
+from ..config import DATA_DIR, HOMEWORK_SUBMISSIONS_DIR
 from ..core import ai_client
 from ..database import get_db_connection
+from .exam_json_service import EXAM_JSON_TEMPLATE, normalize_exam_json_payload
 from .message_center_service import (
     AI_ASSISTANT_LABEL,
     AI_ASSISTANT_ROLE,
@@ -22,12 +24,74 @@ from .psych_profile_service import (
     load_latest_hidden_profile,
 )
 from .submission_file_alignment import resolve_submission_file_path
+from .submission_assets import delete_storage_tree
 
 
 PASSING_STAGE_SCORE = 80
 MATERIAL_COMPLETE_SCROLL = 0.86
 MATERIAL_COMPLETE_ACTIVE_SECONDS = 180
 MATERIAL_COMPLETE_TOTAL_SECONDS = 300
+AI_EXAM_SOURCE_TYPE_STAGE = "manual"
+MAX_COURSE_SECT_NAME_LENGTH = 18
+STAGE_EXAM_TEMPLATE_PATH = DATA_DIR / "exam_templates" / "learning_stage_exam_template.json"
+STAGE_EXAM_TEMPLATE: dict[str, Any] = {
+    "title": "课程名称 · 境界名称破境试炼",
+    "description": "本试炼满分 100 分，建议作答时间 60-90 分钟。试卷只覆盖当前境界及之前已学习的课堂知识点。",
+    "pages": [
+        {
+            "name": "第一部分：单项选择题",
+            "questions": [
+                {
+                    "id": "p1_q1",
+                    "type": "radio",
+                    "text": "1. 围绕当前境界范围内的基础概念设计一道单项选择题。",
+                    "options": ["A. 选项一", "B. 选项二", "C. 选项三", "D. 选项四"],
+                    "answer": "A",
+                    "explanation": "说明正确答案对应的课程知识点。",
+                }
+            ],
+        },
+        {
+            "name": "第二部分：多项选择题",
+            "questions": [
+                {
+                    "id": "p2_q1",
+                    "type": "checkbox",
+                    "text": "2. 围绕当前境界范围内容易混淆的知识点设计一道多项选择题。",
+                    "options": ["A. 选项一", "B. 选项二", "C. 选项三", "D. 选项四"],
+                    "answer": ["A", "C"],
+                    "explanation": "说明每个正确选项为什么成立，并指出干扰项的误区。",
+                }
+            ],
+        },
+        {
+            "name": "第三部分：填空与判断迁移题",
+            "questions": [
+                {
+                    "id": "p3_q1",
+                    "type": "text",
+                    "text": "3. 根据课堂材料中的关键术语或过程设计一道短答案题。",
+                    "placeholder": "请输入简短答案",
+                    "answer": "参考答案",
+                    "explanation": "说明答案所在的知识点和常见错误。",
+                }
+            ],
+        },
+        {
+            "name": "第四部分：简答与综合应用题",
+            "questions": [
+                {
+                    "id": "p4_q1",
+                    "type": "textarea",
+                    "text": "4. 结合学生学习记录和当前境界范围，设计一道需要解释、推理或应用的综合题。",
+                    "placeholder": "请写出完整作答过程",
+                    "answer": "参考答案",
+                    "explanation": "给出评分关注点、关键步骤和可接受的表述。",
+                }
+            ],
+        },
+    ],
+}
 
 STARTER_LEVEL: dict[str, Any] = {
     "key": "mortal",
@@ -143,6 +207,34 @@ def clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
     return max(lower, min(upper, value))
 
 
+def derive_course_sect_name(course_name: Any) -> str:
+    clean_name = "".join(str(course_name or "").strip().split())
+    if not clean_name:
+        return "课堂宗"
+    if "计算机网络" in clean_name:
+        return "计网宗"
+    replacements = ("课程", "实验", "基础", "概论", "导论", "实践", "设计", "专题")
+    compact = clean_name
+    for word in replacements:
+        compact = compact.replace(word, "")
+    compact = compact or clean_name
+    if len(compact) <= 4:
+        stem = compact
+    else:
+        cjk_chars = [char for char in compact if "\u4e00" <= char <= "\u9fff"]
+        stem = "".join(cjk_chars[:2]) if cjk_chars else compact[:4]
+    return f"{stem}宗"
+
+
+def normalize_course_sect_name(value: Any, *, course_name: Any = "") -> str:
+    normalized = " ".join(str(value or "").strip().split())
+    if not normalized:
+        normalized = derive_course_sect_name(course_name)
+    if len(normalized) > MAX_COURSE_SECT_NAME_LENGTH:
+        normalized = normalized[:MAX_COURSE_SECT_NAME_LENGTH]
+    return normalized
+
+
 def truncate_text(value: Any, limit: int = 500) -> str:
     text = " ".join(str(value or "").replace("\x00", " ").split())
     if len(text) <= limit:
@@ -169,6 +261,20 @@ def normalize_level_key(stage_key: Any) -> str:
 def get_learning_level(stage_key: str) -> Optional[dict[str, Any]]:
     normalized = normalize_level_key(stage_key)
     return next((item for item in LEARNING_LEVELS if item["key"] == normalized), None)
+
+
+def get_learning_stage_options() -> list[dict[str, Any]]:
+    return [public_level_payload(level) for level in LEARNING_LEVELS]
+
+
+def normalize_assignment_stage_key(raw_stage_key: Any) -> Optional[str]:
+    stage_key = normalize_level_key(raw_stage_key)
+    if not stage_key:
+        return None
+    level = get_learning_level(stage_key)
+    if not level:
+        raise ValueError("试炼阶段不存在")
+    return level["key"]
 
 
 def get_starter_level() -> dict[str, Any]:
@@ -232,8 +338,77 @@ def student_can_access_assignment(conn, assignment_id: int | str, student_id: in
     return int(target["student_id"]) == int(student_id)
 
 
-def is_learning_stage_assignment(conn, assignment_id: int | str) -> bool:
+def is_personal_stage_exam_assignment(conn, assignment_id: int | str) -> bool:
     return get_stage_exam_target(conn, assignment_id) is not None
+
+
+def is_learning_stage_assignment(conn, assignment_id: int | str) -> bool:
+    return is_personal_stage_exam_assignment(conn, assignment_id)
+
+
+def build_personal_stage_exam_stats(conn, class_offering_id: int) -> dict[str, int]:
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS total_count,
+               COUNT(DISTINCT student_id) AS student_count,
+               SUM(CASE WHEN status IN ('generating', 'generated', 'submitted', 'grading') THEN 1 ELSE 0 END) AS active_count,
+               SUM(CASE WHEN status IN ('submitted', 'grading') THEN 1 ELSE 0 END) AS submitted_count,
+               SUM(CASE WHEN status = 'passed' THEN 1 ELSE 0 END) AS passed_count,
+               SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_count
+        FROM learning_stage_exam_attempts
+        WHERE class_offering_id = ?
+        """,
+        (int(class_offering_id),),
+    ).fetchone()
+    if not row:
+        return {
+            "total_count": 0,
+            "student_count": 0,
+            "active_count": 0,
+            "submitted_count": 0,
+            "passed_count": 0,
+            "failed_count": 0,
+        }
+    return {
+        "total_count": int(row["total_count"] or 0),
+        "student_count": int(row["student_count"] or 0),
+        "active_count": int(row["active_count"] or 0),
+        "submitted_count": int(row["submitted_count"] or 0),
+        "passed_count": int(row["passed_count"] or 0),
+        "failed_count": int(row["failed_count"] or 0),
+    }
+
+
+def is_personal_stage_exam_paper(conn, paper_id: str) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM learning_stage_exam_attempts
+        WHERE exam_paper_id = ?
+        LIMIT 1
+        """,
+        (paper_id,),
+    ).fetchone()
+    return row is not None
+
+
+def personal_stage_assignment_filter_sql(alias: str = "a") -> str:
+    return (
+        "NOT EXISTS ("
+        "SELECT 1 FROM learning_stage_exam_attempts lsea "
+        f"WHERE lsea.assignment_id = {alias}.id"
+        ")"
+    )
+
+
+def visible_stage_assignment_filter_sql(alias: str = "a") -> str:
+    return (
+        "NOT EXISTS ("
+        "SELECT 1 FROM learning_stage_exam_attempts lsea "
+        f"WHERE lsea.assignment_id = {alias}.id "
+        "AND lsea.student_id != ?"
+        ")"
+    )
 
 
 def _load_offering(conn, class_offering_id: int) -> Optional[dict[str, Any]]:
@@ -241,6 +416,7 @@ def _load_offering(conn, class_offering_id: int) -> Optional[dict[str, Any]]:
         """
         SELECT o.*,
                c.name AS course_name,
+               c.sect_name AS course_sect_name,
                c.description AS course_description,
                c.credits AS course_credits,
                cl.name AS class_name,
@@ -670,13 +846,131 @@ def refresh_student_learning_state(conn, class_offering_id: int, student_id: int
                 {"label": "稳定投入", "weight": 5},
             ],
             "pass_score": PASSING_STAGE_SCORE,
-            "fairness_note": "修为由材料研读、任务通关、课堂互动和稳定投入共同凝聚；互动有上限，前期容易入门，后期逐步加大突破难度。",
+            "fairness_note": "修为由材料研读、任务通关、课堂互动和稳定投入共同凝聚",
+        },
+    }
+
+
+def _class_learning_score_rows(
+    conn,
+    class_offering_id: int,
+    student_id: int,
+    *,
+    current_score: float | None = None,
+) -> list[dict[str, Any]]:
+    offering = _load_offering(conn, int(class_offering_id))
+    if not offering:
+        return []
+    rows = conn.execute(
+        """
+        SELECT id, name, student_id_number
+        FROM students
+        WHERE class_id = ?
+        ORDER BY student_id_number, id
+        """,
+        (offering["class_id"],),
+    ).fetchall()
+    score_rows: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item_student_id = int(item["id"])
+        if item_student_id == int(student_id) and current_score is not None:
+            score = safe_float(current_score)
+        else:
+            score = safe_float(_build_learning_metrics(conn, int(class_offering_id), item_student_id).get("score"))
+        score_rows.append({
+            "id": item_student_id,
+            "name": item.get("name") or "同学",
+            "student_id_number": item.get("student_id_number"),
+            "score": round(score, 1),
+            "is_self": item_student_id == int(student_id),
+        })
+    return score_rows
+
+
+def build_student_class_position(
+    conn,
+    class_offering_id: int,
+    student_id: int,
+    *,
+    current_score: float | None = None,
+) -> dict[str, Any] | None:
+    score_rows = _class_learning_score_rows(
+        conn,
+        int(class_offering_id),
+        int(student_id),
+        current_score=current_score,
+    )
+    if not score_rows:
+        return None
+
+    ranked = sorted(
+        score_rows,
+        key=lambda item: (-safe_float(item.get("score")), str(item.get("student_id_number") or ""), int(item["id"])),
+    )
+    total = len(ranked)
+    for index, item in enumerate(ranked, start=1):
+        item["rank"] = index
+    current = next((item for item in ranked if item.get("is_self")), None)
+    if current is None:
+        return None
+
+    leader = ranked[0]
+    ascending = sorted(
+        ranked,
+        key=lambda item: (safe_float(item.get("score")), int(item["rank"]), int(item["id"])),
+    )
+    min_score = safe_float(ascending[0].get("score")) if ascending else 0.0
+    max_score = safe_float(ascending[-1].get("score")) if ascending else 0.0
+    x_by_id: dict[int, float] = {}
+    points: list[dict[str, Any]] = []
+    denominator = max(len(ascending) - 1, 1)
+    for index, item in enumerate(ascending):
+        x_percent = 50.0 if len(ascending) == 1 else round(index / denominator * 100, 2)
+        x_by_id[int(item["id"])] = x_percent
+        points.append({
+            "x": x_percent,
+            "score": safe_float(item.get("score")),
+            "rank": int(item["rank"]),
+            "is_self": bool(item.get("is_self")),
+            "is_top": int(item["id"]) == int(leader["id"]),
+        })
+
+    rank = int(current["rank"])
+    top_percent = max(1, int(math.ceil(rank / total * 100))) if total else 0
+    surpass_percent = int(round((total - rank) / max(total - 1, 1) * 100)) if total > 1 else 100
+    return {
+        "total": total,
+        "current": {
+            "name": current.get("name") or "您",
+            "rank": rank,
+            "score": safe_float(current.get("score")),
+            "top_percent": top_percent,
+            "surpass_percent": surpass_percent,
+            "x": x_by_id.get(int(current["id"]), 50.0),
+        },
+        "leader": {
+            "name": leader.get("name") or "同学",
+            "score": safe_float(leader.get("score")),
+            "x": x_by_id.get(int(leader["id"]), 50.0),
+            "is_self": bool(leader.get("is_self")),
+        },
+        "mountain": {
+            "min_score": min_score,
+            "max_score": max_score,
+            "points": points,
         },
     }
 
 
 def serialize_student_learning_progress(conn, class_offering_id: int, student_id: int) -> dict[str, Any]:
     state = refresh_student_learning_state(conn, int(class_offering_id), int(student_id))
+    state["class_position"] = build_student_class_position(
+        conn,
+        int(class_offering_id),
+        int(student_id),
+        current_score=safe_float(state.get("score")),
+    )
     return state
 
 
@@ -685,7 +979,9 @@ def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str,
     rows = conn.execute(
         """
         SELECT o.id AS class_offering_id,
+               c.id AS course_id,
                c.name AS course_name,
+               c.sect_name AS course_sect_name,
                cl.name AS class_name,
                t.name AS teacher_name
         FROM class_offerings o
@@ -711,7 +1007,12 @@ def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str,
         next_stage = progress.get("next_stage")
         item = {
             "class_offering_id": int(offering["class_offering_id"]),
+            "course_id": safe_int(offering.get("course_id")),
             "course_name": offering.get("course_name") or "课堂",
+            "sect_name": normalize_course_sect_name(
+                offering.get("course_sect_name"),
+                course_name=offering.get("course_name"),
+            ),
             "class_name": offering.get("class_name") or "",
             "teacher_name": offering.get("teacher_name") or "",
             "score": progress["score"],
@@ -720,7 +1021,18 @@ def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str,
             "next_stage": next_stage,
             "eligible_stage": progress.get("eligible_stage"),
             "certificate_count": len(progress.get("certificates") or []),
+            "stages": [
+                {
+                    "key": stage["key"],
+                    "short_name": stage["short_name"],
+                    "status": stage["status"],
+                    "theme": stage.get("theme") or stage["key"],
+                    "progress_percent": stage["progress_percent"],
+                }
+                for stage in progress.get("stages") or []
+            ],
         }
+        item["sect_level_label"] = f"{item['sect_name']} · {current_level['short_name']}"
         course_items.append(item)
         if selected is None:
             selected = item
@@ -737,12 +1049,15 @@ def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str,
         current_level = get_starter_level()
         selected = {
             "class_offering_id": None,
+            "course_id": None,
             "course_name": "尚未加入课堂",
             "class_name": student.get("class_name") or "",
             "teacher_name": "",
             "score": 0,
             "progress_percent": 0,
             "current_level": current_level,
+            "sect_name": "课堂宗",
+            "sect_level_label": "课堂宗 · 未入道",
             "next_stage": LEARNING_LEVELS[0] if LEARNING_LEVELS else None,
             "eligible_stage": None,
             "certificate_count": 0,
@@ -761,6 +1076,11 @@ def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str,
     student_name = student.get("name") or ""
     progress_percent = int(round(clamp(safe_float(selected.get("progress_percent")) / 100) * 100))
     score = round(safe_float(selected.get("score")), 1)
+    sect_name = normalize_course_sect_name(
+        selected.get("sect_name"),
+        course_name=selected.get("course_name"),
+    )
+    sect_level_label = f"{sect_name} · {current_level['short_name']}"
     next_stage = selected.get("next_stage")
     next_name = str(next_stage.get("name") if isinstance(next_stage, dict) else "") if next_stage else ""
     selected_status = str(next_stage.get("status") if isinstance(next_stage, dict) else "")
@@ -794,9 +1114,14 @@ def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str,
         "score": score,
         "progress_percent": progress_percent,
         "course_count": len(course_items),
+        "certificate_count": sum(safe_int(item.get("certificate_count")) for item in course_items),
+        "breakthrough_course_count": sum(1 for item in course_items if item.get("eligible_stage")),
         "best_course": {
             "class_offering_id": selected.get("class_offering_id"),
+            "course_id": selected.get("course_id"),
             "course_name": selected.get("course_name") or "课堂",
+            "sect_name": sect_name,
+            "sect_level_label": sect_level_label,
             "class_name": selected.get("class_name") or "",
             "score": score,
             "progress_percent": progress_percent,
@@ -804,13 +1129,41 @@ def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str,
             "breakthrough_ready": breakthrough_ready,
             "generating_stage_exam": generating_stage_exam,
         },
-        "courses": sorted_courses[:6],
+        "courses": sorted_courses,
+        "sect_name": sect_name,
+        "sect_level_label": sect_level_label,
         "next_stage_name": next_name,
         "progress_label": progress_label,
         "breakthrough_ready": breakthrough_ready,
         "generating_stage_exam": generating_stage_exam,
         "reveal_title": reveal_title,
         "reveal_subtitle": reveal_subtitle,
+    }
+
+
+def build_student_public_cultivation_badge(conn, student_id: int) -> dict[str, Any] | None:
+    profile = build_student_global_cultivation_profile(conn, int(student_id))
+    best_course = profile.get("best_course") or {}
+    highest_level = public_level_payload(profile.get("highest_level"))
+    if not best_course.get("class_offering_id"):
+        return None
+
+    sect_name = normalize_course_sect_name(
+        best_course.get("sect_name"),
+        course_name=best_course.get("course_name"),
+    )
+    label = f"{sect_name} · {highest_level['short_name']}"
+    return {
+        "label": label,
+        "sect_name": sect_name,
+        "level_name": highest_level["level_name"],
+        "short_name": highest_level["short_name"],
+        "tier": highest_level["tier"],
+        "theme": highest_level["theme"],
+        "score": profile.get("score", 0),
+        "progress_percent": profile.get("progress_percent", 0),
+        "course_name": best_course.get("course_name") or "",
+        "class_offering_id": best_course.get("class_offering_id"),
     }
 
 
@@ -878,8 +1231,10 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
     return {
         "student_count": student_count,
         "average_score": round(score_total / student_count, 1) if student_count else 0,
+        "sect_name": normalize_course_sect_name(offering.get("course_sect_name"), course_name=offering.get("course_name")),
         "challenge_ready_count": challenge_ready_count,
         "certificate_count": certificate_count,
+        "personal_stage_exam_stats": build_personal_stage_exam_stats(conn, int(class_offering_id)),
         "distribution": distribution_items,
         "students": students[:12],
         "levels": [dict(level, pass_score=PASSING_STAGE_SCORE) for level in LEARNING_LEVELS],
@@ -960,58 +1315,80 @@ def record_material_learning_progress(
     }
 
 
+def _ensure_stage_exam_template_file() -> dict[str, Any]:
+    STAGE_EXAM_TEMPLATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if STAGE_EXAM_TEMPLATE_PATH.exists():
+        template = json_loads(STAGE_EXAM_TEMPLATE_PATH.read_text(encoding="utf-8"), {})
+        if isinstance(template, dict):
+            try:
+                normalize_exam_json_payload(template)
+                return template
+            except ValueError:
+                pass
+    STAGE_EXAM_TEMPLATE_PATH.write_text(
+        json.dumps(STAGE_EXAM_TEMPLATE, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return STAGE_EXAM_TEMPLATE
+
+
+def _load_stage_exam_template_text() -> str:
+    template = _ensure_stage_exam_template_file()
+    if not template:
+        template = EXAM_JSON_TEMPLATE
+    return json.dumps(template, ensure_ascii=False, indent=2)
+
+
 def _normalize_exam_payload(payload: Any) -> dict[str, Any]:
     data = payload
     if isinstance(data, dict) and isinstance(data.get("exam_data"), dict):
         data = data["exam_data"]
     if isinstance(data, dict) and isinstance(data.get("data"), dict):
         data = data["data"]
-    if not isinstance(data, dict):
-        raise ValueError("AI 返回的试卷不是 JSON 对象")
-    if isinstance(data.get("pages"), list):
-        pages = data["pages"]
-    elif isinstance(data.get("questions"), list):
-        pages = [{"id": "stage-page-1", "title": "破境试炼", "questions": data["questions"]}]
-    else:
-        raise ValueError("AI 返回的试卷缺少 pages/questions")
-
-    normalized_pages = []
-    question_counter = 1
-    for page_index, page in enumerate(pages, start=1):
-        if not isinstance(page, dict):
-            continue
-        questions = []
-        for question in page.get("questions") or []:
-            if not isinstance(question, dict):
-                continue
-            item = dict(question)
-            item["id"] = str(item.get("id") or f"Q{question_counter}")
-            item["type"] = str(item.get("type") or "short_answer")
-            item["text"] = str(item.get("text") or item.get("question") or item.get("title") or f"第{question_counter}题")
-            questions.append(item)
-            question_counter += 1
-        if questions:
-            normalized_pages.append({
-                "id": str(page.get("id") or f"P{page_index}"),
-                "title": str(page.get("title") or f"第{page_index}部分"),
-                "questions": questions,
-            })
-    if not normalized_pages:
-        raise ValueError("AI 返回的试卷没有可用题目")
-    return {
-        "pages": normalized_pages,
-        "meta": {
-            **(data.get("meta") if isinstance(data.get("meta"), dict) else {}),
-            "generated_for": "learning_stage",
-        },
+    try:
+        imported = normalize_exam_json_payload(data)
+    except ValueError as exc:
+        raise ValueError(f"AI 返回的试卷结构不符合原生 JSON 模板：{exc}") from exc
+    questions = dict(imported["questions"])
+    questions["meta"] = {
+        **(questions.get("meta") if isinstance(questions.get("meta"), dict) else {}),
+        "generated_for": "learning_stage",
+        "template": "native_exam_json",
+        "title": imported.get("title"),
+        "description": imported.get("description"),
+        "stats": imported.get("stats"),
     }
+    return questions
 
 
-def _build_course_knowledge_snapshot(conn, class_offering_id: int, limit: int = 3800) -> str:
+def _stage_scope_count(total_count: int, level: Optional[dict[str, Any]]) -> int:
+    if total_count <= 0:
+        return 0
+    if not level:
+        return total_count
+    max_tier = max(safe_int(item["tier"]) for item in LEARNING_LEVELS) or 1
+    tier = max(1, safe_int(level.get("tier"), 1))
+    return max(1, min(total_count, math.ceil(total_count * tier / max_tier)))
+
+
+def _material_summary_text(item: dict[str, Any]) -> str:
+    parse_result = json_loads(item.get("ai_parse_result_json"), {})
+    summary = parse_result.get("summary") if isinstance(parse_result, dict) else ""
+    return summary or item.get("ai_optimized_markdown") or item.get("content") or ""
+
+
+def _build_course_knowledge_snapshot(
+    conn,
+    class_offering_id: int,
+    *,
+    level: Optional[dict[str, Any]] = None,
+    limit: int = 5200,
+) -> str:
     offering = _load_offering(conn, class_offering_id) or {}
     sessions = conn.execute(
         """
-        SELECT s.order_index, s.title, s.content, m.name AS material_name, m.ai_parse_result_json, m.ai_optimized_markdown
+        SELECT s.order_index, s.title, s.content, s.learning_material_id,
+               m.name AS material_name, m.ai_parse_result_json, m.ai_optimized_markdown
         FROM class_offering_sessions s
         LEFT JOIN course_materials m ON m.id = s.learning_material_id
         WHERE s.class_offering_id = ?
@@ -1022,17 +1399,57 @@ def _build_course_knowledge_snapshot(conn, class_offering_id: int, limit: int = 
     lines = [
         f"课程名称：{offering.get('course_name') or ''}",
         f"课程简介：{truncate_text(offering.get('course_description'), 600)}",
-        "课堂章节与材料摘要：",
     ]
-    for row in sessions:
+    scoped_count = _stage_scope_count(len(sessions), level)
+    scoped_sessions = sessions[:scoped_count] if scoped_count else sessions
+    if level and sessions:
+        lines.append(
+            f"当前破境范围：{level['name']}，按境界累计覆盖前 {scoped_count} / {len(sessions)} 个课堂节点。"
+        )
+    lines.append("范围内课堂章节与学习文档摘要：")
+    scoped_material_ids: set[int] = set()
+    for row in scoped_sessions:
         item = dict(row)
-        parse_result = json_loads(item.get("ai_parse_result_json"), {})
-        summary = parse_result.get("summary") if isinstance(parse_result, dict) else ""
-        if not summary:
-            summary = item.get("ai_optimized_markdown") or item.get("content") or ""
+        material_id = safe_int(item.get("learning_material_id"))
+        if material_id:
+            scoped_material_ids.add(material_id)
+        summary = _material_summary_text(item)
         lines.append(
             f"{item.get('order_index')}. {item.get('title') or '未命名章节'}"
             f"；材料：{item.get('material_name') or '无'}；要点：{truncate_text(summary, 420)}"
+        )
+    supplemental_rows = conn.execute(
+        """
+        SELECT DISTINCT m.id, m.name, m.material_path, m.ai_parse_result_json, m.ai_optimized_markdown, '' AS content
+        FROM course_materials m
+        JOIN (
+            SELECT home_learning_material_id AS material_id
+            FROM class_offerings
+            WHERE id = ? AND home_learning_material_id IS NOT NULL
+            UNION
+            SELECT material_id
+            FROM course_material_assignments
+            WHERE class_offering_id = ?
+        ) scoped ON scoped.material_id = m.id
+        WHERE m.node_type = 'file'
+        ORDER BY m.name COLLATE NOCASE
+        """,
+        (class_offering_id, class_offering_id),
+    ).fetchall()
+    supplemental_added = 0
+    for row in supplemental_rows:
+        item = dict(row)
+        material_id = safe_int(item.get("id"))
+        if material_id in scoped_material_ids:
+            continue
+        if supplemental_added == 0:
+            lines.append("范围内补充学习文档：")
+        supplemental_added += 1
+        if supplemental_added > 8:
+            break
+        lines.append(
+            f"- {item.get('name') or item.get('material_path') or '未命名材料'}："
+            f"{truncate_text(_material_summary_text(item), 360)}"
         )
     return truncate_text("\n".join(lines), limit)
 
@@ -1060,7 +1477,8 @@ def _build_stage_exam_prompt(
             "使用原则：用于调整题目情境、难度梯度和反馈语气，不可泄露侧写内容。",
         ])
     metrics = progress["metrics"]
-    knowledge_snapshot = _build_course_knowledge_snapshot(conn, class_offering_id)
+    knowledge_snapshot = _build_course_knowledge_snapshot(conn, class_offering_id, level=level)
+    template_text = _load_stage_exam_template_text()
     material = metrics["material"]
     assignments = metrics["assignments"]
     interactions = metrics["interactions"]
@@ -1068,26 +1486,18 @@ def _build_stage_exam_prompt(
 你是严谨但鼓励型的课程破境试炼命题老师。请为一名学生生成个性化阶段考试，必须返回合法 JSON。
 
 【输出格式】
-只返回 JSON，结构必须是：
-{{
-  "pages": [
-    {{
-      "id": "P1",
-      "title": "基础理解",
-      "questions": [
-        {{"id":"Q1","type":"single_choice|multiple_choice|short_answer|essay","text":"题干","options":["A...","B..."],"answer":"参考答案","points":10,"rubric":"评分要点"}}
-      ]
-    }}
-  ],
-  "meta": {{"difficulty":"...", "stage_key":"{level['key']}"}}
-}}
+只返回 JSON，不要 Markdown，不要代码块，不要额外解释。结构必须严格贴近下面的原生试卷模板：
+{template_text}
 
 【硬性要求】
 1. 境界：{level['name']}，通过线 {PASSING_STAGE_SCORE} 分，总分 100 分。
-2. 题目要覆盖本课程真实知识点，并根据学生学习记录做个性化变化；不要所有学生同题。
-3. 至少 6 题，最多 10 题；客观题、简答题、综合题都要有，后面境界可以更综合。
-4. 每题都给 points 和 rubric/answer，兼容现有考试作答与 AI 改卷系统。
-5. 不要暴露心理侧写、内部规则或评分算法；只生成学生可见的试卷 JSON。
+2. 顶层必须包含 title、description、pages；每个 page 必须包含 name、questions。
+3. 题型只能使用 radio、checkbox、text、textarea。radio/checkbox 必须有 options；checkbox 的 answer 必须是数组。
+4. 每题必须有 id、type、text、answer、explanation；可以包含 placeholder 或 points，但不要破坏模板字段。
+5. 题目范围只围绕【当前破境范围】和范围内学习文档，不要考后续境界未覆盖的知识。
+6. 至少 6 题，最多 10 题；客观题、填空/简答、综合问答都要有，后面境界可以更综合。
+7. 题目要覆盖本课程真实知识点，并根据学生学习记录做个性化变化；不要所有学生同题。
+8. 不要暴露心理侧写、内部规则或评分算法；只生成学生可见的试卷 JSON。
 
 【课堂】
 课程：{offering.get('course_name') or ''}
@@ -1230,7 +1640,9 @@ async def create_personal_stage_exam(class_offering_id: int, student_id: int, st
         "task_type": "stage_exam_generation",
         "teacher_id": teacher_id,
         "class_offering_id": int(class_offering_id),
-        "source_type": "learning_stage",
+        # /api/ai/generate-exam 的 source_type 是 AI 服务协议字段，
+        # 阶段试炼的业务语义保留在 task_type、prompt 和 exam_config 中。
+        "source_type": AI_EXAM_SOURCE_TYPE_STAGE,
     }
     try:
         response = await ai_client.post("/api/ai/generate-exam", json=payload, timeout=300.0)
@@ -1350,6 +1762,97 @@ async def create_personal_stage_exam(class_offering_id: int, student_id: int, st
             "exam_url": f"/exam/take/{assignment_id}",
             "stage": level,
         }
+
+
+def delete_personal_stage_exam(class_offering_id: int, student_id: int, stage_key: str) -> dict[str, Any]:
+    stage_key = normalize_level_key(stage_key)
+    level = get_learning_level(stage_key)
+    if not level:
+        raise ValueError("未知的修行境界")
+
+    storage_roots: list[Path] = []
+    with get_db_connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            """
+            SELECT lsea.*,
+                   a.course_id,
+                   a.exam_paper_id AS assignment_exam_paper_id,
+                   ep.exam_config_json,
+                   (
+                     SELECT COUNT(*)
+                     FROM submissions s
+                     WHERE s.assignment_id = lsea.assignment_id
+                       AND s.student_pk_id = lsea.student_id
+                       AND s.status IN ('submitted', 'grading')
+                   ) AS pending_submission_count
+            FROM learning_stage_exam_attempts lsea
+            LEFT JOIN assignments a ON a.id = lsea.assignment_id
+            LEFT JOIN exam_papers ep ON ep.id = lsea.exam_paper_id
+            WHERE lsea.class_offering_id = ?
+              AND lsea.student_id = ?
+              AND lsea.stage_key = ?
+              AND lsea.status IN ('generated', 'failed')
+            ORDER BY lsea.generated_at DESC, lsea.id DESC
+            LIMIT 1
+            """,
+            (int(class_offering_id), int(student_id), stage_key),
+        ).fetchone()
+        if not row:
+            conn.rollback()
+            raise ValueError("当前没有可删除的个人破境试炼")
+
+        attempt = dict(row)
+        if safe_int(attempt.get("pending_submission_count")):
+            conn.rollback()
+            raise PermissionError("试炼正在提交或批改中，暂时不能删除")
+        config = json_loads(attempt.get("exam_config_json"), {})
+        if config.get("source") != "learning_stage":
+            conn.rollback()
+            raise PermissionError("教师发布的试炼不能由学生删除")
+
+        assignment_id = safe_int(attempt.get("assignment_id"))
+        paper_id = str(attempt.get("exam_paper_id") or attempt.get("assignment_exam_paper_id") or "")
+        course_id = safe_int(attempt.get("course_id"))
+        if assignment_id and course_id:
+            storage_roots.append(HOMEWORK_SUBMISSIONS_DIR / str(course_id) / str(assignment_id))
+
+        submission_rows = conn.execute(
+            "SELECT id FROM submissions WHERE assignment_id = ? AND student_pk_id = ?",
+            (assignment_id, int(student_id)),
+        ).fetchall() if assignment_id else []
+        submission_ids = [int(item["id"]) for item in submission_rows]
+        for submission_id in submission_ids:
+            conn.execute("DELETE FROM submission_files WHERE submission_id = ?", (submission_id,))
+        if submission_ids:
+            placeholders = ",".join("?" for _ in submission_ids)
+            conn.execute(f"DELETE FROM submissions WHERE id IN ({placeholders})", submission_ids)
+
+        conn.execute(
+            """
+            UPDATE learning_stage_status
+            SET status = 'challenge_ready',
+                last_exam_assignment_id = NULL,
+                last_calculated_at = ?
+            WHERE class_offering_id = ? AND student_id = ? AND stage_key = ?
+            """,
+            (now_iso(), int(class_offering_id), int(student_id), stage_key),
+        )
+        conn.execute("DELETE FROM learning_stage_exam_attempts WHERE id = ?", (int(attempt["id"]),))
+        if assignment_id:
+            conn.execute("DELETE FROM assignments WHERE id = ?", (assignment_id,))
+        if paper_id:
+            conn.execute("DELETE FROM exam_papers WHERE id = ?", (paper_id,))
+        conn.commit()
+
+    for storage_root in storage_roots:
+        delete_storage_tree(storage_root)
+    return {
+        "status": "success",
+        "deleted_assignment_id": assignment_id,
+        "stage": level,
+        "message": "个人破境试炼已删除，可以重新生成。",
+    }
 
 
 def mark_stage_submission_saved(conn, submission_id: int | str) -> Optional[dict[str, Any]]:
@@ -1537,6 +2040,230 @@ async def submit_stage_exam_for_ai_grading(submission_id: int) -> None:
             )
             conn.commit()
         print(f"[LEARNING_PROGRESS] 破境试炼自动批改提交失败: {exc}")
+
+
+def _ensure_stage_certificate(
+    conn,
+    *,
+    class_offering_id: int,
+    student_id: int,
+    level: dict[str, Any],
+    score: float,
+    assignment_id: int | str,
+    submission_id: int | str,
+    course_name: str,
+    source: str,
+) -> dict[str, Any]:
+    existing = conn.execute(
+        """
+        SELECT *
+        FROM learning_certificates
+        WHERE class_offering_id = ? AND student_id = ? AND stage_key = ?
+        LIMIT 1
+        """,
+        (class_offering_id, student_id, level["key"]),
+    ).fetchone()
+    if existing:
+        return dict(existing)
+
+    timestamp = now_iso()
+    cert_code = (
+        f"LS-{int(class_offering_id):04d}-"
+        f"{int(student_id):05d}-{level['key'].upper()}-"
+        f"{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+    )
+    cursor = conn.execute(
+        """
+        INSERT INTO learning_certificates (
+            class_offering_id, student_id, stage_key, level_key, level_name,
+            tier, title, certificate_code, issued_at, metadata_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            class_offering_id,
+            student_id,
+            level["key"],
+            level["key"],
+            level["name"],
+            level["tier"],
+            level["certificate_title"],
+            cert_code,
+            timestamp,
+            json.dumps(
+                {
+                    "score": score,
+                    "assignment_id": assignment_id,
+                    "submission_id": int(submission_id),
+                    "course_name": course_name,
+                    "source": source,
+                },
+                ensure_ascii=False,
+            ),
+        ),
+    )
+    return {
+        "id": int(cursor.lastrowid),
+        "certificate_code": cert_code,
+        "title": level["certificate_title"],
+        "level_name": level["name"],
+        "issued_at": timestamp,
+    }
+
+
+def _mark_stage_passed_by_certificate(
+    conn,
+    *,
+    class_offering_id: int,
+    student_id: int,
+    level: dict[str, Any],
+    certificate_id: int,
+    assignment_id: int | str,
+    score: float,
+    timestamp: str,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO learning_stage_status (
+            class_offering_id, student_id, stage_key, status,
+            progress_score, readiness_score, unlocked_at, passed_at,
+            last_exam_assignment_id, certificate_id, last_calculated_at, metadata_json
+        )
+        VALUES (?, ?, ?, 'passed', ?, 100, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(class_offering_id, student_id, stage_key)
+        DO UPDATE SET
+            status = 'passed',
+            progress_score = MAX(learning_stage_status.progress_score, excluded.progress_score),
+            readiness_score = 100,
+            unlocked_at = COALESCE(learning_stage_status.unlocked_at, excluded.unlocked_at),
+            passed_at = COALESCE(learning_stage_status.passed_at, excluded.passed_at),
+            last_exam_assignment_id = excluded.last_exam_assignment_id,
+            certificate_id = excluded.certificate_id,
+            last_calculated_at = excluded.last_calculated_at,
+            metadata_json = excluded.metadata_json
+        """,
+        (
+            class_offering_id,
+            student_id,
+            level["key"],
+            max(float(score or 0), 100.0),
+            timestamp,
+            timestamp,
+            assignment_id,
+            certificate_id,
+            timestamp,
+            json.dumps(
+                {
+                    "level_name": level["name"],
+                    "unlock_score": level["unlock_score"],
+                    "pass_score": PASSING_STAGE_SCORE,
+                    "source": "teacher_stage_assignment",
+                },
+                ensure_ascii=False,
+            ),
+        ),
+    )
+
+
+def handle_assignment_stage_grading_complete(conn, submission_id: int | str) -> Optional[dict[str, Any]]:
+    row = conn.execute(
+        """
+        SELECT s.id AS submission_id,
+               s.student_pk_id,
+               s.student_name,
+               s.status AS submission_status,
+               s.score AS submission_score,
+               a.id AS assignment_id,
+               a.title AS assignment_title,
+               a.learning_stage_key,
+               a.class_offering_id,
+               o.teacher_id,
+               c.name AS course_name
+        FROM submissions s
+        JOIN assignments a ON a.id = s.assignment_id
+        JOIN class_offerings o ON o.id = a.class_offering_id
+        JOIN courses c ON c.id = o.course_id
+        LEFT JOIN learning_stage_exam_attempts lsea ON lsea.assignment_id = a.id
+        WHERE s.id = ?
+          AND lsea.id IS NULL
+        LIMIT 1
+        """,
+        (submission_id,),
+    ).fetchone()
+    if not row:
+        return None
+    payload = dict(row)
+    stage_key = normalize_level_key(payload.get("learning_stage_key"))
+    if not stage_key:
+        return None
+    target_level = get_learning_level(stage_key)
+    if not target_level:
+        return None
+    score = safe_float(payload.get("submission_score"))
+    if str(payload.get("submission_status")) != "graded" or score < PASSING_STAGE_SCORE:
+        return {"status": "failed", "stage": target_level, "score": score}
+
+    class_offering_id = int(payload["class_offering_id"])
+    student_id = int(payload["student_pk_id"])
+    timestamp = now_iso()
+    target_tier = safe_int(target_level["tier"])
+    awarded: list[dict[str, Any]] = []
+    for level in LEARNING_LEVELS:
+        if safe_int(level["tier"]) > target_tier:
+            continue
+        certificate = _ensure_stage_certificate(
+            conn,
+            class_offering_id=class_offering_id,
+            student_id=student_id,
+            level=level,
+            score=score,
+            assignment_id=payload["assignment_id"],
+            submission_id=payload["submission_id"],
+            course_name=str(payload.get("course_name") or ""),
+            source="teacher_stage_assignment",
+        )
+        _mark_stage_passed_by_certificate(
+            conn,
+            class_offering_id=class_offering_id,
+            student_id=student_id,
+            level=level,
+            certificate_id=int(certificate["id"]),
+            assignment_id=payload["assignment_id"],
+            score=score,
+            timestamp=timestamp,
+        )
+        awarded.append({**public_level_payload(level), "certificate_id": int(certificate["id"])})
+
+    classroom_link = f"/classroom/{class_offering_id}"
+    level_names = "、".join(item["level_name"] for item in awarded)
+    create_learning_progress_notification(
+        conn,
+        recipient_role="student",
+        recipient_user_pk=student_id,
+        title=f"通过教师试炼，点亮至 {target_level['name']}",
+        body_preview=f"{payload.get('assignment_title') or '课堂试炼'} 得分 {score:g}，已点亮 {level_names}。",
+        link_url=classroom_link,
+        class_offering_id=class_offering_id,
+        ref_id=f"teacher-stage-assignment:{submission_id}:student",
+        actor_role=AI_ASSISTANT_ROLE,
+        actor_display_name=AI_ASSISTANT_LABEL,
+        metadata={"assignment_id": payload["assignment_id"], "stage_key": target_level["key"], "score": score},
+    )
+    create_learning_progress_notification(
+        conn,
+        recipient_role="teacher",
+        recipient_user_pk=int(payload["teacher_id"]),
+        title=f"{payload.get('student_name') or '学生'} 通过 {target_level['name']} 试炼",
+        body_preview=f"{payload.get('student_name') or '学生'} 在 {payload.get('assignment_title') or '试炼'} 得分 {score:g}，已自动补发阶段证书。",
+        link_url=classroom_link,
+        class_offering_id=class_offering_id,
+        ref_id=f"teacher-stage-assignment:{submission_id}:teacher",
+        actor_role="student",
+        actor_user_pk=student_id,
+        actor_display_name=str(payload.get("student_name") or ""),
+        metadata={"assignment_id": payload["assignment_id"], "stage_key": target_level["key"], "score": score},
+    )
+    return {"status": "passed", "stage": target_level, "score": score, "awarded": awarded}
 
 
 def handle_stage_exam_grading_complete(conn, submission_id: int | str) -> Optional[dict[str, Any]]:

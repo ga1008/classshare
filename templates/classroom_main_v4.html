@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="/static/css/feedback.css">
 <link rel="stylesheet" href="/static/css/toast.css">
 <link rel="stylesheet" href="/static/css/ai_chat.css">
-<link rel="stylesheet" href="/static/css/classroom.css?v=cultivation-20260504">
+<link rel="stylesheet" href="/static/css/classroom.css?v=semester-todos-20260504">
 <link rel="stylesheet" href="/static/css/markdown.css">
 <link rel="stylesheet" href="/static/css/materials.css">
 <link rel="stylesheet" href="/static/css/learning_material_selector.css">
@@ -114,6 +114,7 @@
         classOfferingId: {{ classroom.id }},
         courseId: {{ classroom.course_id }},
         teachingPlan: {{ classroom_page.teaching_plan | tojson }},
+        todoOverview: {{ classroom_page.todo_overview | default(none) | tojson }},
         learningProgress: {{ classroom_page.learning_progress | default(none) | tojson }},
         learningOverview: {{ classroom_page.learning_overview | default(none) | tojson }}
     };
@@ -224,6 +225,7 @@
                                         data-session-order="{{ session.order_index }}"
                                         data-session-id="{{ session.id }}"
                                         data-entry-type="{{ session.entry_type or 'lesson' }}"
+                                        data-session-date="{{ session.session_date or '' }}"
                                         data-session-select
                                         data-has-material="{{ 'true' if session.has_learning_material else 'false' }}"
                                         aria-controls="teachingTimelineDetail"
@@ -403,7 +405,77 @@
                                     {% endif %}
                                 </div>
                             </article>
+                            <section class="semester-todo-panel" id="semesterTodoPanel" aria-label="教学日历待办">
+                                <div class="semester-todo-head">
+                                    <div class="semester-todo-heading">
+                                        <span class="semester-todo-eyebrow">Semester Flow</span>
+                                        <h3>教学日历与本周待办</h3>
+                                        <p id="semesterTodoPolicyText">
+                                            {% if user_info.role == 'student' %}
+                                            自动汇总课程安排、作业考试截止、个人破境试炼和我的待办。
+                                            {% else %}
+                                            自动汇总课程安排和课堂任务截止；不展示学生个人试炼与学生私有待办。
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                    <div class="semester-todo-actions">
+                                        <div class="semester-todo-summary" id="semesterTodoSummary" aria-live="polite"></div>
+                                        {% if user_info.role == 'student' %}
+                                        <button type="button" class="btn btn-primary btn-sm" id="semesterTodoAddBtn">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                            新增待办
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="semester-todo-scroll" id="semesterTodoScroll">
+                                    <div class="semester-todo-weeks" id="semesterTodoWeeks"></div>
+                                </div>
+                            </section>
                         </div>
+                    </div>
+                </div>
+            </section>
+            {% endif %}
+
+            {% if (not teaching_plan or not teaching_plan.session_count) and classroom_page.todo_overview %}
+            <section class="embedded-teaching-plan" id="timeline-panel" data-workspace-section>
+                <div class="embedded-teaching-plan-head">
+                    <div>
+                        <p class="workspace-kicker">Semester Flow</p>
+                        <h2>教学日历与待办</h2>
+                    </div>
+                    <p class="embedded-teaching-plan-note">当前课程暂未生成课次日历，待办将按截止时间和创建时间自动归入周视图。</p>
+                </div>
+                <div class="embedded-teaching-plan-shell">
+                    <div class="embedded-teaching-plan-main is-full">
+                        <section class="semester-todo-panel" id="semesterTodoPanel" aria-label="教学日历待办">
+                            <div class="semester-todo-head">
+                                <div class="semester-todo-heading">
+                                    <span class="semester-todo-eyebrow">Semester Flow</span>
+                                    <h3>教学日历与本周待办</h3>
+                                    <p id="semesterTodoPolicyText">
+                                        {% if user_info.role == 'student' %}
+                                        自动汇总作业考试截止、个人等级试炼和我的待办。
+                                        {% else %}
+                                        自动汇总课堂任务截止；不展示学生个人试炼与学生私有待办。
+                                        {% endif %}
+                                    </p>
+                                </div>
+                                <div class="semester-todo-actions">
+                                    <div class="semester-todo-summary" id="semesterTodoSummary" aria-live="polite"></div>
+                                    {% if user_info.role == 'student' %}
+                                    <button type="button" class="btn btn-primary btn-sm" id="semesterTodoAddBtn">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                        新增待办
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="semester-todo-scroll" id="semesterTodoScroll">
+                                <div class="semester-todo-weeks" id="semesterTodoWeeks"></div>
+                            </div>
+                        </section>
                     </div>
                 </div>
             </section>
@@ -440,7 +512,6 @@
             <div>
                 <p class="workspace-kicker">Cultivation Path</p>
                 <h2>进度及等级</h2>
-                <p>{{ lp.rules.fairness_note }}</p>
             </div>
             <div class="learning-progress-score" data-theme="{{ lp.current_level.level_key }}">
                 <span>修为</span>
@@ -448,49 +519,75 @@
                 <small>{{ lp.current_level.level_name }}</small>
             </div>
         </div>
-        <div class="learning-progress-track" aria-label="修行等级进度">
-            {% for stage in lp.stages %}
-            <div class="learning-stage-node is-{{ stage.status }}" data-theme="{{ stage.theme }}">
-                <span class="learning-stage-orb"></span>
-                <strong>{{ stage.short_name }}</strong>
-                <small>
-                    {% if stage.status == 'passed' %}已点亮{% elif stage.status == 'challenge_ready' %}可破境{% elif stage.status == 'generating' %}生成中{% elif stage.status == 'in_exam' %}试炼中{% else %}{{ stage.progress_percent }}%{% endif %}
-                </small>
-            </div>
-            {% endfor %}
-        </div>
-        <div class="learning-progress-body">
-            <div class="learning-progress-bars">
-                {% for weight in lp.rules.score_weights %}
-                {% set component_key = 'material' if weight.label == '学习材料' else ('task' if weight.label == '作业考试' else ('interaction' if weight.label == '互动求助' else 'consistency')) %}
-                {% set component_value = lp.metrics.components[component_key] %}
-                <div class="learning-score-row">
-                    <span>{{ weight.label }}</span>
-                    <div class="learning-score-bar"><span style="width: {{ (component_value / weight.weight * 100) | round(0) }}%"></span></div>
-                    <strong>{{ component_value }}/{{ weight.weight }}</strong>
+        <div class="learning-progress-grid">
+            <div class="learning-progress-path">
+                <div class="learning-progress-track" aria-label="修行等级进度">
+                    {% for stage in lp.stages %}
+                    <div class="learning-stage-node is-{{ stage.status }}" data-theme="{{ stage.theme }}">
+                        <span class="learning-stage-orb"></span>
+                        <strong>{{ stage.short_name }}</strong>
+                        <small>
+                            {% if stage.status == 'passed' %}已点亮{% elif stage.status == 'challenge_ready' %}可破境{% elif stage.status == 'generating' %}生成中{% elif stage.status == 'in_exam' %}试炼中{% else %}{{ stage.progress_percent }}%{% endif %}
+                        </small>
+                    </div>
+                    {% endfor %}
                 </div>
-                {% endfor %}
+                <div class="learning-progress-body">
+                    <div class="learning-progress-bars">
+                        {% for weight in lp.rules.score_weights %}
+                        {% set component_key = 'material' if weight.label == '学习材料' else ('task' if weight.label == '作业考试' else ('interaction' if weight.label == '互动求助' else 'consistency')) %}
+                        {% set component_value = lp.metrics.components[component_key] %}
+                        <div class="learning-score-row">
+                            <span>{{ weight.label }}</span>
+                            <div class="learning-score-bar"><span style="width: {{ (component_value / weight.weight * 100) | round(0) }}%"></span></div>
+                            <strong>{{ component_value }}/{{ weight.weight }}</strong>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="learning-progress-actions">
+                        {% if lp.eligible_stage %}
+                        <button type="button" class="btn btn-primary learning-stage-exam-btn" data-stage-key="{{ lp.eligible_stage.key }}">
+                            {% if lp.eligible_stage.latest_attempt and lp.eligible_stage.latest_attempt.status == 'failed' %}重新试炼{% else %}破境{% endif %} {{ lp.eligible_stage.name }}
+                        </button>
+                        {% elif lp.next_stage and lp.next_stage.status == 'generating' %}
+                        <button type="button" class="btn btn-outline" disabled>AI 正在生成试炼</button>
+                        {% elif lp.next_stage and lp.next_stage.status == 'in_exam' and lp.next_stage.last_exam_assignment_id %}
+                        <a class="btn btn-primary" href="/exam/take/{{ lp.next_stage.last_exam_assignment_id }}">继续破境试炼</a>
+                        <button type="button" class="btn btn-outline learning-stage-delete-btn" data-stage-key="{{ lp.next_stage.key }}">删除试炼</button>
+                        {% elif lp.next_stage %}
+                        <button type="button" class="btn btn-outline" disabled>距离 {{ lp.next_stage.name }} 还差 {{ (lp.next_stage.unlock_score - lp.score) | round(1) }} 分</button>
+                        {% else %}
+                        <button type="button" class="btn btn-outline" disabled>全部境界已点亮</button>
+                        {% endif %}
+                    </div>
+                </div>
             </div>
-            <div class="learning-progress-actions">
-                {% if lp.eligible_stage %}
-                <button type="button" class="btn btn-primary learning-stage-exam-btn" data-stage-key="{{ lp.eligible_stage.key }}">
-                    破境 {{ lp.eligible_stage.name }}
-                </button>
-                <span>个性化破境试炼</span>
-                {% elif lp.next_stage and lp.next_stage.status == 'generating' %}
-                <button type="button" class="btn btn-outline" disabled>AI 正在生成试炼</button>
-                <span>个性化试卷正在准备中，稍后刷新即可进入。</span>
-                {% elif lp.next_stage and lp.next_stage.status == 'in_exam' and lp.next_stage.last_exam_assignment_id %}
-                <a class="btn btn-primary" href="/exam/take/{{ lp.next_stage.last_exam_assignment_id }}">继续破境试炼</a>
-                <span>达到 {{ lp.rules.pass_score }} 分后自动点亮境界并颁发道印。</span>
-                {% elif lp.next_stage %}
-                <button type="button" class="btn btn-outline" disabled>距离 {{ lp.next_stage.name }} 还差 {{ (lp.next_stage.unlock_score - lp.score) | round(1) }} 分</button>
-                <span>继续研读材料、完成任务或向 AI/助教提问，都能凝聚修为。</span>
-                {% else %}
-                <button type="button" class="btn btn-outline" disabled>全部境界已点亮</button>
-                <span>所有道印已收入囊中，可以继续保持课堂活跃度。</span>
-                {% endif %}
-            </div>
+            {% if lp.class_position %}
+            {% set class_pos = lp.class_position %}
+            <aside class="learning-class-position">
+                <div class="learning-class-position__summary">
+                    <div>
+                        <span>位置</span>
+                        <strong>前 {{ class_pos.current.top_percent }}%</strong>
+                        <small>{{ class_pos.current.rank }}/{{ class_pos.total }}</small>
+                    </div>
+                    <div>
+                        <span>峰顶</span>
+                        <strong>{{ class_pos.leader.name }}</strong>
+                        <small>{{ class_pos.leader.score }}</small>
+                    </div>
+                    <div>
+                        <span>您</span>
+                        <strong>{{ class_pos.current.score }}</strong>
+                        <small>修为</small>
+                    </div>
+                </div>
+                <div class="learning-mountain" data-learning-mountain aria-label="全班修为山峰">
+                    <div class="learning-mountain__chart" data-learning-mountain-chart></div>
+                    <div class="learning-mountain__hint" data-learning-mountain-hint>山顶为最高修为，横线为您的位置</div>
+                </div>
+            </aside>
+            {% endif %}
         </div>
     </section>
     {% elif user_info.role == 'teacher' and classroom_page.learning_overview %}
@@ -500,7 +597,7 @@
             <div>
                 <p class="workspace-kicker">Class Growth</p>
                 <h2>班级修行境界概览</h2>
-                <p>当前课堂 {{ lo.student_count }} 名学生，平均修为 {{ lo.average_score }}，已发放 {{ lo.certificate_count }} 枚晋级道印。</p>
+                <p>当前课堂 {{ lo.student_count }} 名学生，平均修为 {{ lo.average_score }}，已发放 {{ lo.certificate_count }} 枚晋级道印。学生个人试炼只进入班级汇总，不进入作业与考试明细。</p>
             </div>
             <div class="learning-progress-score">
                 <span>可破境</span>
@@ -517,6 +614,25 @@
             </div>
             {% endfor %}
         </div>
+        {% if lo.personal_stage_exam_stats and lo.personal_stage_exam_stats.total_count %}
+        <div class="learning-overview-meta" aria-label="学生个人试炼汇总">
+            <div>
+                <span>个人试炼汇总</span>
+                <strong>{{ lo.personal_stage_exam_stats.total_count }}</strong>
+                <small>{{ lo.personal_stage_exam_stats.student_count }} 人发起</small>
+            </div>
+            <div>
+                <span>进行中</span>
+                <strong>{{ lo.personal_stage_exam_stats.active_count }}</strong>
+                <small>生成、作答或批改中</small>
+            </div>
+            <div>
+                <span>已通过</span>
+                <strong>{{ lo.personal_stage_exam_stats.passed_count }}</strong>
+                <small>仅显示班级总量</small>
+            </div>
+        </div>
+        {% endif %}
         <div class="learning-roster-strip">
             {% for item in lo.students[:6] %}
             <div class="learning-roster-pill">
@@ -564,6 +680,9 @@
                 </article>
                 {% endfor %}
             </div>
+            {% if user_info.role == 'teacher' %}
+            <p class="assignment-scope-note">此处仅显示教师创建并分配的练习与考试；学生个人试炼已汇总到上方班级修行统计。</p>
+            {% endif %}
 
             <div class="assignment-board">
                 {% if assignments %}
@@ -610,6 +729,9 @@
                                     <span class="badge badge-outline">试卷</span>
                                     {% else %}
                                     <span class="badge badge-outline">作业</span>
+                                    {% endif %}
+                                    {% if assignment.learning_stage %}
+                                    <span class="badge badge-primary">试炼 · {{ assignment.learning_stage.short_name }}</span>
                                     {% endif %}
                                 </div>
                                 <span class="assignment-arrow" aria-hidden="true">
@@ -975,6 +1097,17 @@
                 </div>
 
                 <div class="form-group">
+                    <label class="form-label" for="assignment-learning-stage-key">试炼阶段</label>
+                    <select id="assignment-learning-stage-key" class="form-select">
+                        <option value="">普通经验，不绑定境界试炼</option>
+                        {% for stage in learning_stage_options %}
+                        <option value="{{ stage.key }}">{{ stage.level_name }} · 通过后点亮至此境界</option>
+                        {% endfor %}
+                    </select>
+                    <p class="form-hint">绑定后，学生该任务批改达到 {{ classroom_page.learning_progress.rules.pass_score if classroom_page.learning_progress else 80 }} 分，会自动补发该境界及之前缺失的证书。</p>
+                </div>
+
+                <div class="form-group">
                     <label class="form-label" for="assignment-allowed-file-types">允许附件类型</label>
                     <input type="text" id="assignment-allowed-file-types" class="form-control" placeholder="例如：.pdf,.docx,image/*">
                     <p class="form-hint">支持扩展名或 MIME 类型，多个值用逗号分隔；留空表示不限制，学生上传文件夹时也会按此规则过滤子文件。</p>
@@ -1031,6 +1164,16 @@
                     <label class="form-label" for="exam-allowed-file-types">接收附件类型</label>
                     <input type="text" id="exam-allowed-file-types" class="form-control" placeholder="例如：.zip,.py,.pdf">
                     <p class="form-hint">留空表示不限制。学生上传的文件和文件夹内容会在服务端按类型过滤，不符合规则的文件会被丢弃。</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="exam-learning-stage-key">试炼阶段</label>
+                    <select id="exam-learning-stage-key" class="form-select">
+                        <option value="">普通考试，不绑定境界试炼</option>
+                        {% for stage in learning_stage_options %}
+                        <option value="{{ stage.key }}">{{ stage.level_name }} · 通过后点亮至此境界</option>
+                        {% endfor %}
+                    </select>
+                    <p class="form-hint">适合把教师正式考试设置为阶段试炼；不选择则只作为普通经验来源。</p>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="exam-availability-mode">答题时间策略</label>
@@ -1172,6 +1315,64 @@
 {% include "partials/session_material_ai_modal.html" %}
 {% endif %}
 
+{% if user_info.role == 'student' %}
+<div class="modal-backdrop semester-todo-modal-backdrop" id="semesterTodoModal" hidden aria-hidden="true">
+    <div class="modal semester-todo-modal" role="dialog" aria-modal="true" aria-labelledby="semesterTodoModalTitle">
+        <div class="modal-header">
+            <div>
+                <span class="modal-eyebrow">我的待办</span>
+                <h3 id="semesterTodoModalTitle">新增待办事项</h3>
+            </div>
+            <button type="button" class="modal-close" id="semesterTodoModalClose" aria-label="关闭">×</button>
+        </div>
+        <form class="semester-todo-form" id="semesterTodoForm">
+            <label class="form-group">
+                <span>待办名称</span>
+                <input type="text" name="title" maxlength="120" required placeholder="例如：完成第二章实验报告">
+            </label>
+            <label class="form-group">
+                <span>备注</span>
+                <textarea name="notes" maxlength="1200" rows="3" placeholder="可以写下任务要求、材料位置或提醒自己的话"></textarea>
+            </label>
+            <div class="semester-date-picker" id="semesterTodoDatePicker" aria-label="选择待办日期">
+                <div class="semester-date-role-tabs" role="tablist" aria-label="选择日期类型">
+                    <button type="button" class="is-active" data-date-role="due">截止日</button>
+                    <button type="button" data-date-role="start">开始日</button>
+                </div>
+                <div class="semester-date-picker-head">
+                    <button type="button" class="btn btn-ghost btn-sm btn-icon" data-date-nav="prev" aria-label="上个月">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                    </button>
+                    <strong id="semesterTodoPickerTitle">2026年5月</strong>
+                    <button type="button" class="btn btn-ghost btn-sm btn-icon" data-date-nav="next" aria-label="下个月">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                    </button>
+                </div>
+                <div class="semester-date-picker-weekdays" aria-hidden="true">
+                    <span>周一</span><span>周二</span><span>周三</span><span>周四</span><span>周五</span><span>周六</span><span>周日</span>
+                </div>
+                <div class="semester-date-picker-grid" id="semesterTodoPickerGrid"></div>
+            </div>
+            <div class="semester-todo-time-grid">
+                <label class="form-group">
+                    <span>开始时间（可选）</span>
+                    <input type="time" name="start_time" step="60">
+                </label>
+                <label class="form-group">
+                    <span>截止时间（精确到分钟，可选）</span>
+                    <input type="time" name="due_time" step="60">
+                </label>
+            </div>
+            <div class="semester-todo-date-result" id="semesterTodoDateResult">未选择日期时，将使用创建日期作为开始日期。</div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" id="semesterTodoModalCancel">取消</button>
+                <button type="submit" class="btn btn-primary">保存待办</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
 <div id="ai-chat-modal">
     <div class="ai-chat-container">
         <div class="ai-chat-header">
@@ -1216,8 +1417,8 @@
     import * as fileApp from '/static/js/app_files.js';
     import * as materialsApp from '/static/js/classroom_materials.js?v=learning-progress-20260503';
     import * as examApp from '/static/js/app_exams.js';
-    import { initClassroomPage } from '/static/js/classroom_page.js?v=learning-progress-20260503';
-    import { initLearningProgress } from '/static/js/learning_progress.js?v=cultivation-20260504';
+    import { initClassroomPage } from '/static/js/classroom_page.js?v=semester-todos-20260504';
+    import { initLearningProgress } from '/static/js/learning_progress.js?v=cultivation-rank-20260504';
 
     window.UI = ui;
     window.fileApp = fileApp;

@@ -119,16 +119,6 @@ function updateProfileChrome(profile = {}) {
         });
     }
 
-    const summary = document.querySelector('[data-profile-summary]');
-    if (summary) {
-        summary.textContent = profile.description || summary.dataset.emptyText || '';
-    }
-
-    const descriptionPreview = document.querySelector('[data-profile-description-preview]');
-    if (descriptionPreview) {
-        descriptionPreview.textContent = profile.description || '尚未填写';
-    }
-
     const homepageChip = document.querySelector('[data-profile-homepage-chip]');
     if (homepageChip) {
         if (profile.homepage_url) {

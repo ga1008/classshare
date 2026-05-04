@@ -41,6 +41,7 @@ from ..services.academic_service import build_classroom_ai_context
 from ..services.submission_file_alignment import resolve_submission_file_path
 from ..services.learning_progress_service import (
     build_student_global_cultivation_profile,
+    handle_assignment_stage_grading_complete,
     handle_stage_exam_grading_complete,
 )
 from ..services.prompt_utils import (
@@ -305,6 +306,10 @@ async def handle_ai_grading_callback(request: Request):
                     handle_stage_exam_grading_complete(conn, submission_id)
                 except Exception as exc:
                     print(f"[LEARNING_PROGRESS] AI grading stage handling failed: {exc}")
+                try:
+                    handle_assignment_stage_grading_complete(conn, submission_id)
+                except Exception as exc:
+                    print(f"[LEARNING_PROGRESS] AI grading teacher-stage handling failed: {exc}")
             conn.commit()
         print(f"[CALLBACK] 成功接收并更新 AI 批改结果 (Submission ID: {submission_id})")
         # TODO: 通过 WebSocket 向教师推送更新

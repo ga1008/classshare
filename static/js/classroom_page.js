@@ -1711,6 +1711,484 @@ function initTeachingTimeline() {
     });
 }
 
+const TODO_TONE_LABELS = {
+    lesson: '课程',
+    assignment: '作业',
+    exam: '考试',
+    stage: '试炼',
+    manual: '自定义',
+    neutral: '待办',
+};
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function parseDateKey(value) {
+    const text = String(value || '').slice(0, 10);
+    const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function formatDateKey(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function addDays(date, days) {
+    const next = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    next.setDate(next.getDate() + days);
+    return next;
+}
+
+function eachDateKey(startKey, endKey) {
+    const start = parseDateKey(startKey);
+    const end = parseDateKey(endKey || startKey);
+    if (!start || !end) return [];
+    const from = start <= end ? start : end;
+    const to = start <= end ? end : start;
+    const keys = [];
+    for (let cursor = from; cursor <= to; cursor = addDays(cursor, 1)) {
+        keys.push(formatDateKey(cursor));
+    }
+    return keys;
+}
+
+function monthTitle(date) {
+    return `${date.getFullYear()}年${date.getMonth() + 1}月`;
+}
+
+function monthDayLabel(dateKey) {
+    const date = parseDateKey(dateKey);
+    return date ? `${date.getMonth() + 1}月${date.getDate()}日` : '';
+}
+
+function composeDateTime(dateKey, timeValue, fallbackTime) {
+    if (!dateKey) return null;
+    const timeText = String(timeValue || fallbackTime || '').trim();
+    const resolvedTime = /^\d{2}:\d{2}$/.test(timeText) ? timeText : '00:00';
+    return `${dateKey}T${resolvedTime}`;
+}
+
+function initSemesterTodoBoard(config = window.APP_CONFIG || {}) {
+    const panel = document.getElementById('semesterTodoPanel');
+    const weeksEl = document.getElementById('semesterTodoWeeks');
+    const scrollEl = document.getElementById('semesterTodoScroll');
+    const summaryEl = document.getElementById('semesterTodoSummary');
+    if (!panel || !weeksEl || !scrollEl) return;
+
+    const addBtn = document.getElementById('semesterTodoAddBtn');
+    const modal = document.getElementById('semesterTodoModal');
+    const modalClose = document.getElementById('semesterTodoModalClose');
+    const modalCancel = document.getElementById('semesterTodoModalCancel');
+    const form = document.getElementById('semesterTodoForm');
+    const pickerTitle = document.getElementById('semesterTodoPickerTitle');
+    const pickerGrid = document.getElementById('semesterTodoPickerGrid');
+    const pickerResult = document.getElementById('semesterTodoDateResult');
+    const roleTabs = Array.from(document.querySelectorAll('[data-date-role]'));
+    const classOfferingId = config.classOfferingId;
+    let overview = config.todoOverview || { weeks: [], summary: {}, role_policy: {} };
+    let activeTodoId = '';
+    let pickerMonth = new Date();
+    let selectedStartDate = '';
+    let selectedDueDate = '';
+    let selectedRole = 'due';
+
+    const sourceLabel = (todo) => TODO_TONE_LABELS[todo?.tone] || TODO_TONE_LABELS[todo?.source_type] || '待办';
+    const manualTodoId = (todo) => Number(todo?.source_id || String(todo?.id || '').split(':').pop() || 0);
+    const cssEscapeValue = (value) => (
+        window.CSS && typeof window.CSS.escape === 'function'
+            ? window.CSS.escape(String(value))
+            : String(value).replace(/["\\]/g, '\\$&')
+    );
+
+    const scrollToWeek = (weekKey, behavior = 'smooth') => {
+        if (!weekKey) return;
+        const target = weeksEl.querySelector(`[data-week-key="${cssEscapeValue(weekKey)}"]`);
+        if (!target) return;
+        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        scrollEl.scrollTo({
+            top: Math.max(0, target.offsetTop - 12),
+            behavior: prefersReducedMotion ? 'auto' : behavior,
+        });
+        target.classList.remove('is-week-focus');
+        void target.offsetWidth;
+        target.classList.add('is-week-focus');
+        window.setTimeout(() => target.classList.remove('is-week-focus'), 1500);
+    };
+
+    const renderSummary = () => {
+        if (!summaryEl) return;
+        const summary = overview.summary || {};
+        summaryEl.innerHTML = `
+            <span><strong>${Number(summary.open_count || 0)}</strong> 未完成</span>
+            <span><strong>${Number(summary.due_soon_count || 0)}</strong> 7天内截止</span>
+            <span><strong>${Number(summary.no_deadline_count || 0)}</strong> 无截止</span>
+        `;
+    };
+
+    const renderTodoListItem = (todo) => {
+        const tone = escapeHtml(todo.tone || 'neutral');
+        const completedClass = todo.is_completed ? ' is-completed' : '';
+        const checkbox = todo.can_complete
+            ? `<button type="button" class="semester-todo-check${todo.is_completed ? ' is-checked' : ''}" data-todo-complete="${manualTodoId(todo)}" aria-label="${todo.is_completed ? '标记为未完成' : '标记为已完成'}"></button>`
+            : `<span class="semester-todo-source-dot" aria-hidden="true"></span>`;
+        const link = todo.link_url
+            ? `<a class="semester-todo-open" href="${escapeHtml(todo.link_url)}" aria-label="打开${escapeHtml(todo.title)}">打开</a>`
+            : '';
+        const remove = todo.can_complete
+            ? `<button type="button" class="semester-todo-delete" data-todo-delete="${manualTodoId(todo)}" aria-label="删除待办">删除</button>`
+            : '';
+        return `
+            <li class="semester-todo-item is-${tone}${completedClass}" data-todo-id="${escapeHtml(todo.id)}">
+                ${checkbox}
+                <button type="button" class="semester-todo-name" data-todo-focus="${escapeHtml(todo.id)}">
+                    <span>${escapeHtml(todo.title)}</span>
+                    <small>${escapeHtml(todo.duration_label || todo.deadline_label || '')}</small>
+                </button>
+                <span class="semester-todo-status">${escapeHtml(todo.status_label || sourceLabel(todo))}</span>
+                ${link}
+                ${remove}
+            </li>
+        `;
+    };
+
+    const renderGanttRow = (todo) => {
+        const left = Number(todo.bar_left || 0).toFixed(3);
+        const width = Math.max(7, Number(todo.bar_width || 0)).toFixed(3);
+        const tone = escapeHtml(todo.tone || 'neutral');
+        const completedClass = todo.is_completed ? ' is-completed' : '';
+        const timeChip = todo.due_time_label && !todo.no_deadline
+            ? `<span class="semester-gantt-time">${escapeHtml(todo.due_time_label)}</span>`
+            : '';
+        return `
+            <button type="button" class="semester-gantt-row is-${tone}${completedClass}" data-todo-focus="${escapeHtml(todo.id)}">
+                <span class="semester-gantt-lane" aria-hidden="true">
+                    <span class="semester-gantt-bar" style="left:${left}%;width:${width}%"></span>
+                </span>
+                <span class="semester-gantt-title">${escapeHtml(todo.title)}</span>
+                ${timeChip}
+            </button>
+        `;
+    };
+
+    const renderWeek = (week) => {
+        const currentClass = week.is_current ? ' is-current' : '';
+        const days = (week.days || []).map((day) => `
+            <button type="button"
+                class="semester-day-cell${day.is_today ? ' is-today' : ''}${day.is_weekend ? ' is-weekend' : ''}"
+                data-calendar-date="${escapeHtml(day.date)}"
+                aria-label="${escapeHtml(day.month_day_label)} ${escapeHtml(day.weekday_label)}">
+                <span>${escapeHtml(day.weekday_label)}</span>
+                <strong>${escapeHtml(day.day_number)}</strong>
+            </button>
+        `).join('');
+        const todos = Array.isArray(week.todos) ? week.todos : [];
+        const gantt = todos.length
+            ? todos.map(renderGanttRow).join('')
+            : '<div class="semester-week-empty">本周暂无待办。</div>';
+        const list = todos.length
+            ? `<ul class="semester-todo-list">${todos.map(renderTodoListItem).join('')}</ul>`
+            : '';
+        return `
+            <article class="semester-week-card${currentClass}" data-week-key="${escapeHtml(week.key)}">
+                <div class="semester-week-head">
+                    <div>
+                        <strong>${escapeHtml(week.label)}</strong>
+                        <span>${escapeHtml(week.range_label)}</span>
+                    </div>
+                    <small>${Number(week.open_count || 0)} 项待处理</small>
+                </div>
+                <div class="semester-week-calendar">${days}</div>
+                <div class="semester-week-todos">
+                    <div class="semester-gantt">${gantt}</div>
+                    ${list}
+                </div>
+            </article>
+        `;
+    };
+
+    const renderOverview = (nextOverview = overview) => {
+        overview = nextOverview || { weeks: [], summary: {}, role_policy: {} };
+        config.todoOverview = overview;
+        renderSummary();
+        const weeks = Array.isArray(overview.weeks) ? overview.weeks : [];
+        if (!weeks.length) {
+            weeksEl.innerHTML = '<div class="semester-week-empty is-large">还没有可展示的教学日历待办。</div>';
+            return;
+        }
+        weeksEl.innerHTML = weeks.map(renderWeek).join('');
+        window.requestAnimationFrame(() => {
+            scrollToWeek(overview.active_week_key, 'auto');
+            if (activeTodoId) {
+                highlightTodo(activeTodoId, { scroll: false });
+            }
+        });
+    };
+
+    const findTodo = (todoId) => {
+        const items = Array.isArray(overview.items) ? overview.items : [];
+        return items.find((item) => String(item.id) === String(todoId));
+    };
+
+    const highlightTodo = (todoId, options = {}) => {
+        const todo = findTodo(todoId);
+        if (!todo) return;
+        activeTodoId = String(todoId);
+        const startDate = todo.effective_start_date;
+        const endDate = todo.no_deadline ? startDate : (todo.effective_end_date || startDate);
+        const dateKeys = eachDateKey(startDate, endDate);
+        const dateSet = new Set(dateKeys);
+
+        panel.querySelectorAll('[data-todo-id], [data-todo-focus]').forEach((node) => {
+            const nodeTodoId = node.getAttribute('data-todo-id') || node.getAttribute('data-todo-focus');
+            node.classList.toggle('is-active', String(nodeTodoId) === String(todoId));
+        });
+        panel.querySelectorAll('[data-calendar-date]').forEach((node) => {
+            const key = node.getAttribute('data-calendar-date');
+            const active = dateSet.has(key);
+            node.classList.toggle('is-highlighted', active);
+            node.classList.toggle('is-range-start', active && key === startDate);
+            node.classList.toggle('is-range-end', active && key === endDate);
+        });
+        document.querySelectorAll('.teaching-timeline-segment[data-session-date]').forEach((node) => {
+            const key = node.getAttribute('data-session-date');
+            node.classList.toggle('is-todo-highlighted', dateSet.has(key));
+        });
+
+        if (options.scroll !== false) {
+            const week = (overview.weeks || []).find((candidate) => {
+                const weekStart = candidate.key;
+                const weekDate = parseDateKey(weekStart);
+                if (!weekDate) return false;
+                const weekEnd = formatDateKey(addDays(weekDate, 6));
+                return dateKeys.some((key) => key >= weekStart && key <= weekEnd);
+            });
+            if (week) scrollToWeek(week.key);
+            const timelineMatch = document.querySelector(`.teaching-timeline-segment[data-session-date="${cssEscapeValue(startDate)}"]`);
+            timelineMatch?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        }
+    };
+
+    const refreshFromApi = async () => {
+        const result = await apiFetch(`/api/classrooms/${classOfferingId}/todos`, { silent: true });
+        renderOverview(result.todo_overview);
+    };
+
+    const patchManualTodo = async (todoId, body) => {
+        const result = await apiFetch(`/api/classrooms/${classOfferingId}/todos/${todoId}`, {
+            method: 'PATCH',
+            body,
+            silent: true,
+        });
+        renderOverview(result.todo_overview);
+        showToast(result.message || '待办已更新', 'success');
+    };
+
+    const deleteManualTodo = async (todoId) => {
+        const confirmed = window.confirm('确定删除这条待办吗？');
+        if (!confirmed) return;
+        const result = await apiFetch(`/api/classrooms/${classOfferingId}/todos/${todoId}`, {
+            method: 'DELETE',
+            silent: true,
+        });
+        activeTodoId = '';
+        renderOverview(result.todo_overview);
+        showToast(result.message || '待办已删除', 'success');
+    };
+
+    const updatePickerResult = () => {
+        if (!pickerResult) return;
+        const dueTime = form?.elements?.due_time?.value || '23:59';
+        const startTime = form?.elements?.start_time?.value || '00:00';
+        const startText = selectedStartDate ? `${monthDayLabel(selectedStartDate)} ${startTime}` : '未选择';
+        const dueText = selectedDueDate ? `${monthDayLabel(selectedDueDate)} ${dueTime}` : '无截止日期';
+        pickerResult.textContent = `开始：${startText}；截止：${dueText}。无开始日期时，将使用创建日期。`;
+    };
+
+    const setDateRole = (role) => {
+        selectedRole = role === 'start' ? 'start' : 'due';
+        roleTabs.forEach((tab) => tab.classList.toggle('is-active', tab.dataset.dateRole === selectedRole));
+    };
+
+    const renderPicker = () => {
+        if (!pickerGrid || !pickerTitle) return;
+        pickerTitle.textContent = monthTitle(pickerMonth);
+        const firstOfMonth = new Date(pickerMonth.getFullYear(), pickerMonth.getMonth(), 1);
+        const startOffset = (firstOfMonth.getDay() + 6) % 7;
+        const gridStart = addDays(firstOfMonth, -startOffset);
+        const todayKey = formatDateKey(new Date());
+        const cells = [];
+        for (let index = 0; index < 42; index += 1) {
+            const day = addDays(gridStart, index);
+            const key = formatDateKey(day);
+            const inMonth = day.getMonth() === pickerMonth.getMonth();
+            const inRange = selectedStartDate && selectedDueDate
+                ? key >= selectedStartDate && key <= selectedDueDate
+                : false;
+            cells.push(`
+                <button type="button"
+                    class="semester-picker-day${inMonth ? '' : ' is-outside'}${key === todayKey ? ' is-today' : ''}${key === selectedStartDate ? ' is-start' : ''}${key === selectedDueDate ? ' is-due' : ''}${inRange ? ' is-in-range' : ''}"
+                    data-picker-date="${key}">
+                    <span>${day.getDate()}</span>
+                </button>
+            `);
+        }
+        pickerGrid.innerHTML = cells.join('');
+        updatePickerResult();
+    };
+
+    const openModal = () => {
+        if (!modal || !form) return;
+        form.reset();
+        selectedStartDate = '';
+        selectedDueDate = '';
+        setDateRole('due');
+        pickerMonth = new Date();
+        renderPicker();
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('has-semester-todo-modal');
+        window.requestAnimationFrame(() => {
+            modal.classList.add('is-open');
+            form.elements.title?.focus();
+        });
+    };
+
+    const closeModal = () => {
+        if (!modal) return;
+        modal.classList.remove('is-open');
+        modal.setAttribute('aria-hidden', 'true');
+        window.setTimeout(() => {
+            modal.hidden = true;
+            document.body.classList.remove('has-semester-todo-modal');
+        }, 180);
+    };
+
+    weeksEl.addEventListener('click', async (event) => {
+        const completeBtn = event.target.closest('[data-todo-complete]');
+        if (completeBtn) {
+            event.preventDefault();
+            event.stopPropagation();
+            const todoId = completeBtn.dataset.todoComplete;
+            await patchManualTodo(todoId, { completed: !completeBtn.classList.contains('is-checked') });
+            return;
+        }
+
+        const deleteBtn = event.target.closest('[data-todo-delete]');
+        if (deleteBtn) {
+            event.preventDefault();
+            event.stopPropagation();
+            await deleteManualTodo(deleteBtn.dataset.todoDelete);
+            return;
+        }
+
+        if (event.target.closest('.semester-todo-open')) return;
+
+        const focusNode = event.target.closest('[data-todo-focus], [data-todo-id]');
+        if (focusNode) {
+            const todoId = focusNode.getAttribute('data-todo-focus') || focusNode.getAttribute('data-todo-id');
+            highlightTodo(todoId);
+        }
+    });
+
+    roleTabs.forEach((tab) => {
+        tab.addEventListener('click', () => setDateRole(tab.dataset.dateRole));
+    });
+
+    document.querySelectorAll('[data-date-nav]').forEach((button) => {
+        button.addEventListener('click', () => {
+            pickerMonth = new Date(
+                pickerMonth.getFullYear(),
+                pickerMonth.getMonth() + (button.dataset.dateNav === 'next' ? 1 : -1),
+                1,
+            );
+            renderPicker();
+        });
+    });
+
+    pickerGrid?.addEventListener('click', (event) => {
+        const dayButton = event.target.closest('[data-picker-date]');
+        if (!dayButton) return;
+        const key = dayButton.dataset.pickerDate;
+        if (selectedRole === 'start') {
+            selectedStartDate = key;
+            if (selectedDueDate && selectedDueDate < selectedStartDate) {
+                selectedDueDate = selectedStartDate;
+            }
+            setDateRole('due');
+        } else {
+            selectedDueDate = key;
+            if (selectedStartDate && selectedDueDate < selectedStartDate) {
+                const previousStart = selectedStartDate;
+                selectedStartDate = selectedDueDate;
+                selectedDueDate = previousStart;
+            }
+        }
+        renderPicker();
+    });
+
+    form?.addEventListener('input', (event) => {
+        if (event.target?.name === 'due_time' || event.target?.name === 'start_time') {
+            updatePickerResult();
+        }
+    });
+
+    form?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const formData = new FormData(form);
+        const body = {
+            title: String(formData.get('title') || '').trim(),
+            notes: String(formData.get('notes') || '').trim(),
+            start_at: selectedStartDate ? composeDateTime(selectedStartDate, formData.get('start_time'), '00:00') : null,
+            due_at: selectedDueDate ? composeDateTime(selectedDueDate, formData.get('due_time'), '23:59') : null,
+        };
+        const submitBtn = form.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+        try {
+            const result = await apiFetch(`/api/classrooms/${classOfferingId}/todos`, {
+                method: 'POST',
+                body,
+                silent: true,
+            });
+            closeModal();
+            activeTodoId = result.id ? `manual:${result.id}` : '';
+            renderOverview(result.todo_overview);
+            if (activeTodoId) {
+                window.requestAnimationFrame(() => highlightTodo(activeTodoId));
+            }
+            showToast(result.message || '待办已添加', 'success');
+        } catch (error) {
+            showToast(error.message || '新增待办失败', 'error');
+        } finally {
+            if (submitBtn) submitBtn.disabled = false;
+        }
+    });
+
+    addBtn?.addEventListener('click', openModal);
+    modalClose?.addEventListener('click', closeModal);
+    modalCancel?.addEventListener('click', closeModal);
+    modal?.addEventListener('click', (event) => {
+        if (event.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && modal && !modal.hidden) closeModal();
+    });
+
+    renderOverview(overview);
+    if (!overview?.weeks?.length) {
+        refreshFromApi().catch(() => {});
+    }
+}
+
 function resolveCopyTokens(overrides = {}) {
     const userInfo = window.APP_CONFIG?.userInfo || {};
     const classroom = window.APP_CONFIG?.classroom || {};
@@ -1752,6 +2230,7 @@ export function initClassroomPage() {
     initCoursePopover();
     initWorkspaceNav();
     initTeachingTimeline();
+    initSemesterTodoBoard(window.APP_CONFIG || {});
     personalizeClassroomCopy();
     document.addEventListener('classroom:alias-change', (event) => {
         personalizeClassroomCopy(event.detail || {});

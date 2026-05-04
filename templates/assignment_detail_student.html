@@ -426,6 +426,12 @@
                         {% else %}混合批改{% endif %}
                     </div>
                 </div>
+                {% if assignment.learning_stage %}
+                <div class="info-cell">
+                    <div class="text-xs text-muted mb-1">试炼阶段</div>
+                    <div class="font-medium">{{ assignment.learning_stage.level_name }}</div>
+                </div>
+                {% endif %}
                 <div class="info-cell">
                     <div class="text-xs text-muted mb-1">创建时间</div>
                     <div class="font-medium format-date">{{ assignment.created_at or '未知' }}</div>

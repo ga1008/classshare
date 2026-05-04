@@ -788,6 +788,10 @@ def _load_teacher_assignment_stats(conn, offering_ids: list[int]) -> dict[int, d
         LEFT JOIN assignments a
             ON a.course_id = o.course_id
            AND (a.class_offering_id = o.id OR a.class_offering_id IS NULL)
+           AND NOT EXISTS (
+               SELECT 1 FROM learning_stage_exam_attempts lsea
+               WHERE lsea.assignment_id = a.id
+           )
         WHERE o.id IN ({placeholders})
         GROUP BY o.id
         """,
@@ -800,7 +804,7 @@ def _load_student_assignment_stats(conn, offering_ids: list[int], student_id: in
     if not offering_ids:
         return {}
     placeholders = ",".join("?" for _ in offering_ids)
-    params = [student_id, *offering_ids]
+    params = [student_id, student_id, *offering_ids]
     rows = conn.execute(
         f"""
         SELECT o.id AS offering_id,
@@ -815,6 +819,11 @@ def _load_student_assignment_stats(conn, offering_ids: list[int], student_id: in
         LEFT JOIN assignments a
             ON a.course_id = o.course_id
            AND (a.class_offering_id = o.id OR a.class_offering_id IS NULL)
+           AND NOT EXISTS (
+               SELECT 1 FROM learning_stage_exam_attempts lsea
+               WHERE lsea.assignment_id = a.id
+                 AND lsea.student_id != ?
+           )
         LEFT JOIN submissions s
             ON s.assignment_id = a.id
            AND s.student_pk_id = ?
@@ -839,6 +848,10 @@ def _load_teacher_pending_submission_stats(conn, offering_ids: list[int]) -> dic
         JOIN submissions s ON s.assignment_id = a.id
         WHERE a.class_offering_id IN ({placeholders})
           AND s.status IN ('submitted', 'grading')
+          AND NOT EXISTS (
+              SELECT 1 FROM learning_stage_exam_attempts lsea
+              WHERE lsea.assignment_id = a.id
+          )
         GROUP BY a.class_offering_id
         """,
         tuple(offering_ids),
@@ -954,6 +967,11 @@ def _load_student_priority_items(conn, student_id: int, limit: int = 4) -> list[
         JOIN assignments a
             ON a.course_id = o.course_id
            AND (a.class_offering_id = o.id OR a.class_offering_id IS NULL)
+           AND NOT EXISTS (
+               SELECT 1 FROM learning_stage_exam_attempts lsea
+               WHERE lsea.assignment_id = a.id
+                 AND lsea.student_id != ?
+           )
         LEFT JOIN submissions s
             ON s.assignment_id = a.id
            AND s.student_pk_id = ?
@@ -967,7 +985,7 @@ def _load_student_priority_items(conn, student_id: int, limit: int = 4) -> list[
         ORDER BY a.created_at DESC, a.id DESC
         LIMIT ?
         """,
-        (student_id, student_id, limit),
+        (student_id, student_id, student_id, limit),
     ).fetchall()
 
     items = []

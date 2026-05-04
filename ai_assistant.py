@@ -222,7 +222,7 @@ class ExamGenerationRequest(BaseModel):
     task_type: str = "exam_generation"
     teacher_id: Optional[int] = None
     class_offering_id: Optional[int] = None
-    source_type: Literal["manual", "document"] = "manual"
+    source_type: Literal["manual", "document", "learning_stage"] = "manual"
     force_platform: Optional[Literal["volcengine"]] = None
 
 

@@ -111,6 +111,7 @@
 .learning-overview-panel {
     position: relative;
     overflow: hidden;
+    padding: 1rem 1.05rem;
     border-color: rgba(20, 184, 166, 0.2);
     background:
         linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(240, 253, 250, 0.9)),
@@ -137,12 +138,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--spacing-lg);
-    margin-bottom: var(--spacing-lg);
+    gap: 0.8rem;
+    margin-bottom: 0.7rem;
 }
 
 .learning-progress-head h2 {
-    margin: 0 0 0.35rem;
+    margin: 0;
+    font-size: 1.15rem;
+    line-height: 1.18;
 }
 
 .learning-progress-head p {
@@ -154,7 +157,7 @@
 .learning-progress-score {
     --learning-a: #14b8a6;
     --learning-b: #f59e0b;
-    width: 7rem;
+    width: 5rem;
     aspect-ratio: 1;
     flex: 0 0 auto;
     display: grid;
@@ -171,14 +174,14 @@
 .learning-progress-score small {
     display: block;
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: 0.64rem;
     font-weight: 700;
 }
 
 .learning-progress-score strong {
     display: block;
-    margin: -0.35rem 0;
-    font-size: 2rem;
+    margin: -0.18rem 0;
+    font-size: 1.45rem;
     color: #0f172a;
 }
 
@@ -192,22 +195,36 @@
 .learning-progress-track {
     position: relative;
     display: flex;
-    gap: 0.65rem;
-    margin-bottom: var(--spacing-lg);
+    gap: 0.42rem;
+    margin-bottom: 0.65rem;
     overflow-x: auto;
-    padding: 0.35rem 0 0.75rem;
+    padding: 0.18rem 0 0.45rem;
     scroll-snap-type: x proximity;
+}
+
+.learning-progress-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.42fr);
+    gap: 0.9rem;
+    align-items: stretch;
+}
+
+.learning-progress-path {
+    display: grid;
+    align-content: start;
+    gap: 0.65rem;
+    min-width: 0;
 }
 
 .learning-stage-node {
     position: relative;
-    flex: 1 0 128px;
-    min-width: 128px;
+    flex: 1 0 96px;
+    min-width: 96px;
     display: grid;
     justify-items: center;
-    gap: 0.35rem;
-    padding: 0.9rem 0.7rem;
-    border-radius: var(--radius-lg);
+    gap: 0.22rem;
+    padding: 0.52rem 0.45rem;
+    border-radius: var(--radius-md);
     border: 1px solid rgba(148, 163, 184, 0.22);
     background: rgba(255, 255, 255, 0.82);
     scroll-snap-align: start;
@@ -219,7 +236,7 @@
     position: absolute;
     left: 50%;
     right: -50%;
-    top: 1.65rem;
+    top: 1.08rem;
     height: 2px;
     background: rgba(148, 163, 184, 0.2);
     z-index: 0;
@@ -232,11 +249,11 @@
 .learning-stage-orb {
     position: relative;
     z-index: 1;
-    width: 1.65rem;
-    height: 1.65rem;
+    width: 1.1rem;
+    height: 1.1rem;
     border-radius: 50%;
     background: #cbd5e1;
-    box-shadow: 0 0 0 5px rgba(226, 232, 240, 0.65);
+    box-shadow: 0 0 0 3px rgba(226, 232, 240, 0.65);
 }
 
 .learning-stage-node:not(.is-locked)[data-theme="qi_awakening"] .learning-stage-orb { background: #14b8a6; }
@@ -276,21 +293,23 @@
 .learning-stage-node strong {
     position: relative;
     z-index: 1;
-    font-size: 0.95rem;
+    font-size: 0.8rem;
+    line-height: 1.15;
 }
 
 .learning-stage-node small {
     position: relative;
     z-index: 1;
     color: var(--text-muted);
+    font-size: 0.68rem;
     font-weight: 700;
 }
 
 .learning-progress-body {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(260px, 0.72fr);
-    gap: var(--spacing-lg);
-    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr) minmax(120px, auto);
+    gap: 0.65rem;
+    align-items: center;
 }
 
 .learning-progress-bars,
@@ -302,10 +321,10 @@
 .learning-score-row,
 .learning-distribution-item {
     display: grid;
-    grid-template-columns: 5rem minmax(0, 1fr) 4rem;
-    gap: 0.65rem;
+    grid-template-columns: 4.4rem minmax(0, 1fr) 3.2rem;
+    gap: 0.45rem;
     align-items: center;
-    font-size: 0.86rem;
+    font-size: 0.78rem;
 }
 
 .learning-distribution-item.is-compact {
@@ -326,7 +345,7 @@
 }
 
 .learning-score-bar {
-    height: 0.55rem;
+    height: 0.42rem;
     border-radius: 999px;
     background: rgba(148, 163, 184, 0.18);
     overflow: hidden;
@@ -339,14 +358,45 @@
     background: linear-gradient(90deg, #14b8a6, #f59e0b, #38bdf8);
 }
 
+.learning-overview-meta {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.65rem;
+    margin-top: 0.8rem;
+}
+
+.learning-overview-meta > div {
+    min-width: 0;
+    padding: 0.62rem 0.72rem;
+    border: 1px solid rgba(20, 184, 166, 0.18);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.74);
+}
+
+.learning-overview-meta span,
+.learning-overview-meta small {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 750;
+}
+
+.learning-overview-meta strong {
+    display: block;
+    margin: 0.08rem 0;
+    color: var(--text-primary);
+    font-size: 1.18rem;
+    line-height: 1.1;
+}
+
 .learning-progress-actions {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-    gap: 0.8rem;
-    padding: var(--spacing-md);
-    border-radius: var(--radius-lg);
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.52rem;
+    border-radius: var(--radius-md);
     border: 1px dashed rgba(14, 165, 233, 0.28);
     background: rgba(255, 255, 255, 0.72);
 }
@@ -354,6 +404,140 @@
 .learning-progress-actions span {
     color: var(--text-secondary);
     line-height: 1.6;
+}
+
+.learning-class-position {
+    display: grid;
+    align-content: stretch;
+    gap: 0.48rem;
+    min-width: 0;
+    margin: 0;
+    padding: 0.55rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(14, 165, 233, 0.18);
+    background: rgba(255, 255, 255, 0.52);
+}
+
+.learning-class-position__summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.42rem;
+}
+
+.learning-class-position__summary > div {
+    min-width: 0;
+    padding: 0.5rem 0.58rem;
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: rgba(255, 255, 255, 0.72);
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.learning-class-position__summary > div:hover {
+    transform: translateY(-1px);
+    border-color: rgba(20, 184, 166, 0.34);
+    box-shadow: 0 18px 42px -34px rgba(15, 23, 42, 0.48);
+}
+
+.learning-class-position__summary span,
+.learning-class-position__summary small {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.66rem;
+    font-weight: 750;
+}
+
+.learning-class-position__summary strong {
+    display: block;
+    margin: 0.08rem 0;
+    overflow: hidden;
+    color: var(--text-primary);
+    font-size: 1rem;
+    line-height: 1.12;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.learning-mountain {
+    position: relative;
+    min-height: 150px;
+    padding: 0.45rem 0.48rem;
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(14, 165, 233, 0.22);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(240, 249, 255, 0.7)),
+        linear-gradient(90deg, rgba(20, 184, 166, 0.08), rgba(245, 158, 11, 0.08));
+    overflow: hidden;
+}
+
+.learning-mountain__chart {
+    min-height: 126px;
+}
+
+.learning-mountain svg {
+    display: block;
+    width: 100%;
+    height: 126px;
+    overflow: visible;
+}
+
+.learning-mountain__ridge {
+    fill: none;
+    stroke: rgba(14, 165, 233, 0.72);
+    stroke-width: 2.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 8px 10px rgba(14, 165, 233, 0.18));
+}
+
+.learning-mountain__area {
+    fill: url(#learningMountainFill);
+    opacity: 0.72;
+}
+
+.learning-mountain__self-line {
+    stroke: #f59e0b;
+    stroke-width: 2;
+    stroke-dasharray: 6 5;
+}
+
+.learning-mountain__peak-dot,
+.learning-mountain__self-dot {
+    fill: #fff;
+    stroke-width: 2.6;
+}
+
+.learning-mountain__peak-dot {
+    stroke: #14b8a6;
+    filter: drop-shadow(0 0 7px rgba(20, 184, 166, 0.42));
+}
+
+.learning-mountain__self-dot {
+    stroke: #f59e0b;
+    filter: drop-shadow(0 0 7px rgba(245, 158, 11, 0.42));
+}
+
+.learning-mountain__peak-label,
+.learning-mountain__self-label {
+    fill: #334155;
+    font-size: 10.5px;
+    font-weight: 800;
+}
+
+.learning-mountain__self-label {
+    fill: #92400e;
+}
+
+.learning-mountain__self-label-bg {
+    fill: rgba(255, 251, 235, 0.92);
+    stroke: rgba(245, 158, 11, 0.22);
+}
+
+.learning-mountain__hint {
+    min-height: 1.05rem;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 700;
 }
 
 .learning-roster-strip {
@@ -3085,6 +3269,12 @@
 .section-metric-note {
     color: var(--text-secondary);
     font-size: 0.84rem;
+}
+
+.assignment-scope-note {
+    margin: -0.45rem 0 1rem;
+    color: var(--text-secondary);
+    font-size: 0.86rem;
 }
 
 #assignment-panel,
@@ -6103,6 +6293,558 @@
         0 34px 64px -36px rgba(14, 165, 233, 0.62);
 }
 
+.classroom-page .semester-todo-panel {
+    display: grid;
+    gap: 0.8rem;
+    padding: 0.9rem;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96)),
+        linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(20, 184, 166, 0.08), rgba(245, 158, 11, 0.07));
+    box-shadow: 0 18px 38px -34px rgba(15, 23, 42, 0.32);
+}
+
+.classroom-page .semester-todo-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+}
+
+.classroom-page .semester-todo-heading {
+    display: grid;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.classroom-page .semester-todo-eyebrow {
+    color: #0f766e;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.classroom-page .semester-todo-heading h3 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 1rem;
+    line-height: 1.25;
+}
+
+.classroom-page .semester-todo-heading p {
+    margin: 0;
+    max-width: 72ch;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    line-height: 1.55;
+}
+
+.classroom-page .semester-todo-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+    margin-left: auto;
+}
+
+.classroom-page .semester-todo-summary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.classroom-page .semester-todo-summary span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    padding: 0.28rem 0.54rem;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    font-weight: 700;
+}
+
+.classroom-page .semester-todo-summary strong {
+    color: #0369a1;
+    font-size: 0.82rem;
+}
+
+.classroom-page .semester-todo-scroll {
+    max-height: min(42rem, 68vh);
+    overflow-y: auto;
+    padding-right: 0.2rem;
+    scroll-padding: 0.8rem;
+    overscroll-behavior: contain;
+}
+
+.classroom-page .semester-todo-weeks {
+    display: grid;
+    gap: 0.72rem;
+}
+
+.classroom-page .semester-week-card {
+    display: grid;
+    gap: 0.62rem;
+    padding: 0.78rem;
+    border-radius: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(255, 255, 255, 0.92);
+    transition: border-color 220ms ease, box-shadow 260ms ease, transform 220ms ease;
+}
+
+.classroom-page .semester-week-card.is-current {
+    border-color: rgba(14, 165, 233, 0.28);
+    background:
+        linear-gradient(180deg, rgba(240, 249, 255, 0.98), rgba(255, 255, 255, 0.94));
+}
+
+.classroom-page .semester-week-card.is-week-focus {
+    animation: semester-week-focus 1.5s ease;
+}
+
+.classroom-page .semester-week-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.8rem;
+    align-items: flex-start;
+}
+
+.classroom-page .semester-week-head div {
+    display: grid;
+    gap: 0.15rem;
+}
+
+.classroom-page .semester-week-head strong {
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.classroom-page .semester-week-head span,
+.classroom-page .semester-week-head small {
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.classroom-page .semester-week-calendar {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.34rem;
+}
+
+.classroom-page .semester-day-cell {
+    min-width: 0;
+    min-height: 3.1rem;
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 0.1rem;
+    padding: 0.38rem 0.22rem;
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    background: rgba(248, 250, 252, 0.92);
+    color: var(--text-secondary);
+    transition: transform 170ms ease, border-color 180ms ease, box-shadow 210ms ease, background-color 180ms ease;
+}
+
+.classroom-page .semester-day-cell span {
+    font-size: 0.66rem;
+    font-weight: 800;
+}
+
+.classroom-page .semester-day-cell strong {
+    color: var(--text-primary);
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.classroom-page .semester-day-cell.is-weekend {
+    background: rgba(255, 251, 235, 0.72);
+}
+
+.classroom-page .semester-day-cell.is-today {
+    border-color: rgba(20, 184, 166, 0.34);
+    background: rgba(240, 253, 250, 0.96);
+}
+
+.classroom-page .semester-day-cell.is-highlighted {
+    border-color: rgba(14, 165, 233, 0.48);
+    background: linear-gradient(135deg, rgba(224, 242, 254, 0.98), rgba(240, 253, 250, 0.94));
+    box-shadow:
+        0 0 0 2px rgba(125, 211, 252, 0.18),
+        0 16px 28px -24px rgba(14, 165, 233, 0.58);
+    transform: translateY(-1px);
+}
+
+.classroom-page .semester-day-cell.is-range-start,
+.classroom-page .semester-day-cell.is-range-end {
+    border-color: rgba(245, 158, 11, 0.52);
+    background: linear-gradient(135deg, rgba(255, 247, 237, 0.98), rgba(224, 242, 254, 0.94));
+}
+
+.classroom-page .semester-week-todos {
+    display: grid;
+    gap: 0.56rem;
+}
+
+.classroom-page .semester-gantt,
+.classroom-page .semester-todo-list {
+    max-height: 13.4rem;
+    overflow-y: auto;
+    display: grid;
+    gap: 0.42rem;
+    padding-right: 0.12rem;
+}
+
+.classroom-page .semester-gantt-row {
+    display: grid;
+    grid-template-columns: minmax(7.8rem, 1fr) minmax(8rem, 1.2fr) auto;
+    gap: 0.55rem;
+    align-items: center;
+    min-height: 2.22rem;
+    padding: 0.32rem 0.42rem;
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    background: rgba(248, 250, 252, 0.78);
+    color: var(--text-secondary);
+    text-align: left;
+    transition: transform 160ms ease, border-color 180ms ease, box-shadow 220ms ease, background-color 180ms ease;
+}
+
+.classroom-page .semester-gantt-row:hover,
+.classroom-page .semester-gantt-row.is-active,
+.classroom-page .semester-todo-item.is-active {
+    border-color: rgba(14, 165, 233, 0.34);
+    background: rgba(240, 249, 255, 0.94);
+    box-shadow: 0 14px 28px -24px rgba(14, 165, 233, 0.5);
+    transform: translateY(-1px);
+}
+
+.classroom-page .semester-gantt-lane {
+    position: relative;
+    height: 0.5rem;
+    border-radius: 999px;
+    background: rgba(226, 232, 240, 0.82);
+    overflow: hidden;
+}
+
+.classroom-page .semester-gantt-bar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    min-width: 0.55rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #0ea5e9, #14b8a6);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.45) inset;
+}
+
+.classroom-page .semester-gantt-row.is-assignment .semester-gantt-bar {
+    background: linear-gradient(90deg, #2563eb, #22c55e);
+}
+
+.classroom-page .semester-gantt-row.is-exam .semester-gantt-bar {
+    background: linear-gradient(90deg, #7c3aed, #f59e0b);
+}
+
+.classroom-page .semester-gantt-row.is-stage .semester-gantt-bar {
+    background: linear-gradient(90deg, #f59e0b, #14b8a6, #38bdf8);
+}
+
+.classroom-page .semester-gantt-row.is-manual .semester-gantt-bar {
+    background: linear-gradient(90deg, #0f766e, #84cc16);
+}
+
+.classroom-page .semester-gantt-title {
+    min-width: 0;
+    color: var(--text-primary);
+    font-size: 0.78rem;
+    font-weight: 800;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.classroom-page .semester-gantt-time {
+    padding: 0.18rem 0.42rem;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.08);
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    font-weight: 800;
+}
+
+.classroom-page .semester-todo-list {
+    list-style: none;
+    margin: 0;
+    padding-left: 0;
+}
+
+.classroom-page .semester-todo-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    align-items: center;
+    gap: 0.48rem;
+    min-height: 2.7rem;
+    padding: 0.42rem 0.5rem;
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    background: rgba(255, 255, 255, 0.86);
+    transition: transform 160ms ease, border-color 180ms ease, box-shadow 220ms ease, background-color 180ms ease;
+}
+
+.classroom-page .semester-todo-source-dot,
+.classroom-page .semester-todo-check {
+    width: 0.9rem;
+    height: 0.9rem;
+    border-radius: 999px;
+    border: 2px solid rgba(14, 165, 233, 0.44);
+    background: rgba(224, 242, 254, 0.68);
+}
+
+.classroom-page .semester-todo-check {
+    cursor: pointer;
+    transition: transform 160ms ease, background-color 180ms ease, border-color 180ms ease;
+}
+
+.classroom-page .semester-todo-check:hover {
+    transform: scale(1.08);
+}
+
+.classroom-page .semester-todo-check.is-checked {
+    border-color: rgba(20, 184, 166, 0.7);
+    background: radial-gradient(circle at center, #14b8a6 42%, rgba(20, 184, 166, 0.14) 45%);
+}
+
+.classroom-page .semester-todo-name {
+    display: grid;
+    gap: 0.12rem;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    text-align: left;
+}
+
+.classroom-page .semester-todo-name span {
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    font-weight: 800;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.classroom-page .semester-todo-name small {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.classroom-page .semester-todo-status,
+.classroom-page .semester-todo-open,
+.classroom-page .semester-todo-delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 1.65rem;
+    padding: 0.18rem 0.46rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.classroom-page .semester-todo-status {
+    background: rgba(241, 245, 249, 0.9);
+    color: var(--text-secondary);
+}
+
+.classroom-page .semester-todo-open {
+    color: #075985;
+    background: rgba(224, 242, 254, 0.9);
+    text-decoration: none;
+}
+
+.classroom-page .semester-todo-delete {
+    border: none;
+    color: #b91c1c;
+    background: rgba(254, 226, 226, 0.82);
+    cursor: pointer;
+}
+
+.classroom-page .semester-todo-item.is-completed,
+.classroom-page .semester-gantt-row.is-completed {
+    opacity: 0.62;
+}
+
+.classroom-page .semester-week-empty {
+    display: grid;
+    place-items: center;
+    min-height: 3rem;
+    border: 1px dashed rgba(148, 163, 184, 0.24);
+    border-radius: 8px;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    background: rgba(248, 250, 252, 0.72);
+}
+
+.classroom-page .semester-week-empty.is-large {
+    min-height: 9rem;
+}
+
+.classroom-page .teaching-timeline-segment.is-todo-highlighted {
+    border-color: rgba(245, 158, 11, 0.5);
+    box-shadow:
+        0 0 0 3px rgba(245, 158, 11, 0.11),
+        0 20px 42px -28px rgba(245, 158, 11, 0.58);
+}
+
+.semester-todo-modal-backdrop {
+    opacity: 0;
+    transition: opacity 180ms ease;
+}
+
+.semester-todo-modal-backdrop.is-open {
+    opacity: 1;
+}
+
+.semester-todo-modal {
+    width: min(720px, calc(100vw - 2rem));
+    max-height: min(92vh, 780px);
+    overflow-y: auto;
+    transform: translateY(10px) scale(0.98);
+    transition: transform 190ms ease, opacity 180ms ease;
+}
+
+.semester-todo-modal-backdrop.is-open .semester-todo-modal {
+    transform: translateY(0) scale(1);
+}
+
+.semester-todo-form {
+    display: grid;
+    gap: 0.85rem;
+}
+
+.semester-date-picker {
+    display: grid;
+    gap: 0.55rem;
+    padding: 0.72rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 10px;
+    background: rgba(248, 250, 252, 0.86);
+}
+
+.semester-date-role-tabs {
+    display: inline-grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.24rem;
+    width: min(100%, 15rem);
+    padding: 0.2rem;
+    border-radius: 999px;
+    background: rgba(226, 232, 240, 0.74);
+}
+
+.semester-date-role-tabs button {
+    min-height: 1.85rem;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.semester-date-role-tabs button.is-active {
+    background: #ffffff;
+    color: #0369a1;
+    box-shadow: 0 8px 18px -14px rgba(15, 23, 42, 0.34);
+}
+
+.semester-date-picker-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+}
+
+.semester-date-picker-head strong {
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.semester-date-picker-weekdays,
+.semester-date-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.32rem;
+}
+
+.semester-date-picker-weekdays span {
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-align: center;
+}
+
+.semester-picker-day {
+    min-height: 2.35rem;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 8px;
+    background: #ffffff;
+    color: var(--text-secondary);
+    font-weight: 800;
+    cursor: pointer;
+    transition: transform 150ms ease, border-color 170ms ease, background-color 170ms ease;
+}
+
+.semester-picker-day:hover {
+    transform: translateY(-1px);
+    border-color: rgba(14, 165, 233, 0.32);
+}
+
+.semester-picker-day.is-outside {
+    opacity: 0.42;
+}
+
+.semester-picker-day.is-today {
+    border-color: rgba(20, 184, 166, 0.4);
+}
+
+.semester-picker-day.is-in-range {
+    background: rgba(224, 242, 254, 0.76);
+}
+
+.semester-picker-day.is-start,
+.semester-picker-day.is-due {
+    border-color: rgba(245, 158, 11, 0.55);
+    background: linear-gradient(135deg, rgba(255, 247, 237, 0.98), rgba(224, 242, 254, 0.9));
+    color: #92400e;
+}
+
+.semester-todo-time-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.8rem;
+}
+
+.semester-todo-date-result {
+    padding: 0.58rem 0.68rem;
+    border-radius: 8px;
+    background: rgba(240, 249, 255, 0.92);
+    color: #075985;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
 @media (prefers-reduced-motion: no-preference) {
     @keyframes workspace-section-spotlight {
         0% {
@@ -6123,6 +6865,23 @@
                 0 34px 64px -36px rgba(14, 165, 233, 0.62);
         }
     }
+
+    @keyframes semester-week-focus {
+        0% {
+            border-color: rgba(14, 165, 233, 0.2);
+            box-shadow: 0 0 0 0 rgba(14, 165, 233, 0);
+        }
+        38% {
+            border-color: rgba(14, 165, 233, 0.42);
+            box-shadow:
+                0 0 0 5px rgba(14, 165, 233, 0.1),
+                0 24px 42px -30px rgba(14, 165, 233, 0.48);
+        }
+        100% {
+            border-color: rgba(148, 163, 184, 0.16);
+            box-shadow: none;
+        }
+    }
 }
 
 @media (max-width: 768px) {
@@ -6136,7 +6895,9 @@
     }
 
     .learning-progress-head,
-    .learning-progress-body {
+    .learning-progress-grid,
+    .learning-progress-body,
+    .learning-class-position {
         grid-template-columns: 1fr;
         flex-direction: column;
         align-items: stretch;
@@ -6145,8 +6906,8 @@
     .learning-progress-score {
         width: 100%;
         aspect-ratio: auto;
-        min-height: 5rem;
-        border-radius: var(--radius-lg);
+        min-height: 3.2rem;
+        border-radius: var(--radius-md);
     }
 
     .learning-progress-track {
@@ -6158,9 +6919,27 @@
         display: none;
     }
 
+    .learning-mountain {
+        min-height: 116px;
+        padding: 0.5rem;
+    }
+
+    .learning-mountain svg {
+        height: 90px;
+    }
+
+    .learning-mountain__peak-label,
+    .learning-mountain__self-label {
+        font-size: 10.5px;
+    }
+
     .learning-score-row,
     .learning-distribution-item {
-        grid-template-columns: 4.6rem minmax(0, 1fr) 3.6rem;
+        grid-template-columns: 4.2rem minmax(0, 1fr) 3rem;
+    }
+
+    .learning-overview-meta {
+        grid-template-columns: 1fr;
     }
 
     .learning-certificate-shell {
@@ -6191,27 +6970,61 @@
         max-width: calc(100vw - 5.5rem);
         font-size: 0.74rem;
     }
+
+    .classroom-page .semester-todo-head,
+    .classroom-page .semester-todo-actions,
+    .classroom-page .semester-week-head {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .classroom-page .semester-todo-actions {
+        margin-left: 0;
+    }
+
+    .classroom-page .semester-gantt-row {
+        grid-template-columns: 1fr;
+        gap: 0.3rem;
+    }
+
+    .classroom-page .semester-todo-item {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+
+    .classroom-page .semester-todo-open,
+    .classroom-page .semester-todo-delete {
+        grid-column: 2 / -1;
+        justify-self: start;
+    }
+
+    .semester-todo-time-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 480px) {
     .learning-progress-track {
-        gap: 0.5rem;
+        gap: 0.4rem;
     }
 
     .learning-stage-node {
-        flex-basis: 118px;
-        min-width: 118px;
+        flex-basis: 88px;
+        min-width: 88px;
+    }
+
+    .learning-class-position__summary {
+        grid-template-columns: 1fr;
     }
 
     .learning-score-row,
     .learning-distribution-item {
-        grid-template-columns: 1fr;
-        gap: 0.35rem;
+        grid-template-columns: 3.9rem minmax(0, 1fr) 2.8rem;
+        gap: 0.32rem;
     }
 
     .learning-score-row strong,
     .learning-distribution-item strong {
-        text-align: left;
+        text-align: right;
     }
 
     .learning-roster-pill {
