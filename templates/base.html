@@ -7,20 +7,23 @@
 
     <!-- Core Design System (always loaded) -->
     <link rel="stylesheet" href="/static/css/core.css">
-    <link rel="stylesheet" href="/static/css/message_center.css">
+    <link rel="stylesheet" href="/static/css/message_center.css?v=cultivation-20260504">
 
     {% block css %}{% endblock %}
 
     {% block head %}{% endblock %}
 </head>
-<body class="{% block body_class %}{% endblock %}">
+<body class="{% block body_class %}{% endblock %}"{% if user_info is defined and user_info %} data-authenticated-user="true"{% endif %}>
     {% block body %}{% endblock %}
 
     <!-- Global Toast Container -->
     <div id="toast-container" class="toast-container"></div>
 
     <script type="module" src="/static/js/auth.js"></script>
+    {% if user_info is defined and user_info %}
+    <script type="module" src="/static/js/cultivation_identity.js?v=20260504"></script>
     <script type="module" src="/static/js/message_center_bell.js"></script>
+    {% endif %}
     {% block scripts %}{% endblock %}
 </body>
 </html>

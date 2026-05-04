@@ -29,6 +29,7 @@ MESSAGE_CATEGORY_DISCUSSION_MENTION = "discussion_mention"
 MESSAGE_CATEGORY_SUBMISSION = "submission"
 MESSAGE_CATEGORY_GRADING_RESULT = "grading_result"
 MESSAGE_CATEGORY_AI_FEEDBACK = "ai_feedback"
+MESSAGE_CATEGORY_LEARNING_PROGRESS = "learning_progress"
 MESSAGE_CATEGORY_BLOG_COMMENT = "blog_comment"
 MESSAGE_CATEGORY_BLOG_HOT = "blog_hot"
 MESSAGE_CATEGORY_APP_FEEDBACK = "app_feedback"
@@ -56,6 +57,7 @@ ALL_NOTIFICATION_CATEGORIES = (
     MESSAGE_CATEGORY_SUBMISSION,
     MESSAGE_CATEGORY_GRADING_RESULT,
     MESSAGE_CATEGORY_AI_FEEDBACK,
+    MESSAGE_CATEGORY_LEARNING_PROGRESS,
     MESSAGE_CATEGORY_BLOG_COMMENT,
     MESSAGE_CATEGORY_BLOG_HOT,
     MESSAGE_CATEGORY_APP_FEEDBACK,
@@ -69,6 +71,7 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_ASSIGNMENT,
         MESSAGE_CATEGORY_DISCUSSION_MENTION,
         MESSAGE_CATEGORY_GRADING_RESULT,
+        MESSAGE_CATEGORY_LEARNING_PROGRESS,
         MESSAGE_CATEGORY_BLOG_COMMENT,
         MESSAGE_CATEGORY_BLOG_HOT,
     ),
@@ -78,6 +81,7 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_SUBMISSION,
         MESSAGE_CATEGORY_DISCUSSION_MENTION,
         MESSAGE_CATEGORY_AI_FEEDBACK,
+        MESSAGE_CATEGORY_LEARNING_PROGRESS,
         MESSAGE_CATEGORY_BLOG_COMMENT,
         MESSAGE_CATEGORY_BLOG_HOT,
         MESSAGE_CATEGORY_APP_FEEDBACK,
@@ -93,6 +97,7 @@ CATEGORY_LABELS = {
     MESSAGE_CATEGORY_SUBMISSION: "提交动态",
     MESSAGE_CATEGORY_GRADING_RESULT: "批改结果",
     MESSAGE_CATEGORY_AI_FEEDBACK: "AI反馈",
+    MESSAGE_CATEGORY_LEARNING_PROGRESS: "学习成长",
     MESSAGE_CATEGORY_BLOG_COMMENT: "博客评论",
     MESSAGE_CATEGORY_BLOG_HOT: "博客热度",
     MESSAGE_CATEGORY_APP_FEEDBACK: "问题反馈",
@@ -2432,6 +2437,42 @@ def create_student_grading_notification(
         created_at=timestamp,
     )
     return 1 if _insert_notification_if_allowed(conn, payload, allow_duplicates=True) else 0
+
+
+def create_learning_progress_notification(
+    conn,
+    *,
+    recipient_role: str,
+    recipient_user_pk: int,
+    title: str,
+    body_preview: str = "",
+    link_url: str = "",
+    class_offering_id: Optional[int] = None,
+    ref_id: str = "",
+    actor_role: str = "",
+    actor_user_pk: Optional[int] = None,
+    actor_display_name: str = "",
+    metadata: Optional[dict[str, Any]] = None,
+    allow_duplicates: bool = False,
+) -> int:
+    timestamp = _now_iso()
+    payload = _build_notification_payload(
+        recipient_role=str(recipient_role or "").strip().lower(),
+        recipient_user_pk=int(recipient_user_pk),
+        category=MESSAGE_CATEGORY_LEARNING_PROGRESS,
+        title=_truncate_text(title, 80),
+        body_preview=_truncate_text(body_preview, 140),
+        actor_role=str(actor_role or "").strip().lower(),
+        actor_user_pk=actor_user_pk,
+        actor_display_name=str(actor_display_name or "").strip(),
+        link_url=link_url,
+        class_offering_id=_safe_int(class_offering_id),
+        ref_type=MESSAGE_CATEGORY_LEARNING_PROGRESS,
+        ref_id=ref_id or f"learning:{recipient_role}:{recipient_user_pk}:{timestamp}",
+        metadata=metadata or {},
+        created_at=timestamp,
+    )
+    return 1 if _insert_notification_if_allowed(conn, payload, allow_duplicates=allow_duplicates) else 0
 
 
 def create_teacher_ai_feedback_notification(conn, submission_id: int | str) -> int:

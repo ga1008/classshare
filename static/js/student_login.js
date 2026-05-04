@@ -1,4 +1,5 @@
 import { apiFetch } from '/static/js/api.js';
+import { playCultivationReveal } from '/static/js/cultivation_identity.js?v=20260504';
 import { closeModal, openModal, showToast } from '/static/js/ui.js';
 
 function setSubmitting(button, submitting, pendingText) {
@@ -27,9 +28,12 @@ function redirectAfterLogin(result) {
         : '登录成功。';
 
     showToast(message, 'success');
-    window.setTimeout(() => {
-        window.location.assign(redirectTo);
-    }, 450);
+    const go = () => window.location.assign(redirectTo);
+    if (result.cultivation_profile) {
+        playCultivationReveal(result.cultivation_profile, { durationMs: 3600, onDone: go });
+        return;
+    }
+    window.setTimeout(go, 450);
 }
 
 document.addEventListener('DOMContentLoaded', () => {

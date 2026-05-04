@@ -56,6 +56,12 @@ from ..services.course_planning_service import (
     serialize_course_row,
 )
 from ..services.materials_service import attach_home_learning_material_briefs, attach_learning_material_briefs
+from ..services.learning_progress_service import (
+    build_class_learning_overview,
+    build_student_global_cultivation_profile,
+    serialize_student_learning_progress,
+    student_can_access_assignment,
+)
 from ..services.message_center_service import (
     create_password_reset_request_notification,
     is_super_admin_teacher,
@@ -136,11 +142,22 @@ def _build_student_login_json_response(
     login_count: int,
 ) -> JSONResponse:
     access_token, _ = _build_student_login_token(student_row, client_ip)
+    cultivation_profile = None
+    try:
+        with get_db_connection() as profile_conn:
+            cultivation_profile = build_student_global_cultivation_profile(
+                profile_conn,
+                int(student_row["id"]),
+            )
+            profile_conn.commit()
+    except Exception as exc:
+        print(f"[LEARNING_PROGRESS] 登录境界信息加载失败: {exc}")
     response = JSONResponse({
         "status": "success",
         "message": "登录成功。",
         "redirect_to": safe_next,
         "login_count": login_count,
+        "cultivation_profile": cultivation_profile,
     })
     apply_access_token_cookie(response, access_token)
     return response
@@ -527,6 +544,7 @@ def handle_student_login(
         access_token, _ = _build_student_login_token(student_row, client_ip)
         response = RedirectResponse(url=safe_next, status_code=status.HTTP_303_SEE_OTHER)
         apply_access_token_cookie(response, access_token)
+        response.set_cookie("cultivation_reveal", "1", max_age=60, httponly=False, samesite="lax")
         return response
 
     if name and student_id_number:
@@ -760,6 +778,8 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
         for row in assignments_cursor:
             assignment = _enrich_assignment_upload_config(dict(row))
             if user['role'] == 'student':
+                if not student_can_access_assignment(conn, assignment["id"], int(user["id"])):
+                    continue
                 if assignment['status'] == 'new': continue
                 submission = conn.execute(
                     """
@@ -827,6 +847,17 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
             shared_files=files_info,
         )
         classroom_page["teaching_plan"] = teaching_plan
+        if user["role"] == "student":
+            classroom_page["learning_progress"] = serialize_student_learning_progress(
+                conn,
+                class_offering_id,
+                int(user["id"]),
+            )
+        else:
+            classroom_page["learning_overview"] = build_class_learning_overview(
+                conn,
+                class_offering_id,
+            )
 
     try:
         record_behavior_event(
@@ -880,6 +911,8 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
         assignment_row = refresh_assignment_runtime_status(conn, assignment_row)
         assignment = _enrich_assignment_upload_config(dict(assignment_row))
         assignment_back_url = _assignment_back_url(assignment)
+        if user["role"] == "student" and not student_can_access_assignment(conn, assignment_id, int(user["id"])):
+            raise HTTPException(403, "该破境试炼只对指定学生开放")
 
         # 如果是试卷型作业且用户是学生 → 重定向到考试页面
         if assignment.get('exam_paper_id') and user['role'] == 'student':
@@ -1970,6 +2003,8 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
         assignment = refresh_assignment_runtime_status(conn, assignment)
         assignment = _enrich_assignment_upload_config(dict(assignment))
         assignment_back_url = _assignment_back_url(assignment)
+        if user["role"] == "student" and not student_can_access_assignment(conn, assignment_id, int(user["id"])):
+            raise HTTPException(403, "该破境试炼只对指定学生开放")
 
         if not assignment.get('exam_paper_id'):
             # 不是试卷型作业，跳转到普通作业页

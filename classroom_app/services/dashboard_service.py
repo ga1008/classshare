@@ -14,6 +14,10 @@ from .academic_service import (
 from .student_auth_service import build_student_security_summary
 from .ui_copy_service import get_ui_copy_block, render_ui_copy_block
 from .prompt_utils import polite_address
+from .learning_progress_service import (
+    build_student_global_cultivation_profile,
+    serialize_student_learning_progress,
+)
 
 RECENT_ACTIVITY_DAYS = 14
 
@@ -445,10 +449,11 @@ def _build_student_dashboard_context(
     recent_activity = _load_recent_activity(conn, user)
     message_summary = get_message_center_summary(conn, user)
     unread_total = int(message_summary.get("unread_total") or 0)
+    cultivation_profile = build_student_global_cultivation_profile(conn, student_id)
     ui_copy = render_ui_copy_block(
         get_ui_copy_block(conn, scene="dashboard", role="student"),
         {
-            "name": polite_address(user.get("name") or "", "student"),
+            "name": cultivation_profile.get("address_name") or polite_address(user.get("name") or "", "student"),
             "class_name": class_name or "当前班级",
             "unread_total": unread_total,
         },
@@ -466,6 +471,8 @@ def _build_student_dashboard_context(
         assignment_item = assignment_stats.get(offering_id, {})
         resource_item = resource_stats.get(course_id, {})
         material_item = material_stats.get(offering_id, {})
+        learning_progress = serialize_student_learning_progress(conn, offering_id, student_id)
+        cultivation_level = learning_progress.get("current_level") or {}
 
         assignment_count = int(assignment_item.get("assignment_count") or 0)
         pending_count = int(assignment_item.get("pending_count") or 0)
@@ -497,6 +504,8 @@ def _build_student_dashboard_context(
             badges.append({"label": f"已批改 {graded_count}", "tone": "success"})
         if exam_count > 0:
             badges.append({"label": f"考试 {exam_count}", "tone": "primary"})
+        if cultivation_level.get("tier"):
+            badges.append({"label": str(cultivation_level.get("short_name") or cultivation_level.get("level_name")), "tone": "success"})
 
         description = (
             str(offering.get("course_description") or "").strip()
@@ -539,12 +548,25 @@ def _build_student_dashboard_context(
         offering["last_activity_at"] = last_activity_at or ""
         offering["needs_attention"] = pending_count > 0
         offering["has_recent_activity"] = _is_recent(last_activity_at)
-        offering["has_progress"] = submitted_count > 0 or graded_count > 0 or grading_count > 0
+        offering["has_progress"] = (
+            submitted_count > 0
+            or graded_count > 0
+            or grading_count > 0
+            or float(learning_progress.get("score") or 0) > 0
+        )
+        offering["cultivation"] = {
+            "score": learning_progress.get("score", 0),
+            "progress_percent": learning_progress.get("progress_percent", 0),
+            "level_name": cultivation_level.get("level_name") or "未入道",
+            "short_name": cultivation_level.get("short_name") or "未入道",
+            "theme": cultivation_level.get("theme") or "mortal",
+            "next_stage_name": (learning_progress.get("next_stage") or {}).get("name"),
+        }
         offering["metrics"] = [
+            {"label": "修为", "value": learning_progress.get("score", 0), "note": offering["cultivation"]["level_name"]},
             {"label": "待完成", "value": pending_count, "note": "仅统计已发布任务"},
             {"label": "已提交", "value": submitted_count, "note": f"已批改 {graded_count}"},
             {"label": "资料", "value": resource_total, "note": f"文件 {resource_count} · 材料 {material_count}"},
-            {"label": "考试", "value": exam_count, "note": f"课堂任务 {assignment_count}"},
         ]
         offering["search_text"] = _build_dashboard_search_text(
             offering.get("course_name"),
@@ -658,13 +680,14 @@ def _build_student_dashboard_context(
             "subtitle": ui_copy["hero_subtitle"],
             "chips": [
                 class_name or "当前班级",
+                f"{cultivation_profile['highest_level']['level_name']} · 修为 {cultivation_profile['score']:g}",
                 f"累计登录 {total_logins} 次",
                 f"同班 {classmate_count} 人",
             ],
             "spotlight": spotlight,
         },
         "dashboard_stats": [
-            {"label": "我的课堂", "value": len(offerings), "note": class_name or "当前班级"},
+            {"label": "最高境界", "value": cultivation_profile["highest_level"]["short_name"], "note": cultivation_profile.get("best_course", {}).get("course_name") or class_name or "当前班级"},
             {"label": "待完成", "value": pending_total, "note": "仅统计已发布任务"},
             {"label": "已提交", "value": submitted_total, "note": "含待批改与已批改"},
             {"label": "未读提醒", "value": unread_total, "note": f"累计登录 {total_logins} 次"},
@@ -701,6 +724,7 @@ def _build_student_dashboard_context(
         "class_offerings": enriched_offerings,
         "dashboard_semester_calendar": semester_calendar,
         "student_security_summary": student_security_summary,
+        "cultivation_profile": cultivation_profile,
     }
 
 

@@ -23,7 +23,9 @@
         userId: {{ user_info.id | tojson }},
         userRole: {{ user_info.role | tojson }},
         materialId: {{ material.id | tojson }},
-        materialName: {{ material.name | tojson }}
+        materialName: {{ material.name | tojson }},
+        classOfferingId: {{ learning_context.class_offering_id | tojson }},
+        sessionId: {{ learning_context.session_id | tojson }}
     };
 </script>
 {% endblock %}
