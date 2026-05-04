@@ -1737,6 +1737,8 @@ async def material_viewer_page(
     request: Request,
     material_id: int,
     variant: str = Query(default="original"),
+    class_offering_id: int | None = Query(default=None),
+    session_id: int | None = Query(default=None),
     user: dict = Depends(get_current_user),
 ):
     with get_db_connection() as conn:
@@ -1754,6 +1756,8 @@ async def material_viewer_page(
                 "content_url": f"/api/materials/{material_id}/content" if can_edit_source else "",
                 "preview_variant": preview_variant,
                 "path_index": allowed_rows,
+                "class_offering_id": class_offering_id,
+                "session_id": session_id,
                 "is_image": material["preview_type"] == "image",
                 "is_markdown": material["preview_type"] == "markdown",
                 "is_text": material["preview_type"] in {"markdown", "text"},
@@ -1780,6 +1784,10 @@ async def material_viewer_page(
             "request": request,
             "user_info": user,
             "material": preview_payload,
+            "learning_context": {
+                "class_offering_id": class_offering_id,
+                "session_id": session_id,
+            },
         },
     )
 

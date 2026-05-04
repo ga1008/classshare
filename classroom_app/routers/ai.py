@@ -39,6 +39,10 @@ from ..services.psych_profile_service import (
 )
 from ..services.academic_service import build_classroom_ai_context
 from ..services.submission_file_alignment import resolve_submission_file_path
+from ..services.learning_progress_service import (
+    build_student_global_cultivation_profile,
+    handle_stage_exam_grading_complete,
+)
 from ..services.prompt_utils import (
     polite_address,
     build_time_context_text,
@@ -297,6 +301,10 @@ async def handle_ai_grading_callback(request: Request):
                     create_teacher_ai_feedback_notification(conn, submission_id)
                 except Exception as exc:
                     print(f"[MESSAGE_CENTER] AI grading notify failed: {exc}")
+                try:
+                    handle_stage_exam_grading_complete(conn, submission_id)
+                except Exception as exc:
+                    print(f"[LEARNING_PROGRESS] AI grading stage handling failed: {exc}")
             conn.commit()
         print(f"[CALLBACK] 成功接收并更新 AI 批改结果 (Submission ID: {submission_id})")
         # TODO: 通过 WebSocket 向教师推送更新
@@ -818,9 +826,15 @@ def format_system_prompt_student(user_id: int, class_offering_id: int) -> str:
         ).fetchone()
 
         if student_info:
+            cultivation_profile = build_student_global_cultivation_profile(conn, user_id)
+            cultivation_level = cultivation_profile.get("highest_level") or {}
             prompt_parts.append(f"- 身份: 学生")
             prompt_parts.append(f"- 姓名: {student_info['name']}")
-            prompt_parts.append(f"- 礼貌称呼: {polite_address(student_info['name'], 'student')}")
+            prompt_parts.append(f"- 修仙称呼: {cultivation_profile.get('address_name') or polite_address(student_info['name'], 'student')}")
+            prompt_parts.append(f"- 最高境界: {cultivation_level.get('level_name') or '未入道'}")
+            prompt_parts.append(f"- 全局最高修为: {cultivation_profile.get('score', 0)} / 100")
+            if cultivation_profile.get("best_course"):
+                prompt_parts.append(f"- 修为最高课程: {cultivation_profile['best_course'].get('course_name') or ''}")
             prompt_parts.append(f"- 学号: {student_info['student_id_number']}")
             if student_info['gender']:
                 prompt_parts.append(f"- 性别: {student_info['gender']}")
@@ -869,7 +883,7 @@ def format_system_prompt_student(user_id: int, class_offering_id: int) -> str:
     prompt_parts.append(build_system_info_text())
 
     prompt_parts.append("\n请根据以上信息，并结合你掌握的课程大纲和知识点（RAG材料）来回答问题。")
-    prompt_parts.append('称呼用户时请使用"X同学"的格式（X为姓氏），不要直呼全名。语气可以自然轻松、偶尔幽默，让学生感到亲切。')
+    prompt_parts.append('称呼用户时请优先使用上方“修仙称呼”（例如“炼气道友张三”“筑基修士张三”），不要直呼全名；语气要像陪伴修行的课堂助教，轻松鼓励但不夸张。')
     return "\n".join(prompt_parts)
 
 

@@ -1,6 +1,7 @@
 import uuid
 import json
 import io
+import asyncio
 import zipfile
 import pandas as pd
 import sqlite3
@@ -57,6 +58,13 @@ from ..services.submission_assets import (
     summarize_allowed_file_types,
 )
 from ..services.submission_file_alignment import resolve_submission_file_path
+from ..services.learning_progress_service import (
+    get_stage_exam_target,
+    handle_stage_exam_grading_complete,
+    mark_stage_submission_saved,
+    student_can_access_assignment,
+    submit_stage_exam_for_ai_grading,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -605,13 +613,21 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
         # 获取班级花名册以包含未提交学生
         total_students = 0
         roster = []
+        stage_target = get_stage_exam_target(conn, assignment_id)
         if assignment['class_offering_id']:
             offering = conn.execute("SELECT class_id FROM class_offerings WHERE id = ?",
                                     (assignment['class_offering_id'],)).fetchone()
             if offering:
-                students_cursor = conn.execute(
-                    "SELECT id, student_id_number, name FROM students WHERE class_id = ? ORDER BY student_id_number",
-                    (offering['class_id'],))
+                if stage_target:
+                    students_cursor = conn.execute(
+                        "SELECT id, student_id_number, name FROM students WHERE id = ?",
+                        (int(stage_target["student_id"]),),
+                    )
+                else:
+                    students_cursor = conn.execute(
+                        "SELECT id, student_id_number, name FROM students WHERE class_id = ? ORDER BY student_id_number",
+                        (offering['class_id'],),
+                    )
                 roster = [dict(row) for row in students_cursor]
                 total_students = len(roster)
 
@@ -884,6 +900,10 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
             )
         except Exception as exc:
             print(f"[MESSAGE_CENTER] manual grading notify failed: {exc}")
+        try:
+            handle_stage_exam_grading_complete(conn, submission_id)
+        except Exception as exc:
+            print(f"[LEARNING_PROGRESS] manual grading stage handling failed: {exc}")
         conn.commit()
     return {"status": "success", "graded_submission_id": submission_id}
 
@@ -1077,6 +1097,7 @@ async def submit_assignment(assignment_id: str,
     answers_json: 包含所有答题内容的 JSON 字符串
     files: 可选的附件文件列表
     """
+    stage_attempt = None
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
         conn.commit()
@@ -1084,6 +1105,8 @@ async def submit_assignment(assignment_id: str,
         if not assignment:
             raise HTTPException(404, "Assignment not found")
         assignment = enrich_assignment_runtime_view(assignment)
+        if not student_can_access_assignment(conn, assignment_id, int(user["id"])):
+            raise HTTPException(403, "该破境试炼只对指定学生开放")
 
         submission = conn.execute(
             "SELECT * FROM submissions WHERE assignment_id = ? AND student_pk_id = ?",
@@ -1114,6 +1137,10 @@ async def submit_assignment(assignment_id: str,
             existing_submission=existing_submission,
             notify_teacher=True,
         )
+        try:
+            stage_attempt = mark_stage_submission_saved(conn, result["submission_id"])
+        except Exception as exc:
+            print(f"[LEARNING_PROGRESS] 破境试炼提交状态更新失败: {exc}")
 
     if assignment["class_offering_id"]:
         try:
@@ -1138,6 +1165,12 @@ async def submit_assignment(assignment_id: str,
             )
         except Exception as exc:
             print(f"[BEHAVIOR] 记录作业提交失败: {exc}")
+
+    if stage_attempt:
+        try:
+            asyncio.create_task(submit_stage_exam_for_ai_grading(int(result["submission_id"])))
+        except RuntimeError:
+            await submit_stage_exam_for_ai_grading(int(result["submission_id"]))
 
     return {
         "status": "success",

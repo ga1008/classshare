@@ -2506,6 +2506,113 @@ def init_database():
                 "ON session_material_generation_tasks (teacher_id, created_at DESC, id DESC)"
             )
 
+            # 15.6 学习进度、等级考核与证书
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS learning_material_progress (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    class_offering_id INTEGER NOT NULL,
+                    student_id INTEGER NOT NULL,
+                    material_id INTEGER NOT NULL,
+                    session_id INTEGER,
+                    view_count INTEGER NOT NULL DEFAULT 0,
+                    accumulated_seconds INTEGER NOT NULL DEFAULT 0,
+                    active_seconds INTEGER NOT NULL DEFAULT 0,
+                    max_scroll_ratio REAL NOT NULL DEFAULT 0,
+                    completed INTEGER NOT NULL DEFAULT 0,
+                    first_viewed_at TEXT,
+                    last_viewed_at TEXT,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    metadata_json TEXT DEFAULT '{}',
+                    FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                    FOREIGN KEY (material_id) REFERENCES course_materials (id) ON DELETE CASCADE,
+                    FOREIGN KEY (session_id) REFERENCES class_offering_sessions (id) ON DELETE SET NULL,
+                    UNIQUE (class_offering_id, student_id, material_id)
+                )
+            ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS learning_stage_status (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    class_offering_id INTEGER NOT NULL,
+                    student_id INTEGER NOT NULL,
+                    stage_key TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'locked',
+                    progress_score REAL NOT NULL DEFAULT 0,
+                    readiness_score REAL NOT NULL DEFAULT 0,
+                    unlocked_at TEXT,
+                    passed_at TEXT,
+                    last_exam_assignment_id INTEGER,
+                    certificate_id INTEGER,
+                    last_calculated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    metadata_json TEXT DEFAULT '{}',
+                    FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                    FOREIGN KEY (last_exam_assignment_id) REFERENCES assignments (id) ON DELETE SET NULL,
+                    FOREIGN KEY (certificate_id) REFERENCES learning_certificates (id) ON DELETE SET NULL,
+                    UNIQUE (class_offering_id, student_id, stage_key)
+                )
+            ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS learning_stage_exam_attempts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    class_offering_id INTEGER NOT NULL,
+                    student_id INTEGER NOT NULL,
+                    stage_key TEXT NOT NULL,
+                    assignment_id INTEGER,
+                    exam_paper_id TEXT,
+                    status TEXT NOT NULL DEFAULT 'generated',
+                    score REAL,
+                    generated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    submitted_at TEXT,
+                    graded_at TEXT,
+                    passed_at TEXT,
+                    ai_error TEXT,
+                    metadata_json TEXT DEFAULT '{}',
+                    FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                    FOREIGN KEY (assignment_id) REFERENCES assignments (id) ON DELETE SET NULL,
+                    FOREIGN KEY (exam_paper_id) REFERENCES exam_papers (id) ON DELETE SET NULL
+                )
+            ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS learning_certificates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    class_offering_id INTEGER NOT NULL,
+                    student_id INTEGER NOT NULL,
+                    stage_key TEXT NOT NULL,
+                    level_key TEXT NOT NULL,
+                    level_name TEXT NOT NULL,
+                    tier INTEGER NOT NULL DEFAULT 0,
+                    title TEXT NOT NULL,
+                    certificate_code TEXT NOT NULL UNIQUE,
+                    issued_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    metadata_json TEXT DEFAULT '{}',
+                    FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                    UNIQUE (class_offering_id, student_id, stage_key)
+                )
+            ''')
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_learning_material_progress_student "
+                "ON learning_material_progress (class_offering_id, student_id, completed, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_learning_stage_status_student "
+                "ON learning_stage_status (class_offering_id, student_id, stage_key, status)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_learning_stage_attempt_assignment "
+                "ON learning_stage_exam_attempts (assignment_id, student_id, stage_key)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_learning_stage_attempt_active "
+                "ON learning_stage_exam_attempts (class_offering_id, student_id, stage_key, status, generated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_learning_certificates_student "
+                "ON learning_certificates (class_offering_id, student_id, tier DESC, issued_at DESC)"
+            )
+
             # ── 16. 博客中心 ──
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS blog_posts (

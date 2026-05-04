@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="/static/css/feedback.css">
 <link rel="stylesheet" href="/static/css/toast.css">
 <link rel="stylesheet" href="/static/css/ai_chat.css">
-<link rel="stylesheet" href="/static/css/classroom.css?v=floating-nav-20260427">
+<link rel="stylesheet" href="/static/css/classroom.css?v=cultivation-20260504">
 <link rel="stylesheet" href="/static/css/markdown.css">
 <link rel="stylesheet" href="/static/css/materials.css">
 <link rel="stylesheet" href="/static/css/learning_material_selector.css">
@@ -113,7 +113,9 @@
         classroom: {{ classroom | tojson }},
         classOfferingId: {{ classroom.id }},
         courseId: {{ classroom.course_id }},
-        teachingPlan: {{ classroom_page.teaching_plan | tojson }}
+        teachingPlan: {{ classroom_page.teaching_plan | tojson }},
+        learningProgress: {{ classroom_page.learning_progress | default(none) | tojson }},
+        learningOverview: {{ classroom_page.learning_overview | default(none) | tojson }}
     };
 </script>
 {% endblock %}
@@ -141,6 +143,14 @@
         {% include "partials/message_center_bell.html" %}
         {% include "partials/feedback_button.html" %}
         {% include "partials/profile_button.html" %}
+        {% if user_info.role == 'student' and classroom_page.learning_progress %}
+        {% set lp = classroom_page.learning_progress %}
+        <button type="button" class="learning-top-chip" data-learning-scroll title="查看学习进度">
+            <span class="learning-top-chip__level">{{ lp.current_level.level_name }}</span>
+            <span class="learning-top-chip__bar"><span style="width: {{ lp.progress_percent }}%"></span></span>
+            <span class="learning-top-chip__score">修为 {{ lp.score }}</span>
+        </button>
+        {% endif %}
         <span class="user-name">欢迎，{{ user_info.name }} <span class="badge badge-primary ml-2">{{ user_info.nickname if user_info.nickname else ('教师' if user_info.role == 'teacher' else '学生') }}</span></span>
         {% if user_info.role == 'student' %}
         <button type="button" class="btn btn-outline btn-sm" data-open-student-security>修改密码</button>
@@ -403,7 +413,9 @@
                 {% for item in hero.nav %}
                 <a href="#{{ item.target }}" class="workspace-hero-nav-link workspace-floating-nav-link" data-workspace-nav aria-label="快速跳转到{{ item.label }}" title="快速跳转到{{ item.label }}" data-tooltip="快速跳转到{{ item.label }}">
                     <span class="workspace-floating-nav-icon" aria-hidden="true">
-                        {% if item.target == 'assignment-panel' %}
+                        {% if item.target == 'learning-progress-panel' %}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 16.3 6.4 19.2 7.5 13 3 8.6l6.2-.9z"/></svg>
+                        {% elif item.target == 'assignment-panel' %}
                         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2.5" width="8" height="4" rx="1.2"/><path d="M16 4.5h2a2 2 0 0 1 2 2V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6.5a2 2 0 0 1 2-2h2"/><path d="M8 12h8"/><path d="M8 16h5"/></svg>
                         {% elif item.target == 'materials-panel' %}
                         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H12v18H6.5A2.5 2.5 0 0 1 4 18.5z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H12v18h5.5a2.5 2.5 0 0 0 2.5-2.5z"/></svg>
@@ -420,6 +432,101 @@
             </nav>
         </div>
     </section>
+
+    {% if user_info.role == 'student' and classroom_page.learning_progress %}
+    {% set lp = classroom_page.learning_progress %}
+    <section class="workspace-panel learning-progress-panel" id="learning-progress-panel" data-workspace-section>
+        <div class="learning-progress-head">
+            <div>
+                <p class="workspace-kicker">Cultivation Path</p>
+                <h2>进度及等级</h2>
+                <p>{{ lp.rules.fairness_note }}</p>
+            </div>
+            <div class="learning-progress-score" data-theme="{{ lp.current_level.level_key }}">
+                <span>修为</span>
+                <strong>{{ lp.score }}</strong>
+                <small>{{ lp.current_level.level_name }}</small>
+            </div>
+        </div>
+        <div class="learning-progress-track" aria-label="修行等级进度">
+            {% for stage in lp.stages %}
+            <div class="learning-stage-node is-{{ stage.status }}" data-theme="{{ stage.theme }}">
+                <span class="learning-stage-orb"></span>
+                <strong>{{ stage.short_name }}</strong>
+                <small>
+                    {% if stage.status == 'passed' %}已点亮{% elif stage.status == 'challenge_ready' %}可破境{% elif stage.status == 'generating' %}生成中{% elif stage.status == 'in_exam' %}试炼中{% else %}{{ stage.progress_percent }}%{% endif %}
+                </small>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="learning-progress-body">
+            <div class="learning-progress-bars">
+                {% for weight in lp.rules.score_weights %}
+                {% set component_key = 'material' if weight.label == '学习材料' else ('task' if weight.label == '作业考试' else ('interaction' if weight.label == '互动求助' else 'consistency')) %}
+                {% set component_value = lp.metrics.components[component_key] %}
+                <div class="learning-score-row">
+                    <span>{{ weight.label }}</span>
+                    <div class="learning-score-bar"><span style="width: {{ (component_value / weight.weight * 100) | round(0) }}%"></span></div>
+                    <strong>{{ component_value }}/{{ weight.weight }}</strong>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="learning-progress-actions">
+                {% if lp.eligible_stage %}
+                <button type="button" class="btn btn-primary learning-stage-exam-btn" data-stage-key="{{ lp.eligible_stage.key }}">
+                    破境 {{ lp.eligible_stage.name }}
+                </button>
+                <span>个性化破境试炼</span>
+                {% elif lp.next_stage and lp.next_stage.status == 'generating' %}
+                <button type="button" class="btn btn-outline" disabled>AI 正在生成试炼</button>
+                <span>个性化试卷正在准备中，稍后刷新即可进入。</span>
+                {% elif lp.next_stage and lp.next_stage.status == 'in_exam' and lp.next_stage.last_exam_assignment_id %}
+                <a class="btn btn-primary" href="/exam/take/{{ lp.next_stage.last_exam_assignment_id }}">继续破境试炼</a>
+                <span>达到 {{ lp.rules.pass_score }} 分后自动点亮境界并颁发道印。</span>
+                {% elif lp.next_stage %}
+                <button type="button" class="btn btn-outline" disabled>距离 {{ lp.next_stage.name }} 还差 {{ (lp.next_stage.unlock_score - lp.score) | round(1) }} 分</button>
+                <span>继续研读材料、完成任务或向 AI/助教提问，都能凝聚修为。</span>
+                {% else %}
+                <button type="button" class="btn btn-outline" disabled>全部境界已点亮</button>
+                <span>所有道印已收入囊中，可以继续保持课堂活跃度。</span>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+    {% elif user_info.role == 'teacher' and classroom_page.learning_overview %}
+    {% set lo = classroom_page.learning_overview %}
+    <section class="workspace-panel learning-overview-panel" id="learning-progress-panel" data-workspace-section>
+        <div class="learning-progress-head">
+            <div>
+                <p class="workspace-kicker">Class Growth</p>
+                <h2>班级修行境界概览</h2>
+                <p>当前课堂 {{ lo.student_count }} 名学生，平均修为 {{ lo.average_score }}，已发放 {{ lo.certificate_count }} 枚晋级道印。</p>
+            </div>
+            <div class="learning-progress-score">
+                <span>可破境</span>
+                <strong>{{ lo.challenge_ready_count }}</strong>
+                <small>人</small>
+            </div>
+        </div>
+        <div class="learning-distribution">
+            {% for item in lo.distribution %}
+            <div class="learning-distribution-item">
+                <span>{{ item.name }}</span>
+                <div class="learning-score-bar"><span style="width: {{ item.percent }}%"></span></div>
+                <strong>{{ item.count }}</strong>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="learning-roster-strip">
+            {% for item in lo.students[:6] %}
+            <div class="learning-roster-pill">
+                <strong>{{ item.name }}</strong>
+                <span>{{ item.current_level.level_name }} · 修为 {{ item.score }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
 
     <div class="workspace-columns" id="workspace-columns">
         <div class="workspace-content" id="workspace-content">
@@ -989,6 +1096,18 @@
                     </article>
                     {% endfor %}
                 </div>
+                {% if user_info.role == 'teacher' and classroom_page.learning_overview %}
+                <div class="course-popover-section learning-popover-section">
+                    <h4>修行境界分布</h4>
+                    {% for item in classroom_page.learning_overview.distribution %}
+                    <div class="learning-distribution-item is-compact">
+                        <span>{{ item.name }}</span>
+                        <div class="learning-score-bar"><span style="width: {{ item.percent }}%"></span></div>
+                        <strong>{{ item.count }}</strong>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
             </section>
 
             <section class="course-popover-panel" data-course-popover-panel="details" hidden>
@@ -1025,6 +1144,23 @@
     </div>
 </div>
 
+{% if user_info.role == 'student' and classroom_page.learning_progress and classroom_page.learning_progress.latest_certificate %}
+{% set cert = classroom_page.learning_progress.latest_certificate %}
+<div class="learning-certificate-backdrop" id="learning-certificate-backdrop" hidden aria-hidden="true">
+    <div class="learning-certificate-shell" role="dialog" aria-modal="true" aria-labelledby="learning-certificate-title">
+        <div class="learning-certificate-rays" aria-hidden="true"></div>
+        <div class="learning-certificate-card" data-theme="{{ cert.level_key }}">
+            <span class="learning-certificate-kicker">Cultivation Seal</span>
+            <h3 id="learning-certificate-title">{{ cert.title }}</h3>
+            <strong>{{ cert.level_name }}</strong>
+            <p>{{ classroom.course_name }} · {{ user_info.name }}</p>
+            <code>{{ cert.certificate_code }}</code>
+            <button type="button" class="btn btn-primary" id="learning-certificate-close">收下道印</button>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <button id="ai-chat-fab" title="课堂 AI 助手" class="shadow-lg">
     <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 3v.01M12 21v.01M3 12h.01M21 12h.01M5.64 5.64l.01.01M18.36 18.36l.01.01M5.64 18.36l.01.01M18.36 5.64l.01.01M12 8a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM16 12a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/>
@@ -1058,7 +1194,7 @@
                 <div class="left-buttons">
                     <button id="ai-deep-think-btn" class="chat-btn deep-think" title="深度思考"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l4 4-1.5 1.5-4-4v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3"/><path d="m9 9 1.88 1.88"/><path d="M9 13.5V15l1.88-1.88"/></svg></button>
                 </div>
-                <textarea id="ai-chat-textarea" placeholder="输入消息..." rows="1"></textarea>
+                <textarea id="ai-chat-textarea" placeholder="向课堂 AI 问道..." rows="1"></textarea>
                 <div class="right-buttons">
                     <button id="ai-chat-btn-attach" class="chat-btn attach" title="上传图片"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.49"/></svg></button>
                     <button id="ai-chat-btn-send" class="chat-btn send" title="发送"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
@@ -1078,9 +1214,10 @@
     import * as ui from '/static/js/ui.js';
     import { ClassroomChat } from '/static/js/chat.js';
     import * as fileApp from '/static/js/app_files.js';
-    import * as materialsApp from '/static/js/classroom_materials.js';
+    import * as materialsApp from '/static/js/classroom_materials.js?v=learning-progress-20260503';
     import * as examApp from '/static/js/app_exams.js';
-    import { initClassroomPage } from '/static/js/classroom_page.js?v=top-focus-actions-20260425';
+    import { initClassroomPage } from '/static/js/classroom_page.js?v=learning-progress-20260503';
+    import { initLearningProgress } from '/static/js/learning_progress.js?v=cultivation-20260504';
 
     window.UI = ui;
     window.fileApp = fileApp;
@@ -1095,6 +1232,7 @@
             }).start();
         }
         initClassroomPage();
+        initLearningProgress(window.APP_CONFIG);
 
         document.addEventListener('click', (event) => {
             const assignmentEntry = event.target.closest('a[href^="/assignment/"], [data-assignment-link]');

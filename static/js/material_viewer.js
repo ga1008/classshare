@@ -3,6 +3,7 @@ import { showToast } from './ui.js';
 import { renderFilePreview } from './file_preview.js';
 
 const material = window.MATERIAL_VIEWER || {};
+const viewerContext = window.MATERIAL_VIEWER_CONTEXT || {};
 
 const contentEl = document.getElementById('viewer-content');
 const tocEl = document.getElementById('viewer-toc');
@@ -56,6 +57,92 @@ let editorLoadingPromise = null;
 let editorLoaded = false;
 let editorEncoding = material.content_encoding || 'utf-8';
 
+function initLearningMaterialProgressTracker() {
+    if (viewerContext.userRole !== 'student' || !viewerContext.classOfferingId || !viewerContext.materialId) {
+        return;
+    }
+
+    let startedAt = performance.now();
+    let lastTickAt = startedAt;
+    let activeSeconds = 0;
+    let maxScrollRatio = 0;
+    let pending = false;
+
+    const endpoint = `/api/classrooms/${viewerContext.classOfferingId}/learning/material-progress`;
+    const getScrollRatio = () => {
+        const doc = document.documentElement;
+        const maxScrollTop = Math.max(1, doc.scrollHeight - window.innerHeight);
+        return Math.min(1, Math.max(0, (window.scrollY || doc.scrollTop || 0) / maxScrollTop));
+    };
+    const syncActivity = () => {
+        const now = performance.now();
+        const delta = Math.max(0, Math.min(15, (now - lastTickAt) / 1000));
+        if (document.visibilityState === 'visible' && document.hasFocus()) {
+            activeSeconds += delta;
+        }
+        lastTickAt = now;
+        maxScrollRatio = Math.max(maxScrollRatio, getScrollRatio());
+    };
+    const sendProgress = async (options = {}) => {
+        syncActivity();
+        const durationSeconds = Math.round(Math.max(0, (performance.now() - startedAt) / 1000));
+        if (!options.force && durationSeconds < 8 && maxScrollRatio < 0.18) {
+            return;
+        }
+        if (pending && !options.final) {
+            return;
+        }
+        const payload = {
+            material_id: Number(viewerContext.materialId),
+            session_id: viewerContext.sessionId ? Number(viewerContext.sessionId) : null,
+            duration_seconds: durationSeconds,
+            active_seconds: Math.round(activeSeconds),
+            scroll_ratio: maxScrollRatio,
+            completed: maxScrollRatio >= 0.88 || activeSeconds >= 180,
+            page_key: 'material_viewer',
+        };
+        const body = JSON.stringify(payload);
+        if (options.final && navigator.sendBeacon) {
+            const blob = new Blob([body], { type: 'application/json' });
+            navigator.sendBeacon(endpoint, blob);
+        } else {
+            pending = true;
+            try {
+                await fetch(endpoint, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body,
+                    keepalive: Boolean(options.final),
+                });
+            } catch (error) {
+                console.debug('learning progress heartbeat failed', error);
+            } finally {
+                pending = false;
+            }
+        }
+        startedAt = performance.now();
+        lastTickAt = startedAt;
+        activeSeconds = 0;
+    };
+
+    window.addEventListener('scroll', () => {
+        maxScrollRatio = Math.max(maxScrollRatio, getScrollRatio());
+    }, { passive: true });
+    window.setInterval(() => {
+        sendProgress().catch(() => {});
+    }, 30000);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            sendProgress({ final: true, force: true }).catch(() => {});
+        }
+    });
+    window.addEventListener('pagehide', () => {
+        sendProgress({ final: true, force: true }).catch(() => {});
+    });
+    window.setInterval(syncActivity, 5000);
+}
+
 function escapeHtml(value) {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -83,6 +170,18 @@ function buildMaterialDownloadAction(label = '\u4e0b\u8f7d\u539f\u6587\u4ef6') {
         return buildBlockedDownloadButton();
     }
     return `<a href="${material.download_url}" class="btn btn-primary">${label}</a>`;
+}
+
+function buildViewerUrlWithLearningContext(materialId, hash = '') {
+    const url = new URL(`/materials/view/${materialId}`, window.location.origin);
+    if (viewerContext.classOfferingId) {
+        url.searchParams.set('class_offering_id', String(viewerContext.classOfferingId));
+    }
+    if (viewerContext.sessionId) {
+        url.searchParams.set('session_id', String(viewerContext.sessionId));
+    }
+    url.hash = hash || '';
+    return url.pathname + url.search + url.hash;
 }
 
 function parseMarkdownHtml(value) {
@@ -1093,6 +1192,7 @@ async function init() {
     bindSourceEditor();
     decorateViewerDownloadActions();
     bindBlockedDownloadTips();
+    initLearningMaterialProgressTracker();
 
     const pendingToast = sessionStorage.getItem('material-viewer-toast');
     if (pendingToast) {
@@ -1113,7 +1213,7 @@ async function init() {
             if (!target) return null;
 
             if (target.preview_type === 'markdown' || target.preview_type === 'text') {
-                return { href: `/materials/view/${target.id}${resolved.hash}` };
+                return { href: buildViewerUrlWithLearningContext(target.id, resolved.hash) };
             }
             if (target.preview_type === 'image') {
                 return {

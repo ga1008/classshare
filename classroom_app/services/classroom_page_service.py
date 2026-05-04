@@ -48,6 +48,7 @@ def build_classroom_page_context(
             class_size_text=class_size_text,
         ),
         "nav": [
+            {"target": "learning-progress-panel", "label": "境界区", "note": "进度及等级"},
             {"target": "assignment-panel", "label": "任务区", "note": "作业与考试"},
             {"target": "materials-panel", "label": "材料区", "note": "课程文档"},
             {"target": "resources-panel", "label": "资源区", "note": "共享文件"},

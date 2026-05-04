@@ -449,6 +449,7 @@ if (app) {
             discussion_mention: '进入课堂',
             grading_result: '查看批改结果',
             ai_feedback: '查看 AI 反馈',
+            learning_progress: '查看学习进度',
             app_feedback: '查看反馈',
             password_reset_request: '审核申请',
             private_message: '查看私信',

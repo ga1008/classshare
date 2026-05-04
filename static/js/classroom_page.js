@@ -5,6 +5,24 @@ import { showToast } from '/static/js/ui.js';
 
 const learningMaterialSelector = initLearningMaterialSelector();
 
+function buildLearningViewerUrl(viewerUrl, session = null) {
+    const urlText = String(viewerUrl || '').trim();
+    if (!urlText) return '';
+    try {
+        const url = new URL(urlText, window.location.origin);
+        const classOfferingId = window.APP_CONFIG?.classOfferingId;
+        if (classOfferingId) {
+            url.searchParams.set('class_offering_id', String(classOfferingId));
+        }
+        if (session?.id && !session?.is_home_entry && session?.entry_type !== 'home') {
+            url.searchParams.set('session_id', String(session.id));
+        }
+        return url.pathname + url.search + url.hash;
+    } catch {
+        return urlText;
+    }
+}
+
 function initCoursePopover() {
     const popover = document.getElementById('course-info-popover');
     if (!popover) return;
@@ -747,7 +765,7 @@ function initTeachingTimelineLegacy() {
             }
             return;
         }
-        window.open(viewerUrl, '_blank', 'noopener');
+        window.open(buildLearningViewerUrl(viewerUrl, session), '_blank', 'noopener');
     });
 
     openHomeMaterialBtn?.addEventListener('click', () => {
@@ -757,7 +775,7 @@ function initTeachingTimelineLegacy() {
             showToast(isTeacher ? '课程首页尚未配置' : '教师尚未配置课程首页', 'warning');
             return;
         }
-        window.open(viewerUrl, '_blank', 'noopener');
+        window.open(buildLearningViewerUrl(viewerUrl, { is_home_entry: true }), '_blank', 'noopener');
     });
 
     selectHomeMaterialBtn?.addEventListener('click', async () => {
@@ -1602,7 +1620,7 @@ function initTeachingTimeline() {
             }
             return;
         }
-        window.open(viewerUrl, '_blank', 'noopener');
+        window.open(buildLearningViewerUrl(viewerUrl, session), '_blank', 'noopener');
     });
 
     openHomeMaterialBtn?.addEventListener('click', () => {
@@ -1612,7 +1630,7 @@ function initTeachingTimeline() {
             showToast(isTeacher ? '课程首页尚未配置' : '教师尚未配置课程首页', 'warning');
             return;
         }
-        window.open(viewerUrl, '_blank', 'noopener');
+        window.open(buildLearningViewerUrl(viewerUrl, { is_home_entry: true }), '_blank', 'noopener');
     });
 
     selectHomeMaterialBtn?.addEventListener('click', async () => {

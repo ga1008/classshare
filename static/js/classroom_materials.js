@@ -19,6 +19,20 @@ const state = {
     selectedIds: new Set(),
 };
 
+function withClassroomLearningContext(urlText) {
+    const raw = String(urlText || '').trim();
+    if (!raw) return '';
+    try {
+        const url = new URL(raw, window.location.origin);
+        if (config?.classOfferingId) {
+            url.searchParams.set('class_offering_id', String(config.classOfferingId));
+        }
+        return url.pathname + url.search + url.hash;
+    } catch {
+        return raw;
+    }
+}
+
 function refs() {
     return {
         list: document.getElementById('classroom-materials-list'),
@@ -274,14 +288,14 @@ export function init(appConfig) {
                 showToast(error.message || '打开目录失败', 'error');
             });
         } else if (action === 'preview') {
-            window.open(`/materials/view/${materialId}`, '_blank', 'noopener');
+            window.open(withClassroomLearningContext(`/materials/view/${materialId}`), '_blank', 'noopener');
         } else if (action === 'view-doc') {
             const viewerUrl = getLearningDocumentUrl(item);
             if (!viewerUrl) {
                 showToast('当前目录没有可查看的 README.md', 'warning');
                 return;
             }
-            window.open(viewerUrl, '_blank', 'noopener');
+            window.open(withClassroomLearningContext(viewerUrl), '_blank', 'noopener');
         } else if (action === 'download-blocked') {
             showToast(item.download_blocked_reason || '当前材料已限制下载', 'warning');
         } else if (action === 'download') {
@@ -300,7 +314,7 @@ export function init(appConfig) {
                 showToast(error.message || '打开目录失败', 'error');
             });
         } else if (item.preview_supported) {
-            window.open(`/materials/view/${materialId}`, '_blank', 'noopener');
+            window.open(withClassroomLearningContext(`/materials/view/${materialId}`), '_blank', 'noopener');
         }
     });
 
