@@ -125,9 +125,15 @@ def _extract_answer_attachment_context(answers_json: str | None) -> dict[str, di
             kind = str(attachment.get("kind") or attachment.get("type") or "").lower()
             relative_path = str(attachment.get("relative_path") or attachment.get("stored_relative_path") or "").strip()
             file_name = str(attachment.get("file_name") or attachment.get("filename") or "").strip()
-            if kind != "drawing" and not relative_path.startswith("exam_drawings/"):
+            if not relative_path and not file_name:
                 continue
-            label = f"第{question_id}题附图"
+            mime_type = str(attachment.get("mime_type") or attachment.get("content_type") or "").lower()
+            is_image_attachment = (
+                kind in {"drawing", "image", "screenshot"}
+                or relative_path.startswith("exam_drawings/")
+                or mime_type.startswith("image/")
+            )
+            label = f"第{question_id}题{'附图' if is_image_attachment else '附件'}"
             if question_text:
                 label = f"{label} - {question_text[:80]}"
             context = {
@@ -136,6 +142,8 @@ def _extract_answer_attachment_context(answers_json: str | None) -> dict[str, di
                 "label": label,
                 "file_name": file_name,
                 "relative_path": relative_path,
+                "kind": kind,
+                "mime_type": mime_type,
             }
             for key in {file_name, relative_path, relative_path.split("/")[-1] if relative_path else ""}:
                 normalized_key = str(key or "").strip().lower()

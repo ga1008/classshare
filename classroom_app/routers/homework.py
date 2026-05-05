@@ -54,6 +54,7 @@ from ..services.submission_assets import (
     is_allowed_submission_file,
     normalize_allowed_file_types,
     parse_submission_manifest,
+    reconcile_answer_attachment_references,
     store_submission_files,
     summarize_allowed_file_types,
 )
@@ -258,6 +259,93 @@ def _parse_answers_payload(answers_json: str) -> Any:
     return answers_data.get("answers", answers_data) if isinstance(answers_data, dict) else answers_data
 
 
+def _load_exam_attachment_policies(conn, assignment: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    paper_id = assignment.get("exam_paper_id")
+    if not paper_id:
+        return {}
+    paper = conn.execute("SELECT questions_json FROM exam_papers WHERE id = ?", (paper_id,)).fetchone()
+    if not paper or not paper["questions_json"]:
+        return {}
+    try:
+        paper_data = json.loads(paper["questions_json"])
+    except (TypeError, json.JSONDecodeError):
+        return {}
+
+    policies: dict[str, dict[str, Any]] = {}
+    for page in (paper_data.get("pages", []) if isinstance(paper_data, dict) else []):
+        if not isinstance(page, dict):
+            continue
+        for question in page.get("questions", []) or []:
+            if not isinstance(question, dict):
+                continue
+            qid = str(question.get("id") or "").strip()
+            raw_policy = question.get("attachment_requirements")
+            if not qid or not isinstance(raw_policy, dict):
+                continue
+            required = bool(raw_policy.get("required") or raw_policy.get("requires_attachment"))
+            try:
+                min_count = int(raw_policy.get("min_count") or raw_policy.get("min") or (1 if required else 0))
+            except (TypeError, ValueError):
+                min_count = 1 if required else 0
+            try:
+                max_count_raw = raw_policy.get("max_count", raw_policy.get("max"))
+                max_count = int(max_count_raw) if max_count_raw not in (None, "") else None
+            except (TypeError, ValueError):
+                max_count = None
+            allowed_file_types = normalize_allowed_file_types(raw_policy.get("allowed_file_types") or raw_policy.get("file_types") or [])
+            policies[qid] = {
+                "required": required,
+                "min_count": max(0, min_count),
+                "max_count": max_count if max_count and max_count > 0 else None,
+                "allowed_file_types": allowed_file_types,
+            }
+    return policies
+
+
+def _iter_answer_items(answers_payload: Any) -> list[dict[str, Any]]:
+    if isinstance(answers_payload, list):
+        return [item for item in answers_payload if isinstance(item, dict)]
+    if isinstance(answers_payload, dict):
+        items = []
+        for key, value in answers_payload.items():
+            if isinstance(value, dict):
+                items.append({"question_id": key, **value})
+            else:
+                items.append({"question_id": key, "answer": value})
+        return items
+    return []
+
+
+def _validate_exam_answer_attachment_policies(answers_payload: Any, policies: dict[str, dict[str, Any]]) -> None:
+    if not policies:
+        return
+    answer_items = _iter_answer_items(answers_payload)
+    attachments_by_question: dict[str, list[dict[str, Any]]] = {}
+    for index, item in enumerate(answer_items, start=1):
+        qid = str(item.get("question_id") or item.get("question_no") or index)
+        attachments = item.get("attachments") if isinstance(item.get("attachments"), list) else []
+        attachments_by_question[qid] = [attachment for attachment in attachments if isinstance(attachment, dict)]
+
+    for qid, policy in policies.items():
+        attachments = attachments_by_question.get(qid, [])
+        min_count = int(policy.get("min_count") or (1 if policy.get("required") else 0))
+        if policy.get("required") and min_count < 1:
+            min_count = 1
+        if min_count and len(attachments) < min_count:
+            raise HTTPException(400, f"第 {qid} 题需要至少上传 {min_count} 个附件")
+        max_count = policy.get("max_count")
+        if max_count and len(attachments) > int(max_count):
+            raise HTTPException(400, f"第 {qid} 题附件不能超过 {max_count} 个")
+        allowed_file_types = policy.get("allowed_file_types") or []
+        if allowed_file_types:
+            for attachment in attachments:
+                relative_path = str(attachment.get("relative_path") or attachment.get("stored_relative_path") or attachment.get("file_name") or "")
+                content_type = str(attachment.get("mime_type") or attachment.get("content_type") or "")
+                if not is_allowed_submission_file(relative_path, content_type, allowed_file_types):
+                    expected = summarize_allowed_file_types(allowed_file_types)
+                    raise HTTPException(400, f"第 {qid} 题附件类型不符合要求，允许类型: {expected}")
+
+
 def _restore_submission_dir(submission_dir, backup_dir, *, remove_current: bool = True) -> None:
     if remove_current:
         delete_storage_tree(submission_dir)
@@ -282,20 +370,53 @@ async def _save_submission_payload(
     prepared_entries = _validate_upload_entries(files, manifest)
     submitted_at = datetime.now().isoformat()
     answers_payload = _parse_answers_payload(answers_json)
-    has_text_answers = answers_have_content(answers_payload)
+    has_answer_content_before_storage = answers_have_content(answers_payload)
     allowed_file_types = decode_allowed_file_types_json(assignment.get("allowed_file_types_json"))
     has_allowed_uploads = any(
         is_allowed_submission_file(entry.relative_path, entry.content_type, allowed_file_types)
         for entry in prepared_entries
     )
 
-    if not has_text_answers and not prepared_entries:
+    if not has_answer_content_before_storage and not prepared_entries:
         raise HTTPException(400, "请至少填写答案或上传一个文件")
-    if not has_text_answers and not has_allowed_uploads:
+    if not has_answer_content_before_storage and not has_allowed_uploads:
         expected_types = summarize_allowed_file_types(allowed_file_types)
         raise HTTPException(400, f"没有符合要求的文件可提交，允许类型: {expected_types}")
 
     student_pk_id = int(student["id"])
+
+    submission_dir = _build_submission_storage_dir(assignment["course_id"], assignment["id"], student_pk_id)
+    staging_dir = submission_dir.with_name(f"{submission_dir.name}.__staging__{uuid.uuid4().hex}")
+    backup_dir = None
+    staging_moved_to_final = False
+    is_replacement = bool(existing_submission)
+
+    try:
+        storage_result = await store_submission_files(staging_dir, prepared_entries, allowed_file_types)
+        if not storage_result.stored_files and not has_answer_content_before_storage:
+            expected_types = summarize_allowed_file_types(allowed_file_types)
+            raise HTTPException(400, f"没有符合要求的文件可提交，允许类型: {expected_types}")
+        for file_info in storage_result.stored_files:
+            file_info.stored_path = str(_build_submission_file_path(submission_dir, file_info.relative_path))
+    except Exception:
+        delete_storage_tree(staging_dir)
+        raise
+
+    answers_payload = reconcile_answer_attachment_references(answers_payload, storage_result.stored_files)
+    try:
+        _validate_exam_answer_attachment_policies(
+            answers_payload,
+            _load_exam_attachment_policies(conn, assignment),
+        )
+    except Exception:
+        delete_storage_tree(staging_dir)
+        raise
+    has_answer_content = answers_have_content(answers_payload)
+    if not has_answer_content and not storage_result.stored_files:
+        expected_types = summarize_allowed_file_types(allowed_file_types)
+        delete_storage_tree(staging_dir)
+        raise HTTPException(400, f"没有符合要求的作答内容可提交，允许文件类型: {expected_types}")
+
     full_submission = {
         "student_id": student.get("student_id_number", ""),
         "student_name": student.get("name", ""),
@@ -309,23 +430,6 @@ async def _save_submission_payload(
         "submission_channel": channel,
     }
     full_submission_json = json.dumps(full_submission, ensure_ascii=False)
-
-    submission_dir = _build_submission_storage_dir(assignment["course_id"], assignment["id"], student_pk_id)
-    staging_dir = submission_dir.with_name(f"{submission_dir.name}.__staging__{uuid.uuid4().hex}")
-    backup_dir = None
-    staging_moved_to_final = False
-    is_replacement = bool(existing_submission)
-
-    try:
-        storage_result = await store_submission_files(staging_dir, prepared_entries, allowed_file_types)
-        if not storage_result.stored_files and not has_text_answers:
-            expected_types = summarize_allowed_file_types(allowed_file_types)
-            raise HTTPException(400, f"没有符合要求的文件可提交，允许类型: {expected_types}")
-        for file_info in storage_result.stored_files:
-            file_info.stored_path = str(_build_submission_file_path(submission_dir, file_info.relative_path))
-    except Exception:
-        delete_storage_tree(staging_dir)
-        raise
 
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -461,7 +565,7 @@ async def _save_submission_payload(
         "submission_id": int(submission_id),
         "stored_file_count": len(storage_result.stored_files),
         "dropped_file_count": len(storage_result.dropped_files),
-        "has_text_answers": bool(has_text_answers),
+        "has_text_answers": bool(has_answer_content),
         "is_replacement": is_replacement,
     }
 
