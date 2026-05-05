@@ -428,11 +428,13 @@ def _assignment_items(conn: sqlite3.Connection, *, class_offering_id: int, user:
         is_exam = bool(row.get("exam_paper_id"))
         title = str(row.get("title") or row.get("exam_paper_title") or ("考试" if is_exam else "作业")).strip()
         start_at = parse_datetime_input(row.get("starts_at") or row.get("created_at"), "开始时间")
-        due_at = parse_datetime_input(row.get("due_at"), "截止时间")
+        assignment_due_at = parse_datetime_input(row.get("due_at"), "截止时间")
         created_at = parse_datetime_input(row.get("created_at"), "创建时间")
         if role == "student":
             submission_status = str(row.get("submission_status") or "unsubmitted")
             can_resubmit = bool(_safe_int(row.get("resubmission_allowed")) and row.get("resubmission_due_at"))
+            resubmission_due_at = parse_datetime_input(row.get("resubmission_due_at"), "重交截止时间") if can_resubmit else None
+            due_at = resubmission_due_at or assignment_due_at
             status_label = {
                 "submitted": "已提交",
                 "grading": "批改中",
@@ -441,6 +443,7 @@ def _assignment_items(conn: sqlite3.Connection, *, class_offering_id: int, user:
             }.get("returned" if can_resubmit else submission_status, "待提交")
             is_completed = submission_status in {"submitted", "grading", "graded"} and not can_resubmit
         else:
+            due_at = assignment_due_at
             status = str(row.get("status") or "")
             status_label = {
                 "new": "草稿",
@@ -448,6 +451,8 @@ def _assignment_items(conn: sqlite3.Connection, *, class_offering_id: int, user:
                 "closed": "已截止",
             }.get(status, status or "任务")
             is_completed = status == "closed"
+        if due_at is None:
+            continue
 
         items.append(
             _normalize_item(
@@ -731,7 +736,7 @@ def create_manual_todo(
             recipient_user_pk=int(user["id"]),
             title=f"已加入待办：{title}",
             body_preview=f"{_datetime_label(due_at)} 截止",
-            link_url=f"/classroom/{int(class_offering_id)}#timeline-panel",
+            link_url="/dashboard#dashboard-semester",
             class_offering_id=int(class_offering_id),
             ref_id=f"manual-todo:{todo_id}:created",
             actor_role=role,

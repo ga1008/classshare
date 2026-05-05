@@ -74,7 +74,6 @@ from ..services.message_center_service import (
 )
 from ..services.session_material_generation_service import attach_generation_tasks
 from ..services.student_insight_service import build_teacher_student_insight
-from ..services.todo_service import build_classroom_todo_overview
 from ..services.student_auth_service import (
     PASSWORD_POLICY_HINT,
     build_password_setup_token,
@@ -864,12 +863,6 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
             shared_files=files_info,
         )
         classroom_page["teaching_plan"] = teaching_plan
-        classroom_page["todo_overview"] = build_classroom_todo_overview(
-            conn,
-            class_offering_id=class_offering_id,
-            user=user,
-            teaching_plan=teaching_plan,
-        )
         if user["role"] == "student":
             classroom_page["learning_progress"] = serialize_student_learning_progress(
                 conn,

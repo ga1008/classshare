@@ -1,46 +1,147 @@
 import { apiFetch } from '/static/js/api.js';
 import { showToast } from '/static/js/ui.js';
 
-function initTopChipScroll() {
-    const chip = document.querySelector('[data-learning-scroll]');
-    const panel = document.getElementById('learning-progress-panel');
-    if (!chip || !panel) return;
-    chip.addEventListener('click', () => {
-        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        panel.classList.remove('is-learning-focus');
-        void panel.offsetWidth;
-        panel.classList.add('is-learning-focus');
-        window.setTimeout(() => panel.classList.remove('is-learning-focus'), 1800);
+function initLearningProgressModal() {
+    const modal = document.getElementById('learning-progress-modal');
+    const panel = document.querySelector('[data-learning-panel]');
+    const triggers = Array.from(document.querySelectorAll('[data-learning-modal-open], [data-learning-scroll]'));
+    if (!modal || !panel || !triggers.length) return;
+
+    const shell = modal.querySelector('.learning-modal-shell');
+    const closeBtn = document.getElementById('learning-modal-close');
+    const transitionMs = 260;
+    let closeTimer = 0;
+    let activeTrigger = null;
+
+    const getFocusableElements = () => Array.from(
+        modal.querySelectorAll('a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'),
+    ).filter((element) => element.offsetParent !== null || element === document.activeElement);
+
+    const setTriggerState = (expanded) => {
+        triggers.forEach((trigger) => {
+            trigger.setAttribute('aria-expanded', String(expanded));
+        });
+    };
+
+    const openModal = (trigger = null) => {
+        window.clearTimeout(closeTimer);
+        activeTrigger = trigger || document.activeElement;
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('has-learning-modal');
+        setTriggerState(true);
+        window.requestAnimationFrame(() => {
+            modal.classList.add('is-open');
+            panel.classList.remove('is-learning-focus');
+            void panel.offsetWidth;
+            panel.classList.add('is-learning-focus');
+            (closeBtn || shell)?.focus({ preventScroll: true });
+            window.setTimeout(() => panel.classList.remove('is-learning-focus'), 1600);
+        });
+    };
+
+    const closeModal = () => {
+        modal.classList.remove('is-open');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('has-learning-modal');
+        setTriggerState(false);
+        closeTimer = window.setTimeout(() => {
+            if (!modal.classList.contains('is-open')) {
+                modal.hidden = true;
+                activeTrigger?.focus?.({ preventScroll: true });
+                activeTrigger = null;
+            }
+        }, transitionMs);
+    };
+
+    triggers.forEach((trigger) => {
+        trigger.setAttribute('aria-haspopup', 'dialog');
+        trigger.setAttribute('aria-controls', 'learning-progress-modal');
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.addEventListener('click', () => openModal(trigger));
+    });
+    closeBtn?.addEventListener('click', closeModal);
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (modal.hidden) return;
+
+        if (event.key === 'Escape') {
+            closeModal();
+            return;
+        }
+
+        if (event.key !== 'Tab') return;
+
+        const focusableElements = getFocusableElements();
+        if (!focusableElements.length) {
+            event.preventDefault();
+            shell?.focus({ preventScroll: true });
+            return;
+        }
+
+        const firstFocusable = focusableElements[0];
+        const lastFocusable = focusableElements[focusableElements.length - 1];
+        if (event.shiftKey && document.activeElement === firstFocusable) {
+            event.preventDefault();
+            lastFocusable.focus({ preventScroll: true });
+        } else if (!event.shiftKey && document.activeElement === lastFocusable) {
+            event.preventDefault();
+            firstFocusable.focus({ preventScroll: true });
+        }
     });
 }
 
 function initStageExamButton(config) {
-    const button = document.querySelector('.learning-stage-exam-btn');
-    if (button && config?.classOfferingId) {
-        button.addEventListener('click', async () => {
-            const stageKey = button.dataset.stageKey;
-            if (!stageKey) return;
-            const originalText = button.textContent;
-            button.disabled = true;
-            button.textContent = 'AI 正在布置试炼...';
-            try {
-                const result = await apiFetch(
-                    `/api/classrooms/${config.classOfferingId}/learning/stages/${stageKey}/exam`,
-                    { method: 'POST', silent: true },
-                );
-                if (result.status === 'generating') {
-                    showToast(result.message || 'AI 正在生成破境试炼，请稍后刷新。', 'info');
-                    button.disabled = false;
-                    button.textContent = originalText;
-                    return;
+    const buttons = Array.from(document.querySelectorAll('.learning-stage-exam-btn'));
+    const setButtonBusy = (button, busy) => {
+        const label = button.querySelector('[data-learning-stage-action-label]');
+        const nextText = '生成中';
+        if (label && !button.dataset.originalActionLabel) {
+            button.dataset.originalActionLabel = label.textContent;
+        }
+        if (!label && !button.dataset.originalText) {
+            button.dataset.originalText = button.textContent;
+        }
+        button.disabled = busy;
+        button.classList.toggle('is-busy', busy);
+        if (label) {
+            label.textContent = busy ? nextText : button.dataset.originalActionLabel;
+        } else {
+            button.textContent = busy ? 'AI 正在布置试炼...' : button.dataset.originalText;
+        }
+    };
+
+    if (buttons.length && config?.classOfferingId) {
+        buttons.forEach((button) => {
+            button.addEventListener('click', async () => {
+                const stageKey = button.dataset.stageKey;
+                if (!stageKey) return;
+                buttons
+                    .filter((candidate) => candidate.dataset.stageKey === stageKey)
+                    .forEach((candidate) => setButtonBusy(candidate, true));
+                try {
+                    const result = await apiFetch(
+                        `/api/classrooms/${config.classOfferingId}/learning/stages/${stageKey}/exam`,
+                        { method: 'POST', silent: true },
+                    );
+                    if (result.status === 'generating') {
+                        showToast(result.message || 'AI 正在生成破境试炼，请稍后刷新。', 'info');
+                        buttons
+                            .filter((candidate) => candidate.dataset.stageKey === stageKey)
+                            .forEach((candidate) => setButtonBusy(candidate, false));
+                        return;
+                    }
+                    showToast(result.status === 'exists' ? '破境试炼已准备好，正在进入。' : '破境试炼已生成。', 'success');
+                    window.location.href = result.exam_url || `/classroom/${config.classOfferingId}`;
+                } catch (error) {
+                    showToast(error.message || '破境试炼生成失败', 'error');
+                    buttons
+                        .filter((candidate) => candidate.dataset.stageKey === stageKey)
+                        .forEach((candidate) => setButtonBusy(candidate, false));
                 }
-                showToast(result.status === 'exists' ? '破境试炼已准备好，正在进入。' : '破境试炼已生成。', 'success');
-                window.location.href = result.exam_url || `/classroom/${config.classOfferingId}`;
-            } catch (error) {
-                showToast(error.message || '破境试炼生成失败', 'error');
-                button.disabled = false;
-                button.textContent = originalText;
-            }
+            });
         });
     }
 
@@ -228,7 +329,7 @@ function initLearningMountain(config) {
 }
 
 export function initLearningProgress(config = window.APP_CONFIG || {}) {
-    initTopChipScroll();
+    initLearningProgressModal();
     initStageExamButton(config);
     initLearningMountain(config);
     initCertificateReveal(config);

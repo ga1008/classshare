@@ -1,5 +1,5 @@
 import { formatDate, showMessage } from '/static/js/ui.js';
-import { initSemesterCalendar } from '/static/js/semester_calendar.js';
+import { initSemesterCalendar } from '/static/js/semester_calendar.js?v=dashboard-todo-gantt-20260504';
 
 const root = document.querySelector('[data-dashboard-root]');
 
@@ -15,6 +15,8 @@ function compactText(value) {
 }
 
 if (root) {
+    root.classList.add('is-reveal-ready');
+
     const cards = Array.from(root.querySelectorAll('[data-offering-card]'));
     const filterButtons = Array.from(root.querySelectorAll('[data-filter-value]'));
     const searchForm = root.querySelector('[data-dashboard-search-form]');
@@ -59,6 +61,9 @@ if (root) {
 
     const revealElements = () => {
         const targets = root.querySelectorAll('.dashboard-reveal');
+        targets.forEach((element, index) => {
+            element.style.setProperty('--reveal-index', String(Math.min(index, 8)));
+        });
         if (!('IntersectionObserver' in window)) {
             targets.forEach((element) => element.classList.add('is-visible'));
             return;
@@ -244,6 +249,7 @@ if (root) {
     applyFilters({ syncUrl: false });
 
     initSemesterCalendar(semesterCalendarRoot, window.DASHBOARD_SEMESTER_CALENDAR || {}, {
+        showTodos: true,
         onMessage: (message, tone) => showMessage(message, tone || 'info'),
     });
 }
