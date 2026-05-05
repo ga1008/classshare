@@ -939,24 +939,38 @@ async def _get_repository_lock(root_id: int) -> asyncio.Lock:
         return lock
 
 
-def _build_askpass_files(temp_dir: Path) -> Path:
-    ps1_path = temp_dir / "askpass.ps1"
-    cmd_path = temp_dir / "askpass.cmd"
-    ps1_path.write_text(
-        "param([string]$prompt)\n"
-        "if (($prompt | Out-String) -match '(?i)username') {\n"
-        "    [Console]::Out.Write($env:LS_GIT_USERNAME)\n"
-        "} else {\n"
-        "    [Console]::Out.Write($env:LS_GIT_PASSWORD)\n"
-        "}\n",
+def _build_askpass_files(temp_dir: Path, platform_name: str | None = None) -> Path:
+    platform_name = platform_name or os.name
+    if platform_name == "nt":
+        ps1_path = temp_dir / "askpass.ps1"
+        cmd_path = temp_dir / "askpass.cmd"
+        ps1_path.write_text(
+            "param([string]$prompt)\n"
+            "if (($prompt | Out-String) -match '(?i)username') {\n"
+            "    [Console]::Out.Write($env:LS_GIT_USERNAME)\n"
+            "} else {\n"
+            "    [Console]::Out.Write($env:LS_GIT_PASSWORD)\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        cmd_path.write_text(
+            "@echo off\r\n"
+            "powershell -NoProfile -ExecutionPolicy Bypass -File \"%~dp0askpass.ps1\" %*\r\n",
+            encoding="utf-8",
+        )
+        return cmd_path
+
+    sh_path = temp_dir / "askpass.sh"
+    sh_path.write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in\n"
+        "    *[Uu]sername*) printf '%s' \"$LS_GIT_USERNAME\" ;;\n"
+        "    *) printf '%s' \"$LS_GIT_PASSWORD\" ;;\n"
+        "esac\n",
         encoding="utf-8",
     )
-    cmd_path.write_text(
-        "@echo off\r\n"
-        "powershell -NoProfile -ExecutionPolicy Bypass -File \"%~dp0askpass.ps1\" %*\r\n",
-        encoding="utf-8",
-    )
-    return cmd_path
+    os.chmod(sh_path, 0o700)
+    return sh_path
 
 
 async def _run_git_command(command_tokens: list[str], cwd: Path, credential: dict | None = None) -> dict:
