@@ -4,14 +4,21 @@
 {% set panel_empty_title = semester_calendar_empty_title | default('还没有学期数据') %}
 {% set panel_empty_description = semester_calendar_empty_description | default('先创建或绑定学期后，这里会自动显示完整学期周历。') %}
 {% set panel_class = semester_calendar_panel_class | default('') %}
+{% set show_todos = semester_calendar_show_todos | default(false) %}
 
-<section class="semester-calendar-panel{% if panel_class %} {{ panel_class }}{% endif %}" data-semester-calendar-root>
+<section class="semester-calendar-panel{% if panel_class %} {{ panel_class }}{% endif %}" data-semester-calendar-root{% if show_todos %} data-semester-calendar-todos="true"{% endif %}>
     <div class="semester-calendar-panel__header">
         <div class="semester-calendar-panel__heading">
             <h3 class="semester-calendar-panel__title">{{ panel_title }}</h3>
             <p class="semester-calendar-panel__subtitle">{{ panel_subtitle }}</p>
         </div>
         <div class="semester-calendar-panel__actions">
+            {% if show_todos %}
+            <button type="button" class="btn btn-primary" data-semester-todo-add hidden>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                新增待办
+            </button>
+            {% endif %}
             <button type="button" class="btn btn-outline" data-semester-calendar-scroll-start>回到开头</button>
             <button type="button" class="btn btn-outline" data-semester-calendar-scroll-today>定位今天</button>
         </div>
@@ -45,6 +52,9 @@
         <span class="semester-calendar-chip">第二行显示周次</span>
         <span class="semester-calendar-chip is-accent">周末 / 节假日高亮</span>
         <span class="semester-calendar-chip is-success">当前周与今天高亮</span>
+        {% if show_todos %}
+        <span class="semester-calendar-chip is-todo" data-semester-todo-summary hidden></span>
+        {% endif %}
     </div>
 
     <div class="semester-calendar-panel__toolbar">
@@ -58,6 +68,10 @@
     <div class="semester-calendar-scroll" data-semester-calendar-scroll>
         <div class="semester-calendar-board" data-semester-calendar-board></div>
     </div>
+
+    {% if show_todos %}
+    <div class="semester-calendar-todo-detail" data-semester-todo-detail hidden></div>
+    {% endif %}
 
     <div class="semester-calendar-panel__empty" data-semester-calendar-empty hidden>
         <strong>{{ panel_empty_title }}</strong>

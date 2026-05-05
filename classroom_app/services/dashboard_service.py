@@ -18,6 +18,7 @@ from .learning_progress_service import (
     build_student_global_cultivation_profile,
     serialize_student_learning_progress,
 )
+from .todo_service import build_classroom_todo_overview
 
 RECENT_ACTIVITY_DAYS = 14
 
@@ -34,6 +35,241 @@ DASHBOARD_FILTER_VALUES = {
     "teacher": ("all", "attention", "recent"),
     "student": ("all", "attention", "progress", "recent"),
 }
+
+
+def _dashboard_int(value: Any, default: int = 0) -> int:
+    try:
+        if value in (None, ""):
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _dashboard_todo_sort_key(item: dict[str, Any]) -> tuple[int, str, str, int]:
+    return (
+        1 if item.get("is_completed") else 0,
+        str(item.get("effective_end_at") or item.get("effective_start_at") or "9999-12-31"),
+        str(item.get("offering_label") or ""),
+        _dashboard_int(item.get("source_id")),
+    )
+
+
+def _match_semester_for_offering(
+    semesters: list[dict[str, Any]],
+    offering: dict[str, Any],
+) -> dict[str, Any] | None:
+    semester_id = _dashboard_int(offering.get("semester_id"))
+    if semester_id:
+        for semester in semesters:
+            if _dashboard_int(semester.get("id")) == semester_id:
+                return semester
+
+    semester_name = str(offering.get("semester") or "").strip()
+    if semester_name:
+        for semester in semesters:
+            if str(semester.get("name") or "").strip() == semester_name:
+                return semester
+        return None
+
+    teacher_id = _dashboard_int(offering.get("teacher_id"))
+    candidates = [
+        semester
+        for semester in semesters
+        if not teacher_id or _dashboard_int(semester.get("teacher_id")) in {0, teacher_id}
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+
+    for semester in candidates:
+        if semester.get("is_current"):
+            return semester
+
+    if len(semesters) == 1:
+        return semesters[0]
+
+    return None
+
+
+def _dashboard_todo_option(offering: dict[str, Any]) -> dict[str, Any]:
+    course_name = str(offering.get("course_name") or "未命名课程").strip()
+    class_name = str(offering.get("class_name") or "未命名班级").strip()
+    return {
+        "class_offering_id": _dashboard_int(offering.get("id")),
+        "course_name": course_name,
+        "class_name": class_name,
+        "label": f"{course_name} · {class_name}",
+    }
+
+
+def _enrich_dashboard_todo(item: dict[str, Any], offering: dict[str, Any]) -> dict[str, Any]:
+    enriched = dict(item)
+    option = _dashboard_todo_option(offering)
+    class_offering_id = option["class_offering_id"]
+    enriched["class_offering_id"] = class_offering_id
+    enriched["course_name"] = option["course_name"]
+    enriched["class_name"] = option["class_name"]
+    enriched["offering_label"] = option["label"]
+    if not str(enriched.get("link_url") or "").strip() and class_offering_id:
+        enriched["link_url"] = f"/classroom/{class_offering_id}#timeline-panel"
+    return enriched
+
+
+def _attach_dashboard_todos_to_semester_calendar(
+    conn: sqlite3.Connection,
+    semester_calendar: dict[str, Any],
+    offerings: list[dict[str, Any]],
+    user: dict[str, Any],
+) -> None:
+    semesters = [
+        item
+        for item in semester_calendar.get("semesters", [])
+        if isinstance(item, dict)
+    ]
+    if not semesters:
+        return
+
+    can_create_manual = str(user.get("role") or "").strip().lower() == "student"
+    buckets: dict[int, dict[str, Any]] = {}
+    for semester in semesters:
+        semester_id = _dashboard_int(semester.get("id"))
+        if not semester_id:
+            continue
+        role_policy = {
+            "can_create_manual": can_create_manual,
+            "show_student_stage_exams": can_create_manual,
+            "description": (
+                "学生端显示课程安排、待提交任务、个人试炼和自定义待办。"
+                if can_create_manual
+                else "教师端显示课程安排和课堂任务截止，不展示学生个人试炼与学生自定义待办。"
+            ),
+        }
+        bucket = {
+            "items": [],
+            "weeks": {},
+            "todo_create_options": [],
+            "role_policy": role_policy,
+        }
+        buckets[semester_id] = bucket
+        semester["todo_overview"] = {
+            "items": [],
+            "weeks": [],
+            "summary": {
+                "total_count": 0,
+                "open_count": 0,
+                "manual_count": 0,
+                "due_soon_count": 0,
+                "no_deadline_count": 0,
+            },
+            "role_policy": role_policy,
+            "active_week_key": "",
+        }
+        semester["todo_create_options"] = bucket["todo_create_options"]
+
+    for offering in offerings:
+        class_offering_id = _dashboard_int(offering.get("id"))
+        if not class_offering_id:
+            continue
+        semester = _match_semester_for_offering(semesters, offering)
+        if not semester:
+            continue
+        semester_id = _dashboard_int(semester.get("id"))
+        bucket = buckets.get(semester_id)
+        if not bucket:
+            continue
+
+        option = _dashboard_todo_option(offering)
+        if option["class_offering_id"] and not any(
+            existing.get("class_offering_id") == option["class_offering_id"]
+            for existing in bucket["todo_create_options"]
+        ):
+            bucket["todo_create_options"].append(option)
+
+        try:
+            overview = build_classroom_todo_overview(
+                conn,
+                class_offering_id=class_offering_id,
+                user=user,
+            )
+        except Exception:
+            continue
+
+        bucket["items"].extend(
+            _enrich_dashboard_todo(item, offering)
+            for item in overview.get("items", [])
+            if isinstance(item, dict)
+        )
+        for week in overview.get("weeks", []):
+            if not isinstance(week, dict):
+                continue
+            week_key = str(week.get("key") or "").strip()
+            if not week_key:
+                continue
+            target_week = bucket["weeks"].setdefault(
+                week_key,
+                {
+                    "key": week_key,
+                    "week_index": week.get("week_index"),
+                    "label": week.get("label") or "",
+                    "range_label": week.get("range_label") or "",
+                    "todos": [],
+                    "is_current": bool(week.get("is_current")),
+                },
+            )
+            target_week["todos"].extend(
+                _enrich_dashboard_todo(todo, offering)
+                for todo in week.get("todos", [])
+                if isinstance(todo, dict)
+            )
+            target_week["is_current"] = bool(target_week.get("is_current") or week.get("is_current"))
+
+    for semester in semesters:
+        semester_id = _dashboard_int(semester.get("id"))
+        bucket = buckets.get(semester_id)
+        if not bucket:
+            continue
+
+        items = sorted(bucket["items"], key=_dashboard_todo_sort_key)
+        weeks = []
+        for week in bucket["weeks"].values():
+            todos = sorted(week["todos"], key=_dashboard_todo_sort_key)
+            weeks.append({
+                **week,
+                "todos": todos,
+                "todo_count": len(todos),
+                "open_count": sum(1 for item in todos if not item.get("is_completed")),
+            })
+        weeks.sort(key=lambda item: str(item.get("key") or ""))
+
+        active_week_key = ""
+        for week in weeks:
+            if week.get("is_current"):
+                active_week_key = str(week.get("key") or "")
+                break
+        if not active_week_key and weeks:
+            active_week_key = str(weeks[0].get("key") or "")
+
+        semester["todo_overview"] = {
+            "items": items,
+            "weeks": weeks,
+            "summary": {
+                "total_count": len(items),
+                "open_count": sum(1 for item in items if not item.get("is_completed")),
+                "manual_count": sum(1 for item in items if item.get("source_type") == "manual"),
+                "due_soon_count": sum(
+                    1
+                    for item in items
+                    if "后截止" in str(item.get("relative_due_label") or "")
+                ),
+                "no_deadline_count": sum(1 for item in items if item.get("no_deadline")),
+            },
+            "role_policy": bucket["role_policy"],
+            "active_week_key": active_week_key,
+        }
+        semester["todo_create_options"] = sorted(
+            bucket["todo_create_options"],
+            key=lambda item: str(item.get("label") or ""),
+        )
 
 
 def build_dashboard_context(
@@ -362,6 +598,12 @@ def _build_teacher_dashboard_context(
     semester_calendar = build_semester_calendar_payload(
         load_teacher_semester_rows(conn, teacher_id),
     )
+    _attach_dashboard_todos_to_semester_calendar(
+        conn,
+        semester_calendar,
+        offerings,
+        user,
+    )
 
     return {
         "dashboard_theme": "teacher",
@@ -671,6 +913,12 @@ def _build_student_dashboard_context(
     semester_calendar = build_semester_calendar_payload(
         load_student_semester_rows(conn, student_id),
     )
+    _attach_dashboard_todos_to_semester_calendar(
+        conn,
+        semester_calendar,
+        offerings,
+        user,
+    )
 
     return {
         "dashboard_theme": "student",
@@ -731,7 +979,7 @@ def _build_student_dashboard_context(
 def _load_teacher_offerings(conn, teacher_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT o.id, o.class_id, o.course_id, o.teacher_id, o.semester, o.schedule_info, o.created_at,
+        SELECT o.id, o.class_id, o.course_id, o.teacher_id, o.semester, o.semester_id, o.schedule_info, o.created_at,
                c.name AS course_name, c.description AS course_description, c.credits AS course_credits,
                cl.name AS class_name, cl.description AS class_description,
                COUNT(s.id) AS student_count
@@ -740,7 +988,7 @@ def _load_teacher_offerings(conn, teacher_id: int) -> list[dict[str, Any]]:
         JOIN classes cl ON cl.id = o.class_id
         LEFT JOIN students s ON s.class_id = o.class_id
         WHERE o.teacher_id = ?
-        GROUP BY o.id, o.class_id, o.course_id, o.teacher_id, o.semester, o.schedule_info, o.created_at,
+        GROUP BY o.id, o.class_id, o.course_id, o.teacher_id, o.semester, o.semester_id, o.schedule_info, o.created_at,
                  c.name, c.description, c.credits, cl.name, cl.description
         ORDER BY o.id DESC
         """,
@@ -752,7 +1000,7 @@ def _load_teacher_offerings(conn, teacher_id: int) -> list[dict[str, Any]]:
 def _load_student_offerings(conn, student_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT o.id, o.class_id, o.course_id, o.teacher_id, o.semester, o.schedule_info, o.created_at,
+        SELECT o.id, o.class_id, o.course_id, o.teacher_id, o.semester, o.semester_id, o.schedule_info, o.created_at,
                c.name AS course_name, c.description AS course_description, c.credits AS course_credits,
                cl.name AS class_name, cl.description AS class_description,
                t.name AS teacher_name

@@ -3,11 +3,11 @@
     flex-direction: column;
     gap: 18px;
     padding: 24px;
-    border-radius: 24px;
+    border-radius: 8px;
     border: 1px solid rgba(148, 163, 184, 0.2);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.94)),
-        radial-gradient(circle at top right, rgba(14, 165, 233, 0.08), transparent 36%);
+        linear-gradient(135deg, rgba(240, 253, 250, 0.46), rgba(255, 251, 235, 0.26));
     box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
 }
 
@@ -69,6 +69,12 @@
     color: #15803d;
 }
 
+.semester-calendar-chip.is-todo {
+    background: rgba(79, 70, 229, 0.1);
+    border-color: rgba(79, 70, 229, 0.18);
+    color: #4338ca;
+}
+
 .semester-calendar-panel__overview {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -81,7 +87,7 @@
     gap: 6px;
     min-width: 0;
     padding: 16px 18px;
-    border-radius: 18px;
+    border-radius: 8px;
     border: 1px solid rgba(148, 163, 184, 0.16);
     background: rgba(248, 250, 252, 0.88);
 }
@@ -93,7 +99,7 @@
 
 .semester-calendar-overview-card span {
     font-size: 0.78rem;
-    letter-spacing: 0.04em;
+    letter-spacing: 0;
     text-transform: uppercase;
 }
 
@@ -130,7 +136,7 @@
 
 .semester-calendar-panel__empty {
     padding: 36px 24px;
-    border-radius: 22px;
+    border-radius: 8px;
     border: 1px dashed rgba(148, 163, 184, 0.34);
     background: rgba(248, 250, 252, 0.78);
     color: var(--text-secondary);
@@ -171,7 +177,7 @@
     gap: 0;
     min-width: max-content;
     border: 1px solid rgba(148, 163, 184, 0.24);
-    border-radius: 22px;
+    border-radius: 8px;
     overflow: hidden;
     background: #fff;
 }
@@ -277,6 +283,25 @@
     background: linear-gradient(180deg, rgba(219, 234, 254, 0.92), rgba(239, 246, 255, 0.98));
 }
 
+.semester-day-cell.is-todo-highlight {
+    position: relative;
+    background: linear-gradient(180deg, rgba(224, 231, 255, 0.92), rgba(238, 242, 255, 0.98));
+    box-shadow:
+        inset 0 0 0 1px rgba(79, 70, 229, 0.22),
+        inset 0 -3px 0 rgba(79, 70, 229, 0.28);
+}
+
+.semester-day-cell.is-todo-range-start,
+.semester-day-cell.is-todo-range-end {
+    box-shadow:
+        inset 0 0 0 2px rgba(79, 70, 229, 0.42),
+        0 12px 22px -22px rgba(79, 70, 229, 0.48);
+}
+
+.semester-day-cell.is-todo-range-mid .date-number {
+    color: #4338ca;
+}
+
 .semester-day-cell.is-outside {
     background: rgba(248, 250, 252, 0.74);
 }
@@ -307,6 +332,363 @@
     color: #0369a1;
 }
 
+.semester-todo-cell {
+    position: relative;
+    min-width: 96px;
+    min-height: 108px;
+    padding: 10px;
+    border-right: 1px solid rgba(148, 163, 184, 0.16);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(255, 255, 255, 0.94);
+}
+
+.semester-todo-axis {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-primary);
+    font-weight: 750;
+}
+
+.semester-todo-cell.is-current-week {
+    background: linear-gradient(180deg, rgba(238, 242, 255, 0.94), rgba(248, 250, 252, 0.98));
+}
+
+.semester-calendar-gantt-lane {
+    position: relative;
+    display: grid;
+    gap: 6px;
+    max-height: 128px;
+    min-height: 84px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 4px;
+    scrollbar-width: thin;
+}
+
+.semester-calendar-gantt-lane::-webkit-scrollbar {
+    width: 6px;
+}
+
+.semester-calendar-gantt-lane::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.42);
+}
+
+.semester-calendar-todo-bar {
+    --todo-left: 0%;
+    --todo-width: 100%;
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+    width: var(--todo-width);
+    min-width: 42px;
+    min-height: 24px;
+    margin-left: var(--todo-left);
+    padding: 3px 7px;
+    border: 1px solid rgba(79, 70, 229, 0.18);
+    border-radius: 8px;
+    background: rgba(79, 70, 229, 0.1);
+    color: #3730a3;
+    font: inherit;
+    font-size: 0.72rem;
+    text-align: left;
+    cursor: pointer;
+    transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.semester-calendar-todo-bar:hover,
+.semester-calendar-todo-bar:focus-visible,
+.semester-calendar-todo-bar.is-active {
+    transform: translateY(-1px);
+    border-color: rgba(79, 70, 229, 0.34);
+    box-shadow: 0 12px 22px -20px rgba(15, 23, 42, 0.48);
+    outline: none;
+}
+
+.semester-calendar-todo-bar.is-active {
+    background: rgba(79, 70, 229, 0.16);
+    box-shadow:
+        0 14px 24px -18px rgba(79, 70, 229, 0.54),
+        0 0 0 2px rgba(79, 70, 229, 0.12);
+}
+
+.semester-calendar-todo-bar.is-lesson {
+    border-color: rgba(14, 116, 144, 0.2);
+    background: rgba(236, 254, 255, 0.78);
+    color: #155e75;
+}
+
+.semester-calendar-todo-bar.is-assignment,
+.semester-calendar-todo-bar.is-exam {
+    border-color: rgba(180, 83, 9, 0.2);
+    background: rgba(255, 251, 235, 0.86);
+    color: #92400e;
+}
+
+.semester-calendar-todo-bar.is-stage {
+    border-color: rgba(124, 58, 237, 0.18);
+    background: rgba(245, 243, 255, 0.86);
+    color: #6d28d9;
+}
+
+.semester-calendar-todo-bar.is-manual {
+    border-color: rgba(15, 118, 110, 0.2);
+    background: rgba(240, 253, 250, 0.9);
+    color: #0f766e;
+}
+
+.semester-calendar-todo-bar.is-completed {
+    opacity: 0.56;
+}
+
+.semester-calendar-todo-bar__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 750;
+}
+
+.semester-calendar-todo-bar small {
+    color: currentColor;
+    opacity: 0.72;
+    white-space: nowrap;
+}
+
+.semester-todo-cell__empty,
+.semester-todo-cell__more {
+    color: var(--text-muted);
+    font-size: 0.76rem;
+}
+
+.semester-todo-cell__more {
+    display: inline-flex;
+    width: fit-content;
+    margin-top: 6px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(100, 116, 139, 0.1);
+}
+
+.semester-calendar-todo-detail {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.86);
+    box-shadow: 0 18px 34px -30px rgba(15, 23, 42, 0.5);
+}
+
+.semester-calendar-todo-detail[hidden] {
+    display: none;
+}
+
+.semester-calendar-todo-detail__copy {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.semester-calendar-todo-detail__copy span,
+.semester-calendar-todo-detail__copy small {
+    color: var(--text-muted);
+}
+
+.semester-calendar-todo-detail__copy strong {
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+}
+
+.semester-calendar-todo-detail__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.semester-todo-modal-shell[hidden] {
+    display: none;
+}
+
+.semester-todo-modal-shell {
+    position: fixed;
+    inset: 0;
+    z-index: 2200;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+}
+
+.semester-todo-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.32);
+    opacity: 0;
+    transition: opacity 180ms ease;
+}
+
+.semester-todo-modal-card {
+    position: relative;
+    width: min(560px, 100%);
+    max-height: min(720px, calc(100vh - 36px));
+    overflow: auto;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 34px 70px -42px rgba(15, 23, 42, 0.62);
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 180ms ease, transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.semester-todo-modal-shell.is-open .semester-todo-modal-backdrop,
+.semester-todo-modal-shell.is-open .semester-todo-modal-card {
+    opacity: 1;
+}
+
+.semester-todo-modal-shell.is-open .semester-todo-modal-card {
+    transform: translateY(0);
+}
+
+.semester-todo-modal-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.semester-todo-modal-head span {
+    color: #0f766e;
+    font-size: 0.78rem;
+    font-weight: 750;
+}
+
+.semester-todo-modal-head h3 {
+    margin: 4px 0 0;
+}
+
+.semester-todo-modal-form,
+.semester-todo-modal-grid {
+    display: grid;
+    gap: 12px;
+}
+
+.semester-todo-modal-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.semester-todo-picker {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    background: rgba(248, 250, 252, 0.86);
+}
+
+.semester-todo-picker__roles,
+.semester-todo-picker__head,
+.semester-todo-picker__weekdays,
+.semester-todo-picker__grid {
+    display: grid;
+    gap: 6px;
+}
+
+.semester-todo-picker__roles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.semester-todo-picker__roles button {
+    min-height: 36px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    background: #fff;
+    color: #475569;
+    font: inherit;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.semester-todo-picker__roles button.is-active {
+    border-color: rgba(79, 70, 229, 0.28);
+    background: rgba(79, 70, 229, 0.1);
+    color: #4338ca;
+}
+
+.semester-todo-picker__head {
+    grid-template-columns: 40px minmax(0, 1fr) 40px;
+    align-items: center;
+}
+
+.semester-todo-picker__head strong {
+    text-align: center;
+    color: #0f172a;
+}
+
+.semester-todo-picker__weekdays,
+.semester-todo-picker__grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.semester-todo-picker__weekdays span {
+    color: #64748b;
+    font-size: 0.74rem;
+    text-align: center;
+}
+
+.semester-todo-picker__day {
+    min-height: 36px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: #fff;
+    color: #0f172a;
+    font: inherit;
+    font-size: 0.84rem;
+    cursor: pointer;
+    transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.semester-todo-picker__day:hover,
+.semester-todo-picker__day:focus-visible {
+    transform: translateY(-1px);
+    border-color: rgba(79, 70, 229, 0.28);
+    outline: none;
+}
+
+.semester-todo-picker__day.is-outside {
+    color: #94a3b8;
+    background: rgba(241, 245, 249, 0.74);
+}
+
+.semester-todo-picker__day.is-today {
+    border-color: rgba(14, 165, 233, 0.36);
+}
+
+.semester-todo-picker__day.is-range {
+    background: rgba(224, 231, 255, 0.76);
+}
+
+.semester-todo-picker__day.is-start,
+.semester-todo-picker__day.is-due {
+    border-color: rgba(79, 70, 229, 0.42);
+    background: #4f46e5;
+    color: #fff;
+}
+
+.semester-todo-picker__result {
+    color: #475569;
+    font-size: 0.82rem;
+    line-height: 1.55;
+}
+
 @media (max-width: 960px) {
     .semester-calendar-panel__overview {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -316,7 +698,7 @@
 @media (max-width: 768px) {
     .semester-calendar-panel {
         padding: 20px 18px;
-        border-radius: 22px;
+        border-radius: 8px;
     }
 
     .semester-calendar-panel__header,
@@ -325,13 +707,43 @@
         align-items: stretch;
     }
 
+    .semester-calendar-panel__actions {
+        width: 100%;
+    }
+
+    .semester-calendar-panel__actions .btn {
+        flex: 1 1 auto;
+        min-height: 42px;
+    }
+
     .semester-calendar-panel__field {
         min-width: 0;
+    }
+
+    .semester-calendar-todo-detail {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .semester-calendar-todo-detail__actions {
+        justify-content: flex-start;
     }
 }
 
 @media (max-width: 560px) {
     .semester-calendar-panel__overview {
         grid-template-columns: 1fr;
+    }
+
+    .semester-todo-modal-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .semester-calendar-todo-bar,
+    .semester-todo-modal-backdrop,
+    .semester-todo-modal-card {
+        transition-duration: 0.01ms !important;
     }
 }

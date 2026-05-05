@@ -6,14 +6,14 @@
 
 {% block css %}
 {{ super() }}
-<link rel="stylesheet" href="/static/css/dashboard.css">
-<link rel="stylesheet" href="/static/css/semester_calendar.css">
+<link rel="stylesheet" href="/static/css/dashboard.css?v=premium-home-20260504-7">
+<link rel="stylesheet" href="/static/css/semester_calendar.css?v=dashboard-todo-gantt-20260504">
 {% endblock %}
 
 {% block navbar_actions %}
 {{ super() }}
 {% if user_info.role == 'teacher' %}
-<a href="/manage/offerings" class="btn btn-primary btn-sm">
+<a href="/manage/offerings" class="btn btn-primary btn-sm" title="开设新课堂" aria-label="开设新课堂">
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
     开设新课堂
 </a>
@@ -27,15 +27,28 @@
     data-initial-filter="{{ dashboard_initial_filter }}"
     data-initial-search="{{ dashboard_initial_search }}"
 >
-    <section class="dashboard-hero">
+    <section class="dashboard-hero dashboard-reveal" aria-label="首页总览">
         <div class="dashboard-hero__content">
-            <span class="dashboard-hero__eyebrow">{{ dashboard_hero.eyebrow }}</span>
+            <div class="dashboard-hero__topline">
+                <span class="dashboard-hero__eyebrow">{{ dashboard_hero.eyebrow }}</span>
+                <span class="dashboard-hero__status">今日课堂中枢</span>
+            </div>
             <h1 class="dashboard-hero__title">{{ dashboard_hero.title }}</h1>
             <p class="dashboard-hero__subtitle">{{ dashboard_hero.subtitle }}</p>
             <div class="dashboard-hero__chips">
                 {% for chip in dashboard_hero.chips %}
                 <span class="dashboard-chip">{{ chip }}</span>
                 {% endfor %}
+            </div>
+            <div class="dashboard-hero__actions">
+                <a href="#dashboard-class-list" class="btn btn-primary dashboard-hero__primary-action">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+                    进入课堂列表
+                </a>
+                <a href="#dashboard-semester" class="btn btn-secondary dashboard-hero__secondary-action">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+                    学期日历
+                </a>
             </div>
         </div>
 
@@ -63,7 +76,7 @@
 
     <section class="dashboard-main">
         <div class="dashboard-main__primary">
-            <section class="dashboard-panel dashboard-panel--primary dashboard-reveal">
+            <section class="dashboard-panel dashboard-panel--primary dashboard-panel--class-list dashboard-reveal" id="dashboard-class-list">
                 <div class="dashboard-panel__header dashboard-panel__header--spread">
                     <div>
                         <h2>课堂列表</h2>
@@ -199,12 +212,13 @@
                 {% endif %}
             </section>
 
-            <section class="dashboard-semester-section dashboard-reveal">
+            <section class="dashboard-semester-section dashboard-reveal" id="dashboard-semester">
                 {% with
                     semester_calendar_panel_title='学期日历',
-                    semester_calendar_panel_subtitle='查看完整学期周历、当前周次与节假日安排。',
-                    semester_calendar_panel_hint='提示：可拖动滚动条或按住表格左右拖动浏览；当前周与今天会自动高亮。',
+                    semester_calendar_panel_subtitle='查看完整学期周历、当前周次、节假日与本周待办甘特图。',
+                    semester_calendar_panel_hint='提示：待办甘特与第 x 周逐列对齐，可点选任务查看详情；当前周与今天会自动高亮。',
                     semester_calendar_panel_class='dashboard-semester-calendar',
+                    semester_calendar_show_todos=true,
                     semester_calendar_empty_title='暂无可展示的学期日历',
                     semester_calendar_empty_description='教师创建学期并绑定课堂后，这里会自动显示对应学期周历。'
                 %}
@@ -332,5 +346,5 @@
 <script>
     window.DASHBOARD_SEMESTER_CALENDAR = {{ dashboard_semester_calendar | tojson }};
 </script>
-<script type="module" src="/static/js/dashboard.js"></script>
+<script type="module" src="/static/js/dashboard.js?v=dashboard-todo-gantt-20260504"></script>
 {% endblock %}

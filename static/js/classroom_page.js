@@ -2230,7 +2230,6 @@ export function initClassroomPage() {
     initCoursePopover();
     initWorkspaceNav();
     initTeachingTimeline();
-    initSemesterTodoBoard(window.APP_CONFIG || {});
     personalizeClassroomCopy();
     document.addEventListener('classroom:alias-change', (event) => {
         personalizeClassroomCopy(event.detail || {});
