@@ -404,6 +404,51 @@
             background: var(--bg-color);
         }
 
+        .question-attachment-panel {
+            margin-top: var(--spacing-3);
+            padding: var(--spacing-3);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            background: var(--bg-color);
+        }
+
+        .question-attachment-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--spacing-2);
+            margin-bottom: var(--spacing-2);
+        }
+
+        .question-attachment-head strong {
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .question-attachment-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 8px;
+            border-radius: var(--radius-full);
+            background: var(--surface-color);
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .question-attachment-badge.required {
+            background: var(--warning-light);
+            color: var(--warning-color);
+        }
+
+        .question-attachment-hint {
+            margin-bottom: var(--spacing-2);
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            line-height: 1.55;
+        }
+
         .drawing-answer-actions {
             display: flex;
             flex-wrap: wrap;
@@ -553,6 +598,11 @@
         .upload-dropzone:hover {
             border-color: var(--primary-color);
             background: var(--primary-light);
+        }
+
+        .question-upload-dropzone {
+            padding: var(--spacing-3);
+            min-height: 88px;
         }
 
         .file-chips {
@@ -854,10 +904,12 @@
         currentPageIdx: 0,
         answers: {},
         drawings: {},
+        questionFiles: {},
         activeQuestionId: null,
         totalQuestions: 0
     };
     let uploadManager = null;
+    let questionUploadManagers = new Map();
     let drawingBoard = null;
     let isEditingResubmission = false;
     let localSaveWarningShown = false;
@@ -970,8 +1022,56 @@
         return Boolean(drawing && (drawing.dataUrl || drawing.sourceUrl || drawing.relativePath));
     }
 
+    function getQuestionFileEntries(qId) {
+        return Array.isArray(state.questionFiles?.[qId]) ? state.questionFiles[qId] : [];
+    }
+
+    function hasQuestionFiles(qId) {
+        return getQuestionFileEntries(qId).length > 0;
+    }
+
+    function normalizePolicyFileTypes(rawValue) {
+        if (!rawValue) return [];
+        const values = Array.isArray(rawValue)
+            ? rawValue
+            : String(rawValue).replace(/\r/g, '\n').replace(/[;，、]/g, ',').replace(/\n/g, ',').split(',');
+        return values.map(item => String(item || '').trim()).filter(Boolean);
+    }
+
+    function getAttachmentPolicy(q) {
+        const raw = q?.attachment_requirements || q?.attachment_requirement || q?.answer_attachments || {};
+        const required = Boolean(raw.required || raw.requires_attachment || raw.attachment_required);
+        const minCount = Math.max(0, Number(raw.min_count ?? raw.min ?? (required ? 1 : 0)) || 0);
+        const maxCountRaw = Number(raw.max_count ?? raw.max ?? MAX_FILE_COUNT);
+        const maxCount = Math.max(minCount || 0, Math.min(MAX_FILE_COUNT, Number.isFinite(maxCountRaw) && maxCountRaw > 0 ? maxCountRaw : MAX_FILE_COUNT));
+        const allowDrawing = raw.allow_drawing !== false;
+        return {
+            enabled: isDrawingQuestion(q),
+            required,
+            minCount,
+            maxCount,
+            allowDrawing,
+            allowedFileTypes: normalizePolicyFileTypes(raw.allowed_file_types || raw.file_types),
+            description: String(raw.description || raw.requirement || raw.prompt || raw.hint || '').trim(),
+        };
+    }
+
+    function combineAllowedFileTypes(primaryTypes, secondaryTypes) {
+        const primary = Array.isArray(primaryTypes) ? primaryTypes.filter(Boolean) : [];
+        const secondary = Array.isArray(secondaryTypes) ? secondaryTypes.filter(Boolean) : [];
+        if (!primary.length) return secondary;
+        if (!secondary.length) return primary;
+        const secondarySet = new Set(secondary.map(item => String(item).toLowerCase()));
+        const narrowed = primary.filter(item => secondarySet.has(String(item).toLowerCase()));
+        return narrowed.length ? narrowed : primary;
+    }
+
+    function getQuestionAttachmentCount(q) {
+        return getQuestionFileEntries(q.id).length + (hasDrawing(q.id) ? 1 : 0);
+    }
+
     function answerHasContent(q) {
-        return Boolean(String(state.answers[q.id] || '').trim() || hasDrawing(q.id));
+        return Boolean(String(state.answers[q.id] || '').trim() || hasDrawing(q.id) || hasQuestionFiles(q.id));
     }
 
     function sanitizeFileSegment(value, fallback) {
@@ -987,6 +1087,23 @@
         const paperName = sanitizeFileSegment(PAPER_TITLE || '试卷', '试卷');
         const questionLabel = sanitizeFileSegment(`${q.id || `第${index}题`}_${truncate(q.text || '', 24)}`, `第${index}题`);
         return `${paperName}_${questionLabel}_附图.png`;
+    }
+
+    function domIdSegment(value) {
+        return String(value || 'q')
+            .replace(/[^\w\u4e00-\u9fa5-]/g, '_')
+            .slice(0, 48) || 'q';
+    }
+
+    function normalizeUploadRelativePath(rawPath, fallbackName = 'upload.bin') {
+        const raw = String(rawPath || fallbackName).replace(/\\/g, '/').trim().replace(/^\/+|\/+$/g, '');
+        const parts = raw.split('/').map(part => part.trim()).filter(part => part && part !== '.' && part !== '..');
+        return (parts.length ? parts : [fallbackName]).map(part => part.replace(/[\\/\0]/g, '_')).join('/');
+    }
+
+    function makeQuestionAttachmentRelativePath(q, rawPath, index) {
+        const qSegment = sanitizeFileSegment(`${q.id || `第${index}题`}`, `第${index}题`);
+        return `exam_question_files/${qSegment}/${normalizeUploadRelativePath(rawPath || 'upload.bin')}`;
     }
 
     function getQuestionIndex(qId) {
@@ -1030,22 +1147,25 @@
     }
 
     function renderSubmittedAttachments(attachments) {
-        const drawingAttachments = (attachments || []).filter(att => (att.kind || att.type) === 'drawing' || String(att.relative_path || '').startsWith('exam_drawings/'));
-        if (!drawingAttachments.length) return '';
+        const answerAttachments = (attachments || []).filter(att => att && typeof att === 'object');
+        if (!answerAttachments.length) return '';
         return `
             <div class="readonly-answer-attachments">
-                ${drawingAttachments.map((attachment) => {
+                ${answerAttachments.map((attachment) => {
                     const file = findSubmissionFileForAttachment(attachment);
-                    const imageUrl = file?.raw_url || file?.download_url || '';
+                    const mimeType = String(attachment.mime_type || file?.mime_type || '').toLowerCase();
+                    const isImage = Boolean(file?.is_image || file?.raw_url || mimeType.startsWith('image/') || (attachment.kind || attachment.type) === 'drawing');
+                    const imageUrl = isImage ? (file?.raw_url || file?.download_url || '') : '';
                     const downloadUrl = file?.download_url || imageUrl || '#';
-                    const name = attachment.file_name || file?.display_name || file?.original_filename || '题目附图';
+                    const name = attachment.file_name || file?.display_name || file?.original_filename || '题目附件';
+                    const actionText = isImage ? '查看附图' : '下载附件';
                     return `
                         <div class="answer-attachment-card">
                             <div class="answer-attachment-meta">
                                 <span>${esc(name)}</span>
-                                ${downloadUrl !== '#' ? `<a href="${downloadUrl}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">查看附图</a>` : ''}
+                                ${downloadUrl !== '#' ? `<a href="${downloadUrl}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">${actionText}</a>` : ''}
                             </div>
-                            ${imageUrl ? `<img src="${imageUrl}" alt="${esc(name)}">` : `<div class="text-sm text-muted">附图文件暂不可预览</div>`}
+                            ${imageUrl ? `<img src="${imageUrl}" alt="${esc(name)}">` : `<div class="text-sm text-muted">该附件可在下方附件区预览或下载。</div>`}
                         </div>
                     `;
                 }).join('')}
@@ -1191,23 +1311,47 @@
                 const drawing = state.drawings[q.id];
                 const drawingSrc = drawing?.dataUrl || drawing?.sourceUrl || '';
                 const drawingName = drawing?.fileName || makeDrawingFileName(q, getQuestionIndex(q.id));
+                const attachmentPolicy = getAttachmentPolicy(q);
+                const attachmentCount = getQuestionAttachmentCount(q);
+                const safeQId = domIdSegment(q.id);
+                const attachmentHint = attachmentPolicy.description
+                    || `可上传本题截图、报告、代码文件等；总附件限制与交卷附件一致，最多 ${MAX_FILE_COUNT} 个文件。`;
                 html += `
                     <div class="q-text-input">
                         <textarea class="form-control" rows="5" placeholder="${esc(q.placeholder || '请在此作答...')}" data-text-input="${q.id}">${esc(val)}</textarea>
-                        ${isDrawingQuestion(q) ? `
-                            <div class="drawing-answer-panel" data-drawing-panel="${q.id}">
-                                <div class="drawing-answer-actions">
-                                    <button type="button" class="btn btn-outline btn-sm" data-open-drawing="${q.id}">绘图作答</button>
-                                    <button type="button" class="btn btn-ghost btn-sm text-danger" data-remove-drawing="${q.id}" ${drawingSrc ? '' : 'hidden'}>移除附图</button>
-                                    <span class="drawing-answer-status" data-drawing-status="${q.id}">${drawingSrc ? '已保存题目附图' : '可在此题补充手写图、结构图或示意图'}</span>
+                        ${attachmentPolicy.enabled ? `
+                            <div class="question-attachment-panel" data-question-attachment-panel="${q.id}">
+                                <div class="question-attachment-head">
+                                    <strong>本题附件</strong>
+                                    <span class="question-attachment-badge ${attachmentPolicy.required ? 'required' : ''}" data-question-attachment-status="${q.id}">
+                                        ${attachmentPolicy.required ? `需要 ${Math.max(attachmentPolicy.minCount, 1)} 个附件` : `已选 ${attachmentCount} 个`}
+                                    </span>
                                 </div>
-                                <div class="drawing-preview ${drawingSrc ? 'has-drawing' : ''}" data-drawing-preview="${q.id}">
-                                    ${drawingSrc ? `<img src="${drawingSrc}" alt="${esc(drawingName)}">` : ''}
-                                    <div class="drawing-preview-meta">
-                                        <div class="font-medium">${esc(drawingName)}</div>
-                                        <div class="text-muted">提交时会作为本题附图上传，AI 批改会按题号识别。</div>
+                                <div class="question-attachment-hint">${esc(attachmentHint)}${attachmentPolicy.allowedFileTypes.length ? ` 本题建议类型：${esc(attachmentPolicy.allowedFileTypes.join(', '))}。` : ''}${ALLOWED_FILE_TYPES.length ? ` 交卷允许类型：${esc(ALLOWED_FILE_TYPES_LABEL)}。` : ''}</div>
+                                ${attachmentPolicy.allowDrawing ? `
+                                    <div class="drawing-answer-actions">
+                                        <button type="button" class="btn btn-outline btn-sm" data-open-drawing="${q.id}">绘图作答</button>
+                                        <button type="button" class="btn btn-ghost btn-sm text-danger" data-remove-drawing="${q.id}" ${drawingSrc ? '' : 'hidden'}>移除附图</button>
+                                        <span class="drawing-answer-status" data-drawing-status="${q.id}">${drawingSrc ? '已保存题目附图' : '可在此题补充手写图、结构图或示意图'}</span>
                                     </div>
+                                    <div class="drawing-preview ${drawingSrc ? 'has-drawing' : ''}" data-drawing-preview="${q.id}">
+                                        ${drawingSrc ? `<img src="${drawingSrc}" alt="${esc(drawingName)}">` : ''}
+                                        <div class="drawing-preview-meta">
+                                            <div class="font-medium">${esc(drawingName)}</div>
+                                            <div class="text-muted">提交时会作为本题附图上传，AI 批改会按题号识别。</div>
+                                        </div>
+                                    </div>
+                                ` : ''}
+                                <div class="upload-actions mt-3">
+                                    <button type="button" class="btn btn-outline btn-sm" id="questionPickFiles-${safeQId}">添加本题文件</button>
+                                    <span class="text-sm text-muted" id="questionUploadSummary-${safeQId}">未选择文件</span>
                                 </div>
+                                <div class="upload-dropzone question-upload-dropzone" id="question-drop-zone-${safeQId}">
+                                    <p class="mb-1 font-medium text-primary">拖拽本题附件到此处</p>
+                                    <p class="text-sm text-muted">截图、代码、报告等会绑定到第 ${esc(q.id)} 题，AI 批改会按题号识别。</p>
+                                </div>
+                                <input type="file" id="question-file-input-${safeQId}" class="hidden" multiple>
+                                <div class="file-chips" id="question-file-chips-${safeQId}"></div>
                             </div>
                         ` : ''}
                     </div>
@@ -1252,6 +1396,7 @@
         updateProgress();
         renderSidebar();
         bindQuestionInputs();
+        mountQuestionUploadManagers(page.questions || []);
         if (state.currentPageIdx === state.pages.length - 1) {
             mountUploadManager();
         }
@@ -1283,6 +1428,41 @@
         uploadManager.init();
         document.getElementById('examPickFilesBtn')?.addEventListener('click', () => uploadManager.openFilePicker());
         document.getElementById('examPickFolderBtn')?.addEventListener('click', () => uploadManager.openFolderPicker());
+    }
+
+    function mountQuestionUploadManagers(questions) {
+        questionUploadManagers = new Map();
+        (questions || []).forEach((q) => {
+            const policy = getAttachmentPolicy(q);
+            if (!policy.enabled) return;
+            const safeQId = domIdSegment(q.id);
+            const allowedTypes = combineAllowedFileTypes(policy.allowedFileTypes, ALLOWED_FILE_TYPES);
+            const manager = new SubmissionUploadManager({
+                dropZoneId: `question-drop-zone-${safeQId}`,
+                fileInputId: `question-file-input-${safeQId}`,
+                listId: `question-file-chips-${safeQId}`,
+                summaryId: `questionUploadSummary-${safeQId}`,
+                allowedFileTypes: allowedTypes,
+                maxBytes: MAX_UPLOAD_BYTES,
+                maxPerFileBytes: MAX_PER_FILE_BYTES,
+                maxFiles: policy.maxCount || MAX_FILE_COUNT,
+                notify: showMessage,
+                onChange: () => {
+                    state.questionFiles[q.id] = manager.entries;
+                    updateQuestionAttachmentStatus(q.id);
+                    updateQuestionAnsweredState(q.id);
+                    renderSidebar();
+                    window.behaviorTracker?.log('exam_question_file_select', `选择第 ${q.id} 题附件`, {
+                        question_id: q.id,
+                        file_count: manager.entries.length
+                    }, 'exam_take');
+                }
+            });
+            manager.entries = [...getQuestionFileEntries(q.id)];
+            manager.init();
+            questionUploadManagers.set(q.id, manager);
+            document.getElementById(`questionPickFiles-${safeQId}`)?.addEventListener('click', () => manager.openFilePicker());
+        });
     }
 
     function updateProgress() {
@@ -1425,6 +1605,7 @@
             updatedAt: new Date().toISOString(),
         };
         updateDrawingPanel(qId);
+        updateQuestionAttachmentStatus(qId);
         updateQuestionAnsweredState(qId);
         saveToLocal();
         renderSidebar();
@@ -1434,6 +1615,7 @@
         if (!state.drawings[qId]) return;
         delete state.drawings[qId];
         updateDrawingPanel(qId);
+        updateQuestionAttachmentStatus(qId);
         updateQuestionAnsweredState(qId);
         saveToLocal();
         renderSidebar();
@@ -1444,6 +1626,23 @@
         const card = document.getElementById(`q-${qId}`);
         if (!question || !card) return;
         card.classList.toggle('answered', answerHasContent(question));
+    }
+
+    function updateQuestionAttachmentStatus(qId) {
+        const question = findQuestionById(qId);
+        if (!question) return;
+        const policy = getAttachmentPolicy(question);
+        const count = getQuestionAttachmentCount(question);
+        const selectorValue = drawingSelectorValue(qId);
+        const status = document.querySelector(`[data-question-attachment-status="${selectorValue}"]`);
+        if (!status) return;
+        status.classList.toggle('required', policy.required);
+        if (policy.required) {
+            const need = Math.max(policy.minCount, 1);
+            status.textContent = count >= need ? `已满足：${count}/${need}` : `还需 ${Math.max(need - count, 0)} 个附件`;
+        } else {
+            status.textContent = `已选 ${count} 个`;
+        }
     }
 
     function drawingSelectorValue(value) {
@@ -1561,13 +1760,85 @@
         return drawingEntries;
     }
 
+    function appendQuestionAttachmentFiles(formData, allQuestions) {
+        let manifest = [];
+        const currentManifest = formData.get('manifest');
+        if (currentManifest) {
+            try { manifest = JSON.parse(currentManifest) || []; } catch { manifest = []; }
+        }
+        const attachmentEntries = [];
+        for (const q of allQuestions) {
+            const entries = getQuestionFileEntries(q.id);
+            if (!entries.length) continue;
+            for (const entry of entries) {
+                const file = entry.file;
+                if (!file) continue;
+                const fileName = file.name || 'upload.bin';
+                const relativePath = makeQuestionAttachmentRelativePath(q, entry.relativePath || fileName, getQuestionIndex(q.id));
+                formData.append('files', file, fileName);
+                manifest.push({
+                    relative_path: relativePath,
+                    content_type: file.type || '',
+                    kind: 'question_attachment',
+                    question_id: q.id,
+                    question: q.text,
+                });
+                attachmentEntries.push({
+                    kind: file.type && file.type.startsWith('image/') ? 'image' : 'file',
+                    file_name: fileName,
+                    relative_path: relativePath,
+                    mime_type: file.type || '',
+                    file_size: file.size || 0,
+                    question_id: q.id,
+                    question: q.text,
+                });
+            }
+        }
+        formData.set('manifest', JSON.stringify(manifest));
+        return attachmentEntries;
+    }
+
+    function validateQuestionAttachmentRequirements(allQuestions) {
+        for (const q of allQuestions) {
+            const policy = getAttachmentPolicy(q);
+            if (!policy.enabled) continue;
+            const count = getQuestionAttachmentCount(q);
+            const minCount = policy.required ? Math.max(policy.minCount, 1) : policy.minCount;
+            if (minCount > 0 && count < minCount) {
+                return { question: q, message: `第 ${q.id} 题需要至少 ${minCount} 个附件。` };
+            }
+            if (policy.maxCount && count > policy.maxCount) {
+                return { question: q, message: `第 ${q.id} 题附件不能超过 ${policy.maxCount} 个。` };
+            }
+        }
+        return null;
+    }
+
+    function validateFormDataFileLimits(formData) {
+        const files = formData.getAll('files').filter(file => file instanceof File);
+        if (MAX_FILE_COUNT && files.length > MAX_FILE_COUNT) {
+            throw new Error(`文件数量不能超过 ${MAX_FILE_COUNT} 个，请减少题目附件或末尾附件。`);
+        }
+        let totalBytes = 0;
+        for (const file of files) {
+            totalBytes += Number(file.size || 0);
+            if (MAX_PER_FILE_BYTES && file.size > MAX_PER_FILE_BYTES) {
+                throw new Error(`文件 ${file.name || '附件'} 超过单文件大小限制 ${(MAX_PER_FILE_BYTES / 1024 / 1024).toFixed(0)}MB。`);
+            }
+        }
+        if (MAX_UPLOAD_BYTES && totalBytes > MAX_UPLOAD_BYTES) {
+            throw new Error(`全部附件总大小不能超过 ${(MAX_UPLOAD_BYTES / 1024 / 1024).toFixed(0)}MB。`);
+        }
+    }
+
     async function handleSubmission() {
         const allQuestions = [];
         state.pages.forEach(p => (p.questions || []).forEach(q => allQuestions.push(q)));
 
         const unanswered = allQuestions.filter(q => !answerHasContent(q));
         const hasAnswered = allQuestions.some(q => answerHasContent(q));
-        const hasFiles = (uploadManager?.hasFiles() ?? false) || allQuestions.some(q => hasDrawing(q.id));
+        const hasQuestionUploads = allQuestions.some(q => hasDrawing(q.id) || hasQuestionFiles(q.id));
+        const hasFiles = (uploadManager?.hasFiles() ?? false) || hasQuestionUploads;
         window.behaviorTracker?.log('exam_submit_attempt', '尝试提交试卷', {
             total_questions: allQuestions.length,
             unanswered_count: unanswered.length,
@@ -1577,6 +1848,13 @@
 
         if (!hasAnswered && !hasFiles) {
             showMessage('请至少作答一道题或上传附件后再提交。', 'warning');
+            return;
+        }
+
+        const attachmentRequirementError = validateQuestionAttachmentRequirements(allQuestions);
+        if (attachmentRequirementError) {
+            showMessage(attachmentRequirementError.message, 'warning');
+            scrollToQuestion(attachmentRequirementError.question.id);
             return;
         }
 
@@ -1595,16 +1873,21 @@
 
         try {
             const formData = uploadManager ? uploadManager.buildFormData() : new FormData();
+            const questionAttachmentEntries = appendQuestionAttachmentFiles(formData, allQuestions);
             const drawingEntries = await appendDrawingFiles(formData, allQuestions);
-            const drawingMap = new Map(drawingEntries.map(entry => [entry.question_id, entry]));
+            validateFormDataFileLimits(formData);
+            const attachmentMap = new Map();
+            [...questionAttachmentEntries, ...drawingEntries].forEach((entry) => {
+                if (!attachmentMap.has(entry.question_id)) attachmentMap.set(entry.question_id, []);
+                attachmentMap.get(entry.question_id).push(entry);
+            });
             const answersList = allQuestions.map(q => {
-                const attachments = drawingMap.has(q.id) ? [drawingMap.get(q.id)] : [];
                 return {
                     question_id: q.id,
                     question: q.text,
                     type: q.type || '',
                     answer: state.answers[q.id] || '',
-                    attachments,
+                    attachments: attachmentMap.get(q.id) || [],
                 };
             });
             formData.append('answers_json', JSON.stringify({ answers: answersList }));
@@ -1863,6 +2146,7 @@
         isEditingResubmission = true;
         state.answers = extractSubmittedAnswers();
         state.drawings = extractSubmittedDrawings();
+        state.questionFiles = {};
         for (const page of state.pages) {
             for (const q of (page.questions || [])) {
                 if (state.answers[q.id] === undefined) state.answers[q.id] = '';

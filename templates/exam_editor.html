@@ -338,6 +338,31 @@
             border-style: solid;
         }
 
+        .attachment-requirement-box {
+            margin-top: var(--spacing-sm);
+            padding: 12px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-color);
+            background: var(--bg-color);
+        }
+        .attachment-requirement-head {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            color: var(--text-secondary);
+            font-size: 0.86rem;
+            font-weight: 600;
+        }
+        .attachment-requirement-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+        .attachment-requirement-grid input {
+            min-width: 0;
+        }
+
         .add-question-bar {
             display: flex;
             gap: 12px;
@@ -908,6 +933,10 @@
                             <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">填空题</label><input type="number" id="ai-exam-text" class="form-control form-control-sm w-16" min="0" placeholder="自动"></div>
                             <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">问答题</label><input type="number" id="ai-exam-textarea" class="form-control form-control-sm w-16" min="0" placeholder="自动"></div>
                         </div>
+                        <div class="form-group mt-3 mb-0">
+                            <label class="form-label">问答题附件要求（可选）</label>
+                            <textarea id="ai-exam-attachment-requirements" class="form-control" rows="2" placeholder="例如：实验题至少上传 1 张运行截图，可附代码文件；普通问答题不需要附件。"></textarea>
+                        </div>
                     </div>
 
                     <!-- 任务状态显示区域 -->
@@ -1045,6 +1074,53 @@
 
         function hasExistingQuestions() {
             return examData.pages.some(page => (page.questions || []).length > 0);
+        }
+
+        function normalizeAttachmentRequirementForEditor(q) {
+            const raw = q?.attachment_requirements || {};
+            const required = Boolean(raw.required || raw.requires_attachment || raw.attachment_required);
+            const min = Number(raw.min_count ?? raw.min ?? (required ? 1 : 0));
+            const max = raw.max_count ?? raw.max;
+            const allowedTypes = Array.isArray(raw.allowed_file_types)
+                ? raw.allowed_file_types
+                : String(raw.allowed_file_types || raw.file_types || '')
+                    .replace(/\r/g, '\n')
+                    .replace(/[;，、]/g, ',')
+                    .replace(/\n/g, ',')
+                    .split(',');
+            return {
+                enabled: true,
+                required,
+                min_count: Number.isFinite(min) ? Math.max(0, min) : (required ? 1 : 0),
+                max_count: max === undefined || max === '' ? '' : Math.max(1, Number(max) || 1),
+                allow_drawing: raw.allow_drawing !== false,
+                allowed_file_types: allowedTypes.map(item => String(item || '').trim()).filter(Boolean),
+                description: String(raw.description || raw.requirement || raw.prompt || '').trim(),
+            };
+        }
+
+        function ensureAttachmentRequirement(q) {
+            if (!q.attachment_requirements || typeof q.attachment_requirements !== 'object') {
+                q.attachment_requirements = {
+                    enabled: true,
+                    required: false,
+                    min_count: 0,
+                    allow_drawing: true,
+                    allowed_file_types: [],
+                    description: '',
+                };
+            }
+            return q.attachment_requirements;
+        }
+
+        function parseAttachmentAllowedTypes(value) {
+            return String(value || '')
+                .replace(/\r/g, '\n')
+                .replace(/[;，、]/g, ',')
+                .replace(/\n/g, ',')
+                .split(',')
+                .map(item => item.trim())
+                .filter(Boolean);
         }
 
         function applyImportedExamToEditor(imported, sourceLabel) {
@@ -1231,7 +1307,22 @@
                 if (q.type === 'text') {
                     html += `<input class="text-preview-input" value="${escapeHtml(q.placeholder||'')}" placeholder="提示文本 (例如: 请输入函数名)" oninput="window.updatePlaceholder(${idx}, this.value)">`;
                 } else {
+                    const attachmentReq = normalizeAttachmentRequirementForEditor(q);
                     html += `<textarea class="text-preview-input" rows="3" placeholder="提示文本 (例如: 请详细说明...)" oninput="window.updatePlaceholder(${idx}, this.value)">${escapeHtml(q.placeholder||'')}</textarea>`;
+                    html += `
+                        <div class="attachment-requirement-box">
+                            <label class="attachment-requirement-head">
+                                <input type="checkbox" ${attachmentReq.required ? 'checked' : ''} onchange="window.updateAttachmentRequired(${idx}, this.checked)">
+                                要求学生上传本题附件
+                            </label>
+                            <div class="attachment-requirement-grid">
+                                <input class="text-preview-input" type="number" min="0" max="20" value="${attachmentReq.min_count ?? (attachmentReq.required ? 1 : 0)}" placeholder="最少数量" oninput="window.updateAttachmentMin(${idx}, this.value)">
+                                <input class="text-preview-input" type="number" min="1" max="20" value="${attachmentReq.max_count ?? ''}" placeholder="最多数量" oninput="window.updateAttachmentMax(${idx}, this.value)">
+                            </div>
+                            <input class="text-preview-input mt-2" value="${escapeHtml((attachmentReq.allowed_file_types || []).join(', '))}" placeholder="本题允许类型，如 .png, .jpg, .py；留空则沿用作业设置" oninput="window.updateAttachmentAllowedTypes(${idx}, this.value)">
+                            <input class="text-preview-input mt-2" value="${escapeHtml(attachmentReq.description || '')}" placeholder="附件说明，例如：请上传实验截图、核心代码或报告" oninput="window.updateAttachmentDescription(${idx}, this.value)">
+                        </div>
+                    `;
                 }
             }
 
@@ -1286,6 +1377,11 @@
                 delete q.options;
                 if (!q.placeholder) q.placeholder = '';
             }
+            if (newType !== 'textarea') {
+                delete q.attachment_requirements;
+                delete q.attachment_requirement;
+                delete q.answer_attachments;
+            }
             window.renderQuestionEditor();
             window.renderPreview();
         }
@@ -1293,6 +1389,40 @@
         window.updateQText = function(idx, val) { examData.pages[currentPageIdx].questions[idx].text = val; window.renderPreview(); }
         window.updateQId = function(idx, val) { examData.pages[currentPageIdx].questions[idx].id = val; }
         window.updatePlaceholder = function(idx, val) { examData.pages[currentPageIdx].questions[idx].placeholder = val; window.renderPreview(); }
+        window.updateAttachmentRequired = function(idx, checked) {
+            const req = ensureAttachmentRequirement(examData.pages[currentPageIdx].questions[idx]);
+            req.enabled = true;
+            req.required = Boolean(checked);
+            if (checked && (!req.min_count || Number(req.min_count) < 1)) req.min_count = 1;
+            window.renderQuestionEditor();
+            window.renderPreview();
+        }
+        window.updateAttachmentMin = function(idx, val) {
+            const req = ensureAttachmentRequirement(examData.pages[currentPageIdx].questions[idx]);
+            const parsed = parseInt(val, 10);
+            req.min_count = Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
+            if (req.required && req.min_count < 1) req.min_count = 1;
+            window.renderPreview();
+        }
+        window.updateAttachmentMax = function(idx, val) {
+            const req = ensureAttachmentRequirement(examData.pages[currentPageIdx].questions[idx]);
+            const parsed = parseInt(val, 10);
+            if (Number.isInteger(parsed) && parsed > 0) req.max_count = parsed;
+            else delete req.max_count;
+            window.renderPreview();
+        }
+        window.updateAttachmentAllowedTypes = function(idx, val) {
+            const req = ensureAttachmentRequirement(examData.pages[currentPageIdx].questions[idx]);
+            const parsed = parseAttachmentAllowedTypes(val);
+            if (parsed.length) req.allowed_file_types = parsed;
+            else delete req.allowed_file_types;
+            window.renderPreview();
+        }
+        window.updateAttachmentDescription = function(idx, val) {
+            const req = ensureAttachmentRequirement(examData.pages[currentPageIdx].questions[idx]);
+            req.description = val;
+            window.renderPreview();
+        }
         window.updateOption = function(qIdx, optIdx, val) { examData.pages[currentPageIdx].questions[qIdx].options[optIdx] = val; window.renderPreview(); }
         window.addOption = function(qIdx) { examData.pages[currentPageIdx].questions[qIdx].options.push(''); window.renderQuestionEditor(); window.renderPreview(); }
         window.removeOption = function(qIdx, optIdx) { examData.pages[currentPageIdx].questions[qIdx].options.splice(optIdx, 1); window.renderQuestionEditor(); window.renderPreview(); }
@@ -1331,6 +1461,13 @@
                     html += `<input type="text" class="preview-q-input cursor-not-allowed" disabled placeholder="${escapeHtml(q.placeholder || '填空答案')}">`;
                 } else {
                     html += `<textarea class="preview-q-input cursor-not-allowed" rows="3" disabled placeholder="${escapeHtml(q.placeholder || '问答作答区域...')}"></textarea>`;
+                    const attachmentReq = normalizeAttachmentRequirementForEditor(q);
+                    if (attachmentReq.required || attachmentReq.description) {
+                        const minText = attachmentReq.required ? `至少 ${Math.max(attachmentReq.min_count || 1, 1)} 个附件` : '可附加文件';
+                        const maxText = attachmentReq.max_count ? `，最多 ${attachmentReq.max_count} 个` : '';
+                        const typeText = attachmentReq.allowed_file_types?.length ? `；类型 ${escapeHtml(attachmentReq.allowed_file_types.join(', '))}` : '';
+                        html += `<div class="text-xs text-muted mt-2">${minText}${maxText}${typeText}${attachmentReq.description ? `：${escapeHtml(attachmentReq.description)}` : ''}</div>`;
+                    }
                 }
                 html += `</div>`;
             });
@@ -1666,6 +1803,7 @@ ${questionsHtml || '<div style="background:#fff;border-radius:12px;padding:40px;
 
             const title = document.getElementById('ai-exam-title').value.trim();
             const scope = document.getElementById('ai-exam-scope').value.trim();
+            const attachmentRequirements = document.getElementById('ai-exam-attachment-requirements')?.value.trim() || '';
             const difficulty = document.getElementById('ai-exam-difficulty').value;
             const filesInput = document.getElementById('ai-exam-files');
             const sourceFiles = Array.from(filesInput?.files || []);
@@ -1724,7 +1862,10 @@ ${questionsHtml || '<div style="background:#fff;border-radius:12px;padding:40px;
             try {
                 const payload = new FormData();
                 payload.append('title', title);
-                payload.append('scope', scope);
+                const effectiveScope = attachmentRequirements
+                    ? `${scope}\n\n问答题附件要求：${attachmentRequirements}`
+                    : scope;
+                payload.append('scope', effectiveScope);
                 payload.append('difficulty', difficulty);
                 if (totalQuestions !== null) {
                     payload.append('total_questions', String(totalQuestions));

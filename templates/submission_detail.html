@@ -708,11 +708,6 @@
         return Array.isArray(value.attachments) ? value.attachments : [];
     }
 
-    function isDrawingAttachment(attachment) {
-        return (attachment?.kind || attachment?.type) === 'drawing'
-            || String(attachment?.relative_path || '').startsWith('exam_drawings/');
-    }
-
     function findSubmissionFileForAttachment(attachment) {
         if (!attachment) return null;
         const keys = [
@@ -733,21 +728,34 @@
         }) || null;
     }
 
+    function isImageAttachment(attachment, file) {
+        const mimeType = String(attachment?.mime_type || file?.mime_type || '').toLowerCase();
+        return Boolean(
+            file?.is_image
+            || file?.raw_url
+            || mimeType.startsWith('image/')
+            || (attachment?.kind || attachment?.type) === 'drawing'
+            || String(attachment?.relative_path || '').startsWith('exam_drawings/')
+        );
+    }
+
     function renderAnswerAttachments(value) {
-        const attachments = extractAnswerAttachments(value).filter(isDrawingAttachment);
+        const attachments = extractAnswerAttachments(value).filter(item => item && typeof item === 'object');
         if (!attachments.length) return '';
         return `<div class="answer-attachments">
             ${attachments.map((attachment) => {
                 const file = findSubmissionFileForAttachment(attachment);
-                const imageUrl = file?.raw_url || file?.download_url || '';
+                const isImage = isImageAttachment(attachment, file);
+                const imageUrl = isImage ? (file?.raw_url || file?.download_url || '') : '';
                 const downloadUrl = file?.download_url || imageUrl || '#';
-                const name = attachment.file_name || file?.display_name || file?.original_filename || '题目附图';
+                const name = attachment.file_name || file?.display_name || file?.original_filename || '题目附件';
+                const actionText = isImage ? '查看附图' : '下载附件';
                 return `<div class="answer-attachment-card">
                     <div class="answer-attachment-meta">
                         <span>${escapeHtml(name)}</span>
-                        ${downloadUrl !== '#' ? `<a class="btn btn-outline btn-sm" href="${downloadUrl}" target="_blank" rel="noopener">查看附图</a>` : ''}
+                        ${downloadUrl !== '#' ? `<a class="btn btn-outline btn-sm" href="${downloadUrl}" target="_blank" rel="noopener">${actionText}</a>` : ''}
                     </div>
-                    ${imageUrl ? `<img src="${imageUrl}" alt="${escapeHtml(name)}">` : '<div class="text-muted text-sm">附图文件暂不可预览</div>'}
+                    ${imageUrl ? `<img src="${imageUrl}" alt="${escapeHtml(name)}">` : '<div class="text-muted text-sm">该附件可在下方附件区预览或下载。</div>'}
                 </div>`;
             }).join('')}
         </div>`;

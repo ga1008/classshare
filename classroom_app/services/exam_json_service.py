@@ -46,6 +46,15 @@ EXAM_JSON_TEMPLATE: dict[str, Any] = {
                     "placeholder": "请写出完整作答过程",
                     "answer": "参考答案",
                     "explanation": "解析说明，可留空",
+                    "attachment_requirements": {
+                        "enabled": True,
+                        "required": False,
+                        "min_count": 0,
+                        "max_count": 3,
+                        "allowed_file_types": [".png", ".jpg", ".pdf", ".py", ".txt"],
+                        "allow_drawing": True,
+                        "description": "可选：如实验截图、代码文件或报告；不需要时可省略该字段",
+                    },
                 },
             ],
         }
@@ -187,6 +196,14 @@ def _normalize_question(raw_question: Any, page_index: int, question_index: int,
             question["placeholder"] = placeholder
     else:
         question.pop("placeholder", None)
+
+    attachment_requirements = _normalize_attachment_requirements(raw_question, question_type)
+    if attachment_requirements:
+        question["attachment_requirements"] = attachment_requirements
+    else:
+        question.pop("attachment_requirements", None)
+        question.pop("attachment_requirement", None)
+        question.pop("answer_attachments", None)
     return question
 
 
@@ -217,6 +234,108 @@ def _coerce_options(raw_options: Any) -> list[str]:
     if isinstance(raw_options, list):
         return [str(item).strip() for item in raw_options if str(item).strip()]
     raise ValueError("选择题 options 必须是数组或对象。")
+
+
+def _coerce_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on", "required", "必须", "需要", "是"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off", "否", "不需要"}:
+        return False
+    return default
+
+
+def _coerce_optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0, parsed)
+
+
+def _coerce_allowed_file_types(raw_value: Any) -> list[str]:
+    if not raw_value:
+        return []
+    if isinstance(raw_value, str):
+        items = raw_value.replace("\r", "\n").replace(";", ",").replace("，", ",").replace("、", ",").replace("\n", ",").split(",")
+    elif isinstance(raw_value, (list, tuple, set)):
+        items = list(raw_value)
+    else:
+        return []
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        token = str(item or "").strip().lower()
+        if not token:
+            continue
+        token = token if "/" in token or token.startswith(".") else f".{token.lstrip('.')}"
+        if token in seen:
+            continue
+        seen.add(token)
+        normalized.append(token)
+    return normalized
+
+
+def _normalize_attachment_requirements(raw_question: dict[str, Any], question_type: str) -> dict[str, Any] | None:
+    if question_type != "textarea":
+        return None
+
+    raw = (
+        raw_question.get("attachment_requirements")
+        or raw_question.get("attachment_requirement")
+        or raw_question.get("answer_attachments")
+        or raw_question.get("attachments")
+    )
+    if raw is None:
+        direct_required = raw_question.get("requires_attachment", raw_question.get("attachment_required"))
+        if direct_required is None:
+            return None
+        raw = {"required": direct_required}
+    elif isinstance(raw, bool):
+        raw = {"required": raw}
+    elif isinstance(raw, str):
+        raw = {"enabled": True, "description": raw}
+    elif not isinstance(raw, dict):
+        return None
+
+    required = _coerce_bool(
+        raw.get("required", raw.get("requires_attachment", raw.get("attachment_required"))),
+        False,
+    )
+    enabled = _coerce_bool(raw.get("enabled"), True) or required
+    if not enabled:
+        return None
+
+    min_count = _coerce_optional_int(raw.get("min_count", raw.get("min")))
+    max_count = _coerce_optional_int(raw.get("max_count", raw.get("max")))
+    if required and (min_count is None or min_count < 1):
+        min_count = 1
+    if max_count is not None and min_count is not None and max_count < min_count:
+        max_count = min_count
+
+    description = _first_text(raw, ("description", "requirement", "prompt", "hint", "说明", "要求"))
+    allowed_file_types = _coerce_allowed_file_types(raw.get("allowed_file_types", raw.get("file_types")))
+    normalized: dict[str, Any] = {
+        "enabled": True,
+        "required": required,
+        "allow_drawing": _coerce_bool(raw.get("allow_drawing"), True),
+    }
+    if min_count is not None:
+        normalized["min_count"] = min_count
+    if max_count is not None:
+        normalized["max_count"] = max_count
+    if allowed_file_types:
+        normalized["allowed_file_types"] = allowed_file_types
+    if description:
+        normalized["description"] = description
+    return normalized
 
 
 def _normalize_answer(raw_question: dict[str, Any], question_type: str) -> Any:

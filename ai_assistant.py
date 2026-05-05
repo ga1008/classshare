@@ -325,7 +325,16 @@ EXAM_GENERATION_SYSTEM_PROMPT = """
           "text": "问答题内容",
           "placeholder": "提示文本",
           "answer": "参考答案",
-          "explanation": "解析内容"
+          "explanation": "解析内容",
+          "attachment_requirements": {
+            "enabled": true,
+            "required": false,
+            "min_count": 0,
+            "max_count": 3,
+            "allowed_file_types": [".png", ".jpg", ".pdf", ".py", ".txt"],
+            "allow_drawing": true,
+            "description": "如需学生提交实验截图、代码文件或报告，请在这里写明要求；不需要附件时可省略该字段"
+          }
         }
       ]
     }
@@ -342,6 +351,7 @@ EXAM_GENERATION_SYSTEM_PROMPT = """
 6. explanation字段：每道题的解析，说明为什么答案正确或其他选项为什么错误
 7. 试卷可以包含多个pages（部分），每个部分有name和questions数组
 8. 根据教师要求的总题数、题型分布和难度生成题目
+9. 如果问答题要求学生上传截图、代码文件、报告或绘图，请只在textarea题目中添加attachment_requirements字段；required表示是否硬性要求，min_count/max_count表示本题附件数量约束，allowed_file_types可写建议后缀或MIME类型，description写清楚附件条件
 """
 
 # --- Lifespan (替换旧的 Startup/Shutdown) ---
@@ -732,14 +742,25 @@ def _format_answer_attachment_lines(attachments: list[Any]) -> str:
         kind = str(attachment.get("kind") or attachment.get("type") or "attachment")
         file_name = str(attachment.get("file_name") or attachment.get("filename") or "附件")
         relative_path = str(attachment.get("relative_path") or "")
+        mime_type = str(attachment.get("mime_type") or attachment.get("content_type") or "")
+        file_size = attachment.get("file_size")
         question_id = str(attachment.get("question_id") or "")
         question = str(attachment.get("question") or "")
-        label = "题目附图" if kind == "drawing" or relative_path.startswith("exam_drawings/") else "附件"
+        is_image_attachment = (
+            kind in {"drawing", "image", "screenshot"}
+            or relative_path.startswith("exam_drawings/")
+            or mime_type.startswith("image/")
+        )
+        label = "题目附图" if is_image_attachment else "题目附件"
         if question_id:
             label = f"第{question_id}题{label}"
         details = [label, file_name]
         if relative_path:
             details.append(f"relative_path={relative_path}")
+        if mime_type:
+            details.append(f"mime_type={mime_type}")
+        if file_size:
+            details.append(f"size={_human_size(int(file_size))}")
         if question:
             details.append(f"question={question[:80]}")
         lines.append("- " + "；".join(details))
@@ -1150,6 +1171,109 @@ def _first_non_empty_text(source: dict[str, Any], keys: tuple[str, ...], default
     return default
 
 
+def _coerce_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on", "required", "必须", "需要", "是"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off", "否", "不需要"}:
+        return False
+    return default
+
+
+def _coerce_optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0, parsed)
+
+
+def _coerce_attachment_allowed_file_types(raw_value: Any) -> list[str]:
+    if not raw_value:
+        return []
+    if isinstance(raw_value, str):
+        items = raw_value.replace("\r", "\n").replace(";", ",").replace("，", ",").replace("、", ",").replace("\n", ",").split(",")
+    elif isinstance(raw_value, (list, tuple, set)):
+        items = list(raw_value)
+    else:
+        return []
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        token = str(item or "").strip().lower()
+        if not token:
+            continue
+        token = token if "/" in token or token.startswith(".") else f".{token.lstrip('.')}"
+        if token in seen:
+            continue
+        seen.add(token)
+        normalized.append(token)
+    return normalized
+
+
+def _normalize_attachment_requirements(raw_question: dict[str, Any], question_type: str) -> dict[str, Any] | None:
+    if question_type != "textarea":
+        return None
+
+    raw = (
+        raw_question.get("attachment_requirements")
+        or raw_question.get("attachment_requirement")
+        or raw_question.get("answer_attachments")
+        or raw_question.get("attachments")
+    )
+    if raw is None:
+        direct_required = raw_question.get("requires_attachment", raw_question.get("attachment_required"))
+        if direct_required is None:
+            return None
+        raw = {"required": direct_required}
+    elif isinstance(raw, bool):
+        raw = {"required": raw}
+    elif isinstance(raw, str):
+        raw = {"enabled": True, "description": raw}
+    elif not isinstance(raw, dict):
+        return None
+
+    required = _coerce_bool(
+        raw.get("required", raw.get("requires_attachment", raw.get("attachment_required"))),
+        False,
+    )
+    enabled = _coerce_bool(raw.get("enabled"), True) or required
+    if not enabled:
+        return None
+
+    min_count = _coerce_optional_int(raw.get("min_count", raw.get("min")))
+    max_count = _coerce_optional_int(raw.get("max_count", raw.get("max")))
+    if required and (min_count is None or min_count < 1):
+        min_count = 1
+    if max_count is not None and min_count is not None and max_count < min_count:
+        max_count = min_count
+
+    description = _first_non_empty_text(raw, ("description", "requirement", "prompt", "hint", "说明", "要求"))
+    allowed_file_types = _coerce_attachment_allowed_file_types(raw.get("allowed_file_types", raw.get("file_types")))
+    allow_drawing = _coerce_bool(raw.get("allow_drawing"), True)
+    normalized: dict[str, Any] = {
+        "enabled": True,
+        "required": required,
+        "allow_drawing": allow_drawing,
+    }
+    if min_count is not None:
+        normalized["min_count"] = min_count
+    if max_count is not None:
+        normalized["max_count"] = max_count
+    if allowed_file_types:
+        normalized["allowed_file_types"] = allowed_file_types
+    if description:
+        normalized["description"] = description
+    return normalized
+
+
 def _normalize_exam_question(raw_question: Any, ordinal: int) -> dict[str, Any] | None:
     if isinstance(raw_question, str):
         text = raw_question.strip()
@@ -1198,6 +1322,13 @@ def _normalize_exam_question(raw_question: Any, ordinal: int) -> dict[str, Any] 
         placeholder = _first_non_empty_text(raw_question, ("placeholder", "hint", "提示"), "")
         if placeholder:
             question["placeholder"] = placeholder
+    attachment_requirements = _normalize_attachment_requirements(raw_question, question_type)
+    if attachment_requirements:
+        question["attachment_requirements"] = attachment_requirements
+    else:
+        question.pop("attachment_requirements", None)
+        question.pop("attachment_requirement", None)
+        question.pop("answer_attachments", None)
     return question
 
 
@@ -1512,14 +1643,19 @@ def build_vision_messages(rubric: str, files: List[Any], platform_type: str,
             if is_image_file(file_path):
                 text_content += f"- 图片文件: {display_name}\n"
                 b64_url = file_to_base64_url(file_path)
-                if b64_url: content.append({"type": "image_url", "image_url": {"url": b64_url}})
+                if b64_url:
+                    content.append({
+                        "type": "text",
+                        "text": f"\n--- 图片文件: {display_name} ---\n请将紧随其后的图片作为该文件内容处理；若文件名标注了题号，请按对应题目评分。",
+                    })
+                    content.append({"type": "image_url", "image_url": {"url": b64_url}})
             else:
                 file_text = _read_file_text_safe(file_path)
                 if file_text:
                     text_content += f"\n--- {display_name} ---\n```\n{file_text}\n```\n"
                 else:
                     text_content += f"\n--- {display_name} (无法读取) ---\n"
-        content.append({"type": "text", "text": text_content})
+        content.insert(0, {"type": "text", "text": text_content})
         return [{"role": "user", "content": content}]
     else:  # OpenAI compatible format
         header_text = ""
@@ -1534,7 +1670,12 @@ def build_vision_messages(rubric: str, files: List[Any], platform_type: str,
             file_path, display_name = _coerce_file_item(file_item)
             if is_image_file(file_path):
                 b64_url = file_to_base64_url(file_path)
-                if b64_url: content.append({"type": "image_url", "image_url": {"url": b64_url}})
+                if b64_url:
+                    content.append({
+                        "type": "text",
+                        "text": f"\n--- 图片文件: {display_name} ---\n请将紧随其后的图片作为该文件内容处理；若文件名标注了题号，请按对应题目评分。",
+                    })
+                    content.append({"type": "image_url", "image_url": {"url": b64_url}})
             else:
                 file_text = _read_file_text_safe(file_path)
                 if file_text:

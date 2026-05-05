@@ -60,6 +60,16 @@ TEXT_LIKE_MIME_TYPES = {
 EXAM_DRAWING_PREFIX = "exam_drawings/"
 EXAM_DRAWING_EXTENSIONS = {".png"}
 EXAM_DRAWING_MIME_TYPES = {"image/png", "image/x-png"}
+ANSWER_METADATA_KEYS = {
+    "question",
+    "question_id",
+    "question_no",
+    "title",
+    "type",
+    "placeholder",
+    "attachment_requirements",
+    "attachment_requirement",
+}
 
 
 @dataclass(slots=True)
@@ -226,10 +236,42 @@ def answers_have_content(payload: Any) -> bool:
     if isinstance(payload, str):
         return bool(payload.strip())
     if isinstance(payload, dict):
-        return any(answers_have_content(value) for value in payload.values())
+        return any(
+            answers_have_content(value)
+            for key, value in payload.items()
+            if str(key) not in ANSWER_METADATA_KEYS
+        )
     if isinstance(payload, list):
         return any(answers_have_content(item) for item in payload)
     return bool(str(payload).strip())
+
+
+def reconcile_answer_attachment_references(payload: Any, stored_files: Sequence[StoredSubmissionFile]) -> Any:
+    """Drop answer-level attachment references whose upload was filtered out.
+
+    The browser sends answer metadata and files in the same multipart request.
+    File type and size limits are enforced on the server, so this pass keeps
+    the persisted answer JSON aligned with the files that actually survived.
+    """
+    stored_keys = _build_stored_file_reference_keys(stored_files)
+
+    def scrub(value: Any) -> Any:
+        if isinstance(value, list):
+            return [scrub(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+
+        cleaned = {key: scrub(item) for key, item in value.items() if key != "attachments"}
+        attachments = value.get("attachments")
+        if isinstance(attachments, list):
+            cleaned["attachments"] = [
+                dict(attachment)
+                for attachment in attachments
+                if _attachment_matches_stored_file(attachment, stored_keys)
+            ]
+        return cleaned
+
+    return scrub(payload)
 
 
 def is_allowed_submission_file(relative_path: str, content_type: str | None, allowed_file_types: Sequence[str]) -> bool:
@@ -252,6 +294,37 @@ def is_allowed_submission_file(relative_path: str, content_type: str | None, all
                 return True
             continue
         if normalized_path.endswith(token):
+            return True
+    return False
+
+
+def _build_stored_file_reference_keys(stored_files: Sequence[StoredSubmissionFile]) -> set[str]:
+    keys: set[str] = set()
+    for file_info in stored_files:
+        for value in (file_info.relative_path, file_info.original_filename):
+            normalized = str(value or "").replace("\\", "/").strip().lower()
+            if not normalized:
+                continue
+            keys.add(normalized)
+            keys.add(PurePosixPath(normalized).name)
+    return keys
+
+
+def _attachment_matches_stored_file(attachment: Any, stored_keys: set[str]) -> bool:
+    if not isinstance(attachment, dict):
+        return False
+
+    candidates = [
+        attachment.get("relative_path"),
+        attachment.get("stored_relative_path"),
+        attachment.get("file_name"),
+        attachment.get("filename"),
+    ]
+    for value in candidates:
+        normalized = str(value or "").replace("\\", "/").strip().lower()
+        if not normalized:
+            continue
+        if normalized in stored_keys or PurePosixPath(normalized).name in stored_keys:
             return True
     return False
 
