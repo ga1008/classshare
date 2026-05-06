@@ -77,6 +77,7 @@ export class ClassroomChat {
         this.customEmojiProgressBar = document.getElementById(options.customEmojiProgressBarId);
         this.emojiPreviewRow = document.getElementById(options.emojiPreviewRowId);
         this.emojiSetNote = document.getElementById(options.emojiSetNoteId);
+        this.composerExpandButton = document.getElementById(options.composerExpandButtonId);
         this.attachmentTriggerButton = document.getElementById(options.attachmentTriggerButtonId);
         this.attachmentFileInput = document.getElementById(options.attachmentFileInputId);
         this.attachmentPreviewRow = document.getElementById(options.attachmentPreviewRowId);
@@ -123,6 +124,7 @@ export class ClassroomChat {
         this.messageMenuCloseTimer = null;
         this.messageHighlightTimer = null;
         this.emojiPanelLoaded = false;
+        this.composerExpanded = false;
         this.emojiPanelData = {
             emoji_set: null,
             frequent: [],
@@ -210,6 +212,7 @@ export class ClassroomChat {
         });
 
         this.chatInput.addEventListener('input', () => this.resizeInput());
+        this.composerExpandButton?.addEventListener('click', () => this.toggleComposerExpanded());
 
         this.messagesBox.addEventListener('scroll', () => {
             this.updateHistoryLoader();
@@ -272,6 +275,36 @@ export class ClassroomChat {
         this.refreshAliasSwitchUi();
     }
 
+    toggleComposerExpanded() {
+        this.setComposerExpanded(!this.composerExpanded);
+    }
+
+    setComposerExpanded(expanded) {
+        const nextExpanded = Boolean(expanded);
+        if (this.composerExpanded === nextExpanded) {
+            return;
+        }
+
+        this.composerExpanded = nextExpanded;
+        this.discussionRoom?.classList.toggle('is-composer-expanded', nextExpanded);
+        this.chatForm?.classList.toggle('is-composer-expanded', nextExpanded);
+
+        if (this.composerExpandButton) {
+            const title = nextExpanded ? '缩小输入框' : '放大输入框';
+            this.composerExpandButton.classList.toggle('is-expanded', nextExpanded);
+            this.composerExpandButton.title = title;
+            this.composerExpandButton.setAttribute('aria-label', title);
+            this.composerExpandButton.setAttribute('aria-pressed', nextExpanded ? 'true' : 'false');
+        }
+
+        this.resizeInput();
+        this.scheduleDiscussionRoomResize();
+
+        if (nextExpanded) {
+            this.chatInput?.focus({ preventScroll: true });
+        }
+    }
+
     setupDiscussionRoomSizing() {
         if (!this.discussionRoom || !this.workspaceSidebar) {
             return;
@@ -325,9 +358,25 @@ export class ClassroomChat {
             return;
         }
 
-        const headerHeight = Math.ceil(this.discussionRoomHeader?.offsetHeight || 0);
-        const composerHeight = Math.ceil(this.discussionRoomComposer?.offsetHeight || 0);
         const sidebarHeight = Math.max(0, Math.floor(window.innerHeight - DISCUSSION_ROOM_STICKY_TOP));
+        const headerHeight = Math.ceil(this.discussionRoomHeader?.offsetHeight || 0);
+
+        if (this.composerExpanded) {
+            const expandedLayoutKey = `expanded:${sidebarHeight}:${headerHeight}`;
+            if (expandedLayoutKey === this.lastDiscussionRoomLayoutKey) {
+                return;
+            }
+
+            this.workspaceSidebar.classList.add('is-sticky-active');
+            this.discussionRoom.classList.add('is-sticky-active');
+            this.workspaceSidebar.style.setProperty('--discussion-sidebar-top', `${DISCUSSION_ROOM_STICKY_TOP}px`);
+            this.workspaceSidebar.style.setProperty('--discussion-sidebar-height', `${sidebarHeight}px`);
+            this.discussionRoom.style.setProperty('--discussion-body-min-height', '0px');
+            this.lastDiscussionRoomLayoutKey = expandedLayoutKey;
+            return;
+        }
+
+        const composerHeight = Math.ceil(this.discussionRoomComposer?.offsetHeight || 0);
         const messageBodyHeight = sidebarHeight - headerHeight - composerHeight;
 
         if (messageBodyHeight <= DISCUSSION_ROOM_MIN_BODY_HEIGHT) {
@@ -2054,6 +2103,7 @@ export class ClassroomChat {
         }));
 
         this.chatInput.value = '';
+        this.setComposerExpanded(false);
         this.resizeInput();
         this.selectedCustomEmojis = [];
         this.pendingAttachments = [];
@@ -2530,6 +2580,11 @@ export class ClassroomChat {
 
     resizeInput() {
         if (!this.chatInput) {
+            return;
+        }
+        if (this.composerExpanded) {
+            this.chatInput.style.removeProperty('height');
+            this.scheduleDiscussionRoomResize();
             return;
         }
         this.chatInput.style.height = 'auto';
