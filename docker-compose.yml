@@ -87,6 +87,19 @@ services:
       retries: 5
       start_period: 30s
 
+  blog-crawler:
+    <<: *lanshare-service
+    command: ["blog-crawler"]
+    depends_on:
+      ai:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    environment:
+      BLOG_NEWS_CRAWLER_WORKER_ID: blog-crawler-compose
+      BLOG_NEWS_CRAWLER_POLL_SECONDS: "60"
+      AI_ASSISTANT_URL: http://ai:8001
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped

@@ -50,6 +50,12 @@ from ..services.message_center_service import (
     is_super_admin_teacher,
     mark_password_reset_request_notification_read,
 )
+from ..services.blog_news_crawler_service import (
+    cancel_pending_blog_news_crawler_runs,
+    enqueue_blog_news_crawler_run,
+    load_blog_news_crawler_dashboard,
+    update_blog_news_crawler_config,
+)
 from ..services.roster_handler import parse_excel_to_students
 from ..services.student_auth_service import build_student_security_summary, list_student_login_history
 from ..services.submission_file_alignment import run_full_alignment
@@ -1875,6 +1881,53 @@ async def api_update_super_admin_teacher(
             "email": str(target_teacher["email"] or ""),
         },
     }
+
+
+def _require_current_super_admin(conn, user: dict) -> None:
+    if not is_super_admin_teacher(conn, user["id"]):
+        raise HTTPException(status_code=403, detail="只有当前超管教师可以调整 AI 博客管家。")
+
+
+@router.get("/system/blog-crawler/status", response_class=JSONResponse)
+async def api_get_blog_news_crawler_status(user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        dashboard = load_blog_news_crawler_dashboard(conn)
+        dashboard["current_teacher_is_super_admin"] = is_super_admin_teacher(conn, user["id"])
+    return {"status": "success", "dashboard": dashboard}
+
+
+@router.post("/system/blog-crawler/config", response_class=JSONResponse)
+async def api_update_blog_news_crawler_config(request: Request, user: dict = Depends(get_current_teacher)):
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="请求数据格式不正确。")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求数据格式不正确。")
+
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        config = update_blog_news_crawler_config(conn, payload, teacher_id=user["id"])
+        conn.commit()
+    return {"status": "success", "message": "AI 博客管家设置已保存。", "config": config}
+
+
+@router.post("/system/blog-crawler/run", response_class=JSONResponse)
+async def api_enqueue_blog_news_crawler_run(user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        run = enqueue_blog_news_crawler_run(conn, trigger_source="manual")
+        conn.commit()
+    return {"status": "success", "message": "已加入执行队列。", "run": run}
+
+
+@router.post("/system/blog-crawler/cancel-pending", response_class=JSONResponse)
+async def api_cancel_blog_news_crawler_pending_runs(user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        count = cancel_pending_blog_news_crawler_runs(conn)
+        conn.commit()
+    return {"status": "success", "message": f"已取消 {count} 个待执行任务。", "cancelled_count": count}
 
 
 @router.post("/system/password-resets/{request_id}/approve", response_class=JSONResponse)
