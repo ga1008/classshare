@@ -275,6 +275,22 @@ function getWeekTodos(semester, weekStart) {
     return Array.isArray(week?.todos) ? week.todos : [];
 }
 
+function getWeekKey(week) {
+    return week?.start ? formatIsoDate(week.start) : '';
+}
+
+function clampNumber(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function summarizeTodoTitles(todos, limit = 3) {
+    const titles = (Array.isArray(todos) ? todos : [])
+        .map((todo) => String(todo?.title || '').trim())
+        .filter(Boolean)
+        .slice(0, limit);
+    return titles.length ? titles.join(' / ') : '本周暂无待办';
+}
+
 function recalcTodoOverview(overview) {
     const items = Array.isArray(overview.items) ? overview.items : [];
     const weeks = Array.isArray(overview.weeks) ? overview.weeks : [];
@@ -388,9 +404,16 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
 
     const onChange = typeof options.onChange === 'function' ? options.onChange : null;
     const onMessage = typeof options.onMessage === 'function' ? options.onMessage : null;
+    const prefersReducedMotion = Boolean(
+        window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    );
     let dragState = null;
     let activeTodoId = '';
+    let activeWeekKey = '';
     let pendingScrollWeekKey = '';
+    let snapTimer = 0;
+    let ignoreClickUntil = 0;
+    let suppressSnapUntil = 0;
     let todoModal = null;
     let todoPickerState = null;
 
@@ -407,13 +430,36 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         return startDate ? formatIsoDate(getMonday(startDate)) : '';
     }
 
+    function getWeekByKey(model, weekKey) {
+        const key = String(weekKey || '').trim();
+        return (model?.weeks || []).find((week) => getWeekKey(week) === key) || null;
+    }
+
     function getSemesterActiveWeekKey(semester) {
         const overview = normalizeTodoOverview(semester);
         return String(overview.active_week_key || '').trim();
     }
 
+    function resolveActiveWeekKey(semester, model, preferredWeekKey = activeWeekKey) {
+        const weeks = model?.weeks || [];
+        if (!weeks.length) return '';
+        const preferred = String(preferredWeekKey || '').trim();
+        if (preferred && getWeekByKey(model, preferred)) return preferred;
+        const overviewKey = getSemesterActiveWeekKey(semester);
+        if (overviewKey && getWeekByKey(model, overviewKey)) return overviewKey;
+        const currentWeek = weeks.find((week) => week.isCurrentWeek);
+        if (currentWeek) return getWeekKey(currentWeek);
+        const firstTodoWeek = normalizeTodoOverview(semester).weeks
+            .map((week) => String(week.key || '').trim())
+            .find((weekKey) => weekKey && getWeekByKey(model, weekKey));
+        return firstTodoWeek || getWeekKey(weeks[0]);
+    }
+
     function scheduleWeekScroll(weekKey) {
         pendingScrollWeekKey = String(weekKey || '').trim();
+        if (pendingScrollWeekKey) {
+            activeWeekKey = pendingScrollWeekKey;
+        }
     }
 
     function scrollToWeekKey(weekKey, behavior = 'smooth') {
@@ -424,8 +470,76 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         if (!target) {
             return;
         }
-        const left = target.offsetLeft - 180;
-        elements.scroll.scrollTo({ left: Math.max(left, 0), behavior });
+        const maxScrollLeft = Math.max(0, elements.scroll.scrollWidth - elements.scroll.clientWidth);
+        const scrollRect = elements.scroll.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const delta = (targetRect.left + (targetRect.width / 2)) - (scrollRect.left + (scrollRect.width / 2));
+        const left = clampNumber(elements.scroll.scrollLeft + delta, 0, maxScrollLeft);
+        suppressSnapUntil = performance.now() + 240;
+        elements.scroll.scrollTo({
+            left,
+            behavior: prefersReducedMotion ? 'auto' : behavior,
+        });
+    }
+
+    function applyActiveWeekVisuals(semester, model) {
+        if (!elements.board || !model) return;
+        const weekColumns = (model.weeks || [])
+            .map((week) => (getWeekKey(week) === activeWeekKey ? '112px' : '88px'))
+            .join(' ');
+        elements.board.style.gridTemplateColumns = `132px ${weekColumns}`;
+        elements.board.querySelectorAll('[data-week-key]').forEach((node) => {
+            node.classList.toggle('is-active-week', node.dataset.weekKey === activeWeekKey);
+        });
+        renderWeekTodoStage(semester, model);
+        syncActiveTodoVisuals(semester);
+    }
+
+    function setActiveWeekKey(weekKey, options = {}) {
+        const semester = getActiveSemester();
+        const model = buildSemesterModel(semester, holidayLookup, todayIso, modelCache);
+        const resolved = resolveActiveWeekKey(semester, model, weekKey);
+        if (!resolved) return;
+        activeWeekKey = resolved;
+        if (activeTodoId) {
+            const todo = findTodoById(semester, activeTodoId);
+            if (!todo || getTodoWeekKey(todo) !== activeWeekKey) {
+                activeTodoId = '';
+            }
+        }
+        applyActiveWeekVisuals(semester, model);
+        if (options.center !== false) {
+            window.requestAnimationFrame(() => scrollToWeekKey(resolved, options.behavior || 'smooth'));
+        }
+    }
+
+    function getNearestWeekKey() {
+        if (!elements.scroll || !elements.board) return activeWeekKey;
+        const weekHeaders = Array.from(elements.board.querySelectorAll('.semester-header-cell[data-week-key]'));
+        if (!weekHeaders.length) return activeWeekKey;
+        const scrollRect = elements.scroll.getBoundingClientRect();
+        const viewportCenter = scrollRect.left + (scrollRect.width / 2);
+        let nearest = weekHeaders[0];
+        let nearestDistance = Number.POSITIVE_INFINITY;
+        weekHeaders.forEach((header) => {
+            const rect = header.getBoundingClientRect();
+            const center = rect.left + (rect.width / 2);
+            const distance = Math.abs(center - viewportCenter);
+            if (distance < nearestDistance) {
+                nearest = header;
+                nearestDistance = distance;
+            }
+        });
+        return nearest.dataset.weekKey || activeWeekKey;
+    }
+
+    function scheduleSnapToNearest(delay = 140) {
+        if (!showTodos) return;
+        window.clearTimeout(snapTimer);
+        snapTimer = window.setTimeout(() => {
+            if (dragState || performance.now() < suppressSnapUntil) return;
+            setActiveWeekKey(getNearestWeekKey(), { behavior: 'smooth', center: true });
+        }, delay);
     }
 
     function renderSelect() {
@@ -525,6 +639,189 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
                 ? `待办 ${totalCount} 项，未完成 ${openCount} 项`
                 : '可在当前学期添加个人待办';
         }
+    }
+
+    function createWeekPreviewCard(semester, model, week, position) {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = `semester-week-todo-peek is-${position}`;
+        if (!week) {
+            card.disabled = true;
+            card.innerHTML = '<span>--</span><strong>无相邻周</strong><small></small>';
+            return card;
+        }
+        const weekKey = getWeekKey(week);
+        const todos = getWeekTodos(semester, week.start);
+        card.dataset.weekKey = weekKey;
+        card.innerHTML = `
+            <span>第 ${(model.weeks || []).indexOf(week) + 1} 周</span>
+            <strong>${summarizeTodoTitles(todos)}</strong>
+            <small>${todos.length ? `${todos.length} 项待办` : '暂无待办'}</small>
+        `;
+        return card;
+    }
+
+    function createWeekGanttRow(todo) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        const isActive = String(todo.id || '') === String(activeTodoId || '');
+        row.className = `semester-week-gantt-row is-${sourceTone(todo)}${todo.is_completed ? ' is-completed' : ''}${isActive ? ' is-active' : ''}`;
+        row.dataset.semesterTodoId = String(todo.id || '');
+        row.title = [todo.title || '待办', todo.duration_label, todo.offering_label].filter(Boolean).join(' / ');
+
+        const lane = document.createElement('span');
+        lane.className = 'semester-week-gantt-row__lane';
+        const bar = document.createElement('span');
+        bar.className = 'semester-week-gantt-row__bar';
+        bar.style.setProperty('--todo-left', `${Number(todo.bar_left || 0).toFixed(3)}%`);
+        bar.style.setProperty('--todo-width', `${Math.max(8, Number(todo.bar_width || 0)).toFixed(3)}%`);
+        lane.appendChild(bar);
+
+        const copy = document.createElement('span');
+        copy.className = 'semester-week-gantt-row__copy';
+        const title = document.createElement('strong');
+        title.textContent = todo.title || '待办事项';
+        const meta = document.createElement('small');
+        meta.textContent = [todo.duration_label, todo.offering_label || sourceLabel(todo)]
+            .filter(Boolean)
+            .join(' / ');
+        copy.append(title, meta);
+
+        const chip = document.createElement('span');
+        chip.className = 'semester-week-gantt-row__chip';
+        chip.textContent = todo.no_deadline
+            ? '无截止'
+            : (todo.due_time_label ? `${todo.due_time_label}截止` : (todo.status_label || sourceLabel(todo)));
+
+        row.append(lane, copy, chip);
+        return row;
+    }
+
+    function createSelectedTodoPanel(todo) {
+        const detail = document.createElement('div');
+        detail.className = `semester-week-todo-focus${todo ? ` is-${sourceTone(todo)}` : ''}`;
+        if (!todo) {
+            detail.innerHTML = '<span>本周任务</span><strong>点选任一待办查看操作</strong><small>任务详情、完成状态和跳转入口会在这里出现。</small>';
+            return detail;
+        }
+
+        const copy = document.createElement('div');
+        copy.className = 'semester-week-todo-focus__copy';
+        const eyebrow = document.createElement('span');
+        eyebrow.textContent = `${sourceLabel(todo)} / ${todo.offering_label || '课堂'}`;
+        const title = document.createElement('strong');
+        title.textContent = todo.title || '待办事项';
+        const meta = document.createElement('small');
+        meta.textContent = [todo.duration_label, todo.status_label || todo.relative_due_label]
+            .filter(Boolean)
+            .join(' / ');
+        copy.append(eyebrow, title, meta);
+
+        const actions = document.createElement('div');
+        actions.className = 'semester-week-todo-focus__actions';
+        if (todo.link_url) {
+            const link = document.createElement('a');
+            link.className = 'btn btn-outline btn-sm';
+            link.href = todo.link_url;
+            link.textContent = '打开';
+            actions.appendChild(link);
+        }
+        if (todo.can_complete) {
+            const completeBtn = document.createElement('button');
+            completeBtn.type = 'button';
+            completeBtn.className = 'btn btn-outline btn-sm';
+            completeBtn.dataset.semesterTodoComplete = String(manualTodoId(todo));
+            completeBtn.textContent = todo.is_completed ? '标记未完成' : '完成';
+            actions.appendChild(completeBtn);
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.className = 'btn btn-ghost btn-sm text-danger';
+            deleteBtn.dataset.semesterTodoDelete = String(manualTodoId(todo));
+            deleteBtn.textContent = '删除';
+            actions.appendChild(deleteBtn);
+        }
+
+        detail.append(copy, actions);
+        return detail;
+    }
+
+    function renderWeekTodoStage(semester, model) {
+        if (!showTodos || !elements.todoDetail) return;
+        if (!semester || !model || !(model.weeks || []).length) {
+            elements.todoDetail.hidden = true;
+            elements.todoDetail.innerHTML = '';
+            return;
+        }
+
+        activeWeekKey = resolveActiveWeekKey(semester, model);
+        const weeks = model.weeks || [];
+        const activeIndex = Math.max(0, weeks.findIndex((week) => getWeekKey(week) === activeWeekKey));
+        const activeWeek = weeks[activeIndex] || weeks[0];
+        const activeTodos = getWeekTodos(semester, activeWeek.start);
+        const selectedTodo = activeTodoId ? findTodoById(semester, activeTodoId) : null;
+        const selectedTodoWeekKey = selectedTodo ? getTodoWeekKey(selectedTodo) : '';
+        const focusTodo = selectedTodo && selectedTodoWeekKey === activeWeekKey ? selectedTodo : null;
+
+        elements.todoDetail.hidden = false;
+        elements.todoDetail.innerHTML = '';
+        elements.todoDetail.className = 'semester-calendar-week-todo-stage';
+
+        const prevBtn = document.createElement('button');
+        prevBtn.type = 'button';
+        prevBtn.className = 'semester-week-todos__arrow is-prev';
+        prevBtn.dataset.weekShift = '-1';
+        prevBtn.disabled = activeIndex <= 0;
+        prevBtn.setAttribute('aria-label', '切换到上一周待办');
+        prevBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>';
+
+        const nextBtn = document.createElement('button');
+        nextBtn.type = 'button';
+        nextBtn.className = 'semester-week-todos__arrow is-next';
+        nextBtn.dataset.weekShift = '1';
+        nextBtn.disabled = activeIndex >= weeks.length - 1;
+        nextBtn.setAttribute('aria-label', '切换到下一周待办');
+        nextBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
+
+        const rail = document.createElement('div');
+        rail.className = 'semester-week-todos__rail';
+        rail.appendChild(createWeekPreviewCard(semester, model, weeks[activeIndex - 1], 'prev'));
+
+        const card = document.createElement('article');
+        card.className = 'semester-week-todo-card is-active';
+        card.dataset.weekKey = activeWeekKey;
+
+        const head = document.createElement('div');
+        head.className = 'semester-week-todo-card__head';
+        const headCopy = document.createElement('div');
+        const kicker = document.createElement('span');
+        kicker.textContent = `第 ${activeIndex + 1} 周`;
+        const title = document.createElement('strong');
+        title.textContent = activeWeek.range_label || `${formatIsoDate(activeWeek.start)} 至 ${formatIsoDate(activeWeek.end)}`;
+        headCopy.append(kicker, title);
+        const count = document.createElement('small');
+        const openCount = activeTodos.filter((todo) => !todo.is_completed).length;
+        count.textContent = activeTodos.length
+            ? `${activeTodos.length} 项 / ${openCount} 项未完成`
+            : '暂无待办';
+        head.append(headCopy, count);
+
+        const gantt = document.createElement('div');
+        gantt.className = 'semester-week-gantt';
+        if (activeTodos.length) {
+            activeTodos.forEach((todo) => gantt.appendChild(createWeekGanttRow(todo)));
+        } else {
+            const empty = document.createElement('div');
+            empty.className = 'semester-week-gantt__empty';
+            empty.textContent = '本周暂时没有待办事项。';
+            gantt.appendChild(empty);
+        }
+
+        card.append(head, gantt, createSelectedTodoPanel(focusTodo));
+        rail.appendChild(card);
+        rail.appendChild(createWeekPreviewCard(semester, model, weeks[activeIndex + 1], 'next'));
+
+        elements.todoDetail.append(prevBtn, rail, nextBtn);
     }
 
     function renderTodoDetail(semester, todoId) {
@@ -648,7 +945,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         elements.board.querySelectorAll('.semester-day-cell').forEach((cell) => {
             cell.classList.remove('is-todo-highlight', 'is-todo-range-start', 'is-todo-range-end', 'is-todo-range-mid');
         });
-        elements.board.querySelectorAll('.semester-calendar-todo-bar').forEach((bar) => {
+        root.querySelectorAll('[data-semester-todo-id]').forEach((bar) => {
             bar.classList.toggle('is-active', String(bar.dataset.semesterTodoId || '') === String(activeTodoId || ''));
         });
         if (!todo) return;
@@ -941,9 +1238,6 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             scheduleWeekScroll(getTodoWeekKey(findTodoById(semester, activeTodoId)));
         }
         renderCalendar();
-        if (activeTodoId) {
-            renderTodoDetail(semester, activeTodoId);
-        }
     }
 
     async function handleCreateTodo(event) {
@@ -1006,7 +1300,6 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         });
         activeTodoId = '';
         await refreshClassTodos(classOfferingId, result.todo_overview, '');
-        renderTodoDetail(getActiveSemester(), '');
         onMessage?.(result.message || '待办已删除', 'success');
     }
 
@@ -1025,7 +1318,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             elements.empty.hidden = false;
             renderOverview(null, null);
             renderTodoToolbar(null);
-            renderTodoDetail(null, '');
+            renderWeekTodoStage(null, null);
             return;
         }
 
@@ -1035,10 +1328,12 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
 
         const board = elements.board;
         board.innerHTML = '';
-        board.style.gridTemplateColumns = `160px repeat(${model.weeks.length}, minmax(96px, 1fr))`;
-        board.style.gridTemplateRows = showTodos
-            ? '52px 52px repeat(7, minmax(64px, auto)) minmax(108px, auto)'
-            : '52px 52px repeat(7, minmax(64px, auto))';
+        activeWeekKey = resolveActiveWeekKey(semester, model);
+        const weekColumns = model.weeks
+            .map((week) => (getWeekKey(week) === activeWeekKey ? '112px' : '88px'))
+            .join(' ');
+        board.style.gridTemplateColumns = `132px ${weekColumns}`;
+        board.style.gridTemplateRows = '52px 52px repeat(7, minmax(58px, auto))';
 
         const fragment = document.createDocumentFragment();
         createCell(fragment, 'semester-header-cell semester-sticky-cell', '月份', 1, 1);
@@ -1048,12 +1343,18 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
 
         createCell(fragment, 'semester-header-cell semester-sticky-cell', '周次', 2, 1);
         model.weeks.forEach((week, index) => {
+            const weekKey = getWeekKey(week);
             const classes = ['semester-header-cell'];
             if (week.isCurrentWeek) {
                 classes.push('is-current-week');
             }
+            if (weekKey === activeWeekKey) {
+                classes.push('is-active-week');
+            }
             const weekCell = createCell(fragment, classes.join(' '), `第 ${index + 1} 周`, 2, index + 2);
-            weekCell.dataset.weekKey = formatIsoDate(week.start);
+            weekCell.dataset.weekKey = weekKey;
+            weekCell.tabIndex = 0;
+            weekCell.setAttribute('role', 'button');
             const label = document.createElement('span');
             label.className = 'semester-week-label';
             label.textContent = `${monthFormatter.format(week.start)}${week.start.getDate()}日`;
@@ -1065,8 +1366,10 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
 
             model.weeks.forEach((week, weekIndex) => {
                 const day = week.days[dayIndex];
+                const weekKey = getWeekKey(week);
                 const cellClasses = ['semester-day-cell'];
                 if (day.isCurrentWeek) cellClasses.push('is-current-week');
+                if (weekKey === activeWeekKey) cellClasses.push('is-active-week');
                 if (day.isWeekend) cellClasses.push('is-weekend');
                 if (day.isHoliday) cellClasses.push('is-holiday');
                 if (day.isWorkday) cellClasses.push('is-workday');
@@ -1075,6 +1378,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
 
                 const cell = createCell(fragment, cellClasses.join(' '), '', dayIndex + 3, weekIndex + 2);
                 cell.dataset.date = day.isoDate;
+                cell.dataset.weekKey = weekKey;
 
                 const number = document.createElement('div');
                 number.className = 'date-number';
@@ -1100,20 +1404,8 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             });
         }
 
-        if (showTodos) {
-            const todoRow = 10;
-            createCell(fragment, 'semester-todo-cell semester-sticky-cell semester-todo-axis', '待办甘特', todoRow, 1);
-            model.weeks.forEach((week, weekIndex) => {
-                renderTodoWeekCell(fragment, semester, week, todoRow, weekIndex + 2);
-            });
-        }
-
         board.appendChild(fragment);
-        if (activeTodoId) {
-            renderTodoDetail(semester, activeTodoId);
-        } else {
-            renderTodoDetail(semester, '');
-        }
+        renderWeekTodoStage(semester, model);
         syncActiveTodoVisuals(semester);
         if (pendingScrollWeekKey) {
             const weekKey = pendingScrollWeekKey;
@@ -1143,6 +1435,8 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             return;
         }
 
+        const todayDate = parseIsoDate(todayIso);
+        const todayWeekKey = todayDate ? formatIsoDate(getMonday(todayDate)) : '';
         const todayCell = elements.board?.querySelector(`[data-date="${todayIso}"]`);
         if (!todayCell || !elements.scroll) {
             if (onMessage) {
@@ -1151,8 +1445,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             return;
         }
 
-        const left = todayCell.offsetLeft - 180;
-        elements.scroll.scrollTo({ left: Math.max(left, 0), behavior: 'smooth' });
+        setActiveWeekKey(todayWeekKey, { center: true, behavior: 'smooth' });
     }
 
     function bindDragScroll() {
@@ -1164,9 +1457,12 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             if (event.pointerType === 'mouse' && event.button !== 0) {
                 return;
             }
+            window.clearTimeout(snapTimer);
             dragState = {
                 pointerId: event.pointerId,
                 startX: event.clientX,
+                lastX: event.clientX,
+                moved: false,
                 startScrollLeft: elements.scroll.scrollLeft,
             };
             elements.scroll.classList.add('is-dragging');
@@ -1178,6 +1474,8 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
                 return;
             }
             const delta = event.clientX - dragState.startX;
+            dragState.lastX = event.clientX;
+            dragState.moved = dragState.moved || Math.abs(delta) > 6;
             elements.scroll.scrollLeft = dragState.startScrollLeft - delta;
         });
 
@@ -1188,13 +1486,22 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             if (event?.pointerId && dragState.pointerId && event.pointerId !== dragState.pointerId) {
                 return;
             }
+            const didDrag = Boolean(dragState.moved);
             elements.scroll.classList.remove('is-dragging');
             dragState = null;
+            if (didDrag) {
+                ignoreClickUntil = Date.now() + 180;
+                scheduleSnapToNearest(60);
+            }
         };
 
         elements.scroll.addEventListener('pointerup', releaseDrag);
         elements.scroll.addEventListener('pointercancel', releaseDrag);
         elements.scroll.addEventListener('pointerleave', releaseDrag);
+        elements.scroll.addEventListener('scroll', () => {
+            if (dragState || performance.now() < suppressSnapUntil) return;
+            scheduleSnapToNearest(170);
+        }, { passive: true });
     }
 
     function setSemesters(nextSemesters, { preserveSelection = true } = {}) {
@@ -1216,20 +1523,61 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         setActiveSemester(Number(event.target.value || 0));
     });
     elements.scrollStartBtn?.addEventListener('click', () => {
-        elements.scroll?.scrollTo({ left: 0, behavior: 'smooth' });
+        const semester = getActiveSemester();
+        const model = buildSemesterModel(semester, holidayLookup, todayIso, modelCache);
+        const firstWeekKey = getWeekKey(model?.weeks?.[0]);
+        if (firstWeekKey) {
+            setActiveWeekKey(firstWeekKey, { center: true, behavior: 'smooth' });
+        } else {
+            elements.scroll?.scrollTo({ left: 0, behavior: 'smooth' });
+        }
     });
     elements.scrollTodayBtn?.addEventListener('click', scrollToToday);
     elements.todoAddBtn?.addEventListener('click', openTodoModal);
     elements.board?.addEventListener('click', (event) => {
-        const todoButton = event.target.closest('[data-semester-todo-id]');
-        if (!todoButton) return;
-        activeTodoId = todoButton.dataset.semesterTodoId || '';
-        const semester = getActiveSemester();
-        renderTodoDetail(semester, activeTodoId);
-        syncActiveTodoVisuals(semester);
+        if (Date.now() < ignoreClickUntil) return;
+        const weekNode = event.target.closest('[data-week-key]');
+        if (!weekNode) return;
+        setActiveWeekKey(weekNode.dataset.weekKey || '', { center: true, behavior: 'smooth' });
+    });
+    elements.board?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const weekNode = event.target.closest('[data-week-key]');
+        if (!weekNode) return;
+        event.preventDefault();
+        setActiveWeekKey(weekNode.dataset.weekKey || '', { center: true, behavior: 'smooth' });
     });
     elements.todoDetail?.addEventListener('click', async (event) => {
         const semester = getActiveSemester();
+        const model = buildSemesterModel(semester, holidayLookup, todayIso, modelCache);
+        const shiftButton = event.target.closest('[data-week-shift]');
+        if (shiftButton) {
+            const weeks = model?.weeks || [];
+            const currentIndex = weeks.findIndex((week) => getWeekKey(week) === activeWeekKey);
+            const nextIndex = clampNumber(currentIndex + Number(shiftButton.dataset.weekShift || 0), 0, weeks.length - 1);
+            const nextWeekKey = getWeekKey(weeks[nextIndex]);
+            if (nextWeekKey) {
+                activeTodoId = '';
+                setActiveWeekKey(nextWeekKey, { center: true, behavior: 'smooth' });
+            }
+            return;
+        }
+
+        const weekNode = event.target.closest('[data-week-key]');
+        if (weekNode && !weekNode.classList.contains('is-active')) {
+            activeTodoId = '';
+            setActiveWeekKey(weekNode.dataset.weekKey || '', { center: true, behavior: 'smooth' });
+            return;
+        }
+
+        const todoButton = event.target.closest('[data-semester-todo-id]');
+        if (todoButton) {
+            activeTodoId = todoButton.dataset.semesterTodoId || '';
+            renderWeekTodoStage(semester, model);
+            syncActiveTodoVisuals(semester);
+            return;
+        }
+
         const todo = findTodoById(semester, activeTodoId);
         if (!todo) return;
         const completeBtn = event.target.closest('[data-semester-todo-complete]');
