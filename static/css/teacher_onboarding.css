@@ -1,0 +1,383 @@
+.teacher-onboarding-entry-anchor {
+    display: inline-flex;
+    align-items: center;
+    overflow: visible;
+}
+
+.teacher-onboarding-entry {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid rgba(14, 165, 233, 0.2);
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--text-secondary);
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.teacher-onboarding-entry:hover,
+.teacher-onboarding-entry:focus-visible {
+    color: #0369a1;
+    border-color: rgba(14, 165, 233, 0.44);
+    background: #ffffff;
+    box-shadow: 0 16px 32px rgba(14, 116, 144, 0.16), 0 0 0 4px rgba(14, 165, 233, 0.12);
+    transform: translateY(-1px);
+    outline: none;
+}
+
+.teacher-onboarding-entry svg {
+    width: 18px;
+    height: 18px;
+}
+
+.teacher-onboarding-modal[hidden] {
+    display: none !important;
+}
+
+.teacher-onboarding-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(12px, 3vw, 28px);
+    background: rgba(15, 23, 42, 0.58);
+    backdrop-filter: blur(8px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease;
+}
+
+.teacher-onboarding-modal.is-open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.teacher-onboarding-dialog {
+    width: min(980px, 100%);
+    max-height: min(760px, calc(100vh - 28px));
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgba(203, 213, 225, 0.86);
+    border-radius: var(--radius-lg);
+    background:
+        linear-gradient(135deg, rgba(240, 249, 255, 0.96), rgba(255, 255, 255, 0.96) 44%, rgba(236, 253, 245, 0.94)),
+        var(--surface-color);
+    box-shadow: 0 28px 70px rgba(15, 23, 42, 0.28);
+    color: var(--text-primary);
+    transform: translateY(16px) scale(0.98);
+    transition: transform 0.22s ease;
+}
+
+.teacher-onboarding-modal.is-open .teacher-onboarding-dialog {
+    transform: translateY(0) scale(1);
+}
+
+.teacher-onboarding-header,
+.teacher-onboarding-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    padding: var(--spacing-lg);
+    border-color: rgba(203, 213, 225, 0.78);
+}
+
+.teacher-onboarding-header {
+    border-bottom: 1px solid rgba(203, 213, 225, 0.78);
+}
+
+.teacher-onboarding-footer {
+    border-top: 1px solid rgba(203, 213, 225, 0.78);
+    background: rgba(248, 250, 252, 0.82);
+    justify-content: flex-end;
+}
+
+.teacher-onboarding-kicker {
+    margin: 0 0 4px;
+    color: #0f766e;
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.teacher-onboarding-header h2,
+.teacher-onboarding-detail h3 {
+    margin: 0;
+    letter-spacing: 0;
+}
+
+.teacher-onboarding-header h2 {
+    font-size: clamp(1.35rem, 3vw, 1.8rem);
+}
+
+.teacher-onboarding-header p,
+.teacher-onboarding-detail p,
+.teacher-onboarding-tip p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.7;
+}
+
+.teacher-onboarding-close {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.74);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
+}
+
+.teacher-onboarding-close:hover,
+.teacher-onboarding-close:focus-visible {
+    color: var(--text-primary);
+    box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.16);
+    transform: translateY(-1px);
+    outline: none;
+}
+
+.teacher-onboarding-body {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr);
+    gap: var(--spacing-lg);
+    padding: var(--spacing-lg);
+    overflow: auto;
+}
+
+.teacher-onboarding-rail,
+.teacher-onboarding-detail {
+    min-width: 0;
+}
+
+.teacher-onboarding-progress {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+}
+
+.teacher-onboarding-progress strong {
+    color: #0f766e;
+}
+
+.teacher-onboarding-progressbar {
+    height: 8px;
+    margin: var(--spacing-sm) 0 var(--spacing-md);
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(203, 213, 225, 0.68);
+}
+
+.teacher-onboarding-progressbar span {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #0ea5e9, #14b8a6);
+    transition: width 0.22s ease;
+}
+
+.teacher-onboarding-step-list {
+    display: grid;
+    gap: var(--spacing-sm);
+}
+
+.teacher-onboarding-step-button {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--spacing-sm);
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid rgba(203, 213, 225, 0.82);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.78);
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.teacher-onboarding-step-button:hover,
+.teacher-onboarding-step-button:focus-visible,
+.teacher-onboarding-step-button.is-active {
+    border-color: rgba(14, 165, 233, 0.42);
+    background: #ffffff;
+    box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
+    outline: none;
+}
+
+.teacher-onboarding-step-button.is-active {
+    transform: translateY(-1px);
+}
+
+.teacher-onboarding-step-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    background: rgba(14, 165, 233, 0.12);
+    color: #0369a1;
+    font-weight: 800;
+}
+
+.teacher-onboarding-step-button.is-ready .teacher-onboarding-step-index {
+    background: rgba(20, 184, 166, 0.15);
+    color: #0f766e;
+}
+
+.teacher-onboarding-step-copy {
+    min-width: 0;
+}
+
+.teacher-onboarding-step-copy strong {
+    display: block;
+    overflow: hidden;
+    font-size: 0.92rem;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.teacher-onboarding-step-copy span,
+.teacher-onboarding-step-badge {
+    color: var(--text-muted);
+    font-size: 0.76rem;
+}
+
+.teacher-onboarding-step-badge {
+    white-space: nowrap;
+}
+
+.teacher-onboarding-step-button.is-ready .teacher-onboarding-step-badge {
+    color: #0f766e;
+    font-weight: 700;
+}
+
+.teacher-onboarding-detail {
+    display: grid;
+    align-content: start;
+    gap: var(--spacing-md);
+    padding: var(--spacing-lg);
+    border: 1px solid rgba(203, 213, 225, 0.82);
+    border-radius: var(--radius-lg);
+    background: rgba(255, 255, 255, 0.76);
+}
+
+.teacher-onboarding-step-meta {
+    color: #0369a1;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.teacher-onboarding-detail h3 {
+    font-size: clamp(1.18rem, 2.4vw, 1.55rem);
+}
+
+.teacher-onboarding-status-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: rgba(240, 249, 255, 0.86);
+    border: 1px solid rgba(125, 211, 252, 0.38);
+}
+
+.teacher-onboarding-status-box span {
+    color: var(--text-secondary);
+}
+
+.teacher-onboarding-status-box strong {
+    color: #0369a1;
+}
+
+.teacher-onboarding-tip {
+    padding: 14px;
+    border-left: 3px solid #14b8a6;
+    border-radius: var(--radius-md);
+    background: rgba(236, 253, 245, 0.82);
+}
+
+.teacher-onboarding-tip strong {
+    display: block;
+    margin-bottom: 4px;
+    color: #0f766e;
+}
+
+.teacher-onboarding-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--spacing-sm);
+}
+
+.teacher-onboarding-actions .btn {
+    min-width: 96px;
+}
+
+@media (max-width: 860px) {
+    .teacher-onboarding-body {
+        grid-template-columns: 1fr;
+    }
+
+    .teacher-onboarding-dialog {
+        max-height: calc(100vh - 20px);
+    }
+}
+
+@media (max-width: 640px) {
+    .teacher-onboarding-modal {
+        align-items: stretch;
+        padding: 8px;
+    }
+
+    .teacher-onboarding-dialog {
+        max-height: calc(100vh - 16px);
+    }
+
+    .teacher-onboarding-header,
+    .teacher-onboarding-body,
+    .teacher-onboarding-footer {
+        padding: var(--spacing-md);
+    }
+
+    .teacher-onboarding-footer,
+    .teacher-onboarding-actions {
+        justify-content: stretch;
+    }
+
+    .teacher-onboarding-footer .btn,
+    .teacher-onboarding-actions .btn {
+        flex: 1 1 140px;
+    }
+
+    .teacher-onboarding-step-button {
+        grid-template-columns: 30px minmax(0, 1fr);
+    }
+
+    .teacher-onboarding-step-badge {
+        grid-column: 2;
+    }
+}

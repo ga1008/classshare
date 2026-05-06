@@ -50,6 +50,10 @@ from ..services.message_center_service import (
     is_super_admin_teacher,
     mark_password_reset_request_notification_read,
 )
+from ..services.teacher_onboarding_service import (
+    build_teacher_onboarding_payload,
+    mark_teacher_onboarding_dismissed,
+)
 from ..services.blog_news_crawler_service import (
     cancel_pending_blog_news_crawler_runs,
     enqueue_blog_news_crawler_run,
@@ -62,6 +66,33 @@ from ..services.submission_file_alignment import run_full_alignment
 from ..storage_paths import resolve_migrated_file_path
 
 router = APIRouter(prefix="/api/manage", dependencies=[Depends(get_current_teacher)])
+
+
+@router.get("/teacher-onboarding/state", response_class=JSONResponse)
+async def api_get_teacher_onboarding_state(user: dict = Depends(get_current_teacher)):
+    teacher_id = int(user["id"])
+    with get_db_connection() as conn:
+        return build_teacher_onboarding_payload(conn, teacher_id)
+
+
+@router.post("/teacher-onboarding/dismiss", response_class=JSONResponse)
+async def api_dismiss_teacher_onboarding(request: Request, user: dict = Depends(get_current_teacher)):
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    teacher_id = int(user["id"])
+    reason = str(payload.get("reason") or "manual_exit")
+    with get_db_connection() as conn:
+        mark_teacher_onboarding_dismissed(conn, teacher_id, reason)
+        conn.commit()
+        result = build_teacher_onboarding_payload(conn, teacher_id)
+
+    result["message"] = "新手引导状态已更新。"
+    return result
 
 
 def _ensure_teacher_owned_record(

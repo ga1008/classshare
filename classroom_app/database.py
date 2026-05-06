@@ -341,6 +341,23 @@ def init_database():
                 "CREATE INDEX IF NOT EXISTS idx_teachers_super_admin "
                 "ON teachers (is_super_admin, id)"
             )
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS teacher_onboarding_state
+                (
+                    teacher_id INTEGER PRIMARY KEY,
+                    dismissed_at TEXT,
+                    completed_at TEXT,
+                    dismiss_reason TEXT DEFAULT '',
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE
+                )
+                '''
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_onboarding_updated "
+                "ON teacher_onboarding_state (updated_at DESC)"
+            )
             super_admin_rows = conn.execute(
                 "SELECT id FROM teachers WHERE COALESCE(is_super_admin, 0) = 1 ORDER BY id ASC"
             ).fetchall()
