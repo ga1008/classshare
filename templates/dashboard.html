@@ -7,7 +7,7 @@
 {% block css %}
 {{ super() }}
 <link rel="stylesheet" href="/static/css/dashboard.css?v=premium-home-20260504-7">
-<link rel="stylesheet" href="/static/css/semester_calendar.css?v=dashboard-todo-focus-20260507">
+<link rel="stylesheet" href="/static/css/semester_calendar.css?v=dashboard-todo-axis-20260507">
 {% endblock %}
 
 {% block navbar_actions %}
@@ -215,8 +215,8 @@
             <section class="dashboard-semester-section dashboard-reveal" id="dashboard-semester">
                 {% with
                     semester_calendar_panel_title='学期日历',
-                    semester_calendar_panel_subtitle='查看完整学期周历、当前周次、节假日与聚焦周待办甘特图。',
-                    semester_calendar_panel_hint='拖动周历后会自动吸附到居中周，下方待办卡片随聚焦周切换；当前周与今天会自动高亮。',
+                    semester_calendar_panel_subtitle='查看完整学期周历、当前周次、节假日与聚焦周待办轴线。',
+                    semester_calendar_panel_hint='拖动周历后会自动吸附到居中周，下方待办卡片随聚焦周切换；第一周和最后一周也可居中查看。',
                     semester_calendar_panel_class='dashboard-semester-calendar',
                     semester_calendar_show_todos=true,
                     semester_calendar_empty_title='暂无可展示的学期日历',
@@ -346,5 +346,5 @@
 <script>
     window.DASHBOARD_SEMESTER_CALENDAR = {{ dashboard_semester_calendar | tojson }};
 </script>
-<script type="module" src="/static/js/dashboard.js?v=dashboard-todo-focus-20260507"></script>
+<script type="module" src="/static/js/dashboard.js?v=dashboard-todo-axis-20260507"></script>
 {% endblock %}
