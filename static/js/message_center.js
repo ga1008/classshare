@@ -468,6 +468,7 @@ if (app) {
                 <div class="message-center-card__top">
                     <div class="message-center-card__category">
                         <span class="message-center-pill">${escapeHtml(item.category_label || item.category)}</span>
+                        <span class="message-center-pill message-center-pill--severity is-${escapeHtml(item.severity || 'normal')}">${escapeHtml(item.severity_label || '普通通知')}</span>
                         ${item.is_unread ? '<span class="message-center-pill is-danger">未读</span>' : '<span class="message-center-pill">已读</span>'}
                     </div>
                     <span class="message-center-card__meta">${escapeHtml(formatDate(item.created_at || ''))}</span>
@@ -485,7 +486,7 @@ if (app) {
                         标记已读
                     </button>
                     <a
-                        href="${escapeHtml(item.link_url || '/message-center')}"
+                        href="${escapeHtml(item.open_url || item.link_url || '/message-center')}"
                         class="btn btn-primary btn-sm"
                         data-open-notification="${Number(item.id)}"
                     >
@@ -1154,6 +1155,9 @@ if (app) {
 
         event.preventDefault();
         await markRead({ notification_ids: [Number(link.dataset.openNotification)] });
+        if (typeof window.refreshMessageCenterBell === 'function') {
+            await window.refreshMessageCenterBell({ allowPopup: false });
+        }
         window.location.href = link.getAttribute('href') || '/message-center';
     });
 

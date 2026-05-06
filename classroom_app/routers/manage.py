@@ -339,6 +339,7 @@ async def api_create_class(request: Request, class_name: str = Form(), file: Upl
         if temp_excel_path.exists():
             temp_excel_path.unlink()  # 清理临时文件
         raise HTTPException(400, "解析Excel失败，请检查文件格式和列名（需包含'姓名'和'学号'）。")
+    missing_email_count = sum(1 for item in students_data if not str(item.get("email") or "").strip())
 
     # 3. 存入数据库 (使用事务)
     conn = get_db_connection()
@@ -372,7 +373,10 @@ async def api_create_class(request: Request, class_name: str = Form(), file: Upl
         if temp_excel_path.exists():
             temp_excel_path.unlink()  # 清理临时文件
 
-    return {"status": "success", "message": f"成功创建班级 '{class_name}' 并导入 {len(students_data)} 名学生。"}
+    message = f"成功创建班级 '{class_name}' 并导入 {len(students_data)} 名学生。"
+    if missing_email_count:
+        message += f" 其中 {missing_email_count} 名学生缺少邮箱，后续只能收到站内通知，可提醒学生在个人中心补充。"
+    return {"status": "success", "message": message, "missing_email_count": missing_email_count}
 
 
 # (新增) 删除班级

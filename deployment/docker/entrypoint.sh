@@ -23,6 +23,10 @@ case "$service" in
     shift || true
     exec python -u ai_assistant.py "$@"
     ;;
+  mailer)
+    shift || true
+    exec python -u email_worker.py "$@"
+    ;;
   *)
     exec "$@"
     ;;

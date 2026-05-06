@@ -645,6 +645,21 @@
     color: #b91c1c;
 }
 
+.message-center-pill--severity.is-normal {
+    background: rgba(100, 116, 139, 0.12);
+    color: #475569;
+}
+
+.message-center-pill--severity.is-important {
+    background: rgba(245, 158, 11, 0.14);
+    color: #92400e;
+}
+
+.message-center-pill--severity.is-system {
+    background: rgba(14, 116, 144, 0.12);
+    color: #0e7490;
+}
+
 .message-center-private-panel {
     display: grid;
     grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);

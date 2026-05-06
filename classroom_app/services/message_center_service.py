@@ -22,6 +22,11 @@ from .rate_limit_service import (
     build_rate_limit_window_start,
     calculate_retry_after_seconds,
 )
+from .email_notification_service import (
+    SEVERITY_LABELS,
+    notification_severity_for_category,
+    queue_notification_email_if_applicable,
+)
 
 MESSAGE_CATEGORY_PRIVATE = "private_message"
 MESSAGE_CATEGORY_ASSIGNMENT = "assignment"
@@ -118,6 +123,9 @@ APP_FEEDBACK_TYPE_LABELS = {
 FILTER_LABELS = {
     "all": "全部",
     "unread": "仅未读",
+    "important": "重要通知",
+    "system": "系统通知",
+    "normal": "普通通知",
     "today": "仅今日",
 }
 
@@ -681,6 +689,7 @@ def _build_notification_payload(
     recipient_user_pk: int,
     category: str,
     title: str,
+    severity: Optional[str] = None,
     body_preview: str = "",
     actor_role: str = "",
     actor_user_pk: Optional[int] = None,
@@ -698,12 +707,15 @@ def _build_notification_payload(
         actor_identity = build_user_identity(actor_role, actor_user_pk)
     else:
         actor_identity = ""
+    normalized_category = str(category or "").strip().lower()
+    normalized_severity = str(severity or notification_severity_for_category(normalized_category)).strip().lower()
 
     return {
         "recipient_identity": build_user_identity(recipient_role, recipient_user_pk),
         "recipient_role": recipient_role,
         "recipient_user_pk": recipient_user_pk,
-        "category": category,
+        "category": normalized_category,
+        "severity": normalized_severity,
         "actor_identity": actor_identity,
         "actor_role": actor_role,
         "actor_user_pk": actor_user_pk,
@@ -724,17 +736,18 @@ def _insert_notification(conn, payload: dict[str, Any]) -> int:
         """
         INSERT INTO message_center_notifications (
             recipient_identity, recipient_role, recipient_user_pk,
-            category, actor_identity, actor_role, actor_user_pk, actor_display_name,
+            category, severity, actor_identity, actor_role, actor_user_pk, actor_display_name,
             title, body_preview, link_url, class_offering_id,
             ref_type, ref_id, metadata_json, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             payload["recipient_identity"],
             payload["recipient_role"],
             payload["recipient_user_pk"],
             payload["category"],
+            payload.get("severity") or notification_severity_for_category(payload["category"]),
             payload["actor_identity"],
             payload["actor_role"],
             payload["actor_user_pk"],
@@ -749,7 +762,12 @@ def _insert_notification(conn, payload: dict[str, Any]) -> int:
             payload["created_at"],
         ),
     )
-    return int(cursor.lastrowid)
+    notification_id = int(cursor.lastrowid)
+    try:
+        queue_notification_email_if_applicable(conn, notification_id=notification_id, payload=payload)
+    except Exception as exc:
+        print(f"[EMAIL] queue notification email failed: {exc}")
+    return notification_id
 
 
 def _insert_private_message(
@@ -880,6 +898,9 @@ def _serialize_notification(row) -> dict[str, Any]:
     item["is_unread"] = not bool(item.get("read_at"))
     item["metadata"] = _safe_json_loads(item.get("metadata_json"), {})
     item["category_label"] = CATEGORY_LABELS.get(item["category"], item["category"])
+    item["severity"] = str(item.get("severity") or notification_severity_for_category(item["category"]))
+    item["severity_label"] = SEVERITY_LABELS.get(item["severity"], item["severity"])
+    item["open_url"] = f"/message-center/notifications/{item['id']}/open"
     if (
         item["category"] == MESSAGE_CATEGORY_DISCUSSION_MENTION
         and _contains_broadcast_discussion_mention(item.get("body_preview"))
@@ -971,6 +992,17 @@ def get_message_center_summary(conn, user: dict, *, include_private: bool = True
         """.format(conditions=" AND ".join(conditions)),
         tuple(params),
     ).fetchall()
+    severity_rows = conn.execute(
+        """
+        SELECT severity,
+               COUNT(*) AS total_count,
+               SUM(CASE WHEN read_at IS NULL THEN 1 ELSE 0 END) AS unread_count
+        FROM message_center_notifications
+        WHERE {conditions}
+        GROUP BY severity
+        """.format(conditions=" AND ".join(conditions)),
+        tuple(params),
+    ).fetchall()
 
     available_categories = (
         ALL_NOTIFICATION_CATEGORIES
@@ -1011,10 +1043,31 @@ def get_message_center_summary(conn, user: dict, *, include_private: bool = True
             continue
         if category in counts:
             tabs.append(counts[category])
+    severity_counts = {
+        key: {
+            "severity": key,
+            "label": label,
+            "total_count": 0,
+            "unread_count": 0,
+        }
+        for key, label in SEVERITY_LABELS.items()
+    }
+    for row in severity_rows:
+        severity = str(row["severity"] or notification_severity_for_category(""))
+        if severity not in severity_counts:
+            severity_counts[severity] = {
+                "severity": severity,
+                "label": severity,
+                "total_count": 0,
+                "unread_count": 0,
+            }
+        severity_counts[severity]["total_count"] = int(row["total_count"] or 0)
+        severity_counts[severity]["unread_count"] = int(row["unread_count"] or 0)
 
     return {
         "unread_total": unread_total,
         "tabs": tabs,
+        "severity_counts": list(severity_counts.values()),
         "visible_categories": list(visible_categories),
         "filters": [{"value": key, "label": value} for key, value in FILTER_LABELS.items()],
     }
@@ -1047,6 +1100,9 @@ def list_message_center_items(
     normalized_filter = str(filter_key or "all").strip().lower()
     if normalized_filter == "unread":
         conditions.append("read_at IS NULL")
+    elif normalized_filter in {"normal", "important", "system"}:
+        conditions.append("severity = ?")
+        params.append(normalized_filter)
     elif normalized_filter == "today":
         conditions.append("date(created_at) = date('now', 'localtime')")
 
@@ -1142,6 +1198,43 @@ def mark_message_center_items_read(
         (read_at, *params),
     )
     return int(cursor.rowcount or 0)
+
+
+def open_message_center_notification(conn, user: dict, notification_id: int | str) -> dict[str, Any]:
+    user_pk, role, _ = _ensure_user_identity(user)
+    normalized_id = _safe_int(notification_id)
+    if normalized_id is None:
+        raise ValueError("notification not found")
+    row = conn.execute(
+        """
+        SELECT *
+        FROM message_center_notifications
+        WHERE id = ?
+          AND recipient_role = ?
+          AND recipient_user_pk = ?
+        LIMIT 1
+        """,
+        (normalized_id, role, user_pk),
+    ).fetchone()
+    if row is None:
+        raise ValueError("notification not found")
+    if not row["read_at"]:
+        conn.execute(
+            """
+            UPDATE message_center_notifications
+            SET read_at = ?
+            WHERE id = ?
+              AND recipient_role = ?
+              AND recipient_user_pk = ?
+              AND read_at IS NULL
+            """,
+            (_now_iso(), normalized_id, role, user_pk),
+        )
+        row = conn.execute(
+            "SELECT * FROM message_center_notifications WHERE id = ? LIMIT 1",
+            (normalized_id,),
+        ).fetchone()
+    return _serialize_notification(row)
 
 
 def _mark_private_conversation_read(

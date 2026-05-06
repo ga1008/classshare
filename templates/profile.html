@@ -80,6 +80,16 @@
         </aside>
     </section>
 
+    {% if profile.role == 'student' and not profile.email %}
+    <section class="profile-email-reminder profile-reveal" data-profile-email-reminder>
+        <div>
+            <span class="profile-eyebrow">Email</span>
+            <strong>补充邮箱后，重要作业、评分结果和被 @ 提醒可以同步送达。</strong>
+        </div>
+        <a class="btn btn-outline btn-sm" href="/profile?section=settings#profile-email">去补充</a>
+    </section>
+    {% endif %}
+
     <section class="profile-workspace">
         <aside class="profile-sidebar">
             <nav class="profile-nav profile-band profile-reveal" aria-label="个人中心菜单">
@@ -445,6 +455,157 @@
                     </section>
                     {% endif %}
                 </aside>
+            </section>
+
+            {% elif active_section == 'email' and profile.role == 'teacher' %}
+            <section class="profile-band profile-section-head profile-reveal">
+                <div>
+                    <span class="profile-eyebrow">Email Delivery</span>
+                    <h2>邮箱通知</h2>
+                    <p>为重要通知和系统通知配置独立发信身份，普通通知保留站内提醒。</p>
+                </div>
+                <div class="profile-section-head__actions">
+                    <button type="button" class="btn btn-outline" data-profile-email-new>新增配置</button>
+                    <button type="button" class="btn btn-outline" data-profile-email-refresh>刷新状态</button>
+                </div>
+            </section>
+
+            <section class="profile-email-grid">
+                <aside class="profile-band profile-email-list profile-reveal">
+                    <div class="profile-band__head">
+                        <div>
+                            <span class="profile-eyebrow">Servers</span>
+                            <h3>邮箱身份</h3>
+                        </div>
+                    </div>
+                    <div id="profile-email-config-list" class="profile-email-config-list"></div>
+                </aside>
+
+                <section class="profile-band profile-form-band profile-reveal">
+                    <form id="profile-email-form" class="profile-form">
+                        <input type="hidden" name="config_id" id="profile-email-config-id">
+                        <div class="profile-form-section">
+                            <div class="profile-form-section__head">
+                                <span class="profile-eyebrow">Mailbox</span>
+                                <h3>邮箱账户</h3>
+                            </div>
+                            <div class="profile-form-grid">
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email-provider">邮箱服务商</label>
+                                    <select id="profile-email-provider" name="provider" class="form-control">
+                                        <option value="qq">QQ邮箱</option>
+                                        <option value="netease_163">网易163邮箱</option>
+                                        <option value="netease_126">网易126邮箱</option>
+                                        <option value="netease_yeah">网易yeah.net邮箱</option>
+                                        <option value="sina">新浪邮箱</option>
+                                        <option value="sohu">搜狐邮箱</option>
+                                        <option value="aliyun">阿里邮箱</option>
+                                        <option value="custom">自定义邮箱</option>
+                                    </select>
+                                    <div class="academic-hint profile-email-provider-hint" data-profile-email-provider-hint>选择服务商后自动填入服务器参数。</div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email-label">配置名称</label>
+                                    <input id="profile-email-label" name="label" class="form-control" maxlength="80" placeholder="课程通知邮箱">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email-from-email">发信邮箱</label>
+                                    <input id="profile-email-from-email" name="from_email" type="email" class="form-control" maxlength="180" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email-from-name">发信名称</label>
+                                    <input id="profile-email-from-name" name="from_name" class="form-control" maxlength="80" value="{{ profile.name }}">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email-smtp-password">授权码/客户端密码</label>
+                                    <input id="profile-email-smtp-password" name="smtp_password" type="password" class="form-control" autocomplete="new-password" placeholder="邮箱授权码">
+                                </div>
+                                <div class="form-group profile-email-toggle-row">
+                                    <label><input type="checkbox" name="enabled" id="profile-email-enabled" checked> 启用</label>
+                                    <label><input type="checkbox" name="is_default" id="profile-email-default" checked> 默认</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <details class="profile-form-section profile-email-advanced">
+                            <summary>高级服务器参数</summary>
+                            <div class="profile-form-section__head">
+                                <span class="profile-eyebrow">SMTP / IMAP</span>
+                                <h3>服务器连接</h3>
+                            </div>
+                            <div class="profile-form-grid">
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email-smtp-host">SMTP 服务器</label>
+                                    <input id="profile-email-smtp-host" name="smtp_host" class="form-control" maxlength="180" placeholder="smtp.example.com">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email-smtp-port">SMTP 端口</label>
+                                    <input id="profile-email-smtp-port" name="smtp_port" type="number" class="form-control" min="1" max="65535" value="465">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email-smtp-security">SMTP 加密</label>
+                                    <select id="profile-email-smtp-security" name="smtp_security" class="form-control">
+                                        <option value="ssl">SSL</option>
+                                        <option value="starttls">STARTTLS</option>
+                                        <option value="none">无</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email-smtp-username">SMTP 用户名</label>
+                                    <input id="profile-email-smtp-username" name="smtp_username" class="form-control" maxlength="180">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email-imap-host">IMAP 服务器</label>
+                                    <input id="profile-email-imap-host" name="imap_host" class="form-control" maxlength="180" placeholder="imap.example.com">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email-imap-port">IMAP 端口</label>
+                                    <input id="profile-email-imap-port" name="imap_port" type="number" class="form-control" min="1" max="65535" value="993">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email-imap-security">IMAP 加密</label>
+                                    <select id="profile-email-imap-security" name="imap_security" class="form-control">
+                                        <option value="ssl">SSL</option>
+                                        <option value="starttls">STARTTLS</option>
+                                        <option value="none">无</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email-imap-username">IMAP 用户名</label>
+                                    <input id="profile-email-imap-username" name="imap_username" class="form-control" maxlength="180">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email-imap-password">IMAP 密码/授权码</label>
+                                    <input id="profile-email-imap-password" name="imap_password" type="password" class="form-control" autocomplete="new-password" placeholder="留空则沿用SMTP授权码">
+                                </div>
+                            </div>
+                        </details>
+
+                        <div class="profile-form-section">
+                            <div class="profile-form-section__head">
+                                <span class="profile-eyebrow">Rate Limit</span>
+                                <h3>发信限速</h3>
+                            </div>
+                            <div class="profile-form-grid">
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email-per-minute">每分钟上限</label>
+                                    <input id="profile-email-per-minute" name="per_minute_limit" type="number" class="form-control" min="1" max="120" value="25">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="profile-email-daily">每日上限</label>
+                                    <input id="profile-email-daily" name="daily_limit" type="number" class="form-control" min="1" max="5000" value="300">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="profile-form-actions profile-email-actions">
+                            <button type="button" class="btn btn-outline" data-profile-email-test="smtp">测试发信</button>
+                            <button type="button" class="btn btn-outline" data-profile-email-test="imap">测试收信</button>
+                            <button type="button" class="btn btn-ghost" data-profile-email-delete hidden>删除</button>
+                            <button type="submit" class="btn btn-primary">保存配置</button>
+                        </div>
+                    </form>
+                </section>
             </section>
 
             {% elif active_section in ['notifications', 'private'] %}

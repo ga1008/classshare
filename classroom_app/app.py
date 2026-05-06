@@ -22,6 +22,7 @@ from .services.behavior_tracking_service import (
     stop_behavior_write_pipeline,
 )
 from .services.discussion_mood_service import stop_discussion_mood_refresh_tasks
+from .services.email_notification_service import email_worker_health_snapshot
 from .services.message_center_service import schedule_pending_private_ai_reply_jobs
 from .services.runtime_metrics_service import begin_http_request, finish_http_request, get_runtime_metrics_snapshot
 from .services.submission_file_alignment import repair_stale_stored_paths
@@ -140,6 +141,7 @@ async def internal_health():
         "behavior_write_worker_alive": behavior_stats["alive"],
         "behavior_write_queue_depth": behavior_stats["queue_depth"],
         "behavior_write_queue_capacity": behavior_stats["queue_capacity"],
+        "email_worker": email_worker_health_snapshot(),
     }
 
 

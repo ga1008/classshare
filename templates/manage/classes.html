@@ -180,10 +180,10 @@
                     <div class="academic-field">
                         <label for="classRosterInput">学生名单文件</label>
                         <input type="file" id="classRosterInput" name="file" class="form-control" required accept=".xlsx,.xls,.csv">
-                        <div class="academic-hint">文件至少需要包含“姓名”和“学号”两列，支持 Excel 或 CSV。</div>
+                        <div class="academic-hint">文件至少需要包含“姓名”和“学号”两列；建议同时包含“邮箱”或“email”列，方便重要通知邮件送达。</div>
                     </div>
                     <div class="class-form-note">
-                        建议使用一个班级一个名单文件的方式维护。导入成功后，课堂创建时就可以直接复用该班级，而不需要再次上传名单。
+                        建议使用一个班级一个名单文件的方式维护。缺少邮箱不会阻止导入，学生也可以稍后在个人中心补充，但名单中带邮箱能减少后续通知遗漏。
                     </div>
                     <div class="academic-action-group" style="justify-content: flex-end;">
                         <button type="submit" class="btn btn-primary">创建班级并导入学生</button>
