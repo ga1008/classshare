@@ -1,0 +1,68 @@
+<div class="teacher-onboarding-modal" data-teacher-onboarding-modal hidden>
+    <section
+        class="teacher-onboarding-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="teacherOnboardingTitle"
+        aria-describedby="teacherOnboardingSummary"
+    >
+        <header class="teacher-onboarding-header">
+            <div>
+                <p class="teacher-onboarding-kicker">Teacher Starter</p>
+                <h2 id="teacherOnboardingTitle">教师新手引导</h2>
+                <p id="teacherOnboardingSummary">按真实开课顺序完成班级、课程、学期、课堂和 AI 助教配置。</p>
+            </div>
+            <button
+                type="button"
+                class="teacher-onboarding-close"
+                data-teacher-onboarding-dismiss
+                aria-label="退出新手引导"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M18 6 6 18"></path>
+                    <path d="m6 6 12 12"></path>
+                </svg>
+            </button>
+        </header>
+
+        <div class="teacher-onboarding-body">
+            <aside class="teacher-onboarding-rail" aria-label="新手引导步骤">
+                <div class="teacher-onboarding-progress">
+                    <span data-teacher-onboarding-progress-text>正在读取准备情况</span>
+                    <strong data-teacher-onboarding-progress-count>0/5</strong>
+                </div>
+                <div class="teacher-onboarding-progressbar" aria-hidden="true">
+                    <span data-teacher-onboarding-progressbar></span>
+                </div>
+                <div class="teacher-onboarding-step-list" data-teacher-onboarding-step-list></div>
+            </aside>
+
+            <article class="teacher-onboarding-detail">
+                <div class="teacher-onboarding-step-meta" data-teacher-onboarding-step-meta>第 1 步</div>
+                <h3 data-teacher-onboarding-step-title>创建自己的班级</h3>
+                <p data-teacher-onboarding-step-description>正在准备新手引导内容。</p>
+
+                <div class="teacher-onboarding-status-box">
+                    <span data-teacher-onboarding-step-status>待完成</span>
+                    <strong data-teacher-onboarding-step-count>0 项</strong>
+                </div>
+
+                <div class="teacher-onboarding-tip">
+                    <strong>建议顺序</strong>
+                    <p data-teacher-onboarding-tip-text>先创建班级，再准备课程和学期，最后开设课堂并配置 AI 助教。</p>
+                </div>
+
+                <div class="teacher-onboarding-actions">
+                    <button type="button" class="btn btn-outline" data-teacher-onboarding-prev>上一步</button>
+                    <button type="button" class="btn btn-outline" data-teacher-onboarding-next>下一步</button>
+                    <a href="/manage" class="btn btn-primary" data-teacher-onboarding-action>前往处理</a>
+                </div>
+            </article>
+        </div>
+
+        <footer class="teacher-onboarding-footer">
+            <button type="button" class="btn btn-outline" data-teacher-onboarding-dismiss>退出引导</button>
+            <button type="button" class="btn btn-primary" data-teacher-onboarding-complete>完成引导</button>
+        </footer>
+    </section>
+</div>

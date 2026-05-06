@@ -14,6 +14,9 @@
     <link rel="stylesheet" href="/static/css/feedback.css">
     <link rel="stylesheet" href="/static/css/toast.css">
     <link rel="stylesheet" href="/static/css/message_center.css">
+    {% if not embedded_mode %}
+    <link rel="stylesheet" href="/static/css/teacher_onboarding.css">
+    {% endif %}
     {% block extra_head %}{% endblock %}
     <style>
         body {
@@ -406,6 +409,7 @@
                 </div>
                 <div class="manage-header-end">
                     <div class="manage-header-bell-slot">
+                        {% include "partials/teacher_onboarding_button.html" %}
                         {% include "partials/message_center_bell.html" %}
                         {% include "partials/feedback_button.html" %}
                         {% include "partials/profile_button.html" %}
@@ -532,7 +536,13 @@
     </script>
 
     {% include "partials/feedback_modal.html" %}
+    {% if not embedded_mode %}
+    {% include "partials/teacher_onboarding_modal.html" %}
+    {% endif %}
     {% block scripts %}{% endblock %}
     <script type="module" src="/static/js/feedback.js"></script>
+    {% if not embedded_mode %}
+    <script type="module" src="/static/js/teacher_onboarding.js"></script>
+    {% endif %}
 </body>
 </html>
