@@ -916,6 +916,7 @@ export class ClassroomChat {
             return;
         }
 
+        this.discussionRoom?.classList.add('has-emoji-popover-open');
         this.emojiPopover.hidden = false;
         requestAnimationFrame(() => {
             this.emojiPopover.classList.add('is-open');
@@ -945,6 +946,7 @@ export class ClassroomChat {
         window.setTimeout(() => {
             if (!this.emojiPopover?.classList.contains('is-open')) {
                 this.emojiPopover.hidden = true;
+                this.discussionRoom?.classList.remove('has-emoji-popover-open');
             }
         }, 180);
     }

@@ -8447,6 +8447,15 @@
     transition: min-height 220ms ease, transform 220ms ease;
 }
 
+.classroom-page .discussion-room.has-emoji-popover-open {
+    overflow: visible;
+    z-index: 90;
+}
+
+.classroom-page .discussion-room.has-emoji-popover-open .discussion-room-composer {
+    z-index: 96;
+}
+
 .classroom-page .discussion-room-composer .chat-composer {
     position: relative;
     display: block;
@@ -8493,6 +8502,21 @@
     max-height: 11rem;
     padding: 0;
     overflow-y: auto;
+}
+
+.classroom-page .chat-emoji-popover {
+    left: auto;
+    right: 0;
+    bottom: calc(100% + 8px);
+    width: min(360px, 100%);
+    max-width: min(100%, calc(100vw - 32px));
+    max-height: min(480px, calc(100vh - 128px));
+    z-index: 1200;
+    transform-origin: bottom right;
+}
+
+.classroom-page .chat-emoji-popover-body {
+    max-height: clamp(180px, calc(100vh - 240px), 340px);
 }
 
 .classroom-page .chat-composer-actions {
