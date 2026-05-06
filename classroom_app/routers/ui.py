@@ -72,6 +72,7 @@ from ..services.message_center_service import (
     create_password_reset_request_notification,
     is_super_admin_teacher,
 )
+from ..services.blog_news_crawler_service import load_blog_news_crawler_dashboard
 from ..services.session_material_generation_service import attach_generation_tasks
 from ..services.student_insight_service import build_teacher_student_insight
 from ..services.student_auth_service import (
@@ -1846,6 +1847,29 @@ async def get_manage_system_diagnostics_page(request: Request, user: dict = Depe
             user,
             page_title="压测与诊断",
             active_page="system_diagnostics",
+        ),
+    )
+
+
+@router.get("/manage/system/blog-crawler", response_class=HTMLResponse)
+async def get_manage_system_blog_crawler_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """AI blog news crawler management page."""
+    with get_db_connection() as conn:
+        dashboard = load_blog_news_crawler_dashboard(conn)
+        current_teacher_is_super_admin = is_super_admin_teacher(conn, user["id"])
+
+    return templates.TemplateResponse(
+        request,
+        "manage/system/blog_crawler.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="AI博客管家",
+            active_page="system_blog_crawler",
+            extra={
+                "crawler_dashboard": dashboard,
+                "current_teacher_is_super_admin": current_teacher_is_super_admin,
+            },
         ),
     )
 

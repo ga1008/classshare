@@ -3035,6 +3035,130 @@ def init_database():
                 "ON blog_ai_reply_jobs (post_id, status, created_at DESC, id DESC)"
             )
 
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS blog_news_crawler_config (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    auto_publish INTEGER NOT NULL DEFAULT 1,
+                    featured_posts INTEGER NOT NULL DEFAULT 1,
+                    timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+                    schedule_window_start TEXT NOT NULL DEFAULT '01:20',
+                    schedule_window_end TEXT NOT NULL DEFAULT '04:40',
+                    recent_days INTEGER NOT NULL DEFAULT 1,
+                    max_keywords INTEGER NOT NULL DEFAULT 8,
+                    search_limit_per_keyword INTEGER NOT NULL DEFAULT 20,
+                    max_candidates_total INTEGER NOT NULL DEFAULT 80,
+                    max_posts_per_run INTEGER NOT NULL DEFAULT 2,
+                    article_fetch_limit INTEGER NOT NULL DEFAULT 24,
+                    fetch_article_pages INTEGER NOT NULL DEFAULT 1,
+                    fetch_images INTEGER NOT NULL DEFAULT 1,
+                    max_images_per_post INTEGER NOT NULL DEFAULT 1,
+                    max_image_bytes INTEGER NOT NULL DEFAULT 6291456,
+                    request_timeout_seconds REAL NOT NULL DEFAULT 12,
+                    min_request_interval_seconds REAL NOT NULL DEFAULT 2,
+                    max_request_interval_seconds REAL NOT NULL DEFAULT 6,
+                    extra_keywords_json TEXT NOT NULL DEFAULT '[]',
+                    blocked_domains_json TEXT NOT NULL DEFAULT '[]',
+                    source_templates_json TEXT NOT NULL DEFAULT '[]',
+                    enable_global_search_sources INTEGER NOT NULL DEFAULT 0,
+                    next_run_at TEXT DEFAULT '',
+                    last_run_id INTEGER,
+                    last_run_at TEXT DEFAULT '',
+                    last_heartbeat_at TEXT DEFAULT '',
+                    worker_id TEXT DEFAULT '',
+                    worker_status TEXT DEFAULT '',
+                    updated_by_teacher_id INTEGER,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (last_run_id) REFERENCES blog_news_crawler_runs (id) ON DELETE SET NULL,
+                    FOREIGN KEY (updated_by_teacher_id) REFERENCES teachers (id) ON DELETE SET NULL
+                )
+            ''')
+            for column_name, column_def in {
+                "source_templates_json": "TEXT NOT NULL DEFAULT '[]'",
+                "enable_global_search_sources": "INTEGER NOT NULL DEFAULT 0",
+            }.items():
+                try:
+                    conn.execute(f"ALTER TABLE blog_news_crawler_config ADD COLUMN {column_name} {column_def}")
+                except sqlite3.OperationalError:
+                    pass
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS blog_news_crawler_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trigger_source TEXT NOT NULL DEFAULT 'scheduled',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    scheduled_for TEXT DEFAULT '',
+                    worker_id TEXT DEFAULT '',
+                    started_at TEXT DEFAULT '',
+                    finished_at TEXT DEFAULT '',
+                    keywords_json TEXT NOT NULL DEFAULT '[]',
+                    candidate_count INTEGER NOT NULL DEFAULT 0,
+                    new_candidate_count INTEGER NOT NULL DEFAULT 0,
+                    duplicate_count INTEGER NOT NULL DEFAULT 0,
+                    selected_count INTEGER NOT NULL DEFAULT 0,
+                    published_count INTEGER NOT NULL DEFAULT 0,
+                    skipped_count INTEGER NOT NULL DEFAULT 0,
+                    error_message TEXT DEFAULT '',
+                    log_json TEXT NOT NULL DEFAULT '[]',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS blog_news_crawler_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id INTEGER NOT NULL,
+                    keyword TEXT NOT NULL,
+                    course_names_json TEXT NOT NULL DEFAULT '[]',
+                    source_name TEXT DEFAULT '',
+                    title TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    canonical_url TEXT DEFAULT '',
+                    url_hash TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    summary TEXT DEFAULT '',
+                    published_at TEXT DEFAULT '',
+                    fetched_at TEXT DEFAULT '',
+                    media_json TEXT NOT NULL DEFAULT '[]',
+                    score REAL NOT NULL DEFAULT 0,
+                    selected INTEGER NOT NULL DEFAULT 0,
+                    duplicate_of_item_id INTEGER,
+                    duplicate_of_post_id INTEGER,
+                    post_id INTEGER,
+                    raw_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (url_hash),
+                    UNIQUE (content_hash),
+                    FOREIGN KEY (run_id) REFERENCES blog_news_crawler_runs (id) ON DELETE CASCADE,
+                    FOREIGN KEY (duplicate_of_item_id) REFERENCES blog_news_crawler_items (id) ON DELETE SET NULL,
+                    FOREIGN KEY (duplicate_of_post_id) REFERENCES blog_posts (id) ON DELETE SET NULL,
+                    FOREIGN KEY (post_id) REFERENCES blog_posts (id) ON DELETE SET NULL
+                )
+            ''')
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_news_crawler_runs_status "
+                "ON blog_news_crawler_runs (status, scheduled_for, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_news_crawler_runs_created "
+                "ON blog_news_crawler_runs (created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_news_crawler_items_run "
+                "ON blog_news_crawler_items (run_id, selected DESC, score DESC, id ASC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blog_news_crawler_items_post "
+                "ON blog_news_crawler_items (post_id, created_at DESC)"
+            )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO blog_news_crawler_config (id)
+                VALUES (1)
+                """
+            )
+
             # App Feedback System
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS app_feedback (

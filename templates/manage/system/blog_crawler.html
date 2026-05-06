@@ -1,0 +1,423 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}AI博客管家{% endblock %}
+
+{% block extra_head %}
+<style>
+    .bc-hero {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--spacing-lg);
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .bc-hero__icon {
+        width: 56px;
+        height: 56px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.14), rgba(14, 165, 233, 0.1));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        color: #047857;
+    }
+
+    .bc-hero__text h2 {
+        margin: 0 0 var(--spacing-sm);
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .bc-hero__text p {
+        margin: 0;
+        color: var(--text-muted);
+        line-height: 1.7;
+        font-size: 0.9rem;
+    }
+
+    .bc-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        justify-content: flex-end;
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .bc-summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .bc-stat,
+    .bc-panel,
+    .bc-table-wrap {
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.93);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .bc-stat {
+        padding: var(--spacing-lg);
+    }
+
+    .bc-stat span {
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        margin-bottom: 6px;
+    }
+
+    .bc-stat strong {
+        display: block;
+        color: var(--text-primary);
+        font-size: 1.05rem;
+        word-break: break-word;
+    }
+
+    .bc-main-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+        gap: var(--spacing-lg);
+        align-items: start;
+    }
+
+    .bc-panel {
+        padding: var(--spacing-xl);
+    }
+
+    .bc-panel h3 {
+        margin: 0 0 var(--spacing-md);
+        font-size: 1.05rem;
+    }
+
+    .bc-form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--spacing-md);
+    }
+
+    .bc-switch-list {
+        display: grid;
+        gap: var(--spacing-sm);
+        margin-bottom: var(--spacing-md);
+    }
+
+    .bc-switch {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        padding: var(--spacing-sm) var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.72);
+    }
+
+    .bc-switch span {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+    }
+
+    .bc-switch input {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+    }
+
+    .bc-keywords {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .bc-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 100%;
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: rgba(16, 185, 129, 0.09);
+        color: #047857;
+        font-size: 0.82rem;
+        font-weight: 600;
+        word-break: break-word;
+    }
+
+    .bc-table-wrap {
+        overflow-x: auto;
+    }
+
+    .bc-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .bc-table th,
+    .bc-table td {
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border-color);
+        text-align: left;
+        vertical-align: top;
+        font-size: 0.88rem;
+    }
+
+    .bc-table th {
+        color: var(--text-muted);
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .bc-table td {
+        color: var(--text-secondary);
+    }
+
+    .bc-table tr:last-child td {
+        border-bottom: 0;
+    }
+
+    .bc-muted {
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        line-height: 1.6;
+    }
+
+    .bc-post-list {
+        display: grid;
+        gap: var(--spacing-sm);
+    }
+
+    .bc-post {
+        padding: var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.75);
+    }
+
+    .bc-post strong {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--text-primary);
+    }
+
+    @media (max-width: 960px) {
+        .bc-summary,
+        .bc-main-grid,
+        .bc-form-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .bc-toolbar {
+            justify-content: flex-start;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set dashboard = crawler_dashboard %}
+{% set config = dashboard.config %}
+{% set can_manage = current_teacher_is_super_admin %}
+<div class="bc-hero">
+    <div class="bc-hero__icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a8 8 0 0 1 16 0"></path><path d="M4 11v5a3 3 0 0 0 3 3h1"></path><path d="M20 11v5a3 3 0 0 1-3 3h-1"></path><path d="M8 19h8"></path><path d="M9 15h.01"></path><path d="M15 15h.01"></path></svg>
+    </div>
+    <div class="bc-hero__text">
+        <h2>AI博客管家</h2>
+        <p>按课程关键词抓取近日报道，筛选后由 AI 管家改写并发布到博客中心。</p>
+    </div>
+</div>
+
+<div class="bc-toolbar">
+    <button type="button" class="btn btn-outline btn-sm" id="bc-refresh-btn">刷新状态</button>
+    <button type="button" class="btn btn-outline btn-sm" id="bc-cancel-btn" {% if not can_manage %}disabled{% endif %}>取消待执行</button>
+    <button type="button" class="btn btn-primary btn-sm" id="bc-run-btn" {% if not can_manage %}disabled{% endif %}>立即运行一次</button>
+</div>
+
+<div class="bc-summary" id="bc-summary">
+    <div class="bc-stat">
+        <span>运行状态</span>
+        <strong id="bc-worker-status">{{ config.worker_status or '未连接' }}</strong>
+    </div>
+    <div class="bc-stat">
+        <span>下一次</span>
+        <strong id="bc-next-run">{{ config.next_run_at or '待生成' }}</strong>
+    </div>
+    <div class="bc-stat">
+        <span>最近一次</span>
+        <strong id="bc-last-run">{{ config.last_run_at or '暂无' }}</strong>
+    </div>
+    <div class="bc-stat">
+        <span>已发布</span>
+        <strong id="bc-published-count">{{ dashboard.published_count or 0 }}</strong>
+    </div>
+</div>
+
+<div class="bc-main-grid">
+    <section class="bc-panel">
+        <h3>运行设置</h3>
+        <form id="bc-config-form">
+            <div class="bc-switch-list">
+                <label class="bc-switch">
+                    <span>每日自动运行</span>
+                    <input type="checkbox" name="enabled" {% if config.enabled %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
+                </label>
+                <label class="bc-switch">
+                    <span>自动发布</span>
+                    <input type="checkbox" name="auto_publish" {% if config.auto_publish %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
+                </label>
+                <label class="bc-switch">
+                    <span>设为精选</span>
+                    <input type="checkbox" name="featured_posts" {% if config.featured_posts %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
+                </label>
+                <label class="bc-switch">
+                    <span>抓取正文摘要</span>
+                    <input type="checkbox" name="fetch_article_pages" {% if config.fetch_article_pages %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
+                </label>
+                <label class="bc-switch">
+                    <span>保存新闻配图</span>
+                    <input type="checkbox" name="fetch_images" {% if config.fetch_images %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
+                </label>
+                <label class="bc-switch">
+                    <span>启用境外兜底源</span>
+                    <input type="checkbox" name="enable_global_search_sources" {% if config.enable_global_search_sources %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
+                </label>
+            </div>
+
+            <div class="bc-form-grid">
+                <label class="form-group">
+                    <span class="form-label">随机窗口开始</span>
+                    <input class="form-control" type="time" name="schedule_window_start" value="{{ config.schedule_window_start }}" {% if not can_manage %}disabled{% endif %}>
+                </label>
+                <label class="form-group">
+                    <span class="form-label">随机窗口结束</span>
+                    <input class="form-control" type="time" name="schedule_window_end" value="{{ config.schedule_window_end }}" {% if not can_manage %}disabled{% endif %}>
+                </label>
+                <label class="form-group">
+                    <span class="form-label">关键词数量</span>
+                    <input class="form-control" type="number" min="1" max="50" name="max_keywords" value="{{ config.max_keywords }}" {% if not can_manage %}disabled{% endif %}>
+                </label>
+                <label class="form-group">
+                    <span class="form-label">每词搜索条数</span>
+                    <input class="form-control" type="number" min="5" max="50" name="search_limit_per_keyword" value="{{ config.search_limit_per_keyword }}" {% if not can_manage %}disabled{% endif %}>
+                </label>
+                <label class="form-group">
+                    <span class="form-label">每次发文数</span>
+                    <input class="form-control" type="number" min="1" max="8" name="max_posts_per_run" value="{{ config.max_posts_per_run }}" {% if not can_manage %}disabled{% endif %}>
+                </label>
+                <label class="form-group">
+                    <span class="form-label">正文抓取上限</span>
+                    <input class="form-control" type="number" min="0" max="80" name="article_fetch_limit" value="{{ config.article_fetch_limit }}" {% if not can_manage %}disabled{% endif %}>
+                </label>
+                <label class="form-group">
+                    <span class="form-label">最小间隔秒</span>
+                    <input class="form-control" type="number" min="0.5" max="30" step="0.5" name="min_request_interval_seconds" value="{{ config.min_request_interval_seconds }}" {% if not can_manage %}disabled{% endif %}>
+                </label>
+                <label class="form-group">
+                    <span class="form-label">最大间隔秒</span>
+                    <input class="form-control" type="number" min="0.5" max="60" step="0.5" name="max_request_interval_seconds" value="{{ config.max_request_interval_seconds }}" {% if not can_manage %}disabled{% endif %}>
+                </label>
+            </div>
+
+            <label class="form-group">
+                <span class="form-label">补充关键词</span>
+                <textarea class="form-control" name="extra_keywords" rows="3" {% if not can_manage %}disabled{% endif %}>{{ (config.extra_keywords or []) | join('\n') }}</textarea>
+            </label>
+            <label class="form-group">
+                <span class="form-label">自定义信息源</span>
+                <textarea class="form-control" name="source_templates" rows="4" placeholder="名称 | https://example.com/rss.xml | fixed_rss | match&#10;课程搜索 | https://example.com/rss?q={{ '{{keyword_q}}' }} | keyword_rss | all" {% if not can_manage %}disabled{% endif %}>{{ config.custom_source_template_text or '' }}</textarea>
+            </label>
+            <label class="form-group">
+                <span class="form-label">跳过域名</span>
+                <textarea class="form-control" name="blocked_domains" rows="3" {% if not can_manage %}disabled{% endif %}>{{ (config.blocked_domains or []) | join('\n') }}</textarea>
+            </label>
+            <button type="submit" class="btn btn-primary" {% if not can_manage %}disabled{% endif %}>保存设置</button>
+            {% if not can_manage %}
+            <p class="bc-muted" style="margin-top: var(--spacing-sm);">当前账号可查看状态，调整设置需要超管教师权限。</p>
+            {% endif %}
+        </form>
+    </section>
+
+    <aside class="bc-panel">
+        <h3>课程关键词</h3>
+        <div class="bc-keywords" id="bc-keywords">
+            {% for item in dashboard.keywords %}
+            <span class="bc-chip">{{ item.keyword }}</span>
+            {% endfor %}
+            {% if not dashboard.keywords %}
+            <span class="bc-muted">暂无课程关键词</span>
+            {% endif %}
+        </div>
+        <h3 style="margin-top: var(--spacing-xl);">信息源</h3>
+        <div class="bc-keywords" id="bc-sources">
+            {% for source in dashboard.sources %}
+            <span class="bc-chip">{{ source.name }}</span>
+            {% endfor %}
+            {% if not dashboard.sources %}
+            <span class="bc-muted">暂无可用信息源</span>
+            {% endif %}
+        </div>
+        <h3 style="margin-top: var(--spacing-xl);">最近发布</h3>
+        <div class="bc-post-list" id="bc-post-list">
+            {% for post in dashboard.recent_posts %}
+            <article class="bc-post">
+                <strong>{{ post.post_title }}</strong>
+                <div class="bc-muted">{{ post.keyword }} · {{ post.post_created_at }}</div>
+                <a href="/blog?post={{ post.post_id }}" target="_blank" rel="noopener noreferrer">打开博客</a>
+            </article>
+            {% endfor %}
+            {% if not dashboard.recent_posts %}
+            <p class="bc-muted">暂无 AI 管家发布记录。</p>
+            {% endif %}
+        </div>
+    </aside>
+</div>
+
+<section class="bc-panel" style="margin-top: var(--spacing-lg);">
+    <h3>运行记录</h3>
+    <div class="bc-table-wrap">
+        <table class="bc-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>状态</th>
+                    <th>候选</th>
+                    <th>重复</th>
+                    <th>发布</th>
+                    <th>开始</th>
+                    <th>结束</th>
+                </tr>
+            </thead>
+            <tbody id="bc-run-table">
+                {% for run in dashboard.recent_runs %}
+                <tr>
+                    <td>{{ run.id }}</td>
+                    <td>{{ run.status }}</td>
+                    <td>{{ run.new_candidate_count }} / {{ run.candidate_count }}</td>
+                    <td>{{ run.duplicate_count }}</td>
+                    <td>{{ run.published_count }}</td>
+                    <td>{{ run.started_at or run.scheduled_for or run.created_at }}</td>
+                    <td>{{ run.finished_at or '-' }}</td>
+                </tr>
+                {% endfor %}
+                {% if not dashboard.recent_runs %}
+                <tr><td colspan="7" class="bc-muted">暂无运行记录。</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    window.BLOG_CRAWLER_DASHBOARD = {{ crawler_dashboard | tojson }};
+    window.BLOG_CRAWLER_CAN_MANAGE = {{ current_teacher_is_super_admin | tojson }};
+</script>
+<script type="module" src="/static/js/manage_blog_crawler.js"></script>
+{% endblock %}
