@@ -1,5 +1,5 @@
 import { formatDate, showMessage } from '/static/js/ui.js';
-import { initSemesterCalendar } from '/static/js/semester_calendar.js?v=dashboard-todo-gantt-20260504';
+import { initSemesterCalendar } from '/static/js/semester_calendar.js?v=dashboard-todo-focus-20260507';
 
 const root = document.querySelector('[data-dashboard-root]');
 
