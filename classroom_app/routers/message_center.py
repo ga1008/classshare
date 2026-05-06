@@ -21,6 +21,7 @@ from ..services.message_center_service import (
     list_private_message_blocks,
     list_private_message_contacts,
     mark_message_center_items_read,
+    open_message_center_notification,
     process_private_ai_reply_job,
     remove_private_message_block,
     send_private_message_and_maybe_reply,
@@ -115,6 +116,20 @@ def api_message_center_items(
             "status": "success",
             "items": items,
         }
+
+
+@router.get("/message-center/notifications/{notification_id}/open")
+def open_notification_detail(notification_id: int, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        try:
+            item = open_message_center_notification(conn, user, notification_id)
+            conn.commit()
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    target_url = str(item.get("link_url") or "").strip() or "/profile?section=notifications"
+    if target_url.startswith("/message-center/notifications/"):
+        target_url = "/profile?section=notifications"
+    return RedirectResponse(url=target_url, status_code=303)
 
 
 @router.post("/api/message-center/read", response_class=JSONResponse)

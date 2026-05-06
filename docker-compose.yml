@@ -71,6 +71,22 @@ services:
       retries: 5
       start_period: 20s
 
+  mailer:
+    <<: *lanshare-service
+    command: ["mailer"]
+    environment:
+      EMAIL_WORKER_ID: mailer-compose
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - from classroom_app.services.email_notification_service import email_worker_health_snapshot; import sys; snapshot=email_worker_health_snapshot(); sys.exit(0 if snapshot.get('ok') else 1)
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped

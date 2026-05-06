@@ -2084,6 +2084,7 @@ def init_database():
                              recipient_role TEXT NOT NULL,
                              recipient_user_pk INTEGER NOT NULL,
                              category TEXT NOT NULL,
+                             severity TEXT NOT NULL DEFAULT 'normal',
                              actor_identity TEXT DEFAULT '',
                              actor_role TEXT DEFAULT '',
                              actor_user_pk INTEGER,
@@ -2095,11 +2096,37 @@ def init_database():
                              ref_type TEXT DEFAULT '',
                              ref_id TEXT DEFAULT '',
                              metadata_json TEXT DEFAULT '{}',
+                             email_status TEXT NOT NULL DEFAULT 'not_required',
+                             email_job_id INTEGER,
+                             email_queued_at TEXT,
+                             email_sent_at TEXT,
                              read_at TEXT,
                              created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                              FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL
                          )
                          ''')
+            for column_name, column_def in {
+                "severity": "TEXT NOT NULL DEFAULT 'normal'",
+                "email_status": "TEXT NOT NULL DEFAULT 'not_required'",
+                "email_job_id": "INTEGER",
+                "email_queued_at": "TEXT",
+                "email_sent_at": "TEXT",
+            }.items():
+                try:
+                    conn.execute(f"ALTER TABLE message_center_notifications ADD COLUMN {column_name} {column_def}")
+                except sqlite3.OperationalError:
+                    pass
+            conn.execute(
+                """
+                UPDATE message_center_notifications
+                SET severity = CASE
+                    WHEN category IN ('assignment', 'discussion_mention', 'submission', 'grading_result', 'learning_progress') THEN 'important'
+                    WHEN category IN ('ai_feedback', 'app_feedback', 'password_reset_request') THEN 'system'
+                    ELSE 'normal'
+                END
+                WHERE severity IS NULL OR severity = ''
+                """
+            )
 
             # 13.10 绉佷俊浼氳瘽
             conn.execute('''
@@ -2185,6 +2212,109 @@ def init_database():
                          )
                          ''')
 
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS teacher_email_configs
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             teacher_id INTEGER NOT NULL,
+                             label TEXT NOT NULL DEFAULT '默认邮箱',
+                             provider TEXT DEFAULT '',
+                             smtp_host TEXT NOT NULL,
+                             smtp_port INTEGER NOT NULL DEFAULT 465,
+                             smtp_security TEXT NOT NULL DEFAULT 'ssl',
+                             smtp_username TEXT DEFAULT '',
+                             smtp_password_encrypted TEXT DEFAULT '',
+                             from_email TEXT NOT NULL,
+                             from_name TEXT DEFAULT '',
+                             imap_host TEXT DEFAULT '',
+                             imap_port INTEGER NOT NULL DEFAULT 993,
+                             imap_security TEXT NOT NULL DEFAULT 'ssl',
+                             imap_username TEXT DEFAULT '',
+                             imap_password_encrypted TEXT DEFAULT '',
+                             enabled INTEGER NOT NULL DEFAULT 1,
+                             is_default INTEGER NOT NULL DEFAULT 0,
+                             per_minute_limit INTEGER NOT NULL DEFAULT 25,
+                             daily_limit INTEGER NOT NULL DEFAULT 300,
+                             last_status TEXT NOT NULL DEFAULT 'unchecked',
+                             last_status_at TEXT,
+                             last_error TEXT DEFAULT '',
+                             sent_success_count INTEGER NOT NULL DEFAULT 0,
+                             sent_failure_count INTEGER NOT NULL DEFAULT 0,
+                             last_sent_at TEXT,
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE
+                         )
+                         ''')
+            for column_name, column_def in {
+                "provider": "TEXT DEFAULT ''",
+                "imap_host": "TEXT DEFAULT ''",
+                "imap_port": "INTEGER NOT NULL DEFAULT 993",
+                "imap_security": "TEXT NOT NULL DEFAULT 'ssl'",
+                "imap_username": "TEXT DEFAULT ''",
+                "imap_password_encrypted": "TEXT DEFAULT ''",
+                "enabled": "INTEGER NOT NULL DEFAULT 1",
+                "is_default": "INTEGER NOT NULL DEFAULT 0",
+                "per_minute_limit": "INTEGER NOT NULL DEFAULT 25",
+                "daily_limit": "INTEGER NOT NULL DEFAULT 300",
+                "last_status": "TEXT NOT NULL DEFAULT 'unchecked'",
+                "last_status_at": "TEXT",
+                "last_error": "TEXT DEFAULT ''",
+                "sent_success_count": "INTEGER NOT NULL DEFAULT 0",
+                "sent_failure_count": "INTEGER NOT NULL DEFAULT 0",
+                "last_sent_at": "TEXT",
+            }.items():
+                try:
+                    conn.execute(f"ALTER TABLE teacher_email_configs ADD COLUMN {column_name} {column_def}")
+                except sqlite3.OperationalError:
+                    pass
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS email_outbox
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             config_id INTEGER,
+                             teacher_id INTEGER NOT NULL,
+                             notification_id INTEGER,
+                             dedupe_key TEXT NOT NULL UNIQUE,
+                             recipient_identity TEXT NOT NULL,
+                             recipient_role TEXT NOT NULL,
+                             recipient_user_pk INTEGER NOT NULL,
+                             recipient_email TEXT NOT NULL,
+                             subject TEXT NOT NULL,
+                             body_text TEXT NOT NULL,
+                             body_html TEXT DEFAULT '',
+                             category TEXT NOT NULL DEFAULT '',
+                             severity TEXT NOT NULL DEFAULT 'important',
+                             status TEXT NOT NULL DEFAULT 'queued',
+                             attempt_count INTEGER NOT NULL DEFAULT 0,
+                             next_attempt_at TEXT,
+                             locked_at TEXT,
+                             sent_at TEXT,
+                             last_error TEXT DEFAULT '',
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (config_id) REFERENCES teacher_email_configs (id) ON DELETE SET NULL,
+                             FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                             FOREIGN KEY (notification_id) REFERENCES message_center_notifications (id) ON DELETE SET NULL
+                         )
+                         ''')
+            try:
+                conn.execute("ALTER TABLE email_outbox ADD COLUMN body_html TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS email_worker_heartbeats
+                         (
+                             worker_id TEXT PRIMARY KEY,
+                             status TEXT NOT NULL DEFAULT 'starting',
+                             queue_depth INTEGER NOT NULL DEFAULT 0,
+                             last_error TEXT DEFAULT '',
+                             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                         )
+                         ''')
+
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_message_center_notifications_recipient_created "
                 "ON message_center_notifications (recipient_role, recipient_user_pk, created_at DESC, id DESC)"
@@ -2200,6 +2330,10 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_message_center_notifications_unread "
                 "ON message_center_notifications (recipient_role, recipient_user_pk, read_at, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_message_center_notifications_severity "
+                "ON message_center_notifications (recipient_role, recipient_user_pk, severity, read_at, created_at DESC, id DESC)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_private_messages_conversation_time "
@@ -2228,6 +2362,22 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_private_message_ai_jobs_status "
                 "ON private_message_ai_jobs (status, created_at ASC, id ASC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_email_configs_teacher "
+                "ON teacher_email_configs (teacher_id, enabled, is_default, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_email_outbox_due "
+                "ON email_outbox (status, next_attempt_at, created_at ASC, id ASC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_email_outbox_config_status "
+                "ON email_outbox (config_id, status, sent_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_email_outbox_teacher_sent "
+                "ON email_outbox (teacher_id, status, sent_at DESC, id DESC)"
             )
 
             # 14. 试卷库

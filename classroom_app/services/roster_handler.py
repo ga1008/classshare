@@ -31,8 +31,13 @@ def parse_excel_to_students(excel_path: Path) -> list[Any] | None:
             "性别": "gender",
             "邮箱": "email",
             "电子邮箱": "email",
+            "邮箱地址": "email",
+            "email": "email",
+            "e-mail": "email",
+            "mail": "email",
             "手机号": "phone",
             "手机号码": "phone",
+            "phone": "phone",
         }
 
         found_student_id = False
@@ -41,15 +46,18 @@ def parse_excel_to_students(excel_path: Path) -> list[Any] | None:
         parsed_cols = {}
 
         for col in df.columns:
-            if "学号" in col:
+            col_text = str(col).strip()
+            col_lower = col_text.lower()
+            if "学号" in col_text or "student_id" in col_lower or "student id" in col_lower:
                 parsed_cols["student_id_number"] = col
                 found_student_id = True
-            elif "姓名" in col:
+            elif "姓名" in col_text or col_lower in {"name", "student_name", "student name"}:
                 parsed_cols["name"] = col
                 found_name = True
             else:
                 for key, val in column_map.items():
-                    if key in col:
+                    key_lower = str(key).lower()
+                    if key in col_text or key_lower in col_lower:
                         parsed_cols[val] = col
                         break
 
@@ -57,14 +65,19 @@ def parse_excel_to_students(excel_path: Path) -> list[Any] | None:
             raise ValueError("Excel文件必须包含 '学号' 和 '姓名' 两列。")
 
         # 转换为字典列表
+        def cell_text(value: Any) -> str:
+            if pd.isna(value):
+                return ""
+            return str(value).strip()
+
         students = []
         for _, row in df.iterrows():
             student_data = {
-                "student_id_number": str(row[parsed_cols["student_id_number"]]).strip(),
-                "name": str(row[parsed_cols["name"]]).strip(),
-                "gender": str(row.get(parsed_cols.get("gender"), "")).strip(),
-                "email": str(row.get(parsed_cols.get("email"), "")).strip(),
-                "phone": str(row.get(parsed_cols.get("phone"), "")).strip(),
+                "student_id_number": cell_text(row[parsed_cols["student_id_number"]]),
+                "name": cell_text(row[parsed_cols["name"]]),
+                "gender": cell_text(row.get(parsed_cols.get("gender"), "")),
+                "email": cell_text(row.get(parsed_cols.get("email"), "")),
+                "phone": cell_text(row.get(parsed_cols.get("phone"), "")),
             }
             if student_data["student_id_number"] and student_data["name"]:
                 students.append(student_data)

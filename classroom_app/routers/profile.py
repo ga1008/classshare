@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from ..core import templates
 from ..database import get_db_connection
-from ..dependencies import get_current_user, get_password_hash, verify_password
+from ..dependencies import get_current_teacher, get_current_user, get_password_hash, verify_password
 from ..services.emoji_service import get_custom_emoji_path, validate_and_store_custom_emoji
 from ..services.profile_service import (
     build_profile_page_context,
@@ -20,6 +20,13 @@ from ..services.profile_service import (
     update_basic_profile,
     update_profile_avatar,
     update_profile_mood,
+)
+from ..services.email_notification_service import (
+    create_teacher_email_config,
+    delete_teacher_email_config,
+    list_teacher_email_configs,
+    test_teacher_email_config,
+    update_teacher_email_config,
 )
 from ..services.student_auth_service import get_student_auth_record_by_pk, validate_student_password
 
@@ -137,6 +144,98 @@ def api_profile_bootstrap(section: str = "overview", user: dict = Depends(get_cu
             "status": "success",
             **build_profile_page_context(conn, user, section),
         }
+
+
+@router.get("/api/profile/email-configs", response_class=JSONResponse)
+def api_list_teacher_email_configs(user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        return {
+            "status": "success",
+            "configs": list_teacher_email_configs(conn, int(user["id"])),
+        }
+
+
+@router.post("/api/profile/email-configs", response_class=JSONResponse)
+async def api_create_teacher_email_config(request: Request, user: dict = Depends(get_current_teacher)):
+    data = await request.json()
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="邮箱配置格式不正确。")
+    with get_db_connection() as conn:
+        try:
+            config = create_teacher_email_config(conn, int(user["id"]), data)
+            configs = list_teacher_email_configs(conn, int(user["id"]))
+            conn.commit()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "status": "success",
+        "message": "邮箱配置已保存。",
+        "config": config,
+        "configs": configs,
+    }
+
+
+@router.put("/api/profile/email-configs/{config_id}", response_class=JSONResponse)
+async def api_update_teacher_email_config(
+    config_id: int,
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    data = await request.json()
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="邮箱配置格式不正确。")
+    with get_db_connection() as conn:
+        try:
+            config = update_teacher_email_config(conn, int(user["id"]), config_id, data)
+            configs = list_teacher_email_configs(conn, int(user["id"]))
+            conn.commit()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "status": "success",
+        "message": "邮箱配置已更新。",
+        "config": config,
+        "configs": configs,
+    }
+
+
+@router.delete("/api/profile/email-configs/{config_id}", response_class=JSONResponse)
+def api_delete_teacher_email_config(config_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        try:
+            removed_count = delete_teacher_email_config(conn, int(user["id"]), config_id)
+            configs = list_teacher_email_configs(conn, int(user["id"]))
+            conn.commit()
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "status": "success",
+        "message": "邮箱配置已删除。",
+        "removed_count": removed_count,
+        "configs": configs,
+    }
+
+
+@router.post("/api/profile/email-configs/{config_id}/test", response_class=JSONResponse)
+async def api_test_teacher_email_config(
+    config_id: int,
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    data = await request.json()
+    mode = str(data.get("mode") if isinstance(data, dict) else "smtp").strip() or "smtp"
+    with get_db_connection() as conn:
+        try:
+            result = test_teacher_email_config(conn, int(user["id"]), config_id, mode=mode)
+            configs = list_teacher_email_configs(conn, int(user["id"]))
+            conn.commit()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "status": "success" if result["status"] == "ok" else "failed",
+        "result": result,
+        "configs": configs,
+    }
 
 
 @router.put("/api/profile/basic", response_class=JSONResponse)
