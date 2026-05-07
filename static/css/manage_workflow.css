@@ -834,13 +834,83 @@
     align-items: center;
 }
 
+.workflow-stage-carousel {
+    position: relative;
+}
+
 .workflow-stage-rail {
     padding: 2px 0 14px;
 }
 
+.workflow-stage-carousel .workflow-stage-rail::before,
+.workflow-stage-carousel .workflow-stage-rail::after {
+    content: none;
+    display: none;
+}
+
 .workflow-stage-track {
     gap: 12px;
-    padding: 10px 6px 18px;
+    padding: 10px 3.35rem 18px;
+}
+
+.workflow-rail-nav {
+    position: absolute;
+    top: calc(50% - 4px);
+    z-index: 6;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.35rem;
+    height: 2.35rem;
+    padding: 0;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.94);
+    color: #0f172a;
+    box-shadow: 0 16px 34px -24px rgba(15, 23, 42, 0.72);
+    cursor: pointer;
+    transform: translateY(-50%);
+    transition:
+        opacity 160ms ease,
+        border-color 160ms ease,
+        box-shadow 160ms ease,
+        transform 160ms ease;
+}
+
+.workflow-rail-nav span {
+    display: block;
+    margin-top: -0.08rem;
+    font-size: 1.85rem;
+    font-weight: 300;
+    line-height: 1;
+}
+
+.workflow-rail-nav.is-prev {
+    left: 0.42rem;
+}
+
+.workflow-rail-nav.is-next {
+    right: 0.42rem;
+}
+
+.workflow-rail-nav:hover:not(:disabled),
+.workflow-rail-nav:focus-visible {
+    border-color: rgba(15, 118, 110, 0.28);
+    box-shadow: 0 18px 38px -24px rgba(15, 118, 110, 0.66);
+    transform: translateY(-50%) scale(1.04);
+}
+
+.workflow-rail-nav:focus-visible {
+    outline: none;
+    box-shadow:
+        0 0 0 4px rgba(20, 184, 166, 0.14),
+        0 18px 38px -24px rgba(15, 118, 110, 0.66);
+}
+
+.workflow-rail-nav:disabled {
+    opacity: 0.34;
+    cursor: default;
+    box-shadow: none;
 }
 
 .workflow-step-arrow {
@@ -1090,6 +1160,27 @@
 }
 
 @media (max-width: 560px) {
+    .workflow-stage-track {
+        padding-inline: 2.65rem;
+    }
+
+    .workflow-rail-nav {
+        width: 2rem;
+        height: 2rem;
+    }
+
+    .workflow-rail-nav span {
+        font-size: 1.58rem;
+    }
+
+    .workflow-rail-nav.is-prev {
+        left: 0.22rem;
+    }
+
+    .workflow-rail-nav.is-next {
+        right: 0.22rem;
+    }
+
     .workflow-step {
         flex-basis: min(78vw, 14rem);
         min-width: min(78vw, 14rem);
