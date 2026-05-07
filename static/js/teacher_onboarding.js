@@ -233,6 +233,7 @@ if (modal && openButtons.length > 0) {
     function renderHistory() {
         if (!elements.history) return;
         const chips = steps.slice(0, state.activeIndex).filter((step) => step.key !== 'success');
+        elements.history.closest('.teacher-onboarding-welcome-area')?.classList.toggle('has-history', chips.length > 0);
         elements.history.innerHTML = chips.map((step) => (
             `<span class="teacher-onboarding-history-chip">${escapeHtml(step.label)}</span>`
         )).join('');
