@@ -1653,6 +1653,7 @@ def is_super_admin_teacher(conn, teacher_id: int | str | None) -> bool:
         SELECT 1
         FROM teachers
         WHERE id = ?
+          AND COALESCE(is_active, 1) = 1
           AND COALESCE(is_super_admin, 0) = 1
         LIMIT 1
         """,
@@ -1667,6 +1668,7 @@ def list_super_admin_teachers(conn) -> list[dict[str, Any]]:
         SELECT id, name, email
         FROM teachers
         WHERE COALESCE(is_super_admin, 0) = 1
+          AND COALESCE(is_active, 1) = 1
         ORDER BY id ASC
         """
     ).fetchall()
@@ -1753,6 +1755,7 @@ def create_password_reset_request_notification(conn, request_id: int | str) -> i
         FROM student_password_reset_requests r
         JOIN teachers t ON t.id = r.teacher_id
         WHERE r.id = ?
+          AND COALESCE(t.is_active, 1) = 1
         LIMIT 1
         """,
         (request_id,),

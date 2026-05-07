@@ -29,6 +29,7 @@ from ..services.email_notification_service import (
     update_teacher_email_config,
 )
 from ..services.student_auth_service import get_student_auth_record_by_pk, validate_student_password
+from ..services.teacher_account_service import TEACHER_PASSWORD_HINT, validate_teacher_password
 
 router = APIRouter()
 
@@ -368,8 +369,10 @@ async def api_change_profile_password(request: Request, user: dict = Depends(get
                 (get_password_hash(new_password), now_value, user_id),
             )
         else:
-            if len(new_password) < 6:
-                raise HTTPException(status_code=400, detail="教师密码至少需要 6 位。")
+            try:
+                validate_teacher_password(new_password)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc) or TEACHER_PASSWORD_HINT) from exc
             teacher_row = conn.execute(
                 "SELECT id, hashed_password FROM teachers WHERE id = ? LIMIT 1",
                 (user_id,),

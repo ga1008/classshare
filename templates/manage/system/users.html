@@ -1,0 +1,704 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}用户管理{% endblock %}
+
+{% block header_actions %}
+<a class="btn btn-outline btn-sm" href="/manage/system/password-resets">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+    找回申请
+</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    .um-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+        gap: var(--spacing-lg);
+        align-items: stretch;
+    }
+
+    .um-hero-main,
+    .um-create-card,
+    .um-panel {
+        min-width: 0;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .um-hero-main {
+        padding: var(--spacing-xl);
+        display: flex;
+        gap: var(--spacing-lg);
+        align-items: flex-start;
+    }
+
+    .um-hero-main > div:last-child {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .um-hero-icon {
+        width: 56px;
+        height: 56px;
+        border-radius: var(--radius-lg);
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.16), rgba(14, 165, 233, 0.12));
+        color: var(--success-dark);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+    }
+
+    .um-hero-main h2,
+    .um-create-card h3,
+    .um-panel h3 {
+        margin: 0;
+        font-size: 1.12rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .um-hero-main p {
+        margin: var(--spacing-sm) 0 0;
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        line-height: 1.7;
+        overflow-wrap: anywhere;
+    }
+
+    .um-seed-note {
+        margin-top: var(--spacing-md);
+        display: inline-flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        max-width: 100%;
+        padding: 8px 12px;
+        border: 1px solid rgba(16, 185, 129, 0.18);
+        border-radius: var(--radius-md);
+        background: rgba(16, 185, 129, 0.08);
+        color: #047857;
+        font-size: 0.82rem;
+        overflow-wrap: anywhere;
+    }
+
+    .um-summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-lg);
+    }
+
+    .um-summary-item {
+        padding: var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        background: rgba(248, 250, 252, 0.82);
+    }
+
+    .um-summary-item span {
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        margin-bottom: 4px;
+    }
+
+    .um-summary-item strong {
+        color: var(--text-primary);
+        font-size: 1.25rem;
+    }
+
+    .um-create-card {
+        padding: var(--spacing-lg);
+    }
+
+    .um-create-card form {
+        display: grid;
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-md);
+    }
+
+    .um-create-card .form-group {
+        margin-bottom: 0;
+    }
+
+    .um-toolbar {
+        display: flex;
+        gap: var(--spacing-md);
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        margin-bottom: var(--spacing-md);
+    }
+
+    .um-search {
+        min-width: min(100%, 360px);
+        flex: 1 1 300px;
+    }
+
+    .um-filter {
+        max-width: 180px;
+    }
+
+    .um-panel {
+        padding: var(--spacing-lg);
+    }
+
+    .um-table-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        overflow-wrap: anywhere;
+    }
+
+    .um-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 9px;
+        border-radius: var(--radius-full);
+        font-size: 0.75rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .um-badge.is-super {
+        color: #047857;
+        background: rgba(16, 185, 129, 0.1);
+    }
+
+    .um-badge.is-normal {
+        color: var(--text-secondary);
+        background: rgba(148, 163, 184, 0.14);
+    }
+
+    .um-badge.is-inactive {
+        color: #991b1b;
+        background: rgba(239, 68, 68, 0.11);
+    }
+
+    .um-actions {
+        display: flex;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 6px;
+        min-width: 260px;
+    }
+
+    .um-actions .btn {
+        min-height: 34px;
+    }
+
+    .um-empty {
+        padding: var(--spacing-xl);
+        text-align: center;
+        color: var(--text-muted);
+        display: none;
+    }
+
+    .um-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: var(--spacing-lg);
+        background: rgba(15, 23, 42, 0.35);
+        backdrop-filter: blur(6px);
+    }
+
+    .um-modal-backdrop[hidden] {
+        display: none;
+    }
+
+    .um-modal {
+        width: min(100%, 560px);
+        max-height: min(86vh, 760px);
+        overflow: auto;
+        border-radius: var(--radius-lg);
+        background: #fff;
+        border: 1px solid var(--border-color);
+        box-shadow: var(--shadow-xl);
+    }
+
+    .um-modal-header,
+    .um-modal-body,
+    .um-modal-footer {
+        padding: var(--spacing-lg);
+    }
+
+    .um-modal-header {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        align-items: flex-start;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .um-modal-header h3 {
+        margin: 0;
+        font-size: 1.05rem;
+    }
+
+    .um-modal-body {
+        display: grid;
+        gap: var(--spacing-md);
+    }
+
+    .um-modal-body .form-group {
+        margin-bottom: 0;
+    }
+
+    .um-modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--spacing-sm);
+        border-top: 1px solid var(--border-color);
+    }
+
+    @media (max-width: 960px) {
+        .um-hero,
+        .um-summary {
+            grid-template-columns: 1fr;
+        }
+
+        .um-actions {
+            justify-content: flex-start;
+            min-width: 0;
+        }
+    }
+
+    @media (max-width: 640px) {
+        .um-hero-main {
+            flex-direction: column;
+        }
+
+        .um-toolbar {
+            align-items: stretch;
+        }
+
+        .um-search,
+        .um-filter {
+            max-width: none;
+            width: 100%;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="um-hero">
+    <section class="um-hero-main">
+        <div class="um-hero-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 11h-6"></path><path d="M19 8v6"></path></svg>
+        </div>
+        <div>
+            <h2>教师账号与超管授权</h2>
+            <p>教师账号由超管统一创建。删除账号会停用登录并清理会话，课程、班级、材料和历史记录继续保留。</p>
+            <div class="um-seed-note">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+                初始超管：{{ initial_super_admin_name }}（{{ initial_super_admin_email }}）
+            </div>
+            <div class="um-summary">
+                <div class="um-summary-item"><span>教师账号</span><strong>{{ teacher_account_summary.total_count or 0 }}</strong></div>
+                <div class="um-summary-item"><span>启用中</span><strong>{{ teacher_account_summary.active_count or 0 }}</strong></div>
+                <div class="um-summary-item"><span>超管</span><strong>{{ teacher_account_summary.super_admin_count or 0 }}</strong></div>
+                <div class="um-summary-item"><span>已停用</span><strong>{{ teacher_account_summary.inactive_count or 0 }}</strong></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="um-create-card">
+        <h3>新增教师</h3>
+        <form id="teacher-create-form">
+            <div class="form-group">
+                <label class="form-label required" for="create-name">姓名</label>
+                <input class="form-control" id="create-name" name="name" type="text" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label required" for="create-email">邮箱</label>
+                <input class="form-control" id="create-email" name="email" type="email" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label required" for="create-password">初始密码</label>
+                <input class="form-control" id="create-password" name="password" type="password" minlength="8" required placeholder="{{ teacher_password_hint }}">
+            </div>
+            <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="is_super_admin" value="1">
+                <span>同时授予超管权限</span>
+            </label>
+            <button class="btn btn-success" type="submit">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                创建教师
+            </button>
+        </form>
+    </section>
+</div>
+
+<section class="um-panel">
+    <div class="um-toolbar">
+        <h3>教师列表</h3>
+        <div class="flex gap-2 flex-wrap">
+            <input class="form-control um-search" id="teacher-search" type="search" placeholder="搜索姓名、邮箱、联系方式">
+            <select class="form-control um-filter" id="teacher-status-filter">
+                <option value="all">全部状态</option>
+                <option value="active">启用中</option>
+                <option value="super">超管</option>
+                <option value="inactive">已停用</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>教师</th>
+                    <th>权限</th>
+                    <th>教学数据</th>
+                    <th>账号状态</th>
+                    <th class="text-right">操作</th>
+                </tr>
+            </thead>
+            <tbody id="teacher-table-body">
+                {% for teacher in teacher_accounts %}
+                <tr
+                    data-teacher-row
+                    data-id="{{ teacher.id }}"
+                    data-name="{{ teacher.name|e }}"
+                    data-email="{{ teacher.email|e }}"
+                    data-phone="{{ teacher.phone|e }}"
+                    data-wechat="{{ teacher.wechat|e }}"
+                    data-qq="{{ teacher.qq|e }}"
+                    data-homepage-url="{{ teacher.homepage_url|e }}"
+                    data-description="{{ teacher.description|e }}"
+                    data-active="{{ 1 if teacher.is_active else 0 }}"
+                    data-super="{{ 1 if teacher.is_super_admin else 0 }}"
+                    data-search="{{ (teacher.name ~ ' ' ~ teacher.email ~ ' ' ~ teacher.phone ~ ' ' ~ teacher.wechat ~ ' ' ~ teacher.qq)|lower|e }}"
+                >
+                    <td>
+                        <strong>{{ teacher.name }}</strong>
+                        <div class="text-muted text-sm">{{ teacher.email }}</div>
+                        <div class="um-table-meta">
+                            {% if teacher.phone %}<span>{{ teacher.phone }}</span>{% endif %}
+                            {% if teacher.wechat %}<span>微信 {{ teacher.wechat }}</span>{% endif %}
+                            {% if teacher.qq %}<span>QQ {{ teacher.qq }}</span>{% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        {% if teacher.is_super_admin %}
+                        <span class="um-badge is-super">超管</span>
+                        {% else %}
+                        <span class="um-badge is-normal">普通教师</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="um-table-meta">
+                            <span>班级 {{ teacher.class_count }}</span>
+                            <span>课程 {{ teacher.course_count }}</span>
+                            <span>课堂 {{ teacher.offering_count }}</span>
+                            <span>材料 {{ teacher.material_count }}</span>
+                            <span>找回待审 {{ teacher.pending_reset_count }}</span>
+                        </div>
+                    </td>
+                    <td>
+                        {% if teacher.is_active %}
+                        <span class="um-badge is-super">启用中</span>
+                        {% else %}
+                        <span class="um-badge is-inactive">已停用</span>
+                        {% endif %}
+                        <div class="text-muted text-xs mt-sm">更新 {{ teacher.updated_at or teacher.created_at }}</div>
+                    </td>
+                    <td>
+                        <div class="um-actions">
+                            <button class="btn btn-outline btn-sm" type="button" data-action="edit" {% if not teacher.is_active %}disabled{% endif %}>修改</button>
+                            <button class="btn btn-secondary btn-sm" type="button" data-action="reset" {% if not teacher.is_active %}disabled{% endif %}>重置密码</button>
+                            {% if teacher.is_super_admin %}
+                            <button class="btn btn-outline btn-sm" type="button" data-action="revoke" {% if not teacher.is_active %}disabled{% endif %}>撤销超管</button>
+                            {% else %}
+                            <button class="btn btn-outline btn-sm" type="button" data-action="grant" {% if not teacher.is_active %}disabled{% endif %}>授予超管</button>
+                            {% endif %}
+                            <button class="btn btn-danger btn-sm" type="button" data-action="delete" {% if (not teacher.is_active) or teacher.id == user_info.id %}disabled{% endif %}>删除</button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="um-empty" id="teacher-empty-state">没有匹配的教师账号。</div>
+    </div>
+</section>
+
+<div class="um-modal-backdrop" id="teacher-edit-modal" hidden>
+    <div class="um-modal" role="dialog" aria-modal="true" aria-labelledby="teacher-edit-title">
+        <form id="teacher-edit-form">
+            <div class="um-modal-header">
+                <h3 id="teacher-edit-title">修改教师资料</h3>
+                <button class="btn btn-ghost btn-icon" type="button" data-close-modal="teacher-edit-modal" aria-label="关闭">
+                    <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="um-modal-body">
+                <input type="hidden" name="teacher_id" id="edit-teacher-id">
+                <div class="form-group">
+                    <label class="form-label required" for="edit-name">姓名</label>
+                    <input class="form-control" id="edit-name" name="name" type="text" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label required" for="edit-email">邮箱</label>
+                    <input class="form-control" id="edit-email" name="email" type="email" required>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="form-group">
+                        <label class="form-label" for="edit-phone">电话</label>
+                        <input class="form-control" id="edit-phone" name="phone" type="text">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="edit-wechat">微信</label>
+                        <input class="form-control" id="edit-wechat" name="wechat" type="text">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="edit-qq">QQ</label>
+                        <input class="form-control" id="edit-qq" name="qq" type="text">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="edit-homepage-url">主页</label>
+                        <input class="form-control" id="edit-homepage-url" name="homepage_url" type="url">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-description">简介</label>
+                    <textarea class="form-control" id="edit-description" name="description" rows="3"></textarea>
+                </div>
+            </div>
+            <div class="um-modal-footer">
+                <button class="btn btn-ghost" type="button" data-close-modal="teacher-edit-modal">取消</button>
+                <button class="btn btn-success" type="submit">保存修改</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="um-modal-backdrop" id="teacher-password-modal" hidden>
+    <div class="um-modal" role="dialog" aria-modal="true" aria-labelledby="teacher-password-title">
+        <form id="teacher-password-form">
+            <div class="um-modal-header">
+                <h3 id="teacher-password-title">重置教师密码</h3>
+                <button class="btn btn-ghost btn-icon" type="button" data-close-modal="teacher-password-modal" aria-label="关闭">
+                    <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="um-modal-body">
+                <input type="hidden" id="password-teacher-id">
+                <p class="text-muted mb-0" id="password-target-label"></p>
+                <div class="form-group">
+                    <label class="form-label required" for="reset-password">新密码</label>
+                    <input class="form-control" id="reset-password" name="password" type="password" minlength="8" required placeholder="{{ teacher_password_hint }}">
+                </div>
+            </div>
+            <div class="um-modal-footer">
+                <button class="btn btn-ghost" type="button" data-close-modal="teacher-password-modal">取消</button>
+                <button class="btn btn-success" type="submit">确认重置</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+    const searchInput = document.getElementById('teacher-search');
+    const statusFilter = document.getElementById('teacher-status-filter');
+    const rows = Array.from(document.querySelectorAll('[data-teacher-row]'));
+    const emptyState = document.getElementById('teacher-empty-state');
+    const currentTeacherId = Number('{{ user_info.id }}');
+
+    const applyFilters = () => {
+        const keyword = (searchInput?.value || '').trim().toLowerCase();
+        const status = statusFilter?.value || 'all';
+        let visibleCount = 0;
+        rows.forEach((row) => {
+            const matchesKeyword = !keyword || (row.dataset.search || '').includes(keyword);
+            const isActive = row.dataset.active === '1';
+            const isSuper = row.dataset.super === '1';
+            const matchesStatus =
+                status === 'all' ||
+                (status === 'active' && isActive) ||
+                (status === 'super' && isSuper && isActive) ||
+                (status === 'inactive' && !isActive);
+            const visible = matchesKeyword && matchesStatus;
+            row.hidden = !visible;
+            if (visible) visibleCount += 1;
+        });
+        if (emptyState) emptyState.style.display = visibleCount ? 'none' : 'block';
+    };
+
+    searchInput?.addEventListener('input', applyFilters);
+    statusFilter?.addEventListener('change', applyFilters);
+    applyFilters();
+
+    const openModal = (id) => {
+        const modal = document.getElementById(id);
+        if (modal) modal.hidden = false;
+    };
+
+    const closeModal = (id) => {
+        const modal = document.getElementById(id);
+        if (modal) modal.hidden = true;
+    };
+
+    document.querySelectorAll('[data-close-modal]').forEach((button) => {
+        button.addEventListener('click', () => closeModal(button.dataset.closeModal));
+    });
+
+    document.querySelectorAll('.um-modal-backdrop').forEach((backdrop) => {
+        backdrop.addEventListener('click', (event) => {
+            if (event.target === backdrop) closeModal(backdrop.id);
+        });
+    });
+
+    const submitWithLock = async (form, callback) => {
+        const submitButton = form.querySelector('button[type="submit"]');
+        const originalText = submitButton?.innerHTML;
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.innerHTML = '处理中...';
+        }
+        try {
+            await callback();
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.innerHTML = originalText;
+            }
+        }
+    };
+
+    document.getElementById('teacher-create-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        await submitWithLock(form, async () => {
+            try {
+                const result = await window.apiFetch('/api/manage/system/teachers', {
+                    method: 'POST',
+                    body: new FormData(form),
+                });
+                showMessage(result.message || '教师账号已创建。', 'success');
+                window.setTimeout(() => window.location.reload(), 500);
+            } catch (error) {
+                showMessage(error.message || '创建教师账号失败。', 'error');
+            }
+        });
+    });
+
+    const fillEditForm = (row) => {
+        document.getElementById('edit-teacher-id').value = row.dataset.id || '';
+        document.getElementById('edit-name').value = row.dataset.name || '';
+        document.getElementById('edit-email').value = row.dataset.email || '';
+        document.getElementById('edit-phone').value = row.dataset.phone || '';
+        document.getElementById('edit-wechat').value = row.dataset.wechat || '';
+        document.getElementById('edit-qq').value = row.dataset.qq || '';
+        document.getElementById('edit-homepage-url').value = row.dataset.homepageUrl || '';
+        document.getElementById('edit-description').value = row.dataset.description || '';
+    };
+
+    document.getElementById('teacher-edit-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const teacherId = document.getElementById('edit-teacher-id').value;
+        await submitWithLock(form, async () => {
+            try {
+                const result = await window.apiFetch(`/api/manage/system/teachers/${teacherId}`, {
+                    method: 'POST',
+                    body: new FormData(form),
+                });
+                showMessage(result.message || '教师资料已更新。', 'success');
+                window.setTimeout(() => window.location.reload(), 500);
+            } catch (error) {
+                showMessage(error.message || '更新教师资料失败。', 'error');
+            }
+        });
+    });
+
+    document.getElementById('teacher-password-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const teacherId = document.getElementById('password-teacher-id').value;
+        await submitWithLock(form, async () => {
+            try {
+                const result = await window.apiFetch(`/api/manage/system/teachers/${teacherId}/reset-password`, {
+                    method: 'POST',
+                    body: new FormData(form),
+                });
+                showMessage(result.message || '教师密码已重置。', 'success');
+                window.setTimeout(() => window.location.reload(), 500);
+            } catch (error) {
+                showMessage(error.message || '重置教师密码失败。', 'error');
+            }
+        });
+    });
+
+    const runRowAction = async (row, action) => {
+        const teacherId = Number(row.dataset.id || 0);
+        const name = row.dataset.name || '该教师';
+        if (!teacherId) return;
+        if (action === 'edit') {
+            fillEditForm(row);
+            openModal('teacher-edit-modal');
+            return;
+        }
+        if (action === 'reset') {
+            document.getElementById('password-teacher-id').value = String(teacherId);
+            document.getElementById('password-target-label').textContent = `正在为 ${name} 重置登录密码。`;
+            document.getElementById('reset-password').value = '';
+            openModal('teacher-password-modal');
+            return;
+        }
+
+        const actionMap = {
+            grant: {
+                message: `确认授予 ${name} 超管权限？`,
+                url: `/api/manage/system/teachers/${teacherId}/super-admin/grant`,
+                method: 'POST',
+            },
+            revoke: {
+                message: teacherId === currentTeacherId
+                    ? `确认撤销自己的超管权限？操作后需要重新登录。`
+                    : `确认撤销 ${name} 的超管权限？`,
+                url: `/api/manage/system/teachers/${teacherId}/super-admin/revoke`,
+                method: 'POST',
+            },
+            delete: {
+                message: `确认删除 ${name} 的登录账号？历史教学数据会保留。`,
+                url: `/api/manage/system/teachers/${teacherId}`,
+                method: 'DELETE',
+            },
+        };
+        const config = actionMap[action];
+        if (!config || !window.confirm(config.message)) return;
+        try {
+            const result = await window.apiFetch(config.url, { method: config.method });
+            showMessage(result.message || '操作已完成。', 'success');
+            window.setTimeout(() => window.location.reload(), 500);
+        } catch (error) {
+            showMessage(error.message || '操作失败。', 'error');
+        }
+    };
+
+    document.getElementById('teacher-table-body')?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-action]');
+        const row = event.target.closest('[data-teacher-row]');
+        if (!button || !row || button.disabled) return;
+        runRowAction(row, button.dataset.action);
+    });
+})();
+</script>
+{% endblock %}

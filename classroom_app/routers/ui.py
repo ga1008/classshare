@@ -1,5 +1,4 @@
 from datetime import datetime
-import sqlite3
 import json
 from urllib.parse import urlencode
 
@@ -12,7 +11,8 @@ import pandas as pd
 from ..core import templates, COURSE_INFO
 # 修复：移除不再需要的 TEACHER_PASS, SHARE_DIR, ROSTER_DIR
 from ..config import (
-    TEACHER_USER,
+    INITIAL_SUPER_ADMIN_EMAIL,
+    INITIAL_SUPER_ADMIN_NAME,
     MAX_SUBMISSION_FILE_COUNT,
     MAX_UPLOAD_SIZE_MB,
     MAX_SUBMISSION_PER_FILE_MB,
@@ -91,6 +91,11 @@ from ..services.student_auth_service import (
     validate_student_password,
 )
 from ..services.submission_preview_service import ensure_submission_access, serialize_submission_file_row
+from ..services.teacher_account_service import (
+    TEACHER_PASSWORD_HINT,
+    build_teacher_account_summary,
+    list_teacher_accounts,
+)
 
 router = APIRouter()
 
@@ -248,7 +253,17 @@ async def teacher_login_page(request: Request, next: Optional[str] = None):
 
 @router.get("/teacher/register", response_class=HTMLResponse)
 async def teacher_register_page(request: Request):
-    return templates.TemplateResponse(request, "teacher_register_v4.html", {"request": request})
+    return templates.TemplateResponse(
+        request,
+        "status.html",
+        {
+            "request": request,
+            "success": False,
+            "message": "教师账号已改为由超管教师统一创建，请联系系统超管开通账号。",
+            "back_url": "/teacher/login",
+        },
+        status_code=status.HTTP_403_FORBIDDEN,
+    )
 
 
 @router.get("/auth/forbidden", response_class=HTMLResponse)
@@ -585,23 +600,18 @@ def handle_student_login(
 
 @router.post("/teacher/register")
 def handle_teacher_register(request: Request, name: str = Form(), email: str = Form(), password: str = Form()):
-    """V4.0: 教师注册"""
-    hashed_password = get_password_hash(password)
-    try:
-        with get_db_connection() as conn:
-            conn.execute(
-                "INSERT INTO teachers (name, email, hashed_password) VALUES (?, ?, ?)",
-                (name.strip(), email.strip(), hashed_password)
-            )
-            conn.commit()
-    except sqlite3.IntegrityError:  # 邮箱已存在
-        return templates.TemplateResponse(request, "status.html",
-                                          {"request": request, "success": False, "message": "注册失败：该邮箱已被使用。",
-                                           "back_url": "/teacher/register"})
-
-    return templates.TemplateResponse(request, "status.html",
-                                      {"request": request, "success": True, "message": "注册成功！请登录。",
-                                       "back_url": "/teacher/login"})
+    """教师账号只能由超管在管理中心创建。"""
+    return templates.TemplateResponse(
+        request,
+        "status.html",
+        {
+            "request": request,
+            "success": False,
+            "message": "教师账号只能由超管教师创建，请联系系统超管开通账号。",
+            "back_url": "/teacher/login",
+        },
+        status_code=status.HTTP_403_FORBIDDEN,
+    )
 
 
 @router.post("/teacher/login")
@@ -617,7 +627,16 @@ def handle_teacher_login(
     safe_next = sanitize_next_path(next, fallback="/dashboard")
 
     with get_db_connection() as conn:
-        teacher = conn.execute("SELECT * FROM teachers WHERE email = ?", (email,)).fetchone()
+        teacher = conn.execute(
+            """
+            SELECT *
+            FROM teachers
+            WHERE lower(email) = ?
+              AND COALESCE(is_active, 1) = 1
+            LIMIT 1
+            """,
+            (email.strip().lower(),),
+        ).fetchone()
 
     # 修复：使用 verify_password 验证
     if not teacher or not verify_password(password, teacher['hashed_password']):
@@ -1400,12 +1419,20 @@ def _build_manage_template_context(
     active_page: str,
     extra: dict | None = None,
 ) -> dict:
+    current_teacher_is_super_admin = False
+    if user.get("role") == "teacher":
+        try:
+            with get_db_connection() as conn:
+                current_teacher_is_super_admin = is_super_admin_teacher(conn, user.get("id"))
+        except Exception as exc:
+            print(f"[MANAGE] 超管状态读取失败: {exc}")
     context = {
         "request": request,
         "user_info": user,
         "page_title": page_title,
         "active_page": active_page,
         "embedded_mode": _is_embedded_manage_request(request),
+        "current_teacher_is_super_admin": current_teacher_is_super_admin,
     }
     if extra:
         context.update(extra)
@@ -1421,6 +1448,11 @@ def _build_manage_view_url(path: str, **params) -> str:
     if not query:
         return path
     return f"{path}?{urlencode(query)}"
+
+
+def _ensure_manage_super_admin(conn, user: dict) -> None:
+    if not is_super_admin_teacher(conn, user.get("id")):
+        raise HTTPException(status_code=403, detail="只有超管教师可以访问该系统管理页面。")
 
 
 def _build_manage_workflow_snapshot(conn, teacher_id: int) -> dict:
@@ -1747,61 +1779,51 @@ async def get_manage_ai_page(request: Request, user: dict = Depends(get_current_
 
 @router.get("/manage/system", response_class=HTMLResponse)
 async def get_manage_system_redirect(request: Request, user: dict = Depends(get_current_teacher)):
-    """重定向旧的系统管理页面到找回密码申请页。"""
+    """重定向旧的系统管理页面到当前教师可访问的系统页。"""
+    with get_db_connection() as conn:
+        if is_super_admin_teacher(conn, user["id"]):
+            return RedirectResponse(url="/manage/system/users", status_code=302)
     return RedirectResponse(url="/manage/system/password-resets", status_code=302)
+
+
+@router.get("/manage/system/users", response_class=HTMLResponse)
+async def get_manage_system_users_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """教师账号与超管授权管理页面。"""
+    with get_db_connection() as conn:
+        _ensure_manage_super_admin(conn, user)
+        teacher_accounts = list_teacher_accounts(conn)
+        teacher_account_summary = build_teacher_account_summary(conn)
+
+    return templates.TemplateResponse(
+        request,
+        "manage/system/users.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="用户管理",
+            active_page="system_users",
+            extra={
+                "teacher_accounts": teacher_accounts,
+                "teacher_account_summary": teacher_account_summary,
+                "teacher_password_hint": TEACHER_PASSWORD_HINT,
+                "initial_super_admin_email": INITIAL_SUPER_ADMIN_EMAIL,
+                "initial_super_admin_name": INITIAL_SUPER_ADMIN_NAME,
+            },
+        ),
+    )
 
 
 @router.get("/manage/system/super-admin", response_class=HTMLResponse)
 async def get_manage_system_super_admin_page(request: Request, user: dict = Depends(get_current_teacher)):
-    """超管教师与反馈接收设置页面。"""
-    with get_db_connection() as conn:
-        teacher_rows = conn.execute(
-            """
-            SELECT id, name, email, COALESCE(is_super_admin, 0) AS is_super_admin
-            FROM teachers
-            ORDER BY COALESCE(is_super_admin, 0) DESC, id ASC
-            """
-        ).fetchall()
-        super_admin_teacher = conn.execute(
-            """
-            SELECT id, name, email
-            FROM teachers
-            WHERE COALESCE(is_super_admin, 0) = 1
-            ORDER BY id ASC
-            LIMIT 1
-            """
-        ).fetchone()
-        super_admin_count = int(
-            conn.execute(
-                "SELECT COUNT(*) AS cnt FROM teachers WHERE COALESCE(is_super_admin, 0) = 1"
-            ).fetchone()["cnt"]
-            or 0
-        )
-        current_teacher_is_super_admin = is_super_admin_teacher(conn, user["id"])
-        can_manage_super_admin = current_teacher_is_super_admin or super_admin_count == 0
-
-    return templates.TemplateResponse(
-        request,
-        "manage/system/super_admin.html",
-        _build_manage_template_context(
-            request,
-            user,
-            page_title="超管与反馈接收",
-            active_page="system_super_admin",
-            extra={
-                "teacher_rows": teacher_rows,
-                "super_admin_teacher": dict(super_admin_teacher) if super_admin_teacher else None,
-                "current_teacher_is_super_admin": current_teacher_is_super_admin,
-                "can_manage_super_admin": can_manage_super_admin,
-            },
-        ),
-    )
+    """兼容旧超管设置入口，统一进入用户管理页。"""
+    return RedirectResponse(url="/manage/system/users", status_code=302)
 
 
 @router.get("/manage/system/feedback", response_class=HTMLResponse)
 async def get_manage_system_feedback_page(request: Request, user: dict = Depends(get_current_teacher)):
     """问题反馈查看页面，仅超管教师可查看完整内容。"""
     with get_db_connection() as conn:
+        _ensure_manage_super_admin(conn, user)
         current_teacher_is_super_admin = is_super_admin_teacher(conn, user["id"])
 
         feedback_items = []
@@ -1855,6 +1877,8 @@ async def get_manage_system_feedback_page(request: Request, user: dict = Depends
 @router.get("/manage/system/diagnostics", response_class=HTMLResponse)
 async def get_manage_system_diagnostics_page(request: Request, user: dict = Depends(get_current_teacher)):
     """压测与诊断页面，展示后端健康状态、运行时指标和压测工具。"""
+    with get_db_connection() as conn:
+        _ensure_manage_super_admin(conn, user)
     return templates.TemplateResponse(
         request,
         "manage/system/diagnostics.html",
@@ -1871,6 +1895,7 @@ async def get_manage_system_diagnostics_page(request: Request, user: dict = Depe
 async def get_manage_system_blog_crawler_page(request: Request, user: dict = Depends(get_current_teacher)):
     """AI blog news crawler management page."""
     with get_db_connection() as conn:
+        _ensure_manage_super_admin(conn, user)
         dashboard = load_blog_news_crawler_dashboard(conn)
         current_teacher_is_super_admin = is_super_admin_teacher(conn, user["id"])
 
@@ -1903,8 +1928,11 @@ async def get_manage_system_password_resets_page(request: Request, user: dict = 
                 SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count
             FROM student_password_reset_requests
             WHERE teacher_id = ?
+              AND class_id IN (
+                  SELECT id FROM classes WHERE created_by_teacher_id = ?
+              )
             """,
-            (user["id"],),
+            (user["id"], user["id"]),
         ).fetchone()
 
         login_summary = conn.execute(
@@ -1940,6 +1968,7 @@ async def get_manage_system_password_resets_page(request: Request, user: dict = 
             JOIN students s ON s.id = r.student_id
             JOIN classes c ON c.id = r.class_id
             WHERE r.teacher_id = ?
+              AND c.created_by_teacher_id = ?
             ORDER BY
                 CASE r.status
                     WHEN 'pending' THEN 0
@@ -1950,7 +1979,7 @@ async def get_manage_system_password_resets_page(request: Request, user: dict = 
                 r.submitted_at DESC,
                 r.id DESC
             """,
-            (user["id"],),
+            (user["id"], user["id"]),
         ).fetchall()
 
     return templates.TemplateResponse(

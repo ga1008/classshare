@@ -1,0 +1,367 @@
+from __future__ import annotations
+
+import re
+import sqlite3
+from datetime import datetime
+from typing import Any
+
+from ..dependencies import get_password_hash
+
+TEACHER_PASSWORD_MIN_LENGTH = 8
+TEACHER_PASSWORD_HINT = "密码至少 8 位。"
+
+_EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _now_iso() -> str:
+    return datetime.now().isoformat()
+
+
+def normalize_teacher_email(email: str) -> str:
+    return str(email or "").strip().lower()
+
+
+def validate_teacher_password(password: str) -> None:
+    if len(str(password or "")) < TEACHER_PASSWORD_MIN_LENGTH:
+        raise ValueError(TEACHER_PASSWORD_HINT)
+
+
+def _validate_teacher_identity(name: str, email: str) -> tuple[str, str]:
+    normalized_name = " ".join(str(name or "").split())
+    normalized_email = normalize_teacher_email(email)
+    if not normalized_name:
+        raise ValueError("教师姓名不能为空。")
+    if not normalized_email or not _EMAIL_PATTERN.match(normalized_email):
+        raise ValueError("请填写有效的教师邮箱。")
+    return normalized_name, normalized_email
+
+
+def _active_super_admin_count(conn: sqlite3.Connection) -> int:
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM teachers
+        WHERE COALESCE(is_active, 1) = 1
+          AND COALESCE(is_super_admin, 0) = 1
+        """
+    ).fetchone()
+    return int((row["cnt"] if row else 0) or 0)
+
+
+def _teacher_exists_by_email(
+    conn: sqlite3.Connection,
+    email: str,
+    *,
+    exclude_teacher_id: int | None = None,
+):
+    params: list[Any] = [normalize_teacher_email(email)]
+    sql = "SELECT id, is_active FROM teachers WHERE lower(email) = ?"
+    if exclude_teacher_id is not None:
+        sql += " AND id != ?"
+        params.append(int(exclude_teacher_id))
+    sql += " LIMIT 1"
+    return conn.execute(sql, params).fetchone()
+
+
+def _get_teacher_account_row(conn: sqlite3.Connection, teacher_id: int | str):
+    return conn.execute(
+        """
+        SELECT id, name, email, phone, wechat, qq, homepage_url, description,
+               COALESCE(is_super_admin, 0) AS is_super_admin,
+               COALESCE(is_active, 1) AS is_active,
+               created_at, updated_at, password_updated_at, deactivated_at
+        FROM teachers
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(teacher_id),),
+    ).fetchone()
+
+
+def _serialize_teacher_account(row) -> dict[str, Any]:
+    return {
+        "id": int(row["id"]),
+        "name": str(row["name"] or ""),
+        "email": str(row["email"] or ""),
+        "phone": str(row["phone"] or ""),
+        "wechat": str(row["wechat"] or ""),
+        "qq": str(row["qq"] or ""),
+        "homepage_url": str(row["homepage_url"] or ""),
+        "description": str(row["description"] or ""),
+        "is_super_admin": bool(row["is_super_admin"]),
+        "is_active": bool(row["is_active"]),
+        "created_at": str(row["created_at"] or ""),
+        "updated_at": str(row["updated_at"] or ""),
+        "password_updated_at": str(row["password_updated_at"] or ""),
+        "deactivated_at": str(row["deactivated_at"] or ""),
+        "class_count": int(row["class_count"] or 0) if "class_count" in row.keys() else 0,
+        "course_count": int(row["course_count"] or 0) if "course_count" in row.keys() else 0,
+        "offering_count": int(row["offering_count"] or 0) if "offering_count" in row.keys() else 0,
+        "material_count": int(row["material_count"] or 0) if "material_count" in row.keys() else 0,
+        "pending_reset_count": int(row["pending_reset_count"] or 0) if "pending_reset_count" in row.keys() else 0,
+    }
+
+
+def list_teacher_accounts(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT t.id, t.name, t.email, t.phone, t.wechat, t.qq, t.homepage_url, t.description,
+               COALESCE(t.is_super_admin, 0) AS is_super_admin,
+               COALESCE(t.is_active, 1) AS is_active,
+               t.created_at, t.updated_at, t.password_updated_at, t.deactivated_at,
+               (SELECT COUNT(*) FROM classes c WHERE c.created_by_teacher_id = t.id) AS class_count,
+               (SELECT COUNT(*) FROM courses c WHERE c.created_by_teacher_id = t.id) AS course_count,
+               (SELECT COUNT(*) FROM class_offerings o WHERE o.teacher_id = t.id) AS offering_count,
+               (SELECT COUNT(*) FROM course_materials m WHERE m.teacher_id = t.id AND m.name != '.git') AS material_count,
+               (
+                   SELECT COUNT(*)
+                   FROM student_password_reset_requests r
+                   JOIN classes c ON c.id = r.class_id
+                   WHERE r.teacher_id = t.id
+                     AND c.created_by_teacher_id = t.id
+                     AND r.status = 'pending'
+               ) AS pending_reset_count
+        FROM teachers t
+        ORDER BY COALESCE(t.is_active, 1) DESC,
+                 COALESCE(t.is_super_admin, 0) DESC,
+                 t.created_at DESC,
+                 t.id DESC
+        """
+    ).fetchall()
+    return [_serialize_teacher_account(row) for row in rows]
+
+
+def build_teacher_account_summary(conn: sqlite3.Connection) -> dict[str, int]:
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS total_count,
+            SUM(CASE WHEN COALESCE(is_active, 1) = 1 THEN 1 ELSE 0 END) AS active_count,
+            SUM(CASE WHEN COALESCE(is_active, 1) = 0 THEN 1 ELSE 0 END) AS inactive_count,
+            SUM(CASE WHEN COALESCE(is_active, 1) = 1 AND COALESCE(is_super_admin, 0) = 1 THEN 1 ELSE 0 END) AS super_admin_count
+        FROM teachers
+        """
+    ).fetchone()
+    return {
+        "total_count": int((row["total_count"] if row else 0) or 0),
+        "active_count": int((row["active_count"] if row else 0) or 0),
+        "inactive_count": int((row["inactive_count"] if row else 0) or 0),
+        "super_admin_count": int((row["super_admin_count"] if row else 0) or 0),
+    }
+
+
+def create_teacher_account(
+    conn: sqlite3.Connection,
+    *,
+    actor_teacher_id: int,
+    name: str,
+    email: str,
+    password: str,
+    is_super_admin: bool = False,
+) -> dict[str, Any]:
+    normalized_name, normalized_email = _validate_teacher_identity(name, email)
+    validate_teacher_password(password)
+    existing = _teacher_exists_by_email(conn, normalized_email)
+    timestamp = _now_iso()
+    password_hash = get_password_hash(password)
+
+    if existing and int(existing["is_active"] or 0) == 1:
+        raise ValueError("该教师邮箱已存在。")
+
+    if existing:
+        teacher_id = int(existing["id"])
+        conn.execute(
+            """
+            UPDATE teachers
+            SET name = ?,
+                email = ?,
+                hashed_password = ?,
+                password_updated_at = ?,
+                is_super_admin = ?,
+                is_active = 1,
+                deactivated_at = NULL,
+                deactivated_by_teacher_id = NULL,
+                updated_at = ?,
+                created_by_teacher_id = COALESCE(created_by_teacher_id, ?)
+            WHERE id = ?
+            """,
+            (
+                normalized_name,
+                normalized_email,
+                password_hash,
+                timestamp,
+                1 if is_super_admin else 0,
+                timestamp,
+                int(actor_teacher_id),
+                teacher_id,
+            ),
+        )
+    else:
+        cursor = conn.execute(
+            """
+            INSERT INTO teachers (
+                name, email, hashed_password, password_updated_at,
+                is_super_admin, is_active, created_by_teacher_id, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+            """,
+            (
+                normalized_name,
+                normalized_email,
+                password_hash,
+                timestamp,
+                1 if is_super_admin else 0,
+                int(actor_teacher_id),
+                timestamp,
+            ),
+        )
+        teacher_id = int(cursor.lastrowid)
+
+    return get_teacher_account(conn, teacher_id)
+
+
+def get_teacher_account(conn: sqlite3.Connection, teacher_id: int | str) -> dict[str, Any]:
+    row = _get_teacher_account_row(conn, teacher_id)
+    if not row:
+        raise ValueError("教师账号不存在。")
+    return _serialize_teacher_account(row)
+
+
+def update_teacher_account(
+    conn: sqlite3.Connection,
+    *,
+    teacher_id: int,
+    name: str,
+    email: str,
+    phone: str = "",
+    wechat: str = "",
+    qq: str = "",
+    homepage_url: str = "",
+    description: str = "",
+) -> dict[str, Any]:
+    target = _get_teacher_account_row(conn, teacher_id)
+    if not target:
+        raise ValueError("教师账号不存在。")
+    if not bool(target["is_active"]):
+        raise ValueError("该教师账号已停用，不能修改资料。")
+
+    normalized_name, normalized_email = _validate_teacher_identity(name, email)
+    email_conflict = _teacher_exists_by_email(conn, normalized_email, exclude_teacher_id=teacher_id)
+    if email_conflict:
+        raise ValueError("该教师邮箱已被其他账号使用。")
+
+    conn.execute(
+        """
+        UPDATE teachers
+        SET name = ?,
+            email = ?,
+            phone = ?,
+            wechat = ?,
+            qq = ?,
+            homepage_url = ?,
+            description = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            normalized_name,
+            normalized_email,
+            str(phone or "").strip(),
+            str(wechat or "").strip(),
+            str(qq or "").strip(),
+            str(homepage_url or "").strip(),
+            str(description or "").strip(),
+            _now_iso(),
+            int(teacher_id),
+        ),
+    )
+    return get_teacher_account(conn, teacher_id)
+
+
+def reset_teacher_password(
+    conn: sqlite3.Connection,
+    *,
+    teacher_id: int,
+    password: str,
+) -> dict[str, Any]:
+    target = _get_teacher_account_row(conn, teacher_id)
+    if not target:
+        raise ValueError("教师账号不存在。")
+    if not bool(target["is_active"]):
+        raise ValueError("该教师账号已停用，不能重置密码。")
+    validate_teacher_password(password)
+    timestamp = _now_iso()
+    conn.execute(
+        """
+        UPDATE teachers
+        SET hashed_password = ?,
+            password_updated_at = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (get_password_hash(password), timestamp, timestamp, int(teacher_id)),
+    )
+    return get_teacher_account(conn, teacher_id)
+
+
+def grant_teacher_super_admin(conn: sqlite3.Connection, *, teacher_id: int) -> dict[str, Any]:
+    target = _get_teacher_account_row(conn, teacher_id)
+    if not target:
+        raise ValueError("教师账号不存在。")
+    if not bool(target["is_active"]):
+        raise ValueError("已停用的教师账号不能授予超管权限。")
+    conn.execute(
+        "UPDATE teachers SET is_super_admin = 1, updated_at = ? WHERE id = ?",
+        (_now_iso(), int(teacher_id)),
+    )
+    return get_teacher_account(conn, teacher_id)
+
+
+def revoke_teacher_super_admin(
+    conn: sqlite3.Connection,
+    *,
+    teacher_id: int,
+) -> dict[str, Any]:
+    target = _get_teacher_account_row(conn, teacher_id)
+    if not target:
+        raise ValueError("教师账号不存在。")
+    if not bool(target["is_super_admin"]):
+        return get_teacher_account(conn, teacher_id)
+    if _active_super_admin_count(conn) <= 1:
+        raise ValueError("至少需要保留一名启用状态的超管教师。")
+    conn.execute(
+        "UPDATE teachers SET is_super_admin = 0, updated_at = ? WHERE id = ?",
+        (_now_iso(), int(teacher_id)),
+    )
+    return get_teacher_account(conn, teacher_id)
+
+
+def deactivate_teacher_account(
+    conn: sqlite3.Connection,
+    *,
+    teacher_id: int,
+    actor_teacher_id: int,
+) -> dict[str, Any]:
+    if int(teacher_id) == int(actor_teacher_id):
+        raise ValueError("不能删除当前登录的教师账号。")
+    target = _get_teacher_account_row(conn, teacher_id)
+    if not target:
+        raise ValueError("教师账号不存在。")
+    if not bool(target["is_active"]):
+        return get_teacher_account(conn, teacher_id)
+    if bool(target["is_super_admin"]) and _active_super_admin_count(conn) <= 1:
+        raise ValueError("不能删除最后一名启用状态的超管教师。")
+    timestamp = _now_iso()
+    conn.execute(
+        """
+        UPDATE teachers
+        SET is_active = 0,
+            is_super_admin = 0,
+            deactivated_at = ?,
+            deactivated_by_teacher_id = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (timestamp, int(actor_teacher_id), timestamp, int(teacher_id)),
+    )
+    return get_teacher_account(conn, teacher_id)

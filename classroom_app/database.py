@@ -4,8 +4,13 @@ import json
 import uuid
 from datetime import datetime, timezone
 
+from passlib.context import CryptContext
+
 from .config import (
     DB_PATH,
+    INITIAL_SUPER_ADMIN_EMAIL,
+    INITIAL_SUPER_ADMIN_NAME,
+    INITIAL_SUPER_ADMIN_PASSWORD,
     SQLITE_BUSY_TIMEOUT_MS,
     SQLITE_CACHE_SIZE_KB,
     SQLITE_WAL_AUTOCHECKPOINT_PAGES,
@@ -56,6 +61,121 @@ def _normalize_session_row(row: sqlite3.Row | None) -> dict | None:
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+_teacher_seed_pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+
+
+def _setting_exists(conn: sqlite3.Connection, key: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM system_settings WHERE key = ? LIMIT 1",
+        (key,),
+    ).fetchone()
+    return row is not None
+
+
+def _upsert_setting(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO system_settings (key, value, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (key, value),
+    )
+
+
+def _seed_initial_super_admin(conn: sqlite3.Connection) -> None:
+    marker_key = "teacher_accounts.initial_super_admin_seeded"
+    if _setting_exists(conn, marker_key):
+        active_super_admin = conn.execute(
+            """
+            SELECT id
+            FROM teachers
+            WHERE COALESCE(is_active, 1) = 1
+              AND COALESCE(is_super_admin, 0) = 1
+            LIMIT 1
+            """
+        ).fetchone()
+        if active_super_admin:
+            return
+    initial_email = str(INITIAL_SUPER_ADMIN_EMAIL or "").strip().lower()
+    initial_teacher = None
+    if initial_email:
+        initial_teacher = conn.execute(
+            """
+            SELECT id
+            FROM teachers
+            WHERE lower(email) = ?
+              AND COALESCE(is_active, 1) = 1
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (initial_email,),
+        ).fetchone()
+
+    if initial_teacher is not None and not _setting_exists(conn, marker_key):
+        conn.execute("UPDATE teachers SET is_super_admin = 0 WHERE COALESCE(is_active, 1) = 1")
+        conn.execute(
+            "UPDATE teachers SET email = ? WHERE id = ?",
+            (initial_email, initial_teacher["id"]),
+        )
+        conn.execute(
+            "UPDATE teachers SET is_super_admin = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (initial_teacher["id"],),
+        )
+        _upsert_setting(conn, marker_key, f"teacher:{int(initial_teacher['id'])}")
+        return
+
+    if initial_teacher is not None:
+        conn.execute(
+            "UPDATE teachers SET email = ?, is_super_admin = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (initial_email, initial_teacher["id"]),
+        )
+        _upsert_setting(conn, marker_key, f"recovered:{int(initial_teacher['id'])}")
+        return
+
+    fallback_teacher = conn.execute(
+        """
+        SELECT id
+        FROM teachers
+        WHERE COALESCE(is_active, 1) = 1
+        ORDER BY id ASC
+        LIMIT 1
+        """
+    ).fetchone()
+    if fallback_teacher is not None:
+        conn.execute(
+            "UPDATE teachers SET is_super_admin = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (fallback_teacher["id"],),
+        )
+        _upsert_setting(conn, marker_key, f"fallback:{int(fallback_teacher['id'])}")
+        return
+
+    initial_password = str(INITIAL_SUPER_ADMIN_PASSWORD or "").strip()
+    if not initial_email or not initial_password:
+        return
+    if len(initial_password) < 8:
+        print("[DB] INITIAL_SUPER_ADMIN_PASSWORD must be at least 8 characters; initial super-admin was not created.")
+        return
+
+    cursor = conn.execute(
+        """
+        INSERT INTO teachers (
+            name, email, hashed_password, password_updated_at,
+            is_super_admin, is_active, updated_at
+        )
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP, 1, 1, CURRENT_TIMESTAMP)
+        """,
+        (
+            str(INITIAL_SUPER_ADMIN_NAME or "系统超管").strip() or "系统超管",
+            initial_email,
+            _teacher_seed_pwd_context.hash(initial_password),
+        ),
+    )
+    _upsert_setting(conn, marker_key, f"created:{int(cursor.lastrowid)}")
 
 
 def _backfill_academic_departments(conn: sqlite3.Connection) -> None:
@@ -315,6 +435,17 @@ def init_database():
     print("[DB] Initializing V4.0 database schema...")
     try:
         with get_db_connection() as conn:
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS system_settings
+                (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                '''
+            )
+
             # 1. 用户 (教师)
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS teachers
@@ -368,6 +499,22 @@ def init_database():
                               NULL
                               DEFAULT
                               0,
+                              is_active
+                              INTEGER
+                              NOT
+                              NULL
+                              DEFAULT
+                              1,
+                              created_by_teacher_id
+                              INTEGER,
+                              updated_at
+                              TEXT
+                              DEFAULT
+                              CURRENT_TIMESTAMP,
+                              deactivated_at
+                              TEXT,
+                              deactivated_by_teacher_id
+                              INTEGER,
                               created_at
                               TEXT
                               DEFAULT
@@ -387,15 +534,30 @@ def init_database():
                 "today_mood": "TEXT",
                 "today_mood_updated_at": "TEXT",
                 "is_super_admin": "INTEGER NOT NULL DEFAULT 0",
+                "is_active": "INTEGER NOT NULL DEFAULT 1",
+                "created_by_teacher_id": "INTEGER",
+                "updated_at": "TEXT",
+                "deactivated_at": "TEXT",
+                "deactivated_by_teacher_id": "INTEGER",
             }.items():
                 try:
                     conn.execute(f"ALTER TABLE teachers ADD COLUMN {column_name} {column_def}")
                 except sqlite3.OperationalError:
                     pass
 
+            conn.execute("UPDATE teachers SET is_active = 1 WHERE is_active IS NULL")
+            conn.execute("UPDATE teachers SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP)")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_teachers_super_admin "
                 "ON teachers (is_super_admin, id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teachers_active_super_admin "
+                "ON teachers (is_active, is_super_admin, id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teachers_active_email "
+                "ON teachers (is_active, email COLLATE NOCASE)"
             )
             conn.execute(
                 '''
@@ -414,19 +576,7 @@ def init_database():
                 "CREATE INDEX IF NOT EXISTS idx_teacher_onboarding_updated "
                 "ON teacher_onboarding_state (updated_at DESC)"
             )
-            super_admin_rows = conn.execute(
-                "SELECT id FROM teachers WHERE COALESCE(is_super_admin, 0) = 1 ORDER BY id ASC"
-            ).fetchall()
-            if not super_admin_rows:
-                first_teacher = conn.execute("SELECT id FROM teachers ORDER BY id ASC LIMIT 1").fetchone()
-                if first_teacher is not None:
-                    conn.execute(
-                        "UPDATE teachers SET is_super_admin = 1 WHERE id = ?",
-                        (first_teacher["id"],),
-                    )
-            elif len(super_admin_rows) > 1:
-                keep_teacher_id = super_admin_rows[0]["id"]
-                conn.execute("UPDATE teachers SET is_super_admin = 0 WHERE id != ?", (keep_teacher_id,))
+            _seed_initial_super_admin(conn)
 
             conn.execute(
                 '''
