@@ -308,7 +308,7 @@
 
 .onboarding-material-row {
     display: grid;
-    grid-template-columns: 34px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 68px;
     gap: 8px;
     align-items: stretch;
     padding-left: calc(var(--tree-depth, 0) * 22px);
@@ -324,12 +324,13 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 42px;
+    min-height: 58px;
     border: 1px solid rgba(209, 213, 219, 0.86);
     border-radius: 8px;
     background: #ffffff;
     color: #4b5563;
-    font-size: 1.1rem;
+    font-size: 0.86rem;
+    font-weight: 300;
     cursor: pointer;
 }
 
@@ -408,7 +409,7 @@
 }
 
 .onboarding-material-tree-loading {
-    margin-left: calc((var(--tree-depth, 0) + 1) * 22px + 42px);
+    margin-left: calc((var(--tree-depth, 0) + 1) * 22px);
     padding: 9px 12px;
     border: 1px dashed rgba(209, 213, 219, 0.9);
     border-radius: 8px;
@@ -811,6 +812,10 @@
 
     .onboarding-material-select .onboarding-badge-row {
         grid-column: 2;
+    }
+
+    .onboarding-material-row {
+        grid-template-columns: minmax(0, 1fr) 58px;
     }
 
     .teacher-onboarding-footer {

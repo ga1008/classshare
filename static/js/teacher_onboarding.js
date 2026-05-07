@@ -515,7 +515,8 @@ if (modal && openButtons.length > 0) {
         const byId = new Map(materials.map((item) => [Number(item.id), item]));
         const childrenByParent = new Map();
         materials.forEach((item) => {
-            const parentId = item.parent_id && byId.has(item.parent_id) ? item.parent_id : null;
+            if (item.parent_id && !byId.has(item.parent_id)) return;
+            const parentId = item.parent_id || null;
             if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
             childrenByParent.get(parentId).push(item);
         });
@@ -551,13 +552,6 @@ if (modal && openButtons.length > 0) {
         return `
             <article class="onboarding-material-node${isSelected ? ' is-selected' : ''}" style="--tree-depth:${depth}">
                 <div class="onboarding-material-row">
-                    <button
-                        type="button"
-                        class="onboarding-material-toggle"
-                        data-material-toggle="${escapeHtml(materialId)}"
-                        ${hasChildren ? '' : 'disabled'}
-                        aria-label="${isExpanded ? '收起目录' : '展开目录'}"
-                    >${hasChildren ? (isExpanded ? '⌄' : '›') : ''}</button>
                     <button type="button" class="onboarding-material-select" data-material-select="${escapeHtml(materialId)}">
                         <span class="onboarding-material-icon" aria-hidden="true">${isFolder ? '□' : '·'}</span>
                         <span class="onboarding-material-copy">
@@ -566,6 +560,13 @@ if (modal && openButtons.length > 0) {
                         </span>
                         ${badgeHtml ? `<span class="onboarding-badge-row">${badgeHtml}</span>` : ''}
                     </button>
+                    <button
+                        type="button"
+                        class="onboarding-material-toggle"
+                        data-material-toggle="${escapeHtml(materialId)}"
+                        ${hasChildren ? '' : 'disabled'}
+                        aria-label="${isExpanded ? '收起目录' : '展开目录'}"
+                    >${hasChildren ? (isExpanded ? '收起' : '展开') : ''}</button>
                 </div>
                 ${childrenHtml ? `<div class="onboarding-material-children">${childrenHtml}</div>` : ''}
             </article>
@@ -581,19 +582,14 @@ if (modal && openButtons.length > 0) {
         container.innerHTML = renderStepShell(`
             ${renderTitle(steps[3].prompt, '课程材料通常按文件夹整理。可以选择整个目录，也可以展开后选择具体文件；后续还能使用深度思考 AI 协助生成或优化材料。')}
             <div class="onboarding-toolbar">
-                <span class="onboarding-hint">默认收起目录；可多选，不选时下一步会显示为“跳过”。</span>
+                <span class="onboarding-hint">默认只显示根目录；点击名称区域选择，点击右侧“展开”查看子目录。</span>
                 <button type="button" class="btn btn-outline" data-action="create-material">导入材料</button>
             </div>
             <div class="onboarding-material-tree">${body}</div>
         `);
         container.querySelectorAll('[data-material-select]').forEach((button) => {
             button.addEventListener('click', () => {
-                const materialId = Number(button.dataset.materialSelect);
-                if (state.selected.materialIds.has(materialId)) {
-                    state.selected.materialIds.delete(materialId);
-                } else {
-                    state.selected.materialIds.add(materialId);
-                }
+                toggleMaterialSelection(button.dataset.materialSelect);
                 render();
             });
         });
@@ -1385,6 +1381,8 @@ if (modal && openButtons.length > 0) {
         if (!payload) return;
 
         state.activeIndex = 0;
+        state.materialExpandedIds.clear();
+        state.materialLoadingIds.clear();
         state.lastFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         state.bodyOverflow = document.body.style.overflow || '';
         if (elements.welcome) {
