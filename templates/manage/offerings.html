@@ -273,7 +273,7 @@
 
 {% block header_actions %}
 <a href="/manage/semesters" class="btn btn-outline">学期管理</a>
-<a href="/manage/textbooks" class="btn btn-primary">教材管理</a>
+<button type="button" class="btn btn-primary" data-teacher-onboarding-open>开设新课堂</button>
 {% endblock %}
 
 {% block content %}
@@ -321,6 +321,7 @@
                     <h3 class="academic-card-title">开设新课堂</h3>
                     <p class="academic-card-subtitle">同一张表单同时支持新建与编辑课堂，预览区会实时展示生成的上课日期与课堂内容。</p>
                 </div>
+                <button type="button" class="btn btn-primary btn-sm" data-teacher-onboarding-open>逐步开设</button>
             </div>
             <div class="academic-card-body">
                 <div class="offering-editor-state" id="offeringEditorState">

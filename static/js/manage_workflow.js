@@ -1,12 +1,10 @@
 const config = window.MANAGE_WORKFLOW_DATA || {};
 const steps = Array.isArray(config.steps) ? config.steps : [];
-const prepResources = Array.isArray(config.prep_resources) ? config.prep_resources : [];
 const counts = config.counts || {};
 const stageViews = config.stage_views || {};
 const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
 const stepMap = new Map(steps.map((item) => [item.id, item]));
-const prepMap = new Map(prepResources.map((item) => [item.id, item]));
 const stageOrder = steps.map((item) => item.id);
 const animationTimers = new WeakMap();
 
@@ -16,9 +14,6 @@ const elements = {
     stageRail: document.querySelector('.workflow-stage-rail'),
     stageTrack: document.getElementById('workflowStageTrack'),
     stageButtons: Array.from(document.querySelectorAll('[data-stage-id]')),
-    stageArrows: Array.from(document.querySelectorAll('[data-arrow-after-stage]')),
-    prepTabs: document.getElementById('workflowPrepTabs'),
-    prepButtons: Array.from(document.querySelectorAll('[data-prep-id]')),
     focusCard: document.querySelector('.workflow-focus-card'),
     frameShell: document.querySelector('.workflow-frame-shell'),
     stageEyebrow: document.getElementById('workflowStageEyebrow'),
@@ -38,7 +33,6 @@ const elements = {
 
 const state = {
     stage: resolveInitialStage(),
-    prep: resolveInitialPrep(),
     frameSrc: '',
 };
 
@@ -65,16 +59,7 @@ function resolveInitialStage() {
     if (stepMap.has(fromQuery)) {
         return fromQuery;
     }
-    return String(config.recommended_stage || stageOrder[0] || 'preparation');
-}
-
-function resolveInitialPrep() {
-    const params = new URLSearchParams(window.location.search);
-    const fromQuery = String(params.get('prep') || '').trim();
-    if (prepMap.has(fromQuery)) {
-        return fromQuery;
-    }
-    return String(config.recommended_prep || prepResources[0]?.id || 'classes');
+    return String(config.recommended_stage || stageOrder[0] || 'semester');
 }
 
 function countOf(key) {
@@ -94,18 +79,10 @@ function getCurrentStep() {
     return stepMap.get(state.stage) || steps[0] || null;
 }
 
-function getCurrentPrepResource() {
-    return prepMap.get(state.prep) || prepResources[0] || null;
-}
-
 function syncUrl() {
     const params = new URLSearchParams(window.location.search);
     params.set('stage', state.stage);
-    if (state.stage === 'preparation') {
-        params.set('prep', state.prep);
-    } else {
-        params.delete('prep');
-    }
+    params.delete('prep');
 
     const query = params.toString();
     const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
@@ -118,19 +95,6 @@ function getCurrentFrameTarget() {
         return null;
     }
 
-    if (step.id === 'preparation') {
-        const resource = getCurrentPrepResource();
-        if (!resource) {
-            return null;
-        }
-        return {
-            title: `${resource.title}准备`,
-            subtitle: '下方直接处理当前基础资源的表单和已创建列表。',
-            href: resource.href,
-            embedUrl: resource.embed_url,
-        };
-    }
-
     const view = stageViews[step.id];
     if (!view) {
         return null;
@@ -138,7 +102,7 @@ function getCurrentFrameTarget() {
 
     return {
         title: step.title,
-        subtitle: '下方直接复用当前阶段已有的表单和列表。',
+        subtitle: step.summary || '下方直接复用当前阶段已有的表单和列表。',
         href: view.href,
         embedUrl: view.embed_url,
     };
@@ -148,144 +112,30 @@ function buildStageSummary(step) {
     if (!step) {
         return '';
     }
-
-    if (step.id === 'preparation') {
-        const readyCount = prepResources.filter((item) => item.ready).length;
-        return `已准备 ${readyCount}/${prepResources.length} 项基础资源，优先补齐班级、课程和教材后再继续。`;
-    }
-
-    if (step.id === 'semester') {
-        return countOf('semesters') > 0
-            ? `当前共有 ${countOf('semesters')} 个学期，其中 ${countOf('current_semesters')} 个覆盖今天的日期。`
-            : '当前还没有学期，建议先创建本学期，再继续开设课堂。';
-    }
-
-    if (step.id === 'offerings') {
-        return countOf('offerings') > 0
-            ? `当前已开设 ${countOf('offerings')} 个课堂，可以继续补充或调整已有课堂。`
-            : '这里会把学期、班级、课程和教材组合成具体课堂。';
-    }
-
-    return countOf('ai_configs') > 0
-        ? `当前已有 ${countOf('ai_configs')} 个课堂完成 AI 助手配置。`
-        : '当前还没有课堂级 AI 配置，请先选择一个已开设的课堂。';
+    return step.summary || '';
 }
 
 function buildStageAdvice(step) {
     if (!step) {
         return '';
     }
-
-    if (step.id === 'preparation') {
-        const missing = prepResources.filter((item) => !item.ready).map((item) => item.title);
-        if (!missing.length) {
-            return '基础资源已经齐备，建议直接进入“确认学期”。';
-        }
-        return `还未准备：${missing.join('、')}。先补齐这些资源，后续开设课堂会更顺畅。`;
-    }
-
-    if (step.id === 'semester') {
-        return countOf('semesters') > 0
-            ? '优先检查当前学期的起止日期和周次设置是否准确。'
-            : '创建学期时建议直接按真实教学周期填写日期范围。';
-    }
-
-    if (step.id === 'offerings') {
-        return countOf('semesters') === 0
-            ? '建议先回到“确认学期”，至少创建一个可用学期。'
-            : '开设课堂时优先绑定课程模板和教材，后续 AI 上下文会更稳定。';
-    }
-
-    return countOf('offerings') === 0
-        ? '先创建至少一个课堂，课堂级 AI 助手才能建立自己的上下文。'
-        : '建议优先为当前正在使用的课堂完成 AI 配置。';
+    return step.advice || '';
 }
 
 function buildChecklistItems(step) {
     if (!step) {
         return [];
     }
-
-    if (step.id === 'preparation') {
-        return prepResources.map((item) => ({
-            title: item.title,
-            ready: Boolean(item.ready),
-            status: item.status_label,
-            description: `当前 ${item.count} 项，可跨学期复用。`,
-        }));
-    }
-
-    if (step.id === 'semester') {
-        const basicReady = prepResources.filter((item) => item.ready).length;
-        return [
-            {
-                title: '基础资源准备',
-                ready: basicReady >= 3,
-                status: `${basicReady}/${prepResources.length}`,
-                description: '建议至少先准备班级、课程和教材。',
-            },
-            {
-                title: '学期数量',
-                ready: countOf('semesters') > 0,
-                status: `${countOf('semesters')} 个`,
-                description: '学期决定课堂时间范围和周次设置。',
-            },
-            {
-                title: '当前学期识别',
-                ready: countOf('current_semesters') > 0,
-                status: `${countOf('current_semesters')} 个`,
-                description: '覆盖今天日期的学期更适合作为默认学期。',
-            },
-        ];
-    }
-
-    if (step.id === 'offerings') {
-        return [
-            {
-                title: '班级',
-                ready: countOf('classes') > 0,
-                status: `${countOf('classes')} 个`,
-                description: '每个课堂都需要绑定班级。',
-            },
-            {
-                title: '课程与教材',
-                ready: countOf('courses') > 0 && countOf('textbooks') > 0,
-                status: `${countOf('courses')} 门 / ${countOf('textbooks')} 本`,
-                description: '课程模板和教材都会进入课堂上下文。',
-            },
-            {
-                title: '学期',
-                ready: countOf('semesters') > 0,
-                status: `${countOf('semesters')} 个`,
-                description: '绑定学期后，排课预览和时间信息才会准确。',
-            },
-            {
-                title: '已开课堂',
-                ready: countOf('offerings') > 0,
-                status: `${countOf('offerings')} 个`,
-                description: '已创建的课堂可以继续编辑，或直接进入使用。',
-            },
-        ];
+    if (Array.isArray(step.checklist) && step.checklist.length) {
+        return step.checklist;
     }
 
     return [
         {
-            title: '已开课堂',
-            ready: countOf('offerings') > 0,
-            status: `${countOf('offerings')} 个`,
-            description: '只有已开设的课堂才能继续配置课堂级 AI 助手。',
-        },
-        {
-            title: '教材准备',
-            ready: countOf('textbooks') > 0,
-            status: `${countOf('textbooks')} 本`,
-            description: '教材越完整，AI 上下文越稳定。',
-        },
-        {
-            title: '已完成配置',
-            ready: countOf('ai_configs') > 0,
-            status: `${countOf('ai_configs')} 个`,
-            description: '建议优先覆盖正在使用的课堂。',
+            title: step.title || '当前步骤',
+            ready: step.status === 'complete' || step.status === 'optional',
+            status: step.status_label || resolveStageBadgeText(step),
+            description: step.description || '',
         },
     ];
 }
@@ -322,8 +172,6 @@ function renderChecklist(step) {
 }
 
 function renderStageRail() {
-    const currentIndex = stageOrder.indexOf(state.stage);
-
     elements.stageButtons.forEach((button) => {
         const stageId = button.dataset.stageId;
         const step = stepMap.get(stageId);
@@ -333,38 +181,27 @@ function renderStageRail() {
 
         button.classList.toggle('is-active', isActive);
         button.classList.toggle('has-content', badgeCount > 0);
+        button.classList.remove('is-complete', 'is-in_progress', 'is-pending', 'is-optional');
+        if (step?.status) {
+            button.classList.add(`is-${step.status}`);
+        }
         button.setAttribute('aria-current', isActive ? 'step' : 'false');
         button.setAttribute('aria-selected', isActive ? 'true' : 'false');
         button.setAttribute('tabindex', isActive ? '0' : '-1');
 
         if (badge) {
             badge.textContent = resolveStageBadgeText(step);
-            badge.classList.remove('is-complete', 'is-in_progress', 'is-pending', 'has-count', 'is-empty', 'is-active-stage');
+            badge.classList.remove('is-complete', 'is-in_progress', 'is-pending', 'is-optional', 'has-count', 'is-empty', 'is-active-stage');
             badge.classList.add(badgeCount > 0 ? 'has-count' : 'is-empty');
+            if (step?.status) {
+                badge.classList.add(`is-${step.status}`);
+            }
             if (isActive) {
                 badge.classList.add('is-active-stage');
             }
         }
     });
 
-    elements.stageArrows.forEach((arrow) => {
-        const arrowIndex = stageOrder.indexOf(arrow.dataset.arrowAfterStage);
-        arrow.classList.toggle('is-traversed', currentIndex > arrowIndex);
-        arrow.classList.toggle('is-current', currentIndex === arrowIndex);
-    });
-}
-
-function renderPrepTabs() {
-    if (!elements.prepTabs) {
-        return;
-    }
-
-    const showTabs = state.stage === 'preparation';
-    elements.prepTabs.hidden = !showTabs;
-
-    elements.prepButtons.forEach((button) => {
-        button.classList.toggle('is-active', showTabs && button.dataset.prepId === state.prep);
-    });
 }
 
 function renderStageCopy(step) {
@@ -732,7 +569,6 @@ function render({ animateStep = false, animatePanels = false } = {}) {
     const step = getCurrentStep();
     renderRecommended();
     renderStageRail();
-    renderPrepTabs();
     renderStageCopy(step);
     renderChecklist(step);
     renderStepNavigation();
@@ -757,25 +593,6 @@ function switchStage(nextStage, { animate = true } = {}) {
     }
 
     state.stage = nextStage;
-    render({
-        animateStep: animate,
-        animatePanels: animate,
-    });
-}
-
-function switchPrep(nextPrep, { animate = true } = {}) {
-    if (!prepMap.has(nextPrep)) {
-        return;
-    }
-
-    const stageChanged = state.stage !== 'preparation';
-    const prepChanged = state.prep !== nextPrep;
-    if (!stageChanged && !prepChanged) {
-        return;
-    }
-
-    state.prep = nextPrep;
-    state.stage = 'preparation';
     render({
         animateStep: animate,
         animatePanels: animate,
@@ -841,12 +658,6 @@ function bindEvents() {
         nextButton?.focus();
     });
 
-    elements.prepButtons.forEach((button) => {
-        button.addEventListener('click', () => {
-            switchPrep(button.dataset.prepId);
-        });
-    });
-
     elements.prevBtn?.addEventListener('click', () => {
         const currentIndex = stageOrder.indexOf(state.stage);
         if (currentIndex > 0) {
@@ -868,7 +679,6 @@ function bindEvents() {
     window.addEventListener('message', handleEmbedMessage);
     window.addEventListener('popstate', () => {
         state.stage = resolveInitialStage();
-        state.prep = resolveInitialPrep();
         render();
     });
 }
