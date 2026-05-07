@@ -6,8 +6,8 @@
 {% endblock %}
 
 {% block header_actions %}
-<a href="/manage/offerings" class="btn btn-outline">直接开设课堂</a>
-<a href="/manage/semesters?open=new" class="btn btn-primary">新建学期</a>
+<a href="/manage/offerings" class="btn btn-outline">查看已开课堂</a>
+<button type="button" class="btn btn-primary" data-teacher-onboarding-open>开设新课堂</button>
 {% endblock %}
 
 {% block content %}
@@ -15,23 +15,27 @@
     <section class="academic-hero workflow-hero">
         <div class="workflow-hero-copy">
             <div class="academic-eyebrow">Teaching Workflow</div>
-            <h2>先准备基础资源，再推进学期、课堂和 AI 助手配置</h2>
+            <h2>按新建课堂向导，一步一步完成开课</h2>
             <p>
-                这里按真实教学流程组织管理中心。先选定当前阶段，再在下方直接处理对应表单和已创建内容，
-                避免在多个页面之间反复寻找入口。
+                工作台现在跟随“开设新课堂”的真实流程组织：每张步骤卡只对应一件事，
+                下方工作区继续复用现有管理页，便于在启动向导前补齐数据。
             </p>
+            <div class="workflow-hero-actions">
+                <button type="button" class="btn btn-primary" data-teacher-onboarding-open>开设新课堂</button>
+                <a href="/manage/offerings" class="btn btn-outline">查看课堂列表</a>
+            </div>
         </div>
 
         <aside class="workflow-hero-side">
             <article class="workflow-hero-panel">
-                <span>推荐下一步</span>
+                <span>推荐处理</span>
                 <strong id="workflowRecommendedLabel">加载中</strong>
-                <p id="workflowRecommendedHelp">系统会根据当前准备情况给出下一步建议。</p>
+                <p id="workflowRecommendedHelp">系统会根据开课必需条件给出下一步建议。</p>
             </article>
         </aside>
     </section>
 
-    <section class="workflow-stage-rail" aria-label="教学流程导航">
+    <section class="workflow-stage-rail" aria-label="开课流程导航">
         <div class="workflow-stage-track" id="workflowStageTrack" role="tablist" aria-orientation="horizontal">
             {% for step in workflow_snapshot.steps %}
             <button
@@ -42,18 +46,19 @@
                 role="tab"
                 aria-selected="false"
             >
-                <span class="workflow-step-index">{{ loop.index }}</span>
+                <span class="workflow-step-index">{{ step.order_label }}</span>
                 <div class="workflow-step-copy">
                     <strong>{{ step.title }}</strong>
                     <p>{{ step.description }}</p>
                 </div>
-                <span class="workflow-status-badge">{{ step.badge_text }}</span>
+                <span class="workflow-step-tags">
+                    <span class="workflow-status-badge">{{ step.badge_text }}</span>
+                </span>
+                <span class="workflow-step-meta">
+                    <span>{{ step.meta_label }}</span>
+                    <span>{{ step.status_label }}</span>
+                </span>
             </button>
-            {% if not loop.last %}
-            <div class="workflow-step-arrow" data-arrow-after-stage="{{ step.id }}" aria-hidden="true">
-                <span></span>
-            </div>
-            {% endif %}
             {% endfor %}
         </div>
     </section>
@@ -70,19 +75,11 @@
                     <p id="workflowStageSummaryText">正在整理当前阶段摘要。</p>
                 </div>
 
-                <div class="workflow-prep-tabs" id="workflowPrepTabs" hidden>
-                    {% for resource in workflow_snapshot.prep_resources %}
-                    <button type="button" class="workflow-prep-tab" data-prep-id="{{ resource.id }}">
-                        <span>{{ resource.title }}</span>
-                        <em>{{ resource.count }}</em>
-                    </button>
-                    {% endfor %}
-                </div>
-
                 <div class="workflow-stage-actions">
                     <button type="button" class="btn btn-outline" id="workflowPrevBtn">上一步</button>
                     <button type="button" class="btn btn-outline" id="workflowNextBtn">下一步</button>
-                    <a id="workflowOpenPageLink" href="/manage" class="btn btn-primary">在独立页面打开</a>
+                    <button type="button" class="btn btn-primary" data-teacher-onboarding-open>启动开课向导</button>
+                    <a id="workflowOpenPageLink" href="/manage" class="btn btn-ghost">打开对应管理页</a>
                 </div>
             </div>
 

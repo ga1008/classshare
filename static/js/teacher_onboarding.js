@@ -4,7 +4,7 @@ import { showToast } from '/static/js/ui.js';
 const modal = document.querySelector('[data-teacher-onboarding-modal]');
 const openButtons = Array.from(document.querySelectorAll('[data-teacher-onboarding-open]'));
 
-if (modal && openButtons.length > 0) {
+if (modal) {
     const dialog = modal.querySelector('.teacher-onboarding-dialog');
     const submodal = modal.querySelector('[data-onboarding-submodal]');
     const elements = {
@@ -1436,7 +1436,10 @@ if (modal && openButtons.length > 0) {
     }
 
     openButtons.forEach((button) => {
-        button.addEventListener('click', () => openGuide('manual'));
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            openGuide('manual');
+        });
     });
 
     elements.closeButtons.forEach((button) => {

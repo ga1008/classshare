@@ -1,39 +1,3 @@
-.teacher-onboarding-entry-anchor {
-    display: inline-flex;
-    align-items: center;
-    overflow: visible;
-}
-
-.teacher-onboarding-entry {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    border: 1px solid rgba(15, 118, 110, 0.22);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.92);
-    color: #334155;
-    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
-    cursor: pointer;
-    transition: box-shadow 0.22s ease, color 0.22s ease, border-color 0.22s ease, background 0.22s ease;
-}
-
-.teacher-onboarding-entry:hover,
-.teacher-onboarding-entry:focus-visible {
-    color: #0f766e;
-    border-color: rgba(15, 118, 110, 0.46);
-    box-shadow: 0 16px 32px rgba(15, 118, 110, 0.14), 0 0 0 4px rgba(20, 184, 166, 0.12);
-    outline: none;
-}
-
-.teacher-onboarding-entry svg {
-    width: 18px;
-    height: 18px;
-}
-
 .teacher-onboarding-modal[hidden],
 .teacher-onboarding-submodal[hidden] {
     display: none !important;

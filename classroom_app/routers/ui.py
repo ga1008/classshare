@@ -1102,7 +1102,7 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
 @router.get("/manage", response_class=HTMLResponse)
 async def manage_workflow_page(request: Request, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
-        workflow_snapshot = _build_manage_workflow_snapshot(conn, int(user["id"]))
+        workflow_snapshot = _build_classroom_opening_workflow_snapshot(conn, int(user["id"]))
 
     return templates.TemplateResponse(
         request,
@@ -1453,6 +1453,342 @@ def _build_manage_view_url(path: str, **params) -> str:
 def _ensure_manage_super_admin(conn, user: dict) -> None:
     if not is_super_admin_teacher(conn, user.get("id")):
         raise HTTPException(status_code=403, detail="只有超管教师可以访问该系统管理页面。")
+
+
+def _build_classroom_opening_workflow_snapshot(conn, teacher_id: int) -> dict:
+    semester_rows = [serialize_semester_row(row) for row in load_teacher_semester_rows(conn, teacher_id)]
+    counts = {
+        "semesters": len(semester_rows),
+        "current_semesters": sum(1 for item in semester_rows if item.get("is_current")),
+        "courses": int(conn.execute(
+            "SELECT COUNT(*) FROM courses WHERE created_by_teacher_id = ?",
+            (teacher_id,),
+        ).fetchone()[0] or 0),
+        "course_lessons": int(conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM course_lessons lessons
+            JOIN courses c ON c.id = lessons.course_id
+            WHERE c.created_by_teacher_id = ?
+            """,
+            (teacher_id,),
+        ).fetchone()[0] or 0),
+        "textbooks": int(conn.execute(
+            "SELECT COUNT(*) FROM textbooks WHERE teacher_id = ?",
+            (teacher_id,),
+        ).fetchone()[0] or 0),
+        "materials": int(conn.execute(
+            "SELECT COUNT(*) FROM course_materials WHERE teacher_id = ? AND name != '.git'",
+            (teacher_id,),
+        ).fetchone()[0] or 0),
+        "classes": int(conn.execute(
+            "SELECT COUNT(*) FROM classes WHERE created_by_teacher_id = ?",
+            (teacher_id,),
+        ).fetchone()[0] or 0),
+        "offerings": int(conn.execute(
+            "SELECT COUNT(*) FROM class_offerings WHERE teacher_id = ?",
+            (teacher_id,),
+        ).fetchone()[0] or 0),
+        "ai_configs": int(conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM ai_class_configs cfg
+            JOIN class_offerings o ON o.id = cfg.class_offering_id
+            WHERE o.teacher_id = ?
+            """,
+            (teacher_id,),
+        ).fetchone()[0] or 0),
+    }
+
+    def status_for(ready: bool, partial: bool = False, optional: bool = False) -> str:
+        if ready:
+            return "complete"
+        if partial:
+            return "in_progress"
+        if optional:
+            return "optional"
+        return "pending"
+
+    def step(
+        step_id: str,
+        index: int,
+        title: str,
+        eyebrow: str,
+        description: str,
+        summary: str,
+        advice: str,
+        *,
+        count: int = 0,
+        ready: bool = False,
+        partial: bool = False,
+        optional: bool = False,
+        badge_text: str = "",
+        meta_label: str = "",
+        checklist: list[dict] | None = None,
+    ) -> dict:
+        status = status_for(ready, partial, optional)
+        status_label_map = {
+            "complete": "已就绪",
+            "in_progress": "可继续",
+            "optional": "可跳过",
+            "pending": "待处理",
+        }
+        return {
+            "id": step_id,
+            "title": title,
+            "order_label": f"第 {index} 步",
+            "eyebrow": eyebrow,
+            "description": description,
+            "summary": summary,
+            "advice": advice,
+            "status": status,
+            "status_label": status_label_map[status],
+            "count": count,
+            "badge_count": count,
+            "badge_text": badge_text or f"已有 {count} 项",
+            "meta_label": meta_label or status_label_map[status],
+            "checklist": checklist or [],
+        }
+
+    steps = [
+        step(
+            "semester",
+            1,
+            "选择学期",
+            "先确定时间范围",
+            "课堂从学期开始，先确认本次课程属于哪个学期，后续排课、周次和课堂时间轴才不会错位。",
+            f"当前已有 {counts['semesters']} 个学期，其中 {counts['current_semesters']} 个覆盖今天。",
+            "如果还没有本学期，先新建学期；如果已有，开课向导会直接让老师单击选择。",
+            count=counts["semesters"],
+            ready=counts["semesters"] > 0,
+            partial=counts["current_semesters"] > 0,
+            badge_text=f"{counts['semesters']} 个学期",
+            meta_label="学期列表",
+            checklist=[
+                {
+                    "title": "学期可选",
+                    "ready": counts["semesters"] > 0,
+                    "status": f"{counts['semesters']} 个",
+                    "description": "开课必须绑定一个学期，用于计算周次与课堂日期。",
+                },
+                {
+                    "title": "当前学期",
+                    "ready": counts["current_semesters"] > 0,
+                    "status": f"{counts['current_semesters']} 个",
+                    "description": "覆盖今天的学期会更适合作为默认推荐。",
+                },
+            ],
+        ),
+        step(
+            "course",
+            2,
+            "确认课程",
+            "课程名称与系别",
+            "输入课程名称后，系统会推荐相似旧课程；老师可绑定旧课程，也可把同名课程作为新课程创建。",
+            f"当前已有 {counts['courses']} 门课程模板。",
+            "课程名称可以先简单确认，课程简介、学时、学分和课次会在后面的细节步骤继续补齐。",
+            count=counts["courses"],
+            ready=counts["courses"] > 0,
+            badge_text=f"{counts['courses']} 门课程",
+            meta_label="相似课程",
+            checklist=[
+                {
+                    "title": "课程模板",
+                    "ready": counts["courses"] > 0,
+                    "status": f"{counts['courses']} 门",
+                    "description": "已有模板会在向导里作为可绑定对象出现。",
+                },
+                {
+                    "title": "课次基础",
+                    "ready": counts["course_lessons"] > 0,
+                    "status": f"{counts['course_lessons']} 条",
+                    "description": "旧课程若已有课次，开课后课堂时间轴会更完整。",
+                },
+            ],
+        ),
+        step(
+            "textbook",
+            3,
+            "选择教材",
+            "建立知识依据",
+            "教材是课程简介、课次生成和 AI 助教上下文的重要来源，向导会优先推荐与课程相关的教材。",
+            f"当前已有 {counts['textbooks']} 本教材。",
+            "没有合适教材时可在向导里新建；新增后会自动出现在候选列表顶部并被选中。",
+            count=counts["textbooks"],
+            ready=counts["textbooks"] > 0,
+            badge_text=f"{counts['textbooks']} 本教材",
+            meta_label="教材候选",
+            checklist=[
+                {
+                    "title": "教材库",
+                    "ready": counts["textbooks"] > 0,
+                    "status": f"{counts['textbooks']} 本",
+                    "description": "教材越完整，AI 生成课程简介和课堂设置越稳定。",
+                },
+            ],
+        ),
+        step(
+            "materials",
+            4,
+            "导入材料",
+            "文件夹与文档",
+            "课程材料通常以文件夹保存，向导会按目录树展示，可选择根目录、文件夹或具体文件。",
+            f"当前已有 {counts['materials']} 个材料节点；此步骤允许跳过。",
+            "材料可以先跳过，之后再用管理中心导入文件夹，或用深度思考 AI 辅助生成与绑定。",
+            count=counts["materials"],
+            ready=counts["materials"] > 0,
+            optional=counts["materials"] == 0,
+            badge_text=f"{counts['materials']} 个材料",
+            meta_label="可跳过",
+            checklist=[
+                {
+                    "title": "材料库",
+                    "ready": counts["materials"] > 0,
+                    "status": f"{counts['materials']} 个",
+                    "description": "有根目录时向导默认只展示根目录，避免文件列表过长。",
+                },
+                {
+                    "title": "跳过策略",
+                    "ready": True,
+                    "status": "允许",
+                    "description": "没有材料也可以继续开课，后续仍可补充。",
+                },
+            ],
+        ),
+        step(
+            "class",
+            5,
+            "选择班级",
+            "系别与学生名单",
+            "班级按系别归属管理，向导会把与课程系别关联的班级推荐到前面。",
+            f"当前已有 {counts['classes']} 个班级。",
+            "如果班级还没录入，可先在向导里新建班级，再继续完成课堂开设。",
+            count=counts["classes"],
+            ready=counts["classes"] > 0,
+            badge_text=f"{counts['classes']} 个班级",
+            meta_label="班级候选",
+            checklist=[
+                {
+                    "title": "班级可选",
+                    "ready": counts["classes"] > 0,
+                    "status": f"{counts['classes']} 个",
+                    "description": "课程与班级同属系别时，后续统计和推荐更准确。",
+                },
+            ],
+        ),
+        step(
+            "details",
+            6,
+            "补充细节",
+            "学分、学时与课次",
+            "系统会根据学时推算学分，并用课程名称与教材辅助生成简介、课次和材料绑定建议。",
+            f"当前已有 {counts['course_lessons']} 条课程课次设置。",
+            "这一页适合把自动带入的内容检查一遍，尤其是学时合计和课次小节数是否一致。",
+            count=counts["course_lessons"],
+            ready=counts["course_lessons"] > 0,
+            partial=counts["courses"] > 0,
+            badge_text=f"{counts['course_lessons']} 条课次",
+            meta_label="课堂设置",
+            checklist=[
+                {
+                    "title": "学时与学分",
+                    "ready": counts["courses"] > 0,
+                    "status": "自动计算",
+                    "description": "系统按 8 学时 0.5 学分的规则推算，可由老师调整。",
+                },
+                {
+                    "title": "课次设置",
+                    "ready": counts["course_lessons"] > 0,
+                    "status": f"{counts['course_lessons']} 条",
+                    "description": "课次合计小节数需要与总学时一致。",
+                },
+            ],
+        ),
+        step(
+            "ai",
+            7,
+            "配置 AI 助教",
+            "生成课堂助手",
+            "根据学期、课程、教材、材料和班级，生成课堂 AI 助教的上下文与提示词。",
+            f"当前已有 {counts['ai_configs']} 个课堂完成 AI 配置。",
+            "建议先完成课堂创建，再进入 AI 配置；已有内容越完整，助手越容易给出贴合课程的回答。",
+            count=counts["ai_configs"],
+            ready=counts["offerings"] > 0 and counts["ai_configs"] >= counts["offerings"],
+            partial=counts["ai_configs"] > 0,
+            badge_text=f"{counts['ai_configs']} 个配置",
+            meta_label="AI 助教",
+            checklist=[
+                {
+                    "title": "已开课堂",
+                    "ready": counts["offerings"] > 0,
+                    "status": f"{counts['offerings']} 个",
+                    "description": "AI 助教配置依赖具体课堂。",
+                },
+                {
+                    "title": "AI 配置",
+                    "ready": counts["ai_configs"] > 0,
+                    "status": f"{counts['ai_configs']} 个",
+                    "description": "每个课堂都可以保留自己的助手设置。",
+                },
+            ],
+        ),
+        step(
+            "success",
+            8,
+            "完成开课",
+            "进入课堂继续使用",
+            "完成向导后会创建课堂，并提供进入课堂页的按钮。",
+            f"当前已开设 {counts['offerings']} 个课堂。",
+            "创建成功后建议直接进入课堂页，检查时间轴、材料入口和 AI 助手是否符合预期。",
+            count=counts["offerings"],
+            ready=counts["offerings"] > 0,
+            badge_text=f"{counts['offerings']} 个课堂",
+            meta_label="开课结果",
+            checklist=[
+                {
+                    "title": "课堂数量",
+                    "ready": counts["offerings"] > 0,
+                    "status": f"{counts['offerings']} 个",
+                    "description": "已有课堂可在下方列表继续编辑或进入。",
+                },
+            ],
+        ),
+    ]
+
+    if counts["semesters"] == 0:
+        recommended_stage = "semester"
+    elif counts["courses"] == 0:
+        recommended_stage = "course"
+    elif counts["textbooks"] == 0:
+        recommended_stage = "textbook"
+    elif counts["classes"] == 0:
+        recommended_stage = "class"
+    elif counts["offerings"] == 0:
+        recommended_stage = "details"
+    elif counts["ai_configs"] < counts["offerings"]:
+        recommended_stage = "ai"
+    else:
+        recommended_stage = "success"
+
+    stage_views = {
+        "semester": {"href": "/manage/semesters", "embed_url": _build_manage_view_url("/manage/semesters", embed=1)},
+        "course": {"href": "/manage/courses", "embed_url": _build_manage_view_url("/manage/courses", embed=1)},
+        "textbook": {"href": "/manage/textbooks", "embed_url": _build_manage_view_url("/manage/textbooks", embed=1)},
+        "materials": {"href": "/manage/materials", "embed_url": _build_manage_view_url("/manage/materials", embed=1)},
+        "class": {"href": "/manage/classes", "embed_url": _build_manage_view_url("/manage/classes", embed=1)},
+        "details": {"href": "/manage/courses", "embed_url": _build_manage_view_url("/manage/courses", embed=1)},
+        "ai": {"href": "/manage/ai", "embed_url": _build_manage_view_url("/manage/ai", embed=1)},
+        "success": {"href": "/manage/offerings", "embed_url": _build_manage_view_url("/manage/offerings", embed=1)},
+    }
+
+    return {
+        "counts": counts,
+        "prep_resources": [],
+        "steps": steps,
+        "recommended_stage": recommended_stage,
+        "recommended_prep": "",
+        "stage_views": stage_views,
+    }
 
 
 def _build_manage_workflow_snapshot(conn, teacher_id: int) -> dict:
