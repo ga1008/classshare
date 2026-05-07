@@ -18,7 +18,7 @@
     color: #334155;
     box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
     cursor: pointer;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+    transition: box-shadow 0.22s ease, color 0.22s ease, border-color 0.22s ease, background 0.22s ease;
 }
 
 .teacher-onboarding-entry:hover,
@@ -26,7 +26,6 @@
     color: #0f766e;
     border-color: rgba(15, 118, 110, 0.46);
     box-shadow: 0 16px 32px rgba(15, 118, 110, 0.14), 0 0 0 4px rgba(20, 184, 166, 0.12);
-    transform: translateY(-1px);
     outline: none;
 }
 
@@ -52,7 +51,7 @@
     backdrop-filter: blur(8px);
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.22s ease;
+    transition: opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .teacher-onboarding-modal.is-open {
@@ -73,11 +72,17 @@
     box-shadow: 0 28px 72px rgba(17, 24, 39, 0.24);
     color: #333333;
     font-family: "Microsoft YaHei UI Light", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
-    transform: translateY(14px) scale(0.98);
-    transition: transform 0.24s ease;
+    opacity: 0;
+    transform: translateY(24px) scale(0.965);
+    transition:
+        transform 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 0.32s ease,
+        grid-template-rows 0.56s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform, opacity;
 }
 
 .teacher-onboarding-modal.is-open .teacher-onboarding-dialog {
+    opacity: 1;
     transform: translateY(0) scale(1);
 }
 
@@ -127,7 +132,7 @@
     line-height: 1.4;
     text-align: center;
     letter-spacing: 0;
-    transition: transform 0.58s cubic-bezier(0.22, 1, 0.36, 1), font-size 0.58s cubic-bezier(0.22, 1, 0.36, 1), color 0.58s ease;
+    transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1), font-size 0.5s cubic-bezier(0.22, 1, 0.36, 1), color 0.5s ease;
 }
 
 .teacher-onboarding-dialog.is-welcome-pending {
@@ -203,7 +208,10 @@
 
 .teacher-onboarding-dialog.is-welcome-pending .teacher-onboarding-main,
 .teacher-onboarding-dialog.is-welcome-pending .teacher-onboarding-footer {
-    display: none;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(12px);
 }
 
 .teacher-onboarding-step-count {
@@ -220,17 +228,18 @@
 .onboarding-step-shell {
     display: grid;
     gap: 20px;
-    animation: onboardingStepIn 0.3s ease both;
+    animation: onboardingStepIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+    will-change: opacity, transform;
 }
 
 .onboarding-step-shell.is-leaving {
-    animation: onboardingStepOut 0.28s ease both;
+    animation: onboardingStepOut 0.26s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
 @keyframes onboardingStepIn {
     from {
         opacity: 0;
-        transform: translateY(18px);
+        transform: translateY(10px);
     }
     to {
         opacity: 1;
@@ -241,7 +250,7 @@
 @keyframes onboardingStepOut {
     to {
         opacity: 0;
-        transform: translateY(-28px);
+        transform: translateY(-12px);
     }
 }
 
@@ -359,10 +368,14 @@
 .onboarding-material-select:hover,
 .onboarding-material-select:focus-visible,
 .onboarding-material-node.is-selected > .onboarding-material-row .onboarding-material-select {
-    border-color: rgba(75, 85, 99, 0.38);
+    border-color: rgba(15, 118, 110, 0.5);
     background: #fbfbfb;
-    box-shadow: 0 10px 22px rgba(17, 24, 39, 0.08);
+    box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.12), 0 10px 22px rgba(17, 24, 39, 0.08);
     outline: none;
+}
+
+.onboarding-material-node.is-selected > .onboarding-material-row .onboarding-material-select {
+    animation: onboardingSelectedPulse 0.46s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .onboarding-material-icon {
@@ -433,14 +446,13 @@
     color: #333333;
     text-align: left;
     cursor: pointer;
-    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 
 .onboarding-upload-choice:hover,
 .onboarding-upload-choice:focus-visible {
     border-color: rgba(75, 85, 99, 0.38);
     box-shadow: 0 12px 24px rgba(17, 24, 39, 0.09);
-    transform: translateY(-1px);
     outline: none;
 }
 
@@ -475,7 +487,7 @@
     text-align: left;
     cursor: pointer;
     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
-    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease, background 0.18s ease;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 .onboarding-option-card:hover,
@@ -484,8 +496,21 @@
     border-color: rgba(15, 118, 110, 0.54);
     background: #f8fffd;
     box-shadow: 0 14px 28px rgba(15, 118, 110, 0.12);
-    transform: translateY(-1px);
     outline: none;
+}
+
+.onboarding-option-card.is-selected {
+    box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.16), 0 14px 28px rgba(15, 118, 110, 0.12);
+    animation: onboardingSelectedPulse 0.46s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes onboardingSelectedPulse {
+    from {
+        box-shadow: 0 0 0 0 rgba(15, 118, 110, 0.22), 0 8px 18px rgba(15, 23, 42, 0.05);
+    }
+    to {
+        box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.16), 0 14px 28px rgba(15, 118, 110, 0.12);
+    }
 }
 
 .onboarding-option-card.is-muted {
@@ -697,6 +722,7 @@
     justify-content: center;
     padding: 18px;
     background: rgba(15, 23, 42, 0.45);
+    animation: onboardingFadeIn 0.24s ease both;
 }
 
 .teacher-onboarding-submodal-card {
@@ -710,6 +736,27 @@
     border-radius: 12px;
     background: #ffffff;
     box-shadow: 0 28px 72px rgba(15, 23, 42, 0.26);
+    animation: onboardingSubmodalIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes onboardingFadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes onboardingSubmodalIn {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 .teacher-onboarding-submodal-card header {
@@ -824,5 +871,22 @@
 
     .teacher-onboarding-footer .btn {
         width: 100%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .teacher-onboarding-modal,
+    .teacher-onboarding-dialog,
+    .teacher-onboarding-welcome-area h2,
+    .teacher-onboarding-main,
+    .teacher-onboarding-footer,
+    .onboarding-step-shell,
+    .onboarding-step-shell.is-leaving,
+    .onboarding-option-card.is-selected,
+    .onboarding-material-node.is-selected > .onboarding-material-row .onboarding-material-select,
+    .teacher-onboarding-submodal,
+    .teacher-onboarding-submodal-card {
+        animation: none !important;
+        transition: none !important;
     }
 }

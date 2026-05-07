@@ -32,6 +32,7 @@ if (modal && openButtons.length > 0) {
         completing: false,
         materialExpandedIds: new Set(),
         materialLoadingIds: new Set(),
+        courseSuggestionIds: [],
         selected: {
             semesterId: null,
             courseId: null,
@@ -318,6 +319,26 @@ if (modal && openButtons.length > 0) {
         return overlap;
     }
 
+    function computeCourseSuggestions(courses, keyword) {
+        return courses
+            .map((course) => ({ course, score: courseSimilarityScore(course, keyword) }))
+            .filter((item) => item.score > 0 || !keyword)
+            .sort((a, b) => b.score - a.score || Number(b.course.offering_count || 0) - Number(a.course.offering_count || 0))
+            .slice(0, 8);
+    }
+
+    function stableCourseSuggestions(courses, keyword) {
+        if (state.selected.courseId && state.courseSuggestionIds.length) {
+            const byId = new Map(courses.map((course) => [Number(course.id), course]));
+            const cached = state.courseSuggestionIds
+                .map((id) => byId.get(Number(id)))
+                .filter(Boolean)
+                .map((course) => ({ course, score: courseSimilarityScore(course, keyword) }));
+            if (cached.length) return cached;
+        }
+        return computeCourseSuggestions(courses, keyword);
+    }
+
     function relatedClassSummary(course) {
         const ids = Array.isArray(course.related_class_ids) ? course.related_class_ids.map(Number) : [];
         const names = ids
@@ -330,11 +351,7 @@ if (modal && openButtons.length > 0) {
     function renderCourseStep(container) {
         const courses = list('courses');
         const keyword = normalizeText(state.selected.courseName);
-        const similarCourses = courses
-            .map((course) => ({ course, score: courseSimilarityScore(course, keyword) }))
-            .filter((item) => item.score > 0 || !keyword)
-            .sort((a, b) => b.score - a.score || Number(b.course.offering_count || 0) - Number(a.course.offering_count || 0))
-            .slice(0, 8);
+        const similarCourses = stableCourseSuggestions(courses, keyword);
         const departments = list('departments');
         const departmentOptions = departments.map((item) => `<option value="${escapeHtml(item)}"></option>`).join('');
         const similarHtml = similarCourses.length ? similarCourses.map(({ course }) => optionCard({
@@ -383,6 +400,7 @@ if (modal && openButtons.length > 0) {
             const cursorPosition = nameInput.selectionStart || value.length;
             if (value !== state.selected.courseName) {
                 state.selected.courseId = null;
+                state.courseSuggestionIds = [];
                 state.selected.courseName = value;
                 state.selected.sectName = '';
             }
@@ -402,6 +420,7 @@ if (modal && openButtons.length > 0) {
         bindCardSelection(container, (id) => {
             const course = courses.find((item) => Number(item.id) === Number(id));
             if (!course) return;
+            state.courseSuggestionIds = similarCourses.map((item) => Number(item.course.id));
             state.selected.courseId = Number(course.id);
             state.selected.courseName = course.name || '';
             state.selected.department = course.department || state.selected.department;
@@ -418,11 +437,7 @@ if (modal && openButtons.length > 0) {
     function sortedTextbooks() {
         const courseId = Number(state.selected.courseId || 0);
         const courseName = normalizeText(state.selected.courseName).toLowerCase();
-        const selectedId = Number(state.selected.textbookId || 0);
         return [...list('textbooks')].sort((a, b) => {
-            const aSelected = selectedId && Number(a.id) === selectedId ? 1 : 0;
-            const bSelected = selectedId && Number(b.id) === selectedId ? 1 : 0;
-            if (aSelected !== bSelected) return bSelected - aSelected;
             const aLinked = courseId && Array.isArray(a.related_course_ids) && a.related_course_ids.includes(courseId) ? 1 : 0;
             const bLinked = courseId && Array.isArray(b.related_course_ids) && b.related_course_ids.includes(courseId) ? 1 : 0;
             if (aLinked !== bLinked) return bLinked - aLinked;
@@ -495,9 +510,6 @@ if (modal && openButtons.length > 0) {
 
     function materialCompare(a, b) {
         const courseId = Number(state.selected.courseId || 0);
-        const aSelected = state.selected.materialIds.has(Number(a.id)) ? 1 : 0;
-        const bSelected = state.selected.materialIds.has(Number(b.id)) ? 1 : 0;
-        if (aSelected !== bSelected) return bSelected - aSelected;
         const aLinked = courseId && Array.isArray(a.related_course_ids) && a.related_course_ids.includes(courseId) ? 1 : 0;
         const bLinked = courseId && Array.isArray(b.related_course_ids) && b.related_course_ids.includes(courseId) ? 1 : 0;
         if (aLinked !== bLinked) return bLinked - aLinked;
@@ -659,11 +671,7 @@ if (modal && openButtons.length > 0) {
     function sortedClasses() {
         const courseId = Number(state.selected.courseId || 0);
         const department = normalizeText(state.selected.department);
-        const selectedId = Number(state.selected.classId || 0);
         return [...list('classes')].sort((a, b) => {
-            const aSelected = selectedId && Number(a.id) === selectedId ? 1 : 0;
-            const bSelected = selectedId && Number(b.id) === selectedId ? 1 : 0;
-            if (aSelected !== bSelected) return bSelected - aSelected;
             const aLinked = courseId && Array.isArray(a.related_course_ids) && a.related_course_ids.includes(courseId) ? 1 : 0;
             const bLinked = courseId && Array.isArray(b.related_course_ids) && b.related_course_ids.includes(courseId) ? 1 : 0;
             if (aLinked !== bLinked) return bLinked - aLinked;
@@ -1031,7 +1039,7 @@ if (modal && openButtons.length > 0) {
         window.setTimeout(() => {
             state.activeIndex = target;
             render();
-        }, 230);
+        }, 260);
     }
 
     async function handleNext() {
@@ -1383,6 +1391,7 @@ if (modal && openButtons.length > 0) {
         state.activeIndex = 0;
         state.materialExpandedIds.clear();
         state.materialLoadingIds.clear();
+        state.courseSuggestionIds = [];
         state.lastFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         state.bodyOverflow = document.body.style.overflow || '';
         if (elements.welcome) {
@@ -1405,7 +1414,7 @@ if (modal && openButtons.length > 0) {
         state.welcomeTimer = window.setTimeout(() => {
             dialog?.classList.remove('is-welcome-pending');
             dialog?.classList.add('is-welcome-compact');
-        }, 3000);
+        }, 1400);
     }
 
     async function closeGuide(reason = 'manual_exit') {
@@ -1420,7 +1429,7 @@ if (modal && openButtons.length > 0) {
         window.clearTimeout(state.welcomeTimer);
         state.closeTimer = window.setTimeout(() => {
             if (!state.isOpen) modal.hidden = true;
-        }, 220);
+        }, 320);
         if (state.lastFocused && document.contains(state.lastFocused)) {
             state.lastFocused.focus({ preventScroll: true });
         }
