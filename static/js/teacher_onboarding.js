@@ -61,7 +61,7 @@ if (modal && openButtons.length > 0) {
         { key: 'textbook', label: '教材', prompt: '在真正开始开设课堂前，有一些准备工作先要确认一下' },
         { key: 'materials', label: '教学材料', prompt: '上课用到的文档、PPT、思维导图或者其他材料' },
         { key: 'class', label: '班级', prompt: '这门课准备给哪个班级上呢？' },
-        { key: 'details', label: '课程细节', prompt: '反过来补充一些课程细节和课堂安排' },
+        { key: 'details', label: '课程细节', prompt: '再来补充一些课程细节和课堂安排' },
         { key: 'ai', label: 'AI 助教', prompt: '根据已有内容配置课堂 AI 助教' },
         { key: 'success', label: '完成', prompt: '恭喜开课成功' },
     ];
