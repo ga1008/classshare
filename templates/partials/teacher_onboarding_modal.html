@@ -4,65 +4,59 @@
         role="dialog"
         aria-modal="true"
         aria-labelledby="teacherOnboardingTitle"
-        aria-describedby="teacherOnboardingSummary"
+        aria-describedby="teacherOnboardingPrompt"
     >
-        <header class="teacher-onboarding-header">
-            <div>
-                <p class="teacher-onboarding-kicker">Teacher Starter</p>
-                <h2 id="teacherOnboardingTitle">教师新手引导</h2>
-                <p id="teacherOnboardingSummary">按真实开课顺序完成班级、课程、学期、课堂和 AI 助教配置。</p>
-            </div>
-            <button
-                type="button"
-                class="teacher-onboarding-close"
-                data-teacher-onboarding-dismiss
-                aria-label="退出新手引导"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M18 6 6 18"></path>
-                    <path d="m6 6 12 12"></path>
-                </svg>
-            </button>
+        <button
+            type="button"
+            class="teacher-onboarding-close"
+            data-teacher-onboarding-dismiss
+            aria-label="退出新建课堂引导"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M18 6 6 18"></path>
+                <path d="m6 6 12 12"></path>
+            </svg>
+        </button>
+
+        <header class="teacher-onboarding-welcome-area">
+            <h2 id="teacherOnboardingTitle" data-onboarding-welcome>欢迎老师，接下来我们一起一步步完成课堂的开设</h2>
+            <div class="teacher-onboarding-history" data-onboarding-history aria-label="已完成步骤"></div>
         </header>
 
-        <div class="teacher-onboarding-body">
-            <aside class="teacher-onboarding-rail" aria-label="新手引导步骤">
-                <div class="teacher-onboarding-progress">
-                    <span data-teacher-onboarding-progress-text>正在读取准备情况</span>
-                    <strong data-teacher-onboarding-progress-count>0/5</strong>
-                </div>
-                <div class="teacher-onboarding-progressbar" aria-hidden="true">
-                    <span data-teacher-onboarding-progressbar></span>
-                </div>
-                <div class="teacher-onboarding-step-list" data-teacher-onboarding-step-list></div>
-            </aside>
-
-            <article class="teacher-onboarding-detail">
-                <div class="teacher-onboarding-step-meta" data-teacher-onboarding-step-meta>第 1 步</div>
-                <h3 data-teacher-onboarding-step-title>创建自己的班级</h3>
-                <p data-teacher-onboarding-step-description>正在准备新手引导内容。</p>
-
-                <div class="teacher-onboarding-status-box">
-                    <span data-teacher-onboarding-step-status>待完成</span>
-                    <strong data-teacher-onboarding-step-count>0 项</strong>
-                </div>
-
-                <div class="teacher-onboarding-tip">
-                    <strong>建议顺序</strong>
-                    <p data-teacher-onboarding-tip-text>先创建班级，再准备课程和学期，最后开设课堂并配置 AI 助教。</p>
-                </div>
-
-                <div class="teacher-onboarding-actions">
-                    <button type="button" class="btn btn-outline" data-teacher-onboarding-prev>上一步</button>
-                    <button type="button" class="btn btn-outline" data-teacher-onboarding-next>下一步</button>
-                    <a href="/manage" class="btn btn-primary" data-teacher-onboarding-action>前往处理</a>
-                </div>
-            </article>
-        </div>
+        <main class="teacher-onboarding-main">
+            <div class="teacher-onboarding-step-count" data-onboarding-step-count>第 1 步 / 共 8 步</div>
+            <section class="teacher-onboarding-step-panel" data-onboarding-content aria-live="polite"></section>
+        </main>
 
         <footer class="teacher-onboarding-footer">
-            <button type="button" class="btn btn-outline" data-teacher-onboarding-dismiss>退出引导</button>
-            <button type="button" class="btn btn-primary" data-teacher-onboarding-complete>完成引导</button>
+            <button type="button" class="btn btn-outline" data-onboarding-prev>上一步</button>
+            <div class="teacher-onboarding-footer-note" data-onboarding-footer-note>每一步只确认一件事，随时可以返回调整。</div>
+            <button type="button" class="btn btn-primary" data-onboarding-next disabled>下一步</button>
         </footer>
+    </section>
+
+    <section
+        class="teacher-onboarding-submodal"
+        data-onboarding-submodal
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="teacherOnboardingSubmodalTitle"
+        hidden
+    >
+        <div class="teacher-onboarding-submodal-card">
+            <header>
+                <div>
+                    <p class="teacher-onboarding-kicker">Quick Add</p>
+                    <h3 id="teacherOnboardingSubmodalTitle" data-submodal-title>新增</h3>
+                </div>
+                <button type="button" class="teacher-onboarding-close is-submodal" data-submodal-close aria-label="关闭">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M18 6 6 18"></path>
+                        <path d="m6 6 12 12"></path>
+                    </svg>
+                </button>
+            </header>
+            <div class="teacher-onboarding-submodal-body" data-submodal-body></div>
+        </div>
     </section>
 </div>

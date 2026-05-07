@@ -440,6 +440,7 @@
                     <div class="academic-card-topline">
                         <span class="academic-card-kicker">{{ course.coverage_label }}</span>
                         <div class="academic-badge-row">
+                            {% if course.department %}<span class="academic-badge is-accent">{{ course.department }}</span>{% endif %}
                             <span class="academic-badge">{{ course.total_hours }} 学时</span>
                             <span class="academic-badge is-accent">{{ course.sect_name }}</span>
                             <span class="academic-badge is-success">{{ course.lesson_count }} 次课</span>
@@ -462,6 +463,10 @@
                         </div>
 
                         <div class="course-meta-grid">
+                            <div class="course-meta-row">
+                                <span>所属系别</span>
+                                <strong>{{ course.department or '未设置' }}</strong>
+                            </div>
                             <div class="course-meta-row">
                                 <span>宗门名称</span>
                                 <strong>{{ course.sect_name }}</strong>
@@ -559,6 +564,15 @@
                     <div class="form-group">
                         <label class="form-label required" for="courseNameInput">课程名称</label>
                         <input id="courseNameInput" class="form-control" type="text" placeholder="例如：动态 Web 程序设计实验">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="courseDepartmentInput">所属系别</label>
+                        <input id="courseDepartmentInput" class="form-control" type="text" list="courseDepartmentOptions" placeholder="例如：网络工程系">
+                        <datalist id="courseDepartmentOptions">
+                            {% for department in department_options %}
+                            <option value="{{ department }}"></option>
+                            {% endfor %}
+                        </datalist>
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="courseSectNameInput">宗门名称</label>
@@ -680,7 +694,8 @@
 <script>
     window.COURSE_PAGE_DATA = {
         courses: {{ courses_json | tojson }},
-        textbooks: {{ textbooks_json | tojson }}
+        textbooks: {{ textbooks_json | tojson }},
+        departments: {{ department_options | tojson }}
     };
 </script>
 {% endblock %}

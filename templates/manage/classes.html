@@ -178,6 +178,16 @@
                         <input type="text" id="classNameInput" name="class_name" class="form-control" required placeholder="例如：软件工程 2406 班">
                     </div>
                     <div class="academic-field">
+                        <label for="classDepartmentInput">所属系别</label>
+                        <input type="text" id="classDepartmentInput" name="department" class="form-control" list="classDepartmentOptions" placeholder="例如：软件工程系">
+                        <datalist id="classDepartmentOptions">
+                            {% for department in department_options %}
+                            <option value="{{ department }}"></option>
+                            {% endfor %}
+                        </datalist>
+                        <div class="academic-hint">可从班级名称自动推断，手动填写能让课程和班级推荐更准确。</div>
+                    </div>
+                    <div class="academic-field">
                         <label for="classRosterInput">学生名单文件</label>
                         <input type="file" id="classRosterInput" name="file" class="form-control" required accept=".xlsx,.xls,.csv">
                         <div class="academic-hint">文件至少需要包含“姓名”和“学号”两列；建议同时包含“邮箱”或“email”列，方便重要通知邮件送达。</div>
@@ -205,9 +215,13 @@
                     <article class="class-upload-item">
                         <div>
                             <strong>{{ class_item.name }}</strong>
-                            <p>已导入 {{ class_item.student_count }} 名学生，可直接在开设课堂时绑定。</p>
+                            <p>
+                                {% if class_item.department %}{{ class_item.department }} · {% endif %}
+                                已导入 {{ class_item.student_count }} 名学生，可直接在开设课堂时绑定。
+                            </p>
                         </div>
                         <div class="class-upload-item-actions">
+                            {% if class_item.department %}<span class="academic-badge is-accent">{{ class_item.department }}</span>{% endif %}
                             <span class="academic-badge">{{ class_item.student_count }} 名学生</span>
                             <button
                                 type="button"
