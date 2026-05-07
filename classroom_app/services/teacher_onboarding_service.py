@@ -141,6 +141,8 @@ def _load_teacher_materials(conn: sqlite3.Connection, teacher_id: int) -> list[d
     rows = conn.execute(
         """
         SELECT m.id,
+               m.parent_id,
+               m.root_id,
                m.name,
                m.material_path,
                m.node_type,
@@ -148,6 +150,7 @@ def _load_teacher_materials(conn: sqlite3.Connection, teacher_id: int) -> list[d
                m.file_ext,
                m.file_size,
                m.updated_at,
+               (SELECT COUNT(*) FROM course_materials child WHERE child.parent_id = m.id AND child.name != '.git') AS child_count,
                GROUP_CONCAT(DISTINCT cl.course_id) AS lesson_course_ids,
                GROUP_CONCAT(DISTINCT o.course_id) AS offering_course_ids
         FROM course_materials m
@@ -156,9 +159,10 @@ def _load_teacher_materials(conn: sqlite3.Connection, teacher_id: int) -> list[d
         LEFT JOIN class_offerings o ON o.id = a.class_offering_id
         WHERE m.teacher_id = ?
           AND m.name != '.git'
-          AND (m.node_type = 'file' OR m.parent_id IS NULL)
-        GROUP BY m.id, m.name, m.material_path, m.node_type, m.preview_type, m.file_ext, m.file_size, m.updated_at
+          AND m.parent_id IS NULL
+        GROUP BY m.id, m.parent_id, m.root_id, m.name, m.material_path, m.node_type, m.preview_type, m.file_ext, m.file_size, m.updated_at
         ORDER BY
+          CASE WHEN m.node_type = 'folder' THEN 0 ELSE 1 END,
           CASE WHEN m.preview_type = 'markdown' THEN 0 ELSE 1 END,
           m.updated_at DESC,
           m.id DESC
@@ -175,12 +179,15 @@ def _load_teacher_materials(conn: sqlite3.Connection, teacher_id: int) -> list[d
         materials.append(
             {
                 "id": int(row["id"]),
+                "parent_id": int(row["parent_id"]) if row["parent_id"] is not None else None,
+                "root_id": int(row["root_id"] or row["id"]),
                 "name": str(row["name"] or ""),
                 "material_path": str(row["material_path"] or ""),
                 "node_type": str(row["node_type"] or ""),
                 "preview_type": str(row["preview_type"] or ""),
                 "file_ext": str(row["file_ext"] or ""),
                 "file_size": int(row["file_size"] or 0),
+                "child_count": int(row["child_count"] or 0),
                 "updated_at": str(row["updated_at"] or ""),
                 "is_markdown": str(row["node_type"] or "") == "file" and str(row["preview_type"] or "") == "markdown",
                 "related_course_ids": related_course_ids,
