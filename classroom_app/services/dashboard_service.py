@@ -345,10 +345,13 @@ def _build_teacher_dashboard_context(
         conn,
         """
         SELECT COUNT(*)
-        FROM student_password_reset_requests
-        WHERE teacher_id = ? AND status = 'pending'
+        FROM student_password_reset_requests r
+        JOIN classes c ON c.id = r.class_id
+        WHERE r.teacher_id = ?
+          AND c.created_by_teacher_id = ?
+          AND r.status = 'pending'
         """,
-        (teacher_id,),
+        (teacher_id, teacher_id),
     )
 
     enriched_offerings: list[dict[str, Any]] = []

@@ -167,6 +167,9 @@ EMAIL_WORKER_HEARTBEAT_TIMEOUT_SECONDS = max(30, int(os.getenv("EMAIL_WORKER_HEA
 # --- Teacher auth ---
 TEACHER_USER = os.getenv("TEACHER_NAME", "teacher")
 TEACHER_PASS = os.getenv("TEACHER_PASSWD", "admin123")
+INITIAL_SUPER_ADMIN_EMAIL = os.getenv("INITIAL_SUPER_ADMIN_EMAIL", "414160375@qq.com").strip().lower()
+INITIAL_SUPER_ADMIN_NAME = os.getenv("INITIAL_SUPER_ADMIN_NAME", "张海林老师").strip()
+INITIAL_SUPER_ADMIN_PASSWORD = os.getenv("INITIAL_SUPER_ADMIN_PASSWORD", "").strip()
 
 # --- Uploads ---
 TOTAL_UPLOAD_MBPS = float(os.getenv("TOTAL_UPLOAD_MBPS", 100.0))

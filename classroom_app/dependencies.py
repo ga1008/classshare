@@ -15,6 +15,7 @@ from passlib.context import CryptContext
 from .config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 from .database import (
     delete_user_sessions,
+    get_db_connection,
     get_user_session,
     list_user_session_roles,
     list_user_sessions,
@@ -498,6 +499,29 @@ def get_current_teacher(user: dict = Depends(get_current_user)) -> dict:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permission denied: Not a teacher",
+            headers={
+                "X-Auth-Error": AUTH_ERROR_PERMISSION_DENIED,
+                "X-Required-Role": "teacher",
+            },
+        )
+    try:
+        with get_db_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT COALESCE(is_active, 1) AS is_active
+                FROM teachers
+                WHERE id = ?
+                LIMIT 1
+                """,
+                (user.get("id"),),
+            ).fetchone()
+    except Exception:
+        row = None
+    if row is None or int(row["is_active"] or 0) != 1:
+        invalidate_session_for_user(str(user.get("id") or ""), "teacher")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied: Teacher account is disabled",
             headers={
                 "X-Auth-Error": AUTH_ERROR_PERMISSION_DENIED,
                 "X-Required-Role": "teacher",

@@ -66,9 +66,22 @@ from ..services.blog_news_crawler_service import (
 from ..services.roster_handler import parse_excel_to_students
 from ..services.student_auth_service import build_student_security_summary, list_student_login_history
 from ..services.submission_file_alignment import run_full_alignment
+from ..services.teacher_account_service import (
+    TEACHER_PASSWORD_HINT,
+    create_teacher_account,
+    deactivate_teacher_account,
+    grant_teacher_super_admin,
+    reset_teacher_password,
+    revoke_teacher_super_admin,
+    update_teacher_account,
+)
 from ..storage_paths import resolve_migrated_file_path
 
 router = APIRouter(prefix="/api/manage", dependencies=[Depends(get_current_teacher)])
+
+
+def _form_bool(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 @router.get("/teacher-onboarding/state", response_class=JSONResponse)
@@ -2304,9 +2317,11 @@ async def api_get_password_reset_request_detail(
             JOIN students s ON s.id = r.student_id
             JOIN classes c ON c.id = r.class_id
             LEFT JOIN teachers reviewer ON reviewer.id = r.reviewed_by_teacher_id
-            WHERE r.id = ? AND r.teacher_id = ?
+            WHERE r.id = ?
+              AND r.teacher_id = ?
+              AND c.created_by_teacher_id = ?
             """,
-            (request_id, user["id"]),
+            (request_id, user["id"], user["id"]),
         ).fetchone()
 
         if not request_row:
@@ -2328,47 +2343,175 @@ async def api_update_super_admin_teacher(
     teacher_id: int = Form(...),
     user: dict = Depends(get_current_teacher),
 ):
-    """设置唯一超管教师。已有超管时，只有当前超管可以调整。"""
+    """兼容旧入口：为教师授予超管权限。"""
     with get_db_connection() as conn:
-        target_teacher = conn.execute(
-            "SELECT id, name, email FROM teachers WHERE id = ? LIMIT 1",
-            (teacher_id,),
-        ).fetchone()
-        if not target_teacher:
-            raise HTTPException(status_code=404, detail="目标教师不存在。")
-
-        super_admin_count = int(
-            conn.execute(
-                "SELECT COUNT(*) AS cnt FROM teachers WHERE COALESCE(is_super_admin, 0) = 1"
-            ).fetchone()["cnt"]
-            or 0
-        )
-        if super_admin_count > 0 and not is_super_admin_teacher(conn, user["id"]):
-            raise HTTPException(status_code=403, detail="只有当前超管教师可以调整超管身份。")
-
-        conn.execute("UPDATE teachers SET is_super_admin = 0")
-        conn.execute("UPDATE teachers SET is_super_admin = 1 WHERE id = ?", (teacher_id,))
+        _require_current_super_admin(conn, user, "只有当前超管教师可以调整超管身份。")
+        try:
+            teacher = grant_teacher_super_admin(conn, teacher_id=teacher_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         conn.commit()
 
     return {
         "status": "success",
-        "message": f"已将 {target_teacher['name']} 设置为超管教师。",
-        "teacher": {
-            "id": int(target_teacher["id"]),
-            "name": str(target_teacher["name"] or ""),
-            "email": str(target_teacher["email"] or ""),
-        },
+        "message": f"已授予 {teacher['name']} 超管权限。",
+        "teacher": teacher,
     }
 
 
-def _require_current_super_admin(conn, user: dict) -> None:
+def _require_current_super_admin(conn, user: dict, detail: str = "只有当前超管教师可以执行该系统操作。") -> None:
     if not is_super_admin_teacher(conn, user["id"]):
-        raise HTTPException(status_code=403, detail="只有当前超管教师可以调整 AI 博客管家。")
+        raise HTTPException(status_code=403, detail=detail)
+
+
+@router.post("/system/teachers", response_class=JSONResponse)
+async def api_create_teacher_account(
+    name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    is_super_admin: str = Form(default=""),
+    user: dict = Depends(get_current_teacher),
+):
+    """新增教师账号，仅超管可用。"""
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            teacher = create_teacher_account(
+                conn,
+                actor_teacher_id=int(user["id"]),
+                name=name,
+                email=email,
+                password=password,
+                is_super_admin=_form_bool(is_super_admin),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": "教师账号已创建。", "teacher": teacher}
+
+
+@router.post("/system/teachers/{teacher_id}", response_class=JSONResponse)
+async def api_update_teacher_account(
+    teacher_id: int,
+    name: str = Form(...),
+    email: str = Form(...),
+    phone: str = Form(default=""),
+    wechat: str = Form(default=""),
+    qq: str = Form(default=""),
+    homepage_url: str = Form(default=""),
+    description: str = Form(default=""),
+    user: dict = Depends(get_current_teacher),
+):
+    """修改教师账号资料，仅超管可用。"""
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            teacher = update_teacher_account(
+                conn,
+                teacher_id=teacher_id,
+                name=name,
+                email=email,
+                phone=phone,
+                wechat=wechat,
+                qq=qq,
+                homepage_url=homepage_url,
+                description=description,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": "教师资料已更新。", "teacher": teacher}
+
+
+@router.post("/system/teachers/{teacher_id}/reset-password", response_class=JSONResponse)
+async def api_reset_teacher_account_password(
+    teacher_id: int,
+    password: str = Form(...),
+    user: dict = Depends(get_current_teacher),
+):
+    """重置教师账号密码，仅超管可用。"""
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            teacher = reset_teacher_password(conn, teacher_id=teacher_id, password=password)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+
+    invalidate_session_for_user(str(teacher_id), "teacher")
+    return {
+        "status": "success",
+        "message": f"已重置 {teacher['name']} 的密码，并清理其当前登录会话。",
+        "teacher": teacher,
+        "password_hint": TEACHER_PASSWORD_HINT,
+    }
+
+
+@router.post("/system/teachers/{teacher_id}/super-admin/grant", response_class=JSONResponse)
+async def api_grant_teacher_account_super_admin(
+    teacher_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    """授予教师超管权限，仅超管可用。"""
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            teacher = grant_teacher_super_admin(conn, teacher_id=teacher_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": f"已授予 {teacher['name']} 超管权限。", "teacher": teacher}
+
+
+@router.post("/system/teachers/{teacher_id}/super-admin/revoke", response_class=JSONResponse)
+async def api_revoke_teacher_account_super_admin(
+    teacher_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    """撤销教师超管权限，仅超管可用。"""
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            teacher = revoke_teacher_super_admin(conn, teacher_id=teacher_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+
+    if int(teacher_id) == int(user["id"]):
+        invalidate_session_for_user(str(teacher_id), "teacher")
+    return {"status": "success", "message": f"已撤销 {teacher['name']} 的超管权限。", "teacher": teacher}
+
+
+@router.delete("/system/teachers/{teacher_id}", response_class=JSONResponse)
+async def api_delete_teacher_account(
+    teacher_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    """删除教师账号：停用登录，保留历史教学数据。"""
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            teacher = deactivate_teacher_account(
+                conn,
+                teacher_id=teacher_id,
+                actor_teacher_id=int(user["id"]),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+
+    invalidate_session_for_user(str(teacher_id), "teacher")
+    return {
+        "status": "success",
+        "message": f"已删除 {teacher['name']} 的登录账号，历史教学数据已保留。",
+        "teacher": teacher,
+    }
 
 
 @router.get("/system/blog-crawler/status", response_class=JSONResponse)
 async def api_get_blog_news_crawler_status(user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
         dashboard = load_blog_news_crawler_dashboard(conn)
         dashboard["current_teacher_is_super_admin"] = is_super_admin_teacher(conn, user["id"])
     return {"status": "success", "dashboard": dashboard}
@@ -2418,11 +2561,14 @@ async def api_approve_password_reset_request(
     with get_db_connection() as conn:
         request_row = conn.execute(
             """
-            SELECT id, student_id, teacher_id, status
-            FROM student_password_reset_requests
-            WHERE id = ? AND teacher_id = ?
+            SELECT r.id, r.student_id, r.teacher_id, r.status
+            FROM student_password_reset_requests r
+            JOIN classes c ON c.id = r.class_id
+            WHERE r.id = ?
+              AND r.teacher_id = ?
+              AND c.created_by_teacher_id = ?
             """,
-            (request_id, user["id"]),
+            (request_id, user["id"], user["id"]),
         ).fetchone()
         if not request_row:
             raise HTTPException(status_code=404, detail="找回密码申请不存在。")
@@ -2466,11 +2612,14 @@ async def api_reject_password_reset_request(
     with get_db_connection() as conn:
         request_row = conn.execute(
             """
-            SELECT id, status
-            FROM student_password_reset_requests
-            WHERE id = ? AND teacher_id = ?
+            SELECT r.id, r.status
+            FROM student_password_reset_requests r
+            JOIN classes c ON c.id = r.class_id
+            WHERE r.id = ?
+              AND r.teacher_id = ?
+              AND c.created_by_teacher_id = ?
             """,
-            (request_id, user["id"]),
+            (request_id, user["id"], user["id"]),
         ).fetchone()
         if not request_row:
             raise HTTPException(status_code=404, detail="找回密码申请不存在。")
@@ -2501,6 +2650,7 @@ async def api_repair_submission_files(user: dict = Depends(get_current_teacher))
     """
     try:
         with get_db_connection() as conn:
+            _require_current_super_admin(conn, user)
             report = run_full_alignment(conn)
     except Exception as exc:
         traceback.print_exc()
