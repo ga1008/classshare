@@ -24,6 +24,8 @@ const elements = {
     checklist: document.getElementById('workflowChecklist'),
     prevBtn: document.getElementById('workflowPrevBtn'),
     nextBtn: document.getElementById('workflowNextBtn'),
+    railPrevBtn: document.getElementById('workflowRailPrevBtn'),
+    railNextBtn: document.getElementById('workflowRailNextBtn'),
     frameTitle: document.getElementById('workflowFrameTitle'),
     frameSubtitle: document.getElementById('workflowFrameSubtitle'),
     openPageLink: document.getElementById('workflowOpenPageLink'),
@@ -244,12 +246,19 @@ function renderRecommended() {
 
 function renderStepNavigation() {
     const currentIndex = stageOrder.indexOf(state.stage);
-    if (elements.prevBtn) {
-        elements.prevBtn.disabled = currentIndex <= 0;
-    }
-    if (elements.nextBtn) {
-        elements.nextBtn.disabled = currentIndex === -1 || currentIndex >= stageOrder.length - 1;
-    }
+    const isAtStart = currentIndex <= 0;
+    const isAtEnd = currentIndex === -1 || currentIndex >= stageOrder.length - 1;
+
+    [elements.prevBtn, elements.railPrevBtn].forEach((button) => {
+        if (button) {
+            button.disabled = isAtStart;
+        }
+    });
+    [elements.nextBtn, elements.railNextBtn].forEach((button) => {
+        if (button) {
+            button.disabled = isAtEnd;
+        }
+    });
 }
 
 function setLoading(isLoading) {
@@ -599,6 +608,15 @@ function switchStage(nextStage, { animate = true } = {}) {
     });
 }
 
+function switchStageByOffset(offset) {
+    const currentIndex = stageOrder.indexOf(state.stage);
+    const nextIndex = currentIndex + offset;
+    if (currentIndex === -1 || nextIndex < 0 || nextIndex >= stageOrder.length) {
+        return;
+    }
+    switchStage(stageOrder[nextIndex]);
+}
+
 function handleEmbedMessage(event) {
     if (event.origin !== window.location.origin) {
         return;
@@ -658,19 +676,11 @@ function bindEvents() {
         nextButton?.focus();
     });
 
-    elements.prevBtn?.addEventListener('click', () => {
-        const currentIndex = stageOrder.indexOf(state.stage);
-        if (currentIndex > 0) {
-            switchStage(stageOrder[currentIndex - 1]);
-        }
-    });
+    elements.prevBtn?.addEventListener('click', () => switchStageByOffset(-1));
 
-    elements.nextBtn?.addEventListener('click', () => {
-        const currentIndex = stageOrder.indexOf(state.stage);
-        if (currentIndex >= 0 && currentIndex < stageOrder.length - 1) {
-            switchStage(stageOrder[currentIndex + 1]);
-        }
-    });
+    elements.nextBtn?.addEventListener('click', () => switchStageByOffset(1));
+    elements.railPrevBtn?.addEventListener('click', () => switchStageByOffset(-1));
+    elements.railNextBtn?.addEventListener('click', () => switchStageByOffset(1));
 
     elements.frame?.addEventListener('load', () => {
         setLoading(false);
