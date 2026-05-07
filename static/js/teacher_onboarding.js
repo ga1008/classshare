@@ -30,6 +30,8 @@ if (modal && openButtons.length > 0) {
         closeTimer: null,
         welcomeTimer: null,
         completing: false,
+        materialExpandedIds: new Set(),
+        materialLoadingIds: new Set(),
         selected: {
             semesterId: null,
             courseId: null,
@@ -460,51 +462,202 @@ if (modal && openButtons.length > 0) {
         container.querySelector('[data-action="create-textbook"]')?.addEventListener('click', openTextbookSubmodal);
     }
 
-    function sortedMaterials() {
-        const courseId = Number(state.selected.courseId || 0);
-        return [...list('materials')].sort((a, b) => {
-            const aSelected = state.selected.materialIds.has(Number(a.id)) ? 1 : 0;
-            const bSelected = state.selected.materialIds.has(Number(b.id)) ? 1 : 0;
-            if (aSelected !== bSelected) return bSelected - aSelected;
-            const aLinked = courseId && Array.isArray(a.related_course_ids) && a.related_course_ids.includes(courseId) ? 1 : 0;
-            const bLinked = courseId && Array.isArray(b.related_course_ids) && b.related_course_ids.includes(courseId) ? 1 : 0;
-            if (aLinked !== bLinked) return bLinked - aLinked;
-            if (Boolean(a.is_markdown) !== Boolean(b.is_markdown)) return Number(Boolean(b.is_markdown)) - Number(Boolean(a.is_markdown));
-            return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+    function normalizeMaterialItem(item) {
+        return {
+            ...item,
+            id: Number(item.id || 0),
+            parent_id: item.parent_id === null || item.parent_id === undefined ? null : Number(item.parent_id),
+            root_id: Number(item.root_id || item.id || 0),
+            child_count: Number(item.child_count || 0),
+            related_course_ids: Array.isArray(item.related_course_ids) ? item.related_course_ids.map(Number) : [],
+            is_markdown: Boolean(item.is_markdown || (item.node_type === 'file' && item.preview_type === 'markdown')),
+        };
+    }
+
+    function upsertMaterials(items) {
+        const wizardState = wizard();
+        if (!Array.isArray(wizardState.materials)) wizardState.materials = [];
+        const byId = new Map(wizardState.materials.map((item) => [Number(item.id), normalizeMaterialItem(item)]));
+        (items || []).forEach((item) => {
+            const normalized = normalizeMaterialItem(item);
+            if (normalized.id) byId.set(normalized.id, { ...(byId.get(normalized.id) || {}), ...normalized });
         });
+        wizardState.materials = Array.from(byId.values());
+    }
+
+    function materialTypeLabel(material) {
+        if (material.node_type === 'folder') return '文件夹';
+        if (material.preview_type === 'markdown') return 'Markdown';
+        if (material.preview_type === 'image') return '图片';
+        if (material.preview_type === 'text') return material.file_ext ? material.file_ext.toUpperCase() : '文本';
+        return material.file_ext ? material.file_ext.toUpperCase() : '文件';
+    }
+
+    function materialCompare(a, b) {
+        const courseId = Number(state.selected.courseId || 0);
+        const aSelected = state.selected.materialIds.has(Number(a.id)) ? 1 : 0;
+        const bSelected = state.selected.materialIds.has(Number(b.id)) ? 1 : 0;
+        if (aSelected !== bSelected) return bSelected - aSelected;
+        const aLinked = courseId && Array.isArray(a.related_course_ids) && a.related_course_ids.includes(courseId) ? 1 : 0;
+        const bLinked = courseId && Array.isArray(b.related_course_ids) && b.related_course_ids.includes(courseId) ? 1 : 0;
+        if (aLinked !== bLinked) return bLinked - aLinked;
+        if (a.node_type !== b.node_type) return a.node_type === 'folder' ? -1 : 1;
+        if (Boolean(a.is_markdown) !== Boolean(b.is_markdown)) return Number(Boolean(b.is_markdown)) - Number(Boolean(a.is_markdown));
+        return String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN');
+    }
+
+    function sortedMaterials() {
+        return [...list('materials')].map(normalizeMaterialItem).sort(materialCompare);
+    }
+
+    function buildMaterialTree() {
+        const materials = sortedMaterials();
+        const byId = new Map(materials.map((item) => [Number(item.id), item]));
+        const childrenByParent = new Map();
+        materials.forEach((item) => {
+            const parentId = item.parent_id && byId.has(item.parent_id) ? item.parent_id : null;
+            if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+            childrenByParent.get(parentId).push(item);
+        });
+        childrenByParent.forEach((items) => items.sort(materialCompare));
+        return { roots: childrenByParent.get(null) || [], childrenByParent };
+    }
+
+    function materialIsRecommended(material) {
+        const courseId = Number(state.selected.courseId || 0);
+        return Boolean(courseId && Array.isArray(material.related_course_ids) && material.related_course_ids.includes(courseId));
+    }
+
+    function renderMaterialTreeNode(material, childrenByParent, depth = 0) {
+        const materialId = Number(material.id);
+        const isFolder = material.node_type === 'folder';
+        const isExpanded = state.materialExpandedIds.has(materialId);
+        const isSelected = state.selected.materialIds.has(materialId);
+        const isLoading = state.materialLoadingIds.has(materialId);
+        const children = childrenByParent.get(materialId) || [];
+        const hasChildren = isFolder && (children.length > 0 || Number(material.child_count || 0) > 0);
+        const badgeHtml = [
+            materialIsRecommended(material) ? { label: '推荐', className: 'is-green' } : null,
+            { label: materialTypeLabel(material), className: material.is_markdown ? 'is-blue' : 'is-amber' },
+            isFolder && material.child_count ? { label: `${material.child_count} 项`, className: 'is-blue' } : null,
+        ].filter(Boolean).map((badge) => (
+            `<span class="onboarding-badge ${escapeHtml(badge.className || '')}">${escapeHtml(badge.label)}</span>`
+        )).join('');
+        const childrenHtml = isExpanded
+            ? (children.length
+                ? children.map((child) => renderMaterialTreeNode(child, childrenByParent, depth + 1)).join('')
+                : `<div class="onboarding-material-tree-loading">${isLoading ? '正在加载子目录...' : '这个目录下暂时没有可展示材料。'}</div>`)
+            : '';
+        return `
+            <article class="onboarding-material-node${isSelected ? ' is-selected' : ''}" style="--tree-depth:${depth}">
+                <div class="onboarding-material-row">
+                    <button
+                        type="button"
+                        class="onboarding-material-toggle"
+                        data-material-toggle="${escapeHtml(materialId)}"
+                        ${hasChildren ? '' : 'disabled'}
+                        aria-label="${isExpanded ? '收起目录' : '展开目录'}"
+                    >${hasChildren ? (isExpanded ? '⌄' : '›') : ''}</button>
+                    <button type="button" class="onboarding-material-select" data-material-select="${escapeHtml(materialId)}">
+                        <span class="onboarding-material-icon" aria-hidden="true">${isFolder ? '□' : '·'}</span>
+                        <span class="onboarding-material-copy">
+                            <strong>${escapeHtml(material.name || '未命名材料')}</strong>
+                            <small>${escapeHtml(material.material_path || '材料库根目录')}</small>
+                        </span>
+                        ${badgeHtml ? `<span class="onboarding-badge-row">${badgeHtml}</span>` : ''}
+                    </button>
+                </div>
+                ${childrenHtml ? `<div class="onboarding-material-children">${childrenHtml}</div>` : ''}
+            </article>
+        `;
     }
 
     function renderMaterialsStep(container) {
-        const materials = sortedMaterials();
-        const body = materials.length ? materials.map((material, index) => optionCard({
-            id: material.id,
-            selected: state.selected.materialIds.has(Number(material.id)),
-            title: material.name,
-            meta: material.material_path || '根目录',
-            badges: [
-                index < 4 ? { label: '推荐', className: 'is-green' } : null,
-                { label: material.preview_type || material.file_ext || '材料', className: material.is_markdown ? 'is-blue' : 'is-amber' },
-            ],
-        })).join('') : '<div class="onboarding-empty">还没有教学材料。可以先跳过，也可以马上导入文件。</div>';
+        const { roots, childrenByParent } = buildMaterialTree();
+        const body = roots.length
+            ? roots.map((material) => renderMaterialTreeNode(material, childrenByParent)).join('')
+            : '<div class="onboarding-empty">还没有教学材料。可以先跳过，也可以马上导入文件或整个文件夹。</div>';
 
         container.innerHTML = renderStepShell(`
-            ${renderTitle(steps[3].prompt, '选择后会先绑定到新课堂，具体第几次课使用可以在下一步继续调整。')}
+            ${renderTitle(steps[3].prompt, '课程材料通常按文件夹整理。可以选择整个目录，也可以展开后选择具体文件；后续还能使用深度思考 AI 协助生成或优化材料。')}
             <div class="onboarding-toolbar">
-                <span class="onboarding-hint">可多选；不选时下一步会显示为“跳过”。</span>
+                <span class="onboarding-hint">默认收起目录；可多选，不选时下一步会显示为“跳过”。</span>
                 <button type="button" class="btn btn-outline" data-action="create-material">导入材料</button>
             </div>
-            <div class="onboarding-grid">${body}</div>
+            <div class="onboarding-material-tree">${body}</div>
         `);
-        bindCardSelection(container, (id) => {
-            const materialId = Number(id);
-            if (state.selected.materialIds.has(materialId)) {
-                state.selected.materialIds.delete(materialId);
-            } else {
-                state.selected.materialIds.add(materialId);
-            }
-            render();
+        container.querySelectorAll('[data-material-select]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const materialId = Number(button.dataset.materialSelect);
+                if (state.selected.materialIds.has(materialId)) {
+                    state.selected.materialIds.delete(materialId);
+                } else {
+                    state.selected.materialIds.add(materialId);
+                }
+                render();
+            });
+        });
+        container.querySelectorAll('[data-material-toggle]').forEach((button) => {
+            button.addEventListener('click', () => toggleMaterialFolder(Number(button.dataset.materialToggle)));
         });
         container.querySelector('[data-action="create-material"]')?.addEventListener('click', openMaterialSubmodal);
+    }
+
+    async function toggleMaterialFolder(materialId) {
+        if (!materialId || state.materialLoadingIds.has(materialId)) return;
+        if (state.materialExpandedIds.has(materialId)) {
+            state.materialExpandedIds.delete(materialId);
+            render();
+            return;
+        }
+        state.materialExpandedIds.add(materialId);
+        const hasLoadedChildren = list('materials').some((item) => Number(item.parent_id || 0) === materialId);
+        const folder = list('materials').find((item) => Number(item.id) === materialId);
+        if (!hasLoadedChildren && Number(folder?.child_count || 0) > 0) {
+            state.materialLoadingIds.add(materialId);
+            render();
+            try {
+                const result = await apiFetch(`/api/materials/library?parent_id=${encodeURIComponent(materialId)}&sort_by=name&sort_order=asc`, { silent: true });
+                upsertMaterials(result.items || []);
+            } catch (error) {
+                showToast(error.message || '加载子目录失败', 'error');
+            } finally {
+                state.materialLoadingIds.delete(materialId);
+            }
+        }
+        render();
+    }
+
+    function toggleMaterialSelection(id) {
+        const materialId = Number(id);
+        if (!materialId) return;
+        if (state.selected.materialIds.has(materialId)) {
+            state.selected.materialIds.delete(materialId);
+        } else {
+            state.selected.materialIds.add(materialId);
+        }
+    }
+
+    function selectedOrDescendantMaterialIds() {
+        const selectedIds = [...state.selected.materialIds].map(Number);
+        const allMaterials = list('materials').map(normalizeMaterialItem);
+        const selectedFolders = new Set(
+            allMaterials
+                .filter((item) => selectedIds.includes(Number(item.id)) && item.node_type === 'folder')
+                .map((item) => Number(item.id))
+        );
+        if (!selectedFolders.size) return selectedIds;
+        const selectedPaths = allMaterials
+            .filter((item) => selectedFolders.has(Number(item.id)))
+            .map((item) => normalizeText(item.material_path))
+            .filter(Boolean);
+        allMaterials.forEach((item) => {
+            const materialId = Number(item.id);
+            const itemPath = normalizeText(item.material_path);
+            if (selectedIds.includes(materialId) || !itemPath) return;
+            if (selectedPaths.some((path) => itemPath.startsWith(`${path}/`))) selectedIds.push(materialId);
+        });
+        return selectedIds;
     }
 
     function sortedClasses() {
@@ -641,7 +794,7 @@ if (modal && openButtons.length > 0) {
 
     function renderDetailsStep(container) {
         ensureLessons();
-        const selectedMaterialIds = [...state.selected.materialIds];
+        const selectedMaterialIds = selectedOrDescendantMaterialIds();
         const markdownMaterials = list('materials').filter((item) => item.is_markdown && (selectedMaterialIds.length === 0 || selectedMaterialIds.includes(Number(item.id))));
         const materialOptions = ['<option value="">不绑定</option>']
             .concat(markdownMaterials.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`))
@@ -909,7 +1062,7 @@ if (modal && openButtons.length > 0) {
     }
 
     function openSubmodal(title, bodyHtml, onSubmit) {
-        if (!submodal || !elements.submodalBody || !elements.submodalTitle) return;
+        if (!submodal || !elements.submodalBody || !elements.submodalTitle) return null;
         elements.submodalTitle.textContent = title;
         elements.submodalBody.innerHTML = `<form data-submodal-form>${bodyHtml}</form>`;
         submodal.hidden = false;
@@ -936,6 +1089,7 @@ if (modal && openButtons.length > 0) {
             }
         });
         form?.querySelector('input, textarea, select')?.focus({ preventScroll: true });
+        return form;
     }
 
     function openSemesterSubmodal() {
@@ -1009,31 +1163,60 @@ if (modal && openButtons.length > 0) {
     }
 
     function openMaterialSubmodal() {
-        openSubmodal('导入教学材料', `
-            <div class="onboarding-field">
-                <label>选择文件</label>
-                <input name="files" type="file" multiple required>
+        let uploadFiles = [];
+        const form = openSubmodal('导入教学材料', `
+            <div class="onboarding-upload-choice-grid">
+                <button type="button" class="onboarding-upload-choice" data-action="pick-material-files">
+                    <strong>上传单个或多个文件</strong>
+                    <span>适合补充零散课件、文档、PPT 或思维导图。</span>
+                </button>
+                <button type="button" class="onboarding-upload-choice" data-action="pick-material-folder">
+                    <strong>上传整个文件夹</strong>
+                    <span>会保留原有目录结构，适合直接导入一整套课程资料。</span>
+                </button>
             </div>
-            <p class="onboarding-hint">支持文档、PPT、思维导图或其他课堂材料。导入后会出现在材料列表最前面。</p>
+            <input type="file" data-material-file-input multiple hidden>
+            <input type="file" data-material-folder-input webkitdirectory directory multiple hidden>
+            <div class="onboarding-upload-summary" data-upload-summary>还没有选择文件。</div>
+            <p class="onboarding-hint">后面也可以使用深度思考 AI 协助生成课程材料、整理目录或把资料优化成课堂学习文档。</p>
             <div class="teacher-onboarding-submodal-actions">
                 <button type="button" class="btn btn-outline" data-submodal-close-local>取消</button>
                 <button type="submit" class="btn btn-primary">导入材料</button>
             </div>
         `, async (_formData, form) => {
-            const input = form.querySelector('input[type="file"]');
-            const files = Array.from(input?.files || []);
+            const files = uploadFiles.length ? uploadFiles : Array.from(form.querySelector('[data-material-file-input]')?.files || []);
             if (!files.length) throw new Error('请选择要导入的文件');
             const uploadData = new FormData();
-            files.forEach((file) => uploadData.append('files', file));
+            files.forEach((file) => uploadData.append('files', file, file.name));
             uploadData.set('manifest', JSON.stringify(files.map((file) => ({
-                relative_path: file.name,
+                relative_path: file.webkitRelativePath || file.name,
                 content_type: file.type || '',
             }))));
             const result = await apiFetch('/api/materials/upload', { method: 'POST', body: uploadData, silent: true });
             (result.created_items || []).forEach((item) => {
                 if (item?.id) state.selected.materialIds.add(Number(item.id));
+                if (item?.node_type === 'folder') state.materialExpandedIds.delete(Number(item.id));
             });
         });
+        if (!form) return;
+        const fileInput = form.querySelector('[data-material-file-input]');
+        const folderInput = form.querySelector('[data-material-folder-input]');
+        const summary = form.querySelector('[data-upload-summary]');
+        const updateSummary = (files, sourceLabel) => {
+            uploadFiles = Array.from(files || []);
+            const folderNames = new Set(uploadFiles.map((file) => (file.webkitRelativePath || '').split('/')[0]).filter(Boolean));
+            if (!summary) return;
+            if (!uploadFiles.length) {
+                summary.textContent = '还没有选择文件。';
+                return;
+            }
+            const folderText = folderNames.size ? `，包含 ${folderNames.size} 个顶层文件夹` : '';
+            summary.textContent = `${sourceLabel}：已选择 ${uploadFiles.length} 个文件${folderText}。`;
+        };
+        form.querySelector('[data-action="pick-material-files"]')?.addEventListener('click', () => fileInput?.click());
+        form.querySelector('[data-action="pick-material-folder"]')?.addEventListener('click', () => folderInput?.click());
+        fileInput?.addEventListener('change', () => updateSummary(fileInput.files, '文件上传'));
+        folderInput?.addEventListener('change', () => updateSummary(folderInput.files, '文件夹上传'));
     }
 
     function openClassSubmodal() {
@@ -1135,8 +1318,9 @@ if (modal && openButtons.length > 0) {
 
     function completePayload() {
         const materialIds = [...state.selected.materialIds];
+        const candidateHomeMaterialIds = selectedOrDescendantMaterialIds();
         const homeMaterial = list('materials').find((item) => (
-            materialIds.includes(Number(item.id)) && item.is_markdown
+            candidateHomeMaterialIds.includes(Number(item.id)) && item.is_markdown
         ));
         return {
             semester_id: state.selected.semesterId,
