@@ -10,6 +10,7 @@ from .config import (
     SQLITE_CACHE_SIZE_KB,
     SQLITE_WAL_AUTOCHECKPOINT_PAGES,
 )
+from .services.department_service import infer_department_from_text
 
 
 def _apply_sqlite_pragmas(conn: sqlite3.Connection) -> None:
@@ -55,6 +56,61 @@ def _normalize_session_row(row: sqlite3.Row | None) -> dict | None:
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _backfill_academic_departments(conn: sqlite3.Connection) -> None:
+    class_rows = conn.execute(
+        """
+        SELECT id, name, description
+        FROM classes
+        WHERE TRIM(COALESCE(department, '')) = ''
+        """
+    ).fetchall()
+    for row in class_rows:
+        department = infer_department_from_text(row["name"], row["description"])
+        if department:
+            conn.execute(
+                "UPDATE classes SET department = ? WHERE id = ?",
+                (department, row["id"]),
+            )
+
+    course_rows = conn.execute(
+        """
+        SELECT id, name, description
+        FROM courses
+        WHERE TRIM(COALESCE(department, '')) = ''
+        """
+    ).fetchall()
+    for row in course_rows:
+        department = infer_department_from_text(row["name"], row["description"])
+        if department:
+            conn.execute(
+                "UPDATE courses SET department = ? WHERE id = ?",
+                (department, row["id"]),
+            )
+
+    linked_rows = conn.execute(
+        """
+        SELECT co.course_id, c.department, COUNT(*) AS usage_count
+        FROM class_offerings co
+        JOIN classes c ON c.id = co.class_id
+        JOIN courses course ON course.id = co.course_id
+        WHERE TRIM(COALESCE(course.department, '')) = ''
+          AND TRIM(COALESCE(c.department, '')) != ''
+        GROUP BY co.course_id, c.department
+        ORDER BY co.course_id, usage_count DESC
+        """
+    ).fetchall()
+    assigned_course_ids: set[int] = set()
+    for row in linked_rows:
+        course_id = int(row["course_id"])
+        if course_id in assigned_course_ids:
+            continue
+        assigned_course_ids.add(course_id)
+        conn.execute(
+            "UPDATE courses SET department = ? WHERE id = ?",
+            (row["department"], course_id),
+        )
 
 
 def save_user_session(
@@ -416,7 +472,8 @@ def init_database():
                              INTEGER
                              NOT
                              NULL,
-                                description TEXT,
+                             department TEXT DEFAULT '',
+                             description TEXT,
                              created_at
                              TEXT
                              DEFAULT
@@ -428,9 +485,17 @@ def init_database():
                          ) REFERENCES teachers
                          (
                              id
-                         )
-                             )
-                         ''')
+                          )
+                              )
+                          ''')
+            try:
+                conn.execute("ALTER TABLE classes ADD COLUMN description TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE classes ADD COLUMN department TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
 
             # 3. 学生
             conn.execute('''
@@ -551,10 +616,13 @@ def init_database():
                              description
                                  TEXT,
                              sect_name
-                                 TEXT
-                                 DEFAULT '',
+                                  TEXT
+                                  DEFAULT '',
+                             department
+                                  TEXT
+                                  DEFAULT '',
                              credits
-                                 FLOAT,
+                                  FLOAT,
                              created_by_teacher_id
                                  INTEGER
                                  NOT
@@ -581,6 +649,13 @@ def init_database():
                 conn.execute(
                     "ALTER TABLE courses "
                     "ADD COLUMN sect_name TEXT DEFAULT ''"
+                )
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute(
+                    "ALTER TABLE courses "
+                    "ADD COLUMN department TEXT DEFAULT ''"
                 )
             except sqlite3.OperationalError:
                 pass
@@ -747,6 +822,7 @@ def init_database():
                 )
             except sqlite3.OperationalError:
                 pass
+            _backfill_academic_departments(conn)
 
             conn.execute(
                 '''
@@ -2630,6 +2706,14 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_courses_teacher_name "
                 "ON courses (created_by_teacher_id, name COLLATE NOCASE)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classes_teacher_department "
+                "ON classes (created_by_teacher_id, department COLLATE NOCASE, name COLLATE NOCASE)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_courses_teacher_department "
+                "ON courses (created_by_teacher_id, department COLLATE NOCASE, name COLLATE NOCASE)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_lessons_course_order "

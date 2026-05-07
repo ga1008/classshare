@@ -387,6 +387,7 @@ def serialize_course_row(
 
     item["description"] = description
     item["sect_name"] = normalize_course_sect_name(item.get("sect_name"), course_name=item.get("name"))
+    item["department"] = str(item.get("department") or "").strip()
     item["credits"] = float(item.get("credits") or 0)
     item["total_hours"] = total_hours
     item["lesson_count"] = len(lesson_list)
@@ -414,6 +415,7 @@ def serialize_course_row(
             None,
             [
                 str(item.get("name") or "").strip(),
+                item["department"],
                 str(item.get("sect_name") or "").strip(),
                 description,
                 " ".join(lesson_titles),

@@ -5,22 +5,20 @@ const modal = document.querySelector('[data-teacher-onboarding-modal]');
 const openButtons = Array.from(document.querySelectorAll('[data-teacher-onboarding-open]'));
 
 if (modal && openButtons.length > 0) {
+    const dialog = modal.querySelector('.teacher-onboarding-dialog');
+    const submodal = modal.querySelector('[data-onboarding-submodal]');
     const elements = {
         closeButtons: Array.from(modal.querySelectorAll('[data-teacher-onboarding-dismiss]')),
-        completeButton: modal.querySelector('[data-teacher-onboarding-complete]'),
-        stepList: modal.querySelector('[data-teacher-onboarding-step-list]'),
-        progressText: modal.querySelector('[data-teacher-onboarding-progress-text]'),
-        progressCount: modal.querySelector('[data-teacher-onboarding-progress-count]'),
-        progressbar: modal.querySelector('[data-teacher-onboarding-progressbar]'),
-        stepMeta: modal.querySelector('[data-teacher-onboarding-step-meta]'),
-        stepTitle: modal.querySelector('[data-teacher-onboarding-step-title]'),
-        stepDescription: modal.querySelector('[data-teacher-onboarding-step-description]'),
-        stepStatus: modal.querySelector('[data-teacher-onboarding-step-status]'),
-        stepCount: modal.querySelector('[data-teacher-onboarding-step-count]'),
-        tipText: modal.querySelector('[data-teacher-onboarding-tip-text]'),
-        prevButton: modal.querySelector('[data-teacher-onboarding-prev]'),
-        nextButton: modal.querySelector('[data-teacher-onboarding-next]'),
-        actionLink: modal.querySelector('[data-teacher-onboarding-action]'),
+        welcome: modal.querySelector('[data-onboarding-welcome]'),
+        history: modal.querySelector('[data-onboarding-history]'),
+        content: modal.querySelector('[data-onboarding-content]'),
+        stepCount: modal.querySelector('[data-onboarding-step-count]'),
+        footerNote: modal.querySelector('[data-onboarding-footer-note]'),
+        prevButton: modal.querySelector('[data-onboarding-prev]'),
+        nextButton: modal.querySelector('[data-onboarding-next]'),
+        submodalTitle: modal.querySelector('[data-submodal-title]'),
+        submodalBody: modal.querySelector('[data-submodal-body]'),
+        submodalClose: modal.querySelector('[data-submodal-close]'),
     };
 
     const state = {
@@ -30,15 +28,65 @@ if (modal && openButtons.length > 0) {
         lastFocused: null,
         bodyOverflow: '',
         closeTimer: null,
+        welcomeTimer: null,
+        completing: false,
+        selected: {
+            semesterId: null,
+            courseId: null,
+            courseName: '',
+            department: '',
+            textbookId: null,
+            materialIds: new Set(),
+            classId: null,
+            description: '',
+            credits: 2,
+            totalHours: 32,
+            sectName: '',
+            lessons: [],
+            firstClassDate: '',
+            weeklySchedule: [{ weekday: 0, section_count: 2 }],
+            aiSystemPrompt: '',
+            aiSyllabus: '',
+            classroomUrl: '',
+            courseDescriptionDraft: '',
+            creditTouched: false,
+        },
     };
 
-    const stepTips = {
-        classes: '班级是教师端的第一块地基。先建班级，再按需导入学生名单，之后所有课堂都会复用这份班级数据。',
-        courses: '课程是可复用的教学模板，课堂是某个学期里给某个班开的具体课。先有课程，后面开课会更顺手。',
-        semesters: '学期会影响教学日历、周次和课堂排期。即使只是快速试用，也建议先创建当前学期。',
-        offerings: '开设课堂时，把班级、课程和学期绑定在一起。创建完成后，师生都会围绕这个课堂开展作业、材料和讨论。',
-        ai: 'AI 助教按课堂独立配置。保存系统提示词和课程大纲后，它就能带着这门课的上下文服务老师和学生。',
-    };
+    const steps = [
+        { key: 'semester', label: '学期', prompt: '您是准备上哪个学期的课呢？' },
+        { key: 'course', label: '课程', prompt: '请输入您要开课的课程名称' },
+        { key: 'textbook', label: '教材', prompt: '在真正开始开设课堂前，有一些准备工作先要确认一下' },
+        { key: 'materials', label: '教学材料', prompt: '上课用到的文档、PPT、思维导图或者其他材料' },
+        { key: 'class', label: '班级', prompt: '这门课准备给哪个班级上呢？' },
+        { key: 'details', label: '课程细节', prompt: '反过来补充一些课程细节和课堂安排' },
+        { key: 'ai', label: 'AI 助教', prompt: '根据已有内容配置课堂 AI 助教' },
+        { key: 'success', label: '完成', prompt: '恭喜开课成功' },
+    ];
+
+    function wizard() {
+        return state.payload?.wizard || {};
+    }
+
+    function list(name) {
+        const value = wizard()[name];
+        return Array.isArray(value) ? value : [];
+    }
+
+    function selectedTextbook() {
+        const textbookId = Number(state.selected.textbookId || 0);
+        return list('textbooks').find((item) => Number(item.id) === textbookId) || null;
+    }
+
+    function selectedClass() {
+        const classId = Number(state.selected.classId || 0);
+        return list('classes').find((item) => Number(item.id) === classId) || null;
+    }
+
+    function selectedSemester() {
+        const semesterId = Number(state.selected.semesterId || 0);
+        return list('semesters').find((item) => Number(item.id) === semesterId) || null;
+    }
 
     function escapeHtml(value) {
         return String(value ?? '')
@@ -49,28 +97,65 @@ if (modal && openButtons.length > 0) {
             .replace(/'/g, '&#39;');
     }
 
-    function getSteps() {
-        return Array.isArray(state.payload?.progress?.steps) ? state.payload.progress.steps : [];
+    function normalizeText(value) {
+        return String(value ?? '').trim();
     }
 
-    function clampIndex(index) {
-        const steps = getSteps();
-        if (steps.length === 0) {
-            return 0;
+    function numberValue(value, fallback = 0) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function todayIso() {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }
+
+    function jsDateToCourseWeekday(rawDate) {
+        const date = new Date(`${rawDate || todayIso()}T00:00:00`);
+        if (Number.isNaN(date.getTime())) return 0;
+        return (date.getDay() + 6) % 7;
+    }
+
+    function computeCredits(totalHours) {
+        return Math.max(0.5, Math.round((Number(totalHours || 0) / 16) * 10) / 10);
+    }
+
+    function setDefaultSelections() {
+        const defaults = wizard().defaults || {};
+        if (!state.selected.department) {
+            state.selected.department = normalizeText(defaults.department) || normalizeText(list('departments')[0]);
         }
-        return Math.min(Math.max(Number(index) || 0, 0), steps.length - 1);
+        if (!state.selected.totalHours) {
+            state.selected.totalHours = Number(defaults.total_hours || 32);
+        }
+        if (!state.selected.credits) {
+            state.selected.credits = Number(defaults.credits || computeCredits(state.selected.totalHours));
+        }
+        if (!state.selected.firstClassDate) {
+            state.selected.firstClassDate = selectedSemester()?.start_date || todayIso();
+        }
+        if (!Array.isArray(state.selected.weeklySchedule) || !state.selected.weeklySchedule.length) {
+            state.selected.weeklySchedule = defaults.weekly_schedule || [{ weekday: jsDateToCourseWeekday(state.selected.firstClassDate), section_count: 2 }];
+        }
     }
 
     async function loadState({ silent = false } = {}) {
         try {
             state.payload = await apiFetch('/api/manage/teacher-onboarding/state', { silent: true });
+            setDefaultSelections();
             return state.payload;
         } catch (error) {
             if (!silent) {
-                showToast(error.message || '新手引导状态读取失败', 'error');
+                showToast(error.message || '新建课堂引导状态读取失败', 'error');
             }
             return null;
         }
+    }
+
+    async function reloadStateAndRender() {
+        await loadState({ silent: true });
+        render();
     }
 
     async function markDismissed(reason) {
@@ -82,163 +167,1079 @@ if (modal && openButtons.length > 0) {
             });
             return true;
         } catch (error) {
-            showToast(error.message || '新手引导状态保存失败，请稍后再试。', 'error');
+            showToast(error.message || '引导状态保存失败', 'error');
             return false;
         }
     }
 
-    function resolveAutoIndex() {
-        const steps = getSteps();
-        const nextStepId = String(state.payload?.progress?.next_step_id || '');
-        const nextIndex = steps.findIndex((step) => step.id === nextStepId);
-        if (nextIndex >= 0) {
-            return nextIndex;
+    function canGoNext() {
+        const selected = state.selected;
+        const key = steps[state.activeIndex]?.key;
+        if (key === 'semester') return Boolean(selected.semesterId);
+        if (key === 'course') return Boolean(normalizeText(selected.courseName));
+        if (key === 'textbook') return Boolean(selected.textbookId);
+        if (key === 'materials') return true;
+        if (key === 'class') return Boolean(selected.classId);
+        if (key === 'details') {
+            const totalHours = Number(selected.totalHours || 0);
+            const sectionTotal = selected.lessons.reduce((sum, item) => sum + Number(item.section_count || 0), 0);
+            return Boolean(
+                normalizeText(selected.courseName)
+                && totalHours > 0
+                && Number(selected.credits || 0) > 0
+                && normalizeText(selected.description)
+                && selected.lessons.length
+                && sectionTotal === totalHours
+                && normalizeText(selected.firstClassDate)
+                && selected.weeklySchedule.length
+            );
         }
-        const firstPending = steps.findIndex((step) => !step.ready);
-        return firstPending >= 0 ? firstPending : 0;
+        if (key === 'ai') return true;
+        if (key === 'success') return Boolean(selected.classroomUrl);
+        return false;
     }
 
-    function renderProgress() {
-        const progress = state.payload?.progress || {};
-        const completed = Number(progress.completed_count || 0);
-        const total = Number(progress.total_count || getSteps().length || 1);
-        const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+    function nextLabel() {
+        const key = steps[state.activeIndex]?.key;
+        if (key === 'materials' && state.selected.materialIds.size === 0) return '跳过';
+        if (key === 'ai') return state.completing ? '正在开课...' : '完成开课';
+        if (key === 'success') return '进入课堂';
+        return '下一步';
+    }
 
-        if (elements.progressText) {
-            elements.progressText.textContent = progress.all_core_ready
-                ? '基础开课流程已经齐备'
-                : '基础开课流程准备度';
+    function updateFooter() {
+        const key = steps[state.activeIndex]?.key;
+        if (elements.prevButton) {
+            elements.prevButton.disabled = state.activeIndex === 0 || state.completing;
+            elements.prevButton.style.visibility = key === 'success' ? 'hidden' : '';
         }
-        if (elements.progressCount) {
-            elements.progressCount.textContent = `${completed}/${total}`;
+        if (elements.nextButton) {
+            elements.nextButton.disabled = !canGoNext() || state.completing;
+            elements.nextButton.textContent = nextLabel();
         }
-        if (elements.progressbar) {
-            elements.progressbar.style.width = `${percent}%`;
+        if (!elements.footerNote) return;
+        if (key === 'materials' && state.selected.materialIds.size === 0) {
+            elements.footerNote.textContent = '教学材料可以稍后继续补充，当前步骤允许直接跳过。';
+        } else if (key === 'details') {
+            const total = state.selected.lessons.reduce((sum, item) => sum + Number(item.section_count || 0), 0);
+            elements.footerNote.textContent = `当前课堂设置合计 ${total} / ${state.selected.totalHours || 0} 学时。`;
+        } else if (key === 'success') {
+            elements.footerNote.textContent = '课堂已经创建好，可以直接进入课堂继续调整细节。';
+        } else {
+            elements.footerNote.textContent = '每一步只确认一件事，随时可以返回调整。';
         }
     }
 
-    function renderStepList() {
-        const steps = getSteps();
-        if (!elements.stepList) {
-            return;
-        }
+    function renderHistory() {
+        if (!elements.history) return;
+        const chips = steps.slice(0, state.activeIndex).filter((step) => step.key !== 'success');
+        elements.history.innerHTML = chips.map((step) => (
+            `<span class="teacher-onboarding-history-chip">${escapeHtml(step.label)}</span>`
+        )).join('');
+    }
 
-        elements.stepList.innerHTML = steps.map((step, index) => `
+    function optionCard({ id, selected, title, meta = '', badges = [], details = '', muted = false, extraClass = '' }) {
+        const badgeHtml = badges.filter(Boolean).map((badge) => (
+            `<span class="onboarding-badge ${escapeHtml(badge.className || '')}">${escapeHtml(badge.label || badge)}</span>`
+        )).join('');
+        return `
             <button
                 type="button"
-                class="teacher-onboarding-step-button${index === state.activeIndex ? ' is-active' : ''}${step.ready ? ' is-ready' : ''}"
-                data-teacher-onboarding-step-index="${index}"
-                aria-pressed="${index === state.activeIndex ? 'true' : 'false'}"
+                class="onboarding-option-card${selected ? ' is-selected' : ''}${muted ? ' is-muted' : ''}${extraClass ? ` ${escapeHtml(extraClass)}` : ''}"
+                data-select-id="${escapeHtml(id)}"
             >
-                <span class="teacher-onboarding-step-index">${index + 1}</span>
-                <span class="teacher-onboarding-step-copy">
-                    <strong>${escapeHtml(step.title)}</strong>
-                    <span>${escapeHtml(step.description)}</span>
-                </span>
-                <span class="teacher-onboarding-step-badge">${escapeHtml(step.status_label)}</span>
+                <strong>${escapeHtml(title)}</strong>
+                ${meta ? `<span>${escapeHtml(meta)}</span>` : ''}
+                ${badgeHtml ? `<div class="onboarding-badge-row">${badgeHtml}</div>` : ''}
+                ${details ? `<small>${escapeHtml(details)}</small>` : ''}
             </button>
-        `).join('');
+        `;
+    }
 
-        elements.stepList.querySelectorAll('[data-teacher-onboarding-step-index]').forEach((button) => {
+    function renderStepShell(innerHtml) {
+        return `<div class="onboarding-step-shell">${innerHtml}</div>`;
+    }
+
+    function renderTitle(prompt, helper = '') {
+        return `
+            <div class="onboarding-step-title">
+                <h3 id="teacherOnboardingPrompt">${escapeHtml(prompt)}</h3>
+                ${helper ? `<p>${escapeHtml(helper)}</p>` : ''}
+            </div>
+        `;
+    }
+
+    function bindCardSelection(container, callback) {
+        container.querySelectorAll('[data-select-id]').forEach((button) => {
+            button.addEventListener('click', () => callback(button.dataset.selectId));
+        });
+    }
+
+    function renderSemesterStep(container) {
+        const semesters = list('semesters');
+        const body = semesters.length ? semesters.map((semester) => optionCard({
+            id: semester.id,
+            selected: Number(state.selected.semesterId) === Number(semester.id),
+            title: semester.name,
+            meta: `${semester.start_date || '未设置'} 至 ${semester.end_date || '未设置'}`,
+            badges: [
+                { label: `${semester.week_count || 0} 周`, className: 'is-blue' },
+                semester.is_current ? { label: '当前学期', className: 'is-green' } : null,
+            ],
+        })).join('') : '<div class="onboarding-empty">还没有可选学期，先新建一个学期再继续。</div>';
+
+        container.innerHTML = renderStepShell(`
+            ${renderTitle(steps[0].prompt, '学期会影响教学日历、周次和课堂时间轴。')}
+            <div class="onboarding-toolbar">
+                <span class="onboarding-hint">单击卡片选中学期。</span>
+                <button type="button" class="btn btn-outline" data-action="create-semester">新建学期</button>
+            </div>
+            <div class="onboarding-grid">${body}</div>
+        `);
+        bindCardSelection(container, (id) => {
+            state.selected.semesterId = Number(id);
+            state.selected.firstClassDate = selectedSemester()?.start_date || state.selected.firstClassDate || todayIso();
+            state.selected.weeklySchedule = [{ weekday: jsDateToCourseWeekday(state.selected.firstClassDate), section_count: 2 }];
+            render();
+        });
+        container.querySelector('[data-action="create-semester"]')?.addEventListener('click', openSemesterSubmodal);
+    }
+
+    function courseSimilarityScore(course, keyword) {
+        const name = normalizeText(course.name).toLowerCase();
+        const target = normalizeText(keyword).toLowerCase();
+        if (!target) return 0;
+        if (name === target) return 100;
+        if (name.includes(target) || target.includes(name)) return 70;
+        const overlap = [...new Set(target.split(''))].filter((char) => name.includes(char)).length;
+        return overlap;
+    }
+
+    function relatedClassSummary(course) {
+        const ids = Array.isArray(course.related_class_ids) ? course.related_class_ids.map(Number) : [];
+        const names = ids
+            .map((id) => list('classes').find((item) => Number(item.id) === id)?.name)
+            .filter(Boolean)
+            .slice(0, 3);
+        return names.length ? names.join('、') : '暂无正在上课的班级';
+    }
+
+    function renderCourseStep(container) {
+        const courses = list('courses');
+        const keyword = normalizeText(state.selected.courseName);
+        const similarCourses = courses
+            .map((course) => ({ course, score: courseSimilarityScore(course, keyword) }))
+            .filter((item) => item.score > 0 || !keyword)
+            .sort((a, b) => b.score - a.score || Number(b.course.offering_count || 0) - Number(a.course.offering_count || 0))
+            .slice(0, 8);
+        const departments = list('departments');
+        const departmentOptions = departments.map((item) => `<option value="${escapeHtml(item)}"></option>`).join('');
+        const similarHtml = similarCourses.length ? similarCourses.map(({ course }) => optionCard({
+            id: course.id,
+            selected: Number(state.selected.courseId) === Number(course.id),
+            title: course.name,
+            meta: course.department || '未设置系别',
+            badges: [
+                { label: `${course.total_hours || 0} 学时`, className: 'is-blue' },
+                { label: `${course.offering_count || 0} 个课堂`, className: 'is-green' },
+            ],
+            details: '把鼠标移到卡片上可以看到更多确认信息。',
+            extraClass: 'onboarding-course-similar',
+        }).replace('</button>', `
+            <span class="onboarding-course-more">
+                系别：${escapeHtml(course.department || '未设置')}<br>
+                已开课堂：${escapeHtml(course.offering_count || 0)} 个<br>
+                正在上课：${escapeHtml(relatedClassSummary(course))}<br>
+                课次：${escapeHtml(course.lesson_count || 0)} 次
+            </span>
+        </button>`)).join('') : '<div class="onboarding-empty">没有匹配到旧课程。继续输入后将按新课程处理。</div>';
+
+        container.innerHTML = renderStepShell(`
+            ${renderTitle(steps[1].prompt, '选择旧课程会自动绑定课程模板；只输入不选择时，即使同名也会按新课程创建。')}
+            <div class="onboarding-field-grid">
+                <div class="onboarding-field">
+                    <label for="onboardingCourseNameInput">课程名称</label>
+                    <input id="onboardingCourseNameInput" type="text" value="${escapeHtml(state.selected.courseName)}" placeholder="例如：动态 Web 程序设计">
+                </div>
+                <div class="onboarding-field">
+                    <label for="onboardingCourseDepartmentInput">所属系别</label>
+                    <input id="onboardingCourseDepartmentInput" type="text" list="onboardingDepartmentOptions" value="${escapeHtml(state.selected.department)}" placeholder="例如：网络工程系">
+                    <datalist id="onboardingDepartmentOptions">${departmentOptions}</datalist>
+                </div>
+            </div>
+            <div class="onboarding-recommend-panel">
+                <strong>是“${escapeHtml(keyword || '这门')}”课程吗？</strong>
+                <div class="onboarding-grid is-compact">${similarHtml}</div>
+            </div>
+        `);
+
+        const nameInput = container.querySelector('#onboardingCourseNameInput');
+        const departmentInput = container.querySelector('#onboardingCourseDepartmentInput');
+        nameInput?.addEventListener('input', () => {
+            const value = normalizeText(nameInput.value);
+            const cursorPosition = nameInput.selectionStart || value.length;
+            if (value !== state.selected.courseName) {
+                state.selected.courseId = null;
+                state.selected.courseName = value;
+                state.selected.sectName = '';
+            }
+            render();
+            window.requestAnimationFrame(() => {
+                const nextInput = document.getElementById('onboardingCourseNameInput');
+                if (nextInput) {
+                    nextInput.focus({ preventScroll: true });
+                    nextInput.setSelectionRange(cursorPosition, cursorPosition);
+                }
+            });
+        });
+        departmentInput?.addEventListener('input', () => {
+            state.selected.department = normalizeText(departmentInput.value);
+            updateFooter();
+        });
+        bindCardSelection(container, (id) => {
+            const course = courses.find((item) => Number(item.id) === Number(id));
+            if (!course) return;
+            state.selected.courseId = Number(course.id);
+            state.selected.courseName = course.name || '';
+            state.selected.department = course.department || state.selected.department;
+            state.selected.description = course.description || state.selected.description;
+            state.selected.credits = Number(course.credits || state.selected.credits || computeCredits(course.total_hours));
+            state.selected.totalHours = Number(course.total_hours || state.selected.totalHours || 32);
+            state.selected.sectName = course.sect_name || '';
+            state.selected.lessons = Array.isArray(course.lessons) ? course.lessons.map((lesson) => ({ ...lesson })) : [];
+            state.selected.courseDescriptionDraft = '';
+            render();
+        });
+    }
+
+    function sortedTextbooks() {
+        const courseId = Number(state.selected.courseId || 0);
+        const courseName = normalizeText(state.selected.courseName).toLowerCase();
+        const selectedId = Number(state.selected.textbookId || 0);
+        return [...list('textbooks')].sort((a, b) => {
+            const aSelected = selectedId && Number(a.id) === selectedId ? 1 : 0;
+            const bSelected = selectedId && Number(b.id) === selectedId ? 1 : 0;
+            if (aSelected !== bSelected) return bSelected - aSelected;
+            const aLinked = courseId && Array.isArray(a.related_course_ids) && a.related_course_ids.includes(courseId) ? 1 : 0;
+            const bLinked = courseId && Array.isArray(b.related_course_ids) && b.related_course_ids.includes(courseId) ? 1 : 0;
+            if (aLinked !== bLinked) return bLinked - aLinked;
+            const aName = `${a.title || ''} ${a.introduction || ''}`.toLowerCase().includes(courseName) ? 1 : 0;
+            const bName = `${b.title || ''} ${b.introduction || ''}`.toLowerCase().includes(courseName) ? 1 : 0;
+            return bName - aName || Number(b.offering_count || 0) - Number(a.offering_count || 0);
+        });
+    }
+
+    function renderTextbookStep(container) {
+        const textbooks = sortedTextbooks();
+        const body = textbooks.length ? textbooks.map((textbook, index) => optionCard({
+            id: textbook.id,
+            selected: Number(state.selected.textbookId) === Number(textbook.id),
+            title: textbook.title,
+            meta: [textbook.author_display, textbook.publisher].filter(Boolean).join(' · '),
+            badges: [
+                index < 3 ? { label: '推荐', className: 'is-green' } : null,
+                textbook.publication_year ? { label: textbook.publication_year, className: 'is-blue' } : null,
+            ],
+            details: textbook.introduction_preview || textbook.catalog_preview || '',
+        })).join('') : '<div class="onboarding-empty">还没有教材。可以先录入教材名称，后续再补充附件和目录。</div>';
+
+        container.innerHTML = renderStepShell(`
+            ${renderTitle(steps[2].prompt, '请选择已有教材，或者重新录入一个。与当前课程关联度高的教材会排在前面。')}
+            <div class="onboarding-toolbar">
+                <span class="onboarding-hint">教材会用于课程简介、拆课和 AI 助教上下文。</span>
+                <button type="button" class="btn btn-outline" data-action="create-textbook">新建教材</button>
+            </div>
+            <div class="onboarding-grid">${body}</div>
+        `);
+        bindCardSelection(container, (id) => {
+            state.selected.textbookId = Number(id);
+            state.selected.courseDescriptionDraft = '';
+            render();
+        });
+        container.querySelector('[data-action="create-textbook"]')?.addEventListener('click', openTextbookSubmodal);
+    }
+
+    function sortedMaterials() {
+        const courseId = Number(state.selected.courseId || 0);
+        return [...list('materials')].sort((a, b) => {
+            const aSelected = state.selected.materialIds.has(Number(a.id)) ? 1 : 0;
+            const bSelected = state.selected.materialIds.has(Number(b.id)) ? 1 : 0;
+            if (aSelected !== bSelected) return bSelected - aSelected;
+            const aLinked = courseId && Array.isArray(a.related_course_ids) && a.related_course_ids.includes(courseId) ? 1 : 0;
+            const bLinked = courseId && Array.isArray(b.related_course_ids) && b.related_course_ids.includes(courseId) ? 1 : 0;
+            if (aLinked !== bLinked) return bLinked - aLinked;
+            if (Boolean(a.is_markdown) !== Boolean(b.is_markdown)) return Number(Boolean(b.is_markdown)) - Number(Boolean(a.is_markdown));
+            return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+        });
+    }
+
+    function renderMaterialsStep(container) {
+        const materials = sortedMaterials();
+        const body = materials.length ? materials.map((material, index) => optionCard({
+            id: material.id,
+            selected: state.selected.materialIds.has(Number(material.id)),
+            title: material.name,
+            meta: material.material_path || '根目录',
+            badges: [
+                index < 4 ? { label: '推荐', className: 'is-green' } : null,
+                { label: material.preview_type || material.file_ext || '材料', className: material.is_markdown ? 'is-blue' : 'is-amber' },
+            ],
+        })).join('') : '<div class="onboarding-empty">还没有教学材料。可以先跳过，也可以马上导入文件。</div>';
+
+        container.innerHTML = renderStepShell(`
+            ${renderTitle(steps[3].prompt, '选择后会先绑定到新课堂，具体第几次课使用可以在下一步继续调整。')}
+            <div class="onboarding-toolbar">
+                <span class="onboarding-hint">可多选；不选时下一步会显示为“跳过”。</span>
+                <button type="button" class="btn btn-outline" data-action="create-material">导入材料</button>
+            </div>
+            <div class="onboarding-grid">${body}</div>
+        `);
+        bindCardSelection(container, (id) => {
+            const materialId = Number(id);
+            if (state.selected.materialIds.has(materialId)) {
+                state.selected.materialIds.delete(materialId);
+            } else {
+                state.selected.materialIds.add(materialId);
+            }
+            render();
+        });
+        container.querySelector('[data-action="create-material"]')?.addEventListener('click', openMaterialSubmodal);
+    }
+
+    function sortedClasses() {
+        const courseId = Number(state.selected.courseId || 0);
+        const department = normalizeText(state.selected.department);
+        const selectedId = Number(state.selected.classId || 0);
+        return [...list('classes')].sort((a, b) => {
+            const aSelected = selectedId && Number(a.id) === selectedId ? 1 : 0;
+            const bSelected = selectedId && Number(b.id) === selectedId ? 1 : 0;
+            if (aSelected !== bSelected) return bSelected - aSelected;
+            const aLinked = courseId && Array.isArray(a.related_course_ids) && a.related_course_ids.includes(courseId) ? 1 : 0;
+            const bLinked = courseId && Array.isArray(b.related_course_ids) && b.related_course_ids.includes(courseId) ? 1 : 0;
+            if (aLinked !== bLinked) return bLinked - aLinked;
+            const aDept = department && a.department === department ? 1 : 0;
+            const bDept = department && b.department === department ? 1 : 0;
+            return bDept - aDept || String(a.name || '').localeCompare(String(b.name || ''));
+        });
+    }
+
+    function renderClassStep(container) {
+        const classes = sortedClasses();
+        const body = classes.length ? classes.map((item, index) => optionCard({
+            id: item.id,
+            selected: Number(state.selected.classId) === Number(item.id),
+            title: item.name,
+            meta: item.department || '未设置系别',
+            badges: [
+                index < 4 ? { label: '推荐', className: 'is-green' } : null,
+                { label: `${item.student_count || 0} 名学生`, className: 'is-blue' },
+            ],
+        })).join('') : '<div class="onboarding-empty">还没有可选班级。可以先创建一个空班级，稍后再导入学生名单。</div>';
+
+        container.innerHTML = renderStepShell(`
+            ${renderTitle(steps[4].prompt, '课程和班级都按系别归属管理，同系别班级会优先推荐。')}
+            <div class="onboarding-toolbar">
+                <span class="onboarding-hint">当前课程系别：${escapeHtml(state.selected.department || '未设置')}</span>
+                <button type="button" class="btn btn-outline" data-action="create-class">录入新班级</button>
+            </div>
+            <div class="onboarding-grid">${body}</div>
+        `);
+        bindCardSelection(container, (id) => {
+            state.selected.classId = Number(id);
+            render();
+        });
+        container.querySelector('[data-action="create-class"]')?.addEventListener('click', openClassSubmodal);
+    }
+
+    function ensureLessons() {
+        const totalHours = Number(state.selected.totalHours || 32);
+        if (state.selected.lessons.length) return;
+        const sectionCount = 2;
+        const lessonCount = Math.max(1, Math.ceil(totalHours / sectionCount));
+        state.selected.lessons = Array.from({ length: lessonCount }, (_, index) => ({
+            title: `第${index + 1}次课`,
+            content: `${state.selected.courseName || '本课程'}第${index + 1}次课内容，可结合教材和课堂目标继续细化。`,
+            section_count: index === lessonCount - 1 ? totalHours - sectionCount * (lessonCount - 1) || sectionCount : sectionCount,
+            learning_material_id: null,
+        }));
+    }
+
+    function updateLesson(index, field, value) {
+        const lesson = state.selected.lessons[index];
+        if (!lesson) return;
+        if (field === 'section_count') {
+            lesson[field] = Number(value || 0);
+        } else if (field === 'learning_material_id') {
+            lesson[field] = Number(value || 0) || null;
+        } else {
+            lesson[field] = value;
+        }
+        updateFooter();
+    }
+
+    function matchTokens(value) {
+        const text = normalizeText(value).toLowerCase();
+        if (!text) return [];
+        const tokens = text.match(/[a-z0-9]+|[\u4e00-\u9fa5]{2,}/g) || [];
+        return [...new Set(tokens.filter((token) => token.length >= 2))];
+    }
+
+    function scoreMaterialForLesson(material, lesson, index) {
+        const materialText = [
+            material.name,
+            material.material_path,
+            material.preview_type,
+            material.file_ext,
+        ].map(normalizeText).join(' ').toLowerCase();
+        const lessonText = [
+            state.selected.courseName,
+            lesson.title,
+            lesson.content,
+        ].map(normalizeText).join(' ');
+        let score = 0;
+        if (!materialText) return score;
+        if (material.is_markdown) score += 1;
+        if (Number(state.selected.courseId || 0) && Array.isArray(material.related_course_ids)) {
+            score += material.related_course_ids.includes(Number(state.selected.courseId)) ? 6 : 0;
+        }
+        matchTokens(lessonText).forEach((token) => {
+            if (materialText.includes(token)) {
+                score += token.length >= 4 ? 4 : 2;
+            }
+        });
+        const lessonNumber = index + 1;
+        [`第${lessonNumber}`, `${lessonNumber}次`, `lesson${lessonNumber}`, `lesson ${lessonNumber}`].forEach((marker) => {
+            if (materialText.includes(marker.toLowerCase())) score += 5;
+        });
+        return score;
+    }
+
+    function autoBindMaterials(markdownMaterials) {
+        const candidates = markdownMaterials.length ? markdownMaterials : list('materials').filter((item) => item.is_markdown);
+        const unusedIds = new Set(candidates.map((item) => Number(item.id)));
+        state.selected.lessons.forEach((lesson, index) => {
+            let bestMaterial = null;
+            let bestScore = 0;
+            candidates.forEach((material) => {
+                const materialId = Number(material.id);
+                if (!unusedIds.has(materialId)) return;
+                const score = scoreMaterialForLesson(material, lesson, index);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMaterial = material;
+                }
+            });
+            if (!bestMaterial && candidates[index] && unusedIds.has(Number(candidates[index].id))) {
+                bestMaterial = candidates[index];
+            }
+            if (!bestMaterial) return;
+            lesson.learning_material_id = Number(bestMaterial.id);
+            unusedIds.delete(Number(bestMaterial.id));
+        });
+    }
+
+    function renderDetailsStep(container) {
+        ensureLessons();
+        const selectedMaterialIds = [...state.selected.materialIds];
+        const markdownMaterials = list('materials').filter((item) => item.is_markdown && (selectedMaterialIds.length === 0 || selectedMaterialIds.includes(Number(item.id))));
+        const materialOptions = ['<option value="">不绑定</option>']
+            .concat(markdownMaterials.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`))
+            .join('');
+        const lessonsHtml = state.selected.lessons.map((lesson, index) => `
+            <article class="onboarding-lesson-row" data-lesson-index="${index}">
+                <div class="onboarding-field">
+                    <label>第 ${index + 1} 次课标题</label>
+                    <input type="text" value="${escapeHtml(lesson.title || '')}" data-field="title">
+                </div>
+                <div class="onboarding-field">
+                    <label>学时</label>
+                    <input type="number" min="1" max="12" step="1" value="${escapeHtml(lesson.section_count || 2)}" data-field="section_count">
+                </div>
+                <div class="onboarding-field">
+                    <label>绑定材料</label>
+                    <select data-field="learning_material_id">${materialOptions}</select>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm text-danger" data-action="remove-lesson">删除</button>
+                <div class="onboarding-field full-span">
+                    <label>上课内容</label>
+                    <textarea rows="2" data-field="content">${escapeHtml(lesson.content || '')}</textarea>
+                </div>
+            </article>
+        `).join('');
+        const aiSuggestion = state.selected.courseDescriptionDraft ? `
+            <div class="onboarding-ai-suggestion">
+                <strong>快速 AI 推荐简介</strong>
+                <p>${escapeHtml(state.selected.courseDescriptionDraft)}</p>
+                <button type="button" class="btn btn-outline btn-sm" data-action="apply-description">一键填入</button>
+            </div>
+        ` : '';
+
+        container.innerHTML = renderStepShell(`
+            ${renderTitle(steps[5].prompt, '能自动带入的内容已经先带入，仍然可以手动修改。')}
+            <div class="onboarding-field-grid">
+                <div class="onboarding-field">
+                    <label for="onboardingCreditsInput">学分</label>
+                    <input id="onboardingCreditsInput" type="number" min="0.5" max="20" step="0.5" value="${escapeHtml(state.selected.credits)}">
+                </div>
+                <div class="onboarding-field">
+                    <label for="onboardingTotalHoursInput">学时</label>
+                    <input id="onboardingTotalHoursInput" type="number" min="1" max="512" step="1" value="${escapeHtml(state.selected.totalHours)}">
+                </div>
+                <div class="onboarding-field">
+                    <label for="onboardingFirstDateInput">第一次上课日期</label>
+                    <input id="onboardingFirstDateInput" type="date" value="${escapeHtml(state.selected.firstClassDate || todayIso())}">
+                </div>
+                <div class="onboarding-field">
+                    <label for="onboardingWeeklySectionInput">每周本日小节数</label>
+                    <input id="onboardingWeeklySectionInput" type="number" min="1" max="12" step="1" value="${escapeHtml(state.selected.weeklySchedule[0]?.section_count || 2)}">
+                </div>
+                <div class="onboarding-field full-span">
+                    <label for="onboardingDescriptionInput">课程简介</label>
+                    <textarea id="onboardingDescriptionInput" rows="4" placeholder="课程定位、学习目标、实践方式和适用专业">${escapeHtml(state.selected.description)}</textarea>
+                </div>
+            </div>
+            ${aiSuggestion}
+            <div class="onboarding-toolbar">
+                <div class="onboarding-badge-row">
+                    <span class="onboarding-badge is-green">8 学时 = 0.5 学分</span>
+                    <span class="onboarding-badge is-blue">32 学时 = 2.0 学分</span>
+                </div>
+                <div class="onboarding-badge-row">
+                    <button type="button" class="btn btn-outline btn-sm" data-action="generate-description">快速 AI 生成简介</button>
+                    <button type="button" class="btn btn-outline btn-sm" data-action="generate-lessons">AI 生成课堂设置</button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-action="bind-materials">智能绑定材料</button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-action="add-lesson">新增一次课</button>
+                </div>
+            </div>
+            <div class="onboarding-lesson-list">${lessonsHtml}</div>
+        `);
+
+        container.querySelectorAll('[data-lesson-index]').forEach((row) => {
+            const index = Number(row.dataset.lessonIndex);
+            row.querySelectorAll('[data-field]').forEach((field) => {
+                if (field.dataset.field === 'learning_material_id') {
+                    field.value = String(state.selected.lessons[index]?.learning_material_id || '');
+                }
+                field.addEventListener('input', () => updateLesson(index, field.dataset.field, field.value));
+                field.addEventListener('change', () => updateLesson(index, field.dataset.field, field.value));
+            });
+        });
+        container.querySelector('#onboardingCreditsInput')?.addEventListener('input', (event) => {
+            state.selected.creditTouched = true;
+            state.selected.credits = numberValue(event.target.value, 0);
+            updateFooter();
+        });
+        container.querySelector('#onboardingTotalHoursInput')?.addEventListener('input', (event) => {
+            state.selected.totalHours = numberValue(event.target.value, 0);
+            if (!state.selected.creditTouched) {
+                state.selected.credits = computeCredits(state.selected.totalHours);
+                const creditInput = container.querySelector('#onboardingCreditsInput');
+                if (creditInput) creditInput.value = String(state.selected.credits);
+            }
+            updateFooter();
+        });
+        container.querySelector('#onboardingFirstDateInput')?.addEventListener('input', (event) => {
+            state.selected.firstClassDate = event.target.value;
+            state.selected.weeklySchedule[0] = {
+                ...state.selected.weeklySchedule[0],
+                weekday: jsDateToCourseWeekday(event.target.value),
+            };
+            updateFooter();
+        });
+        container.querySelector('#onboardingWeeklySectionInput')?.addEventListener('input', (event) => {
+            state.selected.weeklySchedule[0] = {
+                weekday: jsDateToCourseWeekday(state.selected.firstClassDate),
+                section_count: numberValue(event.target.value, 2),
+            };
+            updateFooter();
+        });
+        container.querySelector('#onboardingDescriptionInput')?.addEventListener('input', (event) => {
+            state.selected.description = event.target.value;
+            state.selected.aiSystemPrompt = '';
+            state.selected.aiSyllabus = '';
+            updateFooter();
+        });
+        container.querySelector('[data-action="apply-description"]')?.addEventListener('click', () => {
+            state.selected.description = state.selected.courseDescriptionDraft;
+            render();
+        });
+        container.querySelector('[data-action="generate-description"]')?.addEventListener('click', generateDescription);
+        container.querySelector('[data-action="generate-lessons"]')?.addEventListener('click', generateLessons);
+        container.querySelector('[data-action="bind-materials"]')?.addEventListener('click', () => {
+            autoBindMaterials(markdownMaterials);
+            render();
+        });
+        container.querySelector('[data-action="add-lesson"]')?.addEventListener('click', () => {
+            state.selected.lessons.push({
+                title: `第${state.selected.lessons.length + 1}次课`,
+                content: '',
+                section_count: 2,
+                learning_material_id: null,
+            });
+            render();
+        });
+        container.querySelectorAll('[data-action="remove-lesson"]').forEach((button) => {
             button.addEventListener('click', () => {
-                state.activeIndex = clampIndex(button.dataset.teacherOnboardingStepIndex);
-                render();
+                const row = button.closest('[data-lesson-index]');
+                const index = Number(row?.dataset.lessonIndex || -1);
+                if (index >= 0) {
+                    state.selected.lessons.splice(index, 1);
+                    render();
+                }
             });
         });
     }
 
-    function renderActiveStep() {
-        const steps = getSteps();
-        const step = steps[state.activeIndex] || steps[0];
-        if (!step) {
-            return;
-        }
+    function buildAiDraft() {
+        const teacherName = normalizeText(wizard().teacher?.name) || '老师';
+        const courseName = normalizeText(state.selected.courseName) || '本课程';
+        const className = selectedClass()?.name || '当前班级';
+        const semesterName = selectedSemester()?.name || '当前学期';
+        const textbookTitle = selectedTextbook()?.title || '已选教材';
+        const materialNames = [...state.selected.materialIds]
+            .map((id) => list('materials').find((item) => Number(item.id) === Number(id))?.name)
+            .filter(Boolean)
+            .join('、') || '未选择教学材料';
+        const summary = `课程：${courseName}\n班级：${className}\n学期：${semesterName}\n系别：${state.selected.department || '未设置'}\n教材：${textbookTitle}\n教学材料：${materialNames}`;
+        return {
+            system: `你是《${courseName}》课堂的 AI 助教，协助${teacherName}老师服务本课堂。请优先依据课程简介、教材、课堂材料和教师发布的任务回答问题。面对学生时强调思路引导，不直接代写作业或泄露考试答案；面对教师时可以协助备课、活动设计和表达优化。始终使用简体中文，回答准确、具体、边界清晰。\n\n${summary}`,
+            syllabus: `${summary}\n\n课程简介：\n${state.selected.description || '待补充'}\n\n课堂设置：\n${state.selected.lessons.map((lesson, index) => `${index + 1}. ${lesson.title || '未命名'}：${lesson.content || ''}`).join('\n')}`,
+        };
+    }
 
-        if (elements.stepMeta) {
-            elements.stepMeta.textContent = `第 ${state.activeIndex + 1} 步 / 共 ${steps.length} 步`;
+    function renderAiStep(container) {
+        if (!state.selected.aiSystemPrompt || !state.selected.aiSyllabus) {
+            const draft = buildAiDraft();
+            state.selected.aiSystemPrompt = state.selected.aiSystemPrompt || draft.system;
+            state.selected.aiSyllabus = state.selected.aiSyllabus || draft.syllabus;
         }
-        if (elements.stepTitle) {
-            elements.stepTitle.textContent = step.title;
-        }
-        if (elements.stepDescription) {
-            elements.stepDescription.textContent = step.description;
-        }
-        if (elements.stepStatus) {
-            elements.stepStatus.textContent = step.status_label;
-        }
-        if (elements.stepCount) {
-            elements.stepCount.textContent = `${Number(step.count || 0)} 项`;
-        }
-        if (elements.tipText) {
-            elements.tipText.textContent = stepTips[step.id] || '按当前步骤继续处理，完成后可以回到这里查看下一步。';
-        }
-        if (elements.actionLink) {
-            elements.actionLink.href = step.href || '/manage';
-            elements.actionLink.textContent = step.action_label || '前往处理';
-        }
-        if (elements.prevButton) {
-            elements.prevButton.disabled = state.activeIndex <= 0;
-        }
-        if (elements.nextButton) {
-            elements.nextButton.disabled = state.activeIndex >= steps.length - 1;
-        }
+        container.innerHTML = renderStepShell(`
+            ${renderTitle(steps[6].prompt, '系统已根据学期、课程、教材、材料和班级生成草稿，保存前可以继续微调。')}
+            <div class="onboarding-field-grid">
+                <div class="onboarding-field full-span">
+                    <label for="onboardingAiPromptInput">系统提示词</label>
+                    <textarea id="onboardingAiPromptInput" rows="8">${escapeHtml(state.selected.aiSystemPrompt)}</textarea>
+                </div>
+                <div class="onboarding-field full-span">
+                    <label for="onboardingAiSyllabusInput">课堂知识依据</label>
+                    <textarea id="onboardingAiSyllabusInput" rows="7">${escapeHtml(state.selected.aiSyllabus)}</textarea>
+                </div>
+            </div>
+        `);
+        container.querySelector('#onboardingAiPromptInput')?.addEventListener('input', (event) => {
+            state.selected.aiSystemPrompt = event.target.value;
+        });
+        container.querySelector('#onboardingAiSyllabusInput')?.addEventListener('input', (event) => {
+            state.selected.aiSyllabus = event.target.value;
+        });
+    }
+
+    function renderSuccessStep(container) {
+        const teacherName = normalizeText(wizard().teacher?.name) || '';
+        container.innerHTML = renderStepShell(`
+            ${renderTitle('完成课堂开设', `恭喜开课成功，预祝${teacherName ? `${teacherName}老师` : '老师'}课程顺利。`)}
+            <div class="onboarding-recommend-panel">
+                <strong>${escapeHtml(state.selected.courseName)} / ${escapeHtml(selectedClass()?.name || '')}</strong>
+                <p>课堂时间轴、课程模板、教材、材料和 AI 助教配置已经保存。</p>
+                <div class="onboarding-badge-row">
+                    <span class="onboarding-badge is-green">${escapeHtml(selectedSemester()?.name || '已绑定学期')}</span>
+                    <span class="onboarding-badge is-blue">${escapeHtml(selectedTextbook()?.title || '已绑定教材')}</span>
+                    <span class="onboarding-badge is-amber">${state.selected.materialIds.size} 个材料</span>
+                </div>
+            </div>
+        `);
     }
 
     function render() {
-        state.activeIndex = clampIndex(state.activeIndex);
-        renderProgress();
-        renderStepList();
-        renderActiveStep();
+        if (!elements.content) return;
+        const step = steps[state.activeIndex] || steps[0];
+        if (elements.stepCount) {
+            elements.stepCount.textContent = `第 ${state.activeIndex + 1} 步 / 共 ${steps.length} 步`;
+        }
+        renderHistory();
+        if (step.key === 'semester') renderSemesterStep(elements.content);
+        if (step.key === 'course') renderCourseStep(elements.content);
+        if (step.key === 'textbook') renderTextbookStep(elements.content);
+        if (step.key === 'materials') renderMaterialsStep(elements.content);
+        if (step.key === 'class') renderClassStep(elements.content);
+        if (step.key === 'details') renderDetailsStep(elements.content);
+        if (step.key === 'ai') renderAiStep(elements.content);
+        if (step.key === 'success') renderSuccessStep(elements.content);
+        updateFooter();
+    }
+
+    function goToStep(index) {
+        const target = Math.min(Math.max(index, 0), steps.length - 1);
+        if (target === state.activeIndex || state.completing) return;
+        const shell = elements.content?.querySelector('.onboarding-step-shell');
+        if (!shell) {
+            state.activeIndex = target;
+            render();
+            return;
+        }
+        shell.classList.add('is-leaving');
+        window.setTimeout(() => {
+            state.activeIndex = target;
+            render();
+        }, 230);
+    }
+
+    async function handleNext() {
+        const key = steps[state.activeIndex]?.key;
+        if (key === 'success') {
+            if (state.selected.classroomUrl) {
+                window.location.href = state.selected.classroomUrl;
+            }
+            return;
+        }
+        if (key === 'ai') {
+            await completeOnboarding();
+            return;
+        }
+        if (canGoNext()) {
+            goToStep(state.activeIndex + 1);
+        }
+    }
+
+    function closeSubmodal() {
+        if (!submodal) return;
+        submodal.hidden = true;
+        if (elements.submodalBody) elements.submodalBody.innerHTML = '';
+    }
+
+    function openSubmodal(title, bodyHtml, onSubmit) {
+        if (!submodal || !elements.submodalBody || !elements.submodalTitle) return;
+        elements.submodalTitle.textContent = title;
+        elements.submodalBody.innerHTML = `<form data-submodal-form>${bodyHtml}</form>`;
+        submodal.hidden = false;
+        const form = elements.submodalBody.querySelector('[data-submodal-form]');
+        form?.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const submit = form.querySelector('[type="submit"]');
+            const originalText = submit?.textContent || '';
+            if (submit) {
+                submit.disabled = true;
+                submit.textContent = '保存中...';
+            }
+            try {
+                await onSubmit(new FormData(form), form);
+                closeSubmodal();
+                await reloadStateAndRender();
+            } catch (error) {
+                showToast(error.message || '保存失败', 'error');
+            } finally {
+                if (submit) {
+                    submit.disabled = false;
+                    submit.textContent = originalText;
+                }
+            }
+        });
+        form?.querySelector('input, textarea, select')?.focus({ preventScroll: true });
+    }
+
+    function openSemesterSubmodal() {
+        openSubmodal('新建学期', `
+            <div class="onboarding-field">
+                <label>学期名称</label>
+                <input name="name" type="text" placeholder="例如：2026 春季学期">
+            </div>
+            <div class="onboarding-field">
+                <label>开始日期</label>
+                <input name="start_date" type="date" required value="${todayIso()}">
+            </div>
+            <div class="onboarding-field">
+                <label>结束日期</label>
+                <input name="end_date" type="date" required>
+            </div>
+            <div class="teacher-onboarding-submodal-actions">
+                <button type="button" class="btn btn-outline" data-submodal-close-local>取消</button>
+                <button type="submit" class="btn btn-primary">保存学期</button>
+            </div>
+        `, async (formData) => {
+            const name = normalizeText(formData.get('name'));
+            const startDate = normalizeText(formData.get('start_date'));
+            await apiFetch('/api/manage/semesters/save', { method: 'POST', body: formData, silent: true });
+            await loadState({ silent: true });
+            const created = list('semesters').find((item) => (
+                (name && item.name === name) || (startDate && item.start_date === startDate)
+            )) || list('semesters')[0];
+            if (created) state.selected.semesterId = Number(created.id);
+        });
+    }
+
+    function openTextbookSubmodal() {
+        openSubmodal('录入教材', `
+            <div class="onboarding-field">
+                <label>教材名称</label>
+                <input name="title" type="text" required placeholder="例如：Web 程序设计基础">
+            </div>
+            <div class="onboarding-field">
+                <label>作者</label>
+                <input name="authors_text" type="text" placeholder="多位作者用逗号分隔">
+            </div>
+            <div class="onboarding-field">
+                <label>出版社</label>
+                <input name="publisher" type="text">
+            </div>
+            <div class="onboarding-field">
+                <label>教材简介</label>
+                <textarea name="introduction" rows="3"></textarea>
+            </div>
+            <div class="onboarding-field">
+                <label>目录或章节线索</label>
+                <textarea name="catalog_text" rows="4"></textarea>
+            </div>
+            <div class="teacher-onboarding-submodal-actions">
+                <button type="button" class="btn btn-outline" data-submodal-close-local>取消</button>
+                <button type="submit" class="btn btn-primary">保存教材</button>
+            </div>
+        `, async (formData) => {
+            const authors = normalizeText(formData.get('authors_text'))
+                .split(/[，,]/)
+                .map((item) => normalizeText(item))
+                .filter(Boolean);
+            formData.delete('authors_text');
+            formData.set('authors_json', JSON.stringify(authors));
+            formData.set('tags_json', JSON.stringify(state.selected.department ? [state.selected.department] : []));
+            const result = await apiFetch('/api/manage/textbooks/save', { method: 'POST', body: formData, silent: true });
+            if (result?.textbook_id) state.selected.textbookId = Number(result.textbook_id);
+            state.selected.courseDescriptionDraft = '';
+        });
+    }
+
+    function openMaterialSubmodal() {
+        openSubmodal('导入教学材料', `
+            <div class="onboarding-field">
+                <label>选择文件</label>
+                <input name="files" type="file" multiple required>
+            </div>
+            <p class="onboarding-hint">支持文档、PPT、思维导图或其他课堂材料。导入后会出现在材料列表最前面。</p>
+            <div class="teacher-onboarding-submodal-actions">
+                <button type="button" class="btn btn-outline" data-submodal-close-local>取消</button>
+                <button type="submit" class="btn btn-primary">导入材料</button>
+            </div>
+        `, async (_formData, form) => {
+            const input = form.querySelector('input[type="file"]');
+            const files = Array.from(input?.files || []);
+            if (!files.length) throw new Error('请选择要导入的文件');
+            const uploadData = new FormData();
+            files.forEach((file) => uploadData.append('files', file));
+            uploadData.set('manifest', JSON.stringify(files.map((file) => ({
+                relative_path: file.name,
+                content_type: file.type || '',
+            }))));
+            const result = await apiFetch('/api/materials/upload', { method: 'POST', body: uploadData, silent: true });
+            (result.created_items || []).forEach((item) => {
+                if (item?.id) state.selected.materialIds.add(Number(item.id));
+            });
+        });
+    }
+
+    function openClassSubmodal() {
+        openSubmodal('录入新班级', `
+            <div class="onboarding-field">
+                <label>班级名称</label>
+                <input name="name" type="text" required placeholder="例如：网络工程 2401 班">
+            </div>
+            <div class="onboarding-field">
+                <label>所属系别</label>
+                <input name="department" type="text" required value="${escapeHtml(state.selected.department)}" placeholder="例如：网络工程系">
+            </div>
+            <div class="onboarding-field">
+                <label>备注</label>
+                <textarea name="description" rows="3" placeholder="可选，稍后仍可导入学生名单"></textarea>
+            </div>
+            <div class="teacher-onboarding-submodal-actions">
+                <button type="button" class="btn btn-outline" data-submodal-close-local>取消</button>
+                <button type="submit" class="btn btn-primary">保存班级</button>
+            </div>
+        `, async (formData) => {
+            const result = await apiFetch('/api/manage/teacher-onboarding/classes/create', {
+                method: 'POST',
+                body: Object.fromEntries(formData.entries()),
+                silent: true,
+            });
+            if (result?.class?.id) state.selected.classId = Number(result.class.id);
+        });
+    }
+
+    async function generateDescription(event) {
+        const button = event?.currentTarget;
+        const originalText = button?.textContent || '';
+        if (button) {
+            button.disabled = true;
+            button.textContent = '生成中...';
+        }
+        try {
+            const result = await apiFetch('/api/manage/teacher-onboarding/course-description', {
+                method: 'POST',
+                body: {
+                    course_name: state.selected.courseName,
+                    department: state.selected.department,
+                    textbook_id: state.selected.textbookId,
+                },
+                silent: true,
+            });
+            state.selected.courseDescriptionDraft = result.description || '';
+            if (!state.selected.description) {
+                state.selected.description = state.selected.courseDescriptionDraft;
+            }
+            state.selected.aiSystemPrompt = '';
+            state.selected.aiSyllabus = '';
+            showToast('课程简介已生成', 'success');
+            render();
+        } catch (error) {
+            showToast(error.message || '课程简介生成失败', 'error');
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        }
+    }
+
+    async function generateLessons(event) {
+        const button = event?.currentTarget;
+        const originalText = button?.textContent || '';
+        if (button) {
+            button.disabled = true;
+            button.textContent = 'AI 生成中...';
+        }
+        try {
+            const result = await apiFetch('/api/manage/courses/ai-generate-lessons', {
+                method: 'POST',
+                body: {
+                    name: state.selected.courseName,
+                    description: state.selected.description,
+                    textbook_id: state.selected.textbookId,
+                    total_hours: state.selected.totalHours,
+                    per_session_sections: Number(state.selected.weeklySchedule[0]?.section_count || 2),
+                },
+                silent: true,
+            });
+            state.selected.lessons = Array.isArray(result.lessons) ? result.lessons : [];
+            state.selected.aiSystemPrompt = '';
+            state.selected.aiSyllabus = '';
+            showToast(result.message || '课堂设置已生成', 'success');
+            render();
+        } catch (error) {
+            showToast(error.message || 'AI 生成课堂设置失败', 'error');
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        }
+    }
+
+    function completePayload() {
+        const materialIds = [...state.selected.materialIds];
+        const homeMaterial = list('materials').find((item) => (
+            materialIds.includes(Number(item.id)) && item.is_markdown
+        ));
+        return {
+            semester_id: state.selected.semesterId,
+            class_id: state.selected.classId,
+            textbook_id: state.selected.textbookId,
+            material_ids: materialIds,
+            home_learning_material_id: homeMaterial?.id || null,
+            course: {
+                course_id: state.selected.courseId,
+                name: state.selected.courseName,
+                department: state.selected.department,
+                sect_name: state.selected.sectName,
+                description: state.selected.description,
+                credits: state.selected.credits,
+                total_hours: state.selected.totalHours,
+                lessons: state.selected.lessons.map((lesson) => ({
+                    title: lesson.title,
+                    content: lesson.content,
+                    section_count: Number(lesson.section_count || 0),
+                    learning_material_id: lesson.learning_material_id || null,
+                })),
+            },
+            schedule: {
+                first_class_date: state.selected.firstClassDate,
+                weekly_schedule: state.selected.weeklySchedule,
+            },
+            ai: {
+                system_prompt: state.selected.aiSystemPrompt,
+                syllabus: state.selected.aiSyllabus,
+            },
+        };
+    }
+
+    async function completeOnboarding() {
+        if (state.completing) return;
+        state.completing = true;
+        updateFooter();
+        try {
+            const result = await apiFetch('/api/manage/teacher-onboarding/complete', {
+                method: 'POST',
+                body: completePayload(),
+                silent: true,
+            });
+            state.selected.classroomUrl = result.classroom_url || '';
+            if (result.course_id && !state.selected.courseId) state.selected.courseId = Number(result.course_id);
+            showToast(result.message || '课堂开设成功', 'success');
+            await loadState({ silent: true });
+            state.completing = false;
+            goToStep(steps.length - 1);
+        } catch (error) {
+            showToast(error.message || '课堂开设失败', 'error');
+        } finally {
+            state.completing = false;
+            updateFooter();
+        }
     }
 
     async function openGuide(source = 'manual') {
         const payload = source === 'manual'
             ? await loadState({ silent: false })
             : (state.payload || await loadState({ silent: true }));
-        if (!payload) {
-            return;
-        }
+        if (!payload) return;
 
-        state.activeIndex = source === 'auto' ? resolveAutoIndex() : 0;
+        state.activeIndex = 0;
         state.lastFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         state.bodyOverflow = document.body.style.overflow || '';
+        if (elements.welcome) {
+            const teacherName = normalizeText(wizard().teacher?.name) || '';
+            elements.welcome.textContent = `欢迎${teacherName}老师，接下来我们一起一步步完成课堂的开设`;
+        }
         render();
 
         window.clearTimeout(state.closeTimer);
+        window.clearTimeout(state.welcomeTimer);
         modal.hidden = false;
+        dialog?.classList.remove('is-welcome-compact');
+        dialog?.classList.add('is-welcome-pending');
         document.body.style.overflow = 'hidden';
         window.requestAnimationFrame(() => {
             modal.classList.add('is-open');
             state.isOpen = true;
             modal.querySelector('[data-teacher-onboarding-dismiss]')?.focus({ preventScroll: true });
         });
+        state.welcomeTimer = window.setTimeout(() => {
+            dialog?.classList.remove('is-welcome-pending');
+            dialog?.classList.add('is-welcome-compact');
+        }, 3000);
     }
 
-    async function closeGuide(reason = 'manual_exit', { navigateTo = '' } = {}) {
-        if (!state.isOpen && !navigateTo) {
-            return;
-        }
-
+    async function closeGuide(reason = 'manual_exit') {
+        if (!state.isOpen) return;
         const persisted = await markDismissed(reason);
-        if (!persisted) {
-            return;
-        }
+        if (!persisted) return;
 
         modal.classList.remove('is-open');
         state.isOpen = false;
         document.body.style.overflow = state.bodyOverflow;
+        closeSubmodal();
+        window.clearTimeout(state.welcomeTimer);
         state.closeTimer = window.setTimeout(() => {
-            if (!state.isOpen) {
-                modal.hidden = true;
-            }
+            if (!state.isOpen) modal.hidden = true;
         }, 220);
-
         if (state.lastFocused && document.contains(state.lastFocused)) {
             state.lastFocused.focus({ preventScroll: true });
-        }
-
-        if (navigateTo) {
-            window.location.href = navigateTo;
         }
     }
 
@@ -250,28 +1251,24 @@ if (modal && openButtons.length > 0) {
         button.addEventListener('click', () => closeGuide('manual_exit'));
     });
 
-    elements.completeButton?.addEventListener('click', () => closeGuide('completed'));
-
-    elements.prevButton?.addEventListener('click', () => {
-        state.activeIndex = clampIndex(state.activeIndex - 1);
-        render();
+    elements.submodalClose?.addEventListener('click', closeSubmodal);
+    elements.submodalBody?.addEventListener('click', (event) => {
+        if (event.target.closest('[data-submodal-close-local]')) {
+            closeSubmodal();
+        }
     });
 
-    elements.nextButton?.addEventListener('click', () => {
-        state.activeIndex = clampIndex(state.activeIndex + 1);
-        render();
-    });
-
-    elements.actionLink?.addEventListener('click', (event) => {
-        const href = elements.actionLink?.getAttribute('href') || '/manage';
-        event.preventDefault();
-        closeGuide('used', { navigateTo: href });
-    });
+    elements.prevButton?.addEventListener('click', () => goToStep(state.activeIndex - 1));
+    elements.nextButton?.addEventListener('click', handleNext);
 
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape' && state.isOpen) {
             event.preventDefault();
-            closeGuide('manual_exit');
+            if (submodal && !submodal.hidden) {
+                closeSubmodal();
+            } else {
+                closeGuide('manual_exit');
+            }
         }
     });
 

@@ -17,6 +17,7 @@ const elements = {
     modalTitle: document.getElementById('courseModalTitle'),
     courseIdInput: document.getElementById('courseIdInput'),
     nameInput: document.getElementById('courseNameInput'),
+    departmentInput: document.getElementById('courseDepartmentInput'),
     sectNameInput: document.getElementById('courseSectNameInput'),
     creditsInput: document.getElementById('courseCreditsInput'),
     descriptionInput: document.getElementById('courseDescriptionInput'),
@@ -144,6 +145,7 @@ function resetForm() {
     if (elements.modalTitle) elements.modalTitle.textContent = '新增课程';
     if (elements.courseIdInput) elements.courseIdInput.value = '';
     if (elements.nameInput) elements.nameInput.value = '';
+    if (elements.departmentInput) elements.departmentInput.value = '';
     if (elements.sectNameInput) elements.sectNameInput.value = '';
     if (elements.creditsInput) elements.creditsInput.value = '0';
     if (elements.descriptionInput) elements.descriptionInput.value = '';
@@ -163,6 +165,7 @@ function populateForm(course) {
     if (elements.modalTitle) elements.modalTitle.textContent = '编辑课程';
     if (elements.courseIdInput) elements.courseIdInput.value = String(course.id || '');
     if (elements.nameInput) elements.nameInput.value = course.name || '';
+    if (elements.departmentInput) elements.departmentInput.value = course.department || '';
     if (elements.sectNameInput) elements.sectNameInput.value = course.sect_name || '';
     if (elements.creditsInput) elements.creditsInput.value = String(course.credits ?? 0);
     if (elements.descriptionInput) elements.descriptionInput.value = course.description || '';
@@ -291,6 +294,7 @@ async function handleSaveCourse() {
     const payload = {
         course_id: elements.courseIdInput?.value || '',
         name: elements.nameInput?.value || '',
+        department: elements.departmentInput?.value || '',
         sect_name: elements.sectNameInput?.value || '',
         description: elements.descriptionInput?.value || '',
         credits: Number(elements.creditsInput?.value || 0),

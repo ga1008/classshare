@@ -350,7 +350,7 @@
                             <select id="offeringClassSelect" class="form-control" required>
                                 <option value="">请选择班级</option>
                                 {% for class_item in my_classes %}
-                                <option value="{{ class_item.id }}">{{ class_item.name }}</option>
+                                <option value="{{ class_item.id }}">{{ class_item.name }}{% if class_item.department %} · {{ class_item.department }}{% endif %}</option>
                                 {% endfor %}
                             </select>
                             <a href="/manage/classes" class="academic-link-btn">新增班级</a>
@@ -363,7 +363,7 @@
                             <select id="offeringCourseSelect" class="form-control" required>
                                 <option value="">请选择课程</option>
                                 {% for course in my_courses %}
-                                <option value="{{ course.id }}">{{ course.name }}</option>
+                                <option value="{{ course.id }}">{{ course.name }}{% if course.department %} · {{ course.department }}{% endif %}</option>
                                 {% endfor %}
                             </select>
                             <a href="/manage/courses" class="academic-link-btn">新增课程</a>
@@ -481,6 +481,8 @@
                             <p>{{ offering.schedule_info or '暂未配置首次上课日期和每周上课安排。' }}</p>
                         </div>
                         <div class="academic-badge-row">
+                            {% if offering.course_department %}<span class="academic-badge is-accent">{{ offering.course_department }}</span>{% endif %}
+                            {% if offering.class_department %}<span class="academic-badge">{{ offering.class_department }}</span>{% endif %}
                             {% if offering.textbook_title %}<span class="academic-badge is-success">{{ offering.textbook_title }}</span>{% endif %}
                             {% if offering.first_class_date %}<span class="academic-badge">{{ offering.first_class_date }}</span>{% endif %}
                             <span class="academic-badge {% if offering.scheduled_session_count %}is-accent{% else %}is-muted{% endif %}">

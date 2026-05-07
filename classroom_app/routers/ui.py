@@ -55,6 +55,7 @@ from ..services.course_planning_service import (
     load_course_lessons_by_course_id,
     serialize_course_row,
 )
+from ..services.department_service import collect_department_options
 from ..services.materials_service import attach_home_learning_material_briefs, attach_learning_material_briefs
 from ..services.learning_progress_service import (
     build_class_learning_overview,
@@ -1105,11 +1106,11 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
     with get_db_connection() as conn:
         my_classes_cursor = conn.execute(
             """
-            SELECT c.id, c.name, COUNT(s.id) as student_count
+            SELECT c.id, c.name, c.department, COUNT(s.id) as student_count
             FROM classes c
             LEFT JOIN students s ON c.id = s.class_id
             WHERE c.created_by_teacher_id = ?
-            GROUP BY c.id, c.name
+            GROUP BY c.id, c.name, c.department
             ORDER BY c.name
             """,
             (user['id'],)
@@ -1140,6 +1141,9 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
             extra={
                 "my_classes": my_classes,
                 "class_stats": class_stats,
+                "department_options": collect_department_options(
+                    (item.get("department") for item in my_classes),
+                ),
             },
         ),
     )
@@ -1209,6 +1213,9 @@ async def get_manage_courses_page(request: Request, user: dict = Depends(get_cur
                 "courses_json": my_courses,
                 "textbooks_json": textbooks,
                 "course_stats": course_stats,
+                "department_options": collect_department_options(
+                    (item.get("department") for item in my_courses),
+                ),
             },
         ),
     )
@@ -1283,6 +1290,7 @@ def _load_teacher_course_rows(conn, teacher_id: int):
         """
         SELECT c.id,
                c.name,
+               c.department,
                c.description,
                c.sect_name,
                c.credits,
@@ -1295,7 +1303,7 @@ def _load_teacher_course_rows(conn, teacher_id: int):
             ON o.course_id = c.id
            AND o.teacher_id = c.created_by_teacher_id
         WHERE c.created_by_teacher_id = ?
-        GROUP BY c.id, c.name, c.description, c.sect_name, c.credits, c.total_hours, c.created_at, c.created_by_teacher_id
+        GROUP BY c.id, c.name, c.department, c.description, c.sect_name, c.credits, c.total_hours, c.created_at, c.created_by_teacher_id
         ORDER BY c.created_at DESC, c.name
         """,
         (teacher_id,),
@@ -1333,7 +1341,9 @@ def _load_teacher_offering_rows(conn, teacher_id: int):
                o.schedule_info,
                COALESCE(s.name, o.semester) AS semester,
                c.name AS class_name,
+               c.department AS class_department,
                co.name AS course_name,
+               co.department AS course_department,
                co.sect_name AS course_sect_name,
                co.description,
                co.credits,
@@ -1358,7 +1368,9 @@ def _load_teacher_offering_rows(conn, teacher_id: int):
                  o.schedule_info,
                  s.name,
                  c.name,
+                 c.department,
                  co.name,
+                 co.department,
                  co.sect_name,
                  co.description,
                  co.credits,
@@ -1664,7 +1676,7 @@ async def get_manage_offerings_page(request: Request, user: dict = Depends(get_c
         my_classes = [
             dict(row)
             for row in conn.execute(
-                "SELECT id, name FROM classes WHERE created_by_teacher_id = ? ORDER BY name",
+                "SELECT id, name, department FROM classes WHERE created_by_teacher_id = ? ORDER BY name",
                 (user["id"],),
             ).fetchall()
         ]
@@ -1699,6 +1711,10 @@ async def get_manage_offerings_page(request: Request, user: dict = Depends(get_c
                 "my_textbooks": my_textbooks,
                 "my_offerings": my_offerings,
                 "default_semester_id": choose_default_semester_id(my_semesters),
+                "department_options": collect_department_options(
+                    (item.get("department") for item in my_classes),
+                    (item.get("department") for item in my_courses),
+                ),
             },
         ),
     )
