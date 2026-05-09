@@ -1125,14 +1125,31 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
     with get_db_connection() as conn:
         my_classes_cursor = conn.execute(
             """
-            SELECT c.id, c.name, c.department, COUNT(s.id) as student_count
+            SELECT c.id,
+                   c.name,
+                   c.department,
+                   c.description,
+                   c.created_at,
+                   COUNT(DISTINCT s.id) AS student_count,
+                   SUM(
+                       CASE
+                           WHEN s.id IS NOT NULL
+                            AND (s.email IS NULL OR TRIM(s.email) = '')
+                           THEN 1 ELSE 0
+                       END
+                   ) AS missing_email_count,
+                   COUNT(DISTINCT o.id) AS offering_count,
+                   MAX(s.created_at) AS latest_student_created_at
             FROM classes c
             LEFT JOIN students s ON c.id = s.class_id
+            LEFT JOIN class_offerings o
+                   ON o.class_id = c.id
+                  AND o.teacher_id = c.created_by_teacher_id
             WHERE c.created_by_teacher_id = ?
-            GROUP BY c.id, c.name, c.department
-            ORDER BY c.name
+            GROUP BY c.id, c.name, c.department, c.description, c.created_at
+            ORDER BY COALESCE(NULLIF(TRIM(c.department), ''), '未分类'), c.name
             """,
-            (user['id'],)
+            (user["id"],),
         )
         my_classes = [dict(row) for row in my_classes_cursor.fetchall()]
         students_by_class = _load_teacher_class_student_rows(
@@ -1141,12 +1158,30 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
             [int(item["id"]) for item in my_classes],
         )
         for class_item in my_classes:
+            class_item["student_count"] = int(class_item.get("student_count") or 0)
+            class_item["missing_email_count"] = int(class_item.get("missing_email_count") or 0)
+            class_item["offering_count"] = int(class_item.get("offering_count") or 0)
+            class_item["department_label"] = str(class_item.get("department") or "").strip() or "未分类"
+            class_item["email_coverage_percent"] = (
+                round(
+                    (class_item["student_count"] - class_item["missing_email_count"])
+                    / class_item["student_count"]
+                    * 100
+                )
+                if class_item["student_count"]
+                else 0
+            )
             class_item["students"] = students_by_class.get(int(class_item["id"]), [])
 
+    missing_email_total = sum(int(item.get("missing_email_count") or 0) for item in my_classes)
+    active_class_count = sum(1 for item in my_classes if int(item.get("offering_count") or 0) > 0)
     class_stats = {
         "class_count": len(my_classes),
         "student_count": sum(int(item.get("student_count") or 0) for item in my_classes),
         "largest_class_size": max((int(item.get("student_count") or 0) for item in my_classes), default=0),
+        "missing_email_count": missing_email_total,
+        "active_class_count": active_class_count,
+        "department_count": len({item.get("department_label") for item in my_classes if item.get("department_label")}),
     }
 
     return templates.TemplateResponse(
@@ -1287,6 +1322,7 @@ def _load_teacher_class_student_rows(conn, teacher_id: int, class_ids: list[int]
                s.nickname,
                s.student_id_number,
                s.email,
+               s.phone,
                s.created_at
         FROM students s
         JOIN classes c ON c.id = s.class_id
@@ -1300,6 +1336,7 @@ def _load_teacher_class_student_rows(conn, teacher_id: int, class_ids: list[int]
     for row in rows:
         item = dict(row)
         item["display_name"] = item.get("nickname") or item.get("name") or "学生"
+        item["has_email"] = bool(str(item.get("email") or "").strip())
         grouped.setdefault(int(item["class_id"]), []).append(item)
     return grouped
 

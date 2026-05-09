@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="/static/css/feedback.css">
 <link rel="stylesheet" href="/static/css/toast.css">
 <link rel="stylesheet" href="/static/css/ai_chat.css">
-<link rel="stylesheet" href="/static/css/classroom.css?v=discussion-popover-20260507">
+<link rel="stylesheet" href="/static/css/classroom.css?v=teacher-roster-detail-fix-20260508">
 <link rel="stylesheet" href="/static/css/markdown.css">
 <link rel="stylesheet" href="/static/css/materials.css">
 <link rel="stylesheet" href="/static/css/learning_material_selector.css">
@@ -638,8 +638,71 @@
                     {% endfor %}
                 </div>
             </div>
+            {% set roster_students = lo.roster_students if lo.roster_students is defined and lo.roster_students else lo.students %}
+            <div class="learning-roster-board" aria-label="学生名单与本课进度">
+                <div class="learning-roster-board__head">
+                    <div>
+                        <h3>学生名单与本课进度</h3>
+                        <p>点击学生姓名可在当前课堂内查看管理中心同源详情统计。</p>
+                    </div>
+                    <label class="learning-roster-search">
+                        <span>筛选学生</span>
+                        <input type="search" data-learning-roster-search placeholder="输入姓名或学号">
+                    </label>
+                </div>
+                <div class="learning-roster-list" data-learning-roster-list>
+                    {% for item in roster_students %}
+                    <a
+                        class="learning-roster-student"
+                        href="/manage/students/{{ item.id }}"
+                        data-student-insight-open
+                        data-student-insight-url="/manage/students/{{ item.id }}?embed=1"
+                        data-student-name="{{ item.name }}"
+                        data-learning-roster-item
+                        data-search-text="{{ (item.name ~ ' ' ~ (item.student_id_number or '') ~ ' ' ~ item.current_level.level_name) | lower }}"
+                    >
+                        <span class="learning-roster-student__identity">
+                            <strong>{{ item.name }}</strong>
+                            <small>{{ item.student_id_number or '未填学号' }} · {{ item.current_level.level_name }}</small>
+                        </span>
+                        <span class="learning-roster-student__progress">
+                            <span class="learning-roster-student__bar" aria-label="本课进度 {{ item.progress_percent }}%">
+                                <span style="width: {{ item.progress_percent }}%"></span>
+                            </span>
+                            <em>修为 {{ item.score }} · {{ item.progress_percent }}%</em>
+                        </span>
+                        <span class="learning-roster-student__metrics" aria-label="本课简要进度">
+                            <b>材 {{ item.material_percent }}%</b>
+                            <b>任 {{ item.task_completion_percent }}%</b>
+                            <b>互 {{ item.interaction_percent }}%</b>
+                        </span>
+                    </a>
+                    {% else %}
+                    <div class="learning-roster-empty">当前课堂还没有学生名单。</div>
+                    {% endfor %}
+                </div>
+                <p class="learning-roster-empty" data-learning-roster-empty hidden>没有匹配的学生。</p>
+            </div>
         </section>
         {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if user_info.role == 'teacher' and classroom_page.learning_overview %}
+        <div class="student-insight-modal-backdrop" id="student-insight-modal" hidden aria-hidden="true">
+            <div class="student-insight-modal-shell" role="dialog" aria-modal="true" aria-labelledby="student-insight-modal-title" tabindex="-1">
+                <div class="student-insight-modal-header">
+                    <div>
+                        <p class="workspace-kicker">Student Insight</p>
+                        <h3 id="student-insight-modal-title">学生详情统计</h3>
+                    </div>
+                    <button class="student-insight-modal-close" id="student-insight-modal-close" type="button" aria-label="关闭学生详情弹窗">&times;</button>
+                </div>
+                <div class="student-insight-modal-body">
+                    <div class="student-insight-modal-loading" data-student-insight-loading>正在加载学生详情...</div>
+                    <iframe class="student-insight-modal-frame" title="学生详情统计" data-student-insight-frame loading="lazy"></iframe>
                 </div>
             </div>
         </div>
@@ -1377,7 +1440,7 @@
     import * as materialsApp from '/static/js/classroom_materials.js?v=learning-progress-20260503';
     import * as examApp from '/static/js/app_exams.js';
     import { initClassroomPage } from '/static/js/classroom_page.js?v=premium-classroom-20260504';
-    import { initLearningProgress } from '/static/js/learning_progress.js?v=cultivation-modal-20260505';
+    import { initLearningProgress } from '/static/js/learning_progress.js?v=teacher-roster-detail-fix-20260508';
 
     window.UI = ui;
     window.fileApp = fileApp;

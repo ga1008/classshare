@@ -66,6 +66,8 @@ function initLearningProgressModal() {
     });
     document.addEventListener('keydown', (event) => {
         if (modal.hidden) return;
+        const studentInsightModal = document.getElementById('student-insight-modal');
+        if (studentInsightModal && !studentInsightModal.hidden) return;
 
         if (event.key === 'Escape') {
             closeModal();
@@ -81,6 +83,132 @@ function initLearningProgressModal() {
             return;
         }
 
+        const firstFocusable = focusableElements[0];
+        const lastFocusable = focusableElements[focusableElements.length - 1];
+        if (event.shiftKey && document.activeElement === firstFocusable) {
+            event.preventDefault();
+            lastFocusable.focus({ preventScroll: true });
+        } else if (!event.shiftKey && document.activeElement === lastFocusable) {
+            event.preventDefault();
+            firstFocusable.focus({ preventScroll: true });
+        }
+    });
+}
+
+function initTeacherLearningRoster() {
+    const searchInput = document.querySelector('[data-learning-roster-search]');
+    const rosterItems = Array.from(document.querySelectorAll('[data-learning-roster-item]'));
+    const emptyState = document.querySelector('[data-learning-roster-empty]');
+    if (!searchInput || !rosterItems.length) return;
+
+    const normalize = (value) => String(value || '').trim().toLowerCase();
+    const applyFilter = () => {
+        const query = normalize(searchInput.value);
+        let visibleCount = 0;
+        rosterItems.forEach((item) => {
+            const text = normalize(item.dataset.searchText || item.textContent);
+            const isVisible = !query || text.includes(query);
+            item.hidden = !isVisible;
+            if (isVisible) visibleCount += 1;
+        });
+        if (emptyState) {
+            emptyState.hidden = !query || visibleCount > 0;
+        }
+    };
+
+    searchInput.addEventListener('input', applyFilter);
+    applyFilter();
+}
+
+function initStudentInsightModal() {
+    const modal = document.getElementById('student-insight-modal');
+    const frame = modal?.querySelector('[data-student-insight-frame]');
+    const loading = modal?.querySelector('[data-student-insight-loading]');
+    const closeBtn = document.getElementById('student-insight-modal-close');
+    const titleEl = document.getElementById('student-insight-modal-title');
+    const triggers = Array.from(document.querySelectorAll('[data-student-insight-open]'));
+    if (!modal || !frame || !triggers.length) return;
+
+    const shell = modal.querySelector('.student-insight-modal-shell');
+    const transitionMs = 240;
+    let activeTrigger = null;
+    let closeTimer = 0;
+    let loadGuardTimer = 0;
+
+    const getFocusableElements = () => Array.from(
+        modal.querySelectorAll('a[href], button:not([disabled]), iframe, textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'),
+    ).filter((element) => element.offsetParent !== null || element === document.activeElement);
+
+    const openModal = (trigger) => {
+        const url = trigger.dataset.studentInsightUrl || `${trigger.getAttribute('href') || ''}?embed=1`;
+        if (!url) return;
+        window.clearTimeout(closeTimer);
+        window.clearTimeout(loadGuardTimer);
+        activeTrigger = trigger;
+        if (titleEl) {
+            const studentName = String(trigger.dataset.studentName || '').trim();
+            titleEl.textContent = studentName ? `${studentName} · 学生详情统计` : '学生详情统计';
+        }
+        if (loading) loading.hidden = false;
+        frame.classList.add('is-loading');
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('has-student-insight-modal');
+        window.requestAnimationFrame(() => {
+            modal.classList.add('is-open');
+            (closeBtn || shell)?.focus({ preventScroll: true });
+            frame.src = url;
+            loadGuardTimer = window.setTimeout(() => {
+                if (loading) loading.hidden = true;
+                frame.classList.remove('is-loading');
+            }, 5000);
+        });
+    };
+
+    const closeModal = () => {
+        window.clearTimeout(loadGuardTimer);
+        modal.classList.remove('is-open');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('has-student-insight-modal');
+        closeTimer = window.setTimeout(() => {
+            if (!modal.classList.contains('is-open')) {
+                modal.hidden = true;
+                activeTrigger?.focus?.({ preventScroll: true });
+                activeTrigger = null;
+            }
+        }, transitionMs);
+    };
+
+    triggers.forEach((trigger) => {
+        trigger.addEventListener('click', (event) => {
+            event.preventDefault();
+            openModal(trigger);
+        });
+    });
+
+    frame.addEventListener('load', () => {
+        window.clearTimeout(loadGuardTimer);
+        if (loading) loading.hidden = true;
+        frame.classList.remove('is-loading');
+    });
+    closeBtn?.addEventListener('click', closeModal);
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (modal.hidden) return;
+        if (event.key === 'Escape') {
+            closeModal();
+            return;
+        }
+        if (event.key !== 'Tab') return;
+
+        const focusableElements = getFocusableElements();
+        if (!focusableElements.length) {
+            event.preventDefault();
+            shell?.focus({ preventScroll: true });
+            return;
+        }
         const firstFocusable = focusableElements[0];
         const lastFocusable = focusableElements[focusableElements.length - 1];
         if (event.shiftKey && document.activeElement === firstFocusable) {
@@ -330,6 +458,8 @@ function initLearningMountain(config) {
 
 export function initLearningProgress(config = window.APP_CONFIG || {}) {
     initLearningProgressModal();
+    initTeacherLearningRoster();
+    initStudentInsightModal();
     initStageExamButton(config);
     initLearningMountain(config);
     initCertificateReveal(config);

@@ -8,7 +8,7 @@
 
 {% block extra_head %}
 <link rel="stylesheet" href="/static/css/manage_academic.css">
-<link rel="stylesheet" href="/static/css/student_insight.css">
+<link rel="stylesheet" href="/static/css/student_insight.css?v=radar-labels-20260508">
 {% endblock %}
 
 {% block header_actions %}
@@ -122,6 +122,11 @@
                     <line x1="26.8" y1="51" x2="141.2" y2="117" stroke="rgba(148,163,184,.24)"></line>
                     <line x1="141.2" y1="51" x2="26.8" y2="117" stroke="rgba(148,163,184,.24)"></line>
                     <polygon class="student-radar-fill" points="{{ insight.radar.points }}"></polygon>
+                    {% for axis in insight.radar.axes %}
+                    <text class="student-radar-label" x="{{ axis.label_x }}" y="{{ axis.label_y }}" text-anchor="middle" dominant-baseline="central">
+                        <title>{{ axis.label }}</title>{{ axis.short_label }}
+                    </text>
+                    {% endfor %}
                 </svg>
                 <div class="student-radar-axis-list">
                     {% for axis in insight.radar.axes %}

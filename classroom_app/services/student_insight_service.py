@@ -18,6 +18,7 @@ from .learning_progress_service import (
 RADAR_SIZE = 168
 RADAR_CENTER = RADAR_SIZE / 2
 RADAR_RADIUS = 66
+RADAR_LABEL_RADIUS = 78
 
 
 def _percent(value: float) -> int:
@@ -58,6 +59,13 @@ def _radar_grid_points(ratio: float, count: int = 6) -> str:
         y = RADAR_CENTER + math.sin(angle) * RADAR_RADIUS * ratio
         points.append(f"{x:.1f},{y:.1f}")
     return " ".join(points)
+
+
+def _radar_label_position(index: int, count: int = 6) -> dict[str, float]:
+    angle = -math.pi / 2 + index * 2 * math.pi / count
+    x = RADAR_CENTER + math.cos(angle) * RADAR_LABEL_RADIUS
+    y = RADAR_CENTER + math.sin(angle) * RADAR_LABEL_RADIUS
+    return {"label_x": round(x, 1), "label_y": round(y, 1)}
 
 
 def _load_teacher_student_row(conn, *, teacher_id: int, student_id: int) -> dict[str, Any] | None:
@@ -336,13 +344,15 @@ def _build_radar_axes(
     activity_boost = min(safe_int(activity_summary.get("active_days")), 8) / 8 * 18
     consistency_score = clamp((consistency_score + activity_boost) / 100) * 100
     axes = [
-        {"label": "材料吸收", "score": round(material_score)},
-        {"label": "任务执行", "score": round(task_score)},
-        {"label": "成绩质量", "score": round(quality_score)},
-        {"label": "互动表达", "score": round(interaction_score)},
-        {"label": "学习稳定", "score": round(consistency_score)},
-        {"label": "修为推进", "score": round(cultivation_score)},
+        {"label": "材料吸收", "short_label": "材", "score": round(material_score)},
+        {"label": "任务执行", "short_label": "任", "score": round(task_score)},
+        {"label": "成绩质量", "short_label": "绩", "score": round(quality_score)},
+        {"label": "互动表达", "short_label": "互", "score": round(interaction_score)},
+        {"label": "学习稳定", "short_label": "稳", "score": round(consistency_score)},
+        {"label": "修为推进", "short_label": "修", "score": round(cultivation_score)},
     ]
+    for index, axis in enumerate(axes):
+        axis.update(_radar_label_position(index, len(axes)))
     return {
         "axes": axes,
         "points": _radar_points(axes),

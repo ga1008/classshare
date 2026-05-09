@@ -7,7 +7,7 @@
 
     <!-- Core Design System (always loaded) -->
     <link rel="stylesheet" href="/static/css/core.css">
-    <link rel="stylesheet" href="/static/css/message_center.css?v=cultivation-20260504">
+    <link rel="stylesheet" href="/static/css/message_center.css?v=cultivation-rank-20260508">
     {% if user_info is defined and user_info and user_info.role == 'teacher' %}
     <link rel="stylesheet" href="/static/css/teacher_onboarding.css">
     {% endif %}
@@ -24,7 +24,7 @@
 
     <script type="module" src="/static/js/auth.js"></script>
     {% if user_info is defined and user_info %}
-    <script type="module" src="/static/js/cultivation_identity.js?v=20260504"></script>
+    <script type="module" src="/static/js/cultivation_identity.js?v=20260508-rank"></script>
     <script type="module" src="/static/js/message_center_bell.js"></script>
     {% if user_info.role == 'teacher' %}
     <script type="module" src="/static/js/teacher_onboarding.js"></script>

@@ -59,6 +59,9 @@ function buildReveal(profile, durationMs) {
     const level = profile?.highest_level || {};
     const progress = clampPercent(profile?.progress_percent);
     const theme = String(profile?.avatar_theme || level.theme || 'mortal').replace(/[^a-z0-9_-]/gi, '') || 'mortal';
+    const rankNotice = profile?.rank_notice || profile?.best_course?.rank_notice || null;
+    const rankTier = String(rankNotice?.tier || 'middle').replace(/[^a-z0-9_-]/gi, '') || 'middle';
+    const rankLine = rankNotice?.message || '';
     const kicker = profile?.breakthrough_ready
         ? '破境已至'
         : (profile?.generating_stage_exam ? '试炼生成中' : (level.aura_label || '灵根初醒'));
@@ -87,6 +90,7 @@ function buildReveal(profile, durationMs) {
             <h1>${escapeHtml(profile?.address_name || profile?.student_name || '道友')}</h1>
             <strong>${escapeHtml(levelText)}</strong>
             <p>${escapeHtml(courseLine)}</p>
+            ${rankLine ? `<p class="cultivation-login-reveal__rank" data-rank-tier="${escapeHtml(rankTier)}">${escapeHtml(rankLine)}</p>` : ''}
             <div class="cultivation-login-reveal__bar" aria-label="${escapeHtml(progressLabel)}">
                 <span style="width: ${progress}%"></span>
             </div>
