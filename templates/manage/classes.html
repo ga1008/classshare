@@ -2,261 +2,264 @@
 
 {% block extra_head %}
 <link rel="stylesheet" href="/static/css/manage_academic.css">
-<style>
-    .class-page-shell {
-        display: flex;
-        flex-direction: column;
-        gap: 24px;
-    }
-
-    .class-form-note {
-        padding: 14px 16px;
-        border-radius: 18px;
-        border: 1px dashed rgba(14, 165, 233, 0.28);
-        background: rgba(239, 246, 255, 0.72);
-        color: var(--text-secondary);
-        line-height: 1.65;
-        font-size: 0.9rem;
-    }
-
-    .class-upload-list {
-        display: grid;
-        gap: 12px;
-    }
-
-    .class-upload-item {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 14px;
-        align-items: flex-start;
-        padding: 16px 18px;
-        border-radius: 20px;
-        border: 1px solid rgba(148, 163, 184, 0.16);
-        background: rgba(255, 255, 255, 0.94);
-    }
-
-    .class-upload-item strong {
-        color: var(--text-primary);
-    }
-
-    .class-upload-item p {
-        margin: 6px 0 0;
-        color: var(--text-secondary);
-        line-height: 1.6;
-    }
-
-    .class-upload-item-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        align-items: center;
-        justify-content: flex-end;
-    }
-
-    .class-student-strip {
-        grid-column: 1 / -1;
-        display: grid;
-        gap: 10px;
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        padding-top: 4px;
-    }
-
-    .class-student-link {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        min-height: 52px;
-        padding: 10px 12px;
-        border-radius: 16px;
-        border: 1px solid rgba(148, 163, 184, 0.18);
-        background: rgba(248, 250, 252, 0.82);
-        color: var(--text-primary);
-        text-decoration: none;
-        transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
-    }
-
-    .class-student-link:hover {
-        transform: translateY(-2px);
-        border-color: rgba(14, 165, 233, 0.34);
-        box-shadow: 0 12px 24px rgba(14, 165, 233, 0.1);
-    }
-
-    .class-student-link strong,
-    .class-student-link small {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .class-student-copy {
-        display: grid;
-        min-width: 0;
-        gap: 2px;
-    }
-
-    .class-student-copy small {
-        color: var(--text-muted);
-        font-size: 0.78rem;
-    }
-
-    .class-student-arrow {
-        flex: 0 0 auto;
-        color: #0369a1;
-        font-weight: 700;
-    }
-
-    @media (max-width: 720px) {
-        .class-upload-item {
-            grid-template-columns: 1fr;
-        }
-
-        .class-upload-item-actions {
-            justify-content: flex-start;
-        }
-    }
-</style>
+<link rel="stylesheet" href="/static/css/manage_classes.css?v=class-workbench-20260508">
 {% endblock %}
 
 {% block header_actions %}
-<button type="button" class="btn btn-primary" id="focusClassCreateBtn">新建班级</button>
+<button type="button" class="btn btn-outline" id="classTemplateDownloadBtn">下载名单模板</button>
+<button type="button" class="btn btn-primary" id="focusClassCreateBtn">导入班级</button>
 {% endblock %}
 
 {% block content %}
+{% set avg_class_size = ((class_stats.student_count / class_stats.class_count) | round(1)) if class_stats.class_count else 0 %}
 <div class="academic-shell class-page-shell">
-    <section class="academic-hero">
-        <div class="academic-eyebrow">Class Library</div>
-        <h2>班级与学生名单管理</h2>
-        <p>
-            先维护可复用的班级和学生名单，后续开设课堂时可以直接绑定，不需要每个学期重复导入。
-            导入后如需删除班级，请先确认不再影响已有课堂。
-        </p>
-        <div class="academic-hero-actions">
+    <section class="class-hero">
+        <div class="class-hero-copy">
+            <div class="academic-eyebrow">Class Library</div>
+            <h2>班级与学生名册工作台</h2>
+            <p>
+                将班级、系别和学生名单集中维护；开设课堂、查看学生详情、追踪通知可达性都从这里进入。
+            </p>
+        </div>
+        <div class="class-hero-actions">
             <button type="button" class="btn btn-primary" id="heroClassCreateBtn">导入新班级</button>
-            <span class="academic-badge is-success">支持 Excel / CSV 导入</span>
-            <span class="academic-badge">班级可跨学期复用</span>
+            <button type="button" class="btn btn-outline" id="heroTemplateDownloadBtn">名单模板</button>
         </div>
     </section>
 
-    <section class="academic-stat-grid">
-        <article class="academic-stat-card">
-            <div class="academic-stat-label">班级数量</div>
-            <div class="academic-stat-value">{{ class_stats.class_count }}</div>
-            <div class="academic-stat-help">当前教师名下可直接用于开课绑定的班级总数。</div>
+    <section class="class-stat-grid" aria-label="班级管理概览">
+        <article class="class-stat-card">
+            <span>班级数量</span>
+            <strong>{{ class_stats.class_count }}</strong>
+            <small>{{ class_stats.department_count }} 个系别分组</small>
         </article>
-        <article class="academic-stat-card">
-            <div class="academic-stat-label">学生总数</div>
-            <div class="academic-stat-value">{{ class_stats.student_count }}</div>
-            <div class="academic-stat-help">已导入到这些班级中的学生人数总和。</div>
+        <article class="class-stat-card">
+            <span>学生总数</span>
+            <strong>{{ class_stats.student_count }}</strong>
+            <small>平均 {{ avg_class_size }} 人 / 班</small>
         </article>
-        <article class="academic-stat-card">
-            <div class="academic-stat-label">最大班级</div>
-            <div class="academic-stat-value">{{ class_stats.largest_class_size }}</div>
-            <div class="academic-stat-help">当前学生人数最多的班级规模。</div>
+        <article class="class-stat-card{% if class_stats.missing_email_count %} is-warning{% endif %}">
+            <span>缺少邮箱</span>
+            <strong>{{ class_stats.missing_email_count }}</strong>
+            <small>{% if class_stats.missing_email_count %}这些学生可能错过邮件通知{% else %}名单邮箱覆盖完整{% endif %}</small>
         </article>
-        <article class="academic-stat-card">
-            <div class="academic-stat-label">平均人数</div>
-            <div class="academic-stat-value">
-                {{ ((class_stats.student_count / class_stats.class_count) | round(1)) if class_stats.class_count else 0 }}
-            </div>
-            <div class="academic-stat-help">按已导入学生数计算的平均班级人数。</div>
+        <article class="class-stat-card">
+            <span>已绑定课堂</span>
+            <strong>{{ class_stats.active_class_count }}</strong>
+            <small>已进入教学流程的班级</small>
         </article>
     </section>
 
-    <section class="academic-content-grid two-column">
-        <article class="academic-card">
-            <div class="academic-card-header">
-                <div>
-                    <h3 class="academic-card-title">导入班级</h3>
-                    <p class="academic-card-subtitle">填写班级名称并上传学生名单文件，保存后即可在“开设课堂”阶段直接选用。</p>
-                </div>
+    <section class="class-control-panel" aria-label="班级筛选与搜索">
+        <div class="class-control-main">
+            <label class="academic-search class-search" for="classSearchInput">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                <input id="classSearchInput" type="search" class="form-control" placeholder="搜索班级、学生姓名、学号或邮箱">
+            </label>
+            <div class="class-filter-fields">
+                <label class="academic-filter-field" for="classDepartmentFilter">
+                    <span>系别</span>
+                    <select id="classDepartmentFilter" class="form-control">
+                        <option value="all">全部系别</option>
+                        {% for department in department_options %}
+                        <option value="{{ department }}">{{ department }}</option>
+                        {% endfor %}
+                        <option value="未分类">未分类</option>
+                    </select>
+                </label>
+                <label class="academic-filter-field" for="classHealthFilter">
+                    <span>名单状态</span>
+                    <select id="classHealthFilter" class="form-control">
+                        <option value="all">全部状态</option>
+                        <option value="missing-email">有学生缺邮箱</option>
+                        <option value="complete-email">邮箱完整</option>
+                        <option value="bound">已绑定课堂</option>
+                        <option value="unbound">未绑定课堂</option>
+                    </select>
+                </label>
+                <label class="academic-filter-field" for="classSortSelect">
+                    <span>排序</span>
+                    <select id="classSortSelect" class="form-control">
+                        <option value="department">按系别与名称</option>
+                        <option value="students-desc">学生数从多到少</option>
+                        <option value="missing-desc">缺邮箱优先</option>
+                        <option value="recent-desc">最近导入优先</option>
+                    </select>
+                </label>
             </div>
-            <div class="academic-card-body">
-                <form id="classCreateForm" action="/api/manage/classes/create" method="post" enctype="multipart/form-data" class="academic-form-grid">
-                    <div class="academic-field">
-                        <label for="classNameInput">班级名称</label>
-                        <input type="text" id="classNameInput" name="class_name" class="form-control" required placeholder="例如：软件工程 2406 班">
-                    </div>
-                    <div class="academic-field">
-                        <label for="classDepartmentInput">所属系别</label>
-                        <input type="text" id="classDepartmentInput" name="department" class="form-control" list="classDepartmentOptions" placeholder="例如：软件工程系">
-                        <datalist id="classDepartmentOptions">
-                            {% for department in department_options %}
-                            <option value="{{ department }}"></option>
-                            {% endfor %}
-                        </datalist>
-                        <div class="academic-hint">可从班级名称自动推断，手动填写能让课程和班级推荐更准确。</div>
-                    </div>
-                    <div class="academic-field">
-                        <label for="classRosterInput">学生名单文件</label>
-                        <input type="file" id="classRosterInput" name="file" class="form-control" required accept=".xlsx,.xls,.csv">
-                        <div class="academic-hint">文件至少需要包含“姓名”和“学号”两列；建议同时包含“邮箱”或“email”列，方便重要通知邮件送达。</div>
-                    </div>
-                    <div class="class-form-note">
-                        建议使用一个班级一个名单文件的方式维护。缺少邮箱不会阻止导入，学生也可以稍后在个人中心补充，但名单中带邮箱能减少后续通知遗漏。
-                    </div>
-                    <div class="academic-action-group" style="justify-content: flex-end;">
-                        <button type="submit" class="btn btn-primary">创建班级并导入学生</button>
-                    </div>
-                </form>
-            </div>
-        </article>
+        </div>
+        <div class="class-department-chips" id="classDepartmentChips" aria-label="按系别快速筛选">
+            <button type="button" class="class-chip is-active" data-department-chip="all">全部 <b>{{ class_stats.class_count }}</b></button>
+            {% for department in department_options %}
+            {% set dept_count = my_classes | selectattr("department_label", "equalto", department) | list | length %}
+            <button type="button" class="class-chip" data-department-chip="{{ department }}">{{ department }} <b>{{ dept_count }}</b></button>
+            {% endfor %}
+            {% set uncategorized_count = my_classes | selectattr("department_label", "equalto", "未分类") | list | length %}
+            {% if uncategorized_count %}
+            <button type="button" class="class-chip" data-department-chip="未分类">未分类 <b>{{ uncategorized_count }}</b></button>
+            {% endif %}
+        </div>
+    </section>
 
-        <article class="academic-card">
-            <div class="academic-card-header">
+    <section class="class-workbench">
+        <div class="class-board" aria-label="班级列表">
+            <div class="class-board-head">
                 <div>
-                    <h3 class="academic-card-title">已创建班级</h3>
-                    <p class="academic-card-subtitle">可在后续学期与课堂中重复使用。删除前请确认不再需要该班级及其学生数据。</p>
+                    <h3>班级资产</h3>
+                    <p><span id="classResultCount">{{ my_classes | length }}</span> 个班级符合当前条件</p>
                 </div>
+                <button type="button" class="btn btn-ghost btn-sm" id="classFilterResetBtn">清除筛选</button>
             </div>
-            <div class="academic-card-body">
-                <div class="class-upload-list" id="classList">
-                    {% for class_item in my_classes %}
-                    <article class="class-upload-item">
-                        <div>
-                            <strong>{{ class_item.name }}</strong>
+
+            <div class="class-card-list" id="classList">
+                {% for class_item in my_classes %}
+                {% set latest_time = class_item.latest_student_created_at or class_item.created_at or '' %}
+                <article
+                    class="class-manage-card"
+                    data-class-card
+                    data-class-id="{{ class_item.id }}"
+                    data-class-name="{{ class_item.name }}"
+                    data-department="{{ class_item.department_label }}"
+                    data-student-count="{{ class_item.student_count }}"
+                    data-missing-email-count="{{ class_item.missing_email_count }}"
+                    data-offering-count="{{ class_item.offering_count }}"
+                    data-latest-time="{{ latest_time }}"
+                >
+                    <div class="class-card-top">
+                        <div class="class-card-title-block">
+                            <span class="class-card-kicker">{{ class_item.department_label }}</span>
+                            <h4>{{ class_item.name }}</h4>
                             <p>
-                                {% if class_item.department %}{{ class_item.department }} · {% endif %}
-                                已导入 {{ class_item.student_count }} 名学生，可直接在开设课堂时绑定。
+                                {{ class_item.student_count }} 名学生
+                                {% if class_item.offering_count %}
+                                · 已绑定 {{ class_item.offering_count }} 个课堂
+                                {% else %}
+                                · 尚未绑定课堂
+                                {% endif %}
                             </p>
                         </div>
-                        <div class="class-upload-item-actions">
-                            {% if class_item.department %}<span class="academic-badge is-accent">{{ class_item.department }}</span>{% endif %}
-                            <span class="academic-badge">{{ class_item.student_count }} 名学生</span>
-                            <button
-                                type="button"
-                                class="btn btn-danger btn-sm"
-                                data-action="delete-class"
-                                data-class-id="{{ class_item.id }}"
-                                data-class-name="{{ class_item.name }}"
-                            >
-                                删除
-                            </button>
+                        <div class="class-card-status{% if class_item.missing_email_count %} is-warning{% else %} is-ok{% endif %}">
+                            {% if class_item.missing_email_count %}
+                            {{ class_item.missing_email_count }} 人缺邮箱
+                            {% else %}
+                            邮箱完整
+                            {% endif %}
                         </div>
-                        {% if class_item.students %}
-                        <div class="class-student-strip">
-                            {% for student in class_item.students %}
-                            <a class="class-student-link" href="/manage/students/{{ student.id }}">
-                                <span class="class-student-copy">
-                                    <strong>{{ student.name }}</strong>
-                                    <small>{{ student.student_id_number }}{% if student.nickname %} · {{ student.nickname }}{% endif %}</small>
-                                </span>
-                                <b class="class-student-arrow">查看</b>
-                            </a>
-                            {% endfor %}
-                        </div>
-                        {% endif %}
-                    </article>
-                    {% else %}
-                    <div class="academic-empty">
-                        <strong>还没有班级</strong>
-                        先导入一个班级，后续开设课堂时才能直接绑定到教学流程中。
                     </div>
-                    {% endfor %}
+
+                    <div class="class-card-metrics">
+                        <div>
+                            <span>学生</span>
+                            <strong>{{ class_item.student_count }}</strong>
+                        </div>
+                        <div>
+                            <span>邮箱覆盖</span>
+                            <strong>{{ class_item.email_coverage_percent }}%</strong>
+                        </div>
+                        <div>
+                            <span>课堂</span>
+                            <strong>{{ class_item.offering_count }}</strong>
+                        </div>
+                    </div>
+
+                    <div class="class-card-students" aria-label="{{ class_item.name }} 学生预览">
+                        {% for student in class_item.students[:6] %}
+                        <span class="class-student-avatar{% if not student.has_email %} is-warning{% endif %}" title="{{ student.name }}{% if not student.has_email %}：缺少邮箱{% endif %}">
+                            {{ (student.name or student.display_name or '学')[:1] }}
+                        </span>
+                        {% endfor %}
+                        {% if class_item.student_count > 6 %}
+                        <span class="class-student-avatar is-more">+{{ class_item.student_count - 6 }}</span>
+                        {% endif %}
+                        {% if not class_item.student_count %}
+                        <span class="class-student-empty">暂无学生</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="class-card-actions">
+                        <button type="button" class="btn btn-primary btn-sm" data-action="open-students" data-class-id="{{ class_item.id }}">查看学生</button>
+                        <button type="button" class="btn btn-outline btn-sm" data-action="export-class" data-class-id="{{ class_item.id }}">导出名单</button>
+                        <a class="btn btn-outline btn-sm" href="/manage/offerings">开设课堂</a>
+                        <button
+                            type="button"
+                            class="btn btn-ghost btn-sm text-danger"
+                            data-action="delete-class"
+                            data-class-id="{{ class_item.id }}"
+                            data-class-name="{{ class_item.name }}"
+                        >
+                            删除
+                        </button>
+                    </div>
+                </article>
+                {% else %}
+                <div class="academic-empty" id="classInitialEmpty">
+                    <strong>还没有班级</strong>
+                    先导入一个班级，后续开设课堂时才能直接绑定到教学流程中。
                 </div>
+                {% endfor %}
             </div>
-        </article>
+
+            <div class="academic-empty class-filter-empty" id="classFilterEmpty" hidden>
+                <strong>没有匹配的班级</strong>
+                换一个关键词或清除筛选后再看。
+            </div>
+        </div>
+
+        <aside class="class-import-panel" id="classImportPanel">
+            <div class="class-import-head">
+                <span>Roster Import</span>
+                <h3>导入班级名单</h3>
+                <p>一个班级对应一个名单文件。建议包含姓名、学号、邮箱、手机号，后续通知会更稳。</p>
+            </div>
+            <form id="classCreateForm" action="/api/manage/classes/create" method="post" enctype="multipart/form-data" class="academic-form-grid">
+                <div class="academic-field">
+                    <label for="classNameInput">班级名称</label>
+                    <input type="text" id="classNameInput" name="class_name" class="form-control" required placeholder="例如：软件工程 2406 班">
+                </div>
+                <div class="academic-field">
+                    <label for="classDepartmentInput">所属系别</label>
+                    <input type="text" id="classDepartmentInput" name="department" class="form-control" list="classDepartmentOptions" placeholder="例如：软件工程系">
+                    <datalist id="classDepartmentOptions">
+                        {% for department in department_options %}
+                        <option value="{{ department }}"></option>
+                        {% endfor %}
+                    </datalist>
+                    <div class="academic-hint">可从班级名称自动推断；手动填写能让筛选与开课推荐更准确。</div>
+                </div>
+                <div class="academic-field">
+                    <label for="classRosterInput">学生名单文件</label>
+                    <input type="file" id="classRosterInput" name="file" class="form-control" required accept=".xlsx,.xls,.csv">
+                    <div class="academic-hint">至少包含“姓名”和“学号”；建议包含“邮箱/email”。</div>
+                </div>
+                <div class="class-form-note">
+                    缺邮箱不会阻止导入，但系统会在列表中标出，方便后续补齐重要通知触达。
+                </div>
+                <button type="submit" class="btn btn-primary">创建班级并导入学生</button>
+            </form>
+        </aside>
     </section>
+</div>
+
+<div class="class-student-drawer-backdrop" id="classStudentDrawer" hidden aria-hidden="true">
+    <aside class="class-student-drawer" role="dialog" aria-modal="true" aria-labelledby="classStudentDrawerTitle" tabindex="-1">
+        <div class="class-student-drawer-head">
+            <div>
+                <span id="classStudentDrawerKicker">学生名单</span>
+                <h3 id="classStudentDrawerTitle">班级学生</h3>
+                <p id="classStudentDrawerMeta">选择学生查看详情统计。</p>
+            </div>
+            <button type="button" class="class-student-drawer-close" id="classStudentDrawerClose" aria-label="关闭学生名单">&times;</button>
+        </div>
+        <div class="class-student-drawer-toolbar">
+            <input type="search" class="form-control" id="classStudentSearchInput" placeholder="搜索姓名、学号或邮箱">
+            <button type="button" class="btn btn-outline btn-sm" id="classStudentExportBtn">导出本班</button>
+        </div>
+        <div class="class-student-drawer-list" id="classStudentList"></div>
+        <div class="academic-empty class-student-drawer-empty" id="classStudentEmpty" hidden>
+            <strong>没有匹配的学生</strong>
+            调整关键词后再试。
+        </div>
+    </aside>
 </div>
 
 <script>
@@ -267,5 +270,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_classes.js"></script>
+<script type="module" src="/static/js/manage_classes.js?v=class-workbench-20260508"></script>
 {% endblock %}

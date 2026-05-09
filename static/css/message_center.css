@@ -206,6 +206,9 @@
     --cultivation-b: #facc15;
     position: relative;
     width: min(92vw, 520px);
+    max-height: calc(100vh - 2rem);
+    max-height: calc(100dvh - 2rem);
+    overflow: hidden auto;
     display: grid;
     justify-items: center;
     gap: 0.72rem;
@@ -261,19 +264,45 @@
 .cultivation-login-reveal__card h1 {
     margin: 0;
     color: #0f172a;
-    font-size: clamp(1.45rem, 5vw, 2.6rem);
+    font-size: 2rem;
     line-height: 1.08;
+    overflow-wrap: anywhere;
 }
 
 .cultivation-login-reveal__card strong {
     color: color-mix(in srgb, var(--cultivation-a) 72%, #0f172a 28%);
-    font-size: clamp(1.8rem, 7vw, 3.4rem);
+    font-size: 2.8rem;
     line-height: 1;
+    overflow-wrap: anywhere;
 }
 
 .cultivation-login-reveal__card p {
     margin: 0;
     color: #334155;
+    max-width: min(100%, 30rem);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.cultivation-login-reveal__rank {
+    color: #0f172a;
+    font-weight: 900;
+}
+
+.cultivation-login-reveal__rank[data-rank-tier="summit"] {
+    color: #b45309;
+}
+
+.cultivation-login-reveal__rank[data-rank-tier="front"] {
+    color: #0f766e;
+}
+
+.cultivation-login-reveal__rank[data-rank-tier="middle"] {
+    color: #1d4ed8;
+}
+
+.cultivation-login-reveal__rank[data-rank-tier="training"] {
+    color: #b91c1c;
 }
 
 .cultivation-login-reveal__bar {
@@ -314,8 +343,45 @@
         display: none;
     }
 
+    .cultivation-login-reveal {
+        padding: 0.75rem;
+    }
+
     .cultivation-login-reveal__card {
+        width: min(94vw, 520px);
+        max-height: calc(100vh - 1.5rem);
+        max-height: calc(100dvh - 1.5rem);
+        gap: 0.58rem;
+        padding: 1.2rem;
         border-radius: 22px;
+    }
+
+    .cultivation-login-reveal__sigil {
+        width: 70px;
+        height: 70px;
+        box-shadow: 0 0 0 8px color-mix(in srgb, var(--cultivation-a) 18%, transparent);
+    }
+
+    .cultivation-login-reveal__sigil span {
+        width: 44px;
+        height: 44px;
+        border-radius: 15px;
+    }
+
+    .cultivation-login-reveal__card h1 {
+        font-size: 1.45rem;
+    }
+
+    .cultivation-login-reveal__card strong {
+        font-size: 2rem;
+    }
+
+    .cultivation-login-reveal__rank {
+        font-size: 0.92rem;
+    }
+
+    .cultivation-login-reveal__bar {
+        height: 0.56rem;
     }
 }
 

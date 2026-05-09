@@ -1,5 +1,5 @@
 import { apiFetch } from '/static/js/api.js';
-import { playCultivationReveal } from '/static/js/cultivation_identity.js?v=20260504';
+import { playCultivationReveal } from '/static/js/cultivation_identity.js?v=20260508-rank';
 import { closeModal, openModal, showToast } from '/static/js/ui.js';
 
 function setSubmitting(button, submitting, pendingText) {

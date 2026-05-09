@@ -317,6 +317,16 @@
     animation: insight-radar 0.7s ease-out both;
 }
 
+.student-radar-label {
+    fill: #0f766e;
+    font-size: 0.72rem;
+    font-weight: 900;
+    paint-order: stroke;
+    stroke: rgba(255, 255, 255, 0.86);
+    stroke-linejoin: round;
+    stroke-width: 4px;
+}
+
 .student-radar-axis-list {
     display: grid;
     gap: 10px;

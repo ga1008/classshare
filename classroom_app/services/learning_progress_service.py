@@ -963,6 +963,55 @@ def build_student_class_position(
     }
 
 
+def build_cultivation_rank_notice(
+    class_position: dict[str, Any] | None,
+    *,
+    sect_name: Any = "",
+) -> dict[str, Any] | None:
+    if not class_position:
+        return None
+    current = class_position.get("current") or {}
+    total = safe_int(class_position.get("total"))
+    rank = safe_int(current.get("rank"))
+    if total <= 0 or rank <= 0:
+        return None
+
+    top_percent = safe_int(current.get("top_percent"), 100)
+    surpass_percent = safe_int(current.get("surpass_percent"))
+    sect_label = normalize_course_sect_name(sect_name)
+    if total == 1:
+        tier = "summit"
+        title = "登顶"
+        message = f"你的修为已登顶{sect_label}，暂居首席！"
+    elif rank == 1:
+        tier = "summit"
+        title = "登顶"
+        message = f"你的修为已登顶{sect_label}，稳坐宗门榜首！"
+    elif top_percent <= 25:
+        tier = "front"
+        title = "位列前茅"
+        message = f"你的修为在{sect_label}位列前茅，已入前 {top_percent}%！"
+    elif top_percent <= 60:
+        tier = "middle"
+        title = "仍有进步空间"
+        message = f"你的修为在{sect_label}仍有进步空间，继续精进可入前列。"
+    else:
+        tier = "training"
+        title = "尚需努力"
+        message = f"你的修为在{sect_label}尚需努力，稳住每日修行即可破局。"
+
+    return {
+        "tier": tier,
+        "title": title,
+        "message": message,
+        "rank": rank,
+        "total": total,
+        "top_percent": top_percent,
+        "surpass_percent": surpass_percent,
+        "scope_label": sect_label,
+    }
+
+
 def serialize_student_learning_progress(conn, class_offering_id: int, student_id: int) -> dict[str, Any]:
     state = refresh_student_learning_state(conn, int(class_offering_id), int(student_id))
     state["class_position"] = build_student_class_position(
@@ -1081,6 +1130,17 @@ def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str,
         course_name=selected.get("course_name"),
     )
     sect_level_label = f"{sect_name} · {current_level['short_name']}"
+    class_position = (
+        build_student_class_position(
+            conn,
+            int(selected["class_offering_id"]),
+            int(student_id),
+            current_score=score,
+        )
+        if selected.get("class_offering_id")
+        else None
+    )
+    rank_notice = build_cultivation_rank_notice(class_position, sect_name=sect_name)
     next_stage = selected.get("next_stage")
     next_name = str(next_stage.get("name") if isinstance(next_stage, dict) else "") if next_stage else ""
     selected_status = str(next_stage.get("status") if isinstance(next_stage, dict) else "")
@@ -1128,10 +1188,12 @@ def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str,
             "next_stage_name": next_name,
             "breakthrough_ready": breakthrough_ready,
             "generating_stage_exam": generating_stage_exam,
+            "rank_notice": rank_notice,
         },
         "courses": sorted_courses,
         "sect_name": sect_name,
         "sect_level_label": sect_level_label,
+        "rank_notice": rank_notice,
         "next_stage_name": next_name,
         "progress_label": progress_label,
         "breakthrough_ready": breakthrough_ready,
@@ -1189,6 +1251,10 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
     for row in rows:
         student = dict(row)
         progress = refresh_student_learning_state(conn, int(class_offering_id), int(student["id"]))
+        metrics = progress.get("metrics") or {}
+        material_metrics = metrics.get("material") or {}
+        assignment_metrics = metrics.get("assignments") or {}
+        interaction_metrics = metrics.get("interactions") or {}
         score_total += safe_float(progress.get("score"))
         current_key = normalize_level_key(progress["current_level"].get("level_key") or "mortal")
         distribution[current_key] = distribution.get(current_key, 0) + 1
@@ -1204,10 +1270,15 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
             "next_stage": progress["next_stage"],
             "certificate_count": len(progress.get("certificates") or []),
             "eligible_stage": progress.get("eligible_stage"),
+            "material_percent": int(round(clamp(safe_float(material_metrics.get("ratio"))) * 100)),
+            "task_completion_percent": int(round(clamp(safe_float(assignment_metrics.get("completion_ratio"))) * 100)),
+            "interaction_percent": int(round(clamp(safe_float(interaction_metrics.get("interaction_ratio"))) * 100)),
+            "submitted_count": safe_int(assignment_metrics.get("submitted_count")),
+            "assignment_count": safe_int(assignment_metrics.get("assignment_count")),
             "metrics": {
-                "materials": progress["metrics"]["material"],
-                "assignments": progress["metrics"]["assignments"],
-                "interactions": progress["metrics"]["interactions"],
+                "materials": material_metrics,
+                "assignments": assignment_metrics,
+                "interactions": interaction_metrics,
             },
         })
     student_count = len(students)
@@ -1227,6 +1298,10 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
             "count": count,
             "percent": int(round(count / student_count * 100)) if student_count else 0,
         })
+    roster_students = sorted(
+        students,
+        key=lambda item: (str(item.get("student_id_number") or ""), str(item.get("name") or ""), int(item["id"])),
+    )
     students.sort(key=lambda item: (item["score"], item["certificate_count"]), reverse=True)
     return {
         "student_count": student_count,
@@ -1237,6 +1312,7 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
         "personal_stage_exam_stats": build_personal_stage_exam_stats(conn, int(class_offering_id)),
         "distribution": distribution_items,
         "students": students[:12],
+        "roster_students": roster_students,
         "levels": [dict(level, pass_score=PASSING_STAGE_SCORE) for level in LEARNING_LEVELS],
     }
 
