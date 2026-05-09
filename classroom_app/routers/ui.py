@@ -4,7 +4,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request, Form, HTTPException, Depends, status, UploadFile, File
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
-from typing import Optional, List
+from typing import Optional, List, Any
 from pathlib import Path
 import pandas as pd
 
@@ -120,6 +120,96 @@ def _enrich_assignment_upload_config(assignment: dict) -> dict:
     stage_level = get_learning_level(stage_key) if stage_key else None
     assignment["learning_stage"] = public_level_payload(stage_level) if stage_level else None
     return enrich_assignment_runtime_view(assignment)
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _attach_teacher_assignment_card_metrics(
+    conn,
+    assignments: list[dict[str, Any]],
+    classroom: dict[str, Any],
+) -> None:
+    if not assignments:
+        return
+
+    total_students = _safe_int(classroom.get("class_student_count"))
+    if total_students <= 0 and classroom.get("class_id"):
+        count_row = conn.execute(
+            "SELECT COUNT(*) FROM students WHERE class_id = ?",
+            (classroom.get("class_id"),),
+        ).fetchone()
+        total_students = _safe_int(count_row[0] if count_row else 0)
+
+    assignment_ids = [_safe_int(item.get("id")) for item in assignments if item.get("id") is not None]
+    assignment_ids = [assignment_id for assignment_id in assignment_ids if assignment_id > 0]
+    if not assignment_ids:
+        return
+
+    placeholders = ",".join("?" for _ in assignment_ids)
+    rows = conn.execute(
+        f"""
+        SELECT assignment_id,
+               COUNT(DISTINCT CASE
+                   WHEN COALESCE(is_absence_score, 0) = 0
+                    AND status != 'unsubmitted'
+                   THEN student_pk_id END) AS submitted_count,
+               COUNT(DISTINCT CASE
+                   WHEN COALESCE(is_absence_score, 0) = 0
+                    AND COALESCE(resubmission_allowed, 0) = 0
+                    AND status = 'submitted'
+                   THEN student_pk_id END) AS pending_grade_count,
+               COUNT(DISTINCT CASE
+                   WHEN COALESCE(is_absence_score, 0) = 0
+                    AND COALESCE(resubmission_allowed, 0) = 0
+                    AND status = 'grading'
+                   THEN student_pk_id END) AS grading_count,
+               COUNT(DISTINCT CASE
+                   WHEN COALESCE(is_absence_score, 0) = 0
+                    AND status = 'graded'
+                   THEN student_pk_id END) AS graded_count,
+               COUNT(DISTINCT CASE
+                   WHEN COALESCE(is_absence_score, 0) = 0
+                    AND COALESCE(resubmission_allowed, 0) = 1
+                   THEN student_pk_id END) AS returned_count,
+               COUNT(DISTINCT CASE
+                   WHEN COALESCE(is_absence_score, 0) = 1
+                   THEN student_pk_id END) AS absence_zero_count
+        FROM submissions
+        WHERE assignment_id IN ({placeholders})
+        GROUP BY assignment_id
+        """,
+        tuple(assignment_ids),
+    ).fetchall()
+    metrics_by_assignment = {int(row["assignment_id"]): dict(row) for row in rows}
+
+    for assignment in assignments:
+        row = metrics_by_assignment.get(_safe_int(assignment.get("id")), {})
+        submitted_count = _safe_int(row.get("submitted_count"))
+        pending_grade_count = _safe_int(row.get("pending_grade_count"))
+        grading_count = _safe_int(row.get("grading_count"))
+        graded_count = _safe_int(row.get("graded_count"))
+        returned_count = _safe_int(row.get("returned_count"))
+        absence_zero_count = _safe_int(row.get("absence_zero_count"))
+        unsubmitted_count = max(0, total_students - submitted_count - absence_zero_count)
+        review_queue_count = pending_grade_count + grading_count
+        assignment["teacher_submission_metrics"] = {
+            "total_students": total_students,
+            "submitted_count": submitted_count,
+            "pending_grade_count": pending_grade_count,
+            "grading_count": grading_count,
+            "graded_count": graded_count,
+            "returned_count": returned_count,
+            "absence_zero_count": absence_zero_count,
+            "unsubmitted_count": unsubmitted_count,
+            "review_queue_count": review_queue_count,
+            "submission_percent": round(submitted_count * 100 / total_students) if total_students else 0,
+            "needs_attention": review_queue_count > 0 or returned_count > 0,
+        }
 
 
 def _assignment_back_url(assignment: dict) -> str:
@@ -838,6 +928,9 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
                     assignment['submission_status'] = 'unsubmitted'
                     assignment['can_resubmit_submission'] = False
             assignments.append(assignment)
+
+        if user['role'] == 'teacher':
+            _attach_teacher_assignment_card_metrics(conn, assignments, offering_data)
 
         session_rows = conn.execute(
             """
