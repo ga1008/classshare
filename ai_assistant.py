@@ -8,7 +8,10 @@ import json
 import mimetypes
 import os
 import sys
+import time
 import traceback
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncGenerator
 from typing import Dict, Any, List, Optional, Literal
@@ -208,6 +211,256 @@ class AIPriorityLimiter:
 
 ai_limiter = AIPriorityLimiter(GLOBAL_AI_CONCURRENCY)
 callback_client = httpx.AsyncClient()
+
+
+AI_USAGE_LOG_ENABLED = os.getenv("AI_USAGE_LOG_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
+AI_USAGE_LOG_TO_STDOUT = os.getenv("AI_USAGE_LOG_TO_STDOUT", "true").strip().lower() not in {"0", "false", "no", "off"}
+AI_USAGE_LOG_PATH = Path(os.getenv("AI_USAGE_LOG_PATH", "logs/ai_usage.jsonl"))
+if not AI_USAGE_LOG_PATH.is_absolute():
+    AI_USAGE_LOG_PATH = Path(__file__).resolve().parent / AI_USAGE_LOG_PATH
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _text_size_bytes(value: Any) -> int:
+    return len(str(value or "").encode("utf-8", errors="replace"))
+
+
+def _json_size_bytes(value: Any) -> int:
+    try:
+        return len(
+            json.dumps(
+                value,
+                ensure_ascii=False,
+                default=str,
+                separators=(",", ":"),
+            ).encode("utf-8", errors="replace")
+        )
+    except Exception:
+        return _text_size_bytes(value)
+
+
+def _estimate_data_url_payload_bytes(value: str) -> int:
+    if not isinstance(value, str) or not value.startswith("data:") or "," not in value:
+        return 0
+    header, payload = value.split(",", 1)
+    if ";base64" not in header.lower():
+        return _text_size_bytes(payload)
+    compact = "".join(payload.split())
+    padding = compact.count("=")
+    return max(0, (len(compact) * 3) // 4 - padding)
+
+
+def _collect_ai_payload_stats(value: Any) -> dict[str, int]:
+    stats = {
+        "json_bytes": _json_size_bytes(value),
+        "string_chars": 0,
+        "string_bytes": 0,
+        "text_chars": 0,
+        "text_bytes": 0,
+        "message_count": 0,
+        "content_item_count": 0,
+        "image_count": 0,
+        "file_count": 0,
+        "data_url_count": 0,
+        "data_url_payload_bytes": 0,
+    }
+
+    def walk(node: Any, key: str = "") -> None:
+        if isinstance(node, dict):
+            item_type = str(node.get("type") or "").strip().lower()
+            if item_type:
+                stats["content_item_count"] += 1
+            if item_type in {"image_url", "input_image"} or "image_url" in node:
+                stats["image_count"] += 1
+            if item_type in {"input_file", "file"} or "file_data" in node:
+                stats["file_count"] += 1
+            if "role" in node and "content" in node:
+                stats["message_count"] += 1
+            for child_key, child_value in node.items():
+                walk(child_value, str(child_key))
+            return
+
+        if isinstance(node, list):
+            for child in node:
+                walk(child, key)
+            return
+
+        if isinstance(node, str):
+            stats["string_chars"] += len(node)
+            encoded_len = _text_size_bytes(node)
+            stats["string_bytes"] += encoded_len
+            if key in {"text", "content", "instructions", "input"}:
+                stats["text_chars"] += len(node)
+                stats["text_bytes"] += encoded_len
+            if node.startswith("data:"):
+                stats["data_url_count"] += 1
+                stats["data_url_payload_bytes"] += _estimate_data_url_payload_bytes(node)
+            return
+
+    walk(value)
+    return stats
+
+
+def _truncate_for_log(value: Any, limit: int = 500) -> str:
+    text = str(value or "")
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "...[truncated]"
+
+
+def _usage_to_dict(usage: Any) -> dict[str, Any] | None:
+    if usage is None:
+        return None
+    if isinstance(usage, dict):
+        source = usage
+    elif hasattr(usage, "model_dump"):
+        source = usage.model_dump()
+    elif hasattr(usage, "dict"):
+        source = usage.dict()
+    else:
+        source = {
+            key: getattr(usage, key)
+            for key in (
+                "prompt_tokens",
+                "completion_tokens",
+                "total_tokens",
+                "input_tokens",
+                "output_tokens",
+            )
+            if hasattr(usage, key)
+        }
+    return source or None
+
+
+def _extract_provider_usage(response_obj: Any) -> dict[str, Any] | None:
+    if isinstance(response_obj, dict):
+        return _usage_to_dict(response_obj.get("usage"))
+    return _usage_to_dict(getattr(response_obj, "usage", None))
+
+
+def _extract_reasoning_text(obj: Any) -> str:
+    for attr_name in ("reasoning_content", "reasoning", "thinking"):
+        candidate = _coerce_stream_text(getattr(obj, attr_name, None))
+        if candidate:
+            return candidate
+    model_extra = getattr(obj, "model_extra", None)
+    if isinstance(model_extra, dict):
+        for key in ("reasoning_content", "reasoning", "thinking"):
+            candidate = _coerce_stream_text(model_extra.get(key))
+            if candidate:
+                return candidate
+    return ""
+
+
+def _split_think_tag_text(text: str) -> tuple[str, str]:
+    if not text:
+        return "", ""
+    start = text.find(THINK_TAG_OPEN)
+    end = text.find(THINK_TAG_CLOSE, start + len(THINK_TAG_OPEN)) if start >= 0 else -1
+    if start < 0 or end < 0:
+        return "", text
+    thinking = text[start + len(THINK_TAG_OPEN):end].strip()
+    answer = (text[:start] + text[end + len(THINK_TAG_CLOSE):]).strip()
+    return thinking, answer
+
+
+def _build_ai_response_stats(
+    *,
+    response_text: str = "",
+    thinking_text: str = "",
+    response_payload: Any = None,
+) -> dict[str, int]:
+    response_text = str(response_text or "")
+    thinking_text = str(thinking_text or "")
+    answer_text = response_text
+    if not thinking_text:
+        parsed_thinking, parsed_answer = _split_think_tag_text(response_text)
+        if parsed_thinking:
+            thinking_text = parsed_thinking
+            answer_text = parsed_answer
+
+    return {
+        "text_chars": len(response_text),
+        "text_bytes": _text_size_bytes(response_text),
+        "answer_chars": len(answer_text),
+        "answer_bytes": _text_size_bytes(answer_text),
+        "thinking_chars": len(thinking_text),
+        "thinking_bytes": _text_size_bytes(thinking_text),
+        "json_bytes": _json_size_bytes(response_payload if response_payload is not None else response_text),
+    }
+
+
+def _write_ai_usage_log(event: dict[str, Any]) -> None:
+    if not AI_USAGE_LOG_ENABLED:
+        return
+
+    line = json.dumps(event, ensure_ascii=False, default=str, separators=(",", ":"))
+    if AI_USAGE_LOG_TO_STDOUT:
+        print(f"[AI USAGE] {line}")
+
+    try:
+        AI_USAGE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with AI_USAGE_LOG_PATH.open("a", encoding="utf-8") as log_file:
+            log_file.write(line + "\n")
+    except Exception as exc:
+        print(f"[AI USAGE] failed_to_write path={AI_USAGE_LOG_PATH}: {exc}")
+
+
+def _log_ai_usage(
+    *,
+    call_id: str,
+    started_at: str,
+    start_perf: float,
+    task_label: Optional[str],
+    platform_name: str,
+    platform_type: str,
+    model_name: str,
+    capability: str,
+    api_style: str,
+    request_payload: Any,
+    response_text: str = "",
+    thinking_text: str = "",
+    response_payload: Any = None,
+    provider_usage: dict[str, Any] | None = None,
+    status: str = "success",
+    stream: bool = False,
+    error: Any = None,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    event = {
+        "event": "ai_usage",
+        "call_id": call_id,
+        "started_at": started_at,
+        "finished_at": _utc_now_iso(),
+        "duration_ms": round((time.perf_counter() - start_perf) * 1000, 2),
+        "status": status,
+        "task_label": task_label or "",
+        "platform": platform_name,
+        "platform_type": platform_type,
+        "model": model_name,
+        "capability": capability,
+        "api_style": api_style,
+        "stream": stream,
+        "request": _collect_ai_payload_stats(request_payload),
+        "response": _build_ai_response_stats(
+            response_text=response_text,
+            thinking_text=thinking_text,
+            response_payload=response_payload,
+        ),
+        "provider_usage": provider_usage,
+    }
+    if error:
+        event["error"] = _truncate_for_log(error)
+    if extra:
+        event["extra"] = extra
+    _write_ai_usage_log(event)
+
+
+def _new_ai_usage_context() -> tuple[str, str, float]:
+    return uuid.uuid4().hex, _utc_now_iso(), time.perf_counter()
 
 
 # --- Pydantic 模型 (去除 model_type 默认值) ---
@@ -1563,6 +1816,7 @@ async def _call_volcengine_responses_api(
     model_name: str,
     api_key: str,
     input_payload: list[dict[str, Any]],
+    capability: str = "responses",
     task_priority: str = "default",
     task_label: Optional[str] = None,
 ) -> dict[str, Any]:
@@ -1572,6 +1826,7 @@ async def _call_volcengine_responses_api(
         "input": input_payload,
         "text": {"format": {"type": "json_object"}},
     }
+    call_id, started_at, start_perf = _new_ai_usage_context()
 
     async with ai_limiter.slot(priority=task_priority, label=task_label or "responses_api"):
         async with httpx.AsyncClient(timeout=180.0) as client:
@@ -1602,6 +1857,24 @@ async def _call_volcengine_responses_api(
     if not output_text:
         raise ValueError("火山方舟 Responses API 未返回可解析的文本结果")
 
+    _log_ai_usage(
+        call_id=call_id,
+        started_at=started_at,
+        start_perf=start_perf,
+        task_label=task_label,
+        platform_name="volcengine",
+        platform_type="responses",
+        model_name=model_name,
+        capability=capability,
+        api_style="responses",
+        request_payload=request_payload,
+        response_text=output_text,
+        response_payload=data,
+        provider_usage=_extract_provider_usage(data),
+        status="success",
+        stream=False,
+        extra={"base_url": VOLCENGINE_OPENAI_BASE_URL},
+    )
     return _robust_parse_grading_json(output_text)
 
 
@@ -1730,6 +2003,11 @@ async def _call_ai_platform(
     platform_type = selected_platform_config["type"]
     can_force_json = selected_platform_config.get("can_force_json", {}).get(capability, False)
     prepared_messages = _prepare_chat_messages_for_platform(messages, capability=capability)
+    request_payload: dict[str, Any] = {"model": model_name, "messages": prepared_messages}
+    call_id, started_at, start_perf = _new_ai_usage_context()
+    provider_usage: dict[str, Any] | None = None
+    response_thinking = ""
+    logged_usage = False
 
     async with ai_limiter.slot(priority=task_priority, label=task_label or f"call:{capability}"):
         print(f"[AI WORKER] 开始处理任务 (Platform: {platform_name}, Model: {model_name}, Capability: {capability})")
@@ -1743,7 +2021,10 @@ async def _call_ai_platform(
                 if not AsyncArk: raise ImportError("volcenginesdkarkruntime 未安装")
                 client = AsyncArk(api_key=api_key)
                 completion = await client.chat.completions.create(model=model_name, messages=prepared_messages)
-                response_content = completion.choices[0].message.content
+                message = completion.choices[0].message
+                response_content = _coerce_stream_text(getattr(message, "content", None))
+                response_thinking = _extract_reasoning_text(message)
+                provider_usage = _extract_provider_usage(completion)
 
             elif platform_type == "openai":
                 if not AsyncOpenAI: raise ImportError("openai 库未安装")
@@ -1758,8 +2039,12 @@ async def _call_ai_platform(
                 elif require_json_output:
                     print(f"[AI WORKER] 平台 {platform_name} 模型 {model_name} 不支持强制JSON，将依赖提示词。")
 
+                request_payload = dict(kwargs)
                 completion = await client.chat.completions.create(**kwargs)
-                response_content = completion.choices[0].message.content
+                message = completion.choices[0].message
+                response_content = _coerce_stream_text(getattr(message, "content", None))
+                response_thinking = _extract_reasoning_text(message)
+                provider_usage = _extract_provider_usage(completion)
 
             else:
                 raise HTTPException(500, f"不支持的平台类型: {platform_type}")
@@ -1768,6 +2053,26 @@ async def _call_ai_platform(
             print(f"[AI WORKER] 原始响应内容: >>>\n{response_content}\n<<<")
 
             # --- 健壮的 JSON 解析 ---
+            _log_ai_usage(
+                call_id=call_id,
+                started_at=started_at,
+                start_perf=start_perf,
+                task_label=task_label,
+                platform_name=platform_name,
+                platform_type=platform_type,
+                model_name=model_name,
+                capability=capability,
+                api_style="chat_completions",
+                request_payload=request_payload,
+                response_text=response_content or "",
+                thinking_text=response_thinking,
+                provider_usage=provider_usage,
+                status="success",
+                stream=False,
+                extra={"require_json_output": require_json_output},
+            )
+            logged_usage = True
+
             if not response_content:
                 print("[ERROR] AI 返回了空内容。")
                 raise HTTPException(500, "AI 返回空内容")
@@ -1794,10 +2099,50 @@ async def _call_ai_platform(
 
         except HTTPException as he:
             print(f"[ERROR] {platform_name} 处理失败: {he.detail}")
+            if not logged_usage:
+                _log_ai_usage(
+                    call_id=call_id,
+                    started_at=started_at,
+                    start_perf=start_perf,
+                    task_label=task_label,
+                    platform_name=platform_name,
+                    platform_type=platform_type,
+                    model_name=model_name,
+                    capability=capability,
+                    api_style="chat_completions",
+                    request_payload=request_payload,
+                    response_text=response_content or "",
+                    thinking_text=response_thinking,
+                    provider_usage=provider_usage,
+                    status="error",
+                    stream=False,
+                    error=he.detail,
+                    extra={"require_json_output": require_json_output},
+                )
             raise he
         except Exception as e:
             print(f"[ERROR] {platform_name} 调用失败: {e}")
             print(traceback.format_exc())
+            if not logged_usage:
+                _log_ai_usage(
+                    call_id=call_id,
+                    started_at=started_at,
+                    start_perf=start_perf,
+                    task_label=task_label,
+                    platform_name=platform_name,
+                    platform_type=platform_type,
+                    model_name=model_name,
+                    capability=capability,
+                    api_style="chat_completions",
+                    request_payload=request_payload,
+                    response_text=response_content or "",
+                    thinking_text=response_thinking,
+                    provider_usage=provider_usage,
+                    status="error",
+                    stream=False,
+                    error=e,
+                    extra={"require_json_output": require_json_output},
+                )
             raise HTTPException(500, f"{platform_name} 调用失败: {e}")
 
 
@@ -1836,6 +2181,9 @@ async def _call_ai_platform_chat_stream_generator(
     api_key = selected_platform_config["api_key"]
     platform_type = selected_platform_config["type"]
     prepared_messages = _prepare_chat_messages_for_platform(final_messages, capability=capability)
+    request_payload: dict[str, Any] = {"model": model_name, "messages": prepared_messages, "stream": True}
+    call_id, started_at, start_perf = _new_ai_usage_context()
+    stream_error: Any = None
 
     async with ai_limiter.slot(priority=task_priority, label=task_label or f"stream:{capability}"):
         print(
@@ -1843,6 +2191,23 @@ async def _call_ai_platform_chat_stream_generator(
         if not api_key:
             error_msg = f"未配置 {platform_name} 的 API_KEY"
             print(f"[ERROR] {error_msg}")
+            _log_ai_usage(
+                call_id=call_id,
+                started_at=started_at,
+                start_perf=start_perf,
+                task_label=task_label,
+                platform_name=platform_name,
+                platform_type=platform_type,
+                model_name=model_name,
+                capability=capability,
+                api_style="chat_completions_stream_legacy",
+                request_payload=request_payload,
+                response_text="",
+                thinking_text="",
+                status="error",
+                stream=True,
+                error=error_msg,
+            )
             yield error_msg
             return
 
@@ -1894,6 +2259,7 @@ async def _call_ai_platform_chat_stream_generator(
                 if "DeepSeek-R1" in model_name:
                     kwargs["extra_body"] = {"thinking_budget": 1024}
 
+                request_payload = dict(kwargs)
                 stream = await client.chat.completions.create(**kwargs)
 
                 async for chunk in stream:
@@ -1922,10 +2288,29 @@ async def _call_ai_platform_chat_stream_generator(
                 yield error_msg
 
         except Exception as e:
+            stream_error = e
             print(f"[ERROR] {platform_name} 流式聊天调用失败: {e}")
             print(traceback.format_exc())
             yield f"\n[AI助手内部错误: {platform_name} 调用失败: {e}]"
         finally:
+            _log_ai_usage(
+                call_id=call_id,
+                started_at=started_at,
+                start_perf=start_perf,
+                task_label=task_label,
+                platform_name=platform_name,
+                platform_type=platform_type,
+                model_name=model_name,
+                capability=capability,
+                api_style="chat_completions_stream_legacy",
+                request_payload=request_payload,
+                response_text=final_answer,
+                thinking_text=thinking_content,
+                provider_usage=None,
+                status="error" if stream_error else "success",
+                stream=True,
+                error=stream_error,
+            )
             print(f"[AI WORKER] {platform_name} 流式聊天结束。")
 
 
@@ -1959,6 +2344,9 @@ async def _call_ai_platform_chat_stream_events(
     thinking_supported = capability == "thinking"
     think_tag_parser = ThinkTagStreamParser() if thinking_supported else None
     prepared_messages = _prepare_chat_messages_for_platform(final_messages, capability=capability)
+    request_payload: dict[str, Any] = {"model": model_name, "messages": prepared_messages, "stream": True}
+    call_id, started_at, start_perf = _new_ai_usage_context()
+    stream_error: Any = None
 
     async with ai_limiter.slot(priority=task_priority, label=task_label or f"stream_events:{capability}"):
         print(
@@ -1967,6 +2355,23 @@ async def _call_ai_platform_chat_stream_events(
         if not api_key:
             error_msg = f"鏈厤缃?{platform_name} 鐨?API_KEY"
             print(f"[ERROR] {error_msg}")
+            _log_ai_usage(
+                call_id=call_id,
+                started_at=started_at,
+                start_perf=start_perf,
+                task_label=task_label,
+                platform_name=platform_name,
+                platform_type=platform_type,
+                model_name=model_name,
+                capability=capability,
+                api_style="chat_completions_stream",
+                request_payload=request_payload,
+                response_text="",
+                thinking_text="",
+                status="error",
+                stream=True,
+                error=error_msg,
+            )
             yield _encode_stream_event("error", message=error_msg)
             yield _encode_stream_event("done", has_thinking=False)
             return
@@ -2022,6 +2427,7 @@ async def _call_ai_platform_chat_stream_events(
                 }
                 if "DeepSeek-R1" in model_name:
                     kwargs["extra_body"] = {"thinking_budget": 1024}
+                request_payload = dict(kwargs)
                 stream = await client.chat.completions.create(**kwargs)
             else:
                 raise HTTPException(500, f"涓嶆敮鎸佺殑骞冲彴绫诲瀷: {platform_type}")
@@ -2049,6 +2455,7 @@ async def _call_ai_platform_chat_stream_events(
         except Exception as e:
             print(f"[ERROR] {platform_name} 缁撴瀯鍖栨祦寮忚亰澶╄皟鐢ㄥけ璐? {e}")
             print(traceback.format_exc())
+            stream_error = e
             yield _encode_stream_event(
                 "error",
                 message=f"AI鍔╂墜鍐呴儴閿欒: {platform_name} 璋冪敤澶辫触: {e}",
@@ -2067,6 +2474,24 @@ async def _call_ai_platform_chat_stream_events(
                 has_thinking=bool(thinking_content.strip()),
                 answer_chars=len(final_answer),
                 thinking_chars=len(thinking_content),
+            )
+            _log_ai_usage(
+                call_id=call_id,
+                started_at=started_at,
+                start_perf=start_perf,
+                task_label=task_label,
+                platform_name=platform_name,
+                platform_type=platform_type,
+                model_name=model_name,
+                capability=capability,
+                api_style="chat_completions_stream",
+                request_payload=request_payload,
+                response_text=final_answer,
+                thinking_text=thinking_content,
+                provider_usage=None,
+                status="error" if stream_error else "success",
+                stream=True,
+                error=stream_error,
             )
 
 
@@ -2099,6 +2524,11 @@ async def _call_ai_platform_chat(
     platform_type = selected_platform_config["type"]
     can_force_json = selected_platform_config.get("can_force_json", {}).get(capability, False)
     prepared_messages = _prepare_chat_messages_for_platform(final_messages, capability=capability)
+    request_payload: dict[str, Any] = {"model": model_name, "messages": prepared_messages}
+    call_id, started_at, start_perf = _new_ai_usage_context()
+    provider_usage: dict[str, Any] | None = None
+    response_thinking = ""
+    logged_usage = False
 
     async with ai_limiter.slot(priority=task_priority, label=task_label or f"chat:{capability}"):
         print(f"[AI WORKER] 开始处理聊天 (Platform: {platform_name}, Model: {model_name}, Capability: {capability})")
@@ -2112,7 +2542,10 @@ async def _call_ai_platform_chat(
 
                 # 火山方舟/豆包，system prompt 作为第一条消息
                 completion = await client.chat.completions.create(model=model_name, messages=prepared_messages)
-                response_content = completion.choices[0].message.content
+                message = completion.choices[0].message
+                response_content = _coerce_stream_text(getattr(message, "content", None))
+                response_thinking = _extract_reasoning_text(message)
+                provider_usage = _extract_provider_usage(completion)
 
             elif platform_type == "openai":
                 if not AsyncOpenAI: raise ImportError("openai 库未安装")
@@ -2125,17 +2558,57 @@ async def _call_ai_platform_chat(
                     model=model_name,
                     messages=prepared_messages  # 直接使用包含system消息的完整消息列表
                 )
-                response_content = completion.choices[0].message.content
+                message = completion.choices[0].message
+                response_content = _coerce_stream_text(getattr(message, "content", None))
+                response_thinking = _extract_reasoning_text(message)
+                provider_usage = _extract_provider_usage(completion)
 
             else:
                 raise HTTPException(500, f"不支持的平台类型: {platform_type}")
 
             print(f"[AI WORKER] {platform_name} 聊天调用成功。")
+            _log_ai_usage(
+                call_id=call_id,
+                started_at=started_at,
+                start_perf=start_perf,
+                task_label=task_label,
+                platform_name=platform_name,
+                platform_type=platform_type,
+                model_name=model_name,
+                capability=capability,
+                api_style="chat_completions",
+                request_payload=request_payload,
+                response_text=response_content or "",
+                thinking_text=response_thinking,
+                provider_usage=provider_usage,
+                status="success",
+                stream=False,
+            )
+            logged_usage = True
             return response_content or ""  # 返回纯文本
 
         except Exception as e:
             print(f"[ERROR] {platform_name} 聊天调用失败: {e}")
             print(traceback.format_exc())
+            if not logged_usage:
+                _log_ai_usage(
+                    call_id=call_id,
+                    started_at=started_at,
+                    start_perf=start_perf,
+                    task_label=task_label,
+                    platform_name=platform_name,
+                    platform_type=platform_type,
+                    model_name=model_name,
+                    capability=capability,
+                    api_style="chat_completions",
+                    request_payload=request_payload,
+                    response_text=response_content or "",
+                    thinking_text=response_thinking,
+                    provider_usage=provider_usage,
+                    status="error",
+                    stream=False,
+                    error=e,
+                )
             raise HTTPException(500, f"{platform_name} 聊天调用失败: {e}")
 
 
@@ -2171,6 +2644,20 @@ async def _call_volcengine_with_web_search(
         raise HTTPException(500, "火山引擎 API Key 未配置")
 
     base_url = volc_config.get("responses_base_url") or VOLCENGINE_OPENAI_BASE_URL
+    request_payload = {
+        "model": model_name,
+        "instructions": system_prompt,
+        "input": [
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": user_message}],
+            }
+        ],
+        "tools": [
+            {"type": "web_search", "sources": ["search_engine"]},
+        ],
+    }
+    call_id, started_at, start_perf = _new_ai_usage_context()
 
     async with ai_limiter.slot(priority="background", label=task_label):
         print(f"[AI WORKER] 开始联网搜索调用 (Responses API, Model: {model_name})")
@@ -2183,19 +2670,7 @@ async def _call_volcengine_with_web_search(
                     "Content-Type": "application/json",
                     "ark-beta-web-search": "true",
                 },
-                json={
-                    "model": model_name,
-                    "instructions": system_prompt,
-                    "input": [
-                        {
-                            "role": "user",
-                            "content": [{"type": "input_text", "text": user_message}],
-                        }
-                    ],
-                    "tools": [
-                        {"type": "web_search", "sources": ["search_engine"]},
-                    ],
-                },
+                json=request_payload,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -2210,6 +2685,24 @@ async def _call_volcengine_with_web_search(
 
         result = "\n".join(text_parts).strip()
         print(f"[AI WORKER] 联网搜索调用成功。")
+        _log_ai_usage(
+            call_id=call_id,
+            started_at=started_at,
+            start_perf=start_perf,
+            task_label=task_label,
+            platform_name="volcengine",
+            platform_type="responses",
+            model_name=model_name,
+            capability="standard",
+            api_style="responses_web_search",
+            request_payload=request_payload,
+            response_text=result,
+            response_payload=data,
+            provider_usage=_extract_provider_usage(data),
+            status="success",
+            stream=False,
+            extra={"base_url": base_url, "web_search": True},
+        )
         return result
 
 
@@ -2530,6 +3023,7 @@ async def run_grading_job(job: GradingJob):
                     job.requirements_md,
                     job.answers_json,
                 ),
+                capability=selected_capability,
                 task_priority="default",
                 task_label=f"grading:{job.submission_id}",
             )
