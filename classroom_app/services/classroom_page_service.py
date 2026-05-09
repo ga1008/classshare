@@ -104,11 +104,42 @@ def build_classroom_page_context(
     }
 
 
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _build_assignment_stats(*, role: str, assignments: list[dict[str, Any]]) -> dict[str, int]:
     assignment_count = len(assignments)
     exam_count = sum(1 for item in assignments if item.get("exam_paper_id"))
     draft_count = sum(1 for item in assignments if item.get("status") == "new") if role == "teacher" else 0
     active_count = sum(1 for item in assignments if item.get("status") == "published") if role == "teacher" else 0
+    if role == "teacher":
+        teacher_metrics = [item.get("teacher_submission_metrics") or {} for item in assignments]
+        submitted_count = sum(_safe_int(item.get("submitted_count")) for item in teacher_metrics)
+        pending_grade_count = sum(_safe_int(item.get("pending_grade_count")) for item in teacher_metrics)
+        grading_count = sum(_safe_int(item.get("grading_count")) for item in teacher_metrics)
+        graded_count = sum(_safe_int(item.get("graded_count")) for item in teacher_metrics)
+        returned_count = sum(_safe_int(item.get("returned_count")) for item in teacher_metrics)
+        unsubmitted_student_count = sum(_safe_int(item.get("unsubmitted_count")) for item in teacher_metrics)
+        pending_review_count = pending_grade_count + grading_count
+        return {
+            "assignment_count": assignment_count,
+            "exam_count": exam_count,
+            "draft_count": draft_count,
+            "active_count": active_count,
+            "submitted_count": submitted_count,
+            "pending_count": 0,
+            "pending_grade_count": pending_grade_count,
+            "pending_review_count": pending_review_count,
+            "grading_count": grading_count,
+            "graded_count": graded_count,
+            "returned_count": returned_count,
+            "unsubmitted_student_count": unsubmitted_student_count,
+        }
+
     submitted_count = (
         sum(
             1
@@ -137,10 +168,22 @@ def _build_assignment_stats(*, role: str, assignments: list[dict[str, Any]]) -> 
 
 def _build_assignment_metrics(*, role: str, assignment_stats: dict[str, int]) -> list[dict[str, Any]]:
     if role == "teacher":
+        pending_review_count = assignment_stats.get("pending_review_count", 0)
+        returned_count = assignment_stats.get("returned_count", 0)
         return [
             {"label": "全部任务", "value": assignment_stats["assignment_count"], "note": "课堂总览", "tone": "primary"},
-            {"label": "考试", "value": assignment_stats["exam_count"], "note": "试卷任务", "tone": "warning"},
-            {"label": "草稿", "value": assignment_stats["draft_count"], "note": "尚未发布", "tone": "danger"},
+            {
+                "label": "待批改",
+                "value": pending_review_count,
+                "note": f"待处理 {assignment_stats.get('pending_grade_count', 0)} / 批改中 {assignment_stats.get('grading_count', 0)}",
+                "tone": "danger" if pending_review_count else "success",
+            },
+            {
+                "label": "待重交",
+                "value": returned_count,
+                "note": "学生需补交",
+                "tone": "warning" if returned_count else "success",
+            },
             {"label": "已发布", "value": assignment_stats["active_count"], "note": "学生可见", "tone": "success"},
         ]
 
@@ -181,7 +224,7 @@ def _build_hero_detail_stats(
             {
                 "label": "全部任务",
                 "value": assignment_stats["assignment_count"],
-                "note": f"已发布 {assignment_stats['active_count']} 项 / 草稿 {assignment_stats['draft_count']} 项",
+                "note": f"待批改 {assignment_stats.get('pending_review_count', 0)} 份 / 草稿 {assignment_stats['draft_count']} 项",
                 "tone": "primary",
             },
             {"label": "考试", "value": assignment_stats["exam_count"], "note": "已加入课堂", "tone": "warning"},
