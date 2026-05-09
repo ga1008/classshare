@@ -25,6 +25,7 @@ from .psych_profile_service import (
 )
 from .submission_file_alignment import resolve_submission_file_path
 from .submission_assets import delete_storage_tree
+from .ai_grading_service import submit_submission_for_ai_grading
 
 
 PASSING_STAGE_SCORE = 80
@@ -2029,9 +2030,6 @@ async def submit_stage_exam_for_ai_grading(submission_id: int) -> None:
             submission = conn.execute(
                 """
                 SELECT s.*,
-                       a.requirements_md,
-                       a.rubric_md,
-                       a.allowed_file_types_json,
                        lsea.id AS attempt_id
                 FROM submissions s
                 JOIN assignments a ON a.id = s.assignment_id
@@ -2045,54 +2043,7 @@ async def submit_stage_exam_for_ai_grading(submission_id: int) -> None:
             ).fetchone()
             if not submission or int(submission["resubmission_allowed"] or 0):
                 return
-            files = conn.execute(
-                """
-                SELECT stored_path, original_filename, relative_path, mime_type, file_size, file_ext, file_hash
-                FROM submission_files
-                WHERE submission_id = ?
-                ORDER BY COALESCE(relative_path, original_filename), id
-                """,
-                (submission_id,),
-            ).fetchall()
-            conn.execute(
-                "UPDATE submissions SET status = 'grading' WHERE id = ? AND COALESCE(resubmission_allowed, 0) = 0",
-                (submission_id,),
-            )
-            conn.commit()
-
-        resolved_files = []
-        for row in files:
-            item = dict(row)
-            resolved = resolve_submission_file_path(str(item.get("stored_path") or ""))
-            if not resolved:
-                continue
-            item["resolved_path"] = str(Path(resolved).resolve())
-            resolved_files.append(item)
-        has_answers = bool(submission["answers_json"])
-        context_by_file = _extract_answer_attachment_context(submission["answers_json"] if has_answers else None)
-        resolved_files = [_apply_attachment_context(item, context_by_file) for item in resolved_files]
-        job_data = {
-            "submission_id": int(submission_id),
-            "rubric_md": submission["rubric_md"],
-            "requirements_md": submission["requirements_md"] or "",
-            "allowed_file_types_json": submission["allowed_file_types_json"],
-            "files": [
-                {
-                    "stored_path": item["resolved_path"],
-                    "original_filename": item.get("original_filename"),
-                    "relative_path": item.get("relative_path") or item.get("original_filename"),
-                    "mime_type": item.get("mime_type"),
-                    "file_size": item.get("file_size"),
-                    "file_ext": item.get("file_ext"),
-                    "file_hash": item.get("file_hash"),
-                }
-                for item in resolved_files
-            ],
-            "file_paths": [item["resolved_path"] for item in resolved_files],
-            "answers_json": submission["answers_json"] if has_answers else None,
-        }
-        response = await ai_client.post("/api/ai/submit-grading-job", json=job_data, timeout=60.0)
-        response.raise_for_status()
+        await submit_submission_for_ai_grading(int(submission_id), allow_graded=False)
     except Exception as exc:
         with get_db_connection() as conn:
             conn.execute(

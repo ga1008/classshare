@@ -1,5 +1,10 @@
 <script src="{{ asset_url('es2022_polyfills') }}"></script>
 <script src="{{ asset_url('marked') }}"></script>
+<script>
+    window.MARKDOWN_PREVIEW_ASSETS = Object.assign({}, window.MARKDOWN_PREVIEW_ASSETS, {
+        mermaid: "{{ asset_url('mermaid') }}"
+    });
+</script>
 {% if include_mermaid | default(false) %}
 <script src="{{ asset_url('mermaid') }}"></script>
 {% endif %}

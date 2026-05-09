@@ -209,6 +209,12 @@
         flex-direction: column;
         gap: var(--spacing-sm);
     }
+    .submission-preview-file-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: stretch;
+    }
     .submission-preview-file-btn {
         width: 100%;
         display: flex;
@@ -283,10 +289,79 @@
         text-align: center;
         color: var(--text-muted);
     }
+    .attachment-manage-panel {
+        margin-top: var(--spacing-lg);
+        padding-top: var(--spacing-lg);
+        border-top: 1px solid var(--border-color);
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: var(--spacing-md);
+        align-items: end;
+    }
+    .attachment-manage-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+    .attachment-actions {
+        display: flex;
+        gap: var(--spacing-sm);
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+    .attachment-locked-note {
+        padding: var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        color: var(--text-muted);
+        background: var(--bg-color);
+    }
+    .upload-dropzone {
+        border: 2px dashed var(--border-color);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-lg);
+        text-align: center;
+        cursor: pointer;
+        background: var(--bg-color);
+        transition: all 0.2s;
+    }
+    .upload-dropzone:hover,
+    .upload-dropzone.dragover {
+        border-color: var(--primary-color);
+        background: var(--primary-light);
+    }
+    .file-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: var(--spacing-sm);
+    }
+    .file-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-sm);
+        padding: 5px 10px;
+        background: var(--surface-color);
+        font-size: 0.85rem;
+    }
 
     @media (max-width: 900px) {
         .submission-preview-layout {
             grid-template-columns: 1fr;
+        }
+        .submission-preview-file-row,
+        .attachment-manage-panel {
+            grid-template-columns: 1fr;
+        }
+        .attachment-actions {
+            justify-content: stretch;
+        }
+        .attachment-actions .btn {
+            flex: 1 1 160px;
         }
     }
 
@@ -380,6 +455,14 @@
 </header>
 
 {% include "partials/feedback_modal.html" %}
+
+{% set can_manage_submission_files = user_info.role == 'teacher' and submission.status != 'grading' and (submission.status != 'graded' or submission.resubmission_allowed) %}
+{% set attachment_locked_reason = '' %}
+{% if user_info.role == 'teacher' and submission.status == 'grading' %}
+    {% set attachment_locked_reason = 'AI 正在批改中，附件暂不可修改。' %}
+{% elif user_info.role == 'teacher' and submission.status == 'graded' and not submission.resubmission_allowed %}
+    {% set attachment_locked_reason = '已批改成功的提交需要先撤回，才能修改附件。' %}
+{% endif %}
 
 <main class="detail-container">
     <!-- Student Info Card -->
@@ -480,27 +563,33 @@
     </div>
 
     <!-- Submission Files Section -->
-    {% if submission_files and submission_files|length > 0 %}
+    {% if (submission_files and submission_files|length > 0) or user_info.role == 'teacher' %}
     <div class="card">
         <div class="card-header">
             <h2 class="card-title text-base m-0">附件文件</h2>
         </div>
         <div class="card-body">
+            {% if submission_files and submission_files|length > 0 %}
             <div class="submission-preview-layout">
                 <div class="submission-preview-sidebar" id="submission-preview-file-list">
                     {% for f in submission_files %}
-                    <button type="button" class="submission-preview-file-btn{% if loop.first %} is-active{% endif %}" data-file-id="{{ f.id }}" title="{{ f.display_name }}">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
-                        <span class="submission-preview-file-copy">
-                            <strong>{{ f.display_name }}</strong>
-                            <span class="submission-preview-type">
-                                {% if f.preview_supported %}{{ f.type_label }} 可预览{% else %}{{ f.type_label }} 下载查看{% endif %}
+                    <div class="submission-preview-file-row">
+                        <button type="button" class="submission-preview-file-btn{% if loop.first %} is-active{% endif %}" data-file-id="{{ f.id }}" title="{{ f.display_name }}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                            <span class="submission-preview-file-copy">
+                                <strong>{{ f.display_name }}</strong>
+                                <span class="submission-preview-type">
+                                    {% if f.preview_supported %}{{ f.type_label }} 可预览{% else %}{{ f.type_label }} 下载查看{% endif %}
+                                </span>
+                                <span class="file-item-meta">
+                                    {% if f.file_size %}{{ '%.1f'|format(f.file_size / 1024 / 1024) }} MB{% else %}大小未知{% endif %}
+                                </span>
                             </span>
-                            <span class="file-item-meta">
-                                {% if f.file_size %}{{ '%.1f'|format(f.file_size / 1024 / 1024) }} MB{% else %}大小未知{% endif %}
-                            </span>
-                        </span>
-                    </button>
+                        </button>
+                        {% if can_manage_submission_files %}
+                        <button type="button" class="btn btn-outline btn-sm text-danger" data-delete-file-id="{{ f.id }}" data-file-name="{{ f.display_name|e }}">删除</button>
+                        {% endif %}
+                    </div>
                     {% endfor %}
                 </div>
                 <div class="submission-preview-main">
@@ -529,6 +618,32 @@
                     </div>
                 </div>
             </div>
+            {% else %}
+            <div class="submission-preview-empty">暂无附件文件</div>
+            {% endif %}
+            {% if can_manage_submission_files %}
+            <div class="attachment-manage-panel">
+                <div>
+                    <div class="upload-dropzone" id="teacher-attachment-dropzone">
+                        <input type="file" id="teacher-attachment-files" multiple hidden>
+                        <div class="font-medium">添加附件</div>
+                        <div class="attachment-manage-copy">
+                            <span>支持 {{ ai_grading_supported_types_label }}</span>
+                            <span>单文件 {{ max_per_file_mb|round(0)|int }}MB，总计 {{ max_total_mb|round(0)|int }}MB，最多 {{ max_submission_file_count }} 个</span>
+                        </div>
+                    </div>
+                    <div class="file-chips" id="teacher-attachment-list"></div>
+                    <div class="text-sm text-muted mt-2" id="teacher-attachment-summary"></div>
+                </div>
+                <div class="attachment-actions">
+                    <button type="button" class="btn btn-outline" id="teacher-attachment-clear-btn">清空</button>
+                    <button type="button" class="btn btn-primary" onclick="uploadSubmissionAttachments(false)">保存附件</button>
+                    <button type="button" class="btn btn-outline text-warning" onclick="uploadSubmissionAttachments(true)">保存并提交 AI</button>
+                </div>
+            </div>
+            {% elif attachment_locked_reason %}
+            <div class="attachment-locked-note mt-md">{{ attachment_locked_reason }}</div>
+            {% endif %}
         </div>
     </div>
     {% endif %}
@@ -586,12 +701,20 @@
     import { apiFetch } from '{{ asset_url("js/api.js") }}';
     import { renderFilePreview } from '{{ asset_url("js/file_preview.js") }}';
     import { showToast, openModal, closeModal, renderMarkdown, escapeHtml } from '{{ asset_url("js/ui.js") }}';
+    import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
 
     const submissionId = {{ submission.id }};
     const assignmentId = "{{ assignment.id }}";
     const answersJsonRaw = {{ submission.answers_json | tojson }};
     const examQuestions = {{ exam_questions | tojson if exam_questions else 'null' }};
     const submissionFiles = {{ submission_files | tojson }};
+    const canManageSubmissionFiles = {{ can_manage_submission_files | tojson }};
+    const aiGradingAllowedFileTypes = {{ ai_grading_upload_extensions | tojson }};
+    const maxSubmissionFileCount = {{ max_submission_file_count }};
+    const maxSubmissionTotalBytes = {{ (max_total_mb * 1024 * 1024)|round(0)|int }};
+    const maxSubmissionPerFileBytes = {{ (max_per_file_mb * 1024 * 1024)|round(0)|int }};
+    const existingSubmissionFileBytes = submissionFiles.reduce((sum, file) => sum + Number(file.file_size || 0), 0);
+    let teacherAttachmentUploadManager = null;
 
     // Format submit time
     const submitTimeEl = document.getElementById('submit-time');
@@ -911,12 +1034,82 @@
         if (!previewFileListEl || !submissionFiles.length) return;
 
         previewFileListEl.addEventListener('click', (event) => {
+            const deleteButton = event.target.closest('[data-delete-file-id]');
+            if (deleteButton) {
+                event.preventDefault();
+                event.stopPropagation();
+                deleteSubmissionFile(Number(deleteButton.dataset.deleteFileId), deleteButton.dataset.fileName || '附件');
+                return;
+            }
             const button = event.target.closest('[data-file-id]');
             if (!button) return;
             selectSubmissionFile(Number(button.dataset.fileId));
         });
 
         selectSubmissionFile(Number(submissionFiles[0].id));
+    }
+
+    function initTeacherAttachmentManager() {
+        if (!canManageSubmissionFiles) return;
+        const remainingFileCount = Math.max(0, maxSubmissionFileCount - submissionFiles.length);
+        const remainingTotalBytes = Math.max(0, maxSubmissionTotalBytes - existingSubmissionFileBytes);
+        teacherAttachmentUploadManager = new SubmissionUploadManager({
+            dropZoneId: 'teacher-attachment-dropzone',
+            fileInputId: 'teacher-attachment-files',
+            listId: 'teacher-attachment-list',
+            summaryId: 'teacher-attachment-summary',
+            allowedFileTypes: aiGradingAllowedFileTypes,
+            maxFiles: remainingFileCount,
+            maxBytes: remainingTotalBytes,
+            maxPerFileBytes: maxSubmissionPerFileBytes,
+            notify: (message, type = 'info') => showToast(message, type),
+        });
+        teacherAttachmentUploadManager.init();
+
+        const dropZone = document.getElementById('teacher-attachment-dropzone');
+        dropZone?.addEventListener('click', () => teacherAttachmentUploadManager?.openFilePicker());
+        document.getElementById('teacher-attachment-clear-btn')?.addEventListener('click', () => {
+            teacherAttachmentUploadManager?.clear();
+        });
+    }
+
+    window.uploadSubmissionAttachments = async function(queueAi = false) {
+        if (!teacherAttachmentUploadManager || !teacherAttachmentUploadManager.hasFiles()) {
+            showToast('请先选择要添加的附件', 'warning');
+            return;
+        }
+        const formData = teacherAttachmentUploadManager.buildFormData();
+        formData.append('queue_ai', queueAi ? '1' : '0');
+        try {
+            const response = await fetch(`/api/submissions/${submissionId}/files`, {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.detail || '附件保存失败');
+            }
+            showToast(queueAi ? '附件已保存，AI 批改任务已提交' : '附件已保存', 'success');
+            setTimeout(() => location.reload(), 900);
+        } catch (error) {
+            showToast(error.message || '附件保存失败', 'error');
+        }
+    };
+
+    async function deleteSubmissionFile(fileId, fileName) {
+        if (!canManageSubmissionFiles || !fileId) return;
+        if (!confirm(`确定删除附件“${fileName}”吗？`)) return;
+        try {
+            const response = await fetch(`/api/submission-files/${fileId}`, { method: 'DELETE' });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.detail || '删除附件失败');
+            }
+            showToast('附件已删除', 'success');
+            setTimeout(() => location.reload(), 700);
+        } catch (error) {
+            showToast(error.message || '删除附件失败', 'error');
+        }
     }
 
     // Submit grading
@@ -970,6 +1163,7 @@
     document.addEventListener('DOMContentLoaded', () => {
         renderAnswers();
         initSubmissionPreview();
+        initTeacherAttachmentManager();
     });
 </script>
 {% endblock %}

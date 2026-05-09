@@ -54,11 +54,18 @@ from ..services.submission_assets import (
     is_allowed_submission_file,
     normalize_allowed_file_types,
     parse_submission_manifest,
+    remove_answer_attachment_references,
     reconcile_answer_attachment_references,
+    StoredSubmissionFile,
     store_submission_files,
     summarize_allowed_file_types,
 )
 from ..services.submission_file_alignment import resolve_submission_file_path
+from ..services.ai_grading_attachments import (
+    build_attachment_type_summary,
+    ensure_ai_grading_attachments_supported,
+)
+from ..services.ai_grading_service import AIGradingQueueError, submit_submission_for_ai_grading
 from ..services.learning_progress_service import (
     get_stage_exam_target,
     handle_assignment_stage_grading_complete,
@@ -175,6 +182,7 @@ def _get_submission_for_teacher(conn, submission_id: int, teacher_id: int) -> di
         SELECT s.*,
                a.course_id,
                a.class_offering_id,
+               a.allowed_file_types_json,
                a.title AS assignment_title,
                c.created_by_teacher_id,
                o.teacher_id AS offering_teacher_id,
@@ -249,6 +257,109 @@ def _validate_upload_entries(files: List[UploadFile], manifest: str):
             f"（当前 {total_size / 1024 / 1024:.1f}MB）",
         )
     return prepared_entries
+
+
+def _deduplicate_relative_path_against_seen(relative_path: str, seen_paths: set[str]) -> str:
+    normalized_key = relative_path.lower()
+    if normalized_key not in seen_paths:
+        seen_paths.add(normalized_key)
+        return relative_path
+
+    path_obj = PurePosixPath(relative_path)
+    parent = "" if str(path_obj.parent) == "." else str(path_obj.parent)
+    suffix = "".join(path_obj.suffixes)
+    stem = path_obj.name[: -len(suffix)] if suffix else path_obj.name
+    for index in range(2, 10000):
+        candidate_name = f"{stem} ({index}){suffix}"
+        candidate_path = f"{parent}/{candidate_name}" if parent else candidate_name
+        candidate_key = candidate_path.lower()
+        if candidate_key in seen_paths:
+            continue
+        seen_paths.add(candidate_key)
+        return candidate_path
+    raise HTTPException(400, "Too many duplicated upload paths")
+
+
+def _deduplicate_upload_entries_against_existing(prepared_entries, existing_files: list[dict[str, Any]]) -> None:
+    seen_paths = {
+        str(row.get("relative_path") or row.get("original_filename") or "").replace("\\", "/").strip().lower()
+        for row in existing_files
+        if str(row.get("relative_path") or row.get("original_filename") or "").strip()
+    }
+    for entry in prepared_entries:
+        entry.relative_path = _deduplicate_relative_path_against_seen(entry.relative_path, seen_paths)
+
+
+def _stored_file_to_dict(file_info: StoredSubmissionFile) -> dict[str, Any]:
+    return {
+        "original_filename": file_info.original_filename,
+        "relative_path": file_info.relative_path,
+        "stored_path": file_info.stored_path,
+        "mime_type": file_info.mime_type,
+        "file_size": file_info.file_size,
+        "file_ext": file_info.file_ext,
+        "file_hash": file_info.file_hash,
+    }
+
+
+def _assignment_uses_ai_grading(assignment: dict[str, Any]) -> bool:
+    return str(assignment.get("grading_mode") or "").strip().lower() in {"ai", "auto", "mixed"}
+
+
+def _ensure_submission_files_manageable(submission: dict[str, Any]) -> None:
+    if int(submission.get("is_absence_score") or 0):
+        raise HTTPException(400, "缺交记 0 记录没有可管理的学生附件")
+    if str(submission.get("status") or "").lower() == "grading":
+        raise HTTPException(409, "该提交正在 AI 批改中，不能修改附件")
+    if str(submission.get("status") or "").lower() == "graded" and not int(submission.get("resubmission_allowed") or 0):
+        raise HTTPException(409, "该提交已批改成功，请先撤回后再修改附件")
+
+
+def _reset_submission_after_attachment_edit(conn, submission_id: int, teacher_id: int) -> None:
+    conn.execute(
+        """
+        UPDATE submissions
+        SET status = 'submitted',
+            score = NULL,
+            feedback_md = NULL,
+            resubmission_allowed = 0,
+            resubmission_due_at = NULL,
+            returned_at = NULL,
+            returned_by_teacher_id = NULL,
+            returned_reason = NULL,
+            submitted_by_role = COALESCE(submitted_by_role, 'teacher'),
+            submitted_by_teacher_id = COALESCE(submitted_by_teacher_id, ?),
+            submission_channel = COALESCE(submission_channel, 'offline'),
+            is_absence_score = 0,
+            absence_scored_at = NULL,
+            absence_scored_by_teacher_id = NULL
+        WHERE id = ?
+        """,
+        (int(teacher_id), int(submission_id)),
+    )
+
+
+async def _submit_ai_grading_background(submission_id: int, *, reason: str = "auto") -> None:
+    try:
+        await submit_submission_for_ai_grading(int(submission_id), allow_graded=False)
+    except AIGradingQueueError as exc:
+        print(f"[AI_GRADING] {reason} submit skipped for submission {submission_id}: {exc.detail}")
+    except Exception as exc:
+        print(f"[AI_GRADING] {reason} submit failed for submission {submission_id}: {exc}")
+
+
+def _schedule_ai_grading(submission_id: int, *, reason: str = "auto") -> bool:
+    task_coro = _submit_ai_grading_background(int(submission_id), reason=reason)
+    try:
+        asyncio.create_task(task_coro)
+        return True
+    except RuntimeError:
+        task_coro.close()
+        return False
+
+
+def _form_bool(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _parse_answers_payload(answers_json: str) -> Any:
@@ -771,6 +882,26 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
             (assignment_id,)
         )
         submissions = [dict(row) for row in submissions_cursor]
+        submission_file_rows = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT sf.submission_id,
+                       sf.original_filename,
+                       sf.relative_path,
+                       sf.mime_type,
+                       sf.file_size,
+                       sf.file_ext,
+                       sf.file_hash,
+                       sf.stored_path
+                FROM submission_files sf
+                JOIN submissions s ON s.id = sf.submission_id
+                WHERE s.assignment_id = ?
+                ORDER BY sf.submission_id, COALESCE(sf.relative_path, sf.original_filename), sf.id
+                """,
+                (assignment_id,),
+            )
+        ]
 
         # 获取班级花名册以包含未提交学生
         total_students = 0
@@ -792,6 +923,20 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
                     )
                 roster = [dict(row) for row in students_cursor]
                 total_students = len(roster)
+
+    files_by_submission: dict[int, list[dict[str, Any]]] = {}
+    for row in submission_file_rows:
+        try:
+            key = int(row.get("submission_id"))
+        except (TypeError, ValueError):
+            continue
+        files_by_submission.setdefault(key, []).append(row)
+
+    for submission in submissions:
+        file_rows = files_by_submission.get(int(submission["id"]), [])
+        type_summary = build_attachment_type_summary(file_rows)
+        submission["attachment_type_summary"] = type_summary
+        submission["has_unsupported_ai_attachments"] = any(not item.get("supported", True) for item in type_summary)
 
     # 构建提交映射
     submission_map = {s['student_pk_id']: s for s in submissions}
@@ -828,6 +973,8 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
                 'is_absence_score': 0,
                 'absence_scored_at': None,
                 'absence_scored_by_teacher_id': None,
+                'attachment_type_summary': [],
+                'has_unsupported_ai_attachments': False,
             })
 
     # 如果没有花名册信息，退回只显示已提交学生
@@ -1086,6 +1233,230 @@ async def return_submission(submission_id: int, user: dict = Depends(get_current
     return {"status": "success", "deleted_submission_id": submission_id}
 
 
+@router.post("/submissions/{submission_id}/files", response_class=JSONResponse)
+async def add_submission_files(
+    submission_id: int,
+    manifest: str = Form(""),
+    queue_ai: str = Form("0"),
+    files: List[UploadFile] = File(default=[]),
+    user: dict = Depends(get_current_teacher),
+):
+    """教师为已提交记录补充附件；已批改记录必须先撤回。"""
+    prepared_entries = _validate_upload_entries(files, manifest)
+    if not prepared_entries:
+        raise HTTPException(400, "请选择要添加的附件")
+
+    queue_ai_requested = _form_bool(queue_ai)
+    moved_paths: list[Path] = []
+    staging_dir: Path | None = None
+
+    with get_db_connection() as conn:
+        submission = _get_submission_for_teacher(conn, int(submission_id), int(user["id"]))
+        _ensure_submission_files_manageable(submission)
+        allowed_file_types = decode_allowed_file_types_json(submission.get("allowed_file_types_json"))
+        existing_files = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT id, original_filename, relative_path, stored_path, mime_type, file_size, file_ext, file_hash
+                FROM submission_files
+                WHERE submission_id = ?
+                ORDER BY COALESCE(relative_path, original_filename), id
+                """,
+                (submission_id,),
+            )
+        ]
+
+    _deduplicate_upload_entries_against_existing(prepared_entries, existing_files)
+    existing_count = len(existing_files)
+    existing_total_bytes = sum(int(row.get("file_size") or 0) for row in existing_files)
+    new_total_bytes = sum(int(entry.size_bytes) for entry in prepared_entries)
+    if existing_count + len(prepared_entries) > MAX_SUBMISSION_FILE_COUNT:
+        raise HTTPException(413, f"附件总数不能超过 {MAX_SUBMISSION_FILE_COUNT} 个")
+    if existing_total_bytes + new_total_bytes > MAX_SUBMISSION_TOTAL_BYTES:
+        raise HTTPException(
+            413,
+            f"附件总大小超过限制 {MAX_SUBMISSION_TOTAL_MB:.0f}MB"
+            f"（当前 {(existing_total_bytes + new_total_bytes) / 1024 / 1024:.1f}MB）",
+        )
+
+    submission_dir = _build_submission_storage_dir(
+        int(submission["course_id"]),
+        submission["assignment_id"],
+        int(submission["student_pk_id"]),
+    )
+    staging_dir = submission_dir.with_name(f"{submission_dir.name}.__teacher_add__{uuid.uuid4().hex}")
+
+    try:
+        storage_result = await store_submission_files(staging_dir, prepared_entries, allowed_file_types)
+        if not storage_result.stored_files:
+            expected_types = summarize_allowed_file_types(allowed_file_types)
+            raise HTTPException(400, f"没有符合要求的文件可添加，允许类型: {expected_types}")
+        try:
+            ensure_ai_grading_attachments_supported([_stored_file_to_dict(item) for item in storage_result.stored_files])
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+        with get_db_connection() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                current_submission = _get_submission_for_teacher(conn, int(submission_id), int(user["id"]))
+                _ensure_submission_files_manageable(current_submission)
+                current_files = [
+                    dict(row)
+                    for row in conn.execute(
+                        """
+                        SELECT id, original_filename, relative_path, stored_path, mime_type, file_size, file_ext, file_hash
+                        FROM submission_files
+                        WHERE submission_id = ?
+                        ORDER BY COALESCE(relative_path, original_filename), id
+                        """,
+                        (submission_id,),
+                    )
+                ]
+                if len(current_files) + len(storage_result.stored_files) > MAX_SUBMISSION_FILE_COUNT:
+                    raise HTTPException(413, f"附件总数不能超过 {MAX_SUBMISSION_FILE_COUNT} 个")
+                current_total = sum(int(row.get("file_size") or 0) for row in current_files)
+                stored_total = sum(int(item.file_size or 0) for item in storage_result.stored_files)
+                if current_total + stored_total > MAX_SUBMISSION_TOTAL_BYTES:
+                    raise HTTPException(413, f"附件总大小超过限制 {MAX_SUBMISSION_TOTAL_MB:.0f}MB")
+
+                seen_paths = {
+                    str(row.get("relative_path") or row.get("original_filename") or "").replace("\\", "/").strip().lower()
+                    for row in current_files
+                    if str(row.get("relative_path") or row.get("original_filename") or "").strip()
+                }
+                submission_dir.mkdir(parents=True, exist_ok=True)
+                for file_info in storage_result.stored_files:
+                    source_path = Path(file_info.stored_path)
+                    relative_path = _deduplicate_relative_path_against_seen(file_info.relative_path, seen_paths)
+                    final_path = _build_submission_file_path(submission_dir, relative_path)
+                    final_path.parent.mkdir(parents=True, exist_ok=True)
+                    source_path.replace(final_path)
+                    moved_paths.append(final_path)
+                    file_info.relative_path = relative_path
+                    file_info.original_filename = PurePosixPath(relative_path).name
+                    file_info.stored_path = str(final_path)
+                    file_info.file_ext = Path(relative_path).suffix.lower()
+
+                for file_info in storage_result.stored_files:
+                    conn.execute(
+                        """
+                        INSERT INTO submission_files (
+                            submission_id, original_filename, relative_path, stored_path,
+                            mime_type, file_size, file_ext, file_hash
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            submission_id,
+                            file_info.original_filename,
+                            file_info.relative_path,
+                            file_info.stored_path,
+                            file_info.mime_type,
+                            file_info.file_size,
+                            file_info.file_ext,
+                            file_info.file_hash,
+                        ),
+                    )
+                _reset_submission_after_attachment_edit(conn, int(submission_id), int(user["id"]))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+    except Exception:
+        for path in moved_paths:
+            try:
+                if path.exists() and path.is_file():
+                    path.unlink()
+            except Exception as exc:
+                print(f"[SUBMISSION_FILES] failed to remove moved file after rollback: {exc}")
+        raise
+    finally:
+        if staging_dir:
+            delete_storage_tree(staging_dir)
+
+    ai_queue_result = None
+    if queue_ai_requested:
+        try:
+            ai_queue_result = await submit_submission_for_ai_grading(
+                int(submission_id),
+                teacher_id=int(user["id"]),
+                allow_graded=False,
+            )
+        except AIGradingQueueError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    return {
+        "status": "success",
+        "submission_id": int(submission_id),
+        "added_count": len(storage_result.stored_files),
+        "dropped_file_count": len(storage_result.dropped_files),
+        "ai_queue_result": ai_queue_result,
+    }
+
+
+@router.delete("/submission-files/{file_id}", response_class=JSONResponse)
+async def delete_submission_file(file_id: int, user: dict = Depends(get_current_teacher)):
+    """教师删除单个学生提交附件；已批改记录必须先撤回。"""
+    physical_path: Path | None = None
+    with get_db_connection() as conn:
+        file_row = conn.execute(
+            """
+            SELECT id, submission_id, original_filename, relative_path, stored_path, mime_type, file_size, file_ext, file_hash
+            FROM submission_files
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (int(file_id),),
+        ).fetchone()
+        if not file_row:
+            raise HTTPException(404, "附件不存在")
+        file_dict = dict(file_row)
+        submission = _get_submission_for_teacher(conn, int(file_dict["submission_id"]), int(user["id"]))
+        _ensure_submission_files_manageable(submission)
+        resolved = resolve_submission_file_path(str(file_dict.get("stored_path") or ""))
+        if resolved:
+            physical_path = Path(resolved)
+
+        answers_json = submission.get("answers_json")
+        cleaned_answers_json = None
+        if answers_json:
+            try:
+                answers_payload = json.loads(answers_json) if isinstance(answers_json, str) else answers_json
+                cleaned_payload = remove_answer_attachment_references(answers_payload, file_dict)
+                cleaned_answers_json = json.dumps(cleaned_payload, ensure_ascii=False)
+            except (TypeError, json.JSONDecodeError):
+                cleaned_answers_json = None
+
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            current_submission = _get_submission_for_teacher(conn, int(file_dict["submission_id"]), int(user["id"]))
+            _ensure_submission_files_manageable(current_submission)
+            conn.execute("DELETE FROM submission_files WHERE id = ?", (int(file_id),))
+            if cleaned_answers_json is not None:
+                conn.execute(
+                    "UPDATE submissions SET answers_json = ? WHERE id = ?",
+                    (cleaned_answers_json, int(file_dict["submission_id"])),
+                )
+            _reset_submission_after_attachment_edit(conn, int(file_dict["submission_id"]), int(user["id"]))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+    if physical_path and physical_path.exists() and physical_path.is_file():
+        try:
+            physical_path.unlink()
+        except Exception as exc:
+            print(f"[SUBMISSION_FILES] failed to delete physical file {physical_path}: {exc}")
+
+    return {
+        "status": "success",
+        "deleted_file_id": int(file_id),
+        "submission_id": int(file_dict["submission_id"]),
+    }
+
+
 @router.get("/assignments/{assignment_id}/export-attachments/{class_offering_id}")
 async def export_submission_attachments(
     assignment_id: str,
@@ -1333,11 +1704,20 @@ async def submit_assignment(assignment_id: str,
         except Exception as exc:
             print(f"[BEHAVIOR] 记录作业提交失败: {exc}")
 
+    auto_ai_grading_scheduled = False
     if stage_attempt:
+        stage_ai_task = submit_stage_exam_for_ai_grading(int(result["submission_id"]))
         try:
-            asyncio.create_task(submit_stage_exam_for_ai_grading(int(result["submission_id"])))
+            asyncio.create_task(stage_ai_task)
+            auto_ai_grading_scheduled = True
         except RuntimeError:
-            await submit_stage_exam_for_ai_grading(int(result["submission_id"]))
+            await stage_ai_task
+            auto_ai_grading_scheduled = True
+    elif _assignment_uses_ai_grading(assignment):
+        auto_ai_grading_scheduled = _schedule_ai_grading(int(result["submission_id"]), reason="assignment_auto")
+        if not auto_ai_grading_scheduled:
+            await _submit_ai_grading_background(int(result["submission_id"]), reason="assignment_auto")
+            auto_ai_grading_scheduled = True
 
     return {
         "status": "success",
@@ -1345,6 +1725,7 @@ async def submit_assignment(assignment_id: str,
         "stored_file_count": result["stored_file_count"],
         "dropped_file_count": result["dropped_file_count"],
         "is_resubmission": result["is_replacement"],
+        "auto_ai_grading_scheduled": auto_ai_grading_scheduled,
     }
 
 
@@ -1514,12 +1895,20 @@ async def teacher_offline_submit_assignment(
         except Exception as exc:
             print(f"[BEHAVIOR] 记录教师线下代交失败: {exc}")
 
+    auto_ai_grading_scheduled = False
+    if _assignment_uses_ai_grading(assignment):
+        auto_ai_grading_scheduled = _schedule_ai_grading(int(result["submission_id"]), reason="teacher_offline_auto")
+        if not auto_ai_grading_scheduled:
+            await _submit_ai_grading_background(int(result["submission_id"]), reason="teacher_offline_auto")
+            auto_ai_grading_scheduled = True
+
     return {
         "status": "success",
         "submission_id": result["submission_id"],
         "stored_file_count": result["stored_file_count"],
         "dropped_file_count": result["dropped_file_count"],
         "is_replacement": result["is_replacement"],
+        "auto_ai_grading_scheduled": auto_ai_grading_scheduled,
     }
 
 

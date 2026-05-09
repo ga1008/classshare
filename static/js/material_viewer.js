@@ -4,6 +4,7 @@ import { renderFilePreview } from './file_preview.js';
 
 const material = window.MATERIAL_VIEWER || {};
 const viewerContext = window.MATERIAL_VIEWER_CONTEXT || {};
+const viewerAssets = window.MATERIAL_VIEWER_ASSETS || {};
 
 const contentEl = document.getElementById('viewer-content');
 const tocEl = document.getElementById('viewer-toc');
@@ -1186,6 +1187,22 @@ function bindSourceEditor() {
     });
 }
 
+function loadTeacherWhiteboardWhenIdle() {
+    if (viewerContext.userRole !== 'teacher') return;
+
+    const loadWhiteboard = () => {
+        import(viewerAssets.teacherWhiteboard || './teacher_whiteboard.js').catch((error) => {
+            console.warn('Teacher whiteboard failed to load:', error);
+        });
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(loadWhiteboard, { timeout: 2000 });
+    } else {
+        window.setTimeout(loadWhiteboard, 800);
+    }
+}
+
 async function init() {
     if (!contentEl) return;
     bindImageLightbox();
@@ -1237,6 +1254,7 @@ async function init() {
         buildFallbackActionHtml: () => buildMaterialDownloadAction('下载原文件'),
     });
     bindBlockedDownloadTips();
+    loadTeacherWhiteboardWhenIdle();
 }
 
 init().catch((error) => {

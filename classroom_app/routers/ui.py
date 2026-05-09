@@ -32,6 +32,7 @@ from ..dependencies import apply_access_token_cookie, clear_access_token_cookie,
 from ..services.behavior_tracking_service import record_behavior_event
 from ..services.discussion_mood_service import maybe_schedule_discussion_mood_refresh
 from ..services.submission_assets import decode_allowed_file_types_json, summarize_allowed_file_types
+from ..services.ai_grading_attachments import AI_GRADING_UPLOAD_EXTENSIONS, AI_GRADING_SUPPORTED_TYPES_LABEL
 from ..services.dashboard_service import build_dashboard_context
 from ..services.classroom_page_service import build_classroom_page_context
 from ..services.assignment_lifecycle_service import (
@@ -2542,6 +2543,12 @@ async def submission_detail_page(request: Request, submission_id: int, user: dic
         "submission": submission,
         "submission_files": submission_files,
         "exam_questions": exam_questions,
+        "ai_grading_upload_extensions": AI_GRADING_UPLOAD_EXTENSIONS,
+        "ai_grading_supported_types_label": AI_GRADING_SUPPORTED_TYPES_LABEL,
+        "max_upload_mb": MAX_UPLOAD_SIZE_MB,
+        "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
+        "max_per_file_mb": MAX_SUBMISSION_PER_FILE_MB,
+        "max_total_mb": MAX_SUBMISSION_TOTAL_MB,
     })
 
 

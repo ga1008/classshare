@@ -168,6 +168,30 @@
     .submissions-table {
         min-width: 900px;
     }
+    .attachment-type-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        min-width: 120px;
+    }
+    .attachment-type-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 7px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        font-size: 0.72rem;
+        font-weight: 700;
+        line-height: 1.35;
+        white-space: nowrap;
+    }
+    .attachment-type-chip.image { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    .attachment-type-chip.pdf { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+    .attachment-type-chip.document { background: #eef2ff; color: #4338ca; border-color: #c7d2fe; }
+    .attachment-type-chip.text { background: #f0fdfa; color: #0f766e; border-color: #99f6e4; }
+    .attachment-type-chip.unsupported { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+    .attachment-type-chip.empty { background: #f8fafc; color: #94a3b8; border-color: #e2e8f0; }
     .sort-header {
         width: 100%;
         display: inline-flex;
@@ -373,6 +397,57 @@
         .selection-toolbar { width: 100%; margin-left: 0; }
         .submission-header-actions { width: 100%; justify-content: flex-start; }
         .filter-bar .filter-input { flex-basis: 100%; }
+        .table-responsive {
+            overflow: visible;
+        }
+        .submissions-table {
+            min-width: 0;
+            border-collapse: separate;
+            border-spacing: 0 10px;
+        }
+        .submissions-table thead {
+            display: none;
+        }
+        .submissions-table tbody,
+        .submissions-table tr,
+        .submissions-table td {
+            display: block;
+            width: 100%;
+        }
+        .submissions-table tbody tr {
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            background: var(--surface-color);
+            padding: 10px 12px;
+            box-shadow: var(--shadow-sm);
+        }
+        .submissions-table tbody td {
+            padding: 7px 0;
+            border: 0;
+        }
+        .submissions-table tbody td[data-label] {
+            display: grid;
+            grid-template-columns: 82px minmax(0, 1fr);
+            gap: 10px;
+            align-items: start;
+        }
+        .submissions-table tbody td[data-label]::before {
+            content: attr(data-label);
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+        .submissions-table tbody td[data-label="选择"] {
+            display: flex;
+            justify-content: flex-end;
+            padding-bottom: 0;
+        }
+        .submissions-table tbody td[data-label="选择"]::before {
+            content: "";
+        }
+        .submissions-table .action-btns {
+            justify-content: flex-start;
+        }
     }
 </style>
 {% endblock %}
@@ -573,7 +648,7 @@
             </div>
         </div>
         <div class="filter-bar">
-            <input type="text" class="filter-input" id="submission-filter" placeholder="搜索学生姓名 / 学号..." oninput="filterSubmissions()">
+            <input type="text" class="filter-input" id="submission-filter" placeholder="搜索学生姓名 / 学号 / 附件后缀..." oninput="filterSubmissions()">
             <button class="filter-btn active" data-filter="all" onclick="setFilter('all', this)">全部</button>
             <button class="filter-btn" data-filter="submitted" onclick="setFilter('submitted', this)">待批改</button>
             <button class="filter-btn" data-filter="graded" onclick="setFilter('graded', this)">已批改</button>
@@ -599,11 +674,12 @@
                         <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="status" onclick="setSubmissionSort('status')">状态<span class="sort-indicator" aria-hidden="true"></span></button></th>
                         <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="score" onclick="setSubmissionSort('score')">得分<span class="sort-indicator" aria-hidden="true"></span></button></th>
                         <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="submitted_at" onclick="setSubmissionSort('submitted_at')">提交时间<span class="sort-indicator" aria-hidden="true"></span></button></th>
+                        <th>附件类型</th>
                         <th>操作</th>
                     </tr>
                 </thead>
                 <tbody id="submissions-list">
-                    <tr><td colspan="7" class="text-center p-xl"><div class="spinner"></div></td></tr>
+                    <tr><td colspan="8" class="text-center p-xl"><div class="spinner"></div></td></tr>
                 </tbody>
             </table>
         </div>
@@ -939,7 +1015,7 @@
             console.error('加载数据失败:', error);
             showToast('加载数据失败', 'error');
             document.getElementById('submissions-list').innerHTML =
-                '<tr><td colspan="7" class="text-center text-danger p-lg">加载失败</td></tr>';
+                '<tr><td colspan="8" class="text-center text-danger p-lg">加载失败</td></tr>';
         }
     }
 
@@ -1135,6 +1211,34 @@
         return 'excellent';
     }
 
+    function getAttachmentSummary(entry) {
+        return Array.isArray(entry?.attachment_type_summary) ? entry.attachment_type_summary : [];
+    }
+
+    function renderAttachmentTypes(entry, isUnsubmitted) {
+        if (isUnsubmitted) {
+            return '<div class="attachment-type-chips"><span class="attachment-type-chip empty">未提交</span></div>';
+        }
+        const summary = getAttachmentSummary(entry);
+        if (!summary.length) {
+            return '<div class="attachment-type-chips"><span class="attachment-type-chip empty">无附件</span></div>';
+        }
+        const chips = summary.map((item) => {
+            const category = item.supported === false ? 'unsupported' : (item.category || 'text');
+            const title = item.reason ? ` title="${escapeHtml(item.reason)}"` : '';
+            const countText = Number(item.count || 0) > 1 ? ` ×${Number(item.count)}` : '';
+            return `<span class="attachment-type-chip ${category}"${title}>${escapeHtml(item.label || item.category_label || '附件')}${countText}</span>`;
+        }).join('');
+        return `<div class="attachment-type-chips">${chips}</div>`;
+    }
+
+    function getAttachmentSearchText(entry) {
+        return getAttachmentSummary(entry)
+            .map(item => `${item.label || ''} ${item.category_label || ''} ${item.supported === false ? '不支持' : ''}`)
+            .join(' ')
+            .toLowerCase();
+    }
+
     function matchesCurrentFilter(entry) {
         if (currentFilter === 'all') return true;
         if (currentFilter === 'fail') return isFailingEntry(entry);
@@ -1196,7 +1300,7 @@
             filtered = filtered.filter(s => {
                 const name = (s.student_name || '').toLowerCase();
                 const sid = (s.student_id_number || '').toLowerCase();
-                return name.includes(searchText) || sid.includes(searchText);
+                return name.includes(searchText) || sid.includes(searchText) || getAttachmentSearchText(s).includes(searchText);
             });
         }
         return sortEntries(filtered);
@@ -1226,7 +1330,7 @@
 
         tbody.innerHTML = '';
         if (filtered.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted p-xl">
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted p-xl">
                 ${allEntries.length === 0 ? '暂无学生数据' : '没有匹配的记录'}
             </td></tr>`;
             syncSelectionToolbar();
@@ -1274,26 +1378,32 @@
             const selected = selectedStudentIds.has(Number(sub.student_pk_id));
             const canOfflineSubmit = isUnsubmitted || isReturned;
             const offlineTitle = canOfflineSubmit ? '线下代交' : '已有正式提交，需先撤回';
-            const aiDisabled = sub.status === 'grading' || isReturned;
+            const unsupportedAiFiles = Boolean(sub.has_unsupported_ai_attachments);
+            const aiDisabled = sub.status === 'grading' || isReturned || unsupportedAiFiles;
+            const aiTitle = unsupportedAiFiles
+                ? '存在 AI 暂不能处理的附件，请先在详情页删除或替换'
+                : (isReturned ? '待重交提交不能批改' : (sub.status === 'grading' ? '批改中' : 'AI 辅助批改'));
+            const attachmentTypesHtml = renderAttachmentTypes(sub, isUnsubmitted);
             const withdrawButton = selectable && !isReturned
                 ? `<button class="btn btn-outline btn-sm text-warning" onclick="event.stopPropagation(); openWithdrawModalForOne(${sub.student_pk_id})" title="撤回后开放重交">撤回</button>`
                 : '';
 
             row.innerHTML = `
-                <td>
+                <td data-label="选择">
                     ${selectable ? `<input type="checkbox" class="submission-checkbox" ${selected ? 'checked' : ''} onclick="event.stopPropagation();" onchange="toggleSubmissionSelection(${sub.student_pk_id}, this.checked)">` : ''}
                 </td>
-                <td class="text-sm text-muted">${escapeHtml(sub.student_id_number || '-')}</td>
-                <td class="font-medium">${escapeHtml(sub.student_name || '-')}</td>
-                <td><span class="badge ${st.cls}">${st.text}</span>${channelBadge}${statusSubtext}</td>
-                <td>${scoreDisplay}</td>
-                <td class="text-sm text-muted">${isUnsubmitted ? '-' : fmtDate(sub.submitted_at)}</td>
-                <td>
+                <td data-label="学号" class="text-sm text-muted">${escapeHtml(sub.student_id_number || '-')}</td>
+                <td data-label="学生姓名" class="font-medium">${escapeHtml(sub.student_name || '-')}</td>
+                <td data-label="状态"><span class="badge ${st.cls}">${st.text}</span>${channelBadge}${statusSubtext}</td>
+                <td data-label="得分">${scoreDisplay}</td>
+                <td data-label="提交时间" class="text-sm text-muted">${isUnsubmitted ? '-' : fmtDate(sub.submitted_at)}</td>
+                <td data-label="附件类型">${attachmentTypesHtml}</td>
+                <td data-label="操作">
                     <div class="action-btns">
                         ${!isUnsubmitted ? `
                         <button class="btn btn-ghost btn-sm text-primary" onclick="event.stopPropagation(); goDetail(${sub.id})" title="查看详情">详情</button>
                         <button class="btn btn-outline btn-sm text-warning" onclick="event.stopPropagation(); aiRegrade(${sub.id})"
-                            ${aiDisabled ? `disabled title="${isReturned ? '待重交提交不能批改' : '批改中'}"` : 'title="AI 辅助批改"'}>AI</button>
+                            ${aiDisabled ? `disabled title="${aiTitle}"` : `title="${aiTitle}"`}>AI</button>
                         ${withdrawButton}
                         ` : ''}
                         <button class="btn btn-outline btn-sm text-primary" onclick="event.stopPropagation(); openOfflineSubmit(${sub.student_pk_id})"
@@ -1488,9 +1598,22 @@
     };
 
     window.aiGradeAll = async function() {
-        const ungraded = allEntries.filter(s => s.status === 'submitted' && !Number(s.resubmission_allowed || 0));
+        const blocked = allEntries.filter(s => (
+            s.status === 'submitted'
+            && !Number(s.resubmission_allowed || 0)
+            && Boolean(s.has_unsupported_ai_attachments)
+        ));
+        const ungraded = allEntries.filter(s => (
+            s.status === 'submitted'
+            && !Number(s.resubmission_allowed || 0)
+            && !Boolean(s.has_unsupported_ai_attachments)
+        ));
         if (ungraded.length === 0) { showToast('没有需要批改的作业', 'info'); return; }
-        if (!confirm(`确定要对 ${ungraded.length} 份未批改作业进行 AI 批量批改吗？`)) return;
+        const blockedHint = blocked.length ? `\n\n${blocked.length} 份提交含有 AI 暂不能处理的附件，将跳过。` : '';
+        if (!confirm(`确定要对 ${ungraded.length} 份未批改作业进行 AI 批量批改吗？${blockedHint}`)) return;
+        if (blocked.length) {
+            showToast(`${blocked.length} 份提交因附件类型不支持已跳过`, 'warning');
+        }
 
         const btn = document.getElementById('ai-grade-all-btn');
         btn.disabled = true;
