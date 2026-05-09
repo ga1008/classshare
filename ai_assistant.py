@@ -35,6 +35,7 @@ from ai_assistant_doc_extract import (
     extract_document_text as _extract_doc_text,
     render_pdf_pages_to_data_urls as _render_pdf_pages,
 )
+from classroom_app.services.ai_grading_attachments import classify_ai_grading_attachment
 
 # --- AI 平台 SDK ---
 try:
@@ -1097,16 +1098,14 @@ def _normalize_grading_files(job: GradingJob) -> list[dict[str, Any]]:
 
 
 def _categorize_grading_file(file_info: dict[str, Any]) -> str:
-    file_path = file_info["path"]
-    mime_type = file_info["mime_type"]
-    ext = file_info["ext"]
-    if mime_type.startswith("image/") or ext in {".bmp", ".gif", ".ico", ".jpeg", ".jpg", ".png", ".svg", ".tiff", ".tif", ".webp"} or is_image_file(file_path):
+    profile = classify_ai_grading_attachment(file_info)
+    if profile["category"] == "image":
         return "image"
-    if ext == ".pdf":
+    if profile["category"] == "pdf":
         return "document_native"
-    if ext in {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".rtf", ".odt"}:
+    if profile["category"] == "document":
         return "document_extractable"
-    if _is_text_like_grading_file(file_path, mime_type):
+    if profile["category"] == "text":
         return "text"
     return "binary"
 
@@ -2987,16 +2986,14 @@ async def run_grading_job(job: GradingJob):
                 except Exception:
                     pass
 
-            # 移除仍然无法处理的二进制文件
+            # AI 批改要求每个附件都能被模型或本地预处理理解，不能静默跳过压缩包等文件。
             still_binary = [f for f in grading_files if f["category"] == "binary"]
             if still_binary:
                 skipped_names = [f["display_name"] for f in still_binary]
-                print(f"[AI WORKER] 跳过不支持的二进制文件: {skipped_names}")
-                grading_files = [f for f in grading_files if f["category"] != "binary"]
-                if not grading_files and not has_answers:
-                    raise ValueError(
-                        "所有附件均为不支持的二进制格式: " + ", ".join(skipped_names[:10])
-                    )
+                raise ValueError(
+                    "AI 批改前检查未通过：存在当前批改链路无法提交给模型理解的附件，请删除后重新提交。"
+                    "不支持的文件: " + ", ".join(skipped_names[:10])
+                )
 
         # 预提取文档内容，发现嵌入图片后作为独立图片条目加入评分文件
         _pre_extract_documents(grading_files)

@@ -3,19 +3,18 @@
 {% block title %}{{ material.name }} | 课程材料预览{% endblock %}
 
 {% block css %}
-<link rel="stylesheet" href="/static/css/layout.css">
-<link rel="stylesheet" href="/static/css/buttons.css">
-<link rel="stylesheet" href="/static/css/cards.css">
-<link rel="stylesheet" href="/static/css/toast.css">
-<link rel="stylesheet" href="/static/css/markdown.css">
-<link rel="stylesheet" href="/static/css/materials.css">
+<link rel="stylesheet" href="{{ asset_url('css/layout.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/buttons.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/cards.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/toast.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/markdown.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/materials.css') }}">
 {% if user_info.role == 'teacher' %}
 <link rel="stylesheet" href="{{ asset_url('css/teacher_whiteboard.css') }}">
 {% endif %}
 {% endblock %}
 
 {% block head %}
-{% set include_mermaid = true %}
 {% include "partials/markdown_assets.html" %}
 <script>
     window.MATERIAL_VIEWER = {{ material | tojson }};
@@ -26,6 +25,9 @@
         materialName: {{ material.name | tojson }},
         classOfferingId: {{ learning_context.class_offering_id | tojson }},
         sessionId: {{ learning_context.session_id | tojson }}
+    };
+    window.MATERIAL_VIEWER_ASSETS = {
+        teacherWhiteboard: "{{ asset_url('js/teacher_whiteboard.js') }}"
     };
 </script>
 {% endblock %}
@@ -142,7 +144,4 @@
 
 {% block scripts %}
 <script type="module" src="{{ asset_url('js/material_viewer.js') }}"></script>
-{% if user_info.role == 'teacher' %}
-<script type="module" src="{{ asset_url('js/teacher_whiteboard.js') }}"></script>
-{% endif %}
 {% endblock %}

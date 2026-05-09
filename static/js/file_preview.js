@@ -1,5 +1,7 @@
 import { escapeHtml } from './ui.js';
 
+let mermaidLoadPromise = null;
+
 function parseMarkdownHtml(value) {
     const runtime = window.MarkdownRuntime;
     if (runtime && typeof runtime.parse === 'function') {
@@ -20,6 +22,53 @@ function slugify(text) {
         .toLowerCase()
         .replace(/[\s\W-]+/g, '-')
         .replace(/^-+|-+$/g, '') || 'section';
+}
+
+function getMermaidAssetUrl() {
+    return window.MARKDOWN_PREVIEW_ASSETS?.mermaid || '/static/vendor/mermaid.min.js';
+}
+
+function loadScriptOnce(src, markerAttribute) {
+    const existingScript = document.querySelector(`script[${markerAttribute}="true"]`);
+    if (existingScript) {
+        return new Promise((resolve, reject) => {
+            if (existingScript.dataset.loaded === 'true') {
+                resolve();
+                return;
+            }
+            existingScript.addEventListener('load', () => resolve(), { once: true });
+            existingScript.addEventListener('error', () => reject(new Error(`Failed to load ${src}`)), { once: true });
+        });
+    }
+
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.setAttribute(markerAttribute, 'true');
+        script.addEventListener('load', () => {
+            script.dataset.loaded = 'true';
+            resolve();
+        }, { once: true });
+        script.addEventListener('error', () => reject(new Error(`Failed to load ${src}`)), { once: true });
+        document.head.appendChild(script);
+    });
+}
+
+async function ensureMermaidLoaded() {
+    if (typeof window.mermaid !== 'undefined') {
+        return window.mermaid;
+    }
+    if (!mermaidLoadPromise) {
+        mermaidLoadPromise = loadScriptOnce(getMermaidAssetUrl(), 'data-markdown-mermaid-loader')
+            .then(() => window.mermaid || null)
+            .catch((error) => {
+                mermaidLoadPromise = null;
+                console.warn('Mermaid asset failed to load:', error);
+                return null;
+            });
+    }
+    return mermaidLoadPromise;
 }
 
 async function copyTextToClipboard(text) {
@@ -148,7 +197,10 @@ export function decoratePreviewCodeBlocks(contentEl) {
 export async function renderPreviewMermaid(contentEl) {
     if (!contentEl) return;
     const mermaidBlocks = Array.from(contentEl.querySelectorAll('pre code.language-mermaid, pre code.lang-mermaid'));
-    if (!mermaidBlocks.length || typeof mermaid === 'undefined') return;
+    if (!mermaidBlocks.length) return;
+
+    const mermaid = await ensureMermaidLoaded();
+    if (!mermaid) return;
 
     mermaid.initialize({
         startOnLoad: false,

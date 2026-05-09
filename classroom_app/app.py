@@ -1,10 +1,12 @@
 import json
 from pathlib import Path
+from urllib.parse import parse_qs
 import anyio.to_thread
 from fastapi import FastAPI, Request, HTTPException
 import sys
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, RedirectResponse
+from starlette.middleware.gzip import GZipMiddleware
 
 # 修复：导入 templates 以便在错误处理程序中使用
 from .core import app, ai_client, templates
@@ -34,6 +36,32 @@ from .routers import ui, files, homework, ai, materials, emoji, behavior, messag
 from .routers import manage as manage_router  # 避免命名冲突
 from .routers import session as session_router
 from .routers import blog, feedback
+
+
+class CacheControlStaticFiles(StaticFiles):
+    def __init__(
+        self,
+        *args,
+        versioned_max_age: int = 31536000,
+        default_max_age: int = 300,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self.versioned_max_age = versioned_max_age
+        self.default_max_age = default_max_age
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code == 200 and "cache-control" not in response.headers:
+            query_params = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+            if query_params.get("v"):
+                response.headers["Cache-Control"] = f"public, max-age={self.versioned_max_age}, immutable"
+            else:
+                response.headers["Cache-Control"] = f"public, max-age={self.default_max_age}"
+        return response
+
+
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 # -----------------
@@ -275,7 +303,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 # 挂载静态文件
 # -----------------
 # 允许模板访问 /static/style.css 等
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/static", CacheControlStaticFiles(directory=STATIC_DIR), name="static")
 
 # -----------------
 # 组装路由

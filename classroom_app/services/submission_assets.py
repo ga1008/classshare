@@ -274,6 +274,31 @@ def reconcile_answer_attachment_references(payload: Any, stored_files: Sequence[
     return scrub(payload)
 
 
+def remove_answer_attachment_references(payload: Any, removed_file: Any) -> Any:
+    """Remove answer-level attachment references for one deleted submission file."""
+    removed_keys = _build_file_reference_keys(removed_file)
+    if not removed_keys:
+        return payload
+
+    def scrub(value: Any) -> Any:
+        if isinstance(value, list):
+            return [scrub(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+
+        cleaned = {key: scrub(item) for key, item in value.items() if key != "attachments"}
+        attachments = value.get("attachments")
+        if isinstance(attachments, list):
+            cleaned["attachments"] = [
+                dict(attachment)
+                for attachment in attachments
+                if not _attachment_matches_stored_file(attachment, removed_keys)
+            ]
+        return cleaned
+
+    return scrub(payload)
+
+
 def is_allowed_submission_file(relative_path: str, content_type: str | None, allowed_file_types: Sequence[str]) -> bool:
     if is_exam_drawing_file(relative_path, content_type):
         return True
@@ -301,12 +326,30 @@ def is_allowed_submission_file(relative_path: str, content_type: str | None, all
 def _build_stored_file_reference_keys(stored_files: Sequence[StoredSubmissionFile]) -> set[str]:
     keys: set[str] = set()
     for file_info in stored_files:
-        for value in (file_info.relative_path, file_info.original_filename):
-            normalized = str(value or "").replace("\\", "/").strip().lower()
-            if not normalized:
-                continue
-            keys.add(normalized)
-            keys.add(PurePosixPath(normalized).name)
+        keys.update(_build_file_reference_keys(file_info))
+    return keys
+
+
+def _build_file_reference_keys(file_info: Any) -> set[str]:
+    keys: set[str] = set()
+    if isinstance(file_info, dict):
+        candidates = [
+            file_info.get("relative_path"),
+            file_info.get("original_filename"),
+            file_info.get("file_name"),
+            file_info.get("filename"),
+        ]
+    else:
+        candidates = [
+            getattr(file_info, "relative_path", None),
+            getattr(file_info, "original_filename", None),
+        ]
+    for value in candidates:
+        normalized = str(value or "").replace("\\", "/").strip().lower()
+        if not normalized:
+            continue
+        keys.add(normalized)
+        keys.add(PurePosixPath(normalized).name)
     return keys
 
 

@@ -6,6 +6,7 @@ import re
 import tempfile
 import zipfile
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path, PurePosixPath
 
 import aiofiles
@@ -150,15 +151,25 @@ def _decode_text_bytes(raw_bytes: bytes) -> tuple[str, str]:
     raise HTTPException(400, "当前文本材料编码暂不支持在线编辑")
 
 
+@lru_cache(maxsize=128)
+def _load_cached_text_content(file_path_value: str, mtime_ns: int, file_size: int) -> tuple[str, str]:
+    del mtime_ns, file_size
+    return _decode_text_bytes(Path(file_path_value).read_bytes())
+
+
 async def _load_material_text_content(material_row, prefer_optimized: bool = False) -> tuple[str, str]:
     optimized_content = _row_value(material_row, "ai_optimized_markdown")
     if prefer_optimized and optimized_content:
         return optimized_content, "utf-8"
 
     file_path = _load_material_storage_path(material_row)
-    async with aiofiles.open(file_path, "rb") as handle:
-        raw_bytes = await handle.read()
-    return _decode_text_bytes(raw_bytes)
+    stat = await asyncio.to_thread(file_path.stat)
+    return await asyncio.to_thread(
+        _load_cached_text_content,
+        str(file_path),
+        int(stat.st_mtime_ns),
+        int(stat.st_size),
+    )
 
 
 async def _write_material_file(file_hash: str, payload_bytes: bytes):

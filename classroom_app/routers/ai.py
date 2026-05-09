@@ -39,6 +39,7 @@ from ..services.psych_profile_service import (
 )
 from ..services.academic_service import build_classroom_ai_context
 from ..services.submission_file_alignment import resolve_submission_file_path
+from ..services.ai_grading_service import AIGradingQueueError, submit_submission_for_ai_grading
 from ..services.learning_progress_service import (
     build_student_global_cultivation_profile,
     handle_assignment_stage_grading_complete,
@@ -187,98 +188,14 @@ async def ai_generate_assignment(request: Request, user: dict = Depends(get_curr
 @router.post("/submissions/{submission_id}/regrade", response_class=JSONResponse)
 async def ai_regrade_submission(submission_id: int, user: dict = Depends(get_current_teacher)):
     """向 AI 助手服务提交一个异步批改任务 (支持文件 + JSON 答案)"""
-    with get_db_connection() as conn:
-        submission = conn.execute(
-            """
-            SELECT s.*,
-                   a.requirements_md,
-                   a.rubric_md,
-                   a.allowed_file_types_json,
-                   c.created_by_teacher_id,
-                   o.teacher_id AS offering_teacher_id
-            FROM submissions s
-            JOIN assignments a ON a.id = s.assignment_id
-            JOIN courses c ON c.id = a.course_id
-            LEFT JOIN class_offerings o ON o.id = a.class_offering_id
-            WHERE s.id = ?
-            LIMIT 1
-            """,
-            (submission_id,),
-        ).fetchone()
-        if not submission: raise HTTPException(status_code=404, detail="Submission not found")
-        teacher_id = int(user["id"])
-        owner_id = int(submission["created_by_teacher_id"] or 0)
-        offering_teacher_id = int(submission["offering_teacher_id"] or 0)
-        if teacher_id not in {owner_id, offering_teacher_id}:
-            raise HTTPException(status_code=403, detail="Permission denied")
-        if int(submission["resubmission_allowed"] or 0):
-            raise HTTPException(status_code=400, detail="该提交已撤回并等待重交，不能批改旧版本")
-        if submission['status'] == 'grading': return {"status": "already_grading"}
-        files_cursor = conn.execute(
-            """
-            SELECT stored_path, original_filename, relative_path, mime_type, file_size, file_ext, file_hash
-            FROM submission_files
-            WHERE submission_id = ?
-            ORDER BY COALESCE(relative_path, original_filename), id
-            """,
-            (submission_id,)
-        )
-        submission_files = [dict(row) for row in files_cursor]
-
-    # 检查是否有可批改的内容（文件或JSON答案均可）
-    resolved_submission_files = []
-    for item in submission_files:
-        resolved_path = resolve_submission_file_path(str(item.get("stored_path") or ""))
-        if not resolved_path:
-            continue
-        item["resolved_path"] = str(Path(resolved_path).resolve())
-        resolved_submission_files.append(item)
-
-    has_files = bool(resolved_submission_files)
-    has_answers = bool(submission['answers_json'])
-    if not has_files and not has_answers:
-        raise HTTPException(status_code=400, detail="该提交没有可批改的内容（无文件也无答案）。")
-
-    attachment_context_by_file = _extract_answer_attachment_context(submission['answers_json'] if has_answers else None)
-    resolved_submission_files = [
-        _apply_attachment_context_to_file(item, attachment_context_by_file)
-        for item in resolved_submission_files
-    ]
-
-    job_data = {
-        "submission_id": submission_id,
-        "rubric_md": submission['rubric_md'],
-        "requirements_md": submission['requirements_md'] or '',
-        "allowed_file_types_json": submission["allowed_file_types_json"],
-        "files": [
-            {
-                "stored_path": item["resolved_path"],
-                "original_filename": item.get("original_filename"),
-                "relative_path": item.get("relative_path") or item.get("original_filename"),
-                "mime_type": item.get("mime_type"),
-                "file_size": item.get("file_size"),
-                "file_ext": item.get("file_ext"),
-                "file_hash": item.get("file_hash"),
-            }
-            for item in resolved_submission_files
-        ] if has_files else [],
-        "file_paths": [item["resolved_path"] for item in resolved_submission_files] if has_files else [],
-        "answers_json": submission['answers_json'] if has_answers else None,
-    }
     try:
-        response = await ai_client.post("/api/ai/submit-grading-job", json=job_data)
-        response.raise_for_status()
-        with get_db_connection() as conn:
-            conn.execute(
-                "UPDATE submissions SET status = 'grading' WHERE id = ? AND COALESCE(resubmission_allowed, 0) = 0",
-                (submission_id,),
-            )
-            conn.commit()
-        return response.json()
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="AI 助手服务未运行，请先启动 ai_assistant.py。")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI 任务提交失败: {e}")
+        return await submit_submission_for_ai_grading(
+            int(submission_id),
+            teacher_id=int(user["id"]),
+            allow_graded=True,
+        )
+    except AIGradingQueueError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.post("/internal/grading-complete", response_class=JSONResponse, include_in_schema=False)
