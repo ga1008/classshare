@@ -456,14 +456,6 @@
 
 {% include "partials/feedback_modal.html" %}
 
-{% set can_manage_submission_files = user_info.role == 'teacher' and submission.status != 'grading' and (submission.status != 'graded' or submission.resubmission_allowed) %}
-{% set attachment_locked_reason = '' %}
-{% if user_info.role == 'teacher' and submission.status == 'grading' %}
-    {% set attachment_locked_reason = 'AI 正在批改中，附件暂不可修改。' %}
-{% elif user_info.role == 'teacher' and submission.status == 'graded' and not submission.resubmission_allowed %}
-    {% set attachment_locked_reason = '已批改成功的提交需要先撤回，才能修改附件。' %}
-{% endif %}
-
 <main class="detail-container">
     <!-- Student Info Card -->
     <div class="card">
@@ -708,11 +700,11 @@
     const answersJsonRaw = {{ submission.answers_json | tojson }};
     const examQuestions = {{ exam_questions | tojson if exam_questions else 'null' }};
     const submissionFiles = {{ submission_files | tojson }};
-    const canManageSubmissionFiles = {{ can_manage_submission_files | tojson }};
-    const aiGradingAllowedFileTypes = {{ ai_grading_upload_extensions | tojson }};
-    const maxSubmissionFileCount = {{ max_submission_file_count }};
-    const maxSubmissionTotalBytes = {{ (max_total_mb * 1024 * 1024)|round(0)|int }};
-    const maxSubmissionPerFileBytes = {{ (max_per_file_mb * 1024 * 1024)|round(0)|int }};
+    const canManageSubmissionFiles = {{ (can_manage_submission_files | default(false)) | tojson }};
+    const aiGradingAllowedFileTypes = {{ (ai_grading_upload_extensions | default([])) | tojson }};
+    const maxSubmissionFileCount = {{ max_submission_file_count | default(0) }};
+    const maxSubmissionTotalBytes = {{ (((max_total_mb | default(0)) * 1024 * 1024)|round(0)|int) }};
+    const maxSubmissionPerFileBytes = {{ (((max_per_file_mb | default(0)) * 1024 * 1024)|round(0)|int) }};
     const existingSubmissionFileBytes = submissionFiles.reduce((sum, file) => sum + Number(file.file_size || 0), 0);
     let teacherAttachmentUploadManager = null;
 

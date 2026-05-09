@@ -2536,6 +2536,24 @@ async def submission_detail_page(request: Request, submission_id: int, user: dic
             if paper:
                 exam_questions = json.loads(paper['questions_json'])
 
+    can_manage_submission_files = bool(
+        user.get("role") == "teacher"
+        and submission.get("status") != "grading"
+        and (
+            submission.get("status") != "graded"
+            or int(submission.get("resubmission_allowed") or 0)
+        )
+    )
+    attachment_locked_reason = ""
+    if user.get("role") == "teacher" and submission.get("status") == "grading":
+        attachment_locked_reason = "AI 正在批改中，附件暂不可修改。"
+    elif (
+        user.get("role") == "teacher"
+        and submission.get("status") == "graded"
+        and not int(submission.get("resubmission_allowed") or 0)
+    ):
+        attachment_locked_reason = "已批改成功的提交需要先撤回，才能修改附件。"
+
     return templates.TemplateResponse(request, "submission_detail.html", {
         "request": request,
         "user_info": user,
@@ -2543,6 +2561,8 @@ async def submission_detail_page(request: Request, submission_id: int, user: dic
         "submission": submission,
         "submission_files": submission_files,
         "exam_questions": exam_questions,
+        "can_manage_submission_files": can_manage_submission_files,
+        "attachment_locked_reason": attachment_locked_reason,
         "ai_grading_upload_extensions": AI_GRADING_UPLOAD_EXTENSIONS,
         "ai_grading_supported_types_label": AI_GRADING_SUPPORTED_TYPES_LABEL,
         "max_upload_mb": MAX_UPLOAD_SIZE_MB,
