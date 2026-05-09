@@ -15,8 +15,6 @@ function compactText(value) {
 }
 
 if (root) {
-    root.classList.add('is-reveal-ready');
-
     const cards = Array.from(root.querySelectorAll('[data-offering-card]'));
     const filterButtons = Array.from(root.querySelectorAll('[data-filter-value]'));
     const searchForm = root.querySelector('[data-dashboard-search-form]');
@@ -64,25 +62,11 @@ if (root) {
         targets.forEach((element, index) => {
             element.style.setProperty('--reveal-index', String(Math.min(index, 8)));
         });
-        if (!('IntersectionObserver' in window)) {
+        root.classList.add('is-reveal-ready');
+        const showTargets = () => {
             targets.forEach((element) => element.classList.add('is-visible'));
-            return;
-        }
-
-        const observer = new IntersectionObserver(
-            (entries) => {
-                entries.forEach((entry) => {
-                    if (!entry.isIntersecting) {
-                        return;
-                    }
-                    entry.target.classList.add('is-visible');
-                    observer.unobserve(entry.target);
-                });
-            },
-            { threshold: 0.15 },
-        );
-
-        targets.forEach((element) => observer.observe(element));
+        };
+        window.requestAnimationFrame(showTargets);
     };
 
     const updateFilterUi = () => {
