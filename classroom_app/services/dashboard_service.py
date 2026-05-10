@@ -286,6 +286,32 @@ def _dashboard_sort_text(value: Any) -> str:
     return str(value or "").strip().casefold()
 
 
+def _dashboard_datetime_sort_value(value: Any) -> int:
+    parsed = _parse_datetime(value)
+    if parsed is None:
+        return 0
+    return int(parsed.timestamp())
+
+
+def _build_teacher_activity_score(
+    *,
+    recent_active_student_count: int,
+    recent_login_count: int,
+    pending_review_count: int,
+    draft_count: int,
+    last_activity_at: Any,
+) -> int:
+    recency = _dashboard_datetime_sort_value(last_activity_at)
+    # Keep real classroom usage dominant, then fall back to content/task activity and recency.
+    return (
+        int(recent_active_student_count or 0) * 1_000_000
+        + int(recent_login_count or 0) * 1_000
+        + int(pending_review_count or 0) * 100
+        + int(draft_count or 0) * 20
+        + min(recency // 86_400, 999)
+    )
+
+
 def _dashboard_weekday_label(value: int) -> str:
     if 0 <= int(value) < len(DASHBOARD_WEEKDAY_LABELS):
         return DASHBOARD_WEEKDAY_LABELS[int(value)]
@@ -526,6 +552,7 @@ def _build_teacher_dashboard_context(
     pending_submission_stats = _load_teacher_pending_submission_stats(conn, offering_ids)
     resource_stats = _load_course_resource_stats(conn, course_ids, include_teacher_resources=True)
     material_stats = _load_offering_material_stats(conn, offering_ids)
+    recent_login_stats = _load_teacher_recent_login_stats(conn, [int(item["class_id"]) for item in offerings])
     recent_activity = _load_recent_activity(conn, user)
     message_summary = get_message_center_summary(conn, user)
     unread_total = int(message_summary.get("unread_total") or 0)
@@ -582,6 +609,7 @@ def _build_teacher_dashboard_context(
         pending_item = pending_submission_stats.get(offering_id, {})
         resource_item = resource_stats.get(course_id, {})
         material_item = material_stats.get(offering_id, {})
+        login_item = recent_login_stats.get(int(offering["class_id"]), {})
 
         student_count = int(offering.get("student_count") or 0)
         assignment_count = int(assignment_item.get("assignment_count") or 0)
@@ -589,6 +617,8 @@ def _build_teacher_dashboard_context(
         published_count = int(assignment_item.get("published_count") or 0)
         exam_count = int(assignment_item.get("exam_count") or 0)
         pending_review_count = int(pending_item.get("pending_review_count") or 0)
+        recent_active_student_count = int(login_item.get("recent_active_student_count") or 0)
+        recent_login_count = int(login_item.get("recent_login_count") or 0)
         resource_count = int(resource_item.get("resource_count") or 0)
         material_count = int(material_item.get("material_count") or 0)
         resource_total = resource_count + material_count
@@ -601,9 +631,17 @@ def _build_teacher_dashboard_context(
             pending_item.get("latest_submission_at"),
             resource_item.get("latest_resource_at"),
             material_item.get("latest_material_at"),
+            login_item.get("latest_login_at"),
         )
         needs_attention = pending_review_count > 0 or draft_count > 0
         has_recent_activity = _is_recent(last_activity_at)
+        activity_score = _build_teacher_activity_score(
+            recent_active_student_count=recent_active_student_count,
+            recent_login_count=recent_login_count,
+            pending_review_count=pending_review_count,
+            draft_count=draft_count,
+            last_activity_at=last_activity_at,
+        )
 
         pending_review_total += pending_review_count
         draft_total += draft_count
@@ -659,6 +697,10 @@ def _build_teacher_dashboard_context(
         offering["draft_count"] = draft_count
         offering["exam_count"] = exam_count
         offering["pending_review_count"] = pending_review_count
+        offering["recent_active_student_count"] = recent_active_student_count
+        offering["recent_login_count"] = recent_login_count
+        offering["activity_score"] = activity_score
+        offering["last_activity_sort"] = _dashboard_datetime_sort_value(last_activity_at)
         offering["last_activity_at"] = last_activity_at or ""
         offering["needs_attention"] = needs_attention
         offering["has_recent_activity"] = has_recent_activity
@@ -682,12 +724,18 @@ def _build_teacher_dashboard_context(
             *meta,
             *(badge.get("label") for badge in badges),
             *(f"{metric['label']} {metric['value']} {metric['note']}" for metric in offering["metrics"]),
+            f"近{RECENT_ACTIVITY_DAYS}天活跃学生 {recent_active_student_count}",
+            f"近{RECENT_ACTIVITY_DAYS}天登录 {recent_login_count}",
         )
         enriched_offerings.append(offering)
 
     _attach_teacher_timeline_items(conn, enriched_offerings)
     enriched_offerings.sort(
         key=lambda item: (
+            -_dashboard_int(item.get("activity_score")),
+            -_dashboard_int(item.get("recent_active_student_count")),
+            -_dashboard_int(item.get("recent_login_count")),
+            -_dashboard_int(item.get("last_activity_sort")),
             _dashboard_sort_text(item.get("department_label")),
             _dashboard_sort_text(item.get("class_name")),
             _dashboard_sort_text(item.get("course_name")),
@@ -1349,6 +1397,28 @@ def _load_teacher_pending_submission_stats(conn, offering_ids: list[int]) -> dic
         tuple(offering_ids),
     ).fetchall()
     return {int(row["offering_id"]): dict(row) for row in rows}
+
+
+def _load_teacher_recent_login_stats(conn, class_ids: list[int]) -> dict[int, dict[str, Any]]:
+    normalized_class_ids = sorted({int(class_id) for class_id in class_ids if int(class_id) > 0})
+    if not normalized_class_ids:
+        return {}
+    placeholders = ",".join("?" for _ in normalized_class_ids)
+    cutoff = (datetime.now() - timedelta(days=RECENT_ACTIVITY_DAYS)).isoformat()
+    rows = conn.execute(
+        f"""
+        SELECT class_id,
+               COUNT(DISTINCT student_id) AS recent_active_student_count,
+               COUNT(*) AS recent_login_count,
+               MAX(logged_at) AS latest_login_at
+        FROM student_login_audit_logs
+        WHERE class_id IN ({placeholders})
+          AND logged_at >= ?
+        GROUP BY class_id
+        """,
+        (*normalized_class_ids, cutoff),
+    ).fetchall()
+    return {int(row["class_id"]): dict(row) for row in rows}
 
 
 def _load_course_resource_stats(
