@@ -14,6 +14,11 @@ function compactText(value) {
     return normalizeText(value).replace(/\s+/g, '');
 }
 
+function toNumber(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
 if (root) {
     const cards = Array.from(root.querySelectorAll('[data-offering-card]'));
     const filterButtons = Array.from(root.querySelectorAll('[data-filter-value]'));
@@ -72,6 +77,10 @@ if (root) {
             classId: String(card.dataset.classId || ''),
             courseName: normalizeGroupLabel(card.dataset.courseName, '未命名课程'),
             courseId: String(card.dataset.courseId || ''),
+            activityScore: toNumber(card.dataset.activityScore),
+            recentUserCount: toNumber(card.dataset.recentUserCount),
+            recentLoginCount: toNumber(card.dataset.recentLoginCount),
+            lastActivitySort: toNumber(card.dataset.lastActivitySort),
             timelineItems: parseTimelineItems(card.dataset.timelineItems),
             visible: !card.hidden,
         });
@@ -496,6 +505,7 @@ if (root) {
 
     function renderTimelineFocus(container, group) {
         container.replaceChildren();
+        const orderedItems = [...group.items].sort(compareTimelineSession);
         const header = document.createElement('div');
         header.className = 'dashboard-timeline-focus__header';
         const copy = document.createElement('div');
@@ -511,7 +521,7 @@ if (root) {
 
         const sessionList = document.createElement('div');
         sessionList.className = 'dashboard-timeline-session-list';
-        group.items.forEach((item) => {
+        orderedItems.forEach((item) => {
             const session = document.createElement('a');
             session.className = `dashboard-timeline-session is-${item.status || 'upcoming'}`;
             session.href = item.href || '#';
@@ -536,7 +546,7 @@ if (root) {
         });
 
         const grid = createCardGrid();
-        const uniqueCards = uniqueCardsFromTimeline(group.items);
+        const uniqueCards = uniqueCardsFromTimeline(orderedItems);
         appendCards(grid, sortCards(uniqueCards, ['courseName', 'className']));
         container.append(header, sessionList, grid);
     }
@@ -611,6 +621,10 @@ if (root) {
 
     function sortCards(cardList, fields) {
         return [...cardList].sort((a, b) => {
+            const activityCompared = compareCardsByActivity(a, b);
+            if (activityCompared !== 0) {
+                return activityCompared;
+            }
             const stateA = cardState.get(a) || {};
             const stateB = cardState.get(b) || {};
             for (const field of fields) {
@@ -629,11 +643,67 @@ if (root) {
             const rawKey = String(getKey(card) || '未分类');
             const label = rawKey.includes('|') ? rawKey.split('|').pop() : rawKey;
             if (!buckets.has(rawKey)) {
-                buckets.set(rawKey, { key: rawKey, label: label || '未分类', items: [] });
+                buckets.set(rawKey, {
+                    key: rawKey,
+                    label: label || '未分类',
+                    items: [],
+                    maxActivityScore: 0,
+                    totalActivityScore: 0,
+                    maxRecentUserCount: 0,
+                    totalRecentUserCount: 0,
+                    maxRecentLoginCount: 0,
+                    totalRecentLoginCount: 0,
+                    maxLastActivitySort: 0,
+                });
             }
-            buckets.get(rawKey).items.push(card);
+            const bucket = buckets.get(rawKey);
+            bucket.items.push(card);
+            addCardActivityToGroup(bucket, card);
         });
-        return Array.from(buckets.values()).sort((a, b) => compareText(a.label, b.label));
+        return Array.from(buckets.values()).sort(compareGroupsByActivity);
+    }
+
+    function addCardActivityToGroup(group, card) {
+        const state = cardState.get(card) || {};
+        group.maxActivityScore = Math.max(group.maxActivityScore, state.activityScore || 0);
+        group.totalActivityScore += state.activityScore || 0;
+        group.maxRecentUserCount = Math.max(group.maxRecentUserCount, state.recentUserCount || 0);
+        group.totalRecentUserCount += state.recentUserCount || 0;
+        group.maxRecentLoginCount = Math.max(group.maxRecentLoginCount, state.recentLoginCount || 0);
+        group.totalRecentLoginCount += state.recentLoginCount || 0;
+        group.maxLastActivitySort = Math.max(group.maxLastActivitySort, state.lastActivitySort || 0);
+    }
+
+    function compareGroupsByActivity(a, b) {
+        const fields = [
+            'maxRecentUserCount',
+            'totalRecentUserCount',
+            'maxRecentLoginCount',
+            'totalRecentLoginCount',
+            'maxActivityScore',
+            'totalActivityScore',
+            'maxLastActivitySort',
+        ];
+        for (const field of fields) {
+            const difference = (b[field] || 0) - (a[field] || 0);
+            if (difference !== 0) {
+                return difference;
+            }
+        }
+        return compareText(a.label, b.label);
+    }
+
+    function compareCardsByActivity(a, b) {
+        const stateA = cardState.get(a) || {};
+        const stateB = cardState.get(b) || {};
+        const fields = ['recentUserCount', 'recentLoginCount', 'activityScore', 'lastActivitySort'];
+        for (const field of fields) {
+            const difference = (stateB[field] || 0) - (stateA[field] || 0);
+            if (difference !== 0) {
+                return difference;
+            }
+        }
+        return 0;
     }
 
     function summarizeUnique(cardList, field, suffix) {
@@ -680,7 +750,20 @@ if (root) {
 
     function compareTimelineItems(a, b) {
         return compareText(a.starts_at, b.starts_at)
+            || compareTimelineSession(a, b)
             || compareText(a.course_name, b.course_name)
+            || compareText(a.class_name, b.class_name)
+            || compareText(a.title, b.title);
+    }
+
+    function compareTimelineSession(a, b) {
+        if (a.card && b.card) {
+            const activityCompared = compareCardsByActivity(a.card, b.card);
+            if (activityCompared !== 0) {
+                return activityCompared;
+            }
+        }
+        return compareText(a.course_name, b.course_name)
             || compareText(a.class_name, b.class_name)
             || compareText(a.title, b.title);
     }

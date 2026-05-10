@@ -163,6 +163,10 @@
                         data-class-id="{{ offering.class_id }}"
                         data-course-name="{{ offering.course_name }}"
                         data-course-id="{{ offering.course_id }}"
+                        data-activity-score="{{ offering.activity_score|default(0) }}"
+                        data-recent-user-count="{{ offering.recent_active_student_count|default(0) }}"
+                        data-recent-login-count="{{ offering.recent_login_count|default(0) }}"
+                        data-last-activity-sort="{{ offering.last_activity_sort|default(0) }}"
                         data-timeline-items='{{ offering.timeline_items|default([])|tojson|forceescape }}'
                         aria-hidden="{{ 'false' if offering.initially_visible else 'true' }}"
                         {% if not offering.initially_visible %}hidden{% endif %}
@@ -369,5 +373,5 @@
 <script>
     window.DASHBOARD_SEMESTER_CALENDAR = {{ dashboard_semester_calendar | tojson }};
 </script>
-<script type="module" src="/static/js/dashboard.js?v=dashboard-organized-20260510"></script>
+<script type="module" src="/static/js/dashboard.js?v=dashboard-activity-grouped-20260510"></script>
 {% endblock %}
