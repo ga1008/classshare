@@ -35,6 +35,7 @@ if (root) {
 
     const cardState = new Map();
     const collator = new Intl.Collator('zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+    const recentActivityDays = toNumber(root.dataset.recentActivityDays) || 14;
     const groupModeLabels = {
         department: '系别班级',
         course: '课程',
@@ -62,6 +63,7 @@ if (root) {
         activeGroupMode = 'department';
     }
     let activeTimelineKey = '';
+    let groupSectionSerial = 0;
     let isComposing = false;
     let searchTimerId = 0;
 
@@ -355,6 +357,7 @@ if (root) {
                 key: `department:${departmentGroup.key}`,
                 title: departmentGroup.label,
                 subtitle: `${classGroups.length} 个班级 · ${departmentGroup.items.length} 个课堂`,
+                activityLabel: buildGroupActivityLabel(departmentGroup),
                 count: departmentGroup.items.length,
                 level: 1,
                 tone: 'department',
@@ -368,6 +371,7 @@ if (root) {
                     key: `department:${departmentGroup.key}:class:${classGroup.key}`,
                     title: className,
                     subtitle: summarizeUnique(classGroup.items, 'courseName', '门课程'),
+                    activityLabel: buildGroupActivityLabel(classGroup),
                     count: classGroup.items.length,
                     level: 2,
                     tone: 'class',
@@ -399,6 +403,7 @@ if (root) {
                 key: `course:${courseGroup.key}`,
                 title: courseName,
                 subtitle: `${summarizeUnique(courseGroup.items, 'department', '个系别')} · ${summarizeUnique(courseGroup.items, 'className', '个班级')}`,
+                activityLabel: buildGroupActivityLabel(courseGroup),
                 count: courseGroup.items.length,
                 level: 1,
                 tone: 'course',
@@ -551,14 +556,18 @@ if (root) {
         container.append(header, sessionList, grid);
     }
 
-    function createGroupSection({ key, title, subtitle, count, level, tone }) {
+    function createGroupSection({ key, title, subtitle, activityLabel, count, level, tone }) {
         const isCollapsed = collapsedGroups.has(key);
+        const bodyId = `dashboard-group-body-${++groupSectionSerial}`;
         const section = document.createElement('section');
         section.className = `dashboard-group-section dashboard-group-section--level-${level} dashboard-group-section--${tone}`;
-        section.classList.toggle('is-collapsed', isCollapsed);
+        section.dataset.groupSection = '';
 
         const header = document.createElement('div');
         header.className = 'dashboard-group-header';
+        header.tabIndex = 0;
+        header.setAttribute('role', 'button');
+        header.setAttribute('aria-controls', bodyId);
         const copy = document.createElement('div');
         copy.className = 'dashboard-group-header__copy';
         const heading = document.createElement('h3');
@@ -569,6 +578,12 @@ if (root) {
 
         const actions = document.createElement('div');
         actions.className = 'dashboard-group-header__actions';
+        if (activityLabel) {
+            const activityPill = document.createElement('span');
+            activityPill.className = 'dashboard-group-activity';
+            activityPill.textContent = activityLabel;
+            actions.appendChild(activityPill);
+        }
         const pill = document.createElement('span');
         pill.className = 'dashboard-group-count';
         pill.textContent = `${count} 个`;
@@ -586,23 +601,83 @@ if (root) {
 
         const body = document.createElement('div');
         body.className = 'dashboard-group-body';
-        body.hidden = isCollapsed;
-        toggle.addEventListener('click', () => {
-            const nextCollapsed = !section.classList.contains('is-collapsed');
+        body.id = bodyId;
+        const bodyInner = document.createElement('div');
+        bodyInner.className = 'dashboard-group-body__inner';
+        body.appendChild(bodyInner);
+
+        const setCollapsed = (nextCollapsed, { persist = true } = {}) => {
             section.classList.toggle('is-collapsed', nextCollapsed);
-            body.hidden = nextCollapsed;
+            body.setAttribute('aria-hidden', String(nextCollapsed));
+            header.setAttribute('aria-expanded', String(!nextCollapsed));
+            header.setAttribute('aria-label', `${title || '当前分组'}，${nextCollapsed ? '已收缩，点击展开' : '已展开，点击收缩'}`);
             toggle.setAttribute('aria-expanded', String(!nextCollapsed));
             toggle.setAttribute('aria-label', `${nextCollapsed ? '展开' : '折叠'}${title || '当前分组'}`);
+            if ('inert' in bodyInner) {
+                bodyInner.inert = nextCollapsed;
+            }
+            if (!persist) {
+                return;
+            }
             if (nextCollapsed) {
                 collapsedGroups.add(key);
             } else {
                 collapsedGroups.delete(key);
             }
             writeJsonStorage('dashboard:teacher-collapsed-groups', Array.from(collapsedGroups));
+        };
+
+        const toggleCollapsed = () => {
+            setCollapsed(!section.classList.contains('is-collapsed'));
+        };
+
+        toggle.addEventListener('click', (event) => {
+            event.stopPropagation();
+            toggleCollapsed();
         });
 
+        header.addEventListener('click', (event) => {
+            if (isNativeInteractiveElement(event.target)) {
+                return;
+            }
+            event.stopPropagation();
+            toggleCollapsed();
+        });
+
+        header.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') {
+                return;
+            }
+            event.preventDefault();
+            toggleCollapsed();
+        });
+
+        section.addEventListener('click', (event) => {
+            if (!section.classList.contains('is-collapsed') || isNativeInteractiveElement(event.target)) {
+                return;
+            }
+            setCollapsed(false);
+        });
+
+        setCollapsed(isCollapsed, { persist: false });
         section.append(header, body);
-        return { section, body };
+        return { section, body: bodyInner };
+    }
+
+    function buildGroupActivityLabel(group) {
+        const activeUsers = Math.round(group.maxRecentUserCount || 0);
+        if (activeUsers > 0) {
+            return `近${recentActivityDays}天活跃 ${activeUsers} 人`;
+        }
+        const logins = Math.round(group.maxRecentLoginCount || 0);
+        if (logins > 0) {
+            return `近${recentActivityDays}天登录 ${logins} 次`;
+        }
+        return '';
+    }
+
+    function isNativeInteractiveElement(target) {
+        return Boolean(target?.closest?.('a, button, input, select, textarea, label, summary, [contenteditable="true"]'));
     }
 
     function createCardGrid() {
