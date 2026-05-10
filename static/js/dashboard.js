@@ -607,7 +607,15 @@ if (root) {
         body.appendChild(bodyInner);
 
         const setCollapsed = (nextCollapsed, { persist = true } = {}) => {
-            section.classList.toggle('is-collapsed', nextCollapsed);
+            const isCurrentlyCollapsed = section.classList.contains('is-collapsed');
+            const shouldAnimate = persist && isCurrentlyCollapsed !== nextCollapsed && body.isConnected;
+            if (shouldAnimate) {
+                animateGroupBody(section, body, nextCollapsed);
+            } else {
+                section.classList.toggle('is-collapsed', nextCollapsed);
+                body.classList.remove('is-animating');
+                body.style.height = nextCollapsed ? '0px' : 'auto';
+            }
             body.setAttribute('aria-hidden', String(nextCollapsed));
             header.setAttribute('aria-expanded', String(!nextCollapsed));
             header.setAttribute('aria-label', `${title || '当前分组'}，${nextCollapsed ? '已收缩，点击展开' : '已展开，点击收缩'}`);
@@ -678,6 +686,46 @@ if (root) {
 
     function isNativeInteractiveElement(target) {
         return Boolean(target?.closest?.('a, button, input, select, textarea, label, summary, [contenteditable="true"]'));
+    }
+
+    function animateGroupBody(section, body, nextCollapsed) {
+        if (body._dashboardGroupAnimationCleanup) {
+            body._dashboardGroupAnimationCleanup();
+        }
+
+        const startHeight = body.getBoundingClientRect().height;
+        body.classList.add('is-animating');
+        body.style.height = `${startHeight}px`;
+        body.offsetHeight;
+        section.classList.toggle('is-collapsed', nextCollapsed);
+
+        const targetHeight = nextCollapsed ? 0 : body.scrollHeight;
+        let done = false;
+        let targetApplied = false;
+        const cleanup = (event) => {
+            if (!targetApplied) {
+                return;
+            }
+            if (event?.type === 'transitionend' && (event.target !== body || event.propertyName !== 'height')) {
+                return;
+            }
+            if (done) {
+                return;
+            }
+            done = true;
+            body.removeEventListener('transitionend', cleanup);
+            body.classList.remove('is-animating');
+            body.style.height = nextCollapsed ? '0px' : 'auto';
+            body._dashboardGroupAnimationCleanup = null;
+        };
+        body._dashboardGroupAnimationCleanup = cleanup;
+        body.addEventListener('transitionend', cleanup);
+
+        window.requestAnimationFrame(() => {
+            targetApplied = true;
+            body.style.height = `${targetHeight}px`;
+            window.setTimeout(() => cleanup(), 280);
+        });
     }
 
     function createCardGrid() {
