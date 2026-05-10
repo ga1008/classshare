@@ -927,6 +927,11 @@ def _split_streaming_response(text: str) -> tuple[str, str]:
 
 
 STREAM_EVENT_MEDIA_TYPE = "application/x-ndjson; charset=utf-8"
+STREAM_RESPONSE_HEADERS = {
+    "Cache-Control": "no-cache, no-transform",
+    "X-Accel-Buffering": "no",
+    "Content-Encoding": "identity",
+}
 
 
 def _encode_stream_event(event: str, **payload: Any) -> str:
@@ -1690,7 +1695,7 @@ async def handle_ai_chat(
     return StreamingResponse(
         structured_stream_and_save_generator(),
         media_type=STREAM_EVENT_MEDIA_TYPE,
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers=STREAM_RESPONSE_HEADERS,
     )
 
 

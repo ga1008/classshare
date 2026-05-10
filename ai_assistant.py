@@ -1000,6 +1000,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)  # 2. 在此处注册 lifespan
 
 STREAM_EVENT_MEDIA_TYPE = "application/x-ndjson; charset=utf-8"
+STREAM_RESPONSE_HEADERS = {
+    "Cache-Control": "no-cache, no-transform",
+    "X-Accel-Buffering": "no",
+    "Content-Encoding": "identity",
+}
 THINK_TAG_OPEN = "<think>"
 THINK_TAG_CLOSE = "</think>"
 
@@ -3200,7 +3205,7 @@ async def ai_chat_task_stream(req: AIChatRequest):
     return StreamingResponse(
         stream_generator,
         media_type=STREAM_EVENT_MEDIA_TYPE,
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers=STREAM_RESPONSE_HEADERS,
     )
 
 

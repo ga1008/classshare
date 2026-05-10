@@ -61,7 +61,15 @@ class CacheControlStaticFiles(StaticFiles):
         return response
 
 
-app.add_middleware(GZipMiddleware, minimum_size=1024)
+class StreamingAwareGZipMiddleware(GZipMiddleware):
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http" and scope.get("path") == "/api/ai/chat":
+            await self.app(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
+
+
+app.add_middleware(StreamingAwareGZipMiddleware, minimum_size=1024)
 
 
 # -----------------
