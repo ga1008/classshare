@@ -26,11 +26,16 @@ x-lanshare-service: &lanshare-service
   networks:
     - lanshare
 
+x-lanshare-timezone: &lanshare-timezone
+  TZ: ${TZ:-Asia/Shanghai}
+  APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Shanghai}
+
 services:
   ai:
     <<: *lanshare-service
     command: ["ai"]
     environment:
+      <<: *lanshare-timezone
       AI_HOST: 0.0.0.0
       AI_PORT: "8001"
       MAIN_APP_CALLBACK_URL: http://app:8000/api/internal/grading-complete
@@ -54,6 +59,7 @@ services:
       ai:
         condition: service_healthy
     environment:
+      <<: *lanshare-timezone
       MAIN_HOST: 0.0.0.0
       MAIN_PORT: "8000"
       AI_ASSISTANT_URL: http://ai:8001
@@ -75,6 +81,7 @@ services:
     <<: *lanshare-service
     command: ["mailer"]
     environment:
+      <<: *lanshare-timezone
       EMAIL_WORKER_ID: mailer-compose
     healthcheck:
       test:
@@ -96,6 +103,7 @@ services:
       app:
         condition: service_healthy
     environment:
+      <<: *lanshare-timezone
       BLOG_NEWS_CRAWLER_WORKER_ID: blog-crawler-compose
       BLOG_NEWS_CRAWLER_POLL_SECONDS: "60"
       AI_ASSISTANT_URL: http://ai:8001

@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 
 # --- 加载 .env 配置 ---
 load_dotenv()
+from classroom_app.time_utils import app_timezone_name, local_iso
 
 # --- 文档文本提取 ---
 import re as _re
@@ -1016,6 +1017,8 @@ async def internal_health():
         "service": "ai",
         "enabled_platforms": ENABLED_PLATFORMS,
         "port": AI_PORT,
+        "timezone": app_timezone_name(),
+        "server_local_time": local_iso(),
     }
 
 

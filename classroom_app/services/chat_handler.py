@@ -13,6 +13,7 @@ from fastapi import WebSocket
 
 from ..config import CHAT_LOG_DIR
 from ..database import get_db_connection
+from ..time_utils import aware_local_now, format_local_time, local_iso, local_now
 
 REFRESH_DEBOUNCE_SECONDS = 5
 INITIAL_HISTORY_WINDOW_HOURS = 24
@@ -137,9 +138,9 @@ def parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
 
 
 def format_display_time(logged_at: Optional[str], fallback: str = "") -> str:
-    parsed = parse_iso_datetime(logged_at)
-    if parsed is not None:
-        return parsed.strftime("%H:%M")
+    formatted = format_local_time(logged_at)
+    if formatted:
+        return formatted
 
     if isinstance(fallback, str) and len(fallback) >= 16 and "T" in fallback:
         return fallback[11:16]
@@ -250,7 +251,7 @@ def ensure_room_history_migrated(room_id: int) -> None:
             with get_db_connection() as conn:
                 conn.execute(
                     "INSERT OR REPLACE INTO chat_log_migrations (class_offering_id, migrated_at) VALUES (?, ?)",
-                    (room_id, datetime.now().isoformat()),
+                    (room_id, local_iso()),
                 )
                 conn.commit()
             _migrated_rooms.add(room_id)
@@ -314,7 +315,7 @@ def ensure_room_history_migrated(room_id: int) -> None:
                             )
                     conn.execute(
                         "INSERT OR REPLACE INTO chat_log_migrations (class_offering_id, migrated_at) VALUES (?, ?)",
-                        (room_id, datetime.now().isoformat()),
+                        (room_id, local_iso()),
                     )
                     conn.commit()
             except Exception as exc:
@@ -324,7 +325,7 @@ def ensure_room_history_migrated(room_id: int) -> None:
             with get_db_connection() as conn:
                 conn.execute(
                     "INSERT OR REPLACE INTO chat_log_migrations (class_offering_id, migrated_at) VALUES (?, ?)",
-                    (room_id, datetime.now().isoformat()),
+                    (room_id, local_iso()),
                 )
                 conn.commit()
 
@@ -367,7 +368,7 @@ def row_to_chat_message(row) -> dict:
 
 def get_initial_history_payload(room_id: int) -> dict:
     ensure_room_history_migrated(room_id)
-    cutoff = (datetime.now() - timedelta(hours=INITIAL_HISTORY_WINDOW_HOURS)).isoformat()
+    cutoff = (local_now() - timedelta(hours=INITIAL_HISTORY_WINDOW_HOURS)).isoformat()
 
     with get_db_connection() as conn:
         rows = conn.execute(
@@ -512,7 +513,7 @@ def _save_chat_message_sync(room_id: int, message: dict) -> dict:
     role = str(message.get("role") or "student")
     content = str(message.get("message") or "")
     timestamp = str(message.get("timestamp") or "")
-    logged_at = str(message.get("logged_at") or datetime.now().isoformat())
+    logged_at = str(message.get("logged_at") or local_iso())
     user_id = str(message.get("user_id") or sender)
     message_type = str(message.get("message_type") or "text")
     emoji_payload = message.get("custom_emojis") or []
@@ -659,7 +660,7 @@ class MultiRoomConnectionManager:
         if next_switch_at is None:
             return 0
 
-        now = datetime.now(next_switch_at.tzinfo) if next_switch_at.tzinfo else datetime.now()
+        now = aware_local_now().astimezone(next_switch_at.tzinfo) if next_switch_at.tzinfo else local_now()
         remaining_seconds = (next_switch_at - now).total_seconds()
         if remaining_seconds <= 0:
             return 0
@@ -882,7 +883,7 @@ class MultiRoomConnectionManager:
         new_name = random.choice(alias_status["available_aliases"])
         session = self.ensure_alias_session(room_id, participant_key)
         session["switches_used"] = int(session.get("switches_used") or 0) + 1
-        session["last_switched_at"] = datetime.now().isoformat()
+        session["last_switched_at"] = local_iso()
         self.room_display_names[room_id][participant_key] = new_name
         return {
             "success": True,
