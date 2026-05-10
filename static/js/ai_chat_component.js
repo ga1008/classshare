@@ -495,16 +495,27 @@ class AIChatComponent {
             content = '',
             thinkingContent = '',
             thinkingState = 'none',
+            statusText = '',
             showStreamingCursor = false
         } = options;
 
         bubble.innerHTML = '';
         const hasThinking = thinkingState !== 'none' && (thinkingContent.trim() || thinkingState === 'thinking');
         const shouldShowAnswer = thinkingState !== 'thinking' && (Boolean(content) || !hasThinking || showStreamingCursor);
+        const shouldShowStatus = Boolean(statusText) && !content && !hasThinking;
 
         if (hasThinking) {
             const thinkingSection = this.createThinkingSection(thinkingContent, { status: thinkingState });
             bubble.appendChild(thinkingSection);
+        }
+
+        if (shouldShowStatus) {
+            const statusSection = document.createElement('div');
+            statusSection.className = 'stream-status';
+            statusSection.textContent = statusText;
+            statusSection.appendChild(document.createElement('span')).className = 'streaming-cursor';
+            bubble.appendChild(statusSection);
+            return;
         }
 
         if (shouldShowAnswer) {
@@ -593,6 +604,7 @@ class AIChatComponent {
             thinkingContent: '',
             finalAnswer: '',
             thinkingState: 'none',
+            statusText: '\u6b63\u5728\u8fde\u63a5 AI \u52a9\u624b...',
             errorMessage: '',
             meta: null
         };
@@ -604,25 +616,48 @@ class AIChatComponent {
         }
 
         switch (event.event) {
+            case 'stream_start':
+                if (!streamState.finalAnswer && !streamState.thinkingContent) {
+                    streamState.statusText = event.thinking_requested
+                        ? '\u6b63\u5728\u8fde\u63a5\u6df1\u5ea6\u601d\u8003\u6a21\u578b...'
+                        : '\u6b63\u5728\u8fde\u63a5 AI \u52a9\u624b...';
+                }
+                break;
+            case 'queue_keepalive':
+                if (!streamState.finalAnswer && !streamState.thinkingContent) {
+                    streamState.statusText = event.thinking_requested
+                        ? '\u6a21\u578b\u6b63\u5728\u6392\u961f\u6216\u601d\u8003\uff0c\u8bf7\u7a0d\u5019...'
+                        : '\u6b63\u5728\u7b49\u5f85 AI \u6d41\u5f0f\u8f93\u51fa...';
+                }
+                break;
             case 'meta':
                 streamState.meta = event;
                 streamState.thinkingSupported = Boolean(event.thinking_supported);
                 streamState.thinkingState = streamState.thinkingSupported ? 'thinking' : 'none';
+                streamState.statusText = streamState.thinkingSupported
+                    ? ''
+                    : '\u6b63\u5728\u751f\u6210\u56de\u590d...';
                 break;
             case 'thinking_delta':
+                streamState.statusText = '';
                 streamState.thinkingContent += event.delta || '';
                 streamState.thinkingState = 'thinking';
                 break;
             case 'thinking_end':
                 streamState.thinkingState = streamState.thinkingContent.trim() ? 'done' : 'none';
+                streamState.statusText = streamState.finalAnswer
+                    ? ''
+                    : '\u6b63\u5728\u7ec4\u7ec7\u6700\u7ec8\u56de\u590d...';
                 break;
             case 'answer_delta':
+                streamState.statusText = '';
                 if (streamState.thinkingState === 'thinking') {
                     streamState.thinkingState = streamState.thinkingContent.trim() ? 'done' : 'none';
                 }
                 streamState.finalAnswer += event.delta || '';
                 break;
             case 'error':
+                streamState.statusText = '';
                 streamState.errorMessage = event.message || '请求失败';
                 if (!streamState.finalAnswer) {
                     streamState.finalAnswer = `抱歉，请求出错了: ${streamState.errorMessage}`;
@@ -632,6 +667,7 @@ class AIChatComponent {
                 }
                 break;
             case 'done':
+                streamState.statusText = '';
                 if (streamState.thinkingState === 'thinking') {
                     streamState.thinkingState = streamState.thinkingContent.trim() ? 'done' : 'none';
                 }
@@ -647,6 +683,7 @@ class AIChatComponent {
             content: streamState.finalAnswer,
             thinkingContent: streamState.thinkingContent,
             thinkingState: streamState.thinkingState,
+            statusText: streamState.statusText,
             showStreamingCursor: streamState.thinkingState === 'none' || Boolean(streamState.finalAnswer)
         });
     }
@@ -809,6 +846,7 @@ class AIChatComponent {
 
         // 重置思考过程状态
         const streamState = this.createStreamState();
+        this.renderStreamState(aiBubble, streamState);
         let streamBuffer = '';
         const decoder = new TextDecoder("utf-8");
 
