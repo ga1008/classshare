@@ -222,6 +222,7 @@ async def _call_ai_chat(system_prompt: str, new_message: str, capability: str = 
         "new_message": new_message,
         "base64_urls": [],
         "model_capability": capability,
+        "task_type": "deep_text_reasoning" if capability == "thinking" else "fast_text_response",
         "web_search_enabled": False,
     }
     try:

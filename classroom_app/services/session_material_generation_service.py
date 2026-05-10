@@ -797,6 +797,7 @@ async def _call_generation_ai(
         "base64_urls": [],
         "file_texts": file_texts,
         "model_capability": "thinking",
+        "task_type": "deep_text_reasoning",
         "response_format": "json",
         "task_priority": "background",
         "task_label": "session_material_generate",
