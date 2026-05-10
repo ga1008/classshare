@@ -795,26 +795,22 @@
 }
 
 .dashboard-group-body {
-    display: grid;
-    grid-template-rows: 1fr;
     overflow: hidden;
-    padding: 14px;
+    height: auto;
     opacity: 1;
     transform: translateY(0);
-    transition: grid-template-rows 240ms cubic-bezier(0.22, 1, 0.36, 1), padding 240ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease, transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition: height 190ms cubic-bezier(0.2, 0, 0, 1), opacity 130ms ease, transform 170ms cubic-bezier(0.2, 0, 0, 1);
+    will-change: height, opacity, transform;
 }
 
 .dashboard-group-body__inner {
-    min-height: 0;
-    overflow: hidden;
+    padding: 14px;
 }
 
 .dashboard-group-section.is-collapsed .dashboard-group-body {
-    grid-template-rows: 0fr;
-    padding-top: 0;
-    padding-bottom: 0;
+    height: 0;
     opacity: 0;
-    transform: translateY(-4px);
+    transform: translateY(-3px);
     pointer-events: none;
 }
 
@@ -1729,7 +1725,7 @@
         justify-content: flex-start;
     }
 
-    .dashboard-group-body,
+    .dashboard-group-body__inner,
     .dashboard-timeline-shell {
         padding: 12px;
     }
@@ -1801,11 +1797,6 @@
     .dashboard-section-pill {
         width: fit-content;
     }
-}
-
-.dashboard-group-section.is-collapsed .dashboard-group-body {
-    padding-top: 0;
-    padding-bottom: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
