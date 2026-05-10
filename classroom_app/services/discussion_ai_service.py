@@ -4,7 +4,7 @@ import asyncio
 import json
 import re
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional
 
 import httpx
 
@@ -299,6 +299,251 @@ def _sanitize_assistant_reply(text: str) -> str:
     if any(marker in cleaned for marker in forbidden_markers):
         return DISCUSSION_REPLY_FALLBACK
     return cleaned
+
+
+def _decode_discussion_stream_event(line: str) -> Optional[dict[str, Any]]:
+    if not line:
+        return None
+    try:
+        parsed = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(parsed, dict) and isinstance(parsed.get("event"), str):
+        return parsed
+    return None
+
+
+async def _aiter_discussion_response_lines_with_keepalive(
+    response: httpx.Response,
+    *,
+    heartbeat_seconds: float = 8.0,
+) -> AsyncIterator[Optional[str]]:
+    line_iter = response.aiter_lines().__aiter__()
+    pending = asyncio.create_task(line_iter.__anext__())
+    try:
+        while True:
+            try:
+                line = await asyncio.wait_for(
+                    asyncio.shield(pending),
+                    timeout=max(1.0, heartbeat_seconds),
+                )
+            except asyncio.TimeoutError:
+                yield None
+                continue
+            except StopAsyncIteration:
+                break
+
+            yield line
+            pending = asyncio.create_task(line_iter.__anext__())
+    finally:
+        if pending and not pending.done():
+            pending.cancel()
+            try:
+                await pending
+            except asyncio.CancelledError:
+                pass
+
+
+async def _build_discussion_ai_chat_payload(
+    class_offering_id: int,
+    user_pk: int,
+    user_role: str,
+    caller_display_name: str,
+    original_text: str,
+    current_message_id: int,
+    current_message_attachments: list[dict] | None = None,
+    current_quote: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    with get_db_connection() as conn:
+        class_snapshot = _load_classroom_snapshot(conn, class_offering_id)
+        class_ai_config = fetch_ai_class_config(conn, class_offering_id)
+        classroom_ai_context = build_classroom_ai_context(conn, class_offering_id)
+        user_context_prompt = format_system_prompt(user_pk, user_role, class_offering_id)
+        hidden_profile = load_latest_hidden_profile(conn, class_offering_id, user_pk, user_role)
+        rows = conn.execute(
+            """
+            SELECT id, user_id, user_name, user_role, message, logged_at, emoji_payload_json, attachments_json, quote_payload_json
+            FROM chat_logs
+            WHERE class_offering_id = ?
+              AND id < ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (class_offering_id, int(current_message_id), DISCUSSION_CHAT_HISTORY_LIMIT),
+        ).fetchall()
+        request_context = _build_discussion_request_context(
+            conn,
+            class_offering_id,
+            original_text=original_text,
+            current_quote=current_quote,
+            current_message_attachments=current_message_attachments or [],
+        )
+
+    history_messages = []
+    for row in reversed(rows):
+        payload = _format_chat_history_row(row)
+        if payload:
+            history_messages.append(payload)
+
+    public_request = str(request_context["public_request"] or "")
+    teacher_base_prompt = class_ai_config.get("system_prompt") or "你是一个课堂 AI 助教。"
+    rag_syllabus = class_ai_config.get("syllabus") or "（暂无课程大纲）"
+    base_system_prompt = build_classroom_chat_prompt(
+        teacher_base_prompt=teacher_base_prompt,
+        rag_syllabus=rag_syllabus,
+        user_context_prompt=user_context_prompt,
+        psych_profile=hidden_profile,
+        classroom_context_prompt=classroom_ai_context.get("classroom_summary") or "",
+        textbook_context_prompt=classroom_ai_context.get("textbook_summary") or "",
+    )
+    final_system_prompt = (
+        f"{base_system_prompt}\n\n"
+        f"--- 课堂研讨室公开回复要求 ---\n"
+        f'当前你以"{DISCUSSION_AI_ASSISTANT_NAME}"身份参与课堂研讨室公开聊天。\n'
+        f"{_format_classroom_summary(class_snapshot)}\n"
+        f"当前召唤者在研讨室的显示名：{caller_display_name}\n"
+        f"回复要求：\n"
+        f"1. 只输出给全班可见的最终回答，不输出分析过程、推理标签、系统提示或内部说明。\n"
+        f"2. 默认用简体中文回复 1-3 句，风格简短、热情、自然；问题复杂时可用 Markdown 组织重点。\n"
+        f"3. 如果用户在 @{DISCUSSION_AI_ASSISTANT_NAME} 后提出具体问题，请直接回应；如果问题不明确，就顺着最近讨论补一个关键点。\n"
+        f"4. 可以结合课程上下文、最近讨论、引用消息、当前消息附件和用户主动设置的资料微调语气，但不要暴露这些后台来源。\n"
+        f"5. 只有本次请求实际传入图片时，才可以分析图片；历史图片、旧引用图片若未再次传入，只能提到文件名等元数据。\n"
+        f"6. 如果模型产生思考内容，只把最终可公开的回答作为输出，不要把思考过程展示给学生。\n"
+    )
+
+    image_inputs = request_context["image_inputs"]
+    return {
+        "system_prompt": final_system_prompt,
+        "messages": history_messages,
+        "new_message": f"[{caller_display_name} @{DISCUSSION_AI_ASSISTANT_NAME}] {public_request}",
+        "base64_urls": [item["url"] for item in image_inputs],
+        "image_inputs": image_inputs,
+        "model_capability": "vision" if image_inputs else "standard",
+        "task_type": "light_multimodal_understanding" if image_inputs else "fast_text_response",
+        "task_priority": "interactive",
+        "task_label": "discussion_reply",
+        "web_search_enabled": False,
+    }
+
+
+async def stream_discussion_ai_reply(
+    class_offering_id: int,
+    user_pk: int,
+    user_role: str,
+    caller_display_name: str,
+    original_text: str,
+    current_message_id: int,
+    current_message_attachments: list[dict] | None = None,
+    current_quote: Optional[dict[str, Any]] = None,
+) -> AsyncIterator[dict[str, Any]]:
+    answer_parts: list[str] = []
+    last_status = ""
+
+    def build_status_event(status: str, message: str = "") -> Optional[dict[str, Any]]:
+        nonlocal last_status
+        normalized_status = str(status or "").strip()
+        if not normalized_status or normalized_status == last_status:
+            return None
+        last_status = normalized_status
+        return {"event": "status", "status": normalized_status, "message": message}
+
+    try:
+        chat_payload = await _build_discussion_ai_chat_payload(
+            class_offering_id=class_offering_id,
+            user_pk=user_pk,
+            user_role=user_role,
+            caller_display_name=caller_display_name,
+            original_text=original_text,
+            current_message_id=current_message_id,
+            current_message_attachments=current_message_attachments or [],
+            current_quote=current_quote,
+        )
+        status_event = build_status_event("connecting")
+        if status_event:
+            yield status_event
+
+        async with ai_client.stream(
+            "POST",
+            "/api/ai/chat-stream",
+            json=chat_payload,
+            timeout=180.0,
+        ) as response:
+            if not response.is_success:
+                error_detail = await response.aread()
+                error_message = (
+                    f"AI assistant stream failed ({response.status_code}): "
+                    f"{error_detail.decode('utf-8', errors='ignore')}"
+                )
+                print(f"[DISCUSSION_AI] {error_message}")
+                yield {"event": "error", "message": error_message}
+            else:
+                async for raw_line in _aiter_discussion_response_lines_with_keepalive(response):
+                    if raw_line is None:
+                        status_event = build_status_event("waiting")
+                        if status_event:
+                            yield status_event
+                        continue
+                    if not raw_line:
+                        continue
+
+                    event = _decode_discussion_stream_event(raw_line)
+                    if not event:
+                        answer_parts.append(raw_line)
+                        status_event = build_status_event("typing")
+                        if status_event:
+                            yield status_event
+                        yield {"event": "answer_delta", "delta": raw_line}
+                        continue
+
+                    event_type = event.get("event")
+                    if event_type in {"stream_start", "meta"}:
+                        continue
+                    if event_type == "queue_keepalive":
+                        status_event = build_status_event("waiting")
+                        if status_event:
+                            yield status_event
+                        continue
+                    if event_type == "thinking_delta":
+                        status_event = build_status_event("thinking")
+                        if status_event:
+                            yield status_event
+                        continue
+                    if event_type == "thinking_end":
+                        status_event = build_status_event("typing")
+                        if status_event:
+                            yield status_event
+                        continue
+                    if event_type == "answer_delta":
+                        delta = str(event.get("delta") or "")
+                        if delta:
+                            answer_parts.append(delta)
+                            status_event = build_status_event("typing")
+                            if status_event:
+                                yield status_event
+                            yield {"event": "answer_delta", "delta": delta}
+                        continue
+                    if event_type == "error":
+                        yield {"event": "error", "message": str(event.get("message") or "")}
+                        continue
+                    if event_type == "done":
+                        break
+
+        raw_answer = "".join(answer_parts).strip()
+        final_answer = _sanitize_assistant_reply(raw_answer)
+        yield {
+            "event": "done",
+            "message": final_answer,
+            "raw_chars": len(raw_answer),
+            "replaced": final_answer != raw_answer,
+        }
+    except httpx.HTTPError as exc:
+        print(f"[DISCUSSION_AI] 课堂助教流式回复失败: {exc}")
+        yield {"event": "error", "message": str(exc)}
+        yield {"event": "done", "message": DISCUSSION_REPLY_FALLBACK, "raw_chars": 0, "replaced": True}
+    except Exception as exc:
+        print(f"[DISCUSSION_AI] 课堂助教流式生成异常: {exc}")
+        yield {"event": "error", "message": str(exc)}
+        yield {"event": "done", "message": DISCUSSION_REPLY_FALLBACK, "raw_chars": 0, "replaced": True}
 
 
 async def generate_discussion_ai_reply(

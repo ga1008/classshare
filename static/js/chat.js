@@ -39,6 +39,11 @@ const DISCUSSION_UI_TEXT = Object.freeze({
     copyActionTitle: '\u590d\u5236\u8fd9\u6761\u6d88\u606f',
     copySuccess: '\u6d88\u606f\u5df2\u590d\u5236\u5230\u526a\u8d34\u677f',
     copyFailed: '\u590d\u5236\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u6d4f\u89c8\u5668\u6743\u9650',
+    aiStreamConnecting: '\u52a9\u6559\u6b63\u5728\u8fde\u63a5...',
+    aiStreamWaiting: '\u52a9\u6559\u6b63\u5728\u7b49\u5f85\u6a21\u578b...',
+    aiStreamThinking: '\u52a9\u6559\u6b63\u5728\u601d\u8003...',
+    aiStreamTyping: '\u52a9\u6559\u6b63\u5728\u8f93\u5165...',
+    aiStreamError: '\u52a9\u6559\u8fde\u63a5\u6709\u70b9\u6162\uff0c\u6b63\u5728\u6536\u5c3e...',
 });
 
 const KNOWN_EMOJIS = Array.from(UNICODE_EMOJI_MAP.keys()).sort((left, right) => right.length - left.length);
@@ -99,6 +104,7 @@ export class ClassroomChat {
         this.isLoadingHistory = false;
         this.knownMessageIds = new Set();
         this.messageRecords = new Map();
+        this.aiStreamMessages = new Map();
         this.aliasState = {
             availableAliasCount: 0,
             switchLimit: DEFAULT_ALIAS_SWITCH_LIMIT,
@@ -604,6 +610,31 @@ export class ClassroomChat {
                 return;
             }
 
+            if (data.type === 'discussion_ai_stream_start') {
+                this.handleDiscussionAiStreamStart(data);
+                return;
+            }
+
+            if (data.type === 'discussion_ai_stream_delta') {
+                this.handleDiscussionAiStreamDelta(data);
+                return;
+            }
+
+            if (data.type === 'discussion_ai_stream_status') {
+                this.handleDiscussionAiStreamStatus(data);
+                return;
+            }
+
+            if (data.type === 'discussion_ai_stream_error') {
+                this.handleDiscussionAiStreamError(data);
+                return;
+            }
+
+            if (data.type === 'discussion_ai_stream_done') {
+                this.handleDiscussionAiStreamDone(data);
+                return;
+            }
+
             if (data.type === 'chat') {
                 const shouldStickBottom = this.isNearBottom();
                 this.appendChatMessage(data, { scrollToBottom: shouldStickBottom });
@@ -693,6 +724,209 @@ export class ClassroomChat {
         }
 
         this.updateHistoryLoader();
+    }
+
+    handleDiscussionAiStreamStart(payload) {
+        const streamId = String(payload?.stream_id || '');
+        if (!streamId || this.aiStreamMessages.has(streamId)) {
+            return;
+        }
+
+        const shouldStickBottom = this.isNearBottom();
+        const message = {
+            ...payload,
+            id: null,
+            type: 'chat',
+            role: 'assistant',
+            message: '',
+            message_type: 'text',
+        };
+        const normalizedMessage = this.normalizeMessagePayload(message);
+        const node = this.appendChatMessage(normalizedMessage, {
+            scrollToBottom: shouldStickBottom,
+            streamId,
+            forceContent: true,
+            streamStatus: this.getDiscussionAiStreamStatusText('connecting'),
+        });
+
+        this.aiStreamMessages.set(streamId, {
+            streamId,
+            node,
+            message: '',
+            status: 'connecting',
+            messageData: normalizedMessage,
+        });
+    }
+
+    handleDiscussionAiStreamDelta(payload) {
+        const streamId = String(payload?.stream_id || '');
+        const delta = String(payload?.delta || '');
+        const record = this.aiStreamMessages.get(streamId);
+        if (!record || !delta) {
+            return;
+        }
+
+        const shouldStickBottom = this.isNearBottom();
+        record.message += delta;
+        record.status = 'typing';
+        record.messageData.message = record.message;
+        this.updateDiscussionAiStreamNode(record);
+        if (shouldStickBottom) {
+            this.scrollToBottom();
+        }
+    }
+
+    handleDiscussionAiStreamStatus(payload) {
+        const streamId = String(payload?.stream_id || '');
+        const record = this.aiStreamMessages.get(streamId);
+        if (!record) {
+            return;
+        }
+
+        const status = String(payload?.status || '');
+        if (!status) {
+            return;
+        }
+        record.status = status;
+        this.updateDiscussionAiStreamNode(record);
+    }
+
+    handleDiscussionAiStreamError(payload) {
+        const streamId = String(payload?.stream_id || '');
+        const record = this.aiStreamMessages.get(streamId);
+        if (!record) {
+            return;
+        }
+
+        record.status = 'error';
+        this.updateDiscussionAiStreamNode(record);
+    }
+
+    handleDiscussionAiStreamDone(payload) {
+        const streamId = String(payload?.stream_id || '');
+        const normalizedMessage = this.normalizeMessagePayload({
+            ...payload,
+            type: 'chat',
+            role: payload?.role || 'assistant',
+        });
+        const record = this.aiStreamMessages.get(streamId);
+
+        if (!record) {
+            this.appendChatMessage(normalizedMessage, { scrollToBottom: this.isNearBottom() });
+            this.scheduleDiscussionMoodRefresh();
+            return;
+        }
+
+        const shouldStickBottom = this.isNearBottom();
+        const messageId = Number(normalizedMessage.id || 0);
+        const node = record.node;
+        if (messageId && this.knownMessageIds.has(messageId) && node instanceof HTMLElement) {
+            node.remove();
+            this.aiStreamMessages.delete(streamId);
+            return;
+        }
+
+        record.message = normalizedMessage.message;
+        record.messageData = normalizedMessage;
+        this.updateDiscussionAiStreamNode(record, { showStatus: false });
+
+        if (node instanceof HTMLElement) {
+            node.classList.remove('is-ai-streaming');
+            delete node.dataset.streamId;
+            if (messageId) {
+                node.dataset.messageId = String(messageId);
+                this.knownMessageIds.add(messageId);
+                this.messageRecords.set(messageId, normalizedMessage);
+                this.ensureMessageActions(node, messageId);
+            }
+        }
+
+        this.aiStreamMessages.delete(streamId);
+        if (shouldStickBottom) {
+            this.scrollToBottom();
+        }
+        this.scheduleDiscussionMoodRefresh();
+    }
+
+    updateDiscussionAiStreamNode(record, options = {}) {
+        const node = record?.node;
+        if (!(node instanceof HTMLElement)) {
+            return;
+        }
+
+        const content = node.querySelector('.message-content');
+        if (!(content instanceof HTMLElement)) {
+            return;
+        }
+
+        this.renderMessageTextContent(content, record.message, 'assistant');
+        if (options.showStatus !== false) {
+            this.appendDiscussionAiStreamStatus(content, this.getDiscussionAiStreamStatusText(record.status));
+        }
+    }
+
+    getDiscussionAiStreamStatusText(status) {
+        switch (String(status || '')) {
+            case 'waiting':
+                return DISCUSSION_UI_TEXT.aiStreamWaiting;
+            case 'thinking':
+                return DISCUSSION_UI_TEXT.aiStreamThinking;
+            case 'typing':
+                return DISCUSSION_UI_TEXT.aiStreamTyping;
+            case 'error':
+                return DISCUSSION_UI_TEXT.aiStreamError;
+            case 'connecting':
+            default:
+                return DISCUSSION_UI_TEXT.aiStreamConnecting;
+        }
+    }
+
+    renderMessageTextContent(content, text, role) {
+        if (!(content instanceof HTMLElement)) {
+            return;
+        }
+
+        const normalizedText = String(text || '');
+        const useMarkdown = role === 'assistant'
+            && normalizedText
+            && typeof globalThis.MarkdownRuntime?.parse === 'function';
+        content.classList.toggle('md-content', Boolean(useMarkdown));
+        content.innerHTML = '';
+        if (!normalizedText) {
+            return;
+        }
+
+        if (useMarkdown) {
+            content.innerHTML = globalThis.MarkdownRuntime.parse(normalizedText);
+        } else {
+            content.innerHTML = this.escape(normalizedText).replace(/\n/g, '<br>');
+        }
+    }
+
+    appendDiscussionAiStreamStatus(content, statusText) {
+        if (!(content instanceof HTMLElement) || !statusText) {
+            return;
+        }
+
+        const status = document.createElement('span');
+        status.className = 'discussion-ai-stream-status';
+        status.textContent = statusText;
+        content.appendChild(status);
+    }
+
+    ensureMessageActions(node, messageId) {
+        const normalizedId = Number(messageId || 0);
+        if (!(node instanceof HTMLElement) || !Number.isFinite(normalizedId) || normalizedId <= 0) {
+            return;
+        }
+
+        const header = node.querySelector('.chat-message-header');
+        if (!(header instanceof HTMLElement) || header.querySelector('.chat-message-actions')) {
+            return;
+        }
+
+        header.classList.add('has-actions');
+        header.appendChild(this.createMessageActionBar(normalizedId));
     }
 
     updateDisplayName(payload) {
@@ -1831,6 +2065,10 @@ export class ClassroomChat {
         if (messageId) {
             wrapper.dataset.messageId = String(messageId);
         }
+        if (options.streamId) {
+            wrapper.dataset.streamId = String(options.streamId);
+            wrapper.classList.add('is-ai-streaming');
+        }
 
         const row = document.createElement('div');
         row.className = 'chat-message-row';
@@ -1869,14 +2107,12 @@ export class ClassroomChat {
             }));
         }
 
-        if (text) {
+        if (text || options.forceContent) {
             const content = document.createElement('div');
             content.className = 'message-content';
-            if (role === 'assistant' && typeof globalThis.MarkdownRuntime?.parse === 'function') {
-                content.classList.add('md-content');
-                content.innerHTML = globalThis.MarkdownRuntime.parse(text);
-            } else {
-                content.innerHTML = this.escape(text).replace(/\n/g, '<br>');
+            this.renderMessageTextContent(content, text, role);
+            if (options.streamStatus) {
+                this.appendDiscussionAiStreamStatus(content, options.streamStatus);
             }
             main.appendChild(content);
         }
@@ -1894,6 +2130,7 @@ export class ClassroomChat {
         row.appendChild(main);
         wrapper.appendChild(row);
         this.insertMessageNode(wrapper, options);
+        return wrapper;
     }
 
     renderMessageCustomEmojis(items) {
