@@ -935,6 +935,7 @@ def _build_teacher_dashboard_context(
         "dashboard_initial_visible_count": initial_visible_count,
         "dashboard_initial_results_summary": initial_results_summary,
         "dashboard_default_group_mode": "department",
+        "dashboard_recent_activity_days": RECENT_ACTIVITY_DAYS,
         "dashboard_empty_state": {
             "title": ui_copy["empty_title"],
             "description": ui_copy["empty_description"],
@@ -1252,6 +1253,7 @@ def _build_student_dashboard_context(
         "dashboard_initial_visible_count": initial_visible_count,
         "dashboard_initial_results_summary": initial_results_summary,
         "dashboard_default_group_mode": "flat",
+        "dashboard_recent_activity_days": RECENT_ACTIVITY_DAYS,
         "dashboard_empty_state": {
             "title": ui_copy["empty_title"],
             "description": ui_copy["empty_description"],

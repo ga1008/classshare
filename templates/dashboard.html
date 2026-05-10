@@ -6,7 +6,7 @@
 
 {% block css %}
 {{ super() }}
-<link rel="stylesheet" href="/static/css/dashboard.css?v=dashboard-organized-20260510">
+<link rel="stylesheet" href="/static/css/dashboard.css?v=dashboard-group-motion-20260510">
 <link rel="stylesheet" href="/static/css/semester_calendar.css?v=dashboard-todo-axis-20260507">
 {% endblock %}
 
@@ -27,6 +27,7 @@
     data-initial-filter="{{ dashboard_initial_filter }}"
     data-initial-search="{{ dashboard_initial_search }}"
     data-initial-group-mode="{{ dashboard_default_group_mode|default('flat') }}"
+    data-recent-activity-days="{{ dashboard_recent_activity_days|default(14) }}"
     data-dashboard-role="{{ user_info.role }}"
 >
     <section class="dashboard-hero dashboard-reveal" aria-label="首页总览">
@@ -373,5 +374,5 @@
 <script>
     window.DASHBOARD_SEMESTER_CALENDAR = {{ dashboard_semester_calendar | tojson }};
 </script>
-<script type="module" src="/static/js/dashboard.js?v=dashboard-activity-grouped-20260510"></script>
+<script type="module" src="/static/js/dashboard.js?v=dashboard-group-motion-20260510"></script>
 {% endblock %}
