@@ -1951,6 +1951,43 @@
     border-color: rgba(16, 185, 129, 0.2);
 }
 
+.chat-message.chat-assistant.is-ai-streaming .message-content {
+    border-color: rgba(20, 184, 166, 0.38);
+    box-shadow: 0 10px 24px rgba(20, 184, 166, 0.12);
+}
+
+.discussion-ai-stream-status {
+    display: flex;
+    align-items: center;
+    gap: 0.36rem;
+    margin-top: 0.35rem;
+    color: #0f766e;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.discussion-ai-stream-status::after {
+    content: "";
+    width: 0.42rem;
+    height: 0.42rem;
+    border-radius: 999px;
+    background: currentColor;
+    animation: discussion-ai-stream-pulse 1s ease-in-out infinite;
+}
+
+@keyframes discussion-ai-stream-pulse {
+    0%,
+    100% {
+        opacity: 0.28;
+        transform: scale(0.82);
+    }
+
+    50% {
+        opacity: 0.95;
+        transform: scale(1);
+    }
+}
+
 .chat-message.system {
     padding: 0.1rem 0;
 }

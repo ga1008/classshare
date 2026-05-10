@@ -29,11 +29,12 @@ from pathlib import Path
 from ..database import get_db_connection
 from ..services.discussion_ai_service import (
     DISCUSSION_AI_ASSISTANT_NAME,
+    DISCUSSION_REPLY_FALLBACK,
     DISCUSSION_AI_USER_ID,
     contains_discussion_ai_mention,
-    generate_discussion_ai_reply,
     record_alias_switch_activity,
     record_message_activity,
+    stream_discussion_ai_reply,
 )
 from ..services.discussion_mood_service import (
     get_discussion_mood_payload,
@@ -411,9 +412,18 @@ def _ensure_websocket_room_access_sync(class_offering_id: int, user: dict, user_
             raise HTTPException(status_code=403, detail="Permission denied")
 
 
-async def _broadcast_discussion_ai_reply(class_offering_id: int, reply_text: str) -> None:
+def _discussion_room_recipient_count(class_offering_id: int) -> int:
+    return max(1, len(manager.rooms.get(class_offering_id, {})))
+
+
+async def _broadcast_discussion_payload(class_offering_id: int, payload: dict) -> None:
+    await manager.broadcast(class_offering_id, json.dumps(payload, ensure_ascii=False))
+    record_websocket_sent(class_offering_id, _discussion_room_recipient_count(class_offering_id))
+
+
+async def _save_discussion_ai_reply(class_offering_id: int, reply_text: str) -> dict:
     now = datetime.now()
-    stored_message = await save_chat_message(class_offering_id, {
+    return await save_chat_message(class_offering_id, {
         "type": "chat",
         "sender": DISCUSSION_AI_ASSISTANT_NAME,
         "role": "assistant",
@@ -424,8 +434,6 @@ async def _broadcast_discussion_ai_reply(class_offering_id: int, reply_text: str
         "user_id": DISCUSSION_AI_USER_ID,
         "logged_at": now.isoformat(),
     })
-    await manager.broadcast(class_offering_id, json.dumps(stored_message, ensure_ascii=False))
-    record_websocket_sent(class_offering_id, max(1, len(manager.rooms.get(class_offering_id, {}))))
 
 
 async def _handle_discussion_ai_mention(
@@ -438,8 +446,44 @@ async def _handle_discussion_ai_mention(
     current_message_attachments: Optional[list[dict]] = None,
     current_quote: Optional[dict] = None,
 ) -> None:
+    stream_id = uuid.uuid4().hex
+    started_at = datetime.now()
+
+    await _broadcast_discussion_payload(class_offering_id, {
+        "type": "discussion_ai_stream_start",
+        "stream_id": stream_id,
+        "sender": DISCUSSION_AI_ASSISTANT_NAME,
+        "role": "assistant",
+        "message": "",
+        "message_type": "text",
+        "timestamp": started_at.strftime("%H:%M"),
+        "class_offering_id": class_offering_id,
+        "user_id": DISCUSSION_AI_USER_ID,
+        "logged_at": started_at.isoformat(),
+    })
+
+    final_reply = ""
+    pending_delta_parts: list[str] = []
+    pending_delta_chars = 0
+    loop = asyncio.get_running_loop()
+    last_delta_flush = loop.time()
+
+    async def flush_pending_delta() -> None:
+        nonlocal pending_delta_parts, pending_delta_chars, last_delta_flush
+        if not pending_delta_parts:
+            return
+        delta = "".join(pending_delta_parts)
+        pending_delta_parts = []
+        pending_delta_chars = 0
+        last_delta_flush = loop.time()
+        await _broadcast_discussion_payload(class_offering_id, {
+            "type": "discussion_ai_stream_delta",
+            "stream_id": stream_id,
+            "delta": delta,
+        })
+
     try:
-        reply_text = await generate_discussion_ai_reply(
+        async for event in stream_discussion_ai_reply(
             class_offering_id=class_offering_id,
             user_pk=user_pk,
             user_role=user_role,
@@ -448,12 +492,58 @@ async def _handle_discussion_ai_mention(
             current_message_id=current_message_id,
             current_message_attachments=current_message_attachments or [],
             current_quote=current_quote,
-        )
-        if not str(reply_text or "").strip():
-            return
-        await _broadcast_discussion_ai_reply(class_offering_id, reply_text)
+        ):
+            event_type = str(event.get("event") or "")
+            if event_type == "answer_delta":
+                delta = str(event.get("delta") or "")
+                if not delta:
+                    continue
+                pending_delta_parts.append(delta)
+                pending_delta_chars += len(delta)
+                if pending_delta_chars >= 80 or loop.time() - last_delta_flush >= 0.08:
+                    await flush_pending_delta()
+                continue
+
+            if event_type == "status":
+                await _broadcast_discussion_payload(class_offering_id, {
+                    "type": "discussion_ai_stream_status",
+                    "stream_id": stream_id,
+                    "status": str(event.get("status") or ""),
+                    "message": str(event.get("message") or ""),
+                })
+                continue
+
+            if event_type == "error":
+                await _broadcast_discussion_payload(class_offering_id, {
+                    "type": "discussion_ai_stream_error",
+                    "stream_id": stream_id,
+                    "message": str(event.get("message") or ""),
+                })
+                continue
+
+            if event_type == "done":
+                final_reply = str(event.get("message") or "")
+                break
+
+        await flush_pending_delta()
+        if not final_reply.strip():
+            final_reply = DISCUSSION_REPLY_FALLBACK
+
+        stored_message = await _save_discussion_ai_reply(class_offering_id, final_reply)
+        await _broadcast_discussion_payload(class_offering_id, {
+            **stored_message,
+            "type": "discussion_ai_stream_done",
+            "stream_id": stream_id,
+        })
     except Exception as exc:
-        print(f"[DISCUSSION_AI] 课堂助教发送失败: {exc}")
+        print(f"[DISCUSSION_AI] discussion AI stream send failed: {exc}")
+        await flush_pending_delta()
+        stored_message = await _save_discussion_ai_reply(class_offering_id, DISCUSSION_REPLY_FALLBACK)
+        await _broadcast_discussion_payload(class_offering_id, {
+            **stored_message,
+            "type": "discussion_ai_stream_done",
+            "stream_id": stream_id,
+        })
 
 
 async def _process_discussion_chat_message(
