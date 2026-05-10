@@ -6,7 +6,7 @@
 
 {% block css %}
 {{ super() }}
-<link rel="stylesheet" href="/static/css/dashboard.css?v=dashboard-reveal-stable-20260510">
+<link rel="stylesheet" href="/static/css/dashboard.css?v=dashboard-organized-20260510">
 <link rel="stylesheet" href="/static/css/semester_calendar.css?v=dashboard-todo-axis-20260507">
 {% endblock %}
 
@@ -26,6 +26,8 @@
     data-dashboard-root
     data-initial-filter="{{ dashboard_initial_filter }}"
     data-initial-search="{{ dashboard_initial_search }}"
+    data-initial-group-mode="{{ dashboard_default_group_mode|default('flat') }}"
+    data-dashboard-role="{{ user_info.role }}"
 >
     <section class="dashboard-hero dashboard-reveal" aria-label="首页总览">
         <div class="dashboard-hero__content">
@@ -80,7 +82,7 @@
                 <div class="dashboard-panel__header dashboard-panel__header--spread">
                     <div>
                         <h2>课堂列表</h2>
-                        <p>你加入的所有课堂。支持按提醒、进度和关键词快速筛选。</p>
+                        <p>你的课堂会先按搜索与标签筛选收窄，再按系别班级、课程或近四天时间轴归纳。</p>
                     </div>
                     {% if class_offerings %}
                     <span class="dashboard-section-pill">共 {{ class_offerings|length }} 个课堂</span>
@@ -121,6 +123,17 @@
                             <button type="submit" class="dashboard-search-submit">搜索</button>
                         </div>
                     </form>
+
+                    {% if user_info.role == 'teacher' %}
+                    <div class="dashboard-organization-toolbar" aria-label="课堂归纳方式">
+                        <span class="dashboard-organization-toolbar__label">归纳方式</span>
+                        <div class="dashboard-organization-switch" data-group-mode-tabs>
+                            <button type="button" class="dashboard-group-mode-btn" data-group-mode="department" aria-pressed="true">系别班级</button>
+                            <button type="button" class="dashboard-group-mode-btn" data-group-mode="course" aria-pressed="false">课程</button>
+                            <button type="button" class="dashboard-group-mode-btn" data-group-mode="timeline" aria-pressed="false">时间轴</button>
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
 
                 <div class="dashboard-results-bar">
@@ -145,6 +158,12 @@
                         data-recent="{{ 'true' if offering.has_recent_activity else 'false' }}"
                         data-progress="{{ 'true' if offering.has_progress else 'false' }}"
                         data-search-text="{{ offering.search_text }}"
+                        data-department="{{ offering.department_label|default('未分类') }}"
+                        data-class-name="{{ offering.class_name }}"
+                        data-class-id="{{ offering.class_id }}"
+                        data-course-name="{{ offering.course_name }}"
+                        data-course-id="{{ offering.course_id }}"
+                        data-timeline-items='{{ offering.timeline_items|default([])|tojson|forceescape }}'
                         aria-hidden="{{ 'false' if offering.initially_visible else 'true' }}"
                         {% if not offering.initially_visible %}hidden{% endif %}
                     >
@@ -155,6 +174,10 @@
                             </div>
                             <a href="/classroom/{{ offering.id }}" class="btn btn-primary btn-sm dashboard-offering-card__enter">进入课堂</a>
                         </div>
+
+                        {% if offering.summary %}
+                        <p class="dashboard-offering-card__summary">{{ offering.summary }}</p>
+                        {% endif %}
 
                         {% if offering.meta %}
                         <div class="dashboard-offering-card__meta">
@@ -346,5 +369,5 @@
 <script>
     window.DASHBOARD_SEMESTER_CALENDAR = {{ dashboard_semester_calendar | tojson }};
 </script>
-<script type="module" src="/static/js/dashboard.js?v=dashboard-reveal-stable-20260510"></script>
+<script type="module" src="/static/js/dashboard.js?v=dashboard-organized-20260510"></script>
 {% endblock %}

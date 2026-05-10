@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import sqlite3
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from .message_center_service import CATEGORY_LABELS, get_message_center_summary
 from .academic_service import (
     build_semester_calendar_payload,
+    china_today,
     load_student_semester_rows,
     load_teacher_semester_rows,
+    parse_date_input,
 )
 from .student_auth_service import build_student_security_summary
 from .ui_copy_service import get_ui_copy_block, render_ui_copy_block
@@ -21,6 +23,9 @@ from .learning_progress_service import (
 from .todo_service import build_classroom_todo_overview
 
 RECENT_ACTIVITY_DAYS = 14
+TIMELINE_WINDOW_DAYS = 2
+DEFAULT_TIMELINE_HOUR = "08:00"
+DASHBOARD_WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
 ACTIVITY_TONE_BY_CATEGORY = {
     "private_message": "neutral",
@@ -272,6 +277,216 @@ def _attach_dashboard_todos_to_semester_calendar(
         )
 
 
+def _normalize_dashboard_group_label(value: Any, fallback: str = "未分类") -> str:
+    normalized = re.sub(r"\s+", " ", str(value or "").strip())
+    return normalized or fallback
+
+
+def _dashboard_sort_text(value: Any) -> str:
+    return str(value or "").strip().casefold()
+
+
+def _dashboard_weekday_label(value: int) -> str:
+    if 0 <= int(value) < len(DASHBOARD_WEEKDAY_LABELS):
+        return DASHBOARD_WEEKDAY_LABELS[int(value)]
+    return ""
+
+
+def _safe_dashboard_date(value: Any) -> date | None:
+    try:
+        return parse_date_input(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _dashboard_relative_day_label(session_date: date, today: date) -> str:
+    delta_days = (session_date - today).days
+    if delta_days == 0:
+        return "今天"
+    if delta_days == 1:
+        return "明天"
+    if delta_days == 2:
+        return "后天"
+    if delta_days == -1:
+        return "昨天"
+    if delta_days == -2:
+        return "前天"
+    if delta_days > 0:
+        return f"{delta_days} 天后"
+    return f"{abs(delta_days)} 天前"
+
+
+def _extract_dashboard_time_label(*values: Any) -> tuple[str, bool]:
+    for value in values:
+        raw = str(value or "")
+        if not raw:
+            continue
+        match = re.search(r"(?<!\d)([01]?\d|2[0-3])[:：]([0-5]\d)(?!\d)", raw)
+        if match:
+            return f"{int(match.group(1)):02d}:{match.group(2)}", True
+        match = re.search(r"(?<!\d)([01]?\d|2[0-3])\s*(?:点|时)(?!\d)", raw)
+        if match:
+            return f"{int(match.group(1)):02d}:00", True
+    return DEFAULT_TIMELINE_HOUR, False
+
+
+def _truncate_dashboard_text(value: Any, max_length: int = 88) -> str:
+    text = re.sub(r"\s+", " ", str(value or "").strip())
+    if len(text) <= max_length:
+        return text
+    return text[: max_length - 1].rstrip() + "…"
+
+
+def _build_teacher_timeline_item(
+    *,
+    offering: dict[str, Any],
+    session: dict[str, Any],
+    session_date: date,
+    today: date,
+    time_label: str,
+    is_time_explicit: bool,
+    is_fallback: bool = False,
+) -> dict[str, Any]:
+    status = "upcoming"
+    if session_date < today:
+        status = "completed"
+    elif session_date == today:
+        status = "current"
+
+    title = str(session.get("title") or "").strip()
+    if not title:
+        title = "首次上课" if is_fallback else "课堂安排"
+    section_count = _dashboard_int(session.get("section_count"))
+    starts_at = f"{session_date.isoformat()}T{time_label}:00"
+    date_key = f"{session_date.isoformat()} {time_label}"
+
+    return {
+        "id": str(session.get("session_id") or session.get("id") or f"fallback-{offering.get('id')}"),
+        "offering_id": _dashboard_int(offering.get("id")),
+        "course_name": str(offering.get("course_name") or "未命名课程"),
+        "class_name": str(offering.get("class_name") or "未命名班级"),
+        "department": str(offering.get("department_label") or "未分类"),
+        "title": title,
+        "summary": _truncate_dashboard_text(session.get("content") or offering.get("summary") or ""),
+        "href": f"/classroom/{_dashboard_int(offering.get('id'))}#timeline-panel",
+        "starts_at": starts_at,
+        "timeline_key": date_key,
+        "date_label": f"{session_date.month}月{session_date.day}日",
+        "date_full_label": session_date.isoformat(),
+        "hour_label": time_label,
+        "weekday_label": _dashboard_weekday_label(session_date.weekday()),
+        "relative_label": _dashboard_relative_day_label(session_date, today),
+        "status": status,
+        "section_label": f"{section_count} 节" if section_count > 0 else "",
+        "week_label": f"第 {int(session.get('week_index') or 0)} 周" if int(session.get("week_index") or 0) > 0 else "",
+        "time_hint": "" if is_time_explicit else "未设置具体上课小时，按默认 08:00 归纳。",
+    }
+
+
+def _attach_teacher_timeline_items(
+    conn: sqlite3.Connection,
+    offerings: list[dict[str, Any]],
+) -> None:
+    if not offerings:
+        return
+
+    today = china_today()
+    window_start = today - timedelta(days=TIMELINE_WINDOW_DAYS)
+    window_end = today + timedelta(days=TIMELINE_WINDOW_DAYS)
+    offering_by_id = {
+        _dashboard_int(item.get("id")): item
+        for item in offerings
+        if _dashboard_int(item.get("id")) > 0
+    }
+    for offering in offerings:
+        offering["timeline_items"] = []
+
+    offering_ids = sorted(offering_by_id)
+    if not offering_ids:
+        return
+    placeholders = ",".join("?" for _ in offering_ids)
+    rows = conn.execute(
+        f"""
+        SELECT id AS session_id,
+               class_offering_id,
+               order_index,
+               title,
+               content,
+               section_count,
+               slot_section_count,
+               session_date,
+               weekday,
+               week_index
+        FROM class_offering_sessions
+        WHERE class_offering_id IN ({placeholders})
+          AND date(session_date) BETWEEN date(?) AND date(?)
+        ORDER BY date(session_date), order_index, id
+        """,
+        (*offering_ids, window_start.isoformat(), window_end.isoformat()),
+    ).fetchall()
+
+    seen_offering_ids: set[int] = set()
+    for row in rows:
+        item = dict(row)
+        offering_id = _dashboard_int(item.get("class_offering_id"))
+        offering = offering_by_id.get(offering_id)
+        if not offering:
+            continue
+        session_date = _safe_dashboard_date(item.get("session_date"))
+        if not session_date:
+            continue
+        time_label, is_time_explicit = _extract_dashboard_time_label(
+            item.get("starts_at"),
+            item.get("start_time"),
+            offering.get("schedule_info"),
+        )
+        offering["timeline_items"].append(
+            _build_teacher_timeline_item(
+                offering=offering,
+                session=item,
+                session_date=session_date,
+                today=today,
+                time_label=time_label,
+                is_time_explicit=is_time_explicit,
+            )
+        )
+        seen_offering_ids.add(offering_id)
+
+    for offering_id, offering in offering_by_id.items():
+        if offering_id in seen_offering_ids:
+            continue
+        first_class_date = _safe_dashboard_date(offering.get("first_class_date"))
+        if not first_class_date or first_class_date < window_start or first_class_date > window_end:
+            continue
+        time_label, is_time_explicit = _extract_dashboard_time_label(offering.get("schedule_info"))
+        offering["timeline_items"].append(
+            _build_teacher_timeline_item(
+                offering=offering,
+                session={
+                    "id": f"first-{offering_id}",
+                    "title": "首次上课",
+                    "content": offering.get("summary"),
+                    "section_count": 0,
+                    "week_index": 0,
+                },
+                session_date=first_class_date,
+                today=today,
+                time_label=time_label,
+                is_time_explicit=is_time_explicit,
+                is_fallback=True,
+            )
+        )
+
+    for offering in offerings:
+        offering["timeline_items"].sort(
+            key=lambda item: (
+                str(item.get("starts_at") or ""),
+                _dashboard_sort_text(item.get("course_name")),
+                _dashboard_sort_text(item.get("class_name")),
+            )
+        )
+
+
 def build_dashboard_context(
     conn,
     user: dict,
@@ -377,6 +592,9 @@ def _build_teacher_dashboard_context(
         resource_count = int(resource_item.get("resource_count") or 0)
         material_count = int(material_item.get("material_count") or 0)
         resource_total = resource_count + material_count
+        class_department = _normalize_dashboard_group_label(offering.get("class_department"))
+        course_department = _normalize_dashboard_group_label(offering.get("course_department"))
+        department_label = class_department if class_department != "未分类" else course_department
         last_activity_at = _pick_latest_datetime(
             offering.get("created_at"),
             assignment_item.get("latest_assignment_at"),
@@ -431,6 +649,9 @@ def _build_teacher_dashboard_context(
         offering["description"] = description
         offering["meta"] = meta
         offering["badges"] = badges
+        offering["class_department_label"] = class_department
+        offering["course_department_label"] = course_department
+        offering["department_label"] = department_label
         offering["resource_total"] = resource_total
         offering["resource_count"] = resource_count
         offering["material_count"] = material_count
@@ -451,6 +672,9 @@ def _build_teacher_dashboard_context(
         offering["search_text"] = _build_dashboard_search_text(
             offering.get("course_name"),
             offering.get("class_name"),
+            department_label,
+            class_department,
+            course_department,
             offering.get("semester"),
             offering.get("schedule_info"),
             description,
@@ -460,6 +684,18 @@ def _build_teacher_dashboard_context(
             *(f"{metric['label']} {metric['value']} {metric['note']}" for metric in offering["metrics"]),
         )
         enriched_offerings.append(offering)
+
+    _attach_teacher_timeline_items(conn, enriched_offerings)
+    enriched_offerings.sort(
+        key=lambda item: (
+            _dashboard_sort_text(item.get("department_label")),
+            _dashboard_sort_text(item.get("class_name")),
+            _dashboard_sort_text(item.get("course_name")),
+            -_dashboard_int(item.get("pending_review_count")),
+            -_dashboard_int(item.get("draft_count")),
+            -_dashboard_int(item.get("id")),
+        )
+    )
 
     distinct_class_count = len({int(item["class_id"]) for item in offerings})
     distinct_course_count = len({int(item["course_id"]) for item in offerings})
@@ -650,6 +886,7 @@ def _build_teacher_dashboard_context(
         "dashboard_initial_search": search_query,
         "dashboard_initial_visible_count": initial_visible_count,
         "dashboard_initial_results_summary": initial_results_summary,
+        "dashboard_default_group_mode": "department",
         "dashboard_empty_state": {
             "title": ui_copy["empty_title"],
             "description": ui_copy["empty_description"],
@@ -966,6 +1203,7 @@ def _build_student_dashboard_context(
         "dashboard_initial_search": search_query,
         "dashboard_initial_visible_count": initial_visible_count,
         "dashboard_initial_results_summary": initial_results_summary,
+        "dashboard_default_group_mode": "flat",
         "dashboard_empty_state": {
             "title": ui_copy["empty_title"],
             "description": ui_copy["empty_description"],
@@ -982,18 +1220,21 @@ def _build_student_dashboard_context(
 def _load_teacher_offerings(conn, teacher_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT o.id, o.class_id, o.course_id, o.teacher_id, o.semester, o.semester_id, o.schedule_info, o.created_at,
+        SELECT o.id, o.class_id, o.course_id, o.teacher_id, o.semester, o.semester_id, o.schedule_info,
+               o.first_class_date, o.weekly_schedule_json, o.created_at,
                c.name AS course_name, c.description AS course_description, c.credits AS course_credits,
-               cl.name AS class_name, cl.description AS class_description,
+               c.department AS course_department,
+               cl.name AS class_name, cl.description AS class_description, cl.department AS class_department,
                COUNT(s.id) AS student_count
         FROM class_offerings o
         JOIN courses c ON c.id = o.course_id
         JOIN classes cl ON cl.id = o.class_id
         LEFT JOIN students s ON s.class_id = o.class_id
         WHERE o.teacher_id = ?
-        GROUP BY o.id, o.class_id, o.course_id, o.teacher_id, o.semester, o.semester_id, o.schedule_info, o.created_at,
-                 c.name, c.description, c.credits, cl.name, cl.description
-        ORDER BY o.id DESC
+        GROUP BY o.id, o.class_id, o.course_id, o.teacher_id, o.semester, o.semester_id, o.schedule_info,
+                 o.first_class_date, o.weekly_schedule_json, o.created_at,
+                 c.name, c.description, c.credits, c.department, cl.name, cl.description, cl.department
+        ORDER BY COALESCE(cl.department, ''), cl.name, c.name, o.id DESC
         """,
         (teacher_id,),
     ).fetchall()
