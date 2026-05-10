@@ -1713,6 +1713,7 @@ async def _call_ai_json(system_prompt: str, user_message: str, *, task_label: st
                 "messages": [],
                 "new_message": user_message,
                 "model_capability": "thinking",
+                "task_type": "deep_text_reasoning",
                 "response_format": "json",
                 "task_priority": "background",
                 "task_label": task_label,

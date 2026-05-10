@@ -199,6 +199,7 @@ async def _generate_discussion_mood_snapshot(
                 "messages": [],
                 "new_message": request_prompt,
                 "model_capability": "standard",
+                "task_type": "fast_text_response",
                 "response_format": "json",
                 "task_priority": "background",
                 "task_label": "discussion_mood",

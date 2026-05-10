@@ -11,6 +11,7 @@ import sys
 import time
 import traceback
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncGenerator
@@ -21,7 +22,7 @@ import uvicorn
 from PIL import Image
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from contextlib import asynccontextmanager # 1. 新增导入
+from contextlib import asynccontextmanager, suppress # 1. 新增导入
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -61,6 +62,13 @@ def _read_int_env(*names: str, default: int) -> int:
     return default
 
 
+def _read_bool_env(name: str, default: bool = False) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value in (None, ""):
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _configure_stdio_encoding() -> None:
     for stream_name in ("stdout", "stderr"):
         stream = getattr(sys, stream_name, None)
@@ -76,11 +84,29 @@ AI_HOST = os.getenv("AI_HOST", "127.0.0.1")
 AI_PORT = int(os.getenv("AI_PORT", 8001))
 GLOBAL_AI_CONCURRENCY = max(
     1,
-    min(_read_int_env("GLOBAL_AI_CONCURRENCY", "AI_WORKER_CONCURRENCY", default=3), 3),
+    _read_int_env("GLOBAL_AI_CONCURRENCY", "AI_WORKER_CONCURRENCY", default=8),
+)
+AI_QUEUE_MAX_PENDING = max(0, _read_int_env("AI_QUEUE_MAX_PENDING", default=200))
+AI_PROVIDER_QUEUE_MAX_PENDING = max(
+    0,
+    _read_int_env("AI_PROVIDER_QUEUE_MAX_PENDING", "AI_QUEUE_MAX_PENDING", default=AI_QUEUE_MAX_PENDING),
 )
 MAIN_APP_CALLBACK_URL = os.getenv("MAIN_APP_CALLBACK_URL")
-PLATFORM_PRIORITY = [p.strip() for p in os.getenv("AI_PLATFORM_PRIORITY", "siliconflow,volcengine,deepseek").split(',')]
+PLATFORM_PRIORITY = [p.strip() for p in os.getenv("AI_PLATFORM_PRIORITY", "deepseek,volcengine").split(',')]
 VOLCENGINE_OPENAI_BASE_URL = os.getenv("VOLCENGINE_OPENAI_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
+AI_TEXT_SPILLOVER_ENABLED = _read_bool_env("AI_TEXT_SPILLOVER_ENABLED", True)
+AI_NONSTREAM_USE_PROVIDER_STREAM = _read_bool_env("AI_NONSTREAM_USE_PROVIDER_STREAM", True)
+DEEPSEEK_TEXT_SPILLOVER_THRESHOLD = max(
+    1,
+    _read_int_env(
+        "DEEPSEEK_TEXT_SPILLOVER_THRESHOLD",
+        "DEEPSEEK_TEXT_MAX_LOCAL_CONCURRENCY",
+        default=8,
+    ),
+)
+DEEPSEEK_MAX_CONCURRENT_REQUESTS = max(0, _read_int_env("DEEPSEEK_MAX_CONCURRENT_REQUESTS", default=8))
+SILICONFLOW_MAX_CONCURRENT_REQUESTS = max(0, _read_int_env("SILICONFLOW_MAX_CONCURRENT_REQUESTS", default=0))
+VOLCENGINE_MAX_CONCURRENT_REQUESTS = max(0, _read_int_env("VOLCENGINE_MAX_CONCURRENT_REQUESTS", default=4))
 AI_GRADING_MAX_FILE_COUNT = int(os.getenv("AI_GRADING_MAX_FILE_COUNT", 50))
 AI_GRADING_MAX_TOTAL_FILE_MB = float(os.getenv("AI_GRADING_MAX_TOTAL_FILE_MB", 20))
 AI_GRADING_MAX_TOTAL_FILE_BYTES = int(AI_GRADING_MAX_TOTAL_FILE_MB * 1024 * 1024)
@@ -91,28 +117,89 @@ VOLCENGINE_DOCUMENT_MAX_BYTES = int(VOLCENGINE_DOCUMENT_MAX_MB * 1024 * 1024)
 VOLCENGINE_IMAGE_MAX_MB = float(os.getenv("VOLCENGINE_IMAGE_MAX_MB", 10))
 VOLCENGINE_IMAGE_MAX_BYTES = int(VOLCENGINE_IMAGE_MAX_MB * 1024 * 1024)
 
+AI_TASK_LIGHT_MULTIMODAL = "light_multimodal_understanding"
+AI_TASK_DEEP_MULTIMODAL = "deep_multimodal_reasoning"
+AI_TASK_FAST_TEXT = "fast_text_response"
+AI_TASK_DEEP_TEXT = "deep_text_reasoning"
+AI_TASK_TYPES = {
+    AI_TASK_LIGHT_MULTIMODAL,
+    AI_TASK_DEEP_MULTIMODAL,
+    AI_TASK_FAST_TEXT,
+    AI_TASK_DEEP_TEXT,
+}
+TEXT_TASK_TYPES = {AI_TASK_FAST_TEXT, AI_TASK_DEEP_TEXT}
+MULTIMODAL_TASK_TYPES = {AI_TASK_LIGHT_MULTIMODAL, AI_TASK_DEEP_MULTIMODAL}
+LEGACY_CAPABILITY_TASK_TYPE = {
+    "standard": AI_TASK_FAST_TEXT,
+    "thinking": AI_TASK_DEEP_TEXT,
+    "vision": AI_TASK_DEEP_MULTIMODAL,
+}
+TASK_TYPE_CAPABILITY = {
+    AI_TASK_FAST_TEXT: "standard",
+    AI_TASK_DEEP_TEXT: "thinking",
+    AI_TASK_LIGHT_MULTIMODAL: "vision",
+    AI_TASK_DEEP_MULTIMODAL: "vision",
+}
+AI_TASK_TYPE_ALIASES = {
+    "standard": AI_TASK_FAST_TEXT,
+    "thinking": AI_TASK_DEEP_TEXT,
+    "vision": AI_TASK_DEEP_MULTIMODAL,
+    "text": AI_TASK_FAST_TEXT,
+    "fast_text": AI_TASK_FAST_TEXT,
+    "quick_text": AI_TASK_FAST_TEXT,
+    "deep_text": AI_TASK_DEEP_TEXT,
+    "reasoning_text": AI_TASK_DEEP_TEXT,
+    "exam_generation": AI_TASK_DEEP_TEXT,
+    "assignment_generation": AI_TASK_DEEP_TEXT,
+    "text_grading": AI_TASK_DEEP_TEXT,
+    "multimodal_grading": AI_TASK_DEEP_MULTIMODAL,
+    "multimodal": AI_TASK_LIGHT_MULTIMODAL,
+    "vision_light": AI_TASK_LIGHT_MULTIMODAL,
+    "vision_deep": AI_TASK_DEEP_MULTIMODAL,
+    "light_vision": AI_TASK_LIGHT_MULTIMODAL,
+    "deep_vision": AI_TASK_DEEP_MULTIMODAL,
+    "light_multimodal": AI_TASK_LIGHT_MULTIMODAL,
+    "deep_multimodal": AI_TASK_DEEP_MULTIMODAL,
+}
+
 # --- 平台详细配置 (保持不变) ---
 PLATFORMS_CONFIG = {
     "deepseek": {
         "enabled": os.getenv("DEEPSEEK_ENABLED", "False").lower() == "true",
         "api_key": os.getenv("DEEPSEEK_API_KEY"), "base_url": "https://api.deepseek.com",
+        "max_concurrency": DEEPSEEK_MAX_CONCURRENT_REQUESTS,
+        "concurrency_limit_name": "DEEPSEEK_MAX_CONCURRENT_REQUESTS",
         "models": {
-            "standard": os.getenv("DEEPSEEK_MODEL_STANDARD", "deepseek-chat"),
-            "thinking": os.getenv("DEEPSEEK_MODEL_THINKING", "deepseek-reasoner"),
+            "standard": os.getenv("DEEPSEEK_MODEL_STANDARD", "deepseek-v4-flash"),
+            "thinking": os.getenv("DEEPSEEK_MODEL_THINKING", "deepseek-v4-pro"),
             "vision": None
         },
+        "task_models": {
+            AI_TASK_FAST_TEXT: os.getenv("DEEPSEEK_MODEL_FAST_TEXT") or os.getenv("DEEPSEEK_MODEL_STANDARD", "deepseek-v4-flash"),
+            AI_TASK_DEEP_TEXT: os.getenv("DEEPSEEK_MODEL_DEEP_TEXT") or os.getenv("DEEPSEEK_MODEL_THINKING", "deepseek-v4-pro"),
+            AI_TASK_LIGHT_MULTIMODAL: None,
+            AI_TASK_DEEP_MULTIMODAL: None,
+        },
         "can_force_json": {
-            "standard": True, "thinking": False, "vision": False
+            "standard": True, "thinking": True, "vision": False
         },
         "type": "openai",
     },
     "siliconflow": {
-        "enabled": os.getenv("SILICONFLOW_ENABLED", "True").lower() == "true",
+        "enabled": os.getenv("SILICONFLOW_ENABLED", "False").lower() == "true",
         "api_key": os.getenv("SILICONFLOW_API_KEY"), "base_url": "https://api.siliconflow.cn/v1",
+        "max_concurrency": SILICONFLOW_MAX_CONCURRENT_REQUESTS,
+        "concurrency_limit_name": "SILICONFLOW_MAX_CONCURRENT_REQUESTS",
         "models": {
             "standard": os.getenv("SILICONFLOW_MODEL_STANDARD", "deepseek-ai/DeepSeek-V2"),
             "thinking": os.getenv("SILICONFLOW_MODEL_THINKING", "deepseek-ai/DeepSeek-V2.5"),
             "vision": os.getenv("SILICONFLOW_MODEL_VISION", "deepseek-ai/deepseek-vl2")
+        },
+        "task_models": {
+            AI_TASK_FAST_TEXT: os.getenv("SILICONFLOW_MODEL_STANDARD", "deepseek-ai/DeepSeek-V2"),
+            AI_TASK_DEEP_TEXT: os.getenv("SILICONFLOW_MODEL_THINKING", "deepseek-ai/DeepSeek-V2.5"),
+            AI_TASK_LIGHT_MULTIMODAL: os.getenv("SILICONFLOW_MODEL_VISION", "deepseek-ai/deepseek-vl2"),
+            AI_TASK_DEEP_MULTIMODAL: os.getenv("SILICONFLOW_MODEL_VISION", "deepseek-ai/deepseek-vl2"),
         },
         "can_force_json": {
             "standard": True, "thinking": True, "vision": False
@@ -121,12 +208,20 @@ PLATFORMS_CONFIG = {
     },
     "volcengine": {
         "enabled": os.getenv("VOLCENGINE_ENABLED", "True").lower() == "true",
-        "api_key": os.getenv("ARK_API_KEY"), "base_url": None,
+        "api_key": os.getenv("ARK_API_KEY"), "base_url": VOLCENGINE_OPENAI_BASE_URL,
         "responses_base_url": VOLCENGINE_OPENAI_BASE_URL,
+        "max_concurrency": VOLCENGINE_MAX_CONCURRENT_REQUESTS,
+        "concurrency_limit_name": "VOLCENGINE_MAX_CONCURRENT_REQUESTS",
         "models": {
-            "standard": os.getenv("VOLCENGINE_MODEL_STANDARD", "doubao-seed-2-0-pro-260215"),
+            "standard": os.getenv("VOLCENGINE_MODEL_STANDARD", "doubao-seed-2-0-lite-260428"),
             "thinking": os.getenv("VOLCENGINE_MODEL_THINKING", "doubao-seed-2-0-pro-260215"),
             "vision": os.getenv("VOLCENGINE_MODEL_VISION", "doubao-seed-2-0-pro-260215")
+        },
+        "task_models": {
+            AI_TASK_FAST_TEXT: os.getenv("VOLCENGINE_MODEL_TEXT_FAST") or os.getenv("VOLCENGINE_MODEL_STANDARD", "doubao-seed-2-0-lite-260428"),
+            AI_TASK_DEEP_TEXT: os.getenv("VOLCENGINE_MODEL_TEXT_DEEP") or os.getenv("VOLCENGINE_MODEL_THINKING", "doubao-seed-2-0-pro-260215"),
+            AI_TASK_LIGHT_MULTIMODAL: os.getenv("VOLCENGINE_MODEL_MULTIMODAL_LIGHT") or os.getenv("VOLCENGINE_MODEL_STANDARD", "doubao-seed-2-0-lite-260428"),
+            AI_TASK_DEEP_MULTIMODAL: os.getenv("VOLCENGINE_MODEL_MULTIMODAL_DEEP") or os.getenv("VOLCENGINE_MODEL_VISION") or os.getenv("VOLCENGINE_MODEL_THINKING", "doubao-seed-2-0-pro-260215"),
         },
         "can_force_json": {
             "standard": False, "thinking": False, "vision": False
@@ -144,14 +239,266 @@ TASK_PRIORITY_ORDER = {
 }
 
 
+@dataclass
+class AIModelRoute:
+    platform_name: str
+    platform_config: dict[str, Any]
+    task_type: str
+    capability: Literal["standard", "thinking", "vision"]
+    model_name: str
+    spillover: bool = False
+    reason: str = ""
+
+
 def _sanitize_task_priority(value: Optional[str]) -> str:
     normalized = str(value or "default").strip().lower()
     return normalized if normalized in TASK_PRIORITY_ORDER else "default"
 
 
+def _normalize_ai_task_type(
+    task_type: Optional[str],
+    capability: Literal["standard", "thinking", "vision"] = "standard",
+) -> str:
+    normalized = str(task_type or "").strip().lower()
+    if normalized in AI_TASK_TYPES:
+        return normalized
+    if normalized in AI_TASK_TYPE_ALIASES:
+        return AI_TASK_TYPE_ALIASES[normalized]
+    return LEGACY_CAPABILITY_TASK_TYPE.get(capability, AI_TASK_FAST_TEXT)
+
+
+def _capability_for_task_type(
+    task_type: str,
+    fallback: Literal["standard", "thinking", "vision"] = "standard",
+) -> Literal["standard", "thinking", "vision"]:
+    capability = TASK_TYPE_CAPABILITY.get(task_type, fallback)
+    return capability if capability in {"standard", "thinking", "vision"} else fallback
+
+
+def _get_platform_task_model(
+    config: dict[str, Any],
+    task_type: str,
+    capability: Literal["standard", "thinking", "vision"],
+) -> Optional[str]:
+    task_models = config.get("task_models") or {}
+    model_name = task_models.get(task_type)
+    if model_name:
+        return str(model_name)
+    models = config.get("models") or {}
+    fallback_model = models.get(capability)
+    return str(fallback_model) if fallback_model else None
+
+
+def _build_model_routes(
+    capability: Literal["standard", "thinking", "vision"],
+    *,
+    task_type: Optional[str] = None,
+    preferred_platform: Optional[str] = None,
+) -> list[AIModelRoute]:
+    normalized_task_type = _normalize_ai_task_type(task_type, capability)
+    effective_capability = _capability_for_task_type(normalized_task_type, capability)
+    platform_order = [preferred_platform] if preferred_platform else ENABLED_PLATFORMS
+    routes: list[AIModelRoute] = []
+
+    for platform_name in platform_order:
+        if not platform_name or platform_name not in PLATFORMS_CONFIG:
+            continue
+        config = PLATFORMS_CONFIG[platform_name]
+        if not config.get("enabled") or platform_name not in ENABLED_PLATFORMS:
+            continue
+        model_name = _get_platform_task_model(config, normalized_task_type, effective_capability)
+        if not model_name:
+            continue
+        if normalized_task_type in MULTIMODAL_TASK_TYPES and platform_name != "volcengine":
+            continue
+        if normalized_task_type in MULTIMODAL_TASK_TYPES and not config.get("models", {}).get("vision"):
+            continue
+        routes.append(
+            AIModelRoute(
+                platform_name=platform_name,
+                platform_config={"name": platform_name, **config},
+                task_type=normalized_task_type,
+                capability=effective_capability,
+                model_name=model_name,
+            )
+        )
+    return routes
+
+
+def _apply_openai_provider_options(
+    kwargs: dict[str, Any],
+    route: AIModelRoute,
+) -> None:
+    if route.platform_name != "deepseek":
+        return
+
+    extra_body = dict(kwargs.get("extra_body") or {})
+    if route.task_type == AI_TASK_FAST_TEXT:
+        extra_body["thinking"] = {"type": "disabled"}
+    elif route.task_type == AI_TASK_DEEP_TEXT:
+        extra_body["thinking"] = {"type": "enabled"}
+        kwargs.setdefault("reasoning_effort", "high")
+
+    if extra_body:
+        kwargs["extra_body"] = extra_body
+
+
+class AIModelLoadRouter:
+    def __init__(self, max_pending: int = 0) -> None:
+        self.max_pending = max_pending
+        self._reserved_by_platform: dict[str, int] = {}
+        self._condition = asyncio.Condition()
+        self._waiting = 0
+
+    async def choose_and_reserve(
+        self,
+        routes: list[AIModelRoute],
+        *,
+        task_priority: str,
+    ) -> tuple[AIModelRoute, str]:
+        if not routes:
+            raise ValueError("no_ai_model_route")
+
+        async with self._condition:
+            while True:
+                selected = self._choose_route_locked(routes, task_priority=task_priority)
+                if selected:
+                    reservation_id = uuid.uuid4().hex
+                    self._reserved_by_platform[selected.platform_name] = (
+                        self._reserved_by_platform.get(selected.platform_name, 0) + 1
+                    )
+                    load = self._reserved_by_platform[selected.platform_name]
+                    break
+
+                if self.max_pending and self._waiting >= self.max_pending:
+                    candidate_platforms = ", ".join(route.platform_name for route in routes)
+                    raise HTTPException(
+                        status_code=503,
+                        detail=(
+                            "AI provider capacity queue is full; please retry shortly. "
+                            f"platforms={candidate_platforms}, pending={self._waiting}, limit={self.max_pending}"
+                        ),
+                    )
+
+                self._waiting += 1
+                print(
+                    "[AI ROUTER] wait provider capacity "
+                    f"task={routes[0].task_type}, priority={task_priority}, "
+                    f"pending={self._waiting}, candidates={','.join(route.platform_name for route in routes)}"
+                )
+                try:
+                    await self._condition.wait()
+                finally:
+                    self._waiting = max(0, self._waiting - 1)
+
+        print(
+            "[AI ROUTER] route "
+            f"task={selected.task_type}, platform={selected.platform_name}, "
+            f"model={selected.model_name}, capability={selected.capability}, "
+            f"reserved={load}, provider_limit={self._provider_limit(selected) or 'unlimited'}, "
+            f"spillover={selected.spillover}"
+        )
+        return selected, reservation_id
+
+    def _provider_limit(self, route: AIModelRoute) -> int:
+        try:
+            return max(0, int(route.platform_config.get("max_concurrency") or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def _has_provider_capacity_locked(self, route: AIModelRoute) -> bool:
+        limit = self._provider_limit(route)
+        if limit <= 0:
+            return True
+        return self._reserved_by_platform.get(route.platform_name, 0) < limit
+
+    def _choose_route_locked(
+        self,
+        routes: list[AIModelRoute],
+        *,
+        task_priority: str,
+    ) -> Optional[AIModelRoute]:
+        available_routes = [
+            route for route in routes
+            if self._has_provider_capacity_locked(route)
+        ]
+        if not available_routes:
+            return None
+
+        task_type = routes[0].task_type
+        if task_type in TEXT_TASK_TYPES and AI_TEXT_SPILLOVER_ENABLED:
+            primary = next((route for route in available_routes if route.platform_name == "deepseek"), None)
+            spillover = next((route for route in available_routes if route.platform_name != "deepseek"), None)
+            blocked_primary = next(
+                (
+                    route for route in routes
+                    if route.platform_name == "deepseek"
+                    and not self._has_provider_capacity_locked(route)
+                ),
+                None,
+            )
+            if blocked_primary and spillover:
+                blocked_limit = self._provider_limit(blocked_primary)
+                return AIModelRoute(
+                    platform_name=spillover.platform_name,
+                    platform_config=spillover.platform_config,
+                    task_type=spillover.task_type,
+                    capability=spillover.capability,
+                    model_name=spillover.model_name,
+                    spillover=True,
+                    reason=f"deepseek_provider_capacity={blocked_limit}",
+                )
+            if primary and spillover:
+                deepseek_load = self._reserved_by_platform.get(primary.platform_name, 0)
+                if deepseek_load >= DEEPSEEK_TEXT_SPILLOVER_THRESHOLD:
+                    return AIModelRoute(
+                        platform_name=spillover.platform_name,
+                        platform_config=spillover.platform_config,
+                        task_type=spillover.task_type,
+                        capability=spillover.capability,
+                        model_name=spillover.model_name,
+                        spillover=True,
+                        reason=f"deepseek_local_load={deepseek_load}/{DEEPSEEK_TEXT_SPILLOVER_THRESHOLD}",
+                    )
+        return available_routes[0]
+
+    async def release(self, route: Optional[AIModelRoute], reservation_id: Optional[str]) -> None:
+        if not route or not reservation_id:
+            return
+        async with self._condition:
+            current = self._reserved_by_platform.get(route.platform_name, 0)
+            if current <= 1:
+                self._reserved_by_platform.pop(route.platform_name, None)
+            else:
+                self._reserved_by_platform[route.platform_name] = current - 1
+            self._condition.notify_all()
+
+    def snapshot(self) -> dict[str, int]:
+        return dict(self._reserved_by_platform)
+
+    @asynccontextmanager
+    async def route(
+        self,
+        routes: list[AIModelRoute],
+        *,
+        task_priority: str,
+    ):
+        selected: Optional[AIModelRoute] = None
+        reservation_id: Optional[str] = None
+        try:
+            selected, reservation_id = await self.choose_and_reserve(
+                routes,
+                task_priority=task_priority,
+            )
+            yield selected
+        finally:
+            await self.release(selected, reservation_id)
+
+
 class AIPriorityLimiter:
-    def __init__(self, concurrency: int):
+    def __init__(self, concurrency: int, max_pending: int = 0):
         self.concurrency = concurrency
+        self.max_pending = max_pending
         self._running = 0
         self._waiters: list[tuple[int, int, asyncio.Future[None], str, str]] = []
         self._counter = 0
@@ -170,6 +517,15 @@ class AIPriorityLimiter:
                 self._running += 1
                 return
 
+            if self.max_pending and len(self._waiters) >= self.max_pending:
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "AI 服务当前排队任务过多，请稍后重试。"
+                        f" pending={len(self._waiters)}, limit={self.max_pending}"
+                    ),
+                )
+
             loop = asyncio.get_running_loop()
             future: asyncio.Future[None] = loop.create_future()
             heapq.heappush(
@@ -183,6 +539,10 @@ class AIPriorityLimiter:
                 ),
             )
             self._counter += 1
+            print(
+                f"[AI QUEUE] 排队: priority={normalized_priority}, label={normalized_label}, "
+                f"pending={len(self._waiters)}, running={self._running}/{self.concurrency}"
+            )
 
         await future
 
@@ -210,7 +570,8 @@ class AIPriorityLimiter:
             await self.release()
 
 
-ai_limiter = AIPriorityLimiter(GLOBAL_AI_CONCURRENCY)
+ai_limiter = AIPriorityLimiter(GLOBAL_AI_CONCURRENCY, max_pending=AI_QUEUE_MAX_PENDING)
+ai_model_router = AIModelLoadRouter(max_pending=AI_PROVIDER_QUEUE_MAX_PENDING)
 callback_client = httpx.AsyncClient()
 
 
@@ -615,7 +976,16 @@ async def lifespan(app: FastAPI):
     if not MAIN_APP_CALLBACK_URL: print("[WARNING] 'MAIN_APP_CALLBACK_URL' 未设置，AI批改结果无法回调主程序。")
     print(f"[AI SERVER] AI 助手服务启动于 http://{AI_HOST}:{AI_PORT}")
     print(f"[AI SERVER] 启用的平台 (按优先级): {', '.join(ENABLED_PLATFORMS)}")
-    print(f"[AI SERVER] 全局 AI 并发数: {GLOBAL_AI_CONCURRENCY}")
+    print(f"[AI SERVER] 全局 AI 并发数: {GLOBAL_AI_CONCURRENCY}, 待处理队列上限: {AI_QUEUE_MAX_PENDING or 'unlimited'}")
+    provider_limits = {
+        name: PLATFORMS_CONFIG[name].get("max_concurrency") or "unlimited"
+        for name in ENABLED_PLATFORMS
+    }
+    print(
+        "[AI SERVER] 厂商并发上限: "
+        f"{provider_limits}, provider_queue_limit={AI_PROVIDER_QUEUE_MAX_PENDING or 'unlimited'}, "
+        f"deepseek_text_spillover_threshold={DEEPSEEK_TEXT_SPILLOVER_THRESHOLD}"
+    )
     await callback_client.__aenter__()
 
     print("[AI SERVER] Lifespan: Startup complete.")
@@ -652,6 +1022,7 @@ class AIChatRequest(BaseModel):
     image_inputs: List[Dict[str, Any]] = Field(default_factory=list)
     file_texts: List[Dict[str, str]] = Field(default_factory=list)  # 文件文本内容 [{"name": "foo.py", "content": "..."}]
     model_capability: Literal["standard", "thinking", "vision"] = "standard"
+    task_type: Optional[str] = None
     response_format: Literal["text", "json"] = "text"
     task_priority: Literal["interactive", "default", "background"] = "default"
     task_label: Optional[str] = None
@@ -1160,14 +1531,6 @@ def _select_grading_execution(grading_files: list[dict[str, Any]]) -> dict[str, 
                     "capability": "vision",
                     "mode": "volcengine_responses",
                 }
-            config = PLATFORMS_CONFIG[platform_name]
-            if config["models"].get("vision"):
-                return {
-                    "platform_name": platform_name,
-                    "platform_config": {"name": platform_name, **config},
-                    "capability": "vision",
-                    "mode": "vision_messages",
-                }
         raise ValueError("当前启用的 AI 平台不支持图片附件识别，请启用支持视觉能力的模型。")
 
     # 仅可提取文档 (无 PDF、无图片)：文本提取后可使用任意平台
@@ -1199,13 +1562,6 @@ def _select_grading_execution(grading_files: list[dict[str, Any]]) -> dict[str, 
                     "platform_config": {"name": platform_name, **config},
                     "capability": "vision",
                     "mode": "volcengine_responses",
-                }
-            if config["models"].get("vision"):
-                return {
-                    "platform_name": platform_name,
-                    "platform_config": {"name": platform_name, **config},
-                    "capability": "vision",
-                    "mode": "vision_messages",
                 }
         raise ValueError("当前启用的 AI 平台不支持图片附件识别，请启用支持视觉能力的模型。")
 
@@ -1816,6 +2172,7 @@ async def _call_volcengine_responses_api(
     api_key: str,
     input_payload: list[dict[str, Any]],
     capability: str = "responses",
+    task_type: Optional[str] = None,
     task_priority: str = "default",
     task_label: Optional[str] = None,
 ) -> dict[str, Any]:
@@ -1826,19 +2183,31 @@ async def _call_volcengine_responses_api(
         "text": {"format": {"type": "json_object"}},
     }
     call_id, started_at, start_perf = _new_ai_usage_context()
+    normalized_task_type = _normalize_ai_task_type(
+        task_type,
+        "vision" if capability == "vision" else "thinking",
+    )
+    volcengine_route = AIModelRoute(
+        platform_name="volcengine",
+        platform_config={"name": "volcengine", **(PLATFORMS_CONFIG.get("volcengine") or {})},
+        task_type=normalized_task_type,
+        capability="vision" if capability == "vision" else "thinking",
+        model_name=model_name,
+    )
 
-    async with ai_limiter.slot(priority=task_priority, label=task_label or "responses_api"):
-        async with httpx.AsyncClient(timeout=180.0) as client:
-            response = await client.post(
-                f"{VOLCENGINE_OPENAI_BASE_URL}/responses",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=request_payload,
-            )
-            response.raise_for_status()
-            data = response.json()
+    async with ai_model_router.route([volcengine_route], task_priority=task_priority):
+        async with ai_limiter.slot(priority=task_priority, label=task_label or f"responses_api:{normalized_task_type}"):
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                response = await client.post(
+                    f"{VOLCENGINE_OPENAI_BASE_URL}/responses",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=request_payload,
+                )
+                response.raise_for_status()
+                data = response.json()
 
     output_text = data.get("output_text")
     if not output_text:
@@ -1872,7 +2241,7 @@ async def _call_volcengine_responses_api(
         provider_usage=_extract_provider_usage(data),
         status="success",
         stream=False,
-        extra={"base_url": VOLCENGINE_OPENAI_BASE_URL},
+        extra={"base_url": VOLCENGINE_OPENAI_BASE_URL, "task_type": normalized_task_type},
     )
     return _robust_parse_grading_json(output_text)
 
@@ -1986,106 +2355,173 @@ async def _call_ai_platform(
         capability: Literal["standard", "thinking", "vision"] = "standard",
         require_json_output: bool = False,
         allow_json_array: bool = False,
+        parse_json_response: bool = True,
         task_priority: str = "default",
         task_label: Optional[str] = None,
         preferred_platform: Optional[str] = None,
+        task_type: Optional[str] = None,
 ) -> Any:
-    selected_platform_config = _get_selected_platform_config(capability, preferred_platform=preferred_platform)
-    if not selected_platform_config:
+    routes = _build_model_routes(capability, task_type=task_type, preferred_platform=preferred_platform)
+    if not routes:
+        normalized_task_type = _normalize_ai_task_type(task_type, capability)
         if preferred_platform:
-            raise HTTPException(500, f"没有找到已启用且支持 '{capability}' 能力的 {preferred_platform} AI 平台。")
-        raise HTTPException(500, f"没有找到支持 '{capability}' 能力的已启用AI平台。")
+            raise HTTPException(500, f"没有找到已启用且支持 '{normalized_task_type}' 任务的 {preferred_platform} AI 平台。")
+        raise HTTPException(500, f"没有找到支持 '{normalized_task_type}' 任务的已启用AI平台。")
 
-    platform_name = selected_platform_config["name"]
-    model_name = selected_platform_config["models"][capability]
-    api_key = selected_platform_config["api_key"]
-    platform_type = selected_platform_config["type"]
-    can_force_json = selected_platform_config.get("can_force_json", {}).get(capability, False)
-    prepared_messages = _prepare_chat_messages_for_platform(messages, capability=capability)
-    request_payload: dict[str, Any] = {"model": model_name, "messages": prepared_messages}
-    call_id, started_at, start_perf = _new_ai_usage_context()
-    provider_usage: dict[str, Any] | None = None
-    response_thinking = ""
-    logged_usage = False
+    async with ai_model_router.route(routes, task_priority=task_priority) as selected_route:
+        selected_platform_config = selected_route.platform_config
+        platform_name = selected_route.platform_name
+        model_name = selected_route.model_name
+        capability = selected_route.capability
+        api_key = selected_platform_config["api_key"]
+        platform_type = selected_platform_config["type"]
+        can_force_json = selected_platform_config.get("can_force_json", {}).get(capability, False)
+        prepared_messages = _prepare_chat_messages_for_platform(messages, capability=capability)
+        request_payload: dict[str, Any] = {"model": model_name, "messages": prepared_messages}
+        call_id, started_at, start_perf = _new_ai_usage_context()
+        provider_usage: dict[str, Any] | None = None
+        response_thinking = ""
+        logged_usage = False
 
-    async with ai_limiter.slot(priority=task_priority, label=task_label or f"call:{capability}"):
-        print(f"[AI WORKER] 开始处理任务 (Platform: {platform_name}, Model: {model_name}, Capability: {capability})")
-        # print(f"[AI WORKER] 发送的 Messages: {json.dumps(messages, ensure_ascii=False, indent=2)}")
-
-        if not api_key: raise HTTPException(500, f"未配置 {platform_name} 的 API_KEY")
-
-        response_content = None
-        try:
-            if platform_type == "volcengine":
-                if not AsyncArk: raise ImportError("volcenginesdkarkruntime 未安装")
-                client = AsyncArk(api_key=api_key)
-                completion = await client.chat.completions.create(model=model_name, messages=prepared_messages)
-                message = completion.choices[0].message
-                response_content = _coerce_stream_text(getattr(message, "content", None))
-                response_thinking = _extract_reasoning_text(message)
-                provider_usage = _extract_provider_usage(completion)
-
-            elif platform_type == "openai":
-                if not AsyncOpenAI: raise ImportError("openai 库未安装")
-                base_url = selected_platform_config["base_url"]
-                # 设置超时时间，防止长时间等待
-                client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=180.0)
-                kwargs = {"model": model_name, "messages": prepared_messages}
-
-                if require_json_output and can_force_json:
-                    print(f"[AI WORKER] 平台 {platform_name} 模型 {model_name} 支持强制JSON，正在启用。")
-                    kwargs["response_format"] = {"type": "json_object"}
-                elif require_json_output:
-                    print(f"[AI WORKER] 平台 {platform_name} 模型 {model_name} 不支持强制JSON，将依赖提示词。")
-
-                request_payload = dict(kwargs)
-                completion = await client.chat.completions.create(**kwargs)
-                message = completion.choices[0].message
-                response_content = _coerce_stream_text(getattr(message, "content", None))
-                response_thinking = _extract_reasoning_text(message)
-                provider_usage = _extract_provider_usage(completion)
-
-            else:
-                raise HTTPException(500, f"不支持的平台类型: {platform_type}")
-
-            print(f"[AI WORKER] {platform_name} 调用成功。")
-            print(f"[AI WORKER] 原始响应内容: >>>\n{response_content}\n<<<")
-
-            # --- 健壮的 JSON 解析 ---
-            _log_ai_usage(
-                call_id=call_id,
-                started_at=started_at,
-                start_perf=start_perf,
-                task_label=task_label,
-                platform_name=platform_name,
-                platform_type=platform_type,
-                model_name=model_name,
-                capability=capability,
-                api_style="chat_completions",
-                request_payload=request_payload,
-                response_text=response_content or "",
-                thinking_text=response_thinking,
-                provider_usage=provider_usage,
-                status="success",
-                stream=False,
-                extra={"require_json_output": require_json_output},
+        async with ai_limiter.slot(priority=task_priority, label=task_label or f"call:{selected_route.task_type}"):
+            print(
+                f"[AI WORKER] start task platform={platform_name}, model={model_name}, "
+                f"task_type={selected_route.task_type}, capability={capability}, spillover={selected_route.spillover}"
             )
-            logged_usage = True
 
-            if not response_content:
-                print("[ERROR] AI 返回了空内容。")
-                raise HTTPException(500, "AI 返回空内容")
+            if not api_key:
+                raise HTTPException(500, f"未配置 {platform_name} 的 API_KEY")
 
-            if require_json_output:
-                try:
-                    return _robust_parse_json_value(
-                        response_content,
-                        purpose="JSON",
-                        allow_array=allow_json_array,
+            response_content = None
+            provider_stream_used = False
+            api_style = "chat_completions"
+            try:
+                if platform_type == "volcengine":
+                    if not AsyncArk:
+                        raise ImportError("volcenginesdkarkruntime 未安装")
+                    client = AsyncArk(
+                        api_key=api_key,
+                        base_url=selected_platform_config.get("base_url") or VOLCENGINE_OPENAI_BASE_URL,
+                        timeout=180.0,
                     )
-                except ValueError as e:
-                    raise HTTPException(500, str(e)) from e
-            else:
+                    if AI_NONSTREAM_USE_PROVIDER_STREAM:
+                        provider_stream_used = True
+                        api_style = "chat_completions_stream_collect"
+                        request_payload = {"model": model_name, "messages": prepared_messages, "stream": True}
+                        stream = await client.chat.completions.create(
+                            model=model_name,
+                            messages=prepared_messages,
+                            stream=True,
+                        )
+                        answer_parts: list[str] = []
+                        thinking_parts: list[str] = []
+                        async for chunk in stream:
+                            provider_usage = _extract_provider_usage(chunk) or provider_usage
+                            if not getattr(chunk, "choices", None) or not chunk.choices[0].delta:
+                                continue
+                            reasoning_text, content_text = _extract_delta_parts(chunk.choices[0].delta)
+                            if reasoning_text:
+                                thinking_parts.append(reasoning_text)
+                            if content_text:
+                                answer_parts.append(content_text)
+                        response_content = "".join(answer_parts)
+                        response_thinking = "".join(thinking_parts)
+                    else:
+                        completion = await client.chat.completions.create(model=model_name, messages=prepared_messages)
+                        message = completion.choices[0].message
+                        response_content = _coerce_stream_text(getattr(message, "content", None))
+                        response_thinking = _extract_reasoning_text(message)
+                        provider_usage = _extract_provider_usage(completion)
+
+                elif platform_type == "openai":
+                    if not AsyncOpenAI:
+                        raise ImportError("openai 库未安装")
+                    base_url = selected_platform_config["base_url"]
+                    client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=180.0)
+                    kwargs = {"model": model_name, "messages": prepared_messages}
+
+                    if require_json_output and can_force_json:
+                        print(f"[AI WORKER] 平台 {platform_name} 模型 {model_name} 支持强制JSON，正在启用。")
+                        kwargs["response_format"] = {"type": "json_object"}
+                    elif require_json_output:
+                        print(f"[AI WORKER] 平台 {platform_name} 模型 {model_name} 不支持强制JSON，将依赖提示词。")
+
+                    _apply_openai_provider_options(kwargs, selected_route)
+                    request_payload = dict(kwargs)
+                    if AI_NONSTREAM_USE_PROVIDER_STREAM:
+                        provider_stream_used = True
+                        api_style = "chat_completions_stream_collect"
+                        kwargs["stream"] = True
+                        request_payload = dict(kwargs)
+                        stream = await client.chat.completions.create(**kwargs)
+                        answer_parts: list[str] = []
+                        thinking_parts: list[str] = []
+                        async for chunk in stream:
+                            provider_usage = _extract_provider_usage(chunk) or provider_usage
+                            if not getattr(chunk, "choices", None) or not chunk.choices[0].delta:
+                                continue
+                            reasoning_text, content_text = _extract_delta_parts(chunk.choices[0].delta)
+                            if reasoning_text:
+                                thinking_parts.append(reasoning_text)
+                            if content_text:
+                                answer_parts.append(content_text)
+                        response_content = "".join(answer_parts)
+                        response_thinking = "".join(thinking_parts)
+                    else:
+                        completion = await client.chat.completions.create(**kwargs)
+                        message = completion.choices[0].message
+                        response_content = _coerce_stream_text(getattr(message, "content", None))
+                        response_thinking = _extract_reasoning_text(message)
+                        provider_usage = _extract_provider_usage(completion)
+
+                else:
+                    raise HTTPException(500, f"不支持的平台类型: {platform_type}")
+
+                print(f"[AI WORKER] {platform_name} 调用成功。")
+                print(f"[AI WORKER] 原始响应内容: >>>\n{response_content}\n<<<")
+
+                usage_extra = {
+                    "require_json_output": require_json_output,
+                    "task_type": selected_route.task_type,
+                    "spillover": selected_route.spillover,
+                    "route_reason": selected_route.reason,
+                }
+                _log_ai_usage(
+                    call_id=call_id,
+                    started_at=started_at,
+                    start_perf=start_perf,
+                    task_label=task_label,
+                    platform_name=platform_name,
+                    platform_type=platform_type,
+                    model_name=model_name,
+                    capability=capability,
+                    api_style=api_style,
+                    request_payload=request_payload,
+                    response_text=response_content or "",
+                    thinking_text=response_thinking,
+                    provider_usage=provider_usage,
+                    status="success",
+                    stream=provider_stream_used,
+                    extra=usage_extra,
+                )
+                logged_usage = True
+
+                if not response_content:
+                    print("[ERROR] AI 返回了空内容。")
+                    raise HTTPException(500, "AI 返回空内容")
+
+                if require_json_output:
+                    try:
+                        return _robust_parse_json_value(
+                            response_content,
+                            purpose="JSON",
+                            allow_array=allow_json_array,
+                        )
+                    except ValueError as e:
+                        raise HTTPException(500, str(e)) from e
+
+                if not parse_json_response:
+                    return {"text": response_content}
                 try:
                     return _robust_parse_json_value(
                         response_content,
@@ -2094,55 +2530,64 @@ async def _call_ai_platform(
                     )
                 except ValueError:
                     return {"text": response_content}
-            # --- 解析结束 ---
 
-        except HTTPException as he:
-            print(f"[ERROR] {platform_name} 处理失败: {he.detail}")
-            if not logged_usage:
-                _log_ai_usage(
-                    call_id=call_id,
-                    started_at=started_at,
-                    start_perf=start_perf,
-                    task_label=task_label,
-                    platform_name=platform_name,
-                    platform_type=platform_type,
-                    model_name=model_name,
-                    capability=capability,
-                    api_style="chat_completions",
-                    request_payload=request_payload,
-                    response_text=response_content or "",
-                    thinking_text=response_thinking,
-                    provider_usage=provider_usage,
-                    status="error",
-                    stream=False,
-                    error=he.detail,
-                    extra={"require_json_output": require_json_output},
-                )
-            raise he
-        except Exception as e:
-            print(f"[ERROR] {platform_name} 调用失败: {e}")
-            print(traceback.format_exc())
-            if not logged_usage:
-                _log_ai_usage(
-                    call_id=call_id,
-                    started_at=started_at,
-                    start_perf=start_perf,
-                    task_label=task_label,
-                    platform_name=platform_name,
-                    platform_type=platform_type,
-                    model_name=model_name,
-                    capability=capability,
-                    api_style="chat_completions",
-                    request_payload=request_payload,
-                    response_text=response_content or "",
-                    thinking_text=response_thinking,
-                    provider_usage=provider_usage,
-                    status="error",
-                    stream=False,
-                    error=e,
-                    extra={"require_json_output": require_json_output},
-                )
-            raise HTTPException(500, f"{platform_name} 调用失败: {e}")
+            except HTTPException as he:
+                print(f"[ERROR] {platform_name} 处理失败: {he.detail}")
+                if not logged_usage:
+                    _log_ai_usage(
+                        call_id=call_id,
+                        started_at=started_at,
+                        start_perf=start_perf,
+                        task_label=task_label,
+                        platform_name=platform_name,
+                        platform_type=platform_type,
+                        model_name=model_name,
+                        capability=capability,
+                        api_style=api_style,
+                        request_payload=request_payload,
+                        response_text=response_content or "",
+                        thinking_text=response_thinking,
+                        provider_usage=provider_usage,
+                        status="error",
+                        stream=provider_stream_used,
+                        error=he.detail,
+                        extra={
+                            "require_json_output": require_json_output,
+                            "task_type": selected_route.task_type,
+                            "spillover": selected_route.spillover,
+                            "route_reason": selected_route.reason,
+                        },
+                    )
+                raise he
+            except Exception as e:
+                print(f"[ERROR] {platform_name} 调用失败: {e}")
+                print(traceback.format_exc())
+                if not logged_usage:
+                    _log_ai_usage(
+                        call_id=call_id,
+                        started_at=started_at,
+                        start_perf=start_perf,
+                        task_label=task_label,
+                        platform_name=platform_name,
+                        platform_type=platform_type,
+                        model_name=model_name,
+                        capability=capability,
+                        api_style=api_style,
+                        request_payload=request_payload,
+                        response_text=response_content or "",
+                        thinking_text=response_thinking,
+                        provider_usage=provider_usage,
+                        status="error",
+                        stream=provider_stream_used,
+                        error=e,
+                        extra={
+                            "require_json_output": require_json_output,
+                            "task_type": selected_route.task_type,
+                            "spillover": selected_route.spillover,
+                            "route_reason": selected_route.reason,
+                        },
+                    )
+                raise HTTPException(500, f"{platform_name} 调用失败: {e}")
 
 
 async def _call_ai_platform_chat_stream_generator(
@@ -2151,6 +2596,7 @@ async def _call_ai_platform_chat_stream_generator(
         capability: Literal["standard", "thinking", "vision"] = "standard",
         task_priority: str = "interactive",
         task_label: Optional[str] = None,
+        task_type: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """
     (新) 专用于聊天流式输出的 AI 调用函数。
@@ -2319,6 +2765,7 @@ async def _call_ai_platform_chat_stream_events(
         capability: Literal["standard", "thinking", "vision"] = "standard",
         task_priority: str = "interactive",
         task_label: Optional[str] = None,
+        task_type: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     thinking_content = ""
     final_answer = ""
@@ -2328,26 +2775,61 @@ async def _call_ai_platform_chat_stream_events(
         *messages
     ]
 
-    selected_platform_config = _get_selected_platform_config(capability)
-    if not selected_platform_config:
-        error_msg = f"娌℃湁鎵惧埌鏀寔 '{capability}' 鑳藉姏鐨勫凡鍚敤AI骞冲彴銆?"
+    routes = _build_model_routes(capability, task_type=task_type)
+    if not routes:
+        normalized_task_type = _normalize_ai_task_type(task_type, capability)
+        error_msg = f"没有找到支持 '{normalized_task_type}' 任务的已启用AI平台。"
         print(f"[ERROR] {error_msg}")
         yield _encode_stream_event("error", message=error_msg)
         yield _encode_stream_event("done", has_thinking=False)
         return
 
-    platform_name = selected_platform_config["name"]
-    model_name = selected_platform_config["models"][capability]
+    route_task = asyncio.create_task(
+        ai_model_router.choose_and_reserve(
+            routes,
+            task_priority=task_priority,
+        )
+    )
+    try:
+        while True:
+            try:
+                selected_route, route_reservation = await asyncio.wait_for(
+                    asyncio.shield(route_task),
+                    timeout=15.0,
+                )
+                break
+            except asyncio.TimeoutError:
+                yield _encode_stream_event(
+                    "queue_keepalive",
+                    message="waiting_for_ai_provider_capacity",
+                )
+            except HTTPException as e:
+                yield _encode_stream_event("error", message=str(e.detail))
+                yield _encode_stream_event("done", has_thinking=False)
+                return
+            except Exception as e:
+                yield _encode_stream_event("error", message=f"AI route selection failed: {e}")
+                yield _encode_stream_event("done", has_thinking=False)
+                return
+    except asyncio.CancelledError:
+        route_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await route_task
+        raise
+    selected_platform_config = selected_route.platform_config
+    capability = selected_route.capability
+    platform_name = selected_route.platform_name
+    model_name = selected_route.model_name
     api_key = selected_platform_config["api_key"]
     platform_type = selected_platform_config["type"]
-    thinking_supported = capability == "thinking"
+    thinking_supported = selected_route.task_type in {AI_TASK_DEEP_TEXT, AI_TASK_DEEP_MULTIMODAL}
     think_tag_parser = ThinkTagStreamParser() if thinking_supported else None
     prepared_messages = _prepare_chat_messages_for_platform(final_messages, capability=capability)
     request_payload: dict[str, Any] = {"model": model_name, "messages": prepared_messages, "stream": True}
     call_id, started_at, start_perf = _new_ai_usage_context()
     stream_error: Any = None
 
-    async with ai_limiter.slot(priority=task_priority, label=task_label or f"stream_events:{capability}"):
+    async with ai_limiter.slot(priority=task_priority, label=task_label or f"stream_events:{selected_route.task_type}"):
         print(
             f"[AI WORKER] 寮€濮嬪鐞嗙粨鏋勫寲娴佸紡鑱婂ぉ (Platform: {platform_name}, Model: {model_name}, Capability: {capability})")
 
@@ -2373,6 +2855,7 @@ async def _call_ai_platform_chat_stream_events(
             )
             yield _encode_stream_event("error", message=error_msg)
             yield _encode_stream_event("done", has_thinking=False)
+            await ai_model_router.release(selected_route, route_reservation)
             return
 
         thinking_end_sent = False
@@ -2401,6 +2884,8 @@ async def _call_ai_platform_chat_stream_events(
             platform=platform_name,
             model=model_name,
             capability=capability,
+            task_type=selected_route.task_type,
+            spillover=selected_route.spillover,
             thinking_supported=thinking_supported,
         )
 
@@ -2408,7 +2893,11 @@ async def _call_ai_platform_chat_stream_events(
             if platform_type == "volcengine":
                 if not AsyncArk:
                     raise ImportError("volcenginesdkarkruntime 鏈畨瑁?")
-                client = AsyncArk(api_key=api_key, timeout=180.0)
+                client = AsyncArk(
+                    api_key=api_key,
+                    base_url=selected_platform_config.get("base_url") or VOLCENGINE_OPENAI_BASE_URL,
+                    timeout=180.0,
+                )
                 stream = await client.chat.completions.create(
                     model=model_name,
                     messages=prepared_messages,
@@ -2426,6 +2915,7 @@ async def _call_ai_platform_chat_stream_events(
                 }
                 if "DeepSeek-R1" in model_name:
                     kwargs["extra_body"] = {"thinking_budget": 1024}
+                _apply_openai_provider_options(kwargs, selected_route)
                 request_payload = dict(kwargs)
                 stream = await client.chat.completions.create(**kwargs)
             else:
@@ -2491,7 +2981,13 @@ async def _call_ai_platform_chat_stream_events(
                 status="error" if stream_error else "success",
                 stream=True,
                 error=stream_error,
+                extra={
+                    "task_type": selected_route.task_type,
+                    "spillover": selected_route.spillover,
+                    "route_reason": selected_route.reason,
+                },
             )
+            await ai_model_router.release(selected_route, route_reservation)
 
 
 async def _call_ai_platform_chat(
@@ -2500,115 +2996,24 @@ async def _call_ai_platform_chat(
         capability: Literal["standard", "thinking", "vision"] = "standard",
         task_priority: str = "interactive",
         task_label: Optional[str] = None,
+        task_type: Optional[str] = None,
 ) -> str:
-    """
-    (新) 专用于聊天的 AI 调用函数，返回纯文本响应。
-    它负责将 system_prompt 注入到 messages 列表中。
-    """
-
-    # 构建最终发送给 AI 的消息列表
-    # (注意: 不同平台处理 system_prompt 的方式不同)
     final_messages = [
         {"role": "system", "content": system_prompt},
-        *messages  # 添加所有历史消息
+        *messages,
     ]
-
-    selected_platform_config = _get_selected_platform_config(capability)
-    if not selected_platform_config:
-        raise HTTPException(500, f"没有找到支持 '{capability}' 能力的已启用AI平台。")
-
-    platform_name = selected_platform_config["name"]
-    model_name = selected_platform_config["models"][capability]
-    api_key = selected_platform_config["api_key"]
-    platform_type = selected_platform_config["type"]
-    can_force_json = selected_platform_config.get("can_force_json", {}).get(capability, False)
-    prepared_messages = _prepare_chat_messages_for_platform(final_messages, capability=capability)
-    request_payload: dict[str, Any] = {"model": model_name, "messages": prepared_messages}
-    call_id, started_at, start_perf = _new_ai_usage_context()
-    provider_usage: dict[str, Any] | None = None
-    response_thinking = ""
-    logged_usage = False
-
-    async with ai_limiter.slot(priority=task_priority, label=task_label or f"chat:{capability}"):
-        print(f"[AI WORKER] 开始处理聊天 (Platform: {platform_name}, Model: {model_name}, Capability: {capability})")
-        if not api_key: raise HTTPException(500, f"未配置 {platform_name} 的 API_KEY")
-
-        response_content = None
-        try:
-            if platform_type == "volcengine":
-                if not AsyncArk: raise ImportError("volcenginesdkarkruntime 未安装")
-                client = AsyncArk(api_key=api_key)
-
-                # 火山方舟/豆包，system prompt 作为第一条消息
-                completion = await client.chat.completions.create(model=model_name, messages=prepared_messages)
-                message = completion.choices[0].message
-                response_content = _coerce_stream_text(getattr(message, "content", None))
-                response_thinking = _extract_reasoning_text(message)
-                provider_usage = _extract_provider_usage(completion)
-
-            elif platform_type == "openai":
-                if not AsyncOpenAI: raise ImportError("openai 库未安装")
-                base_url = selected_platform_config["base_url"]
-                client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=180.0)
-
-                # 修改：对于OpenAI兼容平台，不再使用system参数，而是将system_prompt作为系统消息插入
-                # 这样可以兼容更多平台（如SiliconFlow）
-                completion = await client.chat.completions.create(
-                    model=model_name,
-                    messages=prepared_messages  # 直接使用包含system消息的完整消息列表
-                )
-                message = completion.choices[0].message
-                response_content = _coerce_stream_text(getattr(message, "content", None))
-                response_thinking = _extract_reasoning_text(message)
-                provider_usage = _extract_provider_usage(completion)
-
-            else:
-                raise HTTPException(500, f"不支持的平台类型: {platform_type}")
-
-            print(f"[AI WORKER] {platform_name} 聊天调用成功。")
-            _log_ai_usage(
-                call_id=call_id,
-                started_at=started_at,
-                start_perf=start_perf,
-                task_label=task_label,
-                platform_name=platform_name,
-                platform_type=platform_type,
-                model_name=model_name,
-                capability=capability,
-                api_style="chat_completions",
-                request_payload=request_payload,
-                response_text=response_content or "",
-                thinking_text=response_thinking,
-                provider_usage=provider_usage,
-                status="success",
-                stream=False,
-            )
-            logged_usage = True
-            return response_content or ""  # 返回纯文本
-
-        except Exception as e:
-            print(f"[ERROR] {platform_name} 聊天调用失败: {e}")
-            print(traceback.format_exc())
-            if not logged_usage:
-                _log_ai_usage(
-                    call_id=call_id,
-                    started_at=started_at,
-                    start_perf=start_perf,
-                    task_label=task_label,
-                    platform_name=platform_name,
-                    platform_type=platform_type,
-                    model_name=model_name,
-                    capability=capability,
-                    api_style="chat_completions",
-                    request_payload=request_payload,
-                    response_text=response_content or "",
-                    thinking_text=response_thinking,
-                    provider_usage=provider_usage,
-                    status="error",
-                    stream=False,
-                    error=e,
-                )
-            raise HTTPException(500, f"{platform_name} 聊天调用失败: {e}")
+    result = await _call_ai_platform(
+        final_messages,
+        capability=capability,
+        require_json_output=False,
+        parse_json_response=False,
+        task_priority=task_priority,
+        task_label=task_label,
+        task_type=task_type,
+    )
+    if isinstance(result, dict):
+        return str(result.get("text") or "")
+    return str(result or "")
 
 
 SOFTWARE_INFO_SYSTEM_PROMPT = """你是一个软件信息查询助手。用户会给你一个软件文件名，你需要通过网络搜索找到该软件的准确信息。
@@ -2657,24 +3062,33 @@ async def _call_volcengine_with_web_search(
         ],
     }
     call_id, started_at, start_perf = _new_ai_usage_context()
+    volcengine_route = AIModelRoute(
+        platform_name="volcengine",
+        platform_config={"name": "volcengine", **volc_config},
+        task_type=AI_TASK_FAST_TEXT,
+        capability="standard",
+        model_name=model_name,
+    )
 
-    async with ai_limiter.slot(priority="background", label=task_label):
+    async with ai_model_router.route([volcengine_route], task_priority="background"):
         print(f"[AI WORKER] 开始联网搜索调用 (Responses API, Model: {model_name})")
 
-        async with httpx.AsyncClient(timeout=60.0) as http:
-            resp = await http.post(
-                f"{base_url}/responses",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                    "ark-beta-web-search": "true",
-                },
-                json=request_payload,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        async with ai_limiter.slot(priority="background", label=task_label):
+            async with httpx.AsyncClient(timeout=60.0) as http:
+                resp = await http.post(
+                    f"{base_url}/responses",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                        "ark-beta-web-search": "true",
+                    },
+                    json=request_payload,
+                )
+                resp.raise_for_status()
+                data = resp.json()
 
         # 从 Responses API 输出中提取文本
+        text_parts = []
         text_parts = []
         for item in data.get("output", []):
             if item.get("type") == "message":
@@ -2700,7 +3114,7 @@ async def _call_volcengine_with_web_search(
             provider_usage=_extract_provider_usage(data),
             status="success",
             stream=False,
-            extra={"base_url": base_url, "web_search": True},
+            extra={"base_url": base_url, "web_search": True, "task_type": AI_TASK_FAST_TEXT},
         )
         return result
 
@@ -2715,6 +3129,7 @@ async def generate_assignment_task(req: GenerationRequest):
         require_json_output=True,
         task_priority="default",
         task_label="generate_assignment",
+        task_type=AI_TASK_DEEP_TEXT if req.model_type == "thinking" else AI_TASK_FAST_TEXT,
     )
 
 
@@ -2743,6 +3158,7 @@ async def generate_exam_task(req: ExamGenerationRequest):
         task_priority="default",
         task_label="generate_exam",
         preferred_platform=req.force_platform if req.source_type == "document" else None,
+        task_type=AI_TASK_DEEP_TEXT,
     )
 
     result = _normalize_exam_generation_result(result)
@@ -2776,6 +3192,7 @@ async def ai_chat_task_stream(req: AIChatRequest):
         capability=req.model_capability,
         task_priority=req.task_priority,
         task_label=req.task_label or "chat_stream",
+        task_type=req.task_type,
     )
 
     # 4. 返回 StreamingResponse
@@ -2817,6 +3234,7 @@ async def ai_chat_task(req: AIChatRequest):
                 require_json_output=True,
                 task_priority=req.task_priority,
                 task_label=req.task_label or "chat_json",
+                task_type=req.task_type,
             )
             return {"status": "success", "response_json": ai_response_json}
 
@@ -2828,6 +3246,7 @@ async def ai_chat_task(req: AIChatRequest):
             capability=req.model_capability,
             task_priority=req.task_priority,
             task_label=req.task_label or "chat_text",
+            task_type=req.task_type,
         )
 
         # 6. 返回纯文本响应
@@ -3002,12 +3421,20 @@ async def run_grading_job(job: GradingJob):
         execution = _select_grading_execution(grading_files)
         selected_capability: Literal["standard", "thinking", "vision"] = execution["capability"]
         selected_platform = execution["platform_config"]
+        selected_task_type = execution.get("task_type") or (
+            AI_TASK_DEEP_MULTIMODAL
+            if selected_capability == "vision" or execution["mode"] == "volcengine_responses"
+            else AI_TASK_DEEP_TEXT
+        )
         print(
-            f"[AI WORKER] 将使用平台 {execution['platform_name']} / 能力 {selected_capability} / 模式 {execution['mode']}"
+            f"[AI WORKER] 将使用平台 {execution['platform_name']} / 能力 {selected_capability} / 任务 {selected_task_type} / 模式 {execution['mode']}"
         )
 
         if execution["mode"] == "volcengine_responses":
-            model_name = selected_platform["models"][selected_capability]
+            model_name = (
+                selected_platform.get("task_models", {}).get(selected_task_type)
+                or selected_platform["models"][selected_capability]
+            )
             api_key = selected_platform["api_key"]
             if not api_key:
                 raise ValueError("火山方舟 API Key 未配置")
@@ -3021,6 +3448,7 @@ async def run_grading_job(job: GradingJob):
                     job.answers_json,
                 ),
                 capability=selected_capability,
+                task_type=selected_task_type,
                 task_priority="default",
                 task_label=f"grading:{job.submission_id}",
             )
@@ -3053,6 +3481,8 @@ async def run_grading_job(job: GradingJob):
                 require_json_output=True,
                 task_priority="default",
                 task_label=f"grading:{job.submission_id}",
+                preferred_platform=execution["platform_name"],
+                task_type=selected_task_type,
             )
 
         if not isinstance(result, dict) or ("score" not in result and "feedback_md" not in result):

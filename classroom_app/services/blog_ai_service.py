@@ -335,6 +335,7 @@ async def _generate_housekeeper_reply(
                 "messages": [],
                 "new_message": f"[触发方式] {trigger_label}\n[呼叫者] {caller_display_name or '平台用户'}\n[本次请求]\n{request_text}",
                 "model_capability": "standard",
+                "task_type": "fast_text_response",
                 "task_priority": "background",
                 "task_label": "blog_housekeeper_reply",
                 "web_search_enabled": False,

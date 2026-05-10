@@ -2062,6 +2062,7 @@ async def _generate_ai_private_reply_text(
                 "messages": history_messages,
                 "new_message": latest_user_message,
                 "model_capability": "standard",
+                "task_type": "fast_text_response",
                 "task_priority": "interactive",
                 "task_label": "private_message_reply",
                 "web_search_enabled": False,

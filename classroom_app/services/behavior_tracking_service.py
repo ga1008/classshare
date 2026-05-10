@@ -1300,6 +1300,7 @@ async def generate_behavior_profile_for_user(
                 "messages": [],
                 "new_message": profile_prompt,
                 "model_capability": "thinking",
+                "task_type": "deep_text_reasoning",
                 "response_format": "json",
                 "task_priority": "background",
                 "task_label": "behavior_profile",

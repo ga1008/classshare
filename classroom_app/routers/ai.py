@@ -1075,6 +1075,7 @@ System Prompt:
                 "messages": [],
                 "new_message": profile_prompt,
                 "model_capability": "thinking",
+                "task_type": "deep_text_reasoning",
                 "response_format": "json",
                 "web_search_enabled": False,
             },
@@ -1353,6 +1354,12 @@ async def handle_ai_chat(
             model_capability = "thinking"
     elif deep_thinking:
         model_capability = "thinking"
+    if base64_urls:
+        ai_task_type = "deep_multimodal_reasoning" if deep_thinking else "light_multimodal_understanding"
+    elif model_capability == "thinking":
+        ai_task_type = "deep_text_reasoning"
+    else:
+        ai_task_type = "fast_text_response"
     attachments_json = json.dumps(user_attachments) if user_attachments else None
 
     # 4. 保存用户的消息到数据库
@@ -1392,6 +1399,7 @@ async def handle_ai_chat(
                 "session_uuid": session_uuid,
                 "attachments": user_attachments,
                 "model_capability": model_capability,
+                "task_type": ai_task_type,
                 "deep_thinking": bool(deep_thinking),
             },
             page_key="ai_chat",
@@ -1440,6 +1448,7 @@ async def handle_ai_chat(
         ],
         "file_texts": file_texts,
         "model_capability": model_capability,
+        "task_type": ai_task_type,
         "task_priority": "interactive",
         "task_label": "user_chat",
         "web_search_enabled": should_enable_web_search(model_capability),
@@ -1715,7 +1724,7 @@ async def generate_exam_questions_async(
         payload = {
             "prompt": prompt,
             "model_type": "thinking",  # 使用高级模型
-            "task_type": "exam_generation",
+            "task_type": "deep_text_reasoning",
             "teacher_id": teacher_id,
             "class_offering_id": class_offering_id,
             "source_type": source_type,
@@ -1927,6 +1936,7 @@ async def ai_suggest_exam_topics(request: Request, user: dict = Depends(get_curr
             "messages": [],
             "new_message": prompt,
             "model_capability": "standard",
+            "task_type": "fast_text_response",
             "web_search_enabled": False,
         }, timeout=60.0)
 
