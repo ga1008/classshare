@@ -29,6 +29,7 @@ from .services.message_center_service import schedule_pending_private_ai_reply_j
 from .services.runtime_metrics_service import begin_http_request, finish_http_request, get_runtime_metrics_snapshot
 from .services.submission_file_alignment import repair_stale_stored_paths
 from .services.assignment_lifecycle_service import close_overdue_assignments
+from .time_utils import app_timezone_name, local_iso
 from .database import get_db_connection
 
 # 导入所有 V4.0 路由
@@ -173,6 +174,8 @@ async def internal_health():
         "service": "main",
         "ai_assistant_url": AI_ASSISTANT_URL,
         "database_path": str(DB_PATH),
+        "timezone": app_timezone_name(),
+        "server_local_time": local_iso(),
         "threadpool_tokens": int(thread_limiter.total_tokens),
         "behavior_write_worker_alive": behavior_stats["alive"],
         "behavior_write_queue_depth": behavior_stats["queue_depth"],

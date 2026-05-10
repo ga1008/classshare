@@ -27,6 +27,7 @@ from typing import Optional
 from pathlib import Path
 
 from ..database import get_db_connection
+from ..time_utils import local_now
 from ..services.discussion_ai_service import (
     DISCUSSION_AI_ASSISTANT_NAME,
     DISCUSSION_REPLY_FALLBACK,
@@ -422,7 +423,7 @@ async def _broadcast_discussion_payload(class_offering_id: int, payload: dict) -
 
 
 async def _save_discussion_ai_reply(class_offering_id: int, reply_text: str) -> dict:
-    now = datetime.now()
+    now = local_now()
     return await save_chat_message(class_offering_id, {
         "type": "chat",
         "sender": DISCUSSION_AI_ASSISTANT_NAME,
@@ -447,7 +448,7 @@ async def _handle_discussion_ai_mention(
     current_quote: Optional[dict] = None,
 ) -> None:
     stream_id = uuid.uuid4().hex
-    started_at = datetime.now()
+    started_at = local_now()
 
     await _broadcast_discussion_payload(class_offering_id, {
         "type": "discussion_ai_stream_start",
@@ -581,7 +582,7 @@ async def _process_discussion_chat_message(
     if not normalized_text and not custom_emoji_payloads and not attachment_payloads and not quote_payload:
         return
 
-    now = datetime.now()
+    now = local_now()
     display_time = now.strftime("%H:%M")
     display_name = manager.get_display_name(class_offering_id, client_id, ws_user['name'])
     stored_message = await save_chat_message(class_offering_id, {

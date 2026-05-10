@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 
 from .config import TEMPLATES_DIR, MAX_HISTORY_IN_MEMORY, AI_ASSISTANT_URL, SITE_RECORD
 from .frontend_assets import asset_url
+from .time_utils import format_local_datetime
 
 # FastAPI 应用实例
 app = FastAPI()
@@ -17,16 +18,8 @@ def datetime_format(value, format="%Y-%m-%d %H:%M"):
     if value is None:
         return "未知"
     try:
-        # 如果是字符串，先转换为datetime对象
-        if isinstance(value, str):
-            from datetime import datetime
-            # 尝试解析ISO格式时间
-            if 'T' in value:
-                value = datetime.fromisoformat(value.replace('Z', '+00:00'))
-            else:
-                value = datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
-        return value.strftime(format)
-    except:
+        return format_local_datetime(value, format, fallback=str(value))
+    except Exception:
         return str(value)
 
 # 在模板环境中注册过滤器
