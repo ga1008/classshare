@@ -7,7 +7,7 @@ import traceback
 import tempfile
 import os
 from pathlib import Path
-from typing import List, Literal, Dict, Any, Optional
+from typing import AsyncIterator, List, Literal, Dict, Any, Optional
 from enum import Enum
 from datetime import datetime
 
@@ -947,6 +947,37 @@ def _decode_stream_event(line: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+async def _aiter_ai_response_lines_with_keepalive(
+    response: httpx.Response,
+    *,
+    heartbeat_seconds: float = 8.0,
+) -> AsyncIterator[Optional[str]]:
+    line_iter = response.aiter_lines().__aiter__()
+    pending = asyncio.create_task(line_iter.__anext__())
+    try:
+        while True:
+            try:
+                line = await asyncio.wait_for(
+                    asyncio.shield(pending),
+                    timeout=max(1.0, heartbeat_seconds),
+                )
+            except asyncio.TimeoutError:
+                yield None
+                continue
+            except StopAsyncIteration:
+                break
+
+            yield line
+            pending = asyncio.create_task(line_iter.__anext__())
+    finally:
+        if pending and not pending.done():
+            pending.cancel()
+            try:
+                await pending
+            except asyncio.CancelledError:
+                pass
+
+
 async def update_user_profile(
     user_pk: int,
     user_role: str,
@@ -1561,6 +1592,12 @@ async def handle_ai_chat(
         final_answer = ""
         error_message = ""
 
+        yield _encode_stream_event(
+            "stream_start",
+            message="connecting",
+            thinking_requested=bool(deep_thinking),
+        )
+
         try:
             async with ai_client.stream(
                     "POST",
@@ -1578,7 +1615,14 @@ async def handle_ai_chat(
                     yield _encode_stream_event("error", message=error_message)
                     yield _encode_stream_event("done", has_thinking=False)
                 else:
-                    async for raw_line in response.aiter_lines():
+                    async for raw_line in _aiter_ai_response_lines_with_keepalive(response):
+                        if raw_line is None:
+                            yield _encode_stream_event(
+                                "queue_keepalive",
+                                message="waiting_for_model",
+                                thinking_requested=bool(deep_thinking),
+                            )
+                            continue
                         if not raw_line:
                             continue
 

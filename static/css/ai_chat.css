@@ -500,6 +500,15 @@
     50% { opacity: 0; }
 }
 
+.stream-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-muted);
+    font-size: 0.94rem;
+    line-height: 1.5;
+}
+
 /* ========================
    Copy Code Button
    ======================== */
