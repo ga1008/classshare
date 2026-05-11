@@ -6,7 +6,7 @@
 
 {% block css %}
 {{ super() }}
-<link rel="stylesheet" href="/static/css/dashboard.css?v=dashboard-group-motion-smooth3-20260510">
+<link rel="stylesheet" href="/static/css/dashboard.css?v=dashboard-timeline-axis-20260512">
 <link rel="stylesheet" href="/static/css/semester_calendar.css?v=dashboard-todo-axis-20260507">
 {% endblock %}
 
@@ -83,7 +83,7 @@
                 <div class="dashboard-panel__header dashboard-panel__header--spread">
                     <div>
                         <h2>课堂列表</h2>
-                        <p>你的课堂会先按搜索与标签筛选收窄，再按系别班级、课程或近四天时间轴归纳。</p>
+                        <p>你的课堂会先按搜索与标签筛选收窄，再按系别班级、课程或学期时间轴归纳。</p>
                     </div>
                     {% if class_offerings %}
                     <span class="dashboard-section-pill">共 {{ class_offerings|length }} 个课堂</span>
@@ -374,5 +374,5 @@
 <script>
     window.DASHBOARD_SEMESTER_CALENDAR = {{ dashboard_semester_calendar | tojson }};
 </script>
-<script type="module" src="/static/js/dashboard.js?v=dashboard-group-motion-smooth3-20260510"></script>
+<script type="module" src="/static/js/dashboard.js?v=dashboard-timeline-axis-20260512"></script>
 {% endblock %}

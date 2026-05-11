@@ -23,7 +23,6 @@ from .learning_progress_service import (
 from .todo_service import build_classroom_todo_overview
 
 RECENT_ACTIVITY_DAYS = 14
-TIMELINE_WINDOW_DAYS = 2
 DEFAULT_TIMELINE_HOUR = "08:00"
 DASHBOARD_WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
@@ -399,6 +398,7 @@ def _build_teacher_timeline_item(
         "timeline_key": date_key,
         "date_label": f"{session_date.month}月{session_date.day}日",
         "date_full_label": session_date.isoformat(),
+        "year_label": f"{session_date.year}年",
         "hour_label": time_label,
         "weekday_label": _dashboard_weekday_label(session_date.weekday()),
         "relative_label": _dashboard_relative_day_label(session_date, today),
@@ -417,8 +417,6 @@ def _attach_teacher_timeline_items(
         return
 
     today = china_today()
-    window_start = today - timedelta(days=TIMELINE_WINDOW_DAYS)
-    window_end = today + timedelta(days=TIMELINE_WINDOW_DAYS)
     offering_by_id = {
         _dashboard_int(item.get("id")): item
         for item in offerings
@@ -445,10 +443,9 @@ def _attach_teacher_timeline_items(
                week_index
         FROM class_offering_sessions
         WHERE class_offering_id IN ({placeholders})
-          AND date(session_date) BETWEEN date(?) AND date(?)
         ORDER BY date(session_date), order_index, id
         """,
-        (*offering_ids, window_start.isoformat(), window_end.isoformat()),
+        tuple(offering_ids),
     ).fetchall()
 
     seen_offering_ids: set[int] = set()
@@ -482,7 +479,7 @@ def _attach_teacher_timeline_items(
         if offering_id in seen_offering_ids:
             continue
         first_class_date = _safe_dashboard_date(offering.get("first_class_date"))
-        if not first_class_date or first_class_date < window_start or first_class_date > window_end:
+        if not first_class_date:
             continue
         time_label, is_time_explicit = _extract_dashboard_time_label(offering.get("schedule_info"))
         offering["timeline_items"].append(
