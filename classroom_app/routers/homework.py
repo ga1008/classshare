@@ -1003,6 +1003,12 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
         "graded_count": len(graded_entries),
         "absence_zero_count": len(absence_zero_entries),
         "submitted_count": len([s for s in submitted_entries if s['status'] == 'submitted']),
+        "pending_grade_count": len([
+            s for s in submitted_entries
+            if s["status"] == "submitted"
+            and not int(s.get("resubmission_allowed") or 0)
+            and not int(s.get("is_absence_score") or 0)
+        ]),
         "grading_count": len([s for s in submitted_entries if s['status'] == 'grading']),
         "returned_count": len(returned_entries),
         "average_score": round(sum(scores) / len(scores), 1) if scores else 0,

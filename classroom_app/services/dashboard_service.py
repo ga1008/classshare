@@ -617,6 +617,7 @@ def _build_teacher_dashboard_context(
         published_count = int(assignment_item.get("published_count") or 0)
         exam_count = int(assignment_item.get("exam_count") or 0)
         pending_review_count = int(pending_item.get("pending_review_count") or 0)
+        grading_count = int(pending_item.get("grading_count") or 0)
         recent_active_student_count = int(login_item.get("recent_active_student_count") or 0)
         recent_login_count = int(login_item.get("recent_login_count") or 0)
         resource_count = int(resource_item.get("resource_count") or 0)
@@ -651,6 +652,8 @@ def _build_teacher_dashboard_context(
         badges = []
         if pending_review_count > 0:
             badges.append({"label": f"待批改 {pending_review_count}", "tone": "danger"})
+        if grading_count > 0:
+            badges.append({"label": f"批改中 {grading_count}", "tone": "warning"})
         if draft_count > 0:
             badges.append({"label": f"草稿 {draft_count}", "tone": "warning"})
         if published_count > 0:
@@ -676,6 +679,8 @@ def _build_teacher_dashboard_context(
 
         if pending_review_count > 0:
             summary = f"当前有 {pending_review_count} 份学生提交等待处理。"
+        elif grading_count > 0:
+            summary = f"当前有 {grading_count} 份学生提交正在批改中。"
         elif draft_count > 0:
             summary = f"还有 {draft_count} 项草稿未发布，课堂内容可以继续补齐。"
         elif assignment_count > 0:
@@ -697,6 +702,7 @@ def _build_teacher_dashboard_context(
         offering["draft_count"] = draft_count
         offering["exam_count"] = exam_count
         offering["pending_review_count"] = pending_review_count
+        offering["grading_count"] = grading_count
         offering["recent_active_student_count"] = recent_active_student_count
         offering["recent_login_count"] = recent_login_count
         offering["activity_score"] = activity_score
@@ -708,7 +714,7 @@ def _build_teacher_dashboard_context(
         offering["metrics"] = [
             {"label": "学生", "value": student_count, "note": "班级规模"},
             {"label": "任务", "value": assignment_count, "note": f"考试 {exam_count}"},
-            {"label": "待批改", "value": pending_review_count, "note": "含已提交与批改中"},
+            {"label": "待批改", "value": pending_review_count, "note": f"批改中 {grading_count}"},
             {"label": "资料", "value": resource_total, "note": f"文件 {resource_count} · 材料 {material_count}"},
         ]
         offering["search_text"] = _build_dashboard_search_text(
@@ -1384,8 +1390,21 @@ def _load_teacher_pending_submission_stats(conn, offering_ids: list[int]) -> dic
     rows = conn.execute(
         f"""
         SELECT a.class_offering_id AS offering_id,
-               COUNT(*) AS pending_review_count,
-               MAX(s.submitted_at) AS latest_submission_at
+               COUNT(DISTINCT CASE
+                   WHEN COALESCE(s.is_absence_score, 0) = 0
+                    AND COALESCE(s.resubmission_allowed, 0) = 0
+                    AND s.status = 'submitted'
+                   THEN s.student_pk_id END) AS pending_review_count,
+               COUNT(DISTINCT CASE
+                   WHEN COALESCE(s.is_absence_score, 0) = 0
+                    AND COALESCE(s.resubmission_allowed, 0) = 0
+                    AND s.status = 'grading'
+                   THEN s.student_pk_id END) AS grading_count,
+               MAX(CASE
+                   WHEN COALESCE(s.is_absence_score, 0) = 0
+                    AND COALESCE(s.resubmission_allowed, 0) = 0
+                    AND s.status IN ('submitted', 'grading')
+                   THEN s.submitted_at END) AS latest_submission_at
         FROM assignments a
         JOIN submissions s ON s.assignment_id = a.id
         WHERE a.class_offering_id IN ({placeholders})

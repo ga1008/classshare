@@ -196,7 +196,7 @@ def _attach_teacher_assignment_card_metrics(
         returned_count = _safe_int(row.get("returned_count"))
         absence_zero_count = _safe_int(row.get("absence_zero_count"))
         unsubmitted_count = max(0, total_students - submitted_count - absence_zero_count)
-        review_queue_count = pending_grade_count + grading_count
+        review_queue_count = pending_grade_count
         assignment["teacher_submission_metrics"] = {
             "total_students": total_students,
             "submitted_count": submitted_count,
@@ -207,6 +207,7 @@ def _attach_teacher_assignment_card_metrics(
             "absence_zero_count": absence_zero_count,
             "unsubmitted_count": unsubmitted_count,
             "review_queue_count": review_queue_count,
+            "review_activity_count": pending_grade_count + grading_count,
             "submission_percent": round(submitted_count * 100 / total_students) if total_students else 0,
             "needs_attention": review_queue_count > 0 or returned_count > 0,
         }

@@ -1041,7 +1041,7 @@
         document.getElementById('stat-submitted').textContent = stats.total_submissions ?? 0;
         document.getElementById('stat-unsubmitted').textContent = stats.unsubmitted_count ?? 0;
         document.getElementById('stat-graded').textContent = stats.graded_count ?? 0;
-        document.getElementById('stat-pending').textContent = Math.max(0, (stats.submitted_count ?? 0) - (stats.returned_count ?? 0));
+        document.getElementById('stat-pending').textContent = stats.pending_grade_count ?? Math.max(0, (stats.submitted_count ?? 0) - (stats.returned_count ?? 0));
         document.getElementById('stat-avg').textContent = stats.average_score ?? '-';
         document.getElementById('stat-max').textContent = stats.max_score ?? '-';
         document.getElementById('stat-min').textContent = stats.min_score ?? '-';
