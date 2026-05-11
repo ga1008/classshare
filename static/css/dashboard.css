@@ -822,8 +822,8 @@
 
 .dashboard-timeline-shell {
     display: grid;
-    grid-template-columns: minmax(210px, 0.3fr) minmax(0, 1fr);
-    gap: 16px;
+    grid-template-columns: minmax(300px, 0.36fr) minmax(0, 1fr);
+    gap: 18px;
     min-width: 0;
     padding: 14px;
     border: 1px solid rgba(180, 83, 9, 0.18);
@@ -879,11 +879,11 @@
 .dashboard-timeline-tick {
     position: relative;
     display: grid;
-    grid-template-columns: 34px minmax(0, 1fr);
-    gap: 9px;
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 12px;
     width: 100%;
-    min-height: 76px;
-    padding: 8px 8px 8px 0;
+    min-height: 88px;
+    padding: 10px 10px 10px 0;
     border: 0;
     border-radius: var(--dashboard-radius-card);
     background: transparent;
@@ -902,7 +902,7 @@
 .dashboard-timeline-tick__line {
     position: relative;
     align-self: center;
-    width: 30px;
+    width: 36px;
     height: 2px;
     border-radius: 999px;
     background: rgba(180, 83, 9, 0.28);
@@ -926,13 +926,20 @@
     flex-direction: column;
     justify-content: center;
     min-width: 0;
-    gap: 2px;
+    gap: 4px;
 }
 
 .dashboard-timeline-tick__copy strong {
     color: var(--dashboard-ink);
     font-size: 0.9rem;
     line-height: 1.35;
+}
+
+.dashboard-timeline-tick__copy > * {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .dashboard-timeline-tick__copy span,
@@ -973,10 +980,10 @@
 .dashboard-timeline-gap {
     position: relative;
     display: grid;
-    grid-template-columns: 34px minmax(0, 1fr);
-    gap: 9px;
-    min-height: 38px;
-    padding: 4px 8px 4px 0;
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 12px;
+    min-height: 42px;
+    padding: 5px 10px 5px 0;
     color: rgba(146, 64, 14, 0.66);
 }
 
