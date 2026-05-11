@@ -840,8 +840,9 @@
     gap: 6px;
     max-height: 620px;
     min-height: 360px;
-    padding: 16px 8px 16px 0;
+    padding: 18px 14px 18px 6px;
     overflow-y: auto;
+    overflow-x: hidden;
     overscroll-behavior: contain;
     cursor: grab;
     scrollbar-width: thin;
@@ -851,9 +852,9 @@
 .dashboard-timeline-axis::before {
     content: "";
     position: absolute;
-    top: 10px;
-    bottom: 10px;
-    left: 15px;
+    top: 18px;
+    bottom: 18px;
+    left: 32px;
     width: 1px;
     background: rgba(180, 83, 9, 0.22);
 }
@@ -863,9 +864,9 @@
     position: sticky;
     top: 50%;
     z-index: 1;
-    width: 32px;
+    width: 46px;
     height: 0;
-    margin-left: 0;
+    margin-left: 6px;
     border-top: 2px solid rgba(180, 83, 9, 0.42);
     pointer-events: none;
     transform: translateY(-1px);
@@ -879,11 +880,12 @@
 .dashboard-timeline-tick {
     position: relative;
     display: grid;
-    grid-template-columns: 42px minmax(0, 1fr);
-    gap: 12px;
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 14px;
     width: 100%;
-    min-height: 88px;
-    padding: 10px 10px 10px 0;
+    min-height: 96px;
+    padding: 13px 16px 13px 6px;
+    box-sizing: border-box;
     border: 0;
     border-radius: var(--dashboard-radius-card);
     background: transparent;
@@ -902,8 +904,10 @@
 .dashboard-timeline-tick__line {
     position: relative;
     align-self: center;
-    width: 36px;
+    justify-self: start;
+    width: 44px;
     height: 2px;
+    margin-left: 4px;
     border-radius: 999px;
     background: rgba(180, 83, 9, 0.28);
 }
@@ -921,12 +925,69 @@
     transform: translateY(-50%);
 }
 
+.dashboard-timeline-tick__status {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: -2px;
+    z-index: 2;
+    min-width: 38px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: rgba(245, 158, 11, 0.15);
+    color: #92400e;
+    font-size: 0.68rem;
+    font-weight: 800;
+    line-height: 1.2;
+    text-align: center;
+    white-space: nowrap;
+    box-shadow: 0 1px 0 rgba(180, 83, 9, 0.08);
+}
+
+.dashboard-timeline-tick.is-past .dashboard-timeline-tick__line {
+    background: rgba(100, 116, 139, 0.32);
+}
+
+.dashboard-timeline-tick.is-past .dashboard-timeline-tick__line::after {
+    border-color: rgba(100, 116, 139, 0.42);
+    background: #f8fafc;
+}
+
+.dashboard-timeline-tick.is-past .dashboard-timeline-tick__status {
+    background: rgba(100, 116, 139, 0.13);
+    color: #64748b;
+}
+
+.dashboard-timeline-tick.is-current .dashboard-timeline-tick__line {
+    background: rgba(15, 118, 110, 0.52);
+}
+
+.dashboard-timeline-tick.is-current .dashboard-timeline-tick__line::after {
+    border-color: rgba(15, 118, 110, 0.56);
+    background: #ccfbf1;
+}
+
+.dashboard-timeline-tick.is-current .dashboard-timeline-tick__status {
+    background: rgba(15, 118, 110, 0.14);
+    color: #0f766e;
+}
+
+.dashboard-timeline-tick.is-future .dashboard-timeline-tick__line {
+    background: rgba(180, 83, 9, 0.28);
+}
+
+.dashboard-timeline-tick.is-future .dashboard-timeline-tick__status {
+    background: rgba(245, 158, 11, 0.15);
+    color: #92400e;
+}
+
 .dashboard-timeline-tick__copy {
     display: flex;
     flex-direction: column;
     justify-content: center;
     min-width: 0;
     gap: 4px;
+    padding-right: 8px;
+    overflow: hidden;
 }
 
 .dashboard-timeline-tick__copy strong {
@@ -977,13 +1038,19 @@
     background: #f59e0b;
 }
 
+.dashboard-timeline-tick.is-active .dashboard-timeline-tick__status {
+    background: rgba(146, 64, 14, 0.14);
+    color: #7c2d12;
+}
+
 .dashboard-timeline-gap {
     position: relative;
     display: grid;
-    grid-template-columns: 42px minmax(0, 1fr);
-    gap: 12px;
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 14px;
     min-height: 42px;
-    padding: 5px 10px 5px 0;
+    padding: 5px 16px 5px 6px;
+    box-sizing: border-box;
     color: rgba(146, 64, 14, 0.66);
 }
 
@@ -992,14 +1059,82 @@
     justify-self: start;
     width: 20px;
     height: 1px;
+    margin-left: 4px;
     border-radius: 999px;
     background: repeating-linear-gradient(90deg, rgba(180, 83, 9, 0.36) 0 4px, transparent 4px 8px);
 }
 
 .dashboard-timeline-gap__label {
     align-self: center;
+    min-width: 0;
+    padding-right: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 0.72rem;
     line-height: 1.3;
+}
+
+.dashboard-timeline-now-marker {
+    position: relative;
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 14px;
+    min-height: 42px;
+    padding: 7px 16px 7px 6px;
+    box-sizing: border-box;
+    color: #0f766e;
+}
+
+.dashboard-timeline-now-marker__line {
+    position: relative;
+    align-self: center;
+    justify-self: start;
+    width: 44px;
+    height: 2px;
+    margin-left: 4px;
+    border-radius: 999px;
+    background: rgba(15, 118, 110, 0.58);
+}
+
+.dashboard-timeline-now-marker__line::before,
+.dashboard-timeline-now-marker__line::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    border-radius: 50%;
+    transform: translateY(-50%);
+}
+
+.dashboard-timeline-now-marker__line::before {
+    left: -2px;
+    width: 6px;
+    height: 6px;
+    background: rgba(15, 118, 110, 0.52);
+}
+
+.dashboard-timeline-now-marker__line::after {
+    right: -4px;
+    width: 10px;
+    height: 10px;
+    background: #ccfbf1;
+    border: 2px solid rgba(15, 118, 110, 0.58);
+}
+
+.dashboard-timeline-now-marker__label {
+    align-self: center;
+    justify-self: start;
+    max-width: 100%;
+    padding: 3px 9px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(15, 118, 110, 0.13);
+    color: #0f766e;
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .dashboard-timeline-focus {

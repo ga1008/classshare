@@ -470,14 +470,40 @@ if (root) {
                 return;
             }
 
+            if (node.type === 'now') {
+                const marker = document.createElement('div');
+                marker.className = 'dashboard-timeline-now-marker';
+                marker.setAttribute('aria-hidden', 'true');
+                const line = document.createElement('span');
+                line.className = 'dashboard-timeline-now-marker__line';
+                const label = document.createElement('span');
+                label.className = 'dashboard-timeline-now-marker__label';
+                label.textContent = '现在';
+                marker.append(line, label);
+                axis.appendChild(marker);
+                return;
+            }
+
             const group = node.group;
+            const status = getTimelineGroupStatus(group);
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'dashboard-timeline-tick';
+            button.classList.add(`is-${status}`);
             button.dataset.timelineKey = group.key;
+            button.dataset.timelineStatus = status;
             button.setAttribute('role', 'option');
+            button.setAttribute(
+                'aria-label',
+                `${getTimelineStatusLabel(status)}，${group.yearLabel || getYearLabel(group.startsAt)}，${group.dateLabel} ${group.weekdayLabel}，${group.hourLabel}`,
+            );
             const line = document.createElement('span');
             line.className = 'dashboard-timeline-tick__line';
+            const statusLabel = document.createElement('span');
+            statusLabel.className = 'dashboard-timeline-tick__status';
+            statusLabel.setAttribute('aria-hidden', 'true');
+            statusLabel.textContent = getTimelineStatusLabel(status);
+            line.appendChild(statusLabel);
             const copy = document.createElement('span');
             copy.className = 'dashboard-timeline-tick__copy';
             const yearLabel = document.createElement('span');
@@ -928,6 +954,8 @@ if (root) {
 
     function buildTimelineAxisNodes(groups) {
         const nodes = [];
+        const nowTime = Date.now();
+        let insertedNowMarker = false;
         groups.forEach((group, index) => {
             const previous = groups[index - 1];
             if (previous) {
@@ -939,9 +967,53 @@ if (root) {
                     });
                 }
             }
+            const groupTime = new Date(group.startsAt || group.dateFullLabel || '').getTime();
+            if (!insertedNowMarker && Number.isFinite(groupTime) && groupTime >= nowTime) {
+                nodes.push({ type: 'now' });
+                insertedNowMarker = true;
+            }
             nodes.push({ type: 'group', group });
         });
+        if (!insertedNowMarker && groups.length) {
+            nodes.push({ type: 'now' });
+        }
         return nodes;
+    }
+
+    function getTimelineGroupStatus(group) {
+        const items = group.items || [];
+        if (items.some((item) => item.status === 'current')) {
+            return 'current';
+        }
+        if (items.length && items.every((item) => item.status === 'completed')) {
+            return 'past';
+        }
+
+        const startsAt = new Date(group.startsAt || group.dateFullLabel || '').getTime();
+        if (Number.isFinite(startsAt)) {
+            const now = new Date();
+            const groupDate = new Date(startsAt);
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+            const groupDay = new Date(groupDate.getFullYear(), groupDate.getMonth(), groupDate.getDate()).getTime();
+            if (groupDay < today) {
+                return 'past';
+            }
+            if (groupDay === today) {
+                return 'current';
+            }
+        }
+
+        return 'future';
+    }
+
+    function getTimelineStatusLabel(status) {
+        if (status === 'past') {
+            return '过去';
+        }
+        if (status === 'current') {
+            return '现在';
+        }
+        return '未来';
     }
 
     function getTimelineFocusGroups(groups, key) {
