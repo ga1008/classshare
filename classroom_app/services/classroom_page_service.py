@@ -124,7 +124,7 @@ def _build_assignment_stats(*, role: str, assignments: list[dict[str, Any]]) -> 
         graded_count = sum(_safe_int(item.get("graded_count")) for item in teacher_metrics)
         returned_count = sum(_safe_int(item.get("returned_count")) for item in teacher_metrics)
         unsubmitted_student_count = sum(_safe_int(item.get("unsubmitted_count")) for item in teacher_metrics)
-        pending_review_count = pending_grade_count + grading_count
+        pending_review_count = pending_grade_count
         return {
             "assignment_count": assignment_count,
             "exam_count": exam_count,
@@ -134,6 +134,7 @@ def _build_assignment_stats(*, role: str, assignments: list[dict[str, Any]]) -> 
             "pending_count": 0,
             "pending_grade_count": pending_grade_count,
             "pending_review_count": pending_review_count,
+            "review_activity_count": pending_grade_count + grading_count,
             "grading_count": grading_count,
             "graded_count": graded_count,
             "returned_count": returned_count,
@@ -168,15 +169,16 @@ def _build_assignment_stats(*, role: str, assignments: list[dict[str, Any]]) -> 
 
 def _build_assignment_metrics(*, role: str, assignment_stats: dict[str, int]) -> list[dict[str, Any]]:
     if role == "teacher":
-        pending_review_count = assignment_stats.get("pending_review_count", 0)
+        pending_grade_count = assignment_stats.get("pending_grade_count", 0)
+        grading_count = assignment_stats.get("grading_count", 0)
         returned_count = assignment_stats.get("returned_count", 0)
         return [
             {"label": "全部任务", "value": assignment_stats["assignment_count"], "note": "课堂总览", "tone": "primary"},
             {
                 "label": "待批改",
-                "value": pending_review_count,
-                "note": f"待处理 {assignment_stats.get('pending_grade_count', 0)} / 批改中 {assignment_stats.get('grading_count', 0)}",
-                "tone": "danger" if pending_review_count else "success",
+                "value": pending_grade_count,
+                "note": f"批改中 {grading_count}",
+                "tone": "danger" if pending_grade_count else "success",
             },
             {
                 "label": "待重交",
@@ -224,7 +226,7 @@ def _build_hero_detail_stats(
             {
                 "label": "全部任务",
                 "value": assignment_stats["assignment_count"],
-                "note": f"待批改 {assignment_stats.get('pending_review_count', 0)} 份 / 草稿 {assignment_stats['draft_count']} 项",
+                "note": f"待批改 {assignment_stats.get('pending_grade_count', 0)} 份 / 草稿 {assignment_stats['draft_count']} 项",
                 "tone": "primary",
             },
             {"label": "考试", "value": assignment_stats["exam_count"], "note": "已加入课堂", "tone": "warning"},

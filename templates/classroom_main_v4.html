@@ -782,8 +782,8 @@
                         {% endif %}
                     {% endif %}
                     {% set teacher_metrics = assignment.teacher_submission_metrics | default({}, true) %}
-                    {% set teacher_review_queue = teacher_metrics.review_queue_count | default(0, true) %}
                     {% set teacher_pending_grade_count = teacher_metrics.pending_grade_count | default(0, true) %}
+                    {% set teacher_review_queue = teacher_pending_grade_count %}
                     {% set teacher_grading_count = teacher_metrics.grading_count | default(0, true) %}
                     {% set teacher_returned_count = teacher_metrics.returned_count | default(0, true) %}
                     {% set teacher_unsubmitted_count = teacher_metrics.unsubmitted_count | default(0, true) %}
@@ -803,6 +803,9 @@
                                     {% endif %}
                                     {% if user_info.role == 'teacher' and teacher_review_queue %}
                                     <span class="badge badge-danger">待批改 {{ teacher_review_queue }}</span>
+                                    {% endif %}
+                                    {% if user_info.role == 'teacher' and teacher_grading_count %}
+                                    <span class="badge badge-warning">批改中 {{ teacher_grading_count }}</span>
                                     {% endif %}
                                     {% if user_info.role == 'teacher' and teacher_returned_count %}
                                     <span class="badge badge-warning">待重交 {{ teacher_returned_count }}</span>
