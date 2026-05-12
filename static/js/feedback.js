@@ -93,6 +93,7 @@ class FeedbackModal {
         this.feedbackId = null;
         this.myFeedbackData = null;
         this.myPanelVisible = false;
+        this.closeTimer = null;
 
         this._init();
     }
@@ -101,6 +102,11 @@ class FeedbackModal {
      * Initialisation
      * ============================================================ */
     _init() {
+        this.modalBackdrop.classList.remove('show');
+        this.modalBackdrop.hidden = true;
+        this.modalBackdrop.setAttribute('aria-hidden', 'true');
+        this.modalBackdrop.style.display = '';
+
         this._bindEvents();
         this._autoDetectSection();
         this._applyTypeAccent('bug');
@@ -122,7 +128,7 @@ class FeedbackModal {
         });
 
         // Close button
-        const closeBtn = this.modalBackdrop.querySelector('[data-dismiss="modal"]');
+        const closeBtn = this.modalBackdrop.querySelector('[data-feedback-dismiss]');
         if (closeBtn) closeBtn.addEventListener('click', () => this.close());
 
         // Tab switching
@@ -184,8 +190,16 @@ class FeedbackModal {
     open() {
         if (!this.modalBackdrop) return;
 
+        if (this.closeTimer) {
+            clearTimeout(this.closeTimer);
+            this.closeTimer = null;
+        }
+
         // Show backdrop FIRST so it is always visible regardless of
         // any subsequent state manipulation.
+        this.modalBackdrop.hidden = false;
+        this.modalBackdrop.setAttribute('aria-hidden', 'false');
+        this.modalBackdrop.style.display = '';
         this.modalBackdrop.classList.add('show');
         document.body.style.overflow = 'hidden';
 
@@ -199,6 +213,7 @@ class FeedbackModal {
 
         // Hide backdrop immediately
         this.modalBackdrop.classList.remove('show');
+        this.modalBackdrop.setAttribute('aria-hidden', 'true');
         document.body.style.overflow = '';
 
         // Close emoji picker if open
@@ -211,6 +226,15 @@ class FeedbackModal {
         if (this.footerEl) this.footerEl.style.display = '';
         this.myPanelVisible = false;
         this._setSubmitting(false);
+
+        if (this.closeTimer) clearTimeout(this.closeTimer);
+        this.closeTimer = window.setTimeout(() => {
+            if (!this.modalBackdrop.classList.contains('show')) {
+                this.modalBackdrop.hidden = true;
+                this.modalBackdrop.style.display = '';
+            }
+            this.closeTimer = null;
+        }, 280);
     }
 
     /** Make sure form is shown (hide success, hide my-panel, show footer). */
