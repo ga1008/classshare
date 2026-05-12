@@ -111,6 +111,7 @@ export function playCultivationReveal(profile, options = {}) {
 
     const overlay = buildReveal(profile, durationMs);
     document.body.appendChild(overlay);
+    document.documentElement.classList.add('has-cultivation-login-reveal');
     document.body.classList.add('has-cultivation-login-reveal');
     window.requestAnimationFrame(() => overlay.classList.add('is-open'));
 
@@ -118,6 +119,7 @@ export function playCultivationReveal(profile, options = {}) {
         overlay.classList.add('is-closing');
         window.setTimeout(() => {
             overlay.remove();
+            document.documentElement.classList.remove('has-cultivation-login-reveal');
             document.body.classList.remove('has-cultivation-login-reveal');
             onDone?.();
         }, 320);

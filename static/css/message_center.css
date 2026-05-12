@@ -168,37 +168,48 @@
 
 .cultivation-login-reveal {
     position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     inset: 0;
+    width: 100vw;
+    min-width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 100vh;
+    min-height: 100dvh;
     z-index: 5000;
-    display: grid;
-    place-items: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: clamp(1rem, 4vw, 2rem);
     background:
-        linear-gradient(115deg, rgba(20, 184, 166, 0.18), transparent 32%, rgba(245, 158, 11, 0.16) 72%, transparent),
+        radial-gradient(circle at 22% 18%, rgba(20, 184, 166, 0.26), transparent 34%),
+        radial-gradient(circle at 78% 74%, rgba(245, 158, 11, 0.2), transparent 36%),
         linear-gradient(140deg, rgba(11, 18, 32, 0.94), rgba(17, 24, 39, 0.92));
     opacity: 0;
-    transform: scale(1.02);
-    transition: opacity 0.26s ease, transform 0.32s ease;
+    overflow: hidden;
+    box-sizing: border-box;
+    transition: opacity 0.26s ease;
 }
 
 .cultivation-login-reveal.is-open {
     opacity: 1;
-    transform: scale(1);
 }
 
 .cultivation-login-reveal.is-closing {
     opacity: 0;
-    transform: scale(1.015);
 }
 
 .cultivation-login-reveal__field {
     position: absolute;
     inset: 0;
+    pointer-events: none;
     background:
-        linear-gradient(90deg, transparent 0 8%, rgba(255, 255, 255, 0.06) 8.4% 8.8%, transparent 9.2% 18%),
-        linear-gradient(160deg, transparent 0 38%, rgba(20, 184, 166, 0.14) 38% 42%, transparent 42% 68%, rgba(245, 158, 11, 0.12) 68% 72%, transparent 72%);
-    background-size: 180px 100%, 100% 100%;
-    animation: cultivation-field-drift 6s linear infinite;
+        radial-gradient(circle at 50% 48%, rgba(255, 255, 255, 0.12), transparent 28%),
+        radial-gradient(circle at 30% 70%, rgba(20, 184, 166, 0.1), transparent 34%),
+        radial-gradient(circle at 72% 28%, rgba(245, 158, 11, 0.1), transparent 32%);
 }
 
 .cultivation-login-reveal__card {
@@ -326,10 +337,6 @@
     to { transform: rotate(360deg); }
 }
 
-@keyframes cultivation-field-drift {
-    to { background-position: 180px 0, 0 0, 0 0; }
-}
-
 @keyframes cultivation-card-arrive {
     to { transform: translateY(0) scale(1); }
 }
@@ -396,6 +403,11 @@
         animation-iteration-count: 1 !important;
         transition-duration: 1ms !important;
     }
+}
+
+html.has-cultivation-login-reveal,
+body.has-cultivation-login-reveal {
+    overflow: hidden;
 }
 
 .message-center-bell:hover {
