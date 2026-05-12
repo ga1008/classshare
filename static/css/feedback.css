@@ -31,10 +31,52 @@
     --fb-accent-gradient: linear-gradient(135deg, var(--danger-color, #dc2626), #ef4444);
 }
 
+.feedback-modal {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1040;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    padding: var(--spacing-md);
+    background-color: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(4px);
+    opacity: 0;
+    overflow-y: auto;
+    transition: opacity var(--transition-normal);
+}
+
+.feedback-modal[hidden] {
+    display: none !important;
+}
+
+.feedback-modal.show {
+    display: flex;
+    opacity: 1;
+}
+
 .feedback-modal .modal {
+    position: relative;
+    width: 100%;
     max-width: 36rem;
+    margin: 1.75rem auto;
+    background-color: var(--surface-color);
+    background-clip: padding-box;
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
     overflow: hidden;
+    outline: 0;
+    opacity: 0;
+    transform: scale(0.95) translateY(-20px);
+    transition: transform var(--transition-normal), opacity var(--transition-normal);
+}
+
+.feedback-modal.show .modal {
+    opacity: 1;
+    transform: scale(1) translateY(0);
 }
 
 .feedback-modal .modal-header {

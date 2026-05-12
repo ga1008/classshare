@@ -99,11 +99,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('[data-dismiss="modal"]').forEach((btn) => {
         btn.addEventListener('click', (e) => {
             const modal = e.target.closest('.modal-backdrop');
+            if (modal?.hasAttribute('data-feedback-managed')) return;
             if (modal) closeModal(modal.id);
         });
     });
 
     document.querySelectorAll('.modal-backdrop').forEach((overlay) => {
+        if (overlay.hasAttribute('data-feedback-managed')) return;
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) {
                 closeModal(overlay.id);
