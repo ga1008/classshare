@@ -87,7 +87,7 @@ export class ClassroomPrivateMessages {
             const selected = this.contactSelect.selectedOptions[0];
             if (!selected?.dataset.identity) {
                 this.currentContact = null;
-                this.renderConversationEmpty('请选择同学', '打开一个本班同学后即可发送私信。');
+                this.renderConversationEmpty('请选择同学', '打开一个本班同学后即可发送一对一消息。');
                 this.updateControls();
                 return;
             }
@@ -152,33 +152,50 @@ export class ClassroomPrivateMessages {
             }
         });
         window.addEventListener('beforeunload', () => this.clearPendingAttachments());
+        this.applyModeState('broadcast');
         this.updateControls();
     }
 
     setMode(mode) {
         const nextMode = mode === 'private' ? 'private' : 'broadcast';
-        this.mode = nextMode;
-        const isPrivate = nextMode === 'private';
-        this.root.classList.toggle('is-private-mode', isPrivate);
-        this.broadcastBody.hidden = isPrivate;
-        this.broadcastComposer.hidden = isPrivate;
-        this.privateBody.hidden = !isPrivate;
-        this.privateComposer.hidden = !isPrivate;
-        this.tabs.forEach((tab) => {
-            const active = (tab.dataset.classroomMessageTab || 'broadcast') === nextMode;
-            tab.classList.toggle('is-active', active);
-            tab.setAttribute('aria-selected', active ? 'true' : 'false');
-        });
+        this.applyModeState(nextMode);
         this.onModeChange();
         window.setTimeout(this.onModeChange, 230);
 
-        if (isPrivate) {
+        if (nextMode === 'private') {
             this.loadContacts({ silent: this.loadedContacts });
             this.startRefresh();
             this.input?.focus({ preventScroll: true });
         } else {
             this.stopRefresh();
         }
+    }
+
+    applyModeState(mode) {
+        const nextMode = mode === 'private' ? 'private' : 'broadcast';
+        const isPrivate = nextMode === 'private';
+        this.mode = nextMode;
+        this.root.classList.toggle('is-private-mode', isPrivate);
+        this.root.classList.toggle('is-broadcast-mode', !isPrivate);
+        this.setPanelActive(this.broadcastBody, !isPrivate);
+        this.setPanelActive(this.broadcastComposer, !isPrivate);
+        this.setPanelActive(this.privateBody, isPrivate);
+        this.setPanelActive(this.privateComposer, isPrivate);
+        this.tabs.forEach((tab) => {
+            const active = (tab.dataset.classroomMessageTab || 'broadcast') === nextMode;
+            tab.classList.toggle('is-active', active);
+            tab.setAttribute('aria-selected', active ? 'true' : 'false');
+            tab.tabIndex = active ? 0 : -1;
+        });
+    }
+
+    setPanelActive(panel, active) {
+        if (!panel) {
+            return;
+        }
+        panel.hidden = !active;
+        panel.classList.toggle('is-active', active);
+        panel.setAttribute('aria-hidden', active ? 'false' : 'true');
     }
 
     startRefresh() {
@@ -220,7 +237,7 @@ export class ClassroomPrivateMessages {
             this.renderContacts();
             if (!this.contacts.length) {
                 this.currentContact = null;
-                this.renderConversationEmpty('暂无可私信同学', '本课堂没有可选的本班同学。');
+                this.renderConversationEmpty('暂无可一对一联系的同学', '本课堂没有可选的本班同学。');
                 this.setStatus('没有可选同学');
                 this.updateControls();
                 return;
@@ -231,7 +248,7 @@ export class ClassroomPrivateMessages {
                 await this.loadConversation(nextContact, { showLoading: !silent });
             }
         } catch (error) {
-            this.renderConversationEmpty('私信加载失败', error.message || '请稍后刷新重试。');
+            this.renderConversationEmpty('一对一加载失败', error.message || '请稍后刷新重试。');
             this.setStatus('加载失败');
         }
     }
@@ -265,7 +282,7 @@ export class ClassroomPrivateMessages {
         this.renderContacts();
         this.updateControls();
         if (showLoading) {
-            this.setConversationLoading('正在加载私信...');
+            this.setConversationLoading('正在加载一对一消息...');
         }
         this.loadingConversation = true;
         try {
@@ -284,7 +301,7 @@ export class ClassroomPrivateMessages {
             if (scrollToBottom) {
                 this.scrollToBottom();
             }
-            this.setStatus(this.currentContact?.display_name ? `正在私信 ${this.currentContact.display_name}` : '私信已打开');
+            this.setStatus(this.currentContact?.display_name ? `正在一对一联系 ${this.currentContact.display_name}` : '一对一已打开');
         } catch (error) {
             this.renderConversationEmpty('会话加载失败', error.message || '请稍后重试。');
             this.setStatus('会话加载失败');
@@ -297,11 +314,11 @@ export class ClassroomPrivateMessages {
     renderConversation() {
         const messages = Array.isArray(this.conversation?.messages) ? this.conversation.messages : [];
         if (!this.currentContact) {
-            this.renderConversationEmpty('选择同学开始私信', '这里的内容只会进入你和对方的私信会话。');
+            this.renderConversationEmpty('选择同学开始一对一', '这里的内容只会进入你和对方的一对一会话。');
             return;
         }
         if (!messages.length) {
-            this.renderConversationEmpty(`还没有和 ${this.currentContact.display_name || '这位同学'} 的私信`, '可以发送文字、图片或文件，附件在点击发送前只保留在本机预览。');
+            this.renderConversationEmpty(`还没有和 ${this.currentContact.display_name || '这位同学'} 的一对一消息`, '可以发送文字、图片或文件，附件在点击发送前只保留在本机预览。');
             return;
         }
         this.conversationEl.innerHTML = `
@@ -378,17 +395,17 @@ export class ClassroomPrivateMessages {
             return;
         }
         if (!this.currentContact?.can_send) {
-            showToast('请先选择可发送私信的同学', 'warning');
+            showToast('请先选择可发送一对一消息的同学', 'warning');
             return;
         }
         const remainingSlots = this.attachmentLimit - this.pendingAttachments.length;
         if (remainingSlots <= 0) {
-            showToast(`单条私信最多添加 ${this.attachmentLimit} 个附件`, 'warning');
+            showToast(`单条一对一消息最多添加 ${this.attachmentLimit} 个附件`, 'warning');
             return;
         }
         const acceptedFiles = selectedFiles.slice(0, remainingSlots);
         if (acceptedFiles.length < selectedFiles.length) {
-            showToast(`超出部分已忽略，单条私信最多 ${this.attachmentLimit} 个附件`, 'warning');
+            showToast(`超出部分已忽略，单条一对一消息最多 ${this.attachmentLimit} 个附件`, 'warning');
         }
         acceptedFiles.forEach((file) => {
             if (imagesOnly && !isImageFile(file)) {
@@ -467,12 +484,12 @@ export class ClassroomPrivateMessages {
             return;
         }
         if (!this.currentContact?.identity) {
-            showToast('请先选择私信同学', 'warning');
+            showToast('请先选择一对一同学', 'warning');
             return;
         }
         const content = this.input.value.trim();
         if (!content && !this.pendingAttachments.length) {
-            showToast('请输入私信内容或添加附件', 'warning');
+            showToast('请输入一对一内容或添加附件', 'warning');
             return;
         }
 
@@ -508,12 +525,12 @@ export class ClassroomPrivateMessages {
                 this.renderConversation();
                 this.scrollToBottom();
             }
-            this.setStatus('私信已发送');
-            showToast('私信已发送', 'success');
+            this.setStatus('一对一消息已发送');
+            showToast('一对一消息已发送', 'success');
             window.dispatchEvent(new CustomEvent('message-center:summary-updated', { detail: response.summary || null }));
             await this.loadContacts({ silent: true, keepConversation: true });
         } catch (error) {
-            showToast(error.message || '私信发送失败', 'error');
+            showToast(error.message || '一对一发送失败', 'error');
             this.setStatus('发送失败');
         } finally {
             this.isSending = false;
@@ -532,12 +549,12 @@ export class ClassroomPrivateMessages {
             const hasDraft = Boolean(this.input?.value.trim() || this.pendingAttachments.length);
             this.sendButton.disabled = !canSend || !hasDraft;
             this.sendButton.classList.toggle('is-uploading', this.isSending);
-            this.sendButton.title = this.isSending ? '正在发送私信' : '发送私信';
+            this.sendButton.title = this.isSending ? '正在发送一对一消息' : '发送一对一消息';
         }
         if (this.input) {
             this.input.placeholder = this.currentContact?.display_name
                 ? `发送给 ${this.currentContact.display_name}，可粘贴或拖入图片/文件`
-                : '选择同学后发送私信，可粘贴或拖入图片/文件';
+                : '选择同学后发送一对一消息，可粘贴或拖入图片/文件';
         }
     }
 

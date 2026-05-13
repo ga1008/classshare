@@ -9009,6 +9009,23 @@
     transition: opacity 180ms ease, min-height 220ms ease, padding 220ms ease, transform 220ms ease;
 }
 
+.classroom-page .discussion-panel,
+.classroom-page .discussion-composer {
+    display: none !important;
+}
+
+.classroom-page .discussion-panel.is-active,
+.classroom-page .discussion-composer.is-active {
+    display: block !important;
+}
+
+.classroom-page .discussion-panel[hidden],
+.classroom-page .discussion-composer[hidden],
+.classroom-page .discussion-room-body[hidden],
+.classroom-page .discussion-room-composer[hidden] {
+    display: none !important;
+}
+
 .classroom-page .chat-messages {
     padding: 2px 4px 4px;
     gap: 0.72rem;

@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="/static/css/feedback.css">
 <link rel="stylesheet" href="/static/css/toast.css">
 <link rel="stylesheet" href="/static/css/ai_chat.css">
-<link rel="stylesheet" href="/static/css/classroom.css?v=classroom-private-20260513">
+<link rel="stylesheet" href="/static/css/classroom.css?v=classroom-tabs-fix-20260513">
 <link rel="stylesheet" href="/static/css/markdown.css">
 <link rel="stylesheet" href="/static/css/materials.css">
 <link rel="stylesheet" href="/static/css/learning_material_selector.css">
@@ -1045,7 +1045,7 @@
     </div>
 
     <aside class="workspace-sidebar">
-        <section class="discussion-room" id="discussion-room" data-workspace-section>
+        <section class="discussion-room is-broadcast-mode" id="discussion-room" data-workspace-section>
             <div class="discussion-room-header">
                 <div class="discussion-room-summary-card">
                     <div class="discussion-room-summary-top">
@@ -1056,8 +1056,8 @@
                         </div>
                     </div>
                     <div class="discussion-room-tabs" role="tablist" aria-label="课堂消息模式">
-                        <button type="button" class="discussion-room-tab is-active" id="discussion-tab-broadcast" data-classroom-message-tab="broadcast" role="tab" aria-selected="true" aria-controls="discussion-broadcast-body">全班广播</button>
-                        <button type="button" class="discussion-room-tab" id="discussion-tab-private" data-classroom-message-tab="private" role="tab" aria-selected="false" aria-controls="classroom-private-body">私信</button>
+                        <button type="button" class="discussion-room-tab is-active" id="discussion-tab-broadcast" data-classroom-message-tab="broadcast" role="tab" aria-selected="true" aria-controls="discussion-broadcast-body">研讨室</button>
+                        <button type="button" class="discussion-room-tab" id="discussion-tab-private" data-classroom-message-tab="private" role="tab" aria-selected="false" aria-controls="classroom-private-body">一对一</button>
                     </div>
                     <p class="discussion-room-subtitle" id="discussion-mood-headline">{{ classroom_page.discussion.subtitle }}</p>
 <!--?                <p class="discussion-room-subtitle discussion-room-subtitle-detail" id="discussion-mood-detail">{{ classroom_page.discussion.detail }}</p>-->
@@ -1074,7 +1074,7 @@
                 </div>
             </div>
 
-            <div class="discussion-room-body" id="discussion-broadcast-body" role="tabpanel" aria-labelledby="discussion-tab-broadcast">
+            <div class="discussion-room-body discussion-panel is-active" id="discussion-broadcast-body" role="tabpanel" aria-labelledby="discussion-tab-broadcast">
                 <div class="chat-messages" id="chat-messages">
                     <div class="chat-history-loader" id="chat-history-loader" hidden>
                         <button type="button" class="btn btn-ghost btn-sm" id="chat-history-load-btn">加载历史消息</button>
@@ -1089,7 +1089,7 @@
                 </div>
             </div>
 
-            <div class="discussion-room-composer" id="discussion-broadcast-composer">
+            <div class="discussion-room-composer discussion-composer is-active" id="discussion-broadcast-composer">
                 <form id="chat-form" class="chat-composer">
                     <div class="chat-composer-shell">
                         <label class="chat-composer-sr-only" for="chat-input">课堂讨论输入</label>
@@ -1174,41 +1174,41 @@
                 </div>
             </div>
 
-            <div class="discussion-room-body classroom-private-body" id="classroom-private-body" role="tabpanel" aria-labelledby="discussion-tab-private" hidden>
+            <div class="discussion-room-body classroom-private-body discussion-panel" id="classroom-private-body" role="tabpanel" aria-labelledby="discussion-tab-private" hidden aria-hidden="true">
                 <div class="classroom-private-shell">
                     <div class="classroom-private-contact-bar">
-                        <label class="chat-composer-sr-only" for="classroom-private-contact-select">选择私信同学</label>
+                        <label class="chat-composer-sr-only" for="classroom-private-contact-select">选择一对一同学</label>
                         <select id="classroom-private-contact-select" class="classroom-private-contact-select">
                             <option value="">正在加载本班同学...</option>
                         </select>
-                        <span class="classroom-private-status" id="classroom-private-status" aria-live="polite">切换到私信后选择同学</span>
+                        <span class="classroom-private-status" id="classroom-private-status" aria-live="polite">切换到一对一后选择同学</span>
                     </div>
                     <div class="classroom-private-conversation" id="classroom-private-conversation">
                         <div class="chat-empty-state">
                             <div class="chat-empty-icon">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/><path d="M8 10h8"/><path d="M8 14h5"/></svg>
                             </div>
-                            <strong>选择同学开始私信</strong>
-                            <p>这里的内容只会进入你和对方的私信会话，不会出现在全班广播里。</p>
+                            <strong>选择同学开始一对一</strong>
+                            <p>这里的内容只会进入你和对方的一对一会话，不会出现在研讨室里。</p>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="discussion-room-composer classroom-private-composer" id="classroom-private-composer" hidden>
+            <div class="discussion-room-composer classroom-private-composer discussion-composer" id="classroom-private-composer" hidden aria-hidden="true">
                 <form id="classroom-private-form" class="chat-composer classroom-private-form">
                     <div class="chat-composer-shell classroom-private-composer-shell" id="classroom-private-dropzone">
-                        <label class="chat-composer-sr-only" for="classroom-private-input">课堂私信输入</label>
+                        <label class="chat-composer-sr-only" for="classroom-private-input">课堂一对一输入</label>
                         <div class="classroom-private-attachment-preview" id="classroom-private-attachment-preview" hidden></div>
-                        <textarea id="classroom-private-input" class="form-control chat-composer-input classroom-private-input" autocomplete="off" rows="3" placeholder="选择同学后发送私信，可粘贴或拖入图片/文件"></textarea>
-                        <div class="chat-composer-actions classroom-private-actions" aria-label="私信工具">
+                        <textarea id="classroom-private-input" class="form-control chat-composer-input classroom-private-input" autocomplete="off" rows="3" placeholder="选择同学后发送一对一消息，可粘贴或拖入图片/文件"></textarea>
+                        <div class="chat-composer-actions classroom-private-actions" aria-label="一对一工具">
                             <button type="button" class="btn btn-ghost chat-composer-tool-btn classroom-private-image-btn" id="classroom-private-image-btn" title="添加图片" aria-label="添加图片">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2.4"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-4.6-4.6a1 1 0 0 0-1.4 0L6 19"></path></svg>
                             </button>
                             <button type="button" class="btn btn-ghost chat-composer-tool-btn classroom-private-file-btn" id="classroom-private-file-btn" title="添加文件" aria-label="添加文件">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-8.49 8.49a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66l-9.2 9.19a2 2 0 1 1-2.83-2.83l8.49-8.48"/></svg>
                             </button>
-                            <button type="submit" class="btn btn-primary chat-composer-tool-btn chat-send-btn classroom-private-send-btn" id="classroom-private-send-btn" title="发送私信" aria-label="发送私信">
+                            <button type="submit" class="btn btn-primary chat-composer-tool-btn chat-send-btn classroom-private-send-btn" id="classroom-private-send-btn" title="发送一对一消息" aria-label="发送一对一消息">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                             </button>
                         </div>
@@ -1533,8 +1533,8 @@
 <script type="module" src="/static/js/feedback.js"></script>
 <script type="module">
     import * as ui from '/static/js/ui.js';
-    import { ClassroomChat } from '/static/js/chat.js?v=classroom-private-20260513';
-    import { ClassroomPrivateMessages } from '/static/js/classroom_private_messages.js?v=classroom-private-20260513';
+    import { ClassroomChat } from '/static/js/chat.js?v=classroom-tabs-fix-20260513';
+    import { ClassroomPrivateMessages } from '/static/js/classroom_private_messages.js?v=classroom-tabs-fix-20260513';
     import * as fileApp from '/static/js/app_files.js';
     import * as materialsApp from '/static/js/classroom_materials.js?v=learning-progress-20260503';
     import * as examApp from '/static/js/app_exams.js';
