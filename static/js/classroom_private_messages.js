@@ -38,6 +38,20 @@ function contactKey(contact) {
     return `${contact?.identity || ''}|scope:${Number(contact?.class_offering_id || 0)}`;
 }
 
+function normalizeSearchText(value) {
+    return String(value || '').toLowerCase().replace(/\s+/g, '');
+}
+
+function contactSearchText(contact) {
+    return normalizeSearchText([
+        contact?.display_name,
+        contact?.subtitle,
+        contact?.identity,
+        contact?.user_pk,
+        contactKey(contact),
+    ].filter(Boolean).join(' '));
+}
+
 export class ClassroomPrivateMessages {
     constructor(options) {
         this.classOfferingId = Number(options.classOfferingId);
@@ -48,6 +62,9 @@ export class ClassroomPrivateMessages {
         this.privateComposer = document.getElementById(options.privateComposerId);
         this.tabs = Array.from(this.root?.querySelectorAll(options.tabSelector) || []);
         this.contactSelect = document.getElementById(options.contactSelectId);
+        this.contactInput = document.getElementById(options.contactInputId);
+        this.contactList = document.getElementById(options.contactListId);
+        this.contactToggle = document.getElementById(options.contactToggleId);
         this.statusEl = document.getElementById(options.statusId);
         this.conversationEl = document.getElementById(options.conversationId);
         this.form = document.getElementById(options.formId);
@@ -71,12 +88,15 @@ export class ClassroomPrivateMessages {
         this.pendingAttachments = [];
         this.nextAttachmentId = 1;
         this.refreshTimer = null;
+        this.filteredContacts = [];
+        this.activeContactIndex = -1;
+        this.isContactListOpen = false;
         this.attachmentLimit = PRIVATE_ATTACHMENT_LIMIT;
         this.attachmentMaxBytes = PRIVATE_ATTACHMENT_MAX_BYTES;
     }
 
     init() {
-        if (!this.root || !this.form || !this.input || !this.contactSelect || !this.conversationEl) {
+        if (!this.root || !this.form || !this.input || !this.contactSelect || !this.contactInput || !this.contactList || !this.conversationEl) {
             return;
         }
 
@@ -96,6 +116,36 @@ export class ClassroomPrivateMessages {
                 identity: selected.dataset.identity,
                 class_offering_id: normalizeScope(selected.dataset.scope),
             });
+        });
+        this.contactInput.addEventListener('input', () => {
+            this.openContactList({ preserveActive: false });
+            this.renderContactList(this.contactInput.value);
+        });
+        this.contactInput.addEventListener('focus', () => {
+            this.openContactList({ preserveActive: true });
+        });
+        this.contactInput.addEventListener('keydown', (event) => this.handleContactInputKeydown(event));
+        this.contactToggle?.addEventListener('click', () => {
+            if (this.isContactListOpen) {
+                this.closeContactList();
+            } else {
+                this.openContactList({ preserveActive: true });
+                this.contactInput.focus({ preventScroll: true });
+            }
+        });
+        this.contactList.addEventListener('mousedown', (event) => event.preventDefault());
+        this.contactList.addEventListener('click', (event) => {
+            const option = event.target.closest('[data-contact-key]');
+            if (!option) {
+                return;
+            }
+            const contact = this.contacts.find((item) => contactKey(item) === option.dataset.contactKey);
+            this.selectContact(contact);
+        });
+        document.addEventListener('click', (event) => {
+            if (!event.target.closest('#classroom-private-contact-bar')) {
+                this.closeContactList();
+            }
         });
         this.imageButton?.addEventListener('click', () => this.imageInput?.click());
         this.fileButton?.addEventListener('click', () => this.fileInput?.click());
@@ -165,9 +215,10 @@ export class ClassroomPrivateMessages {
         if (nextMode === 'private') {
             this.loadContacts({ silent: this.loadedContacts });
             this.startRefresh();
-            this.input?.focus({ preventScroll: true });
+            this.contactInput?.focus({ preventScroll: true });
         } else {
             this.stopRefresh();
+            this.closeContactList();
         }
     }
 
@@ -269,6 +320,134 @@ export class ClassroomPrivateMessages {
                 `;
             }).join('')
             : '<option value="">暂无本班同学</option>';
+        this.contactSelect.value = selectedKey || '';
+        if (this.currentContact?.identity) {
+            this.contactInput.value = this.currentContact.display_name || '';
+        } else if (!this.isContactListOpen) {
+            this.contactInput.value = '';
+        }
+        this.renderContactList(this.contactInput.value);
+    }
+
+    renderContactList(query = '') {
+        const normalizedQuery = normalizeSearchText(query);
+        const selectedKey = contactKey(this.currentContact);
+        this.filteredContacts = this.contacts.filter((contact) => {
+            if (!normalizedQuery) {
+                return true;
+            }
+            return contactSearchText(contact).includes(normalizedQuery);
+        });
+        if (this.activeContactIndex >= this.filteredContacts.length) {
+            this.activeContactIndex = this.filteredContacts.length ? 0 : -1;
+        }
+        if (this.activeContactIndex < 0 && this.filteredContacts.length) {
+            this.activeContactIndex = 0;
+        }
+
+        if (!this.filteredContacts.length) {
+            this.contactList.innerHTML = `
+                <div class="classroom-private-contact-empty" role="option" aria-disabled="true">
+                    没有匹配的同学
+                </div>
+            `;
+            this.contactList.hidden = !this.isContactListOpen;
+            this.contactInput.setAttribute('aria-expanded', this.isContactListOpen ? 'true' : 'false');
+            this.contactInput.removeAttribute('aria-activedescendant');
+            return;
+        }
+
+        this.contactList.innerHTML = this.filteredContacts.map((contact, index) => {
+            const key = contactKey(contact);
+            const unread = Number(contact.unread_count || 0);
+            const active = index === this.activeContactIndex;
+            const selected = key === selectedKey;
+            const optionId = `classroom-private-contact-option-${index}`;
+            return `
+                <button
+                    type="button"
+                    class="classroom-private-contact-option${active ? ' is-active' : ''}${selected ? ' is-selected' : ''}"
+                    id="${optionId}"
+                    role="option"
+                    aria-selected="${selected ? 'true' : 'false'}"
+                    data-contact-key="${escapeHtml(key)}"
+                >
+                    <span class="classroom-private-contact-option-main">
+                        <strong>${escapeHtml(contact.display_name || '同学')}</strong>
+                        ${unread ? `<em>${unread}</em>` : ''}
+                    </span>
+                    <small>${escapeHtml(contact.subtitle || '本班同学')}</small>
+                </button>
+            `;
+        }).join('');
+        this.contactList.hidden = !this.isContactListOpen;
+        this.contactInput.setAttribute('aria-expanded', this.isContactListOpen ? 'true' : 'false');
+        const activeOption = this.contactList.querySelector('.classroom-private-contact-option.is-active');
+        if (activeOption) {
+            this.contactInput.setAttribute('aria-activedescendant', activeOption.id);
+        }
+    }
+
+    openContactList({ preserveActive = false } = {}) {
+        this.isContactListOpen = true;
+        if (!preserveActive) {
+            this.activeContactIndex = 0;
+        }
+        this.renderContactList(this.contactInput.value);
+    }
+
+    closeContactList() {
+        this.isContactListOpen = false;
+        this.contactList.hidden = true;
+        this.contactInput?.setAttribute('aria-expanded', 'false');
+        this.contactInput?.removeAttribute('aria-activedescendant');
+    }
+
+    handleContactInputKeydown(event) {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (!this.isContactListOpen) {
+                this.openContactList({ preserveActive: true });
+                return;
+            }
+            const direction = event.key === 'ArrowDown' ? 1 : -1;
+            const total = this.filteredContacts.length;
+            if (!total) {
+                return;
+            }
+            this.activeContactIndex = (this.activeContactIndex + direction + total) % total;
+            this.renderContactList(this.contactInput.value);
+            this.contactList.querySelector('.classroom-private-contact-option.is-active')?.scrollIntoView({ block: 'nearest' });
+            return;
+        }
+        if (event.key === 'Enter' && this.isContactListOpen) {
+            const contact = this.filteredContacts[this.activeContactIndex] || this.filteredContacts[0];
+            if (contact) {
+                event.preventDefault();
+                this.selectContact(contact);
+            }
+            return;
+        }
+        if (event.key === 'Escape') {
+            this.closeContactList();
+            if (this.currentContact?.display_name) {
+                this.contactInput.value = this.currentContact.display_name;
+            }
+        }
+    }
+
+    selectContact(contact) {
+        if (!contact?.identity) {
+            return;
+        }
+        this.contactInput.value = contact.display_name || '';
+        this.contactSelect.value = contactKey(contact);
+        this.closeContactList();
+        this.clearPendingAttachments();
+        this.loadConversation({
+            identity: contact.identity,
+            class_offering_id: normalizeScope(contact.class_offering_id),
+        });
     }
 
     async loadConversation(contact, { showLoading = true, scrollToBottom = true } = {}) {
@@ -540,9 +719,11 @@ export class ClassroomPrivateMessages {
 
     updateControls() {
         const canSend = Boolean(this.currentContact?.can_send) && !this.isSending;
-        [this.input, this.imageButton, this.fileButton].forEach((element) => {
+        [this.contactInput, this.contactToggle, this.input, this.imageButton, this.fileButton].forEach((element) => {
             if (element) {
-                element.disabled = !canSend;
+                element.disabled = element === this.contactInput || element === this.contactToggle
+                    ? !this.contacts.length
+                    : !canSend;
             }
         });
         if (this.sendButton) {
