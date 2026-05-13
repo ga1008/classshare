@@ -260,7 +260,7 @@ storage/
 ### 1. 准备 Python 环境
 
 ```powershell
-cd C:\Users\AngelWei\Nutstore\1\Projects\lanshare
+cd .\lanshare
 
 py -3.14 -m venv venv
 .\venv\Scripts\python.exe -m pip install --upgrade pip
@@ -372,14 +372,14 @@ SILICONFLOW_MAX_CONCURRENT_REQUESTS=2
 窗口 1：启动 AI 服务。
 
 ```powershell
-cd C:\Users\AngelWei\Nutstore\1\Projects\lanshare
+cd .\lanshare
 .\venv\Scripts\python.exe ai_assistant.py
 ```
 
 窗口 2：启动主服务。
 
 ```powershell
-cd C:\Users\AngelWei\Nutstore\1\Projects\lanshare
+cd .\lanshare
 .\venv\Scripts\python.exe main.py
 ```
 
