@@ -743,6 +743,33 @@ def _iter_answer_items(answers_payload: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _dedupe_answer_attachments(attachments: Any) -> list[dict[str, Any]]:
+    if not isinstance(attachments, list):
+        return []
+    unique: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for attachment in attachments:
+        if not isinstance(attachment, dict):
+            continue
+        identity = str(
+            attachment.get("relative_path")
+            or attachment.get("stored_relative_path")
+            or attachment.get("file_name")
+            or attachment.get("filename")
+            or ""
+        ).replace("\\", "/").strip().lower()
+        kind = str(attachment.get("kind") or attachment.get("type") or "file").strip().lower()
+        if identity:
+            key = (kind, identity)
+        else:
+            key = ("json", json.dumps(attachment, ensure_ascii=False, sort_keys=True, default=str))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(attachment)
+    return unique
+
+
 def _validate_exam_answer_attachment_policies(answers_payload: Any, policies: dict[str, dict[str, Any]]) -> None:
     if not policies:
         return
@@ -750,8 +777,7 @@ def _validate_exam_answer_attachment_policies(answers_payload: Any, policies: di
     attachments_by_question: dict[str, list[dict[str, Any]]] = {}
     for index, item in enumerate(answer_items, start=1):
         qid = str(item.get("question_id") or item.get("question_no") or index)
-        attachments = item.get("attachments") if isinstance(item.get("attachments"), list) else []
-        attachments_by_question[qid] = [attachment for attachment in attachments if isinstance(attachment, dict)]
+        attachments_by_question[qid] = _dedupe_answer_attachments(item.get("attachments"))
 
     for qid, policy in policies.items():
         attachments = attachments_by_question.get(qid, [])
