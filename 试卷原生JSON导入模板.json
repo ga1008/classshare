@@ -1,6 +1,16 @@
 {
   "title": "试卷标题",
   "description": "试卷说明，可留空",
+  "exam_config": {
+    "allow_student_ai": false,
+    "ai_policy_note": "开放性实验、项目题或综合论述题可设为 true；客观闭卷题建议保持 false"
+  },
+  "json_authoring_notes": [
+    "题干、选项、解析均支持简易 Markdown，例如 **重点**、`命令`、列表和 ```代码块```。",
+    "Markdown 中的反斜杠、双引号和换行必须保持合法 JSON 转义；推荐先让第三方 AI 输出 JSON，再用 JSON 校验器检查。",
+    "如果某题允许学生答题时使用课堂 AI，可在题目上写 allow_ai: true；也可以只在 exam_config.allow_student_ai 开启整卷允许。",
+    "附件要求只应写在 textarea 问答题里；min_count 大于 0 会被视为必传附件并在学生端显示必传标记。"
+  ],
   "pages": [
     {
       "name": "第一部分",
@@ -45,10 +55,26 @@
         {
           "id": "p1_q4",
           "type": "textarea",
-          "text": "问答题题干",
+          "text": "### 问答题题干\n请结合实验现象说明：\n\n- 关键步骤\n- 结果截图或代码片段\n- 你对异常情况的分析",
           "placeholder": "请写出完整作答过程",
           "answer": "参考答案",
-          "explanation": "解析说明，可留空"
+          "explanation": "解析说明，可留空",
+          "allow_ai": false,
+          "attachment_requirements": {
+            "enabled": true,
+            "required": false,
+            "min_count": 0,
+            "max_count": 3,
+            "allowed_file_types": [
+              ".png",
+              ".jpg",
+              ".pdf",
+              ".py",
+              ".txt"
+            ],
+            "allow_drawing": true,
+            "description": "可选：如实验截图、代码文件或报告；不需要时可省略该字段"
+          }
         }
       ]
     }
