@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import asyncio
 from typing import Optional
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from ..core import templates
 from ..database import get_db_connection
 from ..dependencies import get_current_user
+from ..services.file_service import resolve_global_file_path, stream_file
 from ..services.message_center_service import (
     add_private_message_block,
     get_message_center_bootstrap,
@@ -17,9 +19,11 @@ from ..services.message_center_service import (
     get_message_center_summary,
     get_private_ai_reply_job,
     get_private_message_conversation,
+    list_classroom_private_message_contacts,
     list_message_center_items,
     list_private_message_blocks,
     list_private_message_contacts,
+    load_private_message_attachment_for_user,
     mark_message_center_items_read,
     open_message_center_notification,
     process_private_ai_reply_job,
@@ -30,12 +34,42 @@ from ..services.message_center_service import (
 from ..services.rate_limit_service import RateLimitExceededError
 
 router = APIRouter()
+private_attachment_io_semaphore = asyncio.Semaphore(80)
 
 
 def _normalize_scope(scope: Optional[int]) -> Optional[int]:
     if scope is None:
         return None
+    if scope == "":
+        return None
     return int(scope)
+
+
+async def _read_private_message_payload(request: Request) -> tuple[str, Optional[int], str, list[StarletteUploadFile]]:
+    content_type = request.headers.get("content-type", "")
+    if "multipart/form-data" not in content_type.lower():
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=400, detail="请求格式不正确")
+        return (
+            str(data.get("contact_identity") or ""),
+            _normalize_scope(data.get("class_offering_id")),
+            str(data.get("content") or ""),
+            [],
+        )
+
+    form = await request.form()
+    files: list[StarletteUploadFile] = []
+    for field_name in ("attachments", "files"):
+        for item in form.getlist(field_name):
+            if isinstance(item, StarletteUploadFile):
+                files.append(item)
+    return (
+        str(form.get("contact_identity") or ""),
+        _normalize_scope(form.get("class_offering_id")),
+        str(form.get("content") or ""),
+        files,
+    )
 
 
 @router.get("/message-center", response_class=HTMLResponse)
@@ -166,6 +200,21 @@ def api_private_message_contacts(user: dict = Depends(get_current_user)):
         }
 
 
+@router.get("/api/classrooms/{class_offering_id}/private/contacts", response_class=JSONResponse)
+def api_classroom_private_message_contacts(class_offering_id: int, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        try:
+            payload = list_classroom_private_message_contacts(conn, user, class_offering_id)
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "status": "success",
+        **payload,
+    }
+
+
 @router.get("/api/message-center/private/conversation", response_class=JSONResponse)
 def api_private_message_conversation(
     contact: str = Query(..., min_length=3),
@@ -199,13 +248,14 @@ async def api_send_private_message(
     background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
 ):
-    data = await request.json()
+    contact_identity, class_offering_id, content, attachments = await _read_private_message_payload(request)
     try:
         result = await send_private_message_and_maybe_reply(
             user,
-            contact_identity=str(data.get("contact_identity") or ""),
-            class_offering_id=_normalize_scope(data.get("class_offering_id")),
-            content=str(data.get("content") or ""),
+            contact_identity=contact_identity,
+            class_offering_id=class_offering_id,
+            content=content,
+            attachments=attachments,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -219,6 +269,9 @@ async def api_send_private_message(
                 "retry_after_seconds": exc.retry_after_seconds,
             },
         ) from exc
+    finally:
+        for file in attachments:
+            await file.close()
 
     ai_reply_job = result.get("ai_reply_job")
     if ai_reply_job and ai_reply_job.get("id") is not None:
@@ -226,6 +279,9 @@ async def api_send_private_message(
 
     def _load_summary_and_contacts() -> tuple[dict, list[dict]]:
         with get_db_connection() as conn:
+            if class_offering_id is not None:
+                classroom_contacts = list_classroom_private_message_contacts(conn, user, class_offering_id)
+                return get_message_center_summary(conn, user), classroom_contacts["contacts"]
             return get_message_center_summary(conn, user), list_private_message_contacts(conn, user)
 
     summary, contacts = await asyncio.to_thread(_load_summary_and_contacts)
@@ -236,6 +292,42 @@ async def api_send_private_message(
         "summary": summary,
         "contacts": contacts,
     }
+
+
+@router.get("/api/message-center/private/attachments/{attachment_id}")
+async def api_private_message_attachment(
+    attachment_id: int,
+    download: bool = Query(default=False),
+    user: dict = Depends(get_current_user),
+):
+    with get_db_connection() as conn:
+        try:
+            attachment = load_private_message_attachment_for_user(conn, user, attachment_id)
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    if attachment is None:
+        raise HTTPException(status_code=404, detail="私信附件不存在")
+
+    file_path = resolve_global_file_path(str(attachment["file_hash"]))
+    if not file_path:
+        raise HTTPException(status_code=404, detail="私信附件不存在")
+
+    async def streamed_file():
+        async with private_attachment_io_semaphore:
+            async for chunk in stream_file(file_path):
+                yield chunk
+
+    filename = quote(str(attachment["original_filename"] or "attachment"))
+    disposition = "attachment" if download or str(attachment["attachment_kind"] or "") != "image" else "inline"
+    return StreamingResponse(
+        streamed_file(),
+        media_type=str(attachment["mime_type"] or "application/octet-stream"),
+        headers={
+            "Content-Disposition": f"{disposition}; filename*=utf-8''{filename}",
+            "Content-Length": str(int(attachment["file_size"] or 0)),
+        },
+    )
 
 
 @router.get("/api/message-center/private/ai-jobs/{job_id}", response_class=JSONResponse)

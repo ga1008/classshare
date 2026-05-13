@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import mimetypes
 from datetime import datetime
 from typing import Any, Optional
 from urllib.parse import quote
 
 from ..core import ai_client
 from ..database import get_db_connection
+from .file_service import resolve_global_file_path, save_file_globally
 from .psych_profile_service import (
     build_explicit_user_profile_prompt,
     compose_classroom_chat_system_prompt,
@@ -55,6 +57,14 @@ ACTIVE_AI_REPLY_JOB_STATUSES = {
 
 PRIVATE_MESSAGE_RATE_LIMIT = 5
 PRIVATE_MESSAGE_RATE_WINDOW_SECONDS = 60
+PRIVATE_MESSAGE_ATTACHMENT_MAX_BYTES = 100 * 1024 * 1024
+PRIVATE_MESSAGE_ATTACHMENT_LIMIT = 8
+PRIVATE_MESSAGE_IMAGE_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+}
 
 ALL_NOTIFICATION_CATEGORIES = (
     MESSAGE_CATEGORY_PRIVATE,
@@ -174,6 +184,156 @@ def _safe_json_loads(raw_value: Any, fallback: Any) -> Any:
         return json.loads(raw_value)
     except (TypeError, json.JSONDecodeError):
         return fallback
+
+
+def ensure_private_message_attachment_schema(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS private_message_attachments
+        (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER NOT NULL,
+            conversation_key TEXT NOT NULL,
+            class_offering_id INTEGER,
+            uploaded_by_identity TEXT NOT NULL,
+            uploaded_by_role TEXT NOT NULL,
+            file_hash TEXT NOT NULL,
+            original_filename TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            attachment_kind TEXT NOT NULL DEFAULT 'file',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (message_id) REFERENCES private_messages (id) ON DELETE CASCADE,
+            FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_private_message_attachments_message "
+        "ON private_message_attachments (message_id, id ASC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_private_message_attachments_conversation "
+        "ON private_message_attachments (conversation_key, created_at DESC, id DESC)"
+    )
+
+
+def _detect_upload_size(file: Any) -> int | None:
+    try:
+        file.file.seek(0, 2)
+        size = int(file.file.tell())
+        file.file.seek(0)
+        return size
+    except Exception:
+        return None
+
+
+def _normalize_attachment_filename(raw_name: Any) -> str:
+    normalized = str(raw_name or "attachment").replace("\\", "/").split("/")[-1].strip()
+    normalized = normalized.replace("\x00", "")
+    if not normalized:
+        normalized = "attachment"
+    return normalized[:180]
+
+
+def _guess_attachment_mime(file: Any, filename: str) -> str:
+    content_type = str(getattr(file, "content_type", "") or "").strip().lower()
+    if content_type and content_type != "application/octet-stream":
+        return content_type
+    guessed_type = mimetypes.guess_type(filename)[0]
+    return str(guessed_type or "application/octet-stream").lower()
+
+
+def _private_attachment_kind(mime_type: str) -> str:
+    return "image" if str(mime_type or "").lower() in PRIVATE_MESSAGE_IMAGE_TYPES else "file"
+
+
+async def prepare_private_message_uploads(files: list[Any] | tuple[Any, ...] | None) -> list[dict[str, Any]]:
+    selected_files = [file for file in (files or []) if file is not None]
+    if not selected_files:
+        return []
+    if len(selected_files) > PRIVATE_MESSAGE_ATTACHMENT_LIMIT:
+        raise ValueError(f"单条私信最多只能发送 {PRIVATE_MESSAGE_ATTACHMENT_LIMIT} 个附件")
+
+    prepared: list[dict[str, Any]] = []
+    for file in selected_files:
+        filename = _normalize_attachment_filename(getattr(file, "filename", "") or "attachment")
+        detected_size = _detect_upload_size(file)
+        if detected_size is not None and detected_size > PRIVATE_MESSAGE_ATTACHMENT_MAX_BYTES:
+            raise ValueError("私信附件不能超过 100MB")
+
+        mime_type = _guess_attachment_mime(file, filename)
+        save_result = await save_file_globally(file)
+        if not save_result:
+            raise ValueError(f"附件 {filename} 保存失败")
+
+        saved_size = int(save_result.get("size") or 0)
+        if saved_size > PRIVATE_MESSAGE_ATTACHMENT_MAX_BYTES:
+            raise ValueError("私信附件不能超过 100MB")
+
+        prepared.append({
+            "file_hash": str(save_result["hash"]),
+            "original_filename": filename,
+            "mime_type": mime_type,
+            "file_size": saved_size,
+            "attachment_kind": _private_attachment_kind(mime_type),
+        })
+    return prepared
+
+
+def _build_private_attachment_payload(row) -> dict[str, Any]:
+    attachment_id = int(row["id"])
+    mime_type = str(row["mime_type"] or "application/octet-stream")
+    kind = str(row["attachment_kind"] or _private_attachment_kind(mime_type))
+    return {
+        "attachment_id": attachment_id,
+        "id": attachment_id,
+        "type": kind,
+        "is_image": kind == "image",
+        "name": str(row["original_filename"] or "attachment"),
+        "mime_type": mime_type,
+        "file_size": int(row["file_size"] or 0),
+        "url": f"/api/message-center/private/attachments/{attachment_id}",
+        "download_url": f"/api/message-center/private/attachments/{attachment_id}?download=1",
+        "created_at": str(row["created_at"] or ""),
+    }
+
+
+def _load_private_message_attachments(conn, message_ids: list[int]) -> dict[int, list[dict[str, Any]]]:
+    normalized_ids = [int(message_id) for message_id in message_ids if int(message_id or 0) > 0]
+    if not normalized_ids:
+        return {}
+    ensure_private_message_attachment_schema(conn)
+    placeholders = ",".join("?" for _ in normalized_ids)
+    rows = conn.execute(
+        f"""
+        SELECT *
+        FROM private_message_attachments
+        WHERE message_id IN ({placeholders})
+        ORDER BY message_id ASC, id ASC
+        """,
+        tuple(normalized_ids),
+    ).fetchall()
+    attachments: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        message_id = int(row["message_id"])
+        attachments.setdefault(message_id, []).append(_build_private_attachment_payload(row))
+    return attachments
+
+
+def _format_private_attachment_preview(attachment_count: int) -> str:
+    count = max(int(attachment_count or 0), 0)
+    if count <= 0:
+        return ""
+    return f"{count} 个附件"
+
+
+def _private_message_preview(content: Any, attachment_count: int = 0, limit: int = 90) -> str:
+    text_preview = _truncate_text(content, limit)
+    attachment_preview = _format_private_attachment_preview(attachment_count)
+    if text_preview and attachment_preview:
+        return f"{text_preview} | {attachment_preview}"
+    return text_preview or attachment_preview or "私信"
 
 
 def _enforce_private_message_rate_limit(conn, *, sender_identity: str) -> None:
@@ -316,6 +476,104 @@ def _load_offering_labels(conn, offering_ids: set[int]) -> dict[int, dict[str, s
             "class_name": str(row["class_name"] or ""),
         }
     return labels
+
+
+def _load_accessible_classroom_private_scope(conn, user: dict, class_offering_id: int):
+    current_user_pk, current_role, _ = _ensure_user_identity(user)
+    offering = conn.execute(
+        """
+        SELECT o.id, o.class_id, o.teacher_id, c.name AS course_name, cl.name AS class_name
+        FROM class_offerings o
+        JOIN courses c ON c.id = o.course_id
+        JOIN classes cl ON cl.id = o.class_id
+        WHERE o.id = ?
+        LIMIT 1
+        """,
+        (int(class_offering_id),),
+    ).fetchone()
+    if offering is None:
+        return None
+
+    if current_role == "teacher":
+        return offering if int(offering["teacher_id"]) == current_user_pk else None
+
+    student_row = conn.execute(
+        "SELECT class_id FROM students WHERE id = ? LIMIT 1",
+        (current_user_pk,),
+    ).fetchone()
+    if student_row is None or int(student_row["class_id"]) != int(offering["class_id"]):
+        return None
+    return offering
+
+
+def _load_scoped_student_contact(conn, student_id: int, class_offering_id: Optional[int]) -> Optional[dict[str, Any]]:
+    if class_offering_id is None:
+        return None
+    row = conn.execute(
+        """
+        SELECT s.id, s.name, s.student_id_number,
+               o.id AS class_offering_id,
+               c.name AS course_name,
+               cl.name AS class_name
+        FROM class_offerings o
+        JOIN courses c ON c.id = o.course_id
+        JOIN classes cl ON cl.id = o.class_id
+        JOIN students s ON s.class_id = o.class_id
+        WHERE o.id = ?
+          AND s.id = ?
+        LIMIT 1
+        """,
+        (int(class_offering_id), int(student_id)),
+    ).fetchone()
+    if row is None:
+        return None
+    subtitle_parts = [
+        f"{row['course_name']} / {row['class_name']}",
+        "本班同学",
+    ]
+    if row["student_id_number"]:
+        subtitle_parts.append(f"学号 {row['student_id_number']}")
+    return _build_contact_entry(
+        identity=build_user_identity("student", row["id"]),
+        role="student",
+        display_name=str(row["name"] or "同学"),
+        subtitle=" · ".join(subtitle_parts),
+        class_offering_id=int(row["class_offering_id"]),
+        user_pk=int(row["id"]),
+        can_send=True,
+    )
+
+
+def _load_scoped_teacher_contact(conn, teacher_id: int, class_offering_id: Optional[int]) -> Optional[dict[str, Any]]:
+    if class_offering_id is None:
+        return None
+    row = conn.execute(
+        """
+        SELECT t.id, t.name,
+               o.id AS class_offering_id,
+               c.name AS course_name,
+               cl.name AS class_name
+        FROM class_offerings o
+        JOIN courses c ON c.id = o.course_id
+        JOIN classes cl ON cl.id = o.class_id
+        JOIN teachers t ON t.id = o.teacher_id
+        WHERE o.id = ?
+          AND t.id = ?
+        LIMIT 1
+        """,
+        (int(class_offering_id), int(teacher_id)),
+    ).fetchone()
+    if row is None:
+        return None
+    return _build_contact_entry(
+        identity=build_user_identity("teacher", row["id"]),
+        role="teacher",
+        display_name=build_actor_display_name(str(row["name"] or ""), "teacher"),
+        subtitle=f"{row['course_name']} / {row['class_name']}",
+        class_offering_id=int(row["class_offering_id"]),
+        user_pk=int(row["id"]),
+        can_send=True,
+    )
 
 
 def _build_contact_entry(
@@ -526,14 +784,21 @@ def _merge_private_message_summaries(
     current_identity: str,
     catalog: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    ensure_private_message_attachment_schema(conn)
     rows = conn.execute(
         """
-        SELECT id, class_offering_id, sender_identity, sender_role, sender_user_pk, sender_display_name,
-               recipient_identity, recipient_role, recipient_user_pk, recipient_display_name,
-               content, read_at, created_at
-        FROM private_messages
-        WHERE sender_identity = ? OR recipient_identity = ?
-        ORDER BY created_at DESC, id DESC
+        SELECT pm.id, pm.class_offering_id,
+               pm.sender_identity, pm.sender_role, pm.sender_user_pk, pm.sender_display_name,
+               pm.recipient_identity, pm.recipient_role, pm.recipient_user_pk, pm.recipient_display_name,
+               pm.content, pm.read_at, pm.created_at,
+               COALESCE((
+                   SELECT COUNT(*)
+                   FROM private_message_attachments pma
+                   WHERE pma.message_id = pm.id
+               ), 0) AS attachment_count
+        FROM private_messages pm
+        WHERE pm.sender_identity = ? OR pm.recipient_identity = ?
+        ORDER BY pm.created_at DESC, pm.id DESC
         """,
         (current_identity, current_identity),
     ).fetchall()
@@ -571,7 +836,11 @@ def _merge_private_message_summaries(
         contact = catalog[contact_key]
         if not contact["last_message_at"]:
             contact["last_message_at"] = str(row["created_at"] or "")
-            contact["last_message_preview"] = _truncate_text(row["content"], 72)
+            contact["last_message_preview"] = _private_message_preview(
+                row["content"],
+                int(row["attachment_count"] or 0),
+                72,
+            )
             contact["last_message_is_outgoing"] = is_outgoing
         if not is_outgoing and not row["read_at"]:
             contact["unread_count"] += 1
@@ -581,6 +850,7 @@ def _merge_private_message_summaries(
 
 def list_private_message_contacts(conn, user: dict) -> list[dict[str, Any]]:
     _, _, current_identity = _ensure_user_identity(user)
+    ensure_private_message_attachment_schema(conn)
     catalog = load_private_message_contact_catalog(conn, user)
     blocked_map = _load_blocked_identity_map(conn, current_identity)
     contacts = _merge_private_message_summaries(conn, current_identity=current_identity, catalog=catalog)
@@ -607,6 +877,17 @@ def _resolve_contact(
     parsed_identity = parse_identity(contact_identity)
     if parsed_identity["role"] == AI_ASSISTANT_ROLE and normalized_scope is None:
         normalized_scope = int(parsed_identity["class_offering_id"])
+    if normalized_scope is not None and parsed_identity["role"] in {"student", "teacher"}:
+        accessible_scope = _load_accessible_classroom_private_scope(conn, user, int(normalized_scope))
+        if accessible_scope is None:
+            return None
+        scoped_contact = _resolve_direct_user_contact(
+            conn,
+            contact_identity,
+            class_offering_id=int(accessible_scope["id"]),
+        )
+        if scoped_contact and scoped_contact["identity"] != _ensure_user_identity(user)[2]:
+            return scoped_contact
     for contact in list_private_message_contacts(conn, user):
         if contact["identity"] == contact_identity and int(contact["class_offering_id"] or 0) == int(normalized_scope or 0):
             return contact
@@ -631,6 +912,9 @@ def _resolve_direct_user_contact(
     if role == AI_ASSISTANT_ROLE:
         return None
     if role == "student":
+        scoped_contact = _load_scoped_student_contact(conn, int(parsed["user_pk"]), class_offering_id)
+        if scoped_contact is not None:
+            return scoped_contact
         row = conn.execute(
             """
             SELECT s.id, s.name, s.student_id_number, c.name AS class_name
@@ -659,6 +943,9 @@ def _resolve_direct_user_contact(
         )
 
     if role == "teacher":
+        scoped_contact = _load_scoped_teacher_contact(conn, int(parsed["user_pk"]), class_offering_id)
+        if scoped_contact is not None:
+            return scoped_contact
         row = conn.execute(
             """
             SELECT id, name
@@ -681,6 +968,103 @@ def _resolve_direct_user_contact(
         )
 
     return None
+
+
+def list_classroom_private_message_contacts(conn, user: dict, class_offering_id: int) -> dict[str, Any]:
+    current_user_pk, current_role, current_identity = _ensure_user_identity(user)
+    offering = _load_accessible_classroom_private_scope(conn, user, int(class_offering_id))
+    if offering is None:
+        raise PermissionError("permission denied")
+
+    students = conn.execute(
+        """
+        SELECT id, name, student_id_number
+        FROM students
+        WHERE class_id = ?
+        ORDER BY student_id_number, id
+        """,
+        (int(offering["class_id"]),),
+    ).fetchall()
+    blocked_map = _load_blocked_identity_map(conn, current_identity)
+    contact_by_key: dict[str, dict[str, Any]] = {}
+    for row in students:
+        identity = build_user_identity("student", row["id"])
+        if identity == current_identity:
+            continue
+        subtitle_parts = [
+            f"{offering['course_name']} / {offering['class_name']}",
+            "本班同学",
+        ]
+        if row["student_id_number"]:
+            subtitle_parts.append(f"学号 {row['student_id_number']}")
+        contact = _build_contact_entry(
+            identity=identity,
+            role="student",
+            display_name=str(row["name"] or "同学"),
+            subtitle=" · ".join(subtitle_parts),
+            class_offering_id=int(offering["id"]),
+            user_pk=int(row["id"]),
+            can_send=True,
+        )
+        if identity in blocked_map:
+            contact["is_blocked"] = True
+            contact["can_send"] = False
+        contact["contact_key"] = build_contact_key(identity, int(offering["id"]))
+        contact["identity"] = identity
+        contact["class_offering_id"] = int(offering["id"])
+        contact_by_key[contact["contact_key"]] = contact
+
+    ensure_private_message_attachment_schema(conn)
+    rows = conn.execute(
+        """
+        SELECT pm.id, pm.class_offering_id,
+               pm.sender_identity, pm.recipient_identity,
+               pm.content, pm.read_at, pm.created_at,
+               COALESCE((
+                   SELECT COUNT(*)
+                   FROM private_message_attachments pma
+                   WHERE pma.message_id = pm.id
+               ), 0) AS attachment_count
+        FROM private_messages pm
+        WHERE pm.class_offering_id = ?
+          AND (pm.sender_identity = ? OR pm.recipient_identity = ?)
+        ORDER BY pm.created_at DESC, pm.id DESC
+        """,
+        (int(offering["id"]), current_identity, current_identity),
+    ).fetchall()
+    for row in rows:
+        is_outgoing = str(row["sender_identity"]) == current_identity
+        contact_identity = str(row["recipient_identity"] if is_outgoing else row["sender_identity"])
+        contact_key = build_contact_key(contact_identity, int(offering["id"]))
+        contact = contact_by_key.get(contact_key)
+        if contact is None:
+            continue
+        if not contact["last_message_at"]:
+            contact["last_message_at"] = str(row["created_at"] or "")
+            contact["last_message_preview"] = _private_message_preview(
+                row["content"],
+                int(row["attachment_count"] or 0),
+                72,
+            )
+            contact["last_message_is_outgoing"] = is_outgoing
+        if not is_outgoing and not row["read_at"]:
+            contact["unread_count"] += 1
+
+    contacts = list(contact_by_key.values())
+    contacts.sort(key=lambda item: str(item.get("display_name") or ""))
+    contacts.sort(key=lambda item: str(item.get("last_message_at") or ""), reverse=True)
+    contacts.sort(key=lambda item: 0 if item.get("last_message_at") else 1)
+    contacts.sort(key=lambda item: 0 if int(item.get("unread_count") or 0) > 0 else 1)
+    return {
+        "class_offering_id": int(offering["id"]),
+        "course_name": str(offering["course_name"] or ""),
+        "class_name": str(offering["class_name"] or ""),
+        "contacts": contacts,
+        "limits": {
+            "max_attachment_count": PRIVATE_MESSAGE_ATTACHMENT_LIMIT,
+            "max_attachment_bytes": PRIVATE_MESSAGE_ATTACHMENT_MAX_BYTES,
+        },
+    }
 
 
 def _build_notification_payload(
@@ -832,6 +1216,54 @@ def _insert_private_message(
     }
 
 
+def _insert_private_message_attachments(
+    conn,
+    message_row: dict[str, Any],
+    attachment_payloads: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    prepared = list(attachment_payloads or [])
+    if not prepared:
+        return []
+    ensure_private_message_attachment_schema(conn)
+    inserted_ids: list[int] = []
+    for item in prepared:
+        cursor = conn.execute(
+            """
+            INSERT INTO private_message_attachments (
+                message_id, conversation_key, class_offering_id,
+                uploaded_by_identity, uploaded_by_role,
+                file_hash, original_filename, mime_type, file_size, attachment_kind
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(message_row["id"]),
+                str(message_row["conversation_key"]),
+                message_row["class_offering_id"],
+                str(message_row["sender_identity"]),
+                str(message_row["sender_role"]),
+                str(item["file_hash"]),
+                str(item["original_filename"]),
+                str(item["mime_type"]),
+                int(item["file_size"] or 0),
+                str(item.get("attachment_kind") or _private_attachment_kind(str(item.get("mime_type") or ""))),
+            ),
+        )
+        inserted_ids.append(int(cursor.lastrowid))
+
+    placeholders = ",".join("?" for _ in inserted_ids)
+    rows = conn.execute(
+        f"""
+        SELECT *
+        FROM private_message_attachments
+        WHERE id IN ({placeholders})
+        ORDER BY id ASC
+        """,
+        tuple(inserted_ids),
+    ).fetchall()
+    return [_build_private_attachment_payload(row) for row in rows]
+
+
 def _insert_private_message_audit(conn, message_row: dict[str, Any]) -> None:
     conn.execute(
         """
@@ -859,9 +1291,14 @@ def _insert_private_message_audit(conn, message_row: dict[str, Any]) -> None:
     )
 
 
-def _create_private_message_notification(conn, message_row: dict[str, Any]) -> None:
+def _create_private_message_notification(
+    conn,
+    message_row: dict[str, Any],
+    attachments: list[dict[str, Any]] | None = None,
+) -> None:
     if message_row["recipient_role"] not in {"student", "teacher"} or message_row["recipient_user_pk"] is None:
         return
+    attachment_count = len(attachments or [])
     _insert_notification(
         conn,
         _build_notification_payload(
@@ -869,7 +1306,7 @@ def _create_private_message_notification(conn, message_row: dict[str, Any]) -> N
             recipient_user_pk=int(message_row["recipient_user_pk"]),
             category=MESSAGE_CATEGORY_PRIVATE,
             title=f"来自 {message_row['sender_display_name']} 的私信",
-            body_preview=_truncate_text(message_row["content"], 90),
+            body_preview=_private_message_preview(message_row["content"], attachment_count, 90),
             actor_role=message_row["sender_role"],
             actor_user_pk=message_row["sender_user_pk"],
             actor_display_name=message_row["sender_display_name"],
@@ -933,11 +1370,18 @@ def get_latest_unread_notification(conn, user: dict) -> Optional[dict[str, Any]]
     return _serialize_notification(row)
 
 
-def _serialize_private_message(row, *, current_identity: str, blocked_identities: set[str]) -> dict[str, Any]:
+def _serialize_private_message(
+    row,
+    *,
+    current_identity: str,
+    blocked_identities: set[str],
+    attachments_by_message: dict[int, list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
     sender_identity = str(row["sender_identity"])
     sender_role = str(row["sender_role"] or "")
+    message_id = int(row["id"])
     return {
-        "id": int(row["id"]),
+        "id": message_id,
         "sender_identity": sender_identity,
         "sender_role": sender_role,
         "sender_display_name": str(row["sender_display_name"] or ""),
@@ -950,6 +1394,7 @@ def _serialize_private_message(row, *, current_identity: str, blocked_identities
         "is_outgoing": sender_identity == current_identity,
         "can_block_sender": sender_identity != current_identity and is_blockable_role(sender_role),
         "is_sender_blocked": sender_identity in blocked_identities,
+        "attachments": list((attachments_by_message or {}).get(message_id, [])),
     }
 
 
@@ -1546,6 +1991,7 @@ def get_private_message_conversation(
     if not contact:
         raise ValueError("contact not found")
 
+    ensure_private_message_attachment_schema(conn)
     normalized_scope = _safe_int(contact.get("class_offering_id"))
     if normalized_scope is None:
         normalized_scope = _safe_int(class_offering_id)
@@ -1589,6 +2035,10 @@ def get_private_message_conversation(
             item["read_at"] = _now_iso()
         patched_rows.append(item)
 
+    attachments_by_message = _load_private_message_attachments(
+        conn,
+        [int(item["id"]) for item in patched_rows],
+    )
     contact_payload = dict(contact)
     contact_payload["is_blocked"] = str(contact["identity"]) in blocked_identities
     contact_payload["is_blocked_by_contact"] = is_blocked_by_contact
@@ -1604,11 +2054,38 @@ def get_private_message_conversation(
             conversation_key=conversation_key,
         ),
         "messages": [
-            _serialize_private_message(item, current_identity=current_identity, blocked_identities=blocked_identities)
+            _serialize_private_message(
+                item,
+                current_identity=current_identity,
+                blocked_identities=blocked_identities,
+                attachments_by_message=attachments_by_message,
+            )
             for item in patched_rows
         ],
         "read_result": read_result,
     }
+
+
+def load_private_message_attachment_for_user(conn, user: dict, attachment_id: int):
+    _, _, current_identity = _ensure_user_identity(user)
+    ensure_private_message_attachment_schema(conn)
+    row = conn.execute(
+        """
+        SELECT pma.*,
+               pm.sender_identity,
+               pm.recipient_identity
+        FROM private_message_attachments pma
+        JOIN private_messages pm ON pm.id = pma.message_id
+        WHERE pma.id = ?
+        LIMIT 1
+        """,
+        (int(attachment_id),),
+    ).fetchone()
+    if row is None:
+        return None
+    if current_identity not in {str(row["sender_identity"]), str(row["recipient_identity"])}:
+        raise PermissionError("permission denied")
+    return row
 
 
 def _insert_notification_if_allowed(
@@ -1830,8 +2307,10 @@ def create_private_message(
     contact_identity: str,
     class_offering_id: Optional[int] = None,
     content: str,
+    attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     current_user_pk, current_role, current_identity = _ensure_user_identity(user)
+    ensure_private_message_attachment_schema(conn)
     contact = _resolve_contact(
         conn,
         user=user,
@@ -1842,7 +2321,10 @@ def create_private_message(
         raise ValueError("contact not found")
 
     normalized_content = str(content or "").strip()
-    if not normalized_content:
+    prepared_attachments = list(attachments or [])
+    if len(prepared_attachments) > PRIVATE_MESSAGE_ATTACHMENT_LIMIT:
+        raise ValueError(f"单条私信最多只能发送 {PRIVATE_MESSAGE_ATTACHMENT_LIMIT} 个附件")
+    if not normalized_content and not prepared_attachments:
         raise ValueError("message content is required")
     if len(normalized_content) > 4000:
         raise ValueError("message content is too long")
@@ -1854,6 +2336,8 @@ def create_private_message(
         raise PermissionError("please unblock the contact before sending")
     if _is_blocked(conn, str(contact["identity"]), current_identity):
         raise PermissionError("the recipient is not accepting messages from you")
+    if prepared_attachments and str(contact["role"]) == AI_ASSISTANT_ROLE:
+        raise ValueError("AI 助教私信暂不支持附件，请先发送文字内容")
     _enforce_private_message_rate_limit(conn, sender_identity=current_identity)
 
     normalized_scope = _safe_int(contact.get("class_offering_id"))
@@ -1887,14 +2371,16 @@ def create_private_message(
         recipient_display_name=str(contact.get("display_name") or ""),
         content=normalized_content,
     )
+    attachment_payloads = _insert_private_message_attachments(conn, message_row, prepared_attachments)
     _insert_private_message_audit(conn, message_row)
     if str(contact["role"]) in {"student", "teacher"}:
-        _create_private_message_notification(conn, message_row)
+        _create_private_message_notification(conn, message_row, attachment_payloads)
 
     serialized = _serialize_private_message(
         message_row,
         current_identity=current_identity,
         blocked_identities=set(_load_blocked_identity_map(conn, current_identity).keys()),
+        attachments_by_message={int(message_row["id"]): attachment_payloads},
     )
     return {
         "contact": dict(contact),
@@ -2305,7 +2791,10 @@ async def send_private_message_and_maybe_reply(
     contact_identity: str,
     class_offering_id: Optional[int] = None,
     content: str,
+    attachments: list[Any] | tuple[Any, ...] | None = None,
 ) -> dict[str, Any]:
+    prepared_attachments = await prepare_private_message_uploads(list(attachments or []))
+
     def _send_message_sync() -> tuple[dict[str, Any], Optional[dict[str, Any]]]:
         with get_db_connection() as conn:
             result = create_private_message(
@@ -2314,6 +2803,7 @@ async def send_private_message_and_maybe_reply(
                 contact_identity=contact_identity,
                 class_offering_id=class_offering_id,
                 content=content,
+                attachments=prepared_attachments,
             )
             ai_reply_job = None
             if result["requires_ai_reply"] and result["class_offering_id"] is not None:

@@ -7,7 +7,10 @@ const app = document.querySelector('[data-message-center-app]');
 if (app) {
     const PRIVATE_TAB = 'private_message';
     const AI_JOB_POLL_INTERVAL_MS = 2200;
+    const PRIVATE_ATTACHMENT_MAX_BYTES = 100 * 1024 * 1024;
+    const PRIVATE_ATTACHMENT_LIMIT = 8;
     const ACTIVE_AI_JOB_STATUSES = new Set(['pending', 'running']);
+    const PRIVATE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
     const appMode = app.dataset.messageCenterMode || 'full';
     const isNotificationsMode = appMode === 'notifications';
     const isPrivateMode = appMode === 'private';
@@ -27,6 +30,11 @@ if (app) {
     const composeFormEl = document.getElementById('message-center-compose-form');
     const composeInputEl = document.getElementById('message-center-compose-input');
     const emojiTriggerEl = document.getElementById('message-center-emoji-trigger');
+    const imageTriggerEl = document.getElementById('message-center-image-trigger');
+    const fileTriggerEl = document.getElementById('message-center-file-trigger');
+    const imageInputEl = document.getElementById('message-center-image-input');
+    const fileInputEl = document.getElementById('message-center-file-input');
+    const attachmentPreviewEl = document.getElementById('message-center-attachment-preview');
     const composeSubmitButtonEl = composeFormEl?.querySelector('[data-send-button]');
     const composeSubmitLabelEl = composeSubmitButtonEl?.querySelector('.message-center-compose-submit__label');
     const unreadTotalEl = document.getElementById('message-center-unread-total');
@@ -54,6 +62,8 @@ if (app) {
         aiReplyPollTimer: null,
         aiReplyPollInFlight: false,
         isSendingMessage: false,
+        pendingAttachments: [],
+        nextAttachmentId: 1,
     };
 
     let emojiPicker = null;
@@ -200,32 +210,199 @@ if (app) {
         }
     }
 
+    function setAttachmentButtonsDisabled(disabled) {
+        [imageTriggerEl, fileTriggerEl].forEach((button) => {
+            if (button) {
+                button.disabled = Boolean(disabled);
+            }
+        });
+    }
+
     function updateSendButtonState() {
         const contact = state.conversation?.contact;
         const canSend = Boolean(contact?.can_send);
 
         if (!contact || !canSend) {
             setSubmitButtonVisualState({ label: '发送', disabled: true });
+            setAttachmentButtonsDisabled(true);
             return;
         }
 
         if (state.isSendingMessage) {
             setSubmitButtonVisualState({ label: '发送中', disabled: true, busy: true, title: '正在发送私信' });
+            setAttachmentButtonsDisabled(true);
             return;
         }
 
         if (isCurrentConversationAiPending()) {
             setSubmitButtonVisualState({ label: 'AI 回复中', disabled: true, busy: true, title: 'AI 助教正在回复上一条消息' });
+            setAttachmentButtonsDisabled(true);
             return;
         }
 
         if (isSendCooldownActive()) {
             const remaining = Math.ceil(getSendCooldownRemainingMs() / 1000);
             setSubmitButtonVisualState({ label: `${remaining}s 后可发送`, disabled: true });
+            setAttachmentButtonsDisabled(true);
             return;
         }
 
+        setAttachmentButtonsDisabled(false);
         setSubmitButtonVisualState({ label: '发送' });
+    }
+
+    function formatBytes(size) {
+        const value = Number(size || 0);
+        if (!Number.isFinite(value) || value <= 0) {
+            return '';
+        }
+        if (value < 1024) {
+            return `${value} B`;
+        }
+        if (value < 1024 * 1024) {
+            return `${(value / 1024).toFixed(1).replace(/\.0$/, '')} KB`;
+        }
+        return `${(value / (1024 * 1024)).toFixed(1).replace(/\.0$/, '')} MB`;
+    }
+
+    function isImageFile(file) {
+        const type = String(file?.type || '').toLowerCase();
+        const name = String(file?.name || '').toLowerCase();
+        return PRIVATE_IMAGE_TYPES.has(type) || /\.(png|jpe?g|gif|webp)$/.test(name);
+    }
+
+    function revokeAttachmentPreview(attachment) {
+        if (attachment?.previewUrl) {
+            URL.revokeObjectURL(attachment.previewUrl);
+        }
+    }
+
+    function clearPendingAttachments() {
+        state.pendingAttachments.forEach(revokeAttachmentPreview);
+        state.pendingAttachments = [];
+        renderPendingAttachments();
+    }
+
+    function renderPendingAttachments() {
+        if (!attachmentPreviewEl) {
+            return;
+        }
+        attachmentPreviewEl.replaceChildren();
+        attachmentPreviewEl.hidden = state.pendingAttachments.length === 0;
+        if (!state.pendingAttachments.length) {
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+        state.pendingAttachments.forEach((attachment) => {
+            const card = document.createElement('div');
+            card.className = `message-center-attachment-chip${attachment.isImage ? ' is-image' : ''}`;
+
+            if (attachment.isImage && attachment.previewUrl) {
+                const image = document.createElement('img');
+                image.src = attachment.previewUrl;
+                image.alt = attachment.file.name || '待发送图片';
+                image.loading = 'lazy';
+                card.appendChild(image);
+            } else {
+                const icon = document.createElement('span');
+                icon.className = 'message-center-attachment-chip__icon';
+                icon.textContent = '📎';
+                icon.setAttribute('aria-hidden', 'true');
+                card.appendChild(icon);
+            }
+
+            const meta = document.createElement('span');
+            meta.className = 'message-center-attachment-chip__meta';
+            meta.innerHTML = `
+                <strong>${escapeHtml(attachment.file.name || '附件')}</strong>
+                <small>${escapeHtml(formatBytes(attachment.file.size) || '待发送')}</small>
+            `;
+            card.appendChild(meta);
+
+            const removeButton = document.createElement('button');
+            removeButton.type = 'button';
+            removeButton.textContent = '×';
+            removeButton.title = '移除附件';
+            removeButton.setAttribute('aria-label', `移除 ${attachment.file.name || '附件'}`);
+            removeButton.addEventListener('click', () => {
+                state.pendingAttachments = state.pendingAttachments.filter((item) => item.id !== attachment.id);
+                revokeAttachmentPreview(attachment);
+                renderPendingAttachments();
+            });
+            card.appendChild(removeButton);
+            fragment.appendChild(card);
+        });
+        attachmentPreviewEl.appendChild(fragment);
+    }
+
+    function queuePrivateAttachments(files, { imagesOnly = false } = {}) {
+        const selectedFiles = Array.from(files || []);
+        if (!selectedFiles.length) {
+            return;
+        }
+        if (!state.conversation?.contact?.can_send) {
+            showToast('请先选择可发送的联系人', 'warning');
+            return;
+        }
+
+        const remainingSlots = PRIVATE_ATTACHMENT_LIMIT - state.pendingAttachments.length;
+        if (remainingSlots <= 0) {
+            showToast(`单条私信最多添加 ${PRIVATE_ATTACHMENT_LIMIT} 个附件`, 'warning');
+            return;
+        }
+        const acceptedFiles = selectedFiles.slice(0, remainingSlots);
+        if (acceptedFiles.length < selectedFiles.length) {
+            showToast(`超出部分已忽略，单条私信最多 ${PRIVATE_ATTACHMENT_LIMIT} 个附件`, 'warning');
+        }
+
+        for (const file of acceptedFiles) {
+            if (imagesOnly && !isImageFile(file)) {
+                showToast('图片入口仅支持 PNG、JPG、GIF 或 WebP', 'warning');
+                continue;
+            }
+            if (Number(file.size || 0) > PRIVATE_ATTACHMENT_MAX_BYTES) {
+                showToast(`${file.name || '附件'} 超过 100MB，已忽略`, 'warning');
+                continue;
+            }
+            const isImage = isImageFile(file);
+            state.pendingAttachments.push({
+                id: state.nextAttachmentId++,
+                file,
+                isImage,
+                previewUrl: isImage ? URL.createObjectURL(file) : '',
+            });
+        }
+        renderPendingAttachments();
+    }
+
+    function renderMessageAttachments(attachments) {
+        const items = Array.isArray(attachments) ? attachments : [];
+        if (!items.length) {
+            return '';
+        }
+        return `
+            <div class="message-center-message__attachments">
+                ${items.map((attachment) => {
+                    const name = escapeHtml(attachment.name || '附件');
+                    const size = escapeHtml(formatBytes(attachment.file_size));
+                    if (attachment.is_image || attachment.type === 'image') {
+                        return `
+                            <a class="message-center-message__attachment is-image" href="${escapeHtml(attachment.url || '#')}" target="_blank" rel="noreferrer noopener">
+                                <img src="${escapeHtml(attachment.url || '')}" alt="${name}" loading="lazy" decoding="async">
+                                <span>${name}${size ? ` · ${size}` : ''}</span>
+                            </a>
+                        `;
+                    }
+                    return `
+                        <a class="message-center-message__attachment is-file" href="${escapeHtml(attachment.download_url || attachment.url || '#')}" target="_blank" rel="noreferrer noopener">
+                            <span class="message-center-message__attachment-icon" aria-hidden="true">📎</span>
+                            <span>${name}${size ? `<small>${size}</small>` : ''}</span>
+                        </a>
+                    `;
+                }).join('')}
+            </div>
+        `;
     }
 
     function activateSendCooldown(retryAfterSeconds) {
@@ -635,10 +812,11 @@ if (app) {
         if (existingIndex < 0) {
             return;
         }
+        const attachmentCount = Array.isArray(message.attachments) ? message.attachments.length : 0;
         state.contacts[existingIndex] = {
             ...state.contacts[existingIndex],
             unread_count: 0,
-            last_message_preview: String(message.content || ''),
+            last_message_preview: String(message.content || '') || (attachmentCount ? `${attachmentCount} 个附件` : ''),
             last_message_at: String(message.created_at || ''),
             last_message_is_outgoing: Boolean(message.is_outgoing),
         };
@@ -674,6 +852,9 @@ if (app) {
         return state.conversation.messages.filter((message) => (
             String(message.content || '').toLowerCase().includes(keyword)
             || String(message.sender_display_name || '').toLowerCase().includes(keyword)
+            || (Array.isArray(message.attachments) && message.attachments.some((attachment) => (
+                String(attachment.name || '').toLowerCase().includes(keyword)
+            )))
         ));
     }
 
@@ -731,6 +912,7 @@ if (app) {
             if (emojiTriggerEl) {
                 emojiTriggerEl.disabled = true;
             }
+            setAttachmentButtonsDisabled(true);
             updateSendButtonState();
             return;
         }
@@ -787,7 +969,8 @@ if (app) {
                                     <strong>${escapeHtml(message.sender_display_name || '')}</strong>
                                     <span>${escapeHtml(formatDate(message.created_at || ''))}</span>
                                 </div>
-                                <div class="${contentClass}">${contentHtml}</div>
+                                ${rawContent ? `<div class="${contentClass}">${contentHtml}</div>` : ''}
+                                ${renderMessageAttachments(message.attachments)}
                                 ${message.status_copy ? `<div class="message-center-message__status">${escapeHtml(message.status_copy)}</div>` : ''}
                                 ${!isVirtual && message.can_block_sender && !message.is_sender_blocked ? `
                                     <div class="message-center-message__actions">
@@ -812,6 +995,7 @@ if (app) {
         if (emojiTriggerEl) {
             emojiTriggerEl.disabled = !canSend;
         }
+        setAttachmentButtonsDisabled(!canSend);
         composeInputEl.placeholder = canSend
             ? (isCurrentConversationAiPending() ? 'AI 助教正在回复上一条消息，你可以先整理下一条内容' : `发送给 ${contact.display_name || '联系人'}`)
             : (contact.is_blocked ? '对方已在黑名单中，解除后才能发送' : '当前无法向该联系人发送消息');
@@ -975,8 +1159,8 @@ if (app) {
         }
 
         const content = composeInputEl.value.trim();
-        if (!content) {
-            showToast('请输入私信内容', 'warning');
+        if (!content && !state.pendingAttachments.length) {
+            showToast('请输入私信内容或添加附件', 'warning');
             return;
         }
 
@@ -984,17 +1168,33 @@ if (app) {
         updateSendButtonState();
 
         try {
-            const response = await apiFetch('/api/message-center/private/messages', {
-                method: 'POST',
-                body: {
+            let requestBody;
+            if (state.pendingAttachments.length) {
+                requestBody = new FormData();
+                requestBody.append('contact_identity', state.currentContact);
+                if (state.currentScope != null) {
+                    requestBody.append('class_offering_id', String(state.currentScope));
+                }
+                requestBody.append('content', content);
+                state.pendingAttachments.forEach((attachment) => {
+                    requestBody.append('attachments', attachment.file, attachment.file.name || 'attachment');
+                });
+            } else {
+                requestBody = {
                     contact_identity: state.currentContact,
                     class_offering_id: state.currentScope,
                     content,
-                },
+                };
+            }
+
+            const response = await apiFetch('/api/message-center/private/messages', {
+                method: 'POST',
+                body: requestBody,
                 silent: true,
             });
 
             composeInputEl.value = '';
+            clearPendingAttachments();
             if (emojiPicker?.isOpen()) {
                 emojiPicker.close();
             }
@@ -1166,6 +1366,7 @@ if (app) {
         if (!selectedOption?.dataset.contact) {
             return;
         }
+        clearPendingAttachments();
         await loadConversation(selectedOption.dataset.contact, selectedOption.dataset.scope);
     });
 
@@ -1197,8 +1398,51 @@ if (app) {
         await toggleBlock(blockButton.dataset.blockSender, state.currentScope, false);
     });
 
+    imageTriggerEl?.addEventListener('click', () => imageInputEl?.click());
+    fileTriggerEl?.addEventListener('click', () => fileInputEl?.click());
+    imageInputEl?.addEventListener('change', (event) => {
+        queuePrivateAttachments(event.currentTarget?.files || [], { imagesOnly: true });
+        if (event.currentTarget) {
+            event.currentTarget.value = '';
+        }
+    });
+    fileInputEl?.addEventListener('change', (event) => {
+        queuePrivateAttachments(event.currentTarget?.files || []);
+        if (event.currentTarget) {
+            event.currentTarget.value = '';
+        }
+    });
+    composeInputEl.addEventListener('paste', (event) => {
+        const files = Array.from(event.clipboardData?.files || []);
+        if (files.length) {
+            queuePrivateAttachments(files);
+        }
+    });
+    composeFormEl.addEventListener('dragover', (event) => {
+        if (Array.from(event.dataTransfer?.types || []).includes('Files')) {
+            event.preventDefault();
+            composeFormEl.classList.add('is-dragover');
+        }
+    });
+    composeFormEl.addEventListener('dragleave', (event) => {
+        if (!composeFormEl.contains(event.relatedTarget)) {
+            composeFormEl.classList.remove('is-dragover');
+        }
+    });
+    composeFormEl.addEventListener('drop', (event) => {
+        const files = Array.from(event.dataTransfer?.files || []);
+        if (!files.length) {
+            return;
+        }
+        event.preventDefault();
+        composeFormEl.classList.remove('is-dragover');
+        queuePrivateAttachments(files);
+    });
     composeFormEl.addEventListener('submit', sendMessage);
-    window.addEventListener('beforeunload', clearAiReplyPolling);
+    window.addEventListener('beforeunload', () => {
+        clearAiReplyPolling();
+        clearPendingAttachments();
+    });
 
     initEmojiPicker();
     initEditorToolbar();
