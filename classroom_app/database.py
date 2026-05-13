@@ -2469,6 +2469,26 @@ def init_database():
                          ''')
 
             conn.execute('''
+                         CREATE TABLE IF NOT EXISTS private_message_attachments
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             message_id INTEGER NOT NULL,
+                             conversation_key TEXT NOT NULL,
+                             class_offering_id INTEGER,
+                             uploaded_by_identity TEXT NOT NULL,
+                             uploaded_by_role TEXT NOT NULL,
+                             file_hash TEXT NOT NULL,
+                             original_filename TEXT NOT NULL,
+                             mime_type TEXT NOT NULL,
+                             file_size INTEGER NOT NULL,
+                             attachment_kind TEXT NOT NULL DEFAULT 'file',
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (message_id) REFERENCES private_messages (id) ON DELETE CASCADE,
+                             FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL
+                         )
+                         ''')
+
+            conn.execute('''
                          CREATE TABLE IF NOT EXISTS private_message_ai_jobs
                          (
                              id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2634,6 +2654,14 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_private_message_audit_lookup "
                 "ON private_message_audit_logs (sender_identity, recipient_identity, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_private_message_attachments_message "
+                "ON private_message_attachments (message_id, id ASC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_private_message_attachments_conversation "
+                "ON private_message_attachments (conversation_key, created_at DESC, id DESC)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_private_message_ai_jobs_lookup "
