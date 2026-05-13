@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/static/css/forms.css">
     <link rel="stylesheet" href="/static/css/cards.css">
     <link rel="stylesheet" href="/static/css/toast.css">
+    <link rel="stylesheet" href="/static/css/markdown.css">
     <link rel="stylesheet" href="/static/css/teacher_whiteboard.css">
     <style>
         body {
@@ -213,6 +214,8 @@
         }
 
         .save-status.saved { color: var(--success-color); }
+        .save-status.syncing { color: var(--primary-color); }
+        .save-status.error { color: var(--danger-color); }
 
         /* === Main Exam Area === */
         .exam-main {
@@ -623,6 +626,15 @@
             font-size: 0.85rem;
         }
 
+        .server-draft-files {
+            margin-top: var(--spacing-2);
+        }
+
+        .file-chip.server-draft {
+            border-color: rgba(99, 102, 241, 0.24);
+            background: rgba(238, 242, 255, 0.62);
+        }
+
         .submitted-files {
             display: flex;
             flex-direction: column;
@@ -678,6 +690,64 @@
             margin: var(--spacing-3) 0;
             line-height: 1;
         }
+        .result-feedback-overview {
+            max-width: 620px;
+            margin: var(--spacing-4) auto 0;
+            padding: var(--spacing-4);
+            text-align: left;
+            border: 1px solid rgba(99, 102, 241, 0.16);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.76);
+            animation: feedback-rise 0.32s ease both;
+        }
+        .result-feedback-overview__title,
+        .grading-question-feedback__label {
+            margin-bottom: 8px;
+            color: var(--text-primary);
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+        .result-feedback-note {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            margin: 0 0 var(--spacing-4);
+            padding: 10px 12px;
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            border-radius: 8px;
+            background: rgba(248, 250, 252, 0.9);
+            color: var(--text-muted);
+            font-size: 0.88rem;
+            line-height: 1.55;
+        }
+        .grading-question-feedback {
+            margin: var(--spacing-4) 0 0 calc(var(--spacing-3) + 35px);
+            padding: 12px 14px;
+            border: 1px solid rgba(99, 102, 241, 0.18);
+            border-left: 3px solid var(--primary-color);
+            border-radius: 8px;
+            background: rgba(238, 242, 255, 0.56);
+            animation: feedback-rise 0.28s ease both;
+        }
+        .grading-question-feedback__body {
+            font-size: 0.92rem;
+        }
+        .grading-question-feedback__body > :last-child,
+        .result-feedback-overview .md-content > :last-child {
+            margin-bottom: 0;
+        }
+        .result-feedback-overview .md-content {
+            color: #334155;
+        }
+        .result-feedback-overview .md-content h1,
+        .result-feedback-overview .md-content h2,
+        .result-feedback-overview .md-content h3 {
+            color: #0f172a;
+        }
+        @keyframes feedback-rise {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
 
         .readonly-answer {
             padding: var(--spacing-3) var(--spacing-4);
@@ -693,6 +763,17 @@
         .readonly-answer.empty {
             color: var(--text-muted);
             font-style: italic;
+        }
+        @media (max-width: 768px) {
+            .grading-question-feedback {
+                margin-left: 0;
+            }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .result-feedback-overview,
+            .grading-question-feedback {
+                animation: none;
+            }
         }
 
         /* Mobile Controls */
@@ -857,11 +938,18 @@
 
 <script type="module" src="/static/js/auth.js"></script>
 <script src="/static/js/behavior_tracker.js"></script>
+{% include "partials/markdown_assets.html" %}
 <script type="module">
     import { showMessage } from '/static/js/ui.js';
     import { apiFetch } from '/static/js/api.js';
     import { SubmissionUploadManager } from '/static/js/submission_upload.js';
     import { initExamDrawingWhiteboard } from '/static/js/teacher_whiteboard.js';
+    import {
+        findQuestionFeedback,
+        parseGradingFeedback,
+        renderMarkdownHtml,
+        renderQuestionFeedbackHtml
+    } from '/static/js/grading_feedback.js?v=20260513';
 
     // Global configurations injected by Jinja2
     const ASSIGNMENT_ID = "{{ assignment.id }}";
@@ -878,6 +966,9 @@
     const CAN_WITHDRAW_SUBMISSION = {{ can_withdraw_submission | tojson }};
     const CAN_RESUBMIT_SUBMISSION = {{ can_resubmit_submission | tojson }};
     const RESUBMISSION_DUE_AT = {{ resubmission_due_at | tojson }};
+    const SUBMISSION_FEEDBACK_MD = {{ (submission.feedback_md if submission else '') | tojson }};
+    const gradingFeedback = parseGradingFeedback(SUBMISSION_FEEDBACK_MD);
+    const LOCAL_DRAFT_KEY = `exam_${ASSIGNMENT_ID}`;
 
     {% if submission %}
     const SUBMISSION_EXISTS = true;
@@ -905,14 +996,23 @@
         answers: {},
         drawings: {},
         questionFiles: {},
+        serverQuestionFiles: {},
         activeQuestionId: null,
         totalQuestions: 0
     };
     let uploadManager = null;
     let questionUploadManagers = new Map();
+    let questionDraftUploadTimers = new Map();
+    let pendingDraftReplaceQuestionIds = new Set();
+    let questionDraftChangeVersions = new Map();
     let drawingBoard = null;
     let isEditingResubmission = false;
     let localSaveWarningShown = false;
+    let serverDraftSaveTimer = null;
+    let serverDraftInFlight = null;
+    let serverDraftWriteChain = Promise.resolve();
+    let serverDraftLoadDone = false;
+    let lastLocalSavedAt = '';
 
     // DOM Elements
     const elements = {
@@ -936,7 +1036,7 @@
     };
 
     // Initialize
-    function init() {
+    async function init() {
         if (window.BehaviorTracker && CLASS_OFFERING_ID) {
             window.behaviorTracker = new window.BehaviorTracker({
                 classOfferingId: CLASS_OFFERING_ID,
@@ -954,6 +1054,7 @@
             renderSubmittedView();
         } else {
             loadFromLocal();
+            await loadServerDraft();
             renderCurrentPage();
         }
     }
@@ -961,11 +1062,13 @@
     // --- Data Persistence ---
     function saveToLocal() {
         if (SUBMISSION_EXISTS && !isEditingResubmission) return;
+        lastLocalSavedAt = new Date().toISOString();
         try {
-            localStorage.setItem(`exam_${ASSIGNMENT_ID}`, JSON.stringify({
+            localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify({
                 answers: state.answers,
                 drawings: state.drawings,
-                currentPage: state.currentPageIdx
+                currentPage: state.currentPageIdx,
+                updatedAt: lastLocalSavedAt
             }));
             localSaveWarningShown = false;
         } catch (error) {
@@ -986,15 +1089,17 @@
                 elements.saveStatus.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg> 本地自动保存`;
             }, 2000);
         }
+        scheduleServerDraftSave();
     }
 
     function loadFromLocal() {
         try {
-            const raw = localStorage.getItem(`exam_${ASSIGNMENT_ID}`);
+            const raw = localStorage.getItem(LOCAL_DRAFT_KEY);
             if (raw) {
                 const d = JSON.parse(raw);
                 state.answers = d.answers || {};
                 state.drawings = d.drawings || {};
+                lastLocalSavedAt = d.updatedAt || '';
                 if (typeof d.currentPage === 'number' && d.currentPage < state.pages.length) {
                     state.currentPageIdx = d.currentPage;
                 }
@@ -1008,6 +1113,204 @@
             for (const q of (page.questions || [])) {
                 if (state.answers[q.id] === undefined) state.answers[q.id] = '';
             }
+        }
+    }
+
+    function getAllQuestions() {
+        const allQuestions = [];
+        state.pages.forEach(p => (p.questions || []).forEach(q => allQuestions.push(q)));
+        return allQuestions;
+    }
+
+    function setSaveStatus(kind, text) {
+        if (!elements.saveStatus) return;
+        elements.saveStatus.classList.remove('saved', 'syncing', 'error');
+        if (kind) elements.saveStatus.classList.add(kind);
+        elements.saveStatus.innerHTML = text;
+    }
+
+    function buildAnswersListForDraft(extraAttachments = [], replaceQuestionIds = []) {
+        const replaceSet = new Set((replaceQuestionIds || []).map(value => String(value)));
+        const attachmentMap = new Map();
+        Object.entries(state.serverQuestionFiles || {}).forEach(([qid, files]) => {
+            if (replaceSet.has(String(qid))) return;
+            (files || []).forEach((file) => {
+                if (!attachmentMap.has(qid)) attachmentMap.set(qid, []);
+                attachmentMap.get(qid).push({
+                    kind: file.kind || (file.is_image ? 'image' : 'file'),
+                    file_name: file.file_name || file.original_filename || '附件',
+                    relative_path: file.relative_path || '',
+                    mime_type: file.mime_type || '',
+                    file_size: file.file_size || 0,
+                    question_id: qid,
+                });
+            });
+        });
+        (extraAttachments || []).forEach((entry) => {
+            const qid = String(entry.question_id || '');
+            if (!qid) return;
+            if (!attachmentMap.has(qid)) attachmentMap.set(qid, []);
+            attachmentMap.get(qid).push(entry);
+        });
+        return getAllQuestions().map(q => ({
+            question_id: q.id,
+            question: q.text,
+            type: q.type || '',
+            answer: state.answers[q.id] || '',
+            attachments: attachmentMap.get(String(q.id)) || [],
+        }));
+    }
+
+    async function loadServerDraft() {
+        if (SUBMISSION_EXISTS && !isEditingResubmission) return;
+        try {
+            const draft = await apiFetch(`/api/assignments/${ASSIGNMENT_ID}/draft`, { method: 'GET', silent: true });
+            serverDraftLoadDone = true;
+            if (!draft?.exists) {
+                if (lastLocalSavedAt) scheduleServerDraftSave(200);
+                return;
+            }
+            const serverTime = Date.parse(draft.server_updated_at || '') || 0;
+            const localTime = Date.parse(lastLocalSavedAt || '') || 0;
+            if (serverTime >= localTime) {
+                applyServerDraft(draft);
+                showMessage('已恢复服务器自动保存的作答进度。', 'success');
+            } else {
+                applyServerDraftFiles(draft);
+                scheduleServerDraftSave(200);
+                showMessage('检测到本机草稿更新，正在同步到服务器。', 'info');
+            }
+        } catch (error) {
+            serverDraftLoadDone = true;
+            console.warn('Failed to load server draft:', error);
+            setSaveStatus('error', '服务器草稿暂不可用');
+        }
+    }
+
+    function applyServerDraft(draft) {
+        try {
+            const raw = draft.answers_json || '';
+            const data = typeof raw === 'string' ? JSON.parse(raw || '{}') : (raw || {});
+            const answers = data.answers || data;
+            if (Array.isArray(answers)) {
+                answers.forEach((item) => {
+                    if (!item || typeof item !== 'object') return;
+                    const qid = item.question_id || item.question;
+                    if (!qid) return;
+                    state.answers[qid] = item.answer || item.text || item.content || '';
+                });
+            } else if (answers && typeof answers === 'object') {
+                Object.entries(answers).forEach(([qid, value]) => {
+                    state.answers[qid] = typeof value === 'object'
+                        ? (value.answer || value.text || value.content || '')
+                        : String(value || '');
+                });
+            }
+        } catch (error) {
+            console.warn('Failed to apply server draft answers:', error);
+        }
+
+        state.drawings = {};
+        applyServerDraftFiles(draft);
+        if (typeof draft.current_page === 'number' && draft.current_page >= 0 && draft.current_page < state.pages.length) {
+            state.currentPageIdx = draft.current_page;
+        }
+        ensureAnswerKeys();
+    }
+
+    function applyServerDraftFiles(draft) {
+        state.serverQuestionFiles = draft.files_by_question || {};
+        Object.entries(state.serverQuestionFiles).forEach(([qid, files]) => {
+            const drawing = (files || []).find(file => file.kind === 'exam_drawing' || file.kind === 'drawing' || String(file.relative_path || '').startsWith('exam_drawings/'));
+            if (!drawing) return;
+            state.drawings[qid] = {
+                kind: 'drawing',
+                question_id: qid,
+                fileName: drawing.file_name || drawing.original_filename || `${qid}_附图.png`,
+                relativePath: drawing.relative_path || '',
+                mimeType: drawing.mime_type || 'image/png',
+                sourceUrl: drawing.raw_url || drawing.download_url || '',
+                updatedAt: draft.server_updated_at || new Date().toISOString(),
+            };
+        });
+    }
+
+    function ensureAnswerKeys() {
+        for (const page of state.pages) {
+            for (const q of (page.questions || [])) {
+                if (state.answers[q.id] === undefined) state.answers[q.id] = '';
+            }
+        }
+    }
+
+    function scheduleServerDraftSave(delay = 900) {
+        if (SUBMISSION_EXISTS && !isEditingResubmission) return;
+        if (!serverDraftLoadDone && !lastLocalSavedAt) return;
+        clearTimeout(serverDraftSaveTimer);
+        serverDraftSaveTimer = setTimeout(() => {
+            saveServerDraft().catch((error) => {
+                console.warn('Server draft save failed:', error);
+            });
+        }, delay);
+    }
+
+    async function saveServerDraft(options = {}) {
+        const task = serverDraftWriteChain.catch(() => null).then(() => performServerDraftSave(options));
+        serverDraftWriteChain = task.catch(() => null);
+        return task;
+    }
+
+    async function performServerDraftSave({ uploadItems = [], replaceQuestionIds = [] } = {}) {
+        if (SUBMISSION_EXISTS && !isEditingResubmission) return null;
+        const formData = new FormData();
+        const manifest = [];
+        const extraAttachments = [];
+        uploadItems.forEach((item) => {
+            if (!item?.file) return;
+            formData.append('files', item.file, item.file.name || 'upload.bin');
+            manifest.push({
+                relative_path: item.relative_path,
+                content_type: item.file.type || item.mime_type || '',
+                kind: item.kind || 'file',
+                question_id: item.question_id || '',
+                question: item.question || '',
+            });
+            extraAttachments.push({
+                kind: item.kind === 'exam_drawing' ? 'drawing' : ((item.file.type || '').startsWith('image/') ? 'image' : 'file'),
+                file_name: item.file.name || 'upload.bin',
+                relative_path: item.relative_path,
+                mime_type: item.file.type || item.mime_type || '',
+                file_size: item.file.size || 0,
+                question_id: item.question_id || '',
+                question: item.question || '',
+            });
+        });
+        const answersList = buildAnswersListForDraft(extraAttachments, replaceQuestionIds);
+        formData.append('answers_json', JSON.stringify({ answers: answersList }));
+        formData.append('current_page', String(state.currentPageIdx || 0));
+        formData.append('client_updated_at', lastLocalSavedAt || new Date().toISOString());
+        formData.append('replace_question_ids', JSON.stringify(replaceQuestionIds || []));
+        formData.append('manifest', JSON.stringify(manifest));
+
+        setSaveStatus('syncing', '正在同步到服务器...');
+        serverDraftInFlight = apiFetch(`/api/assignments/${ASSIGNMENT_ID}/draft`, {
+            method: 'POST',
+            body: formData,
+            silent: true,
+        });
+        try {
+            const resp = await serverDraftInFlight;
+            state.serverQuestionFiles = resp.files_by_question || {};
+            setSaveStatus('saved', '已保存到服务器');
+            setTimeout(() => {
+                setSaveStatus('', '本地与服务器自动保存');
+            }, 2000);
+            return resp;
+        } catch (error) {
+            setSaveStatus('error', '服务器保存失败，本地草稿仍在');
+            throw error;
+        } finally {
+            serverDraftInFlight = null;
         }
     }
 
@@ -1026,8 +1329,13 @@
         return Array.isArray(state.questionFiles?.[qId]) ? state.questionFiles[qId] : [];
     }
 
+    function getServerQuestionFileEntries(qId) {
+        if (pendingDraftReplaceQuestionIds.has(String(qId))) return [];
+        return Array.isArray(state.serverQuestionFiles?.[qId]) ? state.serverQuestionFiles[qId] : [];
+    }
+
     function hasQuestionFiles(qId) {
-        return getQuestionFileEntries(qId).length > 0;
+        return getQuestionFileEntries(qId).length > 0 || getServerQuestionFileEntries(qId).length > 0;
     }
 
     function normalizePolicyFileTypes(rawValue) {
@@ -1067,7 +1375,10 @@
     }
 
     function getQuestionAttachmentCount(q) {
-        return getQuestionFileEntries(q.id).length + (hasDrawing(q.id) ? 1 : 0);
+        const localFiles = getQuestionFileEntries(q.id);
+        const serverFiles = localFiles.length ? [] : getServerQuestionFileEntries(q.id)
+            .filter(file => !(file.kind === 'exam_drawing' || file.kind === 'drawing' || String(file.relative_path || '').startsWith('exam_drawings/')));
+        return localFiles.length + serverFiles.length + (hasDrawing(q.id) ? 1 : 0);
     }
 
     function answerHasContent(q) {
@@ -1169,6 +1480,23 @@
                         </div>
                     `;
                 }).join('')}
+            </div>
+        `;
+    }
+
+    function renderServerDraftFiles(qId) {
+        const files = getServerQuestionFileEntries(qId)
+            .filter(file => !(file.kind === 'exam_drawing' || file.kind === 'drawing' || String(file.relative_path || '').startsWith('exam_drawings/')));
+        if (!files.length) return '';
+        return `
+            <div class="file-chips server-draft-files">
+                ${files.map(file => `
+                    <div class="file-chip server-draft">
+                        <span class="text-primary">服务器草稿</span>
+                        <span class="truncate" style="max-width:220px;" title="${esc(file.relative_path || file.file_name || '')}">${esc(file.file_name || file.original_filename || '题目附件')}</span>
+                        <span class="text-xs text-muted">${file.file_size ? formatFileSize(file.file_size) : ''}</span>
+                    </div>
+                `).join('')}
             </div>
         `;
     }
@@ -1352,6 +1680,7 @@
                                 </div>
                                 <input type="file" id="question-file-input-${safeQId}" class="hidden" multiple>
                                 <div class="file-chips" id="question-file-chips-${safeQId}"></div>
+                                ${renderServerDraftFiles(q.id)}
                             </div>
                         ` : ''}
                     </div>
@@ -1452,6 +1781,7 @@
                     updateQuestionAttachmentStatus(q.id);
                     updateQuestionAnsweredState(q.id);
                     renderSidebar();
+                    scheduleQuestionDraftUpload(q.id);
                     window.behaviorTracker?.log('exam_question_file_select', `选择第 ${q.id} 题附件`, {
                         question_id: q.id,
                         file_count: manager.entries.length
@@ -1608,6 +1938,7 @@
         updateQuestionAttachmentStatus(qId);
         updateQuestionAnsweredState(qId);
         saveToLocal();
+        scheduleQuestionDraftUpload(qId, 200);
         renderSidebar();
     }
 
@@ -1618,6 +1949,7 @@
         updateQuestionAttachmentStatus(qId);
         updateQuestionAnsweredState(qId);
         saveToLocal();
+        scheduleQuestionDraftUpload(qId, 200);
         renderSidebar();
     }
 
@@ -1798,6 +2130,102 @@
         return attachmentEntries;
     }
 
+    async function buildQuestionDraftUploadItems(q) {
+        const uploadItems = [];
+        const index = getQuestionIndex(q.id);
+        for (const entry of getQuestionFileEntries(q.id)) {
+            const file = entry.file;
+            if (!file) continue;
+            const fileName = file.name || 'upload.bin';
+            uploadItems.push({
+                file,
+                relative_path: makeQuestionAttachmentRelativePath(q, entry.relativePath || fileName, index),
+                kind: 'question_attachment',
+                question_id: q.id,
+                question: q.text,
+            });
+        }
+        const drawing = state.drawings[q.id];
+        if (drawing && (drawing.dataUrl || drawing.sourceUrl)) {
+            const fileName = drawing.fileName || makeDrawingFileName(q, index);
+            const file = drawing.dataUrl
+                ? await dataUrlToFile(drawing.dataUrl, fileName)
+                : await sourceUrlToFile(drawing.sourceUrl, fileName);
+            uploadItems.push({
+                file,
+                relative_path: drawing.relativePath || `exam_drawings/${fileName}`,
+                kind: 'exam_drawing',
+                question_id: q.id,
+                question: q.text,
+            });
+        }
+        return uploadItems;
+    }
+
+    function markQuestionDraftDirty(qId) {
+        const key = String(qId);
+        const nextVersion = Number(questionDraftChangeVersions.get(key) || 0) + 1;
+        pendingDraftReplaceQuestionIds.add(key);
+        questionDraftChangeVersions.set(key, nextVersion);
+        return nextVersion;
+    }
+
+    function markQuestionDraftClean(qId, version) {
+        const key = String(qId);
+        if (version !== undefined && Number(questionDraftChangeVersions.get(key) || 0) !== Number(version)) {
+            return;
+        }
+        pendingDraftReplaceQuestionIds.delete(key);
+    }
+
+    function clearQuestionDraftUploadTimers() {
+        questionDraftUploadTimers.forEach((timer) => clearTimeout(timer));
+        questionDraftUploadTimers.clear();
+    }
+
+    async function buildPendingQuestionDraftPayload() {
+        const replaceQuestionIds = Array.from(pendingDraftReplaceQuestionIds);
+        const versions = new Map(replaceQuestionIds.map((qid) => [String(qid), questionDraftChangeVersions.get(String(qid))]));
+        const uploadItems = [];
+        for (const qId of replaceQuestionIds) {
+            const question = findQuestionById(qId);
+            if (!question) continue;
+            uploadItems.push(...await buildQuestionDraftUploadItems(question));
+        }
+        return { uploadItems, replaceQuestionIds, versions };
+    }
+
+    function markPendingQuestionDraftsClean(payload) {
+        (payload?.replaceQuestionIds || []).forEach((qId) => {
+            markQuestionDraftClean(qId, payload.versions?.get(String(qId)));
+        });
+    }
+
+    function scheduleQuestionDraftUpload(qId, delay = 700) {
+        const question = findQuestionById(qId);
+        if (!question || (SUBMISSION_EXISTS && !isEditingResubmission)) return;
+        const dirtyVersion = markQuestionDraftDirty(question.id);
+        clearTimeout(questionDraftUploadTimers.get(qId));
+        const timer = setTimeout(async () => {
+            try {
+                const uploadItems = await buildQuestionDraftUploadItems(question);
+                const resp = await saveServerDraft({
+                    uploadItems,
+                    replaceQuestionIds: [question.id],
+                });
+                if (Number(resp?.dropped_file_count || 0) > 0) {
+                    showMessage('部分题目附件没有保存到服务器草稿，请检查文件类型或大小。', 'warning');
+                }
+                markQuestionDraftClean(question.id, dirtyVersion);
+                updateQuestionAttachmentStatus(question.id);
+                renderSidebar();
+            } catch (error) {
+                showMessage(error.message || '题目附件保存到服务器失败，本地草稿仍可继续提交。', 'warning');
+            }
+        }, delay);
+        questionDraftUploadTimers.set(qId, timer);
+    }
+
     function validateQuestionAttachmentRequirements(allQuestions) {
         for (const q of allQuestions) {
             const policy = getAttachmentPolicy(q);
@@ -1872,11 +2300,54 @@
         btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;margin-right:8px;"></span> 提交中...';
 
         try {
+            clearTimeout(serverDraftSaveTimer);
+            clearQuestionDraftUploadTimers();
+            let useServerDraftFiles = false;
+            try {
+                const pendingPayload = await buildPendingQuestionDraftPayload();
+                const draftResp = await saveServerDraft(pendingPayload);
+                markPendingQuestionDraftsClean(pendingPayload);
+                useServerDraftFiles = Boolean(draftResp);
+                if (Number(draftResp?.dropped_file_count || 0) > 0) {
+                    showMessage('部分题目附件没有保存到服务器草稿，请检查文件类型或大小。', 'warning');
+                }
+            } catch (draftError) {
+                console.warn('Final draft sync failed before submit:', draftError);
+                const hasServerDraftFiles = Object.values(state.serverQuestionFiles || {}).some((files) => Array.isArray(files) && files.length > 0);
+                if (hasServerDraftFiles) {
+                    throw new Error('服务器草稿同步失败，已暂停提交，避免旧附件被误交。请检查网络后重新提交。');
+                }
+                showMessage('服务器草稿同步失败，将继续使用当前页面内容提交。', 'warning');
+            }
+            const refreshedAttachmentRequirementError = validateQuestionAttachmentRequirements(allQuestions);
+            if (refreshedAttachmentRequirementError) {
+                showMessage(refreshedAttachmentRequirementError.message, 'warning');
+                scrollToQuestion(refreshedAttachmentRequirementError.question.id);
+                btn.disabled = false;
+                btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> 确认交卷';
+                return;
+            }
             const formData = uploadManager ? uploadManager.buildFormData() : new FormData();
             const questionAttachmentEntries = appendQuestionAttachmentFiles(formData, allQuestions);
             const drawingEntries = await appendDrawingFiles(formData, allQuestions);
             validateFormDataFileLimits(formData);
             const attachmentMap = new Map();
+            if (useServerDraftFiles) {
+                Object.entries(state.serverQuestionFiles || {}).forEach(([qid, files]) => {
+                    (files || []).forEach((file) => {
+                        if (!attachmentMap.has(qid)) attachmentMap.set(qid, []);
+                        attachmentMap.get(qid).push({
+                            kind: file.kind === 'exam_drawing' ? 'drawing' : (file.kind || (file.is_image ? 'image' : 'file')),
+                            file_name: file.file_name || file.original_filename || '题目附件',
+                            relative_path: file.relative_path || '',
+                            mime_type: file.mime_type || '',
+                            file_size: file.file_size || 0,
+                            question_id: qid,
+                            question: findQuestionById(qid)?.text || '',
+                        });
+                    });
+                });
+            }
             [...questionAttachmentEntries, ...drawingEntries].forEach((entry) => {
                 if (!attachmentMap.has(entry.question_id)) attachmentMap.set(entry.question_id, []);
                 attachmentMap.get(entry.question_id).push(entry);
@@ -1891,6 +2362,7 @@
                 };
             });
             formData.append('answers_json', JSON.stringify({ answers: answersList }));
+            formData.append('use_server_draft', useServerDraftFiles ? '1' : '0');
 
             const resp = await apiFetch(`/api/assignments/${ASSIGNMENT_ID}/submit`, {
                 method: 'POST',
@@ -1904,7 +2376,7 @@
                     : '交卷成功！',
                 droppedCount > 0 ? 'warning' : 'success'
             );
-            localStorage.removeItem(`exam_${ASSIGNMENT_ID}`);
+            localStorage.removeItem(LOCAL_DRAFT_KEY);
 
             // Reload to show submitted state
             setTimeout(() => location.reload(), 1500);
@@ -1925,7 +2397,7 @@
         try {
             await apiFetch(`/api/assignments/${ASSIGNMENT_ID}/withdraw`, { method: 'DELETE' });
             showMessage('已撤回提交，即将刷新页面', 'success');
-            localStorage.removeItem(`exam_${ASSIGNMENT_ID}`);
+            localStorage.removeItem(LOCAL_DRAFT_KEY);
             setTimeout(() => location.reload(), 800);
         } catch (e) {
             showMessage(e.message || '撤回失败，请稍后重试', 'error');
@@ -1948,6 +2420,12 @@
                     <div class="result-icon">🎉</div>
                     <h3>考试已批改</h3>
                     <div class="result-score">${SUBMISSION_SCORE || 0} <span style="font-size:1.2rem;color:var(--text-muted);">分</span></div>
+                    ${SUBMISSION_FEEDBACK_MD ? `
+                        <div class="result-feedback-overview">
+                            <div class="result-feedback-overview__title">总览评语</div>
+                            <div class="md-content">${renderMarkdownHtml(gradingFeedback.overviewMd || SUBMISSION_FEEDBACK_MD)}</div>
+                        </div>
+                    ` : ''}
                 </div>
             `;
         } else if (SUBMISSION_STATUS === 'grading') {
@@ -1956,6 +2434,14 @@
                     <div class="result-icon">⏳</div>
                     <h3>批改中</h3>
                     <p>正在批改试卷，请稍后刷新查看结果。</p>
+                </div>
+            `;
+        } else if (SUBMISSION_STATUS === 'grading_failed') {
+            html += `
+                <div class="result-banner warning">
+                    <div class="result-icon">!</div>
+                    <h3>AI 批改暂未完成</h3>
+                    <p>提交内容已保存，系统没有得到可用的 AI 批改结果，请等待教师复核或稍后重试批改。</p>
                 </div>
             `;
         } else {
@@ -2010,14 +2496,27 @@
 
         html += `
             <div class="page-heading" style="margin-top: 2rem;">我的答卷</div>
+            ${SUBMISSION_FEEDBACK_MD ? `
+                <div class="result-feedback-note">
+                    <span aria-hidden="true">●</span>
+                    <span>${gradingFeedback.hasQuestionFeedback
+                        ? `已识别 ${gradingFeedback.questions.length} 条逐题反馈，错误点会显示在对应题目下方。`
+                        : '本次批改只有总览评语，未包含可自动对应到每一题的错误点。后续结构化批改会把错误点显示在题目旁。'}</span>
+                </div>
+            ` : ''}
             <div class="question-list">
         `;
 
-        allQuestions.forEach((q) => {
+        allQuestions.forEach((q, index) => {
             const record = submittedAnswers[q.id] || { text: '', attachments: [] };
             const ans = record.text || '';
             const hasAns = Boolean(ans.trim());
             const attachmentsHtml = renderSubmittedAttachments(record.attachments);
+            const feedback = findQuestionFeedback(gradingFeedback, {
+                index: index + 1,
+                questionId: q.id,
+                questionText: q.text,
+            });
 
             html += `
                 <div class="question-card" id="q-${q.id}">
@@ -2029,6 +2528,7 @@
                         ${hasAns ? esc(ans) : '(未作答)'}
                     </div>
                     ${attachmentsHtml}
+                    ${renderQuestionFeedbackHtml(feedback)}
                 </div>
             `;
         });

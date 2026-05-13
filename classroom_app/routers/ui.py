@@ -1,5 +1,6 @@
 from datetime import datetime
 import json
+import re
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request, Form, HTTPException, Depends, status, UploadFile, File
@@ -127,6 +128,21 @@ def _safe_int(value: Any) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _plain_feedback_preview(markdown: Any, limit: int = 96) -> str:
+    text = str(markdown or "")
+    if not text.strip():
+        return ""
+    text = re.sub(r"```[\s\S]*?```", " ", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"!\[[^\]]*]\([^)]*\)", " ", text)
+    text = re.sub(r"\[([^\]]+)]\([^)]*\)", r"\1", text)
+    text = re.sub(r"[#>*_~|`]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "..."
 
 
 def _attach_teacher_assignment_card_metrics(
@@ -912,7 +928,7 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
                 if assignment['status'] == 'new': continue
                 submission = conn.execute(
                     """
-                    SELECT status, score, resubmission_allowed, resubmission_due_at
+                    SELECT id, status, score, feedback_md, resubmission_allowed, resubmission_due_at
                     FROM submissions
                     WHERE assignment_id = ? AND student_pk_id = ?
                     """,
@@ -925,9 +941,15 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
                     assignment['resubmission_due_at'] = submission_dict.get('resubmission_due_at')
                     assignment['submission_status'] = 'returned' if can_resubmit else submission_dict['status']
                     assignment['submission_score'] = submission['score']
+                    assignment['submission_id'] = submission['id']
+                    assignment['submission_feedback_md'] = submission['feedback_md']
+                    assignment['submission_feedback_preview'] = _plain_feedback_preview(submission['feedback_md'])
                 else:
                     assignment['submission_status'] = 'unsubmitted'
                     assignment['can_resubmit_submission'] = False
+                    assignment['submission_id'] = None
+                    assignment['submission_feedback_md'] = None
+                    assignment['submission_feedback_preview'] = ""
             assignments.append(assignment)
 
         if user['role'] == 'teacher':

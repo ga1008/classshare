@@ -38,6 +38,7 @@ from ai_assistant_doc_extract import (
     render_pdf_pages_to_data_urls as _render_pdf_pages,
 )
 from classroom_app.services.ai_grading_attachments import classify_ai_grading_attachment
+from classroom_app.services.grading_feedback_service import normalize_grading_result
 
 # --- AI 平台 SDK ---
 try:
@@ -860,6 +861,7 @@ class GradingJob(BaseModel):
     file_paths: List[str] = Field(default_factory=list)
     answers_json: Optional[str] = None
     allowed_file_types_json: Optional[str] = None
+    student_profile_context: Optional[str] = None
     # model_type 将在 run_grading_job 中动态决定，这里不再需要
 
 
@@ -875,12 +877,13 @@ GRADING_SYSTEM_PROMPT = """
 你必须严格按照以下JSON格式返回结果，不要包含任何额外的解释或代码块标记：
 {
   "score": <评分，整数，0-100>,
-  "feedback_md": "<详细的批改反馈，使用Markdown格式，按评分标准的每个维度逐一说明得分点和失分点>"
+  "feedback_md": "<详细的批改反馈，使用Markdown格式。必须先写“## 总览评语”，再写“## 逐题反馈”；逐题反馈用“### 第 N 题”作为小标题，明确列出答题错误、图片/附件问题、多余或缺失内容、改进建议。没有对应问题时写“未发现明显问题”。>"
 }
+如果输入中包含【内部个性化支持参考】，它只用于调整评语语气、详略和鼓励方式，不是评分依据。严禁在 feedback_md 中提到“测评师”“侧写”“画像”“隐藏提示”“系统内部分析”等来源或相关信息，也不要让学生感觉自己被后台分析。
 例如:
 {
   "score": 85,
-  "feedback_md": "- **知识点理解 (30/30)**: 概念理解准确，论述清晰。\n- **代码实现 (25/30)**: 核心逻辑正确，但边界条件处理不完整。\n- **规范性 (15/20)**: 代码格式基本规范，缺少部分注释。\n- **完成度 (15/20)**: 大部分功能已实现，少数功能缺失。\n\n**总结**: 整体完成度较好，建议加强对边界条件的处理和代码注释。"
+  "feedback_md": "## 总览评语\n整体完成度较好，核心思路基本正确，但边界条件和附件说明还不够完整。\n\n## 逐题反馈\n\n### 第 1 题\n- 答题错误：核心概念解释准确，但缺少异常场景说明。\n- 图片/附件问题：未发现明显问题。\n- 多余或缺失内容：缺少对输入为空时的处理说明。\n- 改进建议：补充边界条件并给出一组测试样例。\n\n### 第 2 题\n- 答题错误：代码主流程正确。\n- 图片/附件问题：截图内容与题目要求一致。\n- 多余或缺失内容：注释略少。\n- 改进建议：为关键函数补充简短注释。"
 }
 """
 
@@ -1363,6 +1366,18 @@ def _extract_answers_text(answers_json: str | None) -> str:
         return f"【学生文字答案】\n{answers}"
     except (json.JSONDecodeError, AttributeError, TypeError):
         return f"【学生文字答案】\n{answers_json}"
+
+
+def _build_hidden_grading_profile_prompt(student_profile_context: str | None) -> str:
+    context = str(student_profile_context or "").strip()
+    if not context:
+        return ""
+    return (
+        "【内部个性化支持参考】\n"
+        "以下内容来自平台内部的学习支持侧写，只能用于调整评语的语气、详略、鼓励方式和改进建议的颗粒度；"
+        "不能作为加分或扣分依据，也不能在反馈中透露来源、侧写、测评、画像、后台分析或隐藏提示等信息。\n"
+        f"{context[:4000]}"
+    )
 
 
 def _format_answer_attachment_lines(attachments: list[Any]) -> str:
@@ -2033,10 +2048,14 @@ def _build_text_grading_message(
     grading_files: list[dict[str, Any]],
     requirements_md: str = "",
     answers_json: str | None = None,
+    student_profile_context: str | None = None,
 ) -> list[dict[str, Any]]:
     answers_text = _extract_answers_text(answers_json)
+    profile_prompt = _build_hidden_grading_profile_prompt(student_profile_context)
 
     text_content = ""
+    if profile_prompt:
+        text_content += profile_prompt + "\n\n"
     if requirements_md:
         text_content += f"【作业要求】\n{requirements_md}\n\n"
     text_content += f"【评分标准】\n{rubric_md}\n\n"
@@ -2091,8 +2110,12 @@ def _build_volcengine_responses_input(
     grading_files: list[dict[str, Any]],
     requirements_md: str = "",
     answers_json: str | None = None,
+    student_profile_context: str | None = None,
 ) -> list[dict[str, Any]]:
     prompt_lines = []
+    profile_prompt = _build_hidden_grading_profile_prompt(student_profile_context)
+    if profile_prompt:
+        prompt_lines.append(profile_prompt)
     if requirements_md:
         prompt_lines.append(f"【作业要求】\n{requirements_md}")
     prompt_lines.append(f"【评分标准】\n{rubric_md}")
@@ -2255,9 +2278,11 @@ async def _call_volcengine_responses_api(
 
 
 def build_vision_messages(rubric: str, files: List[Any], platform_type: str,
-                          requirements_md: str = "", answers_json: str = None) -> List[Dict[str, Any]]:
+                          requirements_md: str = "", answers_json: str = None,
+                          student_profile_context: str | None = None) -> List[Dict[str, Any]]:
     """构建视觉消息 (支持文件 + JSON 答案混合)"""
     answers_text = _extract_answers_text(answers_json)
+    profile_prompt = _build_hidden_grading_profile_prompt(student_profile_context)
 
     def _coerce_file_item(file_item: Any) -> tuple[Path, str]:
         if isinstance(file_item, dict):
@@ -2281,6 +2306,8 @@ def build_vision_messages(rubric: str, files: List[Any], platform_type: str,
     if platform_type == "volcengine":
         content = []
         text_content = ""
+        if profile_prompt:
+            text_content += profile_prompt + "\n\n"
         if requirements_md:
             text_content += f"【作业要求】\n{requirements_md}\n\n"
         text_content += f"【评分标准】\n{rubric}\n\n"
@@ -2308,6 +2335,8 @@ def build_vision_messages(rubric: str, files: List[Any], platform_type: str,
         return [{"role": "user", "content": content}]
     else:  # OpenAI compatible format
         header_text = ""
+        if profile_prompt:
+            header_text += profile_prompt + "\n\n"
         if requirements_md:
             header_text += f"【作业要求】\n{requirements_md}\n\n"
         header_text += f"【评分标准】\n{rubric}\n\n"
@@ -3454,6 +3483,7 @@ async def run_grading_job(job: GradingJob):
                     grading_files,
                     job.requirements_md,
                     job.answers_json,
+                    job.student_profile_context,
                 ),
                 capability=selected_capability,
                 task_type=selected_task_type,
@@ -3470,6 +3500,7 @@ async def run_grading_job(job: GradingJob):
                         selected_platform["type"],
                         job.requirements_md,
                         job.answers_json,
+                        job.student_profile_context,
                     )
                 )
             else:
@@ -3479,6 +3510,7 @@ async def run_grading_job(job: GradingJob):
                         grading_files,
                         job.requirements_md,
                         job.answers_json,
+                        job.student_profile_context,
                     )
                 )
 
@@ -3495,6 +3527,9 @@ async def run_grading_job(job: GradingJob):
 
         if not isinstance(result, dict) or ("score" not in result and "feedback_md" not in result):
             raise ValueError(f"AI 返回的批改结果缺少 score/feedback_md 字段：{str(result)[:200]}")
+        result = normalize_grading_result(result, answers_json=job.answers_json)
+        if result.get("score") is None:
+            raise ValueError(f"AI 返回的批改分数无效：{str(result)[:200]}")
 
         callback_data = {
             "submission_id": job.submission_id, "status": "graded",

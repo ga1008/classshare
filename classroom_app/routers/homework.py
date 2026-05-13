@@ -3,6 +3,7 @@ import json
 import io
 import asyncio
 import zipfile
+import shutil
 import pandas as pd
 import sqlite3
 from urllib.parse import quote
@@ -52,6 +53,7 @@ from ..services.submission_assets import (
     delete_storage_tree,
     encode_allowed_file_types_json,
     is_allowed_submission_file,
+    normalize_submission_relative_path,
     normalize_allowed_file_types,
     parse_submission_manifest,
     remove_answer_attachment_references,
@@ -90,6 +92,10 @@ def _build_assignment_storage_dir(course_id: int, assignment_id: int | str):
 
 def _build_submission_storage_dir(course_id: int, assignment_id: int | str, student_pk_id: int | str):
     return _build_assignment_storage_dir(course_id, assignment_id) / str(student_pk_id)
+
+
+def _build_submission_draft_storage_dir(course_id: int, assignment_id: int | str, student_pk_id: int | str):
+    return _build_assignment_storage_dir(course_id, assignment_id) / "__drafts__" / str(student_pk_id)
 
 
 def _build_submission_file_path(submission_dir: Path, relative_path: str) -> Path:
@@ -302,6 +308,306 @@ def _stored_file_to_dict(file_info: StoredSubmissionFile) -> dict[str, Any]:
     }
 
 
+def _parse_json_list(raw_value: str, *, field_name: str) -> list[Any]:
+    if not raw_value:
+        return []
+    try:
+        parsed = json.loads(raw_value)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, f"{field_name} 不是有效 JSON") from exc
+    if not isinstance(parsed, list):
+        raise HTTPException(400, f"{field_name} 必须是数组")
+    return parsed
+
+
+def _load_submission_draft(conn, assignment_id: str, student_pk_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT *
+        FROM submission_drafts
+        WHERE assignment_id = ? AND student_pk_id = ?
+        LIMIT 1
+        """,
+        (assignment_id, int(student_pk_id)),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _ensure_submission_draft(
+    conn,
+    *,
+    assignment_id: str,
+    student_pk_id: int,
+    answers_json: str,
+    current_page: int,
+    client_updated_at: str,
+) -> dict[str, Any]:
+    now = datetime.now().isoformat()
+    current_page = max(0, int(current_page or 0))
+    existing = _load_submission_draft(conn, assignment_id, student_pk_id)
+    if existing:
+        conn.execute(
+            """
+            UPDATE submission_drafts
+            SET answers_json = ?,
+                current_page = ?,
+                client_updated_at = ?,
+                server_updated_at = ?,
+                server_version = COALESCE(server_version, 0) + 1,
+                status = 'active'
+            WHERE id = ?
+            """,
+            (answers_json, current_page, client_updated_at, now, int(existing["id"])),
+        )
+        return {
+            **existing,
+            "answers_json": answers_json,
+            "current_page": current_page,
+            "client_updated_at": client_updated_at,
+            "server_updated_at": now,
+            "server_version": int(existing.get("server_version") or 0) + 1,
+        }
+
+    cursor = conn.execute(
+        """
+        INSERT INTO submission_drafts (
+            assignment_id, student_pk_id, answers_json, current_page,
+            client_updated_at, server_updated_at, server_version, status
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, 'active')
+        """,
+        (assignment_id, int(student_pk_id), answers_json, current_page, client_updated_at, now),
+    )
+    return {
+        "id": int(cursor.lastrowid),
+        "assignment_id": assignment_id,
+        "student_pk_id": int(student_pk_id),
+        "answers_json": answers_json,
+        "current_page": current_page,
+        "client_updated_at": client_updated_at,
+        "server_updated_at": now,
+        "server_version": 1,
+        "status": "active",
+    }
+
+
+def _load_submission_draft_files(conn, draft_id: int) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM submission_draft_files
+        WHERE draft_id = ?
+        ORDER BY question_id, relative_path, id
+        """,
+        (int(draft_id),),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _serialize_draft_file(row: dict[str, Any], assignment_id: str) -> dict[str, Any]:
+    file_id = int(row["id"])
+    mime_type = str(row.get("mime_type") or "")
+    download_url = f"/api/assignments/{assignment_id}/draft-files/{file_id}"
+    return {
+        "id": file_id,
+        "question_id": str(row.get("question_id") or ""),
+        "kind": str(row.get("kind") or "file"),
+        "file_name": row.get("original_filename") or PurePosixPath(str(row.get("relative_path") or "")).name,
+        "original_filename": row.get("original_filename") or "",
+        "relative_path": row.get("relative_path") or "",
+        "mime_type": mime_type,
+        "file_size": row.get("file_size"),
+        "file_ext": row.get("file_ext") or "",
+        "file_hash": row.get("file_hash") or "",
+        "download_url": download_url,
+        "raw_url": download_url if mime_type.startswith("image/") else "",
+        "is_image": mime_type.startswith("image/"),
+        "server_draft": True,
+    }
+
+
+def _serialize_submission_draft(conn, draft: dict[str, Any] | None, assignment_id: str) -> dict[str, Any]:
+    if not draft:
+        return {
+            "exists": False,
+            "answers_json": "",
+            "current_page": 0,
+            "client_updated_at": "",
+            "server_updated_at": "",
+            "server_version": 0,
+            "files": [],
+            "files_by_question": {},
+        }
+    files = [_serialize_draft_file(row, assignment_id) for row in _load_submission_draft_files(conn, int(draft["id"]))]
+    files_by_question: dict[str, list[dict[str, Any]]] = {}
+    for item in files:
+        qid = str(item.get("question_id") or "")
+        files_by_question.setdefault(qid, []).append(item)
+    return {
+        "exists": True,
+        "answers_json": draft.get("answers_json") or "",
+        "current_page": int(draft.get("current_page") or 0),
+        "client_updated_at": draft.get("client_updated_at") or "",
+        "server_updated_at": draft.get("server_updated_at") or "",
+        "server_version": int(draft.get("server_version") or 0),
+        "files": files,
+        "files_by_question": files_by_question,
+    }
+
+
+def _delete_draft_file_rows_for_questions(
+    conn,
+    *,
+    draft_id: int,
+    question_ids: set[str],
+) -> list[str]:
+    if not question_ids:
+        return []
+    placeholders = ",".join("?" for _ in question_ids)
+    params = [int(draft_id), *sorted(question_ids)]
+    rows = conn.execute(
+        f"""
+        SELECT stored_path
+        FROM submission_draft_files
+        WHERE draft_id = ? AND question_id IN ({placeholders})
+        """,
+        params,
+    ).fetchall()
+    conn.execute(
+        f"""
+        DELETE FROM submission_draft_files
+        WHERE draft_id = ? AND question_id IN ({placeholders})
+        """,
+        params,
+    )
+    return [str(row["stored_path"] or "") for row in rows if str(row["stored_path"] or "").strip()]
+
+
+def _move_stored_files_to_final_dir(
+    stored_files: list[StoredSubmissionFile],
+    *,
+    staging_dir: Path,
+    final_dir: Path,
+    backup_dir: Path | None = None,
+) -> list[tuple[Path, Path | None]]:
+    moved_files: list[tuple[Path, Path | None]] = []
+    for file_info in stored_files:
+        source = Path(file_info.stored_path)
+        if not source.exists():
+            source = _build_submission_file_path(staging_dir, file_info.relative_path)
+        target = _build_submission_file_path(final_dir, file_info.relative_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        backup_path = None
+        if target.exists():
+            if backup_dir:
+                backup_path = _build_submission_file_path(backup_dir, file_info.relative_path)
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                target.replace(backup_path)
+            else:
+                target.unlink()
+        source.replace(target)
+        file_info.stored_path = str(target)
+        moved_files.append((target, backup_path))
+    return moved_files
+
+
+def _restore_moved_draft_files(moved_files: list[tuple[Path, Path | None]]) -> None:
+    for target, backup_path in reversed(moved_files):
+        try:
+            if target.exists() and target.is_file():
+                target.unlink()
+            if backup_path and backup_path.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                backup_path.replace(target)
+        except Exception as exc:
+            print(f"[SUBMISSION_DRAFT] failed to restore draft file {target}: {exc}")
+
+
+def _validate_combined_stored_file_limits(stored_files: list[StoredSubmissionFile]) -> None:
+    if len(stored_files) > MAX_SUBMISSION_FILE_COUNT:
+        raise HTTPException(413, f"文件数量不能超过 {MAX_SUBMISSION_FILE_COUNT} 个")
+    total_size = sum(int(file_info.file_size or 0) for file_info in stored_files)
+    if total_size > MAX_SUBMISSION_TOTAL_BYTES:
+        raise HTTPException(
+            413,
+            f"总文件大小超过限制 {MAX_SUBMISSION_TOTAL_MB:.0f}MB"
+            f"（当前 {total_size / 1024 / 1024:.1f}MB）",
+        )
+
+
+def _copy_submission_draft_files_to_staging(
+    conn,
+    *,
+    assignment: dict[str, Any],
+    student_pk_id: int,
+    staging_dir: Path,
+    submission_dir: Path,
+    existing_relative_paths: set[str],
+    allowed_file_types: list[str],
+) -> tuple[list[StoredSubmissionFile], int]:
+    draft = _load_submission_draft(conn, str(assignment["id"]), int(student_pk_id))
+    if not draft:
+        return [], 0
+    copied_files: list[StoredSubmissionFile] = []
+    dropped_count = 0
+    for row in _load_submission_draft_files(conn, int(draft["id"])):
+        relative_path = str(row.get("relative_path") or "").replace("\\", "/").strip()
+        if not relative_path:
+            dropped_count += 1
+            continue
+        path_key = relative_path.lower()
+        if path_key in existing_relative_paths:
+            continue
+        mime_type = str(row.get("mime_type") or "")
+        if not is_allowed_submission_file(relative_path, mime_type, allowed_file_types):
+            dropped_count += 1
+            continue
+        source_path = resolve_submission_file_path(str(row.get("stored_path") or "")) or Path(str(row.get("stored_path") or ""))
+        source_path = Path(source_path)
+        if not source_path.exists() or not source_path.is_file():
+            dropped_count += 1
+            continue
+        target = _build_submission_file_path(staging_dir, relative_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, target)
+        existing_relative_paths.add(path_key)
+        copied_files.append(
+            StoredSubmissionFile(
+                original_filename=str(row.get("original_filename") or PurePosixPath(relative_path).name),
+                relative_path=relative_path,
+                stored_path=str(_build_submission_file_path(submission_dir, relative_path)),
+                mime_type=mime_type,
+                file_size=int(row.get("file_size") or target.stat().st_size),
+                file_ext=str(row.get("file_ext") or Path(relative_path).suffix.lower()),
+                file_hash=str(row.get("file_hash") or ""),
+            )
+        )
+    return copied_files, dropped_count
+
+
+def _ensure_student_can_save_assignment_draft(
+    conn,
+    *,
+    assignment: dict[str, Any],
+    student_id: int,
+) -> dict[str, Any] | None:
+    if not student_can_access_assignment(conn, str(assignment["id"]), int(student_id)):
+        raise HTTPException(403, "该破境试炼只对指定学生开放")
+    submission = conn.execute(
+        "SELECT * FROM submissions WHERE assignment_id = ? AND student_pk_id = ? LIMIT 1",
+        (assignment["id"], int(student_id)),
+    ).fetchone()
+    existing_submission = dict(submission) if submission else None
+    if existing_submission:
+        if int(existing_submission.get("is_absence_score") or 0):
+            _ensure_accepting_submission(assignment)
+            return existing_submission
+        if submission_resubmission_accepts(existing_submission):
+            return existing_submission
+        raise HTTPException(409, "您已经提交过此作业，当前不能继续保存草稿")
+    _ensure_accepting_submission(assignment)
+    return None
+
+
 def _assignment_uses_ai_grading(assignment: dict[str, Any]) -> bool:
     return str(assignment.get("grading_mode") or "").strip().lower() in {"ai", "auto", "mixed"}
 
@@ -477,24 +783,26 @@ async def _save_submission_payload(
     channel: str,
     existing_submission: dict[str, Any] | None = None,
     notify_teacher: bool = False,
+    use_server_draft_files: bool = False,
 ) -> dict[str, Any]:
     prepared_entries = _validate_upload_entries(files, manifest)
     submitted_at = datetime.now().isoformat()
     answers_payload = _parse_answers_payload(answers_json)
     has_answer_content_before_storage = answers_have_content(answers_payload)
     allowed_file_types = decode_allowed_file_types_json(assignment.get("allowed_file_types_json"))
+    student_pk_id = int(student["id"])
+    draft = _load_submission_draft(conn, str(assignment["id"]), student_pk_id) if use_server_draft_files else None
+    has_server_draft_files = bool(draft and _load_submission_draft_files(conn, int(draft["id"])))
     has_allowed_uploads = any(
         is_allowed_submission_file(entry.relative_path, entry.content_type, allowed_file_types)
         for entry in prepared_entries
     )
 
-    if not has_answer_content_before_storage and not prepared_entries:
+    if not has_answer_content_before_storage and not prepared_entries and not has_server_draft_files:
         raise HTTPException(400, "请至少填写答案或上传一个文件")
-    if not has_answer_content_before_storage and not has_allowed_uploads:
+    if not has_answer_content_before_storage and not has_allowed_uploads and not has_server_draft_files:
         expected_types = summarize_allowed_file_types(allowed_file_types)
         raise HTTPException(400, f"没有符合要求的文件可提交，允许类型: {expected_types}")
-
-    student_pk_id = int(student["id"])
 
     submission_dir = _build_submission_storage_dir(assignment["course_id"], assignment["id"], student_pk_id)
     staging_dir = submission_dir.with_name(f"{submission_dir.name}.__staging__{uuid.uuid4().hex}")
@@ -505,10 +813,28 @@ async def _save_submission_payload(
     try:
         storage_result = await store_submission_files(staging_dir, prepared_entries, allowed_file_types)
         if not storage_result.stored_files and not has_answer_content_before_storage:
-            expected_types = summarize_allowed_file_types(allowed_file_types)
-            raise HTTPException(400, f"没有符合要求的文件可提交，允许类型: {expected_types}")
+            if not has_server_draft_files:
+                expected_types = summarize_allowed_file_types(allowed_file_types)
+                raise HTTPException(400, f"没有符合要求的文件可提交，允许类型: {expected_types}")
         for file_info in storage_result.stored_files:
             file_info.stored_path = str(_build_submission_file_path(submission_dir, file_info.relative_path))
+        if use_server_draft_files:
+            existing_paths = {file_info.relative_path.lower() for file_info in storage_result.stored_files}
+            draft_files, draft_dropped_count = _copy_submission_draft_files_to_staging(
+                conn,
+                assignment=assignment,
+                student_pk_id=student_pk_id,
+                staging_dir=staging_dir,
+                submission_dir=submission_dir,
+                existing_relative_paths=existing_paths,
+                allowed_file_types=allowed_file_types,
+            )
+            storage_result.stored_files.extend(draft_files)
+            storage_result.dropped_files.extend(
+                {"relative_path": "server_draft", "reason": "draft_file_unavailable_or_filtered"}
+                for _ in range(draft_dropped_count)
+            )
+        _validate_combined_stored_file_limits(storage_result.stored_files)
     except Exception:
         delete_storage_tree(staging_dir)
         raise
@@ -640,9 +966,16 @@ async def _save_submission_payload(
                 create_submission_notification(conn, submission_id)
             except Exception as exc:
                 print(f"[MESSAGE_CENTER] submission notify failed: {exc}")
+        if use_server_draft_files:
+            cursor.execute(
+                "DELETE FROM submission_drafts WHERE assignment_id = ? AND student_pk_id = ?",
+                (assignment["id"], student_pk_id),
+            )
         conn.commit()
         if backup_dir:
             delete_storage_tree(backup_dir)
+        if use_server_draft_files:
+            delete_storage_tree(_build_submission_draft_storage_dir(assignment["course_id"], assignment["id"], student_pk_id))
     except sqlite3.IntegrityError:
         conn.rollback()
         _restore_submission_dir(
@@ -1629,10 +1962,249 @@ async def export_grades_for_class(assignment_id: str, class_offering_id: int, us
 
 
 # --- 学生作业 API ---
+@router.get("/assignments/{assignment_id}/draft", response_class=JSONResponse)
+async def get_assignment_draft(assignment_id: str, user: dict = Depends(get_current_student)):
+    with get_db_connection() as conn:
+        close_overdue_assignments(conn)
+        conn.commit()
+        assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
+        if not assignment:
+            raise HTTPException(404, "Assignment not found")
+        assignment = enrich_assignment_runtime_view(assignment)
+        _ensure_student_can_save_assignment_draft(
+            conn,
+            assignment=assignment,
+            student_id=int(user["id"]),
+        )
+        draft = _load_submission_draft(conn, assignment_id, int(user["id"]))
+        return _serialize_submission_draft(conn, draft, assignment_id)
+
+
+@router.post("/assignments/{assignment_id}/draft", response_class=JSONResponse)
+async def save_assignment_draft(
+    assignment_id: str,
+    answers_json: str = Form(""),
+    current_page: int = Form(0),
+    client_updated_at: str = Form(""),
+    replace_question_ids: str = Form("[]"),
+    manifest: str = Form(""),
+    files: List[UploadFile] = File(default=[]),
+    user: dict = Depends(get_current_student),
+):
+    staging_dir: Path | None = None
+    move_backup_dir: Path | None = None
+    moved_draft_files: list[tuple[Path, Path | None]] = []
+    old_file_paths: list[str] = []
+    with get_db_connection() as conn:
+        close_overdue_assignments(conn)
+        conn.commit()
+        assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
+        if not assignment:
+            raise HTTPException(404, "Assignment not found")
+        assignment = enrich_assignment_runtime_view(assignment)
+        _ensure_student_can_save_assignment_draft(
+            conn,
+            assignment=assignment,
+            student_id=int(user["id"]),
+        )
+
+        replace_ids = {
+            str(item or "").strip()
+            for item in _parse_json_list(replace_question_ids or "[]", field_name="replace_question_ids")
+            if str(item or "").strip()
+        }
+        manifest_items = _parse_json_list(manifest or "[]", field_name="manifest") if manifest else []
+        manifest_by_path: dict[str, dict[str, Any]] = {}
+        for item in manifest_items:
+            if not isinstance(item, dict):
+                continue
+            try:
+                relative_path = normalize_submission_relative_path(
+                    str(item.get("relative_path") or ""),
+                    fallback_name=str(item.get("file_name") or item.get("filename") or "upload.bin"),
+                )
+            except HTTPException:
+                continue
+            manifest_by_path[relative_path.lower()] = item
+
+        prepared_entries = _validate_upload_entries(files, manifest)
+        allowed_file_types = decode_allowed_file_types_json(assignment.get("allowed_file_types_json"))
+        draft_dir = _build_submission_draft_storage_dir(assignment["course_id"], assignment["id"], int(user["id"]))
+        staging_dir = draft_dir.with_name(f"{draft_dir.name}.__staging__{uuid.uuid4().hex}")
+        try:
+            storage_result = await store_submission_files(staging_dir, prepared_entries, allowed_file_types)
+
+            if storage_result.stored_files:
+                remaining_rows = conn.execute(
+                    """
+                    SELECT question_id, file_size
+                    FROM submission_draft_files sdf
+                    JOIN submission_drafts sd ON sd.id = sdf.draft_id
+                    WHERE sd.assignment_id = ? AND sd.student_pk_id = ?
+                    """,
+                    (assignment_id, int(user["id"])),
+                ).fetchall()
+                remaining_count = 0
+                remaining_size = 0
+                for row in remaining_rows:
+                    if str(row["question_id"] or "") in replace_ids:
+                        continue
+                    remaining_count += 1
+                    remaining_size += int(row["file_size"] or 0)
+                next_count = remaining_count + len(storage_result.stored_files)
+                next_size = remaining_size + sum(int(file_info.file_size or 0) for file_info in storage_result.stored_files)
+                if next_count > MAX_SUBMISSION_FILE_COUNT:
+                    raise HTTPException(413, f"草稿附件数量不能超过 {MAX_SUBMISSION_FILE_COUNT} 个")
+                if next_size > MAX_SUBMISSION_TOTAL_BYTES:
+                    raise HTTPException(
+                        413,
+                        f"草稿附件总大小超过限制 {MAX_SUBMISSION_TOTAL_MB:.0f}MB"
+                        f"（当前 {next_size / 1024 / 1024:.1f}MB）",
+                    )
+        except Exception:
+            if staging_dir:
+                delete_storage_tree(staging_dir)
+            raise
+
+        try:
+            if storage_result.stored_files:
+                move_backup_dir = draft_dir.with_name(f"{draft_dir.name}.__replace_backup__{uuid.uuid4().hex}")
+                moved_draft_files = _move_stored_files_to_final_dir(
+                    storage_result.stored_files,
+                    staging_dir=staging_dir,
+                    final_dir=draft_dir,
+                    backup_dir=move_backup_dir,
+                )
+            conn.execute("BEGIN IMMEDIATE")
+            draft = _ensure_submission_draft(
+                conn,
+                assignment_id=assignment_id,
+                student_pk_id=int(user["id"]),
+                answers_json=answers_json,
+                current_page=current_page,
+                client_updated_at=client_updated_at,
+            )
+            old_file_paths = _delete_draft_file_rows_for_questions(
+                conn,
+                draft_id=int(draft["id"]),
+                question_ids=replace_ids,
+            )
+            for file_info in storage_result.stored_files:
+                manifest_item = manifest_by_path.get(file_info.relative_path.lower(), {})
+                question_id = str(manifest_item.get("question_id") or "").strip()
+                kind = str(manifest_item.get("kind") or "file").strip() or "file"
+                duplicate_rows = conn.execute(
+                    """
+                    SELECT stored_path
+                    FROM submission_draft_files
+                    WHERE draft_id = ? AND LOWER(relative_path) = LOWER(?)
+                    """,
+                    (int(draft["id"]), file_info.relative_path),
+                ).fetchall()
+                old_file_paths.extend(
+                    str(row["stored_path"] or "")
+                    for row in duplicate_rows
+                    if str(row["stored_path"] or "").strip()
+                )
+                conn.execute(
+                    """
+                    DELETE FROM submission_draft_files
+                    WHERE draft_id = ? AND LOWER(relative_path) = LOWER(?)
+                    """,
+                    (int(draft["id"]), file_info.relative_path),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO submission_draft_files (
+                        draft_id, question_id, kind, original_filename, relative_path,
+                        stored_path, mime_type, file_size, file_ext, file_hash, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        int(draft["id"]),
+                        question_id,
+                        kind,
+                        file_info.original_filename,
+                        file_info.relative_path,
+                        file_info.stored_path,
+                        file_info.mime_type,
+                        file_info.file_size,
+                        file_info.file_ext,
+                        file_info.file_hash,
+                        datetime.now().isoformat(),
+                    ),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            _restore_moved_draft_files(moved_draft_files)
+            raise
+        finally:
+            if staging_dir:
+                delete_storage_tree(staging_dir)
+            if move_backup_dir:
+                delete_storage_tree(move_backup_dir)
+
+        new_file_paths = {str(file_info.stored_path) for file_info in storage_result.stored_files}
+        for old_path in old_file_paths:
+            if str(old_path) in new_file_paths:
+                continue
+            physical_path = resolve_submission_file_path(old_path) or Path(old_path)
+            try:
+                physical_path = Path(physical_path)
+                if physical_path.exists() and physical_path.is_file():
+                    physical_path.unlink()
+            except Exception as exc:
+                print(f"[SUBMISSION_DRAFT] failed to delete old draft file {old_path}: {exc}")
+
+        draft = _load_submission_draft(conn, assignment_id, int(user["id"]))
+        payload = _serialize_submission_draft(conn, draft, assignment_id)
+        payload.update(
+            {
+                "status": "success",
+                "stored_file_count": len(storage_result.stored_files),
+                "dropped_file_count": len(storage_result.dropped_files),
+            }
+        )
+        return payload
+
+
+@router.get("/assignments/{assignment_id}/draft-files/{file_id}")
+async def download_assignment_draft_file(
+    assignment_id: str,
+    file_id: int,
+    user: dict = Depends(get_current_student),
+):
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT sdf.*, sd.assignment_id, sd.student_pk_id
+            FROM submission_draft_files sdf
+            JOIN submission_drafts sd ON sd.id = sdf.draft_id
+            WHERE sdf.id = ? AND sd.assignment_id = ? AND sd.student_pk_id = ?
+            LIMIT 1
+            """,
+            (int(file_id), assignment_id, int(user["id"])),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "草稿附件不存在")
+        file_dict = dict(row)
+    physical_path = resolve_submission_file_path(str(file_dict.get("stored_path") or "")) or Path(str(file_dict.get("stored_path") or ""))
+    physical_path = Path(physical_path)
+    if not physical_path.exists() or not physical_path.is_file():
+        raise HTTPException(404, "草稿附件文件不存在")
+    return FileResponse(
+        physical_path,
+        media_type=file_dict.get("mime_type") or "application/octet-stream",
+        filename=file_dict.get("original_filename") or physical_path.name,
+    )
+
+
 @router.post("/assignments/{assignment_id}/submit", response_class=JSONResponse)
 async def submit_assignment(assignment_id: str,
                             answers_json: str = Form(""),
                             manifest: str = Form(""),
+                            use_server_draft: bool = Form(False),
                             files: List[UploadFile] = File(default=[]),
                             user: dict = Depends(get_current_student)):
     """
@@ -1680,6 +2252,7 @@ async def submit_assignment(assignment_id: str,
             channel="online",
             existing_submission=existing_submission,
             notify_teacher=personal_stage_target is None,
+            use_server_draft_files=_form_bool(use_server_draft),
         )
         try:
             stage_attempt = mark_stage_submission_saved(conn, result["submission_id"])

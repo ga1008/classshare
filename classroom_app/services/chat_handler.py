@@ -20,6 +20,7 @@ INITIAL_HISTORY_WINDOW_HOURS = 24
 HISTORY_PAGE_SIZE = 20
 ALIAS_SWITCH_COOLDOWN_SECONDS = 10
 ALIAS_SWITCH_LIMIT_PER_ENTRY = 6
+BROADCAST_CHUNK_SIZE = 64
 
 TEMPORARY_NAMES = [
     "令狐冲", "杨过", "小龙女", "张无忌", "赵敏", "黄蓉", "郭靖", "周芷若", "乔峰", "段誉",
@@ -757,12 +758,40 @@ class MultiRoomConnectionManager:
         )
         await websocket.send_text(json.dumps(payload, ensure_ascii=False))
 
+    def forget_connection(self, connection_id: str) -> None:
+        connection_info = self.connection_state.pop(connection_id, None)
+        if not connection_info:
+            return
+
+        room_id = connection_info["room_id"]
+        participant_key = connection_info["participant_key"]
+        self.rooms.get(room_id, {}).pop(connection_id, None)
+
+        participant_connections = self.room_participants.get(room_id, {}).get(participant_key)
+        if participant_connections is not None:
+            participant_connections.discard(connection_id)
+            if not participant_connections:
+                self.room_participants[room_id].pop(participant_key, None)
+
+    async def _send_display_name_payload_safely(self, room_id: int, connection_id: str) -> str | None:
+        try:
+            await self.send_display_name_payload(room_id, connection_id)
+            return None
+        except Exception as exc:
+            print(f"[CHAT] 发送代号状态失败 (课堂: {room_id}, 连接: {connection_id}): {exc}", file=sys.stderr)
+            return connection_id
+
     async def broadcast_alias_states(self, room_id: int) -> None:
-        for connection_id in list(self.rooms.get(room_id, {}).keys()):
-            try:
-                await self.send_display_name_payload(room_id, connection_id)
-            except Exception as exc:
-                print(f"[CHAT] 发送代号状态失败 (课堂: {room_id}, 连接: {connection_id}): {exc}", file=sys.stderr)
+        connection_ids = list(self.rooms.get(room_id, {}).keys())
+        failed_ids: list[str] = []
+        for index in range(0, len(connection_ids), BROADCAST_CHUNK_SIZE):
+            chunk = connection_ids[index:index + BROADCAST_CHUNK_SIZE]
+            results = await asyncio.gather(
+                *(self._send_display_name_payload_safely(room_id, connection_id) for connection_id in chunk)
+            )
+            failed_ids.extend(connection_id for connection_id in results if connection_id)
+        for connection_id in failed_ids:
+            self.forget_connection(connection_id)
 
     async def connect(self, websocket: WebSocket, user: dict) -> str:
         await websocket.accept()
@@ -894,12 +923,25 @@ class MultiRoomConnectionManager:
             "alias_state": self.build_display_name_payload(room_id, participant_key, user),
         }
 
+    async def _send_broadcast_safely(self, room_id: int, connection_id: str, websocket: WebSocket, message: str) -> str | None:
+        try:
+            await websocket.send_text(message)
+            return None
+        except Exception as exc:
+            print(f"[CHAT] 广播失败 (课堂: {room_id}, 连接: {connection_id}): {exc}", file=sys.stderr)
+            return connection_id
+
     async def broadcast(self, room_id: int, message: str) -> None:
-        for connection_id, websocket in list(self.rooms.get(room_id, {}).items()):
-            try:
-                await websocket.send_text(message)
-            except Exception as exc:
-                print(f"[CHAT] 广播失败 (课堂: {room_id}, 连接: {connection_id}): {exc}", file=sys.stderr)
+        connections = list(self.rooms.get(room_id, {}).items())
+        failed_ids: list[str] = []
+        for index in range(0, len(connections), BROADCAST_CHUNK_SIZE):
+            chunk = connections[index:index + BROADCAST_CHUNK_SIZE]
+            results = await asyncio.gather(
+                *(self._send_broadcast_safely(room_id, connection_id, websocket, message) for connection_id, websocket in chunk)
+            )
+            failed_ids.extend(connection_id for connection_id in results if connection_id)
+        for connection_id in failed_ids:
+            self.forget_connection(connection_id)
 
     async def broadcast_user_list(self, room_id: int) -> None:
         participants = []

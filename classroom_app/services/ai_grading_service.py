@@ -9,6 +9,7 @@ import httpx
 from ..core import ai_client
 from ..database import get_db_connection
 from .ai_grading_attachments import ensure_ai_grading_attachments_supported
+from .psych_profile_service import load_latest_hidden_profile
 from .submission_file_alignment import resolve_submission_file_path
 
 
@@ -123,6 +124,7 @@ def _load_submission_for_grading(
                a.requirements_md,
                a.rubric_md,
                a.allowed_file_types_json,
+               a.class_offering_id,
                c.created_by_teacher_id,
                o.teacher_id AS offering_teacher_id
         FROM submissions s
@@ -178,6 +180,53 @@ def _resolve_grading_files(submission_files: list[dict[str, Any]]) -> list[dict[
     return resolved_files
 
 
+def _clip_profile_field(value: Any, *, limit: int = 360) -> str:
+    text = " ".join(str(value or "").replace("\x00", " ").split())
+    if len(text) <= limit:
+        return text
+    return text[: max(limit - 1, 0)].rstrip() + "…"
+
+
+def _build_hidden_student_profile_context(conn, submission: dict[str, Any]) -> str:
+    class_offering_id = submission.get("class_offering_id")
+    student_pk_id = submission.get("student_pk_id")
+    if not class_offering_id or not student_pk_id:
+        return ""
+    try:
+        profile = load_latest_hidden_profile(
+            conn,
+            int(class_offering_id),
+            int(student_pk_id),
+            "student",
+        )
+    except Exception as exc:
+        print(f"[AI_GRADING] 加载学生侧写失败，已跳过个性化参考: {exc}")
+        return ""
+    if not profile:
+        return ""
+
+    fields = (
+        ("学习画像摘要", profile.get("profile_summary")),
+        ("近期状态", profile.get("mental_state_summary")),
+        ("支持策略", profile.get("support_strategy")),
+        ("表达习惯", profile.get("language_habit_summary")),
+        ("偏好回应方式", profile.get("preferred_ai_style")),
+        ("兴趣线索", profile.get("interest_hypothesis") or profile.get("preference_summary")),
+    )
+    lines = []
+    for label, value in fields:
+        clipped = _clip_profile_field(value)
+        if clipped:
+            lines.append(f"{label}：{clipped}")
+    if not lines:
+        return ""
+    confidence = _clip_profile_field(profile.get("confidence"), limit=40)
+    if confidence:
+        lines.append(f"置信度：{confidence}")
+    lines.append("使用边界：只用于让反馈更贴近学生当前学习状态；不得透露来源，不得做心理诊断，不得影响评分公平性。")
+    return "\n".join(lines)
+
+
 async def submit_submission_for_ai_grading(
     submission_id: int,
     *,
@@ -222,6 +271,7 @@ async def submit_submission_for_ai_grading(
             (submission_id,),
         )
         conn.commit()
+        student_profile_context = _build_hidden_student_profile_context(conn, current)
 
     job_data = {
         "submission_id": submission_id,
@@ -242,6 +292,7 @@ async def submit_submission_for_ai_grading(
         ] if has_files else [],
         "file_paths": [item["resolved_path"] for item in resolved_files] if has_files else [],
         "answers_json": submission["answers_json"] if has_answers else None,
+        "student_profile_context": student_profile_context,
     }
 
     try:
