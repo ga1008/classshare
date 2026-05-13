@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="/static/css/cards.css">
     <link rel="stylesheet" href="/static/css/toast.css">
     <link rel="stylesheet" href="/static/css/markdown.css">
+    <link rel="stylesheet" href="/static/css/ai_chat.css">
     <link rel="stylesheet" href="/static/css/teacher_whiteboard.css">
     <style>
         body {
@@ -359,6 +360,28 @@
             color: var(--text-primary);
             line-height: 1.6;
             flex: 1;
+        }
+
+        .exam-question-md,
+        .exam-option-md,
+        .exam-answer-md {
+            color: inherit;
+        }
+
+        .exam-question-md > :first-child,
+        .exam-option-md > :first-child,
+        .exam-answer-md > :first-child {
+            margin-top: 0;
+        }
+
+        .exam-question-md > :last-child,
+        .exam-option-md > :last-child,
+        .exam-answer-md > :last-child {
+            margin-bottom: 0;
+        }
+
+        .exam-option-md p {
+            margin: 0;
         }
 
         .q-options {
@@ -764,6 +787,9 @@
             color: var(--text-muted);
             font-style: italic;
         }
+        .readonly-answer .md-content {
+            white-space: normal;
+        }
         @media (max-width: 768px) {
             .grading-question-feedback {
                 margin-left: 0;
@@ -936,8 +962,50 @@
     </main>
 </div>
 
+{% if exam_ai_allowed and user_info.role == 'student' and assignment.class_offering_id %}
+<button id="ai-chat-fab" title="课堂 AI 助手" class="shadow-lg exam-ai-chat-fab">
+    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3v.01M12 21v.01M3 12h.01M21 12h.01M5.64 5.64l.01.01M18.36 18.36l.01.01M5.64 18.36l.01.01M18.36 5.64l.01.01M12 8a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM16 12a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/>
+    </svg>
+</button>
+<div id="ai-chat-modal">
+    <div class="ai-chat-container">
+        <div class="ai-chat-header">
+            <h3>考试 AI 助手</h3>
+            <div class="header-buttons">
+                <button id="ai-chat-btn-new" class="chat-btn" title="新对话"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14m-7-7h14"/></svg></button>
+                <button id="ai-chat-btn-fullscreen" class="chat-btn" title="全屏"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
+                <button id="ai-chat-btn-close" class="chat-btn" title="关闭"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+            </div>
+        </div>
+        <div class="ai-chat-messages" id="ai-chat-messages-box">
+            <div class="ai-chat-message system">
+                <div class="bubble">本场考试允许使用课堂 AI。你可以围绕当前课堂资料和试卷题目提问，但请保留自己的思考过程。</div>
+            </div>
+        </div>
+        <div class="ai-chat-attachment-previews" id="ai-chat-previews"></div>
+        <div class="ai-chat-input-area">
+            <div class="input-row">
+                <input type="file" id="ai-chat-file-input" accept="image/*,.txt,.md,.py,.js,.ts,.tsx,.jsx,.html,.htm,.css,.json,.xml,.yaml,.yml,.toml,.c,.cpp,.h,.hpp,.java,.kt,.rs,.go,.rb,.php,.sh,.bat,.sql,.csv,.svg,.vue,.log,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.pdf" multiple style="display: none;">
+                <div class="left-buttons">
+                    <button id="ai-deep-think-btn" class="chat-btn deep-think" title="深度思考"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l4 4-1.5 1.5-4-4v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3"/><path d="m9 9 1.88 1.88"/><path d="M9 13.5V15l1.88-1.88"/></svg></button>
+                </div>
+                <textarea id="ai-chat-textarea" placeholder="向考试 AI 提问..." rows="1"></textarea>
+                <div class="right-buttons">
+                    <button id="ai-chat-btn-attach" class="chat-btn attach" title="上传图片"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.49"/></svg></button>
+                    <button id="ai-chat-btn-send" class="chat-btn send" title="发送"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+                </div>
+            </div>
+        </div>
+        <div class="resizer resizer-top"></div><div class="resizer resizer-right"></div><div class="resizer resizer-bottom"></div><div class="resizer resizer-left"></div>
+        <div class="resizer resizer-top-left"></div><div class="resizer resizer-top-right"></div><div class="resizer resizer-bottom-left"></div><div class="resizer resizer-bottom-right"></div>
+    </div>
+</div>
+{% endif %}
+
 <script type="module" src="/static/js/auth.js"></script>
 <script src="/static/js/behavior_tracker.js"></script>
+<script src="/static/js/tools.js"></script>
 {% include "partials/markdown_assets.html" %}
 <script type="module">
     import { showMessage } from '/static/js/ui.js';
@@ -950,6 +1018,9 @@
         renderMarkdownHtml,
         renderQuestionFeedbackHtml
     } from '/static/js/grading_feedback.js?v=20260513';
+
+    window.showMessage = showMessage;
+    window.UI = Object.assign({}, window.UI || {}, { showMessage, showToast: showMessage });
 
     // Global configurations injected by Jinja2
     const ASSIGNMENT_ID = "{{ assignment.id }}";
@@ -967,6 +1038,8 @@
     const CAN_RESUBMIT_SUBMISSION = {{ can_resubmit_submission | tojson }};
     const RESUBMISSION_DUE_AT = {{ resubmission_due_at | tojson }};
     const SUBMISSION_FEEDBACK_MD = {{ (submission.feedback_md if submission else '') | tojson }};
+    const EXAM_AI_ALLOWED = {{ exam_ai_allowed | default(false) | tojson }};
+    const EXAM_AI_CONTEXT = {{ exam_ai_context | default('') | tojson }};
     const gradingFeedback = parseGradingFeedback(SUBMISSION_FEEDBACK_MD);
     const LOCAL_DRAFT_KEY = `exam_${ASSIGNMENT_ID}`;
 
@@ -1049,6 +1122,7 @@
 
         setupEventListeners();
         drawingBoard = initExamDrawingWhiteboard();
+        initExamAiChat();
 
         if (SUBMISSION_EXISTS) {
             renderSubmittedView();
@@ -1056,6 +1130,23 @@
             loadFromLocal();
             await loadServerDraft();
             renderCurrentPage();
+        }
+    }
+
+    function initExamAiChat() {
+        if (!EXAM_AI_ALLOWED || USER_ROLE !== 'student' || !CLASS_OFFERING_ID) return;
+        if (typeof window.AIChatComponent !== 'function') {
+            console.warn('AIChatComponent is not available on exam page.');
+            return;
+        }
+        try {
+            const aiChat = new window.AIChatComponent({
+                classOfferingId: CLASS_OFFERING_ID,
+                contextPromptExtra: EXAM_AI_CONTEXT,
+            });
+            aiChat.init();
+        } catch (error) {
+            console.error('Failed to init exam AI chat', error);
         }
     }
 
@@ -1346,17 +1437,24 @@
         return values.map(item => String(item || '').trim()).filter(Boolean);
     }
 
+    function isPolicyEnabled(raw) {
+        if (!raw || raw.enabled === undefined || raw.enabled === null || raw.enabled === '') return true;
+        return !['0', 'false', 'no', 'off'].includes(String(raw.enabled).trim().toLowerCase());
+    }
+
     function getAttachmentPolicy(q) {
         const raw = q?.attachment_requirements || q?.attachment_requirement || q?.answer_attachments || {};
-        const required = Boolean(raw.required || raw.requires_attachment || raw.attachment_required);
-        const minCount = Math.max(0, Number(raw.min_count ?? raw.min ?? (required ? 1 : 0)) || 0);
+        const policyEnabled = isPolicyEnabled(raw);
+        const rawRequired = Boolean(raw.required || raw.requires_attachment || raw.attachment_required);
+        const minCount = Math.max(0, Number(raw.min_count ?? raw.min ?? (rawRequired ? 1 : 0)) || 0);
         const maxCountRaw = Number(raw.max_count ?? raw.max ?? MAX_FILE_COUNT);
         const maxCount = Math.max(minCount || 0, Math.min(MAX_FILE_COUNT, Number.isFinite(maxCountRaw) && maxCountRaw > 0 ? maxCountRaw : MAX_FILE_COUNT));
+        const required = rawRequired || (policyEnabled && minCount > 0);
         const allowDrawing = raw.allow_drawing !== false;
         return {
-            enabled: isDrawingQuestion(q),
+            enabled: isDrawingQuestion(q) && policyEnabled,
             required,
-            minCount,
+            minCount: required ? Math.max(minCount, 1) : minCount,
             maxCount,
             allowDrawing,
             allowedFileTypes: normalizePolicyFileTypes(raw.allowed_file_types || raw.file_types),
@@ -1610,7 +1708,7 @@
                     html += `
                         <label class="option-label ${isSelected ? 'selected' : ''}" for="${optId}">
                             <input type="radio" id="${optId}" name="${q.id}" value="${esc(opt)}" ${isSelected ? 'checked' : ''} class="q-radio-input">
-                            <span>${esc(opt)}</span>
+                            ${formatInlineMarkdown(opt)}
                         </label>
                     `;
                 });
@@ -1624,7 +1722,7 @@
                     html += `
                         <label class="option-label ${isSelected ? 'selected' : ''}" for="${optId}">
                             <input type="checkbox" id="${optId}" value="${esc(opt)}" ${isSelected ? 'checked' : ''} class="q-check-input" data-qid="${q.id}">
-                            <span>${esc(opt)}</span>
+                            ${formatInlineMarkdown(opt)}
                         </label>
                     `;
                 });
@@ -2525,7 +2623,7 @@
                         <div class="q-body">${formatText(q.text)}</div>
                     </div>
                     <div class="readonly-answer ${!hasAns ? 'empty' : ''}">
-                        ${hasAns ? esc(ans) : '(未作答)'}
+                        ${hasAns ? formatAnswerMarkdown(ans) : '(未作答)'}
                     </div>
                     ${attachmentsHtml}
                     ${renderQuestionFeedbackHtml(feedback)}
@@ -2728,9 +2826,21 @@
     }
 
     function formatText(s) {
-        if(!s) return '';
-        // Convert newlines to br, but keep basic escaping
-        return esc(s).replace(/\n/g, '<br>');
+        const text = String(s || '').trim();
+        if (!text) return '';
+        return `<div class="md-content exam-question-md">${renderMarkdownHtml(text)}</div>`;
+    }
+
+    function formatInlineMarkdown(s) {
+        const text = String(s || '').trim();
+        if (!text) return '';
+        return `<div class="md-content exam-option-md">${renderMarkdownHtml(text)}</div>`;
+    }
+
+    function formatAnswerMarkdown(s) {
+        const text = String(s || '').trim();
+        if (!text) return '';
+        return `<div class="md-content exam-answer-md">${renderMarkdownHtml(text)}</div>`;
     }
 
     function truncate(s, n) {
@@ -2749,5 +2859,8 @@
     document.addEventListener('DOMContentLoaded', init);
 
 </script>
+{% if exam_ai_allowed and user_info.role == 'student' and assignment.class_offering_id %}
+<script src="/static/js/ai_chat_component.js"></script>
+{% endif %}
 </body>
 </html>

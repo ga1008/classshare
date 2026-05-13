@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/static/css/buttons.css">
     <link rel="stylesheet" href="/static/css/forms.css">
     <link rel="stylesheet" href="/static/css/toast.css">
+    <link rel="stylesheet" href="/static/css/markdown.css">
 
     <style>
         :root {
@@ -264,11 +265,47 @@
             background: var(--bg-color);
             margin-bottom: var(--spacing-md);
             transition: all 0.2s;
+            resize: vertical;
+            min-height: 72px;
         }
         .q-title-input:focus, .q-title-input:hover {
             border-color: var(--border-color);
             background: var(--surface-color);
             outline: none;
+        }
+
+        .question-ai-toggle,
+        .exam-ai-policy-toggle {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            color: var(--text-secondary);
+            font-size: 0.86rem;
+            line-height: 1.45;
+        }
+        .question-ai-toggle {
+            margin: -4px 0 var(--spacing-md);
+            padding: 8px 10px;
+            border-radius: var(--radius-md);
+            background: rgba(238, 242, 255, 0.52);
+            border: 1px solid rgba(99, 102, 241, 0.16);
+        }
+        .question-ai-toggle input,
+        .exam-ai-policy-toggle input {
+            margin-top: 3px;
+        }
+        .exam-ai-policy-card {
+            margin-top: var(--spacing-sm);
+            padding: 10px 12px;
+            border: 1px solid rgba(99, 102, 241, 0.16);
+            border-radius: var(--radius-md);
+            background: rgba(248, 250, 252, 0.86);
+        }
+        .exam-ai-policy-card small {
+            display: block;
+            margin-top: 4px;
+            color: var(--text-muted);
+            line-height: 1.45;
         }
 
         .q-id-input {
@@ -419,6 +456,17 @@
             font-size: 0.9rem;
             margin-bottom: var(--spacing-sm);
             color: var(--text-primary);
+        }
+        .preview-q-title .md-content > :first-child,
+        .preview-q-option .md-content > :first-child {
+            margin-top: 0;
+        }
+        .preview-q-title .md-content > :last-child,
+        .preview-q-option .md-content > :last-child {
+            margin-bottom: 0;
+        }
+        .preview-q-option .md-content p {
+            margin: 0;
         }
         .preview-q-options {
             display: flex;
@@ -802,6 +850,13 @@
                     <label class="form-label text-xs text-muted mb-1">试卷说明</label>
                     <textarea id="exam-desc" class="form-control form-control-sm" rows="3" placeholder="填写注意事项或考试说明...">{{ paper.description if paper and paper.description else '' }}</textarea>
                 </div>
+                <div class="exam-ai-policy-card">
+                    <label class="exam-ai-policy-toggle">
+                        <input type="checkbox" id="exam-allow-student-ai">
+                        <span>整卷允许学生使用课堂 AI</span>
+                    </label>
+                    <small>适合开放实验、综合项目和论述题；开启后学生答题页会出现同课堂一致的 AI 助手，并携带当前试卷上下文。</small>
+                </div>
             </div>
 
             <div class="sidebar-section flex flex-col min-h-0">
@@ -1035,17 +1090,30 @@
         </div>
     </div>
 
+    {% include "partials/markdown_assets.html" %}
     <script type="module" src="/static/js/auth.js"></script>
     <script type="module">
         import { showToast } from '/static/js/ui.js';
+        import { renderMarkdownHtml } from '/static/js/grading_feedback.js?v=20260513';
 
         // Expose to window for inline onclick handlers
         window.showToast = showToast;
 
         const EXAM_ID = "{{ paper.id if paper else '' }}";
+        const EXAM_CONFIG_RAW = {{ (paper.exam_config_json if paper else '{}') | tojson }};
         let examData = { pages: [] };
+        let examConfig = {};
         let currentPageIdx = -1;
         let nativeJsonFile = null;
+
+        try {
+            examConfig = typeof EXAM_CONFIG_RAW === 'string'
+                ? JSON.parse(EXAM_CONFIG_RAW || '{}')
+                : (EXAM_CONFIG_RAW || {});
+        } catch (error) {
+            console.warn('Failed to parse exam config', error);
+            examConfig = {};
+        }
 
         const typeLabels = {
             radio: '单选题',
@@ -1054,7 +1122,25 @@
             textarea: '问答题'
         };
 
+        function renderEditorMarkdown(value, emptyText = '') {
+            const text = String(value || '').trim();
+            if (!text) return emptyText ? escapeHtml(emptyText) : '';
+            return renderMarkdownHtml(text);
+        }
+
+        function isQuestionAiAllowed(q) {
+            return Boolean(q?.allow_ai || q?.allow_student_ai || q?.ai_allowed);
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
+            const aiPolicyInput = document.getElementById('exam-allow-student-ai');
+            if (aiPolicyInput) {
+                aiPolicyInput.checked = Boolean(examConfig.allow_student_ai || examConfig.student_ai_enabled || examConfig.allow_ai);
+                aiPolicyInput.addEventListener('change', () => {
+                    examConfig.allow_student_ai = aiPolicyInput.checked;
+                    window.renderPreview();
+                });
+            }
             {% if paper and paper.questions_json %}
             try {
                 const loaded = JSON.parse({{ paper.questions_json | tojson }});
@@ -1078,8 +1164,9 @@
 
         function normalizeAttachmentRequirementForEditor(q) {
             const raw = q?.attachment_requirements || {};
-            const required = Boolean(raw.required || raw.requires_attachment || raw.attachment_required);
-            const min = Number(raw.min_count ?? raw.min ?? (required ? 1 : 0));
+            const rawRequired = Boolean(raw.required || raw.requires_attachment || raw.attachment_required);
+            const min = Number(raw.min_count ?? raw.min ?? (rawRequired ? 1 : 0));
+            const required = rawRequired || (Number.isFinite(min) && min > 0);
             const max = raw.max_count ?? raw.max;
             const allowedTypes = Array.isArray(raw.allowed_file_types)
                 ? raw.allowed_file_types
@@ -1087,11 +1174,12 @@
                     .replace(/\r/g, '\n')
                     .replace(/[;，、]/g, ',')
                     .replace(/\n/g, ',')
-                    .split(',');
+                .split(',');
+            const minCount = Number.isFinite(min) ? Math.max(0, min) : (required ? 1 : 0);
             return {
                 enabled: true,
                 required,
-                min_count: Number.isFinite(min) ? Math.max(0, min) : (required ? 1 : 0),
+                min_count: required ? Math.max(minCount, 1) : minCount,
                 max_count: max === undefined || max === '' ? '' : Math.max(1, Number(max) || 1),
                 allow_drawing: raw.allow_drawing !== false,
                 allowed_file_types: allowedTypes.map(item => String(item || '').trim()).filter(Boolean),
@@ -1134,6 +1222,13 @@
             }
 
             examData.pages = questions.pages;
+            if (imported.exam_config || questions.exam_config || imported.config || questions.config) {
+                examConfig = imported.exam_config || questions.exam_config || imported.config || questions.config || {};
+                const aiPolicyInput = document.getElementById('exam-allow-student-ai');
+                if (aiPolicyInput) {
+                    aiPolicyInput.checked = Boolean(examConfig.allow_student_ai || examConfig.student_ai_enabled || examConfig.allow_ai);
+                }
+            }
             if (examData.pages.length === 0) {
                 window.addPage();
             } else {
@@ -1283,7 +1378,11 @@
                     </div>
                 </div>
 
-                <input class="q-title-input" value="${escapeHtml(q.text||'')}" placeholder="在此输入题目内容..." oninput="window.updateQText(${idx}, this.value)">
+                <textarea class="q-title-input" rows="3" placeholder="在此输入题目内容，可使用 Markdown，例如 **重点**、列表、行内命令或代码块" oninput="window.updateQText(${idx}, this.value)">${escapeHtml(q.text||'')}</textarea>
+                <label class="question-ai-toggle">
+                    <input type="checkbox" ${isQuestionAiAllowed(q) ? 'checked' : ''} onchange="window.updateQuestionAllowAi(${idx}, this.checked)">
+                    <span>允许学生答本题时使用课堂 AI</span>
+                </label>
             `;
 
             if (isChoice) {
@@ -1389,11 +1488,22 @@
         window.updateQText = function(idx, val) { examData.pages[currentPageIdx].questions[idx].text = val; window.renderPreview(); }
         window.updateQId = function(idx, val) { examData.pages[currentPageIdx].questions[idx].id = val; }
         window.updatePlaceholder = function(idx, val) { examData.pages[currentPageIdx].questions[idx].placeholder = val; window.renderPreview(); }
+        window.updateQuestionAllowAi = function(idx, checked) {
+            const q = examData.pages[currentPageIdx].questions[idx];
+            if (checked) q.allow_ai = true;
+            else {
+                delete q.allow_ai;
+                delete q.allow_student_ai;
+                delete q.ai_allowed;
+            }
+            window.renderPreview();
+        }
         window.updateAttachmentRequired = function(idx, checked) {
             const req = ensureAttachmentRequirement(examData.pages[currentPageIdx].questions[idx]);
             req.enabled = true;
             req.required = Boolean(checked);
             if (checked && (!req.min_count || Number(req.min_count) < 1)) req.min_count = 1;
+            if (!checked && Number(req.min_count || 0) > 0) req.min_count = 0;
             window.renderQuestionEditor();
             window.renderPreview();
         }
@@ -1401,6 +1511,7 @@
             const req = ensureAttachmentRequirement(examData.pages[currentPageIdx].questions[idx]);
             const parsed = parseInt(val, 10);
             req.min_count = Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
+            if (req.min_count > 0) req.required = true;
             if (req.required && req.min_count < 1) req.min_count = 1;
             window.renderPreview();
         }
@@ -1444,7 +1555,8 @@
             questions.forEach((q, i) => {
                 html += `
                 <div class="preview-q">
-                    <div class="preview-q-title"><span class="text-muted mr-1">${i+1}.</span> ${escapeHtml(q.text || '(未填写题干)')}</div>`;
+                    <div class="preview-q-title"><span class="text-muted mr-1">${i+1}.</span> <div class="md-content">${renderEditorMarkdown(q.text, '(未填写题干)')}</div></div>
+                    ${isQuestionAiAllowed(q) ? '<div class="text-xs text-primary mb-2">本题允许学生使用课堂 AI</div>' : ''}`;
 
                 if ((q.type === 'radio' || q.type === 'checkbox') && q.options) {
                     html += `<div class="preview-q-options">`;
@@ -1453,7 +1565,7 @@
                         html += `
                         <label class="preview-q-option">
                             <input type="${inputType}" disabled class="cursor-not-allowed">
-                            <span>${escapeHtml(opt || '(空)')}</span>
+                            <div class="md-content">${renderEditorMarkdown(opt, '(空)')}</div>
                         </label>`;
                     });
                     html += `</div>`;
@@ -1484,6 +1596,10 @@
                 title: title,
                 description: document.getElementById('exam-desc').value,
                 questions: examData,
+                config: {
+                    ...examConfig,
+                    allow_student_ai: Boolean(document.getElementById('exam-allow-student-ai')?.checked),
+                },
                 status: 'draft'
             };
 
@@ -1522,17 +1638,17 @@
                 questionsHtml += `<div style="background:#fff;border-radius:12px;padding:24px;box-shadow:0 1px 3px rgba(0,0,0,0.1);border:1px solid #E5E7EB;margin-bottom:20px;">`;
                 questionsHtml += `<div style="font-weight:600;font-size:1.05rem;margin-bottom:16px;display:flex;align-items:baseline;gap:8px;color:#111827;">`;
                 questionsHtml += `<span style="background:#EEF2FF;color:#4F46E5;padding:4px 10px;border-radius:20px;font-size:0.8rem;font-weight:700;">${i+1}</span>`;
-                questionsHtml += `<span>${escapeHtml(q.text || '(未填写题目)')}</span></div>`;
+                questionsHtml += `<span>${renderEditorMarkdown(q.text, '(未填写题目)')}</span></div>`;
 
                 if (q.type === 'radio' && q.options) {
                     q.options.forEach(opt => {
                         questionsHtml += `<label style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:12px;border:1px solid #E5E7EB;border-radius:8px;font-size:0.95rem;color:#374151;">`;
-                        questionsHtml += `<input type="radio" disabled style="width:16px;height:16px;"> ${escapeHtml(opt || '(空)')}</label>`;
+                        questionsHtml += `<input type="radio" disabled style="width:16px;height:16px;"> ${renderEditorMarkdown(opt, '(空)')}</label>`;
                     });
                 } else if (q.type === 'checkbox' && q.options) {
                     q.options.forEach(opt => {
                         questionsHtml += `<label style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:12px;border:1px solid #E5E7EB;border-radius:8px;font-size:0.95rem;color:#374151;">`;
-                        questionsHtml += `<input type="checkbox" disabled style="width:16px;height:16px;"> ${escapeHtml(opt || '(空)')}</label>`;
+                        questionsHtml += `<input type="checkbox" disabled style="width:16px;height:16px;"> ${renderEditorMarkdown(opt, '(空)')}</label>`;
                     });
                 } else if (q.type === 'text') {
                     questionsHtml += `<input type="text" disabled placeholder="${escapeHtml(q.placeholder || '请输入答案')}" style="width:100%;padding:12px 16px;border:2px solid #E5E7EB;border-radius:8px;font-size:0.95rem;background:#F9FAFB;">`;
@@ -1865,7 +1981,7 @@ ${questionsHtml || '<div style="background:#fff;border-radius:12px;padding:40px;
                 const effectiveScope = attachmentRequirements
                     ? `${scope}\n\n问答题附件要求：${attachmentRequirements}`
                     : scope;
-                payload.append('scope', effectiveScope);
+                payload.append('scope', `${effectiveScope}\n\n出题格式要求：题干、选项和解析可以使用简易 Markdown（列表、加粗、行内代码、代码块），但返回内容必须是合法 JSON 字符串；开放性题目可按需设置 allow_ai=true。`);
                 payload.append('difficulty', difficulty);
                 if (totalQuestions !== null) {
                     payload.append('total_questions', String(totalQuestions));

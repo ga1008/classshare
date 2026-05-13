@@ -699,22 +699,32 @@ def _load_exam_attachment_policies(conn, assignment: dict[str, Any]) -> dict[str
             raw_policy = question.get("attachment_requirements")
             if not qid or not isinstance(raw_policy, dict):
                 continue
-            required = bool(raw_policy.get("required") or raw_policy.get("requires_attachment"))
+            enabled = raw_policy.get("enabled")
+            raw_required = bool(raw_policy.get("required") or raw_policy.get("requires_attachment"))
             try:
-                min_count = int(raw_policy.get("min_count") or raw_policy.get("min") or (1 if required else 0))
+                min_count = int(raw_policy.get("min_count") or raw_policy.get("min") or (1 if raw_required else 0))
             except (TypeError, ValueError):
-                min_count = 1 if required else 0
+                min_count = 1 if raw_required else 0
+            enabled_false = enabled is not None and not _form_bool(enabled)
+            required = bool(raw_required or (min_count > 0 and not enabled_false))
+            if enabled_false and not raw_required:
+                continue
+            if required and min_count < 1:
+                min_count = 1
             try:
                 max_count_raw = raw_policy.get("max_count", raw_policy.get("max"))
                 max_count = int(max_count_raw) if max_count_raw not in (None, "") else None
             except (TypeError, ValueError):
                 max_count = None
+            if max_count is not None and max_count < min_count:
+                max_count = min_count
             allowed_file_types = normalize_allowed_file_types(raw_policy.get("allowed_file_types") or raw_policy.get("file_types") or [])
             policies[qid] = {
                 "required": required,
                 "min_count": max(0, min_count),
                 "max_count": max_count if max_count and max_count > 0 else None,
                 "allowed_file_types": allowed_file_types,
+                "title": str(question.get("text") or question.get("title") or "").strip(),
             }
     return policies
 
@@ -749,7 +759,9 @@ def _validate_exam_answer_attachment_policies(answers_payload: Any, policies: di
         if policy.get("required") and min_count < 1:
             min_count = 1
         if min_count and len(attachments) < min_count:
-            raise HTTPException(400, f"第 {qid} 题需要至少上传 {min_count} 个附件")
+            title = str(policy.get("title") or "").strip()
+            title_hint = f"（{title[:24]}）" if title else ""
+            raise HTTPException(400, f"第 {qid} 题{title_hint}需要至少上传 {min_count} 个附件")
         max_count = policy.get("max_count")
         if max_count and len(attachments) > int(max_count):
             raise HTTPException(400, f"第 {qid} 题附件不能超过 {max_count} 个")
