@@ -134,12 +134,22 @@
         margin-bottom: var(--spacing-md);
     }
 
+    .um-toolbar-controls {
+        display: flex;
+        flex: 1 1 420px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: var(--spacing-sm);
+        min-width: min(100%, 420px);
+    }
+
     .um-search {
         min-width: min(100%, 360px);
         flex: 1 1 300px;
     }
 
     .um-filter {
+        flex: 0 0 180px;
         max-width: 180px;
     }
 
@@ -193,6 +203,16 @@
 
     .um-actions .btn {
         min-height: 34px;
+    }
+
+    @media (max-width: 640px) {
+        .um-toolbar-controls,
+        .um-search,
+        .um-filter {
+            width: 100%;
+            max-width: none;
+            flex-basis: 100%;
+        }
     }
 
     .um-empty {
@@ -345,7 +365,7 @@
 <section class="um-panel">
     <div class="um-toolbar">
         <h3>教师列表</h3>
-        <div class="flex gap-2 flex-wrap">
+        <div class="um-toolbar-controls">
             <input class="form-control um-search" id="teacher-search" type="search" placeholder="搜索姓名、邮箱、联系方式">
             <select class="form-control um-filter" id="teacher-status-filter">
                 <option value="all">全部状态</option>

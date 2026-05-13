@@ -597,22 +597,15 @@
         - `partials/markdown_assets.html`
     - 样式层
       - 设计基座
-        - `static/css/core.css`
+        - `static/css/ui-system.src.css`
+        - `static/css/tailwind-app.css`
       - 布局与组件
-        - `layout.css`
-        - `buttons.css`
-        - `cards.css`
-        - `forms.css`
-        - `modals.css`
-        - `tables.css`
-        - `toast.css`
+        - Tailwind CSS utilities
+        - DaisyUI theme `lanshare`
+        - Flowbite component plugin
       - 业务主题
-        - `dashboard.css`
-        - `classroom.css`
-        - `materials.css`
-        - `message_center.css`
-        - `ai_chat.css`
-        - `markdown.css`
+        - 已折入 `static/css/ui-system.src.css` 的 Tailwind 组件层
+        - 统一输出到 `static/css/tailwind-app.css`
     - 脚本层
       - 基础脚本
         - `static/js/api.js`

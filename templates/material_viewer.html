@@ -3,14 +3,7 @@
 {% block title %}{{ material.name }} | 课程材料预览{% endblock %}
 
 {% block css %}
-<link rel="stylesheet" href="{{ asset_url('css/layout.css') }}">
-<link rel="stylesheet" href="{{ asset_url('css/buttons.css') }}">
-<link rel="stylesheet" href="{{ asset_url('css/cards.css') }}">
-<link rel="stylesheet" href="{{ asset_url('css/toast.css') }}">
-<link rel="stylesheet" href="{{ asset_url('css/markdown.css') }}">
-<link rel="stylesheet" href="{{ asset_url('css/materials.css') }}">
 {% if user_info.role == 'teacher' %}
-<link rel="stylesheet" href="{{ asset_url('css/teacher_whiteboard.css') }}">
 {% endif %}
 {% endblock %}
 

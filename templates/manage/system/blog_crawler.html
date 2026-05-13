@@ -86,6 +86,12 @@
         align-items: start;
     }
 
+    .bc-main-column {
+        display: grid;
+        gap: var(--spacing-lg);
+        min-width: 0;
+    }
+
     .bc-panel {
         padding: var(--spacing-xl);
     }
@@ -259,6 +265,7 @@
 </div>
 
 <div class="bc-main-grid">
+    <div class="bc-main-column">
     <section class="bc-panel">
         <h3>运行设置</h3>
         <form id="bc-config-form">
@@ -343,6 +350,42 @@
         </form>
     </section>
 
+    <section class="bc-panel">
+        <h3>运行记录</h3>
+        <div class="bc-table-wrap">
+            <table class="bc-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>状态</th>
+                        <th>候选</th>
+                        <th>重复</th>
+                        <th>发布</th>
+                        <th>开始</th>
+                        <th>结束</th>
+                    </tr>
+                </thead>
+                <tbody id="bc-run-table">
+                    {% for run in dashboard.recent_runs %}
+                    <tr>
+                        <td>{{ run.id }}</td>
+                        <td>{{ run.status }}</td>
+                        <td>{{ run.new_candidate_count }} / {{ run.candidate_count }}</td>
+                        <td>{{ run.duplicate_count }}</td>
+                        <td>{{ run.published_count }}</td>
+                        <td>{{ run.started_at or run.scheduled_for or run.created_at }}</td>
+                        <td>{{ run.finished_at or '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not dashboard.recent_runs %}
+                    <tr><td colspan="7" class="bc-muted">暂无运行记录。</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    </div>
+
     <aside class="bc-panel">
         <h3>课程关键词</h3>
         <div class="bc-keywords" id="bc-keywords">
@@ -377,41 +420,6 @@
         </div>
     </aside>
 </div>
-
-<section class="bc-panel" style="margin-top: var(--spacing-lg);">
-    <h3>运行记录</h3>
-    <div class="bc-table-wrap">
-        <table class="bc-table">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>状态</th>
-                    <th>候选</th>
-                    <th>重复</th>
-                    <th>发布</th>
-                    <th>开始</th>
-                    <th>结束</th>
-                </tr>
-            </thead>
-            <tbody id="bc-run-table">
-                {% for run in dashboard.recent_runs %}
-                <tr>
-                    <td>{{ run.id }}</td>
-                    <td>{{ run.status }}</td>
-                    <td>{{ run.new_candidate_count }} / {{ run.candidate_count }}</td>
-                    <td>{{ run.duplicate_count }}</td>
-                    <td>{{ run.published_count }}</td>
-                    <td>{{ run.started_at or run.scheduled_for or run.created_at }}</td>
-                    <td>{{ run.finished_at or '-' }}</td>
-                </tr>
-                {% endfor %}
-                {% if not dashboard.recent_runs %}
-                <tr><td colspan="7" class="bc-muted">暂无运行记录。</td></tr>
-                {% endif %}
-            </tbody>
-        </table>
-    </div>
-</section>
 {% endblock %}
 
 {% block scripts %}

@@ -28,6 +28,7 @@ share/python-wheels/
 MANIFEST
 /.tmp_loadtest_run*
 /logs
+node_modules/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template

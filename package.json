@@ -1,0 +1,12 @@
+{
+  "scripts": {
+    "build:css": "tailwindcss -c tailwind.config.js -i ./static/css/ui-system.src.css -o ./static/css/tailwind-app.css --minify"
+  },
+  "devDependencies": {
+    "autoprefixer": "10.4.20",
+    "daisyui": "4.12.24",
+    "flowbite": "2.5.2",
+    "postcss": "8.4.49",
+    "tailwindcss": "3.4.17"
+  }
+}

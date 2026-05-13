@@ -854,15 +854,15 @@ def _build_email_content(payload: dict[str, Any], recipient_name: str, *, notifi
     safe_action_url = html.escape(action_url, quote=True)
     html_body = f"""<!doctype html>
 <html lang="zh-CN">
-<body style="margin:0;padding:0;background:#f8fafc;color:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;">
-  <div style="max-width:640px;margin:0 auto;padding:28px 18px;">
-    <div style="border:1px solid #e2e8f0;border-radius:8px;background:#ffffff;padding:24px;">
-      <div style="font-size:13px;font-weight:700;color:#0f766e;margin-bottom:14px;">{safe_site}</div>
-      <div style="display:inline-block;padding:4px 10px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;">{safe_severity}</div>
+<body style="margin:0;padding:0;background:#edf2fb;color:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;">
+  <div style="max-width:640px;margin:0 auto;padding:32px 18px;">
+    <div style="border:1px solid #dbe3ef;border-radius:18px;background:#ffffff;padding:28px;box-shadow:0 18px 40px -28px rgba(15,23,42,0.42);">
+      <div style="font-size:13px;font-weight:800;color:#4f46e5;margin-bottom:14px;letter-spacing:0.02em;">{safe_site}</div>
+      <div style="display:inline-block;padding:6px 12px;border-radius:999px;background:#fff7ed;color:#b45309;font-size:12px;font-weight:800;border:1px solid #fed7aa;">{safe_severity}</div>
       <h1 style="margin:16px 0 10px;font-size:22px;line-height:1.35;color:#0f172a;">{safe_title}</h1>
       <p style="margin:0 0 16px;font-size:15px;line-height:1.8;color:#475569;">{safe_greeting}，你好。</p>
       <p style="margin:0 0 22px;font-size:15px;line-height:1.8;color:#475569;">{safe_summary}</p>
-      <a href="{safe_action_url}" style="display:inline-block;padding:11px 18px;border-radius:6px;background:#0f766e;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">{safe_action_label}</a>
+      <a href="{safe_action_url}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#4f46e5;color:#ffffff;text-decoration:none;font-size:14px;font-weight:800;">{safe_action_label}</a>
       <p style="margin:22px 0 0;font-size:12px;line-height:1.7;color:#64748b;">若按钮无法打开，请复制此链接到浏览器：<br><span style="word-break:break-all;">{safe_action_url}</span></p>
     </div>
     <p style="margin:14px 2px 0;font-size:12px;line-height:1.7;color:#64748b;">普通通知仅保留站内提醒，重要与系统类通知才会发送邮件。</p>

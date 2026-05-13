@@ -18,5 +18,10 @@
   "mermaid": {
     "path": "vendor/mermaid.min.js",
     "type": "script"
+  },
+  "tailwind_app": {
+    "path": "css/tailwind-app.css",
+    "version": "tailwind-daisy-flowbite-20260513",
+    "type": "style"
   }
 }

@@ -1,15 +1,13 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="lanshare">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}课堂互动平台{% endblock %}</title>
 
     <!-- Core Design System (always loaded) -->
-    <link rel="stylesheet" href="/static/css/core.css">
-    <link rel="stylesheet" href="/static/css/message_center.css?v=private-attachments-20260513">
+    {% include "partials/ui_system_assets.html" %}
     {% if user_info is defined and user_info and user_info.role == 'teacher' %}
-    <link rel="stylesheet" href="/static/css/teacher_onboarding.css">
     {% endif %}
 
     {% block css %}{% endblock %}

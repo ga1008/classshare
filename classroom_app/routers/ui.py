@@ -1093,16 +1093,32 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
         )
         classroom_page["teaching_plan"] = teaching_plan
         if user["role"] == "student":
-            classroom_page["learning_progress"] = serialize_student_learning_progress(
-                conn,
-                class_offering_id,
-                int(user["id"]),
-            )
+            try:
+                classroom_page["learning_progress"] = serialize_student_learning_progress(
+                    conn,
+                    class_offering_id,
+                    int(user["id"]),
+                )
+            except Exception as exc:
+                print(f"[LEARNING_PROGRESS] 学生修为信息加载失败: {exc}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                classroom_page["learning_progress"] = None
         else:
-            classroom_page["learning_overview"] = build_class_learning_overview(
-                conn,
-                class_offering_id,
-            )
+            try:
+                classroom_page["learning_overview"] = build_class_learning_overview(
+                    conn,
+                    class_offering_id,
+                )
+            except Exception as exc:
+                print(f"[LEARNING_PROGRESS] 课堂修为概览加载失败: {exc}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                classroom_page["learning_overview"] = None
 
     try:
         record_behavior_event(

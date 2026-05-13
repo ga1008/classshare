@@ -1,21 +1,11 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="lanshare">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ page_title }} - 教师管理中心</title>
-    <link rel="stylesheet" href="/static/css/core.css">
-    <link rel="stylesheet" href="/static/css/layout.css">
-    <link rel="stylesheet" href="/static/css/buttons.css">
-    <link rel="stylesheet" href="/static/css/cards.css">
-    <link rel="stylesheet" href="/static/css/tables.css">
-    <link rel="stylesheet" href="/static/css/forms.css">
-    <link rel="stylesheet" href="/static/css/modals.css">
-    <link rel="stylesheet" href="/static/css/feedback.css">
-    <link rel="stylesheet" href="/static/css/toast.css">
-    <link rel="stylesheet" href="/static/css/message_center.css?v=cultivation-rank-20260508">
+    {% include "partials/ui_system_assets.html" %}
     {% if not embedded_mode %}
-    <link rel="stylesheet" href="/static/css/teacher_onboarding.css">
     {% endif %}
     {% block extra_head %}{% endblock %}
     <style>

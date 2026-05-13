@@ -1,18 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="lanshare">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>{{ paper.title }} - 在线考试</title>
-    <link rel="stylesheet" href="/static/css/core.css">
-    <link rel="stylesheet" href="/static/css/layout.css">
-    <link rel="stylesheet" href="/static/css/buttons.css">
-    <link rel="stylesheet" href="/static/css/forms.css">
-    <link rel="stylesheet" href="/static/css/cards.css">
-    <link rel="stylesheet" href="/static/css/toast.css">
-    <link rel="stylesheet" href="/static/css/markdown.css">
-    <link rel="stylesheet" href="/static/css/ai_chat.css">
-    <link rel="stylesheet" href="/static/css/teacher_whiteboard.css">
+    {% include "partials/ui_system_assets.html" %}
     <style>
         body {
             background-color: var(--bg-color);
@@ -347,6 +339,7 @@
         .q-number {
             background: var(--bg-color);
             color: var(--text-secondary);
+            flex: 0 0 auto;
             padding: 4px 8px;
             border-radius: var(--radius-sm);
             font-size: 0.8rem;
@@ -356,6 +349,7 @@
         }
 
         .q-body {
+            min-width: 0;
             font-weight: 500;
             color: var(--text-primary);
             line-height: 1.6;

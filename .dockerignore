@@ -9,6 +9,7 @@ docker.env
 venv/
 .venv/
 python_runtime/
+node_modules/
 
 attendance/
 chat_logs/
