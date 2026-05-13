@@ -1479,6 +1479,25 @@
         return localFiles.length + serverFiles.length + (hasDrawing(q.id) ? 1 : 0);
     }
 
+    function findUnsyncedQuestionDraft(allQuestions) {
+        for (const q of allQuestions) {
+            const qId = String(q.id);
+            const localFiles = getQuestionFileEntries(qId);
+            const serverFiles = Array.isArray(state.serverQuestionFiles?.[qId]) ? state.serverQuestionFiles[qId] : [];
+            const serverRegularFiles = serverFiles.filter(file => !(file.kind === 'exam_drawing' || file.kind === 'drawing' || String(file.relative_path || '').startsWith('exam_drawings/')));
+            if (localFiles.length > 0 && serverRegularFiles.length < localFiles.length) {
+                return q;
+            }
+            const drawing = state.drawings?.[qId];
+            const hasLocalDrawing = Boolean(drawing?.dataUrl);
+            const hasServerDrawing = serverFiles.some(file => file.kind === 'exam_drawing' || file.kind === 'drawing' || String(file.relative_path || '').startsWith('exam_drawings/'));
+            if (hasLocalDrawing && !hasServerDrawing) {
+                return q;
+            }
+        }
+        return null;
+    }
+
     function answerHasContent(q) {
         return Boolean(String(state.answers[q.id] || '').trim() || hasDrawing(q.id) || hasQuestionFiles(q.id));
     }
@@ -1583,6 +1602,7 @@
     }
 
     function renderServerDraftFiles(qId) {
+        if (getQuestionFileEntries(qId).length > 0) return '';
         const files = getServerQuestionFileEntries(qId)
             .filter(file => !(file.kind === 'exam_drawing' || file.kind === 'drawing' || String(file.relative_path || '').startsWith('exam_drawings/')));
         if (!files.length) return '';
@@ -1593,6 +1613,7 @@
                         <span class="text-primary">服务器草稿</span>
                         <span class="truncate" style="max-width:220px;" title="${esc(file.relative_path || file.file_name || '')}">${esc(file.file_name || file.original_filename || '题目附件')}</span>
                         <span class="text-xs text-muted">${file.file_size ? formatFileSize(file.file_size) : ''}</span>
+                        <button type="button" class="btn btn-ghost btn-sm p-1 ml-1 text-danger h-auto" style="flex-shrink:0;line-height:1;" data-remove-server-draft-question="${esc(qId)}" title="移除服务器草稿附件">&times;</button>
                     </div>
                 `).join('')}
             </div>
@@ -1739,6 +1760,10 @@
                 const drawingName = drawing?.fileName || makeDrawingFileName(q, getQuestionIndex(q.id));
                 const attachmentPolicy = getAttachmentPolicy(q);
                 const attachmentCount = getQuestionAttachmentCount(q);
+                const attachmentNeed = Math.max(attachmentPolicy.minCount, 1);
+                const attachmentStatusText = attachmentPolicy.required
+                    ? (attachmentCount >= attachmentNeed ? `已满足：${attachmentCount}/${attachmentNeed}` : `还需 ${Math.max(attachmentNeed - attachmentCount, 0)} 个附件`)
+                    : `已选 ${attachmentCount} 个`;
                 const safeQId = domIdSegment(q.id);
                 const attachmentHint = attachmentPolicy.description
                     || `可上传本题截图、报告、代码文件等；总附件限制与交卷附件一致，最多 ${MAX_FILE_COUNT} 个文件。`;
@@ -1750,7 +1775,7 @@
                                 <div class="question-attachment-head">
                                     <strong>本题附件</strong>
                                     <span class="question-attachment-badge ${attachmentPolicy.required ? 'required' : ''}" data-question-attachment-status="${q.id}">
-                                        ${attachmentPolicy.required ? `需要 ${Math.max(attachmentPolicy.minCount, 1)} 个附件` : `已选 ${attachmentCount} 个`}
+                                        ${attachmentStatusText}
                                     </span>
                                 </div>
                                 <div class="question-attachment-hint">${esc(attachmentHint)}${attachmentPolicy.allowedFileTypes.length ? ` 本题建议类型：${esc(attachmentPolicy.allowedFileTypes.join(', '))}。` : ''}${ALLOWED_FILE_TYPES.length ? ` 交卷允许类型：${esc(ALLOWED_FILE_TYPES_LABEL)}。` : ''}</div>
@@ -1991,6 +2016,9 @@
         document.querySelectorAll('[data-remove-drawing]').forEach(button => {
             button.addEventListener('click', () => removeDrawingForQuestion(button.dataset.removeDrawing));
         });
+        document.querySelectorAll('[data-remove-server-draft-question]').forEach(button => {
+            button.addEventListener('click', () => removeServerDraftFilesForQuestion(button.dataset.removeServerDraftQuestion));
+        });
 
         // Submit button
         const submitBtn = document.getElementById('submitExamBtn');
@@ -2049,6 +2077,21 @@
         saveToLocal();
         scheduleQuestionDraftUpload(qId, 200);
         renderSidebar();
+    }
+
+    function removeServerDraftFilesForQuestion(qId) {
+        const key = String(qId || '');
+        if (!key || !Array.isArray(state.serverQuestionFiles?.[key]) || !state.serverQuestionFiles[key].length) return;
+        state.serverQuestionFiles[key] = [];
+        const drawing = state.drawings?.[key];
+        if (drawing && !drawing.dataUrl && drawing.sourceUrl) {
+            delete state.drawings[key];
+        }
+        updateQuestionAttachmentStatus(key);
+        updateQuestionAnsweredState(key);
+        renderSidebar();
+        renderCurrentPage();
+        scheduleQuestionDraftUpload(key, 120);
     }
 
     function updateQuestionAnsweredState(qId) {
@@ -2407,7 +2450,11 @@
                 markPendingQuestionDraftsClean(pendingPayload);
                 useServerDraftFiles = Boolean(draftResp);
                 if (Number(draftResp?.dropped_file_count || 0) > 0) {
-                    showMessage('部分题目附件没有保存到服务器草稿，请检查文件类型或大小。', 'warning');
+                    throw new Error('部分题目附件没有保存到服务器草稿，请检查文件类型或大小后重新提交。');
+                }
+                const unsyncedQuestion = useServerDraftFiles ? findUnsyncedQuestionDraft(allQuestions) : null;
+                if (unsyncedQuestion) {
+                    throw new Error(`第 ${unsyncedQuestion.id} 题附件还没有完整同步到服务器草稿，请稍后重试。`);
                 }
             } catch (draftError) {
                 console.warn('Final draft sync failed before submit:', draftError);
@@ -2426,8 +2473,12 @@
                 return;
             }
             const formData = uploadManager ? uploadManager.buildFormData() : new FormData();
-            const questionAttachmentEntries = appendQuestionAttachmentFiles(formData, allQuestions);
-            const drawingEntries = await appendDrawingFiles(formData, allQuestions);
+            let questionAttachmentEntries = [];
+            let drawingEntries = [];
+            if (!useServerDraftFiles) {
+                questionAttachmentEntries = appendQuestionAttachmentFiles(formData, allQuestions);
+                drawingEntries = await appendDrawingFiles(formData, allQuestions);
+            }
             validateFormDataFileLimits(formData);
             const attachmentMap = new Map();
             if (useServerDraftFiles) {
