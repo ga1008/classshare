@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="/static/css/feedback.css">
 <link rel="stylesheet" href="/static/css/toast.css">
 <link rel="stylesheet" href="/static/css/ai_chat.css">
-<link rel="stylesheet" href="/static/css/classroom.css?v=classroom-tabs-fix-20260513">
+<link rel="stylesheet" href="/static/css/classroom.css?v=classroom-combobox-20260513">
 <link rel="stylesheet" href="/static/css/markdown.css">
 <link rel="stylesheet" href="/static/css/materials.css">
 <link rel="stylesheet" href="/static/css/learning_material_selector.css">
@@ -1176,9 +1176,28 @@
 
             <div class="discussion-room-body classroom-private-body discussion-panel" id="classroom-private-body" role="tabpanel" aria-labelledby="discussion-tab-private" hidden aria-hidden="true">
                 <div class="classroom-private-shell">
-                    <div class="classroom-private-contact-bar">
-                        <label class="chat-composer-sr-only" for="classroom-private-contact-select">选择一对一同学</label>
-                        <select id="classroom-private-contact-select" class="classroom-private-contact-select">
+                    <div class="classroom-private-contact-bar" id="classroom-private-contact-bar">
+                        <label class="chat-composer-sr-only" for="classroom-private-contact-input">输入姓名或学号选择一对一同学</label>
+                        <div class="classroom-private-contact-picker" id="classroom-private-contact-picker">
+                            <div class="classroom-private-contact-combobox">
+                                <input
+                                    type="text"
+                                    id="classroom-private-contact-input"
+                                    class="classroom-private-contact-input"
+                                    autocomplete="off"
+                                    role="combobox"
+                                    aria-autocomplete="list"
+                                    aria-expanded="false"
+                                    aria-controls="classroom-private-contact-list"
+                                    placeholder="输入姓名或学号搜索本班同学"
+                                >
+                                <button type="button" class="classroom-private-contact-toggle" id="classroom-private-contact-toggle" title="展开同学列表" aria-label="展开同学列表">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+                                </button>
+                            </div>
+                            <div class="classroom-private-contact-list" id="classroom-private-contact-list" role="listbox" hidden></div>
+                        </div>
+                        <select id="classroom-private-contact-select" class="classroom-private-contact-select" hidden aria-hidden="true" tabindex="-1">
                             <option value="">正在加载本班同学...</option>
                         </select>
                         <span class="classroom-private-status" id="classroom-private-status" aria-live="polite">切换到一对一后选择同学</span>
@@ -1533,8 +1552,8 @@
 <script type="module" src="/static/js/feedback.js"></script>
 <script type="module">
     import * as ui from '/static/js/ui.js';
-    import { ClassroomChat } from '/static/js/chat.js?v=classroom-tabs-fix-20260513';
-    import { ClassroomPrivateMessages } from '/static/js/classroom_private_messages.js?v=classroom-tabs-fix-20260513';
+    import { ClassroomChat } from '/static/js/chat.js?v=classroom-combobox-20260513';
+    import { ClassroomPrivateMessages } from '/static/js/classroom_private_messages.js?v=classroom-combobox-20260513';
     import * as fileApp from '/static/js/app_files.js';
     import * as materialsApp from '/static/js/classroom_materials.js?v=learning-progress-20260503';
     import * as examApp from '/static/js/app_exams.js';
@@ -1616,6 +1635,9 @@
             privateComposerId: 'classroom-private-composer',
             tabSelector: '[data-classroom-message-tab]',
             contactSelectId: 'classroom-private-contact-select',
+            contactInputId: 'classroom-private-contact-input',
+            contactListId: 'classroom-private-contact-list',
+            contactToggleId: 'classroom-private-contact-toggle',
             statusId: 'classroom-private-status',
             conversationId: 'classroom-private-conversation',
             formId: 'classroom-private-form',
