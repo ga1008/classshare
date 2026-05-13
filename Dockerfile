@@ -20,7 +20,8 @@ COPY requirements.txt requirements.lock.txt requirements-docker.txt ./
 RUN python -m pip install --no-cache-dir -r requirements.txt -i "${PIP_INDEX_URL}"
 
 COPY deployment/docker/entrypoint.sh /usr/local/bin/lanshare-entrypoint
-RUN chmod +x /usr/local/bin/lanshare-entrypoint
+RUN sed -i 's/\r$//' /usr/local/bin/lanshare-entrypoint \
+    && chmod +x /usr/local/bin/lanshare-entrypoint
 
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
@@ -56,5 +57,5 @@ RUN mkdir -p \
 
 EXPOSE 8000 8001
 
-ENTRYPOINT ["lanshare-entrypoint"]
+ENTRYPOINT ["/usr/local/bin/lanshare-entrypoint"]
 CMD ["main"]
