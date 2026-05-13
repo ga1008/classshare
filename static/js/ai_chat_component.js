@@ -16,9 +16,19 @@ const AI_CHAT_DESKTOP_MARGIN = 24;
 const AI_CHAT_MOBILE_MARGIN = 12;
 const AI_CHAT_MOBILE_BREAKPOINT = 768;
 
+function notifyAIChat(message, type = 'info') {
+    const notifier = window.showMessage || window.UI?.showMessage || window.UI?.showToast;
+    if (typeof notifier === 'function') {
+        notifier(message, type);
+    } else {
+        console[type === 'error' ? 'error' : 'log'](message);
+    }
+}
+
 class AIChatComponent {
     constructor(options) {
         this.classOfferingId = options.classOfferingId;
+        this.contextPromptExtra = String(options.contextPromptExtra || '').trim();
         if (!this.classOfferingId) {
             console.error("AIChatComponent: classOfferingId is required.");
         }
@@ -398,9 +408,9 @@ class AIChatComponent {
         this.deepThinkBtn.classList.toggle('active', this.isDeepThinking);
 
         if (this.isDeepThinking) {
-            showMessage('已开启深度思考模式', 'success');
+            notifyAIChat('已开启深度思考模式', 'success');
         } else {
-            showMessage('已关闭深度思考模式', 'success');
+            notifyAIChat('已关闭深度思考模式', 'success');
         }
     }
 
@@ -721,7 +731,7 @@ class AIChatComponent {
                 await this.startNewSession();
             }
         } catch (err) {
-            showMessage(`AI 助手加载失败: ${err.message}`, 'error');
+            notifyAIChat(`AI 助手加载失败: ${err.message}`, 'error');
         }
     }
     async loadSession(uuid) {
@@ -771,7 +781,7 @@ class AIChatComponent {
                 );
             });
         } catch (err) {
-            showMessage(`加载历史失败: ${err.message}`, 'error');
+            notifyAIChat(`加载历史失败: ${err.message}`, 'error');
         }
     }
     async startNewSession() {
@@ -786,7 +796,7 @@ class AIChatComponent {
             this.messagesBox.innerHTML = '';
             this.renderMessage('system', '已开始新对话。');
         } catch (err) {
-            showMessage(`创建新会话失败: ${err.message}`, 'error');
+            notifyAIChat(`创建新会话失败: ${err.message}`, 'error');
         }
     }
 
@@ -799,7 +809,7 @@ class AIChatComponent {
         if (!message && this.pendingFiles.length === 0) return;
         if (this.isLoading) return;
         if (!this.currentSessionUUID) {
-            showMessage('请先开始一个新会话。', 'error');
+            notifyAIChat('请先开始一个新会话。', 'error');
             return;
         }
 
@@ -825,6 +835,9 @@ class AIChatComponent {
         formData.append('session_uuid', this.currentSessionUUID);
         formData.append('class_offering_id', this.classOfferingId);
         formData.append('deep_thinking', this.isDeepThinking); // 新增参数
+        if (this.contextPromptExtra) {
+            formData.append('context_prompt_extra', this.contextPromptExtra);
+        }
         this.pendingFiles.forEach(file => {
             formData.append('files', file);
         });
@@ -1144,7 +1157,7 @@ class AIChatComponent {
 
         for (const file of e.target.files) {
             if (this.pendingFiles.length >= 5) {
-                showMessage('一次最多上传5个文件。', 'error');
+                notifyAIChat('一次最多上传5个文件。', 'error');
                 break;
             }
 
@@ -1159,7 +1172,7 @@ class AIChatComponent {
                 this.pendingFiles.push(file);
                 acceptedCount += 1;
             } else {
-                showMessage(`不支持的文件类型: ${file.name}`, 'warning');
+                notifyAIChat(`不支持的文件类型: ${file.name}`, 'warning');
             }
         }
         this.renderPreviews();
@@ -1245,11 +1258,11 @@ class AIChatComponent {
                 }, 2000);
             } else {
                 // 如果是代码块复制 (没有传入事件)，使用 showMessage
-                showMessage('代码已复制!', 'success');
+                notifyAIChat('代码已复制!', 'success');
             }
         }).catch(err => {
             console.error('复制失败: ', err);
-            showMessage('复制失败，请检查浏览器权限。', 'error');
+            notifyAIChat('复制失败，请检查浏览器权限。', 'error');
         });
     }
 

@@ -941,10 +941,11 @@ EXAM_GENERATION_SYSTEM_PROMPT = """
         {
           "id": "q4",
           "type": "textarea",
-          "text": "问答题内容",
+          "text": "### 问答题内容\n请用简洁 Markdown 作答要求组织题干，例如列表、`命令` 或代码块。",
           "placeholder": "提示文本",
           "answer": "参考答案",
           "explanation": "解析内容",
+          "allow_ai": false,
           "attachment_requirements": {
             "enabled": true,
             "required": false,
@@ -965,12 +966,13 @@ EXAM_GENERATION_SYSTEM_PROMPT = """
 1. id字段格式：q1, q2, q3... 或 p1_q1, p1_q2...
 2. type字段必须是：radio（单选题）、checkbox（多选题）、text（填空题）、textarea（问答题）
 3. 对于radio和checkbox类型，必须提供options数组（至少2个选项）
-4. 对于text和textarea类型，可以提供placeholder作为提示文本
+4. 题干、选项、解析都支持简易 Markdown；请优先使用 **加粗**、列表、`行内代码`、```代码块```，但必须保持合法 JSON：双引号要转义，换行用 \n 或由 JSON 序列化器处理，不要在字符串外直接写 Markdown 符号
 5. answer字段：radio类型为单个选项字母（如"A"），checkbox类型为选项字母数组（如["A", "B"]），text和textarea类型为字符串答案
 6. explanation字段：每道题的解析，说明为什么答案正确或其他选项为什么错误
 7. 试卷可以包含多个pages（部分），每个部分有name和questions数组
 8. 根据教师要求的总题数、题型分布和难度生成题目
-9. 如果问答题要求学生上传截图、代码文件、报告或绘图，请只在textarea题目中添加attachment_requirements字段；required表示是否硬性要求，min_count/max_count表示本题附件数量约束，allowed_file_types可写建议后缀或MIME类型，description写清楚附件条件
+9. 如果问答题要求学生上传截图、代码文件、报告或绘图，请只在textarea题目中添加attachment_requirements字段；required表示是否硬性要求，min_count/max_count表示本题附件数量约束，min_count大于0时必须同时视为required=true，allowed_file_types可写建议后缀或MIME类型，description写清楚附件条件
+10. 开放性题目可设置 allow_ai=true，表示学生答题页允许打开课堂 AI；闭卷题、记忆性客观题不要开启
 """
 
 # --- Lifespan (替换旧的 Startup/Shutdown) ---
@@ -1881,6 +1883,8 @@ def _normalize_attachment_requirements(raw_question: dict[str, Any], question_ty
 
     min_count = _coerce_optional_int(raw.get("min_count", raw.get("min")))
     max_count = _coerce_optional_int(raw.get("max_count", raw.get("max")))
+    if min_count is not None and min_count > 0:
+        required = True
     if required and (min_count is None or min_count < 1):
         min_count = 1
     if max_count is not None and min_count is not None and max_count < min_count:
@@ -1960,6 +1964,16 @@ def _normalize_exam_question(raw_question: Any, ordinal: int) -> dict[str, Any] 
         question.pop("attachment_requirements", None)
         question.pop("attachment_requirement", None)
         question.pop("answer_attachments", None)
+    allow_ai = _coerce_bool(
+        raw_question.get("allow_ai", raw_question.get("allow_student_ai", raw_question.get("ai_allowed"))),
+        False,
+    )
+    if allow_ai:
+        question["allow_ai"] = True
+    else:
+        question.pop("allow_ai", None)
+        question.pop("allow_student_ai", None)
+        question.pop("ai_allowed", None)
     return question
 
 

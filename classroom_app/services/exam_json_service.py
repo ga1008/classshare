@@ -11,6 +11,16 @@ EXAM_JSON_MAX_BYTES = 2 * 1024 * 1024
 EXAM_JSON_TEMPLATE: dict[str, Any] = {
     "title": "试卷标题",
     "description": "试卷说明，可留空",
+    "exam_config": {
+        "allow_student_ai": False,
+        "ai_policy_note": "开放性实验、项目题或综合论述题可设为 true；客观闭卷题建议保持 false",
+    },
+    "json_authoring_notes": [
+        "题干、选项、解析均支持简易 Markdown，例如 **重点**、`命令`、列表和 ```代码块```。",
+        "Markdown 中的反斜杠、双引号和换行必须保持合法 JSON 转义；推荐先让第三方 AI 输出 JSON，再用 JSON 校验器检查。",
+        "如果某题允许学生答题时使用课堂 AI，可在题目上写 allow_ai: true；也可以只在 exam_config.allow_student_ai 开启整卷允许。",
+        "附件要求只应写在 textarea 问答题里；min_count 大于 0 会被视为必传附件并在学生端显示必传标记。",
+    ],
     "pages": [
         {
             "name": "第一部分",
@@ -42,10 +52,11 @@ EXAM_JSON_TEMPLATE: dict[str, Any] = {
                 {
                     "id": "p1_q4",
                     "type": "textarea",
-                    "text": "问答题题干",
+                    "text": "### 问答题题干\n请结合实验现象说明：\n\n- 关键步骤\n- 结果截图或代码片段\n- 你对异常情况的分析",
                     "placeholder": "请写出完整作答过程",
                     "answer": "参考答案",
                     "explanation": "解析说明，可留空",
+                    "allow_ai": False,
                     "attachment_requirements": {
                         "enabled": True,
                         "required": False,
@@ -78,12 +89,21 @@ def normalize_exam_json_payload(payload: Any) -> dict[str, Any]:
     root = _unwrap_payload(payload)
     title = ""
     description = ""
+    exam_config: dict[str, Any] = {}
 
     if isinstance(root, list):
         raw_pages: Any = [{"name": "试卷题目", "questions": root}]
     elif isinstance(root, dict):
         title = _first_text(root, ("title", "name", "试卷标题"))
         description = _first_text(root, ("description", "desc", "说明"))
+        raw_config = root.get("exam_config") or root.get("config")
+        if isinstance(raw_config, dict):
+            exam_config = {
+                "allow_student_ai": _coerce_bool(
+                    raw_config.get("allow_student_ai", raw_config.get("student_ai_enabled", raw_config.get("allow_ai"))),
+                    False,
+                )
+            }
         if "pages" in root:
             raw_pages = root["pages"]
         elif "questions" in root:
@@ -98,6 +118,7 @@ def normalize_exam_json_payload(payload: Any) -> dict[str, Any]:
     return {
         "title": title,
         "description": description,
+        "exam_config": exam_config,
         "questions": {"pages": pages},
         "stats": stats,
     }
@@ -204,6 +225,16 @@ def _normalize_question(raw_question: Any, page_index: int, question_index: int,
         question.pop("attachment_requirements", None)
         question.pop("attachment_requirement", None)
         question.pop("answer_attachments", None)
+    allow_ai = _coerce_bool(
+        raw_question.get("allow_ai", raw_question.get("allow_student_ai", raw_question.get("ai_allowed"))),
+        False,
+    )
+    if allow_ai:
+        question["allow_ai"] = True
+    else:
+        question.pop("allow_ai", None)
+        question.pop("allow_student_ai", None)
+        question.pop("ai_allowed", None)
     return question
 
 
@@ -315,6 +346,8 @@ def _normalize_attachment_requirements(raw_question: dict[str, Any], question_ty
 
     min_count = _coerce_optional_int(raw.get("min_count", raw.get("min")))
     max_count = _coerce_optional_int(raw.get("max_count", raw.get("max")))
+    if min_count is not None and min_count > 0:
+        required = True
     if required and (min_count is None or min_count < 1):
         min_count = 1
     if max_count is not None and min_count is not None and max_count < min_count:

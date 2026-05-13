@@ -102,6 +102,97 @@ from ..services.teacher_account_service import (
 router = APIRouter()
 
 
+def _truthy_config(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on", "允许", "是"}
+
+
+def _load_json_object(raw_value: Any) -> dict[str, Any]:
+    if isinstance(raw_value, dict):
+        return raw_value
+    if not raw_value:
+        return {}
+    try:
+        parsed = json.loads(raw_value) if isinstance(raw_value, str) else raw_value
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _iter_exam_questions(paper_data: dict[str, Any]) -> list[dict[str, Any]]:
+    questions: list[dict[str, Any]] = []
+    for page in paper_data.get("pages", []) or []:
+        if not isinstance(page, dict):
+            continue
+        for question in page.get("questions", []) or []:
+            if isinstance(question, dict):
+                questions.append(question)
+    return questions
+
+
+def _exam_allows_student_ai(paper_data: dict[str, Any], exam_config: dict[str, Any]) -> bool:
+    if _truthy_config(
+        exam_config.get("allow_student_ai")
+        or exam_config.get("student_ai_enabled")
+        or exam_config.get("allow_ai")
+    ):
+        return True
+    return any(
+        _truthy_config(
+            question.get("allow_ai")
+            or question.get("allow_student_ai")
+            or question.get("ai_allowed")
+        )
+        for question in _iter_exam_questions(paper_data)
+    )
+
+
+def _build_exam_ai_context(assignment: dict[str, Any], paper: dict[str, Any], paper_data: dict[str, Any]) -> str:
+    lines = [
+        "【当前考试上下文】",
+        f"- 作业/考试标题：{assignment.get('title') or paper.get('title') or assignment.get('id')}",
+        f"- 试卷标题：{paper.get('title') or ''}",
+    ]
+    if paper.get("description"):
+        lines.append(f"- 试卷说明：{str(paper.get('description'))[:800]}")
+    allowed_question_ids = []
+    question_lines = []
+    for index, question in enumerate(_iter_exam_questions(paper_data), start=1):
+        allow_ai = _truthy_config(
+            question.get("allow_ai")
+            or question.get("allow_student_ai")
+            or question.get("ai_allowed")
+        )
+        if allow_ai:
+            allowed_question_ids.append(str(question.get("id") or index))
+        text = re.sub(r"\s+", " ", str(question.get("text") or "")).strip()
+        attachment = question.get("attachment_requirements") if isinstance(question.get("attachment_requirements"), dict) else {}
+        attachment_note = ""
+        if attachment:
+            min_count = attachment.get("min_count") or attachment.get("min")
+            try:
+                min_count_num = int(min_count or 0)
+            except (TypeError, ValueError):
+                min_count_num = 0
+            required = _truthy_config(attachment.get("required")) or min_count_num > 0
+            if required or attachment.get("description"):
+                attachment_note = f"；附件要求：{attachment.get('description') or ('至少' + str(min_count_num or 1) + '个附件')}"
+        question_lines.append(
+            f"{index}. [{question.get('id') or index}] {question.get('type') or 'question'}：{text[:320]}{attachment_note}"
+        )
+    if allowed_question_ids:
+        lines.append(f"- 教师允许使用课堂 AI 的题目：{', '.join(allowed_question_ids)}")
+    else:
+        lines.append("- 教师允许使用课堂 AI：整卷允许")
+    lines.append("【试卷题目摘要】")
+    lines.extend(question_lines[:80])
+    lines.append("请只围绕当前课堂、试卷和学生提问提供启发式帮助，不要直接替学生完成整份答案。")
+    return "\n".join(lines)
+
+
 def _build_login_page_context(request: Request, next_url: Optional[str]) -> dict:
     safe_next = sanitize_next_path(next_url, fallback="/dashboard")
     return {
@@ -2713,6 +2804,15 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
         paper = conn.execute("SELECT * FROM exam_papers WHERE id = ?", (assignment['exam_paper_id'],)).fetchone()
         if not paper:
             raise HTTPException(404, "试卷不存在")
+        paper_dict = dict(paper)
+        paper_data = _load_json_object(paper_dict.get("questions_json"))
+        exam_config = _load_json_object(paper_dict.get("exam_config_json"))
+        exam_ai_allowed = (
+            user["role"] == "student"
+            and bool(assignment.get("class_offering_id"))
+            and _exam_allows_student_ai(paper_data, exam_config)
+        )
+        exam_ai_context = _build_exam_ai_context(assignment, paper_dict, paper_data) if exam_ai_allowed else ""
 
         # 检查学生是否已提交
         submission = None
@@ -2769,9 +2869,11 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
         "user_info": user,
         "assignment": assignment,
         "assignment_back_url": assignment_back_url,
-        "paper": dict(paper),
+        "paper": paper_dict,
         "submission": submission,
         "submission_files": submission_files,
+        "exam_ai_allowed": exam_ai_allowed,
+        "exam_ai_context": exam_ai_context,
         "can_withdraw_submission": can_withdraw_submission,
         "can_resubmit_submission": can_resubmit_submission,
         "resubmission_due_at": submission.get("resubmission_due_at") if submission else None,

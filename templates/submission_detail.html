@@ -158,6 +158,19 @@
         color: var(--text-primary);
         margin-bottom: 8px;
     }
+    .question-card .q-title.md-content > :first-child,
+    .question-card .q-content .md-content > :first-child,
+    .question-card .q-options .md-content > :first-child {
+        margin-top: 0;
+    }
+    .question-card .q-title.md-content > :last-child,
+    .question-card .q-content .md-content > :last-child,
+    .question-card .q-options .md-content > :last-child {
+        margin-bottom: 0;
+    }
+    .question-card .q-options .md-content p {
+        margin: 0;
+    }
     .question-card .q-options {
         margin-bottom: 10px;
         padding-left: 16px;
@@ -177,6 +190,9 @@
         background: var(--surface-color);
         border-radius: var(--radius-sm);
         border: 1px solid var(--border-color);
+    }
+    .question-card .q-content .md-content {
+        white-space: normal;
     }
     .question-card .q-content pre { margin: 8px 0 0 0; }
 
@@ -865,7 +881,7 @@
                         questionText: key,
                     });
                     html += `<div class="question-card">
-                        <div class="q-title">${escapeHtml(String(key))}</div>
+                        <div class="q-title md-content">${renderMarkdownHtml(String(key))}</div>
                         <div class="q-answer-label">学生答案</div>
                         <div class="q-content">${answerText ? formatAnswer(val) : '<span class="empty-answer">(未作答)</span>'}</div>
                         ${renderAnswerAttachments(val)}
@@ -885,7 +901,7 @@
                         questionText: item.question || q,
                     });
                     html += `<div class="question-card">
-                        <div class="q-title">${escapeHtml(String(q))}</div>
+                        <div class="q-title md-content">${renderMarkdownHtml(String(q))}</div>
                         <div class="q-answer-label">学生答案</div>
                         <div class="q-content">${a ? formatAnswer(a) : '<span class="empty-answer">(未作答)</span>'}</div>
                         ${renderAnswerAttachments(item)}
@@ -900,7 +916,7 @@
                         questionText: key,
                     });
                     html += `<div class="question-card">
-                        <div class="q-title">${escapeHtml(String(key))}</div>
+                        <div class="q-title md-content">${renderMarkdownHtml(String(key))}</div>
                         <div class="q-answer-label">学生答案</div>
                         <div class="q-content">${formatAnswer(value)}</div>
                         ${renderAnswerAttachments(value)}
@@ -1015,7 +1031,7 @@
     function renderQuestionCard(q, studentAnswer, index) {
         const answerText = extractAnswerText(studentAnswer);
         let html = `<div class="question-card">`;
-        html += `<div class="q-title">${escapeHtml(q.text)}</div>`;
+        html += `<div class="q-title md-content">${renderMarkdownHtml(q.text)}</div>`;
 
         // Render options for radio/checkbox questions
         if (q.options && Array.isArray(q.options)) {
@@ -1024,7 +1040,7 @@
                 const isSelected = answerText === opt;
                 html += `<li class="${isSelected ? 'selected' : ''}">`;
                 if (isSelected) html += `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="vertical-align:-1px;margin-right:4px"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
-                html += `${escapeHtml(opt)}</li>`;
+                html += `<span class="md-content">${renderMarkdownHtml(opt)}</span></li>`;
             });
             html += `</ul>`;
         }
@@ -1070,7 +1086,7 @@
         const isCode = text.includes('\n') && (text.includes('def ') || text.includes('import ') ||
             text.includes('function ') || text.includes('class ') || text.includes('```'));
         if (isCode) return `<pre><code>${escapeHtml(text)}</code></pre>`;
-        return escapeHtml(text);
+        return `<div class="md-content">${renderMarkdownHtml(text)}</div>`;
     }
 
     const previewCache = new Map();
