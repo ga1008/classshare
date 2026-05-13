@@ -96,6 +96,53 @@
         background: var(--warning-light);
         color: var(--text-primary);
     }
+    .grade-feedback-card {
+        border-color: rgba(99, 102, 241, 0.16);
+        background: rgba(255, 255, 255, 0.98);
+    }
+    .grade-feedback-meta {
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        font-weight: 500;
+    }
+    .question-feedback-note {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin-bottom: var(--spacing-md);
+        padding: 10px 12px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.9);
+        color: var(--text-muted);
+        font-size: 0.88rem;
+        line-height: 1.55;
+    }
+    .grading-question-feedback {
+        margin-top: var(--spacing-md);
+        padding: 12px 14px;
+        border: 1px solid rgba(99, 102, 241, 0.18);
+        border-left: 3px solid var(--primary-color);
+        border-radius: 8px;
+        background: rgba(238, 242, 255, 0.56);
+        animation: feedback-rise 0.28s ease both;
+    }
+    .grading-question-feedback__label {
+        margin-bottom: 8px;
+        color: var(--text-primary);
+        font-size: 0.82rem;
+        font-weight: 700;
+    }
+    .grading-question-feedback__body {
+        font-size: 0.92rem;
+    }
+    .grading-question-feedback__body > :last-child {
+        margin-bottom: 0;
+    }
+    @keyframes feedback-rise {
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
 
     /* Answer cards */
     .question-card {
@@ -411,7 +458,20 @@
     .score-input-wrapper input:focus { border-color: var(--primary-color); }
     .score-input-wrapper span { font-size: 1.2rem; color: var(--text-muted); }
     .grading-feedback-group { flex: 1; min-width: 250px; }
-    .grading-feedback-group label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; }
+    .grading-feedback-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--spacing-sm);
+        margin-bottom: 8px;
+    }
+    .grading-feedback-group label { display: block; font-size: 0.85rem; color: var(--text-muted); }
+    .grading-feedback-hint {
+        margin-top: 6px;
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        line-height: 1.5;
+    }
     .grading-actions {
         width: 100%;
         display: flex;
@@ -432,6 +492,15 @@
     @media (max-width: 768px) {
         .grading-body { flex-direction: column; }
         .grading-score-group { flex: none; width: 100%; }
+        .grading-feedback-head {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .grading-question-feedback {
+            animation: none;
+        }
     }
 </style>
 {% endblock %}
@@ -478,11 +547,13 @@
                             {% if submission.resubmission_allowed %}badge-warning
                             {% elif submission.status == 'graded' %}badge-success
                             {% elif submission.status == 'grading' %}badge-warning
+                            {% elif submission.status == 'grading_failed' %}badge-warning
                             {% elif submission.status == 'submitted' %}badge-primary
                             {% else %}badge-secondary{% endif %}">
                             {% if submission.resubmission_allowed %}待重交
                             {% elif submission.status == 'graded' %}已批改
                             {% elif submission.status == 'grading' %}批改中
+                            {% elif submission.status == 'grading_failed' %}AI批改失败
                             {% elif submission.status == 'submitted' %}已提交
                             {% else %}{{ submission.status }}{% endif %}
                         </span>
@@ -534,12 +605,13 @@
 
     <!-- Teacher Feedback Section (shown if graded) -->
     {% if submission.feedback_md %}
-    <div class="card">
+    <div class="card grade-feedback-card">
         <div class="card-header">
-            <h2 class="card-title text-base m-0">教师评语</h2>
+            <h2 class="card-title text-base m-0">批改总览</h2>
+            <span class="grade-feedback-meta">显示给学生的总体反馈</span>
         </div>
         <div class="card-body">
-            <div class="md-content" id="teacher-feedback"></div>
+            <div class="md-content" id="teacher-feedback-overview"></div>
         </div>
     </div>
     {% endif %}
@@ -549,8 +621,13 @@
         <div class="card-header">
             <h2 class="card-title text-base m-0">答题内容</h2>
         </div>
-        <div class="card-body" id="answers-container">
-            <div class="spinner mx-auto"></div>
+        <div class="card-body">
+            {% if submission.feedback_md %}
+            <div class="question-feedback-note" id="question-feedback-note" hidden></div>
+            {% endif %}
+            <div id="answers-container">
+                <div class="spinner mx-auto"></div>
+            </div>
         </div>
     </div>
 
@@ -667,9 +744,13 @@
                 </div>
             </div>
             <div class="grading-feedback-group">
-                <label>评语 (支持 Markdown)</label>
+                <div class="grading-feedback-head">
+                    <label>评语 (支持 Markdown)</label>
+                    <button type="button" class="btn btn-outline btn-sm" id="insert-feedback-template-btn">插入逐题模板</button>
+                </div>
                 <textarea id="grade-feedback" class="form-control" rows="5"
                           placeholder="输入评语，给出具体反馈...">{{ submission.feedback_md or '' }}</textarea>
+                <p class="grading-feedback-hint">建议保留“总览评语 + 逐题反馈”结构，学生端会自动把第 N 题的错误点显示到对应答案旁。</p>
             </div>
             <div class="grading-actions">
                 <button class="btn btn-outline" onclick="history.back()">取消</button>
@@ -692,14 +773,22 @@
 <script type="module">
     import { apiFetch } from '{{ asset_url("js/api.js") }}';
     import { renderFilePreview } from '{{ asset_url("js/file_preview.js") }}';
-    import { showToast, openModal, closeModal, renderMarkdown, escapeHtml } from '{{ asset_url("js/ui.js") }}';
+    import { showToast, escapeHtml } from '{{ asset_url("js/ui.js") }}';
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
+    import {
+        findQuestionFeedback,
+        parseGradingFeedback,
+        renderMarkdownHtml,
+        renderQuestionFeedbackHtml
+    } from '/static/js/grading_feedback.js?v=20260513';
 
     const submissionId = {{ submission.id }};
     const assignmentId = "{{ assignment.id }}";
     const answersJsonRaw = {{ submission.answers_json | tojson }};
     const examQuestions = {{ exam_questions | tojson if exam_questions else 'null' }};
     const submissionFiles = {{ submission_files | tojson }};
+    const submissionFeedbackMd = {{ (submission.feedback_md or '') | tojson }};
+    const gradingFeedback = parseGradingFeedback(submissionFeedbackMd);
     const canManageSubmissionFiles = {{ (can_manage_submission_files | default(false)) | tojson }};
     const aiGradingAllowedFileTypes = {{ (ai_grading_upload_extensions | default([])) | tojson }};
     const maxSubmissionFileCount = {{ max_submission_file_count | default(0) }};
@@ -724,7 +813,7 @@
 
     // Render teacher feedback markdown
     {% if submission.feedback_md %}
-    renderMarkdown('teacher-feedback', {{ submission.feedback_md | tojson }});
+    document.getElementById('teacher-feedback-overview').innerHTML = renderMarkdownHtml(gradingFeedback.overviewMd || submissionFeedbackMd);
     {% endif %}
 
     // Parse answers JSON
@@ -771,11 +860,16 @@
                 html += `<h4 class="text-sm font-semibold text-muted uppercase tracking-wide mt-lg mb-2">其他内容</h4>`;
                 extraAnswers.forEach(([key, val]) => {
                     const answerText = extractAnswerText(val);
+                    const feedback = findQuestionFeedback(gradingFeedback, {
+                        questionId: key,
+                        questionText: key,
+                    });
                     html += `<div class="question-card">
                         <div class="q-title">${escapeHtml(String(key))}</div>
                         <div class="q-answer-label">学生答案</div>
                         <div class="q-content">${answerText ? formatAnswer(val) : '<span class="empty-answer">(未作答)</span>'}</div>
                         ${renderAnswerAttachments(val)}
+                        ${renderQuestionFeedbackHtml(feedback)}
                     </div>`;
                 });
             }
@@ -785,26 +879,39 @@
                 answers.forEach((item, i) => {
                     const q = item.question || item.question_id || `第 ${i + 1} 题`;
                     const a = extractAnswerText(item);
+                    const feedback = findQuestionFeedback(gradingFeedback, {
+                        index: i + 1,
+                        questionId: item.question_id,
+                        questionText: item.question || q,
+                    });
                     html += `<div class="question-card">
                         <div class="q-title">${escapeHtml(String(q))}</div>
                         <div class="q-answer-label">学生答案</div>
                         <div class="q-content">${a ? formatAnswer(a) : '<span class="empty-answer">(未作答)</span>'}</div>
                         ${renderAnswerAttachments(item)}
+                        ${renderQuestionFeedbackHtml(feedback)}
                     </div>`;
                 });
             } else if (typeof answers === 'object') {
-                Object.entries(answers).forEach(([key, value]) => {
+                Object.entries(answers).forEach(([key, value], index) => {
+                    const feedback = findQuestionFeedback(gradingFeedback, {
+                        index: index + 1,
+                        questionId: key,
+                        questionText: key,
+                    });
                     html += `<div class="question-card">
                         <div class="q-title">${escapeHtml(String(key))}</div>
                         <div class="q-answer-label">学生答案</div>
                         <div class="q-content">${formatAnswer(value)}</div>
                         ${renderAnswerAttachments(value)}
+                        ${renderQuestionFeedbackHtml(feedback)}
                     </div>`;
                 });
             }
         }
 
         container.innerHTML = html || '<p class="text-muted text-center p-xl">暂无答题内容</p>';
+        updateQuestionFeedbackNote();
     }
 
     /** Extract a scalar answer value from any storage format */
@@ -931,8 +1038,30 @@
         }
 
         html += renderAnswerAttachments(studentAnswer);
+        html += renderQuestionFeedbackHtml(findQuestionFeedback(gradingFeedback, {
+            index,
+            questionId: q.id,
+            questionText: q.text,
+        }));
         html += `</div>`;
         return html;
+    }
+
+    function updateQuestionFeedbackNote() {
+        const note = document.getElementById('question-feedback-note');
+        if (!note || !submissionFeedbackMd) return;
+        note.hidden = false;
+        if (gradingFeedback.hasQuestionFeedback) {
+            note.innerHTML = `
+                <span aria-hidden="true">●</span>
+                <span>已识别 ${gradingFeedback.questions.length} 条逐题反馈，错误点会跟随对应题目显示。</span>
+            `;
+            return;
+        }
+        note.innerHTML = `
+            <span aria-hidden="true">●</span>
+            <span>本次评语尚未写成逐题结构，学生端会先展示总览评语；之后使用模板或 AI 批改会自动把错误点放到对应题目下。</span>
+        `;
     }
 
     function formatAnswer(value) {
@@ -1133,6 +1262,62 @@
             showToast(error.message || '批改失败', 'error');
         }
     };
+
+    function collectQuestionsForFeedbackTemplate() {
+        const questions = [];
+        if (examQuestions?.pages) {
+            examQuestions.pages.forEach((page) => {
+                (page.questions || []).forEach((question, index) => {
+                    questions.push({
+                        id: question.id || `q${questions.length + 1}`,
+                        text: question.text || `第 ${questions.length + 1} 题`,
+                    });
+                });
+            });
+        }
+        if (!questions.length) {
+            const answers = parseAnswersJson();
+            if (Array.isArray(answers)) {
+                answers.forEach((item, index) => {
+                    questions.push({
+                        id: item.question_id || `q${index + 1}`,
+                        text: item.question || item.question_id || `第 ${index + 1} 题`,
+                    });
+                });
+            } else if (answers && typeof answers === 'object') {
+                Object.keys(answers).forEach((key, index) => {
+                    questions.push({ id: key || `q${index + 1}`, text: key || `第 ${index + 1} 题` });
+                });
+            }
+        }
+        if (!questions.length) {
+            questions.push({ id: 'q1', text: '综合答题区' });
+        }
+        return questions;
+    }
+
+    function buildFeedbackTemplate() {
+        const questions = collectQuestionsForFeedbackTemplate();
+        const questionSections = questions.map((question, index) => (
+            `### 第 ${index + 1} 题\n`
+            + `- 错误点：\n`
+            + `- 图片/附件问题：\n`
+            + `- 多余或缺失内容：\n`
+            + `- 改进建议：\n`
+        )).join('\n');
+        return `## 总览评语\n\n## 逐题反馈\n\n${questionSections}`.trim();
+    }
+
+    document.getElementById('insert-feedback-template-btn')?.addEventListener('click', () => {
+        const feedbackEl = document.getElementById('grade-feedback');
+        if (!feedbackEl) return;
+        const template = buildFeedbackTemplate();
+        feedbackEl.value = feedbackEl.value.trim()
+            ? `${feedbackEl.value.trim()}\n\n${template}`
+            : template;
+        feedbackEl.focus();
+        showToast('已插入逐题反馈模板', 'success');
+    });
 
     // AI Regrade
     window.aiRegrade = async function() {

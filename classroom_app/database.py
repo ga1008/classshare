@@ -1495,6 +1495,43 @@ def init_database():
                              )
                          ''')
 
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS submission_drafts
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             assignment_id TEXT NOT NULL,
+                             student_pk_id INTEGER NOT NULL,
+                             answers_json TEXT DEFAULT '',
+                             current_page INTEGER NOT NULL DEFAULT 0,
+                             client_updated_at TEXT DEFAULT '',
+                             server_updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             server_version INTEGER NOT NULL DEFAULT 0,
+                             status TEXT NOT NULL DEFAULT 'active',
+                             FOREIGN KEY (assignment_id) REFERENCES assignments (id) ON DELETE CASCADE,
+                             FOREIGN KEY (student_pk_id) REFERENCES students (id) ON DELETE CASCADE,
+                             UNIQUE (assignment_id, student_pk_id)
+                         )
+                         ''')
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS submission_draft_files
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             draft_id INTEGER NOT NULL,
+                             question_id TEXT DEFAULT '',
+                             kind TEXT DEFAULT 'file',
+                             original_filename TEXT NOT NULL,
+                             relative_path TEXT NOT NULL,
+                             stored_path TEXT NOT NULL,
+                             mime_type TEXT,
+                             file_size INTEGER,
+                             file_ext TEXT,
+                             file_hash TEXT,
+                             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (draft_id) REFERENCES submission_drafts (id) ON DELETE CASCADE
+                         )
+                         ''')
+
             # 10. 聊天记录 (关联到班级课堂)
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS chat_logs
@@ -2920,6 +2957,14 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_submissions_resubmission_window "
                 "ON submissions (assignment_id, resubmission_allowed, resubmission_due_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_submission_drafts_assignment_student "
+                "ON submission_drafts (assignment_id, student_pk_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_submission_draft_files_draft_question "
+                "ON submission_draft_files (draft_id, question_id)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_materials_root_path ON course_materials (root_id, material_path)"

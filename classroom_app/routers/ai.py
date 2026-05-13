@@ -40,6 +40,7 @@ from ..services.psych_profile_service import (
 from ..services.academic_service import build_classroom_ai_context
 from ..services.submission_file_alignment import resolve_submission_file_path
 from ..services.ai_grading_service import AIGradingQueueError, submit_submission_for_ai_grading
+from ..services.grading_feedback_service import normalize_grading_result, sanitize_student_feedback_text
 from ..services.learning_progress_service import (
     build_student_global_cultivation_profile,
     handle_assignment_stage_grading_complete,
@@ -206,17 +207,33 @@ async def handle_ai_grading_callback(request: Request):
         submission_id = data['submission_id']
         with get_db_connection() as conn:
             submission = conn.execute(
-                "SELECT resubmission_allowed FROM submissions WHERE id = ?",
+                "SELECT resubmission_allowed, answers_json FROM submissions WHERE id = ?",
                 (submission_id,),
             ).fetchone()
             if submission and int(submission["resubmission_allowed"] or 0):
                 conn.commit()
                 return {"status": "ignored_returned_submission"}
+            status = str(data.get("status") or "").strip().lower()
+            score = data.get("score")
+            feedback_md = data.get("feedback_md")
+            if status == "graded":
+                normalized = normalize_grading_result(
+                    data,
+                    answers_json=submission["answers_json"] if submission else None,
+                    fallback_reason="AI 批改已完成，但返回内容结构不完整，系统已整理为可读评语。",
+                )
+                score = normalized.get("score")
+                feedback_md = normalized.get("feedback_md")
+                if score is None:
+                    status = "grading_failed"
+                    feedback_md = "AI 批改返回的分数无效，已保留提交内容，请教师手动复核。"
+            elif feedback_md:
+                feedback_md = sanitize_student_feedback_text(feedback_md)
             conn.execute(
                 "UPDATE submissions SET status = ?, score = ?, feedback_md = ? WHERE id = ?",
-                (data['status'], data.get('score'), data.get('feedback_md'), submission_id)
+                (status, score, feedback_md, submission_id)
             )
-            if data.get('status') == 'graded':
+            if status == 'graded':
                 try:
                     create_student_grading_notification(
                         conn,
