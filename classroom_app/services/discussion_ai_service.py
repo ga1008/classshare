@@ -764,6 +764,7 @@ def _load_user_profile_seed(conn, user_pk: int, user_role: str) -> tuple[str, st
             SELECT s.name, s.description
             FROM students s
             WHERE s.id = ?
+              AND COALESCE(s.enrollment_status, 'active') = 'active'
             LIMIT 1
             """,
             (user_pk,),

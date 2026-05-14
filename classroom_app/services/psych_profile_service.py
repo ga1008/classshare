@@ -106,6 +106,7 @@ def load_explicit_user_profile(conn, user_pk: int, user_role: str) -> dict[str, 
             FROM students s
             JOIN classes c ON c.id = s.class_id
             WHERE s.id = ?
+              AND COALESCE(s.enrollment_status, 'active') = 'active'
             LIMIT 1
             """,
             (user_pk,),

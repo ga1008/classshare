@@ -92,6 +92,11 @@ from ..services.student_auth_service import (
     record_student_login,
     validate_student_password,
 )
+from ..services.student_lifecycle_service import (
+    STUDENT_STATUS_ACTIVE,
+    normalize_student_enrollment_status,
+    student_enrollment_status_label,
+)
 from ..services.submission_preview_service import ensure_submission_access, serialize_submission_file_row
 from ..services.teacher_account_service import (
     TEACHER_PASSWORD_HINT,
@@ -247,7 +252,12 @@ def _attach_teacher_assignment_card_metrics(
     total_students = _safe_int(classroom.get("class_student_count"))
     if total_students <= 0 and classroom.get("class_id"):
         count_row = conn.execute(
-            "SELECT COUNT(*) FROM students WHERE class_id = ?",
+            """
+            SELECT COUNT(*)
+            FROM students
+            WHERE class_id = ?
+              AND COALESCE(enrollment_status, 'active') = 'active'
+            """,
             (classroom.get("class_id"),),
         ).fetchone()
         total_students = _safe_int(count_row[0] if count_row else 0)
@@ -350,6 +360,19 @@ def _build_student_login_token(student_row, client_ip: str) -> tuple[str, dict]:
     return access_token, token_data
 
 
+def _ensure_student_can_login(student_row) -> None:
+    if not student_row:
+        return
+    normalized_status = normalize_student_enrollment_status(
+        student_row["enrollment_status"] if "enrollment_status" in student_row.keys() else STUDENT_STATUS_ACTIVE
+    )
+    if normalized_status != STUDENT_STATUS_ACTIVE:
+        raise HTTPException(
+            status_code=403,
+            detail=f"该学生已设置为{student_enrollment_status_label(normalized_status)}，暂不纳入课堂学习。",
+        )
+
+
 def _build_student_login_json_response(
     *,
     student_row,
@@ -357,6 +380,7 @@ def _build_student_login_json_response(
     safe_next: str,
     login_count: int,
 ) -> JSONResponse:
+    _ensure_student_can_login(student_row)
     access_token, _ = _build_student_login_token(student_row, client_ip)
     cultivation_profile = None
     try:
@@ -394,6 +418,7 @@ def _perform_student_password_login(
 
     if not student_row:
         raise HTTPException(status_code=400, detail="登录失败：账号或密码错误。")
+    _ensure_student_can_login(student_row)
     if student_row["password_reset_required"]:
         raise HTTPException(
             status_code=409,
@@ -545,6 +570,7 @@ def api_student_identity_login(
         student_row = get_student_auth_record_by_identity(conn, name, student_id_number)
         if not student_row:
             raise HTTPException(status_code=400, detail="登录失败：姓名或学号错误。")
+        _ensure_student_can_login(student_row)
         if not can_student_use_identity_login(student_row):
             raise HTTPException(status_code=409, detail="该账号已设置密码，请使用密码登录。")
 
@@ -615,6 +641,7 @@ def api_student_password_setup(
         student_row = get_student_auth_record_by_pk(conn, int(token_payload["student_id"]))
         if not student_row:
             raise HTTPException(status_code=404, detail="学生账号不存在。")
+        _ensure_student_can_login(student_row)
 
         if flow_type == "password_reset":
             if not student_row["password_reset_required"]:
@@ -678,6 +705,7 @@ def api_student_password_forgot(
 
         if not student_row:
             raise HTTPException(status_code=400, detail="提交失败：姓名、学号和班级名称不匹配。")
+        _ensure_student_can_login(student_row)
         if not student_row["hashed_password"] and not student_row["password_reset_required"]:
             raise HTTPException(
                 status_code=400,
@@ -940,7 +968,12 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
                       cl.description as class_description,
                       t.name as teacher_name,
                       tb.title as textbook_title,
-                      (SELECT COUNT(*) FROM students s WHERE s.class_id = o.class_id) as class_student_count
+                      (
+                          SELECT COUNT(*)
+                          FROM students s
+                          WHERE s.class_id = o.class_id
+                            AND COALESCE(s.enrollment_status, 'active') = 'active'
+                      ) as class_student_count
                FROM class_offerings o
                         JOIN courses c ON o.course_id = c.id
                         JOIN classes cl ON o.class_id = cl.id
@@ -964,8 +997,19 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
         course_id = offering_data['course_id']
 
         if user['role'] == 'student':
-            student_class = conn.execute("SELECT class_id FROM students WHERE id = ?", (user['id'],)).fetchone()
-            if not student_class or student_class['class_id'] != offering_data['class_id']:
+            student_class = conn.execute(
+                """
+                SELECT class_id, COALESCE(enrollment_status, 'active') AS enrollment_status
+                FROM students
+                WHERE id = ?
+                """,
+                (user['id'],),
+            ).fetchone()
+            if (
+                not student_class
+                or student_class['class_id'] != offering_data['class_id']
+                or normalize_student_enrollment_status(student_class["enrollment_status"]) != STUDENT_STATUS_ACTIVE
+            ):
                 raise HTTPException(403, "您未加入此课堂")
             student_security_summary = build_student_security_summary(conn, int(user['id']))
         elif user['role'] == 'teacher':
@@ -1354,16 +1398,30 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
                    c.department,
                    c.description,
                    c.created_at,
-                   COUNT(DISTINCT s.id) AS student_count,
+                   COUNT(DISTINCT CASE
+                       WHEN COALESCE(s.enrollment_status, 'active') = 'active'
+                       THEN s.id END
+                   ) AS student_count,
+                   COUNT(DISTINCT CASE
+                       WHEN COALESCE(s.enrollment_status, 'active') = 'suspended'
+                       THEN s.id END
+                   ) AS suspended_student_count,
+                   COUNT(DISTINCT s.id) AS total_student_count,
                    SUM(
                        CASE
                            WHEN s.id IS NOT NULL
-                            AND (s.email IS NULL OR TRIM(s.email) = '')
-                           THEN 1 ELSE 0
+                             AND COALESCE(s.enrollment_status, 'active') = 'active'
+                             AND (s.email IS NULL OR TRIM(s.email) = '')
+                            THEN 1 ELSE 0
                        END
                    ) AS missing_email_count,
                    COUNT(DISTINCT o.id) AS offering_count,
-                   MAX(s.created_at) AS latest_student_created_at
+                   MAX(
+                       CASE
+                           WHEN COALESCE(s.enrollment_status, 'active') = 'active'
+                           THEN s.created_at
+                       END
+                   ) AS latest_student_created_at
             FROM classes c
             LEFT JOIN students s ON c.id = s.class_id
             LEFT JOIN class_offerings o
@@ -1383,6 +1441,8 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
         )
         for class_item in my_classes:
             class_item["student_count"] = int(class_item.get("student_count") or 0)
+            class_item["suspended_student_count"] = int(class_item.get("suspended_student_count") or 0)
+            class_item["total_student_count"] = int(class_item.get("total_student_count") or 0)
             class_item["missing_email_count"] = int(class_item.get("missing_email_count") or 0)
             class_item["offering_count"] = int(class_item.get("offering_count") or 0)
             class_item["department_label"] = str(class_item.get("department") or "").strip() or "未分类"
@@ -1396,12 +1456,18 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
                 else 0
             )
             class_item["students"] = students_by_class.get(int(class_item["id"]), [])
+            class_item["active_students"] = [
+                student
+                for student in class_item["students"]
+                if student.get("enrollment_status") == STUDENT_STATUS_ACTIVE
+            ]
 
     missing_email_total = sum(int(item.get("missing_email_count") or 0) for item in my_classes)
     active_class_count = sum(1 for item in my_classes if int(item.get("offering_count") or 0) > 0)
     class_stats = {
         "class_count": len(my_classes),
         "student_count": sum(int(item.get("student_count") or 0) for item in my_classes),
+        "suspended_student_count": sum(int(item.get("suspended_student_count") or 0) for item in my_classes),
         "largest_class_size": max((int(item.get("student_count") or 0) for item in my_classes), default=0),
         "missing_email_count": missing_email_total,
         "active_class_count": active_class_count,
@@ -1547,18 +1613,28 @@ def _load_teacher_class_student_rows(conn, teacher_id: int, class_ids: list[int]
                s.student_id_number,
                s.email,
                s.phone,
+               COALESCE(s.enrollment_status, 'active') AS enrollment_status,
+               s.enrollment_status_updated_at,
+               s.enrollment_note,
                s.created_at
         FROM students s
         JOIN classes c ON c.id = s.class_id
         WHERE c.created_by_teacher_id = ?
           AND s.class_id IN ({placeholders})
-        ORDER BY s.class_id, s.student_id_number, s.id
+        ORDER BY
+            s.class_id,
+            CASE COALESCE(s.enrollment_status, 'active') WHEN 'active' THEN 0 ELSE 1 END,
+            s.student_id_number,
+            s.id
         """,
         [int(teacher_id), *normalized_ids],
     ).fetchall()
     grouped: dict[int, list[dict]] = {class_id: [] for class_id in normalized_ids}
     for row in rows:
         item = dict(row)
+        item["enrollment_status"] = normalize_student_enrollment_status(item.get("enrollment_status"))
+        item["enrollment_status_label"] = student_enrollment_status_label(item["enrollment_status"])
+        item["is_active"] = item["enrollment_status"] == STUDENT_STATUS_ACTIVE
         item["display_name"] = item.get("nickname") or item.get("name") or "学生"
         item["has_email"] = bool(str(item.get("email") or "").strip())
         grouped.setdefault(int(item["class_id"]), []).append(item)
@@ -2604,9 +2680,9 @@ async def get_manage_system_password_resets_page(request: Request, user: dict = 
 async def manage_exams_page(request: Request, user: dict = Depends(get_current_teacher)):
     """试卷库管理页面"""
     with get_db_connection() as conn:
-        # 自动将已完成的AI生成试卷从 generating 转为 draft
+        # 兼容旧版本：已完成但仍停留在 generating 的试卷应进入可用状态。
         conn.execute(
-            """UPDATE exam_papers SET status = 'draft', ai_gen_status = NULL, updated_at = ?
+            """UPDATE exam_papers SET status = 'ready', updated_at = ?
                WHERE teacher_id = ? AND status = 'generating' AND ai_gen_status = 'completed'""",
             (datetime.now().isoformat(), user['id'])
         )

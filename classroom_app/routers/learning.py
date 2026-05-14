@@ -73,7 +73,15 @@ def _ensure_classroom_access(conn, class_offering_id: int, user: dict) -> dict:
             raise HTTPException(403, "无权访问该课堂")
         return offering
     if role == "student":
-        student = conn.execute("SELECT class_id FROM students WHERE id = ?", (user["id"],)).fetchone()
+        student = conn.execute(
+            """
+            SELECT class_id
+            FROM students
+            WHERE id = ?
+              AND COALESCE(enrollment_status, 'active') = 'active'
+            """,
+            (user["id"],),
+        ).fetchone()
         if not student or int(student["class_id"]) != int(offering["class_id"]):
             raise HTTPException(403, "您未加入此课堂")
         return offering

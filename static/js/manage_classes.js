@@ -35,11 +35,22 @@ const elements = {
     drawerList: document.getElementById('classStudentList'),
     drawerEmpty: document.getElementById('classStudentEmpty'),
     drawerSearch: document.getElementById('classStudentSearchInput'),
+    drawerAdd: document.getElementById('classStudentAddBtn'),
     drawerExport: document.getElementById('classStudentExportBtn'),
+    addModal: document.getElementById('classStudentAddModal'),
+    addModalPanel: document.querySelector('.class-student-modal'),
+    addModalClose: document.getElementById('classStudentAddClose'),
+    addModalCancel: document.getElementById('classStudentAddCancel'),
+    addForm: document.getElementById('classStudentAddForm'),
+    addClassId: document.getElementById('classStudentAddClassId'),
+    addTitle: document.getElementById('classStudentAddTitle'),
+    addMeta: document.getElementById('classStudentAddMeta'),
+    addName: document.getElementById('classStudentAddName'),
 };
 
 let activeDrawerClass = null;
 let activeDrawerTrigger = null;
+let activeAddTrigger = null;
 
 function normalize(value) {
     return String(value || '').trim().toLowerCase();
@@ -119,8 +130,10 @@ function cardPassesHealthFilter(card) {
     const health = elements.healthFilter?.value || 'all';
     const missingCount = numberValue(card.dataset.missingEmailCount);
     const offeringCount = numberValue(card.dataset.offeringCount);
+    const suspendedCount = numberValue(card.dataset.suspendedStudentCount);
     if (health === 'missing-email') return missingCount > 0;
     if (health === 'complete-email') return missingCount === 0;
+    if (health === 'has-suspended') return suspendedCount > 0;
     if (health === 'bound') return offeringCount > 0;
     if (health === 'unbound') return offeringCount === 0;
     return true;
@@ -190,12 +203,13 @@ function downloadRosterTemplate() {
 function exportClassRoster(classItem) {
     if (!classItem) return;
     const rows = [
-        ['班级', '系别', '姓名', '学号', '昵称', '邮箱', '手机号'],
+        ['班级', '系别', '姓名', '学号', '状态', '昵称', '邮箱', '手机号'],
         ...(classItem.students || []).map((student) => [
             classItem.name || '',
             classItem.department_label || classItem.department || '',
             student.name || '',
             student.student_id_number || '',
+            student.enrollment_status_label || (student.enrollment_status === 'suspended' ? '休学' : '在读'),
             student.nickname || '',
             student.email || '',
             student.phone || '',
@@ -236,9 +250,15 @@ function studentSearchText(student) {
         student.display_name,
         student.nickname,
         student.student_id_number,
+        student.enrollment_status_label,
+        student.enrollment_status === 'suspended' ? '休学' : '在读',
         student.email,
         student.phone,
     ].filter(Boolean).join(' '));
+}
+
+function studentStatusLabel(student) {
+    return student.enrollment_status_label || (student.enrollment_status === 'suspended' ? '休学' : '在读');
 }
 
 function renderStudentRows(classItem) {
@@ -247,15 +267,26 @@ function renderStudentRows(classItem) {
     elements.drawerList.innerHTML = students.map((student) => {
         const name = student.name || student.display_name || '学生';
         const hasEmail = Boolean(student.has_email || normalize(student.email));
+        const isSuspended = student.enrollment_status === 'suspended';
+        const statusText = studentStatusLabel(student);
+        const statusActionText = isSuspended ? '恢复在读' : '设为休学';
+        const nextStatus = isSuspended ? 'active' : 'suspended';
         return `
             <article class="class-student-row" data-student-row data-search-text="${escapeHtml(studentSearchText(student))}">
-                <span class="class-student-row__avatar">${escapeHtml(name.slice(0, 1))}</span>
+                <span class="class-student-row__avatar${isSuspended ? ' is-muted' : ''}">${escapeHtml(name.slice(0, 1))}</span>
                 <span class="class-student-row__main">
                     <strong>${escapeHtml(name)}</strong>
                     <small>${escapeHtml(student.student_id_number || '未填学号')}${student.email ? ` · ${escapeHtml(student.email)}` : ''}</small>
                 </span>
-                <span class="class-student-row__status${hasEmail ? '' : ' is-warning'}">${hasEmail ? '邮箱已填' : '缺邮箱'}</span>
-                <a class="btn btn-outline btn-sm" href="/manage/students/${Number(student.id)}">详情</a>
+                <span class="class-student-row__badges">
+                    <span class="class-student-row__status${isSuspended ? ' is-muted' : ''}">${escapeHtml(statusText)}</span>
+                    <span class="class-student-row__status${hasEmail ? '' : ' is-warning'}">${hasEmail ? '邮箱已填' : '缺邮箱'}</span>
+                </span>
+                <span class="class-student-row__actions">
+                    <a class="btn btn-outline btn-sm" href="/manage/students/${Number(student.id)}">详情</a>
+                    <button type="button" class="btn btn-outline btn-sm" data-student-action="status" data-student-id="${Number(student.id)}" data-next-status="${nextStatus}" data-student-name="${escapeHtml(name)}">${statusActionText}</button>
+                    <button type="button" class="btn btn-ghost btn-sm text-danger" data-student-action="delete" data-student-id="${Number(student.id)}" data-student-name="${escapeHtml(name)}">删除</button>
+                </span>
             </article>
         `;
     }).join('');
@@ -286,7 +317,8 @@ function openStudentDrawer(classItem, trigger = null) {
     if (elements.drawerKicker) elements.drawerKicker.textContent = classItem.department_label || classItem.department || '未分类';
     if (elements.drawerMeta) {
         const missing = Number(classItem.missing_email_count || 0);
-        elements.drawerMeta.textContent = `${Number(classItem.student_count || 0)} 名学生 · ${missing ? `${missing} 人缺邮箱` : '邮箱覆盖完整'}`;
+        const suspended = Number(classItem.suspended_student_count || 0);
+        elements.drawerMeta.textContent = `${Number(classItem.student_count || 0)} 名在读学生 · ${suspended ? `${suspended} 人休学 · ` : ''}${missing ? `${missing} 人缺邮箱` : '邮箱覆盖完整'}`;
     }
     if (elements.drawerSearch) elements.drawerSearch.value = '';
     renderStudentRows(classItem);
@@ -312,6 +344,120 @@ function closeStudentDrawer() {
             activeDrawerClass = null;
         }
     }, 180);
+}
+
+function openAddStudentModal(classItem, trigger = null) {
+    if (!elements.addModal || !classItem) return;
+    activeAddTrigger = trigger;
+    if (elements.addClassId) elements.addClassId.value = String(classItem.id || '');
+    if (elements.addTitle) elements.addTitle.textContent = `加入 ${classItem.name || '班级'}`;
+    if (elements.addMeta) {
+        const department = classItem.department_label || classItem.department || '未分类';
+        elements.addMeta.textContent = `${department} · 当前 ${Number(classItem.student_count || 0)} 名在读学生`;
+    }
+    elements.addForm?.reset();
+    if (elements.addClassId) elements.addClassId.value = String(classItem.id || '');
+    elements.addModal.hidden = false;
+    elements.addModal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('has-class-student-modal');
+    window.requestAnimationFrame(() => {
+        elements.addModal.classList.add('is-open');
+        elements.addName?.focus({ preventScroll: true });
+    });
+}
+
+function closeAddStudentModal() {
+    if (!elements.addModal) return;
+    elements.addModal.classList.remove('is-open');
+    elements.addModal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('has-class-student-modal');
+    window.setTimeout(() => {
+        if (!elements.addModal.classList.contains('is-open')) {
+            elements.addModal.hidden = true;
+            activeAddTrigger?.focus?.({ preventScroll: true });
+            activeAddTrigger = null;
+        }
+    }, 160);
+}
+
+async function submitAddStudent(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const classId = Number(elements.addClassId?.value || 0);
+    if (!classId) {
+        showMessage('未找到目标班级', 'error');
+        return;
+    }
+    const submitButton = form.querySelector('button[type="submit"]');
+    const originalText = submitButton?.innerHTML;
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span> 提交中...';
+    }
+    try {
+        const formData = new FormData(form);
+        formData.delete('class_id');
+        const result = await apiFetch(`/api/manage/classes/${classId}/students`, {
+            method: 'POST',
+            body: formData,
+            silent: true,
+        });
+        showMessage(result.message || '学生已加入班级', 'success');
+        window.setTimeout(() => window.location.reload(), 650);
+    } catch (error) {
+        showMessage(error.message || '新增学生失败', 'error');
+    } finally {
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.innerHTML = originalText;
+        }
+    }
+}
+
+async function updateStudentStatus(button) {
+    const studentId = Number(button.dataset.studentId || 0);
+    const nextStatus = button.dataset.nextStatus || 'active';
+    const studentName = button.dataset.studentName || '该学生';
+    if (!studentId) return;
+    const confirmed = window.confirm(
+        nextStatus === 'suspended'
+            ? `确定将“${studentName}”设置为休学吗？\n休学后会保留数据，但不再纳入课堂任务、统计和通知范围。`
+            : `确定将“${studentName}”恢复为在读吗？\n恢复后会重新纳入课堂任务、统计和通知范围。`
+    );
+    if (!confirmed) return;
+    const formData = new FormData();
+    formData.set('enrollment_status', nextStatus);
+    try {
+        const result = await apiFetch(`/api/manage/students/${studentId}/status`, {
+            method: 'POST',
+            body: formData,
+            silent: true,
+        });
+        showMessage(result.message || '学生状态已更新', 'success');
+        window.setTimeout(() => window.location.reload(), 650);
+    } catch (error) {
+        showMessage(error.message || '更新学生状态失败', 'error');
+    }
+}
+
+async function deleteStudent(button) {
+    const studentId = Number(button.dataset.studentId || 0);
+    const studentName = button.dataset.studentName || '该学生';
+    if (!studentId) return;
+    const confirmed = window.confirm(
+        `确定删除“${studentName}”吗？\n这会移除该学生账号及其关联课堂数据；如果只是暂时不参与学习，请改用休学。`
+    );
+    if (!confirmed) return;
+    try {
+        const result = await apiFetch(`/api/manage/students/${studentId}`, {
+            method: 'DELETE',
+            silent: true,
+        });
+        showMessage(result.message || '学生已删除', 'success');
+        window.setTimeout(() => window.location.reload(), 650);
+    } catch (error) {
+        showMessage(error.message || '删除学生失败', 'error');
+    }
 }
 
 function bindEvents() {
@@ -352,6 +498,10 @@ function bindEvents() {
             openStudentDrawer(classItem, actionButton);
             return;
         }
+        if (actionButton.dataset.action === 'add-student') {
+            openAddStudentModal(classItem, actionButton);
+            return;
+        }
         if (actionButton.dataset.action === 'export-class') {
             exportClassRoster(classItem);
         }
@@ -362,8 +512,30 @@ function bindEvents() {
         if (event.target === elements.drawer) closeStudentDrawer();
     });
     elements.drawerSearch?.addEventListener('input', filterStudentRows);
+    elements.drawerAdd?.addEventListener('click', () => openAddStudentModal(activeDrawerClass, elements.drawerAdd));
     elements.drawerExport?.addEventListener('click', () => exportClassRoster(activeDrawerClass));
+    elements.drawerList?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-student-action]');
+        if (!button) return;
+        if (button.dataset.studentAction === 'status') {
+            updateStudentStatus(button);
+            return;
+        }
+        if (button.dataset.studentAction === 'delete') {
+            deleteStudent(button);
+        }
+    });
+    elements.addForm?.addEventListener('submit', submitAddStudent);
+    elements.addModalClose?.addEventListener('click', closeAddStudentModal);
+    elements.addModalCancel?.addEventListener('click', closeAddStudentModal);
+    elements.addModal?.addEventListener('click', (event) => {
+        if (event.target === elements.addModal) closeAddStudentModal();
+    });
     document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && elements.addModal && !elements.addModal.hidden) {
+            closeAddStudentModal();
+            return;
+        }
         if (event.key === 'Escape' && elements.drawer && !elements.drawer.hidden) {
             closeStudentDrawer();
         }

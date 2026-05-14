@@ -867,6 +867,7 @@ def _class_learning_score_rows(
         SELECT id, name, student_id_number
         FROM students
         WHERE class_id = ?
+          AND COALESCE(enrollment_status, 'active') = 'active'
         ORDER BY student_id_number, id
         """,
         (offering["class_id"],),
@@ -1042,6 +1043,7 @@ def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str,
             SELECT class_id
             FROM students
             WHERE id = ?
+              AND COALESCE(enrollment_status, 'active') = 'active'
         )
         ORDER BY o.id DESC
         """,
@@ -1239,6 +1241,7 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
         SELECT id, name, student_id_number
         FROM students
         WHERE class_id = ?
+          AND COALESCE(enrollment_status, 'active') = 'active'
         ORDER BY student_id_number, id
         """,
         (offering["class_id"],),
@@ -2049,7 +2052,9 @@ async def submit_stage_exam_for_ai_grading(submission_id: int) -> None:
             conn.execute(
                 """
                 UPDATE submissions
-                SET status = 'submitted'
+                SET status = 'submitted',
+                    grading_started_at = NULL,
+                    grading_attempt_fingerprint = NULL
                 WHERE id = ? AND status = 'grading'
                 """,
                 (int(submission_id),),

@@ -23656,7 +23656,7 @@ body.has-cultivation-login-reveal {
 
 .class-card-metrics {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
 }
 
@@ -23866,7 +23866,7 @@ body.has-cultivation-login-reveal {
 
 .class-student-row {
     display: grid;
-    grid-template-columns: 38px minmax(0, 1fr) auto auto;
+    grid-template-columns: 38px minmax(0, 1fr);
     gap: 10px;
     align-items: center;
     padding: 12px;
@@ -23889,6 +23889,12 @@ body.has-cultivation-login-reveal {
     background: rgba(240, 253, 250, 0.92);
     color: #0f766e;
     font-weight: 900;
+}
+
+.class-student-row__avatar.is-muted {
+    border: 1px solid rgba(100, 116, 139, 0.18);
+    background: rgba(241, 245, 249, 0.92);
+    color: #64748b;
 }
 
 .class-student-row__main {
@@ -23925,9 +23931,30 @@ body.has-cultivation-login-reveal {
     font-weight: 800;
 }
 
+.class-student-row__badges,
+.class-student-row__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.class-student-row__badges {
+    grid-column: 2;
+}
+
+.class-student-row__actions {
+    grid-column: 2;
+}
+
 .class-student-row__status.is-warning {
     color: #b45309;
     background: rgba(255, 251, 235, 0.96);
+}
+
+.class-student-row__status.is-muted {
+    color: #475569;
+    background: rgba(241, 245, 249, 0.96);
 }
 
 .class-student-drawer-empty {
@@ -23935,14 +23962,101 @@ body.has-cultivation-login-reveal {
     border-radius: 8px;
 }
 
-body.has-class-student-drawer {
+.class-student-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1230;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(15, 23, 42, 0.38);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 160ms ease;
+}
+
+.class-student-modal-backdrop[hidden] {
+    display: none;
+}
+
+.class-student-modal-backdrop.is-open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.class-student-modal {
+    width: min(640px, 100%);
+    max-height: min(760px, calc(100vh - 36px));
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 30px 68px -46px rgba(15, 23, 42, 0.78);
+    transform: translateY(10px) scale(0.98);
+    transition: transform 160ms ease;
+}
+
+.class-student-modal-backdrop.is-open .class-student-modal {
+    transform: translateY(0) scale(1);
+}
+
+.class-student-modal-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 18px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.class-student-modal-head span {
+    color: #0f766e;
+    font-size: 0.78rem;
+    font-weight: 900;
+}
+
+.class-student-modal-head h3 {
+    margin: 5px 0 0;
+    color: #0f172a;
+    font-size: 1.16rem;
+}
+
+.class-student-modal-head p {
+    margin: 6px 0 0;
+    color: #64748b;
+    line-height: 1.5;
+}
+
+.class-student-modal-form {
+    min-height: 0;
+    overflow: auto;
+    padding: 18px;
+}
+
+.class-student-modal-wide {
+    grid-column: 1 / -1;
+}
+
+.class-student-modal-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+body.has-class-student-drawer,
+body.has-class-student-modal {
     overflow: hidden;
 }
 
 @media (prefers-reduced-motion: reduce) {
     .class-manage-card,
     .class-student-drawer,
-    .class-student-drawer-backdrop {
+    .class-student-drawer-backdrop,
+    .class-student-modal,
+    .class-student-modal-backdrop {
         transition: none;
     }
 
@@ -24005,14 +24119,23 @@ body.has-class-student-drawer {
         border-left: 0;
     }
 
-    .class-student-row {
-        grid-template-columns: 38px minmax(0, 1fr);
-    }
-
-    .class-student-row__status,
-    .class-student-row .btn {
+    .class-student-row__badges,
+    .class-student-row__actions {
         grid-column: 2;
         justify-self: start;
+    }
+
+    .class-student-modal-form {
+        grid-template-columns: 1fr;
+    }
+
+    .class-student-modal-actions {
+        flex-direction: column-reverse;
+    }
+
+    .class-student-modal-actions .btn {
+        width: 100%;
+        justify-content: center;
     }
 }
 

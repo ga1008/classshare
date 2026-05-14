@@ -32,9 +32,14 @@
             <small>{{ class_stats.department_count }} 个系别分组</small>
         </article>
         <article class="class-stat-card">
-            <span>学生总数</span>
+            <span>在读学生</span>
             <strong>{{ class_stats.student_count }}</strong>
-            <small>平均 {{ avg_class_size }} 人 / 班</small>
+            <small>
+                平均 {{ avg_class_size }} 人 / 班
+                {% if class_stats.suspended_student_count %}
+                · {{ class_stats.suspended_student_count }} 人休学
+                {% endif %}
+            </small>
         </article>
         <article class="class-stat-card{% if class_stats.missing_email_count %} is-warning{% endif %}">
             <span>缺少邮箱</span>
@@ -71,6 +76,7 @@
                         <option value="all">全部状态</option>
                         <option value="missing-email">有学生缺邮箱</option>
                         <option value="complete-email">邮箱完整</option>
+                        <option value="has-suspended">含休学学生</option>
                         <option value="bound">已绑定课堂</option>
                         <option value="unbound">未绑定课堂</option>
                     </select>
@@ -119,6 +125,7 @@
                     data-class-name="{{ class_item.name }}"
                     data-department="{{ class_item.department_label }}"
                     data-student-count="{{ class_item.student_count }}"
+                    data-suspended-student-count="{{ class_item.suspended_student_count }}"
                     data-missing-email-count="{{ class_item.missing_email_count }}"
                     data-offering-count="{{ class_item.offering_count }}"
                     data-latest-time="{{ latest_time }}"
@@ -128,7 +135,10 @@
                             <span class="class-card-kicker">{{ class_item.department_label }}</span>
                             <h4>{{ class_item.name }}</h4>
                             <p>
-                                {{ class_item.student_count }} 名学生
+                                {{ class_item.student_count }} 名在读学生
+                                {% if class_item.suspended_student_count %}
+                                · {{ class_item.suspended_student_count }} 人休学
+                                {% endif %}
                                 {% if class_item.offering_count %}
                                 · 已绑定 {{ class_item.offering_count }} 个课堂
                                 {% else %}
@@ -147,8 +157,12 @@
 
                     <div class="class-card-metrics">
                         <div>
-                            <span>学生</span>
+                            <span>在读</span>
                             <strong>{{ class_item.student_count }}</strong>
+                        </div>
+                        <div>
+                            <span>休学</span>
+                            <strong>{{ class_item.suspended_student_count }}</strong>
                         </div>
                         <div>
                             <span>邮箱覆盖</span>
@@ -161,7 +175,7 @@
                     </div>
 
                     <div class="class-card-students" aria-label="{{ class_item.name }} 学生预览">
-                        {% for student in class_item.students[:6] %}
+                        {% for student in class_item.active_students[:6] %}
                         <span class="class-student-avatar{% if not student.has_email %} is-warning{% endif %}" title="{{ student.name }}{% if not student.has_email %}：缺少邮箱{% endif %}">
                             {{ (student.name or student.display_name or '学')[:1] }}
                         </span>
@@ -170,12 +184,13 @@
                         <span class="class-student-avatar is-more">+{{ class_item.student_count - 6 }}</span>
                         {% endif %}
                         {% if not class_item.student_count %}
-                        <span class="class-student-empty">暂无学生</span>
+                        <span class="class-student-empty">暂无在读学生</span>
                         {% endif %}
                     </div>
 
                     <div class="class-card-actions">
                         <button type="button" class="btn btn-primary btn-sm" data-action="open-students" data-class-id="{{ class_item.id }}">查看学生</button>
+                        <button type="button" class="btn btn-outline btn-sm" data-action="add-student" data-class-id="{{ class_item.id }}" data-class-name="{{ class_item.name }}">新增学生</button>
                         <button type="button" class="btn btn-outline btn-sm" data-action="export-class" data-class-id="{{ class_item.id }}">导出名单</button>
                         <a class="btn btn-outline btn-sm" href="/manage/offerings">开设课堂</a>
                         <button
@@ -250,6 +265,7 @@
         </div>
         <div class="class-student-drawer-toolbar">
             <input type="search" class="form-control" id="classStudentSearchInput" placeholder="搜索姓名、学号或邮箱">
+            <button type="button" class="btn btn-primary btn-sm" id="classStudentAddBtn">新增学生</button>
             <button type="button" class="btn btn-outline btn-sm" id="classStudentExportBtn">导出本班</button>
         </div>
         <div class="class-student-drawer-list" id="classStudentList"></div>
@@ -260,6 +276,53 @@
     </aside>
 </div>
 
+<div class="class-student-modal-backdrop" id="classStudentAddModal" hidden aria-hidden="true">
+    <section class="class-student-modal" role="dialog" aria-modal="true" aria-labelledby="classStudentAddTitle" tabindex="-1">
+        <div class="class-student-modal-head">
+            <div>
+                <span id="classStudentAddKicker">新增学生</span>
+                <h3 id="classStudentAddTitle">加入班级</h3>
+                <p id="classStudentAddMeta">填写基础信息后，学生会正式进入该班级名单。</p>
+            </div>
+            <button type="button" class="class-student-drawer-close" id="classStudentAddClose" aria-label="关闭新增学生表单">&times;</button>
+        </div>
+        <form id="classStudentAddForm" class="class-student-modal-form academic-form-grid">
+            <input type="hidden" name="class_id" id="classStudentAddClassId">
+            <div class="academic-field">
+                <label for="classStudentAddName">姓名</label>
+                <input type="text" id="classStudentAddName" name="name" class="form-control" required placeholder="例如：张三">
+            </div>
+            <div class="academic-field">
+                <label for="classStudentAddIdNumber">学号</label>
+                <input type="text" id="classStudentAddIdNumber" name="student_id_number" class="form-control" required placeholder="例如：20260001">
+            </div>
+            <div class="academic-field">
+                <label for="classStudentAddGender">性别</label>
+                <select id="classStudentAddGender" name="gender" class="form-control">
+                    <option value="">未填写</option>
+                    <option value="男">男</option>
+                    <option value="女">女</option>
+                </select>
+            </div>
+            <div class="academic-field">
+                <label for="classStudentAddPhone">手机号</label>
+                <input type="tel" id="classStudentAddPhone" name="phone" class="form-control" placeholder="用于后续联系">
+            </div>
+            <div class="academic-field class-student-modal-wide">
+                <label for="classStudentAddEmail">邮箱</label>
+                <input type="email" id="classStudentAddEmail" name="email" class="form-control" placeholder="student@example.com">
+            </div>
+            <div class="class-form-note class-student-modal-wide">
+                新增学生默认为在读状态，会被纳入课堂任务、统计和通知范围；休学可在学生名单中单独设置。
+            </div>
+            <div class="class-student-modal-actions">
+                <button type="button" class="btn btn-outline" id="classStudentAddCancel">取消</button>
+                <button type="submit" class="btn btn-primary">确认加入班级</button>
+            </div>
+        </form>
+    </section>
+</div>
+
 <script>
     window.MANAGE_CLASSES_DATA = {
         classes: {{ my_classes | tojson }}
@@ -268,5 +331,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_classes.js?v=class-workbench-20260508"></script>
+<script type="module" src="/static/js/manage_classes.js?v=class-student-lifecycle-20260514"></script>
 {% endblock %}

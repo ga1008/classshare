@@ -640,6 +640,7 @@ def _resolve_allowed_scope_rows(conn, material_row, user: dict) -> list[dict]:
         FROM class_offerings o
         JOIN students s ON s.class_id = o.class_id
         WHERE s.id = ?
+          AND COALESCE(s.enrollment_status, 'active') = 'active'
         """,
         (user["id"],),
     ).fetchall()

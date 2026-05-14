@@ -230,12 +230,20 @@ def _parse_int_set(raw_values: Any, field_name: str) -> set[int]:
 
 def _get_student_for_assignment(conn, assignment: dict[str, Any], student_pk_id: int) -> dict[str, Any]:
     student = conn.execute(
-        "SELECT id, student_id_number, name, class_id FROM students WHERE id = ? LIMIT 1",
+        """
+        SELECT id, student_id_number, name, class_id,
+               COALESCE(enrollment_status, 'active') AS enrollment_status
+        FROM students
+        WHERE id = ?
+        LIMIT 1
+        """,
         (student_pk_id,),
     ).fetchone()
     if not student:
         raise HTTPException(404, "学生不存在")
     student_dict = dict(student)
+    if str(student_dict.get("enrollment_status") or "active").strip().lower() != "active":
+        raise HTTPException(400, "该学生已休学，不需要完成当前课堂任务")
     offering_class_id = assignment.get("offering_class_id")
     if offering_class_id and int(student_dict.get("class_id") or 0) != int(offering_class_id):
         raise HTTPException(400, "该学生不属于当前作业对应班级")
@@ -628,6 +636,8 @@ def _reset_submission_after_attachment_edit(conn, submission_id: int, teacher_id
         SET status = 'submitted',
             score = NULL,
             feedback_md = NULL,
+            grading_started_at = NULL,
+            grading_attempt_fingerprint = NULL,
             resubmission_allowed = 0,
             resubmission_due_at = NULL,
             returned_at = NULL,
@@ -931,6 +941,8 @@ async def _save_submission_payload(
                     status = 'submitted',
                     score = NULL,
                     feedback_md = NULL,
+                    grading_started_at = NULL,
+                    grading_attempt_fingerprint = NULL,
                     answers_json = ?,
                     submitted_at = ?,
                     submitted_by_role = ?,
@@ -1284,12 +1296,23 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
             if offering:
                 if stage_target:
                     students_cursor = conn.execute(
-                        "SELECT id, student_id_number, name FROM students WHERE id = ?",
+                        """
+                        SELECT id, student_id_number, name
+                        FROM students
+                        WHERE id = ?
+                          AND COALESCE(enrollment_status, 'active') = 'active'
+                        """,
                         (int(stage_target["student_id"]),),
                     )
                 else:
                     students_cursor = conn.execute(
-                        "SELECT id, student_id_number, name FROM students WHERE class_id = ? ORDER BY student_id_number",
+                        """
+                        SELECT id, student_id_number, name
+                        FROM students
+                        WHERE class_id = ?
+                          AND COALESCE(enrollment_status, 'active') = 'active'
+                        ORDER BY student_id_number
+                        """,
                         (offering['class_id'],),
                     )
                 roster = [dict(row) for row in students_cursor]
@@ -1427,6 +1450,7 @@ async def zero_unsubmitted_scores(assignment_id: str, user: dict = Depends(get_c
                 SELECT s.id, s.student_id_number, s.name
                 FROM students s
                 WHERE s.class_id = ?
+                  AND COALESCE(s.enrollment_status, 'active') = 'active'
                 ORDER BY s.student_id_number, s.name
                 """,
                 (int(offering_class_id),),
@@ -1567,6 +1591,8 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
             SET status = 'graded',
                 score = ?,
                 feedback_md = ?,
+                grading_started_at = NULL,
+                grading_attempt_fingerprint = NULL,
                 resubmission_allowed = 0,
                 resubmission_due_at = NULL,
                 returned_at = NULL,
@@ -1872,7 +1898,12 @@ async def export_submission_attachments(
             JOIN submissions s ON s.id = sf.submission_id
             JOIN students stu ON stu.id = s.student_pk_id
             WHERE s.assignment_id = ?
-              AND s.student_pk_id IN (SELECT id FROM students WHERE class_id = ?)
+              AND s.student_pk_id IN (
+                  SELECT id
+                  FROM students
+                  WHERE class_id = ?
+                    AND COALESCE(enrollment_status, 'active') = 'active'
+              )
               AND s.status != 'unsubmitted'
             ORDER BY stu.student_id_number, sf.relative_path
             """,
@@ -1963,7 +1994,15 @@ async def export_grades_for_class(assignment_id: str, class_offering_id: int, us
             raise HTTPException(404, "未找到班级")
 
         # 1. 获取班级所有学生
-        roster_cursor = conn.execute("SELECT id, student_id_number, name FROM students WHERE class_id = ?", (class_id,))
+        roster_cursor = conn.execute(
+            """
+            SELECT id, student_id_number, name
+            FROM students
+            WHERE class_id = ?
+              AND COALESCE(enrollment_status, 'active') = 'active'
+            """,
+            (class_id,),
+        )
         roster_df = pd.DataFrame(roster_cursor, columns=['student_pk_id', '学号', '姓名'])
 
         if roster_df.empty:
@@ -1980,8 +2019,13 @@ async def export_grades_for_class(assignment_id: str, class_offering_id: int, us
                       END AS status,
                       feedback_md
                FROM submissions
-               WHERE assignment_id = ?
-                 AND student_pk_id IN (SELECT id FROM students WHERE class_id = ?)""",
+                WHERE assignment_id = ?
+                  AND student_pk_id IN (
+                      SELECT id
+                      FROM students
+                      WHERE class_id = ?
+                        AND COALESCE(enrollment_status, 'active') = 'active'
+                  )""",
             (assignment_id, class_id)
         )
         grades_df = pd.DataFrame(grades_cursor, columns=['student_pk_id', '提交姓名', '分数', '状态', '评语'])
@@ -2411,6 +2455,8 @@ async def teacher_withdraw_submissions(
             SET status = 'submitted',
                 score = NULL,
                 feedback_md = NULL,
+                grading_started_at = NULL,
+                grading_attempt_fingerprint = NULL,
                 resubmission_allowed = 1,
                 resubmission_due_at = ?,
                 returned_at = ?,

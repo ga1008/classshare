@@ -39,10 +39,11 @@ def _ensure_behavior_access(conn, class_offering_id: int, user_pk: int, user_rol
         offering = conn.execute(
             """
             SELECT o.id
-            FROM class_offerings o
-            JOIN students s ON s.class_id = o.class_id
-            WHERE o.id = ? AND s.id = ?
-            LIMIT 1
+        FROM class_offerings o
+        JOIN students s ON s.class_id = o.class_id
+        WHERE o.id = ? AND s.id = ?
+          AND COALESCE(s.enrollment_status, 'active') = 'active'
+        LIMIT 1
             """,
             (class_offering_id, user_pk),
         ).fetchone()

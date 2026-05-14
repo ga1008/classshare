@@ -39,7 +39,11 @@ from ..services.psych_profile_service import (
 )
 from ..services.academic_service import build_classroom_ai_context
 from ..services.submission_file_alignment import resolve_submission_file_path
-from ..services.ai_grading_service import AIGradingQueueError, submit_submission_for_ai_grading
+from ..services.ai_grading_service import (
+    AIGradingQueueError,
+    build_submission_grading_fingerprint,
+    submit_submission_for_ai_grading,
+)
 from ..services.grading_feedback_service import normalize_grading_result, sanitize_student_feedback_text
 from ..services.learning_progress_service import (
     build_student_global_cultivation_profile,
@@ -70,6 +74,44 @@ class ExamGenTaskStatus(str, Enum):
 _exam_gen_tasks: Dict[str, Dict[str, Any]] = {}
 _exam_gen_tasks_lock = asyncio.Lock()
 PSYCH_PROFILE_HISTORY_LIMIT = 24
+
+
+def _exam_task_payload_from_paper(paper: dict[str, Any]) -> dict[str, Any]:
+    status = str(paper.get("ai_gen_status") or "").strip().lower() or ExamGenTaskStatus.PENDING
+    task = {
+        "id": paper.get("ai_gen_task_id"),
+        "paper_id": paper.get("id"),
+        "status": status,
+        "title": paper.get("title") or "",
+        "created_at": paper.get("created_at"),
+        "started_at": None,
+        "completed_at": paper.get("updated_at") if status in {ExamGenTaskStatus.COMPLETED, ExamGenTaskStatus.FAILED} else None,
+        "error": paper.get("ai_gen_error"),
+    }
+    if status == ExamGenTaskStatus.COMPLETED:
+        try:
+            exam_data = json.loads(paper.get("questions_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            exam_data = {}
+        if isinstance(exam_data, dict):
+            task["exam_data"] = exam_data
+    return task
+
+
+def _load_exam_task_from_db(task_id: str, teacher_id: int) -> dict[str, Any] | None:
+    with get_db_connection() as conn:
+        paper = conn.execute(
+            """
+            SELECT *
+            FROM exam_papers
+            WHERE ai_gen_task_id = ? AND teacher_id = ?
+            LIMIT 1
+            """,
+            (task_id, int(teacher_id)),
+        ).fetchone()
+        if not paper:
+            return None
+        return _exam_task_payload_from_paper(dict(paper))
 
 
 def _extract_ai_service_http_error(exc: httpx.HTTPStatusError) -> str:
@@ -207,12 +249,37 @@ async def handle_ai_grading_callback(request: Request):
         submission_id = data['submission_id']
         with get_db_connection() as conn:
             submission = conn.execute(
-                "SELECT resubmission_allowed, answers_json FROM submissions WHERE id = ?",
+                "SELECT id, status, resubmission_allowed, answers_json, submitted_at FROM submissions WHERE id = ?",
                 (submission_id,),
             ).fetchone()
+            if not submission:
+                conn.commit()
+                return {"status": "ignored_missing_submission"}
             if submission and int(submission["resubmission_allowed"] or 0):
                 conn.commit()
                 return {"status": "ignored_returned_submission"}
+            current_status = str(submission["status"] or "").strip().lower()
+            if current_status != "grading":
+                conn.commit()
+                return {"status": "ignored_non_grading_submission", "current_status": current_status}
+            expected_fingerprint = str(data.get("submission_fingerprint") or "").strip()
+            if expected_fingerprint:
+                file_rows = [
+                    dict(row)
+                    for row in conn.execute(
+                        """
+                        SELECT id, stored_path, original_filename, relative_path, mime_type, file_size, file_ext, file_hash
+                        FROM submission_files
+                        WHERE submission_id = ?
+                        ORDER BY COALESCE(relative_path, original_filename), id
+                        """,
+                        (submission_id,),
+                    )
+                ]
+                current_fingerprint = build_submission_grading_fingerprint(dict(submission), file_rows)
+                if current_fingerprint != expected_fingerprint:
+                    conn.commit()
+                    return {"status": "ignored_stale_grading_result"}
             status = str(data.get("status") or "").strip().lower()
             score = data.get("score")
             feedback_md = data.get("feedback_md")
@@ -230,8 +297,16 @@ async def handle_ai_grading_callback(request: Request):
             elif feedback_md:
                 feedback_md = sanitize_student_feedback_text(feedback_md)
             conn.execute(
-                "UPDATE submissions SET status = ?, score = ?, feedback_md = ? WHERE id = ?",
-                (status, score, feedback_md, submission_id)
+                """
+                UPDATE submissions
+                SET status = ?,
+                    score = ?,
+                    feedback_md = ?,
+                    grading_started_at = NULL,
+                    grading_attempt_fingerprint = NULL
+                WHERE id = ?
+                """,
+                (status, score, feedback_md, submission_id),
             )
             if status == 'graded':
                 try:
@@ -540,6 +615,7 @@ def _ensure_classroom_access(conn, class_offering_id: int, user_pk: int, user_ro
             FROM class_offerings o
             JOIN students s ON s.class_id = o.class_id
             WHERE o.id = ? AND s.id = ?
+              AND COALESCE(s.enrollment_status, 'active') = 'active'
             """,
             (class_offering_id, user_pk)
         ).fetchone()
@@ -811,8 +887,15 @@ def format_system_prompt_student(user_id: int, class_offering_id: int) -> str:
             prompt_parts.append(f"- 所在行政班级: {student_info['class_name']}")
 
             # 3. 获取班级人数
-            count_result = conn.execute("SELECT COUNT(*) FROM students WHERE class_id = ?",
-                                        (student_info['class_id'],)).fetchone()
+            count_result = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM students
+                WHERE class_id = ?
+                  AND COALESCE(enrollment_status, 'active') = 'active'
+                """,
+                (student_info['class_id'],),
+            ).fetchone()
             if count_result:
                 prompt_parts.append(f"- 行政班级人数: {count_result[0]}")
 
@@ -1834,7 +1917,7 @@ async def generate_exam_questions_async(
                 _exam_gen_tasks[task_id]['result'] = exam_data
                 _exam_gen_tasks[task_id]['completed_at'] = datetime.now().isoformat()
 
-            # 更新数据库（保持 status='generating'，让前端轮询能检测到完成状态）
+            # 更新数据库：试卷内容已可用，轮询接口会通过 ai_gen_status 检测完成状态。
             if paper_id:
                 try:
                     questions_json = json.dumps(exam_data, ensure_ascii=False)
@@ -1843,7 +1926,10 @@ async def generate_exam_questions_async(
                         conn.execute(
                             """UPDATE exam_papers
                                SET questions_json = ?, description = ?,
-                                   ai_gen_status = 'completed', updated_at = ?
+                                   status = 'ready',
+                                   ai_gen_status = 'completed',
+                                   ai_gen_error = NULL,
+                                   updated_at = ?
                                WHERE id = ?""",
                             (questions_json, description, datetime.now().isoformat(), paper_id)
                         )
@@ -2296,6 +2382,9 @@ async def get_exam_gen_task_status(task_id: str, user: dict = Depends(get_curren
         task = _exam_gen_tasks.get(task_id)
 
     if not task:
+        task_from_db = _load_exam_task_from_db(task_id, int(user["id"]))
+        if task_from_db:
+            return {"status": "success", "task": task_from_db}
         raise HTTPException(status_code=404, detail="任务不存在")
 
     if task['teacher_id'] != user['id']:
@@ -2332,7 +2421,22 @@ async def cancel_exam_gen_task(task_id: str, user: dict = Depends(get_current_te
         task = _exam_gen_tasks.get(task_id)
 
     if not task:
-        raise HTTPException(status_code=404, detail="任务不存在")
+        task_from_db = _load_exam_task_from_db(task_id, int(user["id"]))
+        if not task_from_db:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        if task_from_db["status"] == ExamGenTaskStatus.COMPLETED:
+            return {"status": "success", "message": "任务已完成，无法取消"}
+        if task_from_db["status"] == ExamGenTaskStatus.FAILED:
+            return {"status": "success", "message": "任务已失败，无法取消"}
+        paper_id = task_from_db.get("paper_id")
+        if paper_id:
+            with get_db_connection() as conn:
+                conn.execute(
+                    "DELETE FROM exam_papers WHERE id = ? AND teacher_id = ?",
+                    (paper_id, user["id"]),
+                )
+                conn.commit()
+        return {"status": "success", "message": "任务已取消", "paper_id": paper_id}
 
     if task['teacher_id'] != user['id']:
         raise HTTPException(status_code=403, detail="无权操作此任务")
@@ -2423,6 +2527,7 @@ async def get_generating_exam_papers(user: dict = Depends(get_current_teacher)):
         papers = conn.execute(
             """SELECT * FROM exam_papers
                WHERE teacher_id = ? AND status = 'generating'
+                 AND COALESCE(ai_gen_status, '') IN ('pending', 'running', 'failed')
                ORDER BY created_at DESC""",
             (user['id'],)
         ).fetchall()

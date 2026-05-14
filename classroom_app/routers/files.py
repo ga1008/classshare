@@ -106,7 +106,12 @@ def _ensure_classroom_access_for_user(conn, class_offering_id: int, user: Option
             raise HTTPException(status_code=403, detail="Permission denied")
     elif user.get("role") == "student":
         student_class = conn.execute(
-            "SELECT class_id FROM students WHERE id = ?",
+            """
+            SELECT class_id
+            FROM students
+            WHERE id = ?
+              AND COALESCE(enrollment_status, 'active') = 'active'
+            """,
             (user_pk,),
         ).fetchone()
         if not student_class or int(student_class["class_id"]) != int(offering["class_id"]):
@@ -152,6 +157,7 @@ def _ensure_course_file_access(conn, file_row, user: Optional[dict]):
         JOIN students s ON s.class_id = o.class_id
         WHERE o.course_id = ?
           AND s.id = ?
+          AND COALESCE(s.enrollment_status, 'active') = 'active'
         LIMIT 1
         """,
         (file_row["course_id"], user_pk),
@@ -406,7 +412,12 @@ def _ensure_websocket_room_access_sync(class_offering_id: int, user: dict, user_
             raise HTTPException(status_code=403, detail="Permission denied")
 
         student_class = conn.execute(
-            "SELECT class_id FROM students WHERE id = ?",
+            """
+            SELECT class_id
+            FROM students
+            WHERE id = ?
+              AND COALESCE(enrollment_status, 'active') = 'active'
+            """,
             (user_pk,),
         ).fetchone()
         if not student_class or int(student_class["class_id"]) != int(offering["class_id"]):

@@ -21,7 +21,7 @@
   },
   "tailwind_app": {
     "path": "css/tailwind-app.css",
-    "version": "tailwind-daisy-flowbite-20260513",
+    "version": "tailwind-daisy-flowbite-20260514-student-lifecycle",
     "type": "style"
   }
 }

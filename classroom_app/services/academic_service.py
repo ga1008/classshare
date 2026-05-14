@@ -323,6 +323,7 @@ def load_student_semester_rows(conn, student_id: int):
         SELECT class_id
         FROM students
         WHERE id = ?
+          AND COALESCE(enrollment_status, 'active') = 'active'
         LIMIT 1
         """,
         (student_id,),
@@ -675,6 +676,7 @@ def build_classroom_ai_context(conn, class_offering_id: int) -> dict[str, Any]:
                    SELECT COUNT(*)
                    FROM students st
                    WHERE st.class_id = o.class_id
+                     AND COALESCE(st.enrollment_status, 'active') = 'active'
                ) AS class_student_count,
                tb.title AS textbook_title,
                tb.authors_json AS textbook_authors_json,

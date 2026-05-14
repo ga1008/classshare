@@ -502,7 +502,12 @@ def ensure_classroom_access(conn, class_offering_id: int, user: dict):
         return offering
 
     student = conn.execute(
-        "SELECT class_id FROM students WHERE id = ?",
+        """
+        SELECT class_id
+        FROM students
+        WHERE id = ?
+          AND COALESCE(enrollment_status, 'active') = 'active'
+        """,
         (user["id"],),
     ).fetchone()
     if not student or int(student["class_id"]) != int(offering["class_id"]):
@@ -536,6 +541,7 @@ def _get_student_offering_ids(conn, student_id: int) -> list[int]:
         FROM class_offerings o
         JOIN students s ON s.class_id = o.class_id
         WHERE s.id = ?
+          AND COALESCE(s.enrollment_status, 'active') = 'active'
         """,
         (student_id,),
     ).fetchall()

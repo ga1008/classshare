@@ -563,6 +563,7 @@ def _build_teacher_dashboard_context(
             FROM class_offerings
             WHERE teacher_id = ?
         ) active_classes ON active_classes.class_id = s.class_id
+        WHERE COALESCE(s.enrollment_status, 'active') = 'active'
         """,
         (teacher_id,),
     )
@@ -963,10 +964,16 @@ def _build_student_dashboard_context(
     student_profile = conn.execute(
         """
         SELECT s.id, s.class_id, c.name AS class_name,
-               (SELECT COUNT(*) FROM students peers WHERE peers.class_id = s.class_id) AS classmate_count
+               (
+                   SELECT COUNT(*)
+                   FROM students peers
+                   WHERE peers.class_id = s.class_id
+                     AND COALESCE(peers.enrollment_status, 'active') = 'active'
+               ) AS classmate_count
         FROM students s
         JOIN classes c ON c.id = s.class_id
         WHERE s.id = ?
+          AND COALESCE(s.enrollment_status, 'active') = 'active'
         LIMIT 1
         """,
         (student_id,),
@@ -1278,11 +1285,16 @@ def _load_teacher_offerings(conn, teacher_id: int) -> list[dict[str, Any]]:
                c.name AS course_name, c.description AS course_description, c.credits AS course_credits,
                c.department AS course_department,
                cl.name AS class_name, cl.description AS class_description, cl.department AS class_department,
-               COUNT(s.id) AS student_count
+               COUNT(CASE
+                   WHEN COALESCE(s.enrollment_status, 'active') = 'active'
+                   THEN s.id END
+               ) AS student_count
         FROM class_offerings o
         JOIN courses c ON c.id = o.course_id
         JOIN classes cl ON cl.id = o.class_id
-        LEFT JOIN students s ON s.class_id = o.class_id
+        LEFT JOIN students s
+               ON s.class_id = o.class_id
+              AND COALESCE(s.enrollment_status, 'active') = 'active'
         WHERE o.teacher_id = ?
         GROUP BY o.id, o.class_id, o.course_id, o.teacher_id, o.semester, o.semester_id, o.schedule_info,
                  o.first_class_date, o.weekly_schedule_json, o.created_at,
@@ -1309,6 +1321,7 @@ def _load_student_offerings(conn, student_id: int) -> list[dict[str, Any]]:
             SELECT class_id
             FROM students
             WHERE id = ?
+              AND COALESCE(enrollment_status, 'active') = 'active'
         )
         ORDER BY o.id DESC
         """,
@@ -1432,6 +1445,11 @@ def _load_teacher_recent_login_stats(conn, class_ids: list[int]) -> dict[int, di
         FROM student_login_audit_logs
         WHERE class_id IN ({placeholders})
           AND logged_at >= ?
+          AND student_id IN (
+              SELECT id
+              FROM students
+              WHERE COALESCE(enrollment_status, 'active') = 'active'
+          )
         GROUP BY class_id
         """,
         (*normalized_class_ids, cutoff),
@@ -1559,6 +1577,7 @@ def _load_student_priority_items(conn, student_id: int, limit: int = 4) -> list[
             SELECT class_id
             FROM students
             WHERE id = ?
+              AND COALESCE(enrollment_status, 'active') = 'active'
         )
           AND a.status = 'published'
           AND s.id IS NULL

@@ -89,7 +89,9 @@ def _load_teacher_classes(conn: sqlite3.Connection, teacher_id: int) -> list[dic
                COUNT(DISTINCT s.id) AS student_count,
                GROUP_CONCAT(DISTINCT o.course_id) AS related_course_ids
         FROM classes c
-        LEFT JOIN students s ON s.class_id = c.id
+        LEFT JOIN students s
+               ON s.class_id = c.id
+              AND COALESCE(s.enrollment_status, 'active') = 'active'
         LEFT JOIN class_offerings o ON o.class_id = c.id AND o.teacher_id = c.created_by_teacher_id
         WHERE c.created_by_teacher_id = ?
         GROUP BY c.id, c.name, c.department, c.description, c.created_at

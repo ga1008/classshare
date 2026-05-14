@@ -21,6 +21,11 @@ from .database import (
     list_user_sessions,
     save_user_session,
 )
+from .services.student_lifecycle_service import (
+    STUDENT_STATUS_ACTIVE,
+    normalize_student_enrollment_status,
+    student_enrollment_status_label,
+)
 
 # --- 密码加密 ---
 
@@ -492,6 +497,41 @@ def get_current_user(user: Optional[dict] = Depends(get_current_user_optional)) 
                 "X-Auth-Error": AUTH_ERROR_LOGIN_REQUIRED,
             },
         )
+    if user.get("role") == "student":
+        try:
+            with get_db_connection() as conn:
+                row = conn.execute(
+                    """
+                    SELECT COALESCE(enrollment_status, 'active') AS enrollment_status
+                    FROM students
+                    WHERE id = ?
+                    LIMIT 1
+                    """,
+                    (user.get("id"),),
+                ).fetchone()
+        except Exception:
+            row = None
+        if row is None:
+            invalidate_session_for_user(str(user.get("id") or ""), "student")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="当前学生账号不存在或已移除。",
+                headers={
+                    "X-Auth-Error": AUTH_ERROR_PERMISSION_DENIED,
+                    "X-Required-Role": "student",
+                },
+            )
+        normalized_status = normalize_student_enrollment_status(row["enrollment_status"])
+        if normalized_status != STUDENT_STATUS_ACTIVE:
+            invalidate_session_for_user(str(user.get("id") or ""), "student")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"当前学生账号已设置为{student_enrollment_status_label(normalized_status)}，暂不纳入课堂学习。",
+                headers={
+                    "X-Auth-Error": AUTH_ERROR_PERMISSION_DENIED,
+                    "X-Required-Role": "student",
+                },
+            )
     return user
 
 def get_current_teacher(user: dict = Depends(get_current_user)) -> dict:

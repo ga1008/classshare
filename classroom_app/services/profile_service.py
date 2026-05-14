@@ -188,7 +188,12 @@ def get_user_profile(conn, user: dict) -> dict[str, Any]:
                    s.avatar_mime_type, s.avatar_updated_at, s.today_mood,
                    s.today_mood_updated_at, s.created_at,
                    c.name AS class_name,
-                   (SELECT COUNT(*) FROM students peers WHERE peers.class_id = s.class_id) AS classmate_count
+                   (
+                       SELECT COUNT(*)
+                       FROM students peers
+                       WHERE peers.class_id = s.class_id
+                         AND COALESCE(peers.enrollment_status, 'active') = 'active'
+                   ) AS classmate_count
             FROM students s
             JOIN classes c ON c.id = s.class_id
             WHERE s.id = ?
@@ -459,6 +464,7 @@ def _build_teacher_overview(conn, profile: dict[str, Any], user: dict) -> dict[s
             FROM students s
             JOIN class_offerings o ON o.class_id = s.class_id
             WHERE o.teacher_id = ?
+              AND COALESCE(s.enrollment_status, 'active') = 'active'
             """,
             (teacher_id,),
         )
@@ -568,7 +574,12 @@ def _build_student_overview(conn, profile: dict[str, Any], user: dict) -> dict[s
             """
             SELECT COUNT(*)
             FROM class_offerings
-            WHERE class_id = (SELECT class_id FROM students WHERE id = ?)
+            WHERE class_id = (
+                SELECT class_id
+                FROM students
+                WHERE id = ?
+                  AND COALESCE(enrollment_status, 'active') = 'active'
+            )
             """,
             (student_id,),
         )

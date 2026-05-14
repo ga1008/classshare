@@ -498,7 +498,13 @@ def _load_accessible_classroom_private_scope(conn, user: dict, class_offering_id
         return offering if int(offering["teacher_id"]) == current_user_pk else None
 
     student_row = conn.execute(
-        "SELECT class_id FROM students WHERE id = ? LIMIT 1",
+        """
+        SELECT class_id
+        FROM students
+        WHERE id = ?
+          AND COALESCE(enrollment_status, 'active') = 'active'
+        LIMIT 1
+        """,
         (current_user_pk,),
     ).fetchone()
     if student_row is None or int(student_row["class_id"]) != int(offering["class_id"]):
@@ -521,6 +527,7 @@ def _load_scoped_student_contact(conn, student_id: int, class_offering_id: Optio
         JOIN students s ON s.class_id = o.class_id
         WHERE o.id = ?
           AND s.id = ?
+          AND COALESCE(s.enrollment_status, 'active') = 'active'
         LIMIT 1
         """,
         (int(class_offering_id), int(student_id)),
@@ -632,6 +639,7 @@ def _load_student_contact_catalog(conn, student_id: int) -> dict[str, dict[str, 
         SELECT id, name, student_id_number
         FROM students
         WHERE class_id = ? AND id != ?
+          AND COALESCE(enrollment_status, 'active') = 'active'
         ORDER BY student_id_number, id
         """,
         (class_id, student_id),
@@ -711,6 +719,7 @@ def _load_teacher_contact_catalog(conn, teacher_id: int) -> dict[str, dict[str, 
         JOIN classes cl ON cl.id = o.class_id
         JOIN students s ON s.class_id = o.class_id
         WHERE o.teacher_id = ?
+          AND COALESCE(s.enrollment_status, 'active') = 'active'
         ORDER BY c.name, cl.name, s.student_id_number, s.id
         """,
         (teacher_id,),
@@ -921,6 +930,7 @@ def _resolve_direct_user_contact(
             FROM students s
             LEFT JOIN classes c ON c.id = s.class_id
             WHERE s.id = ?
+              AND COALESCE(s.enrollment_status, 'active') = 'active'
             LIMIT 1
             """,
             (parsed["user_pk"],),
@@ -981,6 +991,7 @@ def list_classroom_private_message_contacts(conn, user: dict, class_offering_id:
         SELECT id, name, student_id_number
         FROM students
         WHERE class_id = ?
+          AND COALESCE(enrollment_status, 'active') = 'active'
         ORDER BY student_id_number, id
         """,
         (int(offering["class_id"]),),
@@ -2881,6 +2892,7 @@ def create_assignment_published_notifications(conn, assignment_id: int | str) ->
             FROM class_offerings o
             JOIN students s ON s.class_id = o.class_id
             WHERE o.id = ?
+              AND COALESCE(s.enrollment_status, 'active') = 'active'
             ORDER BY s.id
             """,
             (int(assignment["class_offering_id"]),),
@@ -2892,6 +2904,7 @@ def create_assignment_published_notifications(conn, assignment_id: int | str) ->
             FROM class_offerings o
             JOIN students s ON s.class_id = o.class_id
             WHERE o.course_id = ? AND o.teacher_id = ?
+              AND COALESCE(s.enrollment_status, 'active') = 'active'
             ORDER BY s.id
             """,
             (int(assignment["course_id"]), teacher_id),
@@ -3209,7 +3222,13 @@ def create_discussion_mention_notifications(
     }
 
     student_rows = conn.execute(
-        "SELECT id, name FROM students WHERE class_id = ? ORDER BY id",
+        """
+        SELECT id, name
+        FROM students
+        WHERE class_id = ?
+          AND COALESCE(enrollment_status, 'active') = 'active'
+        ORDER BY id
+        """,
         (int(offering["class_id"]),),
     ).fetchall()
     for row in student_rows:

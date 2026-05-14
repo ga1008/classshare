@@ -71,6 +71,17 @@ def _read_bool_env(name: str, default: bool = False) -> bool:
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _read_float_env(name: str, default: float) -> float:
+    raw_value = os.getenv(name)
+    if raw_value in (None, ""):
+        return default
+    try:
+        return float(raw_value)
+    except ValueError:
+        print(f"[WARNING] Invalid float for {name}: {raw_value!r}. Using {default}.")
+        return default
+
+
 def _configure_stdio_encoding() -> None:
     for stream_name in ("stdout", "stderr"):
         stream = getattr(sys, stream_name, None)
@@ -118,6 +129,19 @@ VOLCENGINE_DOCUMENT_MAX_MB = float(os.getenv("VOLCENGINE_DOCUMENT_MAX_MB", 5))
 VOLCENGINE_DOCUMENT_MAX_BYTES = int(VOLCENGINE_DOCUMENT_MAX_MB * 1024 * 1024)
 VOLCENGINE_IMAGE_MAX_MB = float(os.getenv("VOLCENGINE_IMAGE_MAX_MB", 10))
 VOLCENGINE_IMAGE_MAX_BYTES = int(VOLCENGINE_IMAGE_MAX_MB * 1024 * 1024)
+AI_GRADING_MAX_CONCURRENT_JOBS = max(1, _read_int_env("AI_GRADING_MAX_CONCURRENT_JOBS", default=4))
+AI_GRADING_MAX_PENDING_JOBS = max(
+    0,
+    _read_int_env("AI_GRADING_MAX_PENDING_JOBS", "AI_QUEUE_MAX_PENDING", default=AI_QUEUE_MAX_PENDING),
+)
+AI_GRADING_CALLBACK_MAX_ATTEMPTS = max(
+    1,
+    min(_read_int_env("AI_GRADING_CALLBACK_MAX_ATTEMPTS", default=4), 12),
+)
+AI_GRADING_CALLBACK_RETRY_BASE_SECONDS = max(
+    0.5,
+    _read_float_env("AI_GRADING_CALLBACK_RETRY_BASE_SECONDS", 2.0),
+)
 
 AI_TASK_LIGHT_MULTIMODAL = "light_multimodal_understanding"
 AI_TASK_DEEP_MULTIMODAL = "deep_multimodal_reasoning"
@@ -575,6 +599,9 @@ class AIPriorityLimiter:
 ai_limiter = AIPriorityLimiter(GLOBAL_AI_CONCURRENCY, max_pending=AI_QUEUE_MAX_PENDING)
 ai_model_router = AIModelLoadRouter(max_pending=AI_PROVIDER_QUEUE_MAX_PENDING)
 callback_client = httpx.AsyncClient()
+grading_job_semaphore = asyncio.Semaphore(AI_GRADING_MAX_CONCURRENT_JOBS)
+grading_job_lock = asyncio.Lock()
+grading_job_pending_count = 0
 
 
 AI_USAGE_LOG_ENABLED = os.getenv("AI_USAGE_LOG_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
@@ -862,6 +889,8 @@ class GradingJob(BaseModel):
     answers_json: Optional[str] = None
     allowed_file_types_json: Optional[str] = None
     student_profile_context: Optional[str] = None
+    submitted_at: Optional[str] = None
+    submission_fingerprint: Optional[str] = None
     # model_type 将在 run_grading_job 中动态决定，这里不再需要
 
 
@@ -1024,6 +1053,11 @@ async def internal_health():
         "port": AI_PORT,
         "timezone": app_timezone_name(),
         "server_local_time": local_iso(),
+        "grading_queue": {
+            "pending": grading_job_pending_count,
+            "max_pending": AI_GRADING_MAX_PENDING_JOBS,
+            "max_concurrent": AI_GRADING_MAX_CONCURRENT_JOBS,
+        },
     }
 
 
@@ -3340,10 +3374,52 @@ async def get_software_info(req: SoftwareInfoRequest):
 
 @app.post("/api/ai/submit-grading-job")
 async def submit_grading_task(job: GradingJob):
+    global grading_job_pending_count
+    async with grading_job_lock:
+        if AI_GRADING_MAX_PENDING_JOBS and grading_job_pending_count >= AI_GRADING_MAX_PENDING_JOBS:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "AI grading queue is full; please retry shortly. "
+                    f"pending={grading_job_pending_count}, limit={AI_GRADING_MAX_PENDING_JOBS}"
+                ),
+            )
+        grading_job_pending_count += 1
     print(f"[AI SERVER] 收到批改任务 (Submission ID: {job.submission_id})，已加入后台处理。")
     # 这里不 await，让任务在后台运行
-    asyncio.create_task(run_grading_job(job))
+    asyncio.create_task(_run_grading_job_with_queue_slot(job))
     return {"status": "queued", "submission_id": job.submission_id}
+
+
+async def _run_grading_job_with_queue_slot(job: GradingJob):
+    global grading_job_pending_count
+    try:
+        async with grading_job_semaphore:
+            await run_grading_job(job)
+    finally:
+        async with grading_job_lock:
+            grading_job_pending_count = max(0, grading_job_pending_count - 1)
+
+
+async def _post_grading_callback_with_retry(callback_data: dict[str, Any], submission_id: int) -> None:
+    last_error: Exception | None = None
+    for attempt in range(1, AI_GRADING_CALLBACK_MAX_ATTEMPTS + 1):
+        try:
+            response = await callback_client.post(MAIN_APP_CALLBACK_URL, json=callback_data, timeout=30.0)
+            response.raise_for_status()
+            print(f"[AI WORKER] 回调成功 (Submission ID: {submission_id}, attempt={attempt})")
+            return
+        except Exception as exc:
+            last_error = exc
+            if attempt >= AI_GRADING_CALLBACK_MAX_ATTEMPTS:
+                break
+            delay = min(AI_GRADING_CALLBACK_RETRY_BASE_SECONDS * (2 ** (attempt - 1)), 30.0)
+            print(
+                f"[AI WORKER] 回调失败，将重试 "
+                f"(Submission ID: {submission_id}, attempt={attempt}, delay={delay:.1f}s): {exc}"
+            )
+            await asyncio.sleep(delay)
+    raise RuntimeError(f"grading callback failed after retries: {last_error}")
 
 
 def _pre_extract_documents(grading_files: list[dict[str, Any]]) -> None:
@@ -3556,6 +3632,12 @@ async def run_grading_job(job: GradingJob):
             "score": None, "feedback_md": f"AI 批改失败: {e}"
         }
 
+    if callback_data:
+        if job.submitted_at:
+            callback_data["submitted_at"] = job.submitted_at
+        if job.submission_fingerprint:
+            callback_data["submission_fingerprint"] = job.submission_fingerprint
+
     # --- 回调 main.py (保持不变) ---
     if not MAIN_APP_CALLBACK_URL:
         print("[ERROR] MAIN_APP_CALLBACK_URL 未设置，无法回调。")
@@ -3563,8 +3645,7 @@ async def run_grading_job(job: GradingJob):
     try:
         print(f"[AI WORKER] 正在回调: {MAIN_APP_CALLBACK_URL}")
         if callback_data:
-            await callback_client.post(MAIN_APP_CALLBACK_URL, json=callback_data, timeout=30.0)
-            print(f"[AI WORKER] 回调成功 (Submission ID: {job.submission_id})")
+            await _post_grading_callback_with_retry(callback_data, job.submission_id)
         else:
             print(f"[ERROR] Callback data is empty for Submission ID: {job.submission_id}")
 

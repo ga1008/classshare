@@ -65,6 +65,12 @@ from ..services.blog_news_crawler_service import (
 )
 from ..services.roster_handler import parse_excel_to_students
 from ..services.student_auth_service import build_student_security_summary, list_student_login_history
+from ..services.student_lifecycle_service import (
+    STUDENT_STATUS_ACTIVE,
+    STUDENT_STATUS_SUSPENDED,
+    normalize_student_enrollment_status,
+    student_enrollment_status_label,
+)
 from ..services.submission_file_alignment import run_full_alignment
 from ..services.teacher_account_service import (
     TEACHER_PASSWORD_HINT,
@@ -76,6 +82,7 @@ from ..services.teacher_account_service import (
     update_teacher_account,
 )
 from ..storage_paths import resolve_migrated_file_path
+from ..time_utils import local_iso
 
 router = APIRouter(prefix="/api/manage", dependencies=[Depends(get_current_teacher)])
 
@@ -505,6 +512,45 @@ def _normalize_material_id_list(raw_value: Any) -> list[int]:
     return normalized
 
 
+def _clean_form_text(value: Any, *, limit: int | None = None) -> str:
+    text = str(value or "").strip()
+    if limit and len(text) > limit:
+        return text[:limit].strip()
+    return text
+
+
+def _ensure_teacher_owned_class(conn, *, class_id: int, teacher_id: int):
+    class_row = conn.execute(
+        """
+        SELECT *
+        FROM classes
+        WHERE id = ? AND created_by_teacher_id = ?
+        LIMIT 1
+        """,
+        (int(class_id), int(teacher_id)),
+    ).fetchone()
+    if not class_row:
+        raise HTTPException(status_code=404, detail="班级不存在或无权操作")
+    return class_row
+
+
+def _ensure_teacher_owned_student(conn, *, student_id: int, teacher_id: int):
+    student_row = conn.execute(
+        """
+        SELECT s.*, c.name AS class_name, c.created_by_teacher_id
+        FROM students s
+        JOIN classes c ON c.id = s.class_id
+        WHERE s.id = ?
+          AND c.created_by_teacher_id = ?
+        LIMIT 1
+        """,
+        (int(student_id), int(teacher_id)),
+    ).fetchone()
+    if not student_row:
+        raise HTTPException(status_code=404, detail="学生不存在或无权操作")
+    return student_row
+
+
 @router.post("/teacher-onboarding/complete", response_class=JSONResponse)
 async def api_complete_teacher_onboarding(request: Request, user: dict = Depends(get_current_teacher)):
     data = await _parse_json_request(request)
@@ -871,6 +917,135 @@ async def api_create_class(request: Request, class_name: str = Form(), file: Upl
     if missing_email_count:
         message += f" 其中 {missing_email_count} 名学生缺少邮箱，后续只能收到站内通知，可提醒学生在个人中心补充。"
     return {"status": "success", "message": message, "missing_email_count": missing_email_count}
+
+
+@router.post("/classes/{class_id}/students", response_class=JSONResponse)
+async def api_create_class_student(
+    class_id: int,
+    name: str = Form(...),
+    student_id_number: str = Form(...),
+    gender: str = Form(default=""),
+    email: str = Form(default=""),
+    phone: str = Form(default=""),
+    user: dict = Depends(get_current_teacher),
+):
+    """向已有班级追加单个学生，适用于插班等日常维护。"""
+    cleaned_name = _clean_form_text(name, limit=80)
+    cleaned_student_id = _clean_form_text(student_id_number, limit=80)
+    cleaned_gender = _clean_form_text(gender, limit=20)
+    cleaned_email = _clean_form_text(email, limit=160)
+    cleaned_phone = _clean_form_text(phone, limit=80)
+
+    if not cleaned_name:
+        raise HTTPException(status_code=400, detail="请填写学生姓名")
+    if not cleaned_student_id:
+        raise HTTPException(status_code=400, detail="请填写学生学号")
+
+    with get_db_connection() as conn:
+        _ensure_teacher_owned_class(conn, class_id=class_id, teacher_id=user["id"])
+        try:
+            cursor = conn.execute(
+                """
+                INSERT INTO students (
+                    student_id_number, name, class_id, gender, email, phone,
+                    enrollment_status, enrollment_status_updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?)
+                """,
+                (
+                    cleaned_student_id,
+                    cleaned_name,
+                    int(class_id),
+                    cleaned_gender,
+                    cleaned_email,
+                    cleaned_phone,
+                    local_iso(),
+                ),
+            )
+            student_id = int(cursor.lastrowid)
+            conn.commit()
+        except sqlite3.IntegrityError as exc:
+            conn.rollback()
+            raise HTTPException(
+                status_code=400,
+                detail="新增失败：该学号已经存在，请先确认学生是否已在其它班级名单中。",
+            ) from exc
+
+    return {
+        "status": "success",
+        "message": f"已将 {cleaned_name} 加入班级。",
+        "student": {
+            "id": student_id,
+            "name": cleaned_name,
+            "student_id_number": cleaned_student_id,
+            "gender": cleaned_gender,
+            "email": cleaned_email,
+            "phone": cleaned_phone,
+            "enrollment_status": STUDENT_STATUS_ACTIVE,
+            "enrollment_status_label": student_enrollment_status_label(STUDENT_STATUS_ACTIVE),
+        },
+    }
+
+
+@router.post("/students/{student_id}/status", response_class=JSONResponse)
+async def api_update_class_student_status(
+    student_id: int,
+    enrollment_status: str = Form(...),
+    enrollment_note: str = Form(default=""),
+    user: dict = Depends(get_current_teacher),
+):
+    """切换学生学籍状态；休学学生保留数据但不再纳入课堂管理统计。"""
+    raw_status = str(enrollment_status or "").strip().lower()
+    if raw_status not in {"active", "suspended", "在读", "休学"}:
+        raise HTTPException(status_code=400, detail="学生状态参数不正确")
+
+    normalized_status = normalize_student_enrollment_status(enrollment_status)
+    note = _clean_form_text(enrollment_note, limit=500)
+
+    with get_db_connection() as conn:
+        student_row = _ensure_teacher_owned_student(conn, student_id=student_id, teacher_id=user["id"])
+        conn.execute(
+            """
+            UPDATE students
+            SET enrollment_status = ?,
+                enrollment_status_updated_at = ?,
+                enrollment_note = ?
+            WHERE id = ?
+            """,
+            (normalized_status, local_iso(), note, int(student_id)),
+        )
+        conn.commit()
+
+    if normalized_status != STUDENT_STATUS_ACTIVE:
+        invalidate_session_for_user(str(student_id), "student")
+
+    student_name = str(student_row["name"] or "学生")
+    return {
+        "status": "success",
+        "message": f"{student_name} 已设置为{student_enrollment_status_label(normalized_status)}。",
+        "student": {
+            "id": int(student_id),
+            "enrollment_status": normalized_status,
+            "enrollment_status_label": student_enrollment_status_label(normalized_status),
+            "enrollment_note": note,
+        },
+    }
+
+
+@router.delete("/students/{student_id}", response_class=JSONResponse)
+async def api_delete_class_student(student_id: int, user: dict = Depends(get_current_teacher)):
+    """从班级名册中删除单个学生及其关联课堂数据。"""
+    with get_db_connection() as conn:
+        student_row = _ensure_teacher_owned_student(conn, student_id=student_id, teacher_id=user["id"])
+        student_name = str(student_row["name"] or "学生")
+        try:
+            conn.execute("DELETE FROM students WHERE id = ?", (int(student_id),))
+            conn.commit()
+        except sqlite3.IntegrityError as exc:
+            conn.rollback()
+            raise HTTPException(status_code=400, detail=f"删除失败: {exc}") from exc
+
+    invalidate_session_for_user(str(student_id), "student")
+    return {"status": "success", "message": f"已删除学生 {student_name}。"}
 
 
 # (新增) 删除班级

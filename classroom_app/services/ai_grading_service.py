@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +20,95 @@ class AIGradingQueueError(Exception):
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
+
+
+STALE_GRADING_MESSAGE = "AI 批改任务长时间未返回结果，系统已自动转为失败状态，请重新发起 AI 批改或手动批改。"
+
+
+def expire_stale_ai_grading_submissions(
+    conn,
+    *,
+    stale_minutes: int = 240,
+) -> int:
+    cutoff = (datetime.now() - timedelta(minutes=max(15, int(stale_minutes or 240)))).isoformat()
+    stale_rows = [
+        dict(row)
+        for row in conn.execute(
+            """
+            SELECT s.id,
+                   s.assignment_id,
+                   lsea.id AS stage_attempt_id,
+                   lsea.class_offering_id AS stage_class_offering_id,
+                   lsea.student_id AS stage_student_id,
+                   lsea.stage_key AS stage_key
+            FROM submissions s
+            LEFT JOIN learning_stage_exam_attempts lsea
+                   ON lsea.assignment_id = s.assignment_id
+                  AND lsea.student_id = s.student_pk_id
+                  AND lsea.status = 'grading'
+            WHERE s.status = 'grading'
+              AND COALESCE(s.grading_started_at, s.submitted_at) < ?
+            """,
+            (cutoff,),
+        ).fetchall()
+    ]
+    cursor = conn.execute(
+        """
+        UPDATE submissions
+        SET status = 'grading_failed',
+            feedback_md = ?,
+            grading_started_at = NULL,
+            grading_attempt_fingerprint = NULL
+        WHERE status = 'grading'
+          AND COALESCE(grading_started_at, submitted_at) < ?
+        """,
+        (STALE_GRADING_MESSAGE, cutoff),
+    )
+    stage_attempt_ids = sorted(
+        {
+            int(row["stage_attempt_id"])
+            for row in stale_rows
+            if row.get("stage_attempt_id") is not None
+        }
+    )
+    if stage_attempt_ids:
+        placeholders = ",".join("?" for _ in stage_attempt_ids)
+        conn.execute(
+            f"""
+            UPDATE learning_stage_exam_attempts
+            SET status = 'failed',
+                ai_error = ?
+            WHERE id IN ({placeholders})
+              AND status = 'grading'
+            """,
+            (STALE_GRADING_MESSAGE, *stage_attempt_ids),
+        )
+        stage_targets = {
+            (
+                int(row["stage_class_offering_id"]),
+                int(row["stage_student_id"]),
+                str(row["stage_key"]),
+            )
+            for row in stale_rows
+            if row.get("stage_attempt_id") is not None
+            and row.get("stage_class_offering_id") is not None
+            and row.get("stage_student_id") is not None
+            and row.get("stage_key") is not None
+        }
+        for class_offering_id, student_id, stage_key in stage_targets:
+            conn.execute(
+                """
+                UPDATE learning_stage_status
+                SET status = 'challenge_ready',
+                    last_calculated_at = ?
+                WHERE class_offering_id = ?
+                  AND student_id = ?
+                  AND stage_key = ?
+                  AND status IN ('generating', 'in_exam')
+                """,
+                (datetime.now().isoformat(), class_offering_id, student_id, stage_key),
+            )
+    return int(cursor.rowcount or 0)
 
 
 def _extract_answer_attachment_context(answers_json: str | None) -> dict[str, dict[str, str]]:
@@ -150,7 +241,7 @@ def _load_submission_for_grading(
 def _load_submission_files_for_grading(conn, submission_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT stored_path, original_filename, relative_path, mime_type, file_size, file_ext, file_hash
+        SELECT id, stored_path, original_filename, relative_path, mime_type, file_size, file_ext, file_hash
         FROM submission_files
         WHERE submission_id = ?
         ORDER BY COALESCE(relative_path, original_filename), id
@@ -178,6 +269,59 @@ def _resolve_grading_files(submission_files: list[dict[str, Any]]) -> list[dict[
             + "、".join(missing_names[:8]),
         )
     return resolved_files
+
+
+def build_submission_grading_fingerprint(
+    submission: dict[str, Any],
+    submission_files: list[dict[str, Any]],
+) -> str:
+    """Build a stable version token for an AI grading job."""
+    files_payload = []
+    for item in sorted(
+        submission_files,
+        key=lambda file_info: (
+            str(file_info.get("relative_path") or file_info.get("original_filename") or ""),
+            str(file_info.get("id") or ""),
+        ),
+    ):
+        files_payload.append(
+            {
+                "id": item.get("id"),
+                "relative_path": item.get("relative_path"),
+                "stored_path": item.get("stored_path"),
+                "original_filename": item.get("original_filename"),
+                "file_size": item.get("file_size"),
+                "file_hash": item.get("file_hash"),
+            }
+        )
+    payload = {
+        "submission_id": submission.get("id"),
+        "submitted_at": submission.get("submitted_at"),
+        "answers_json": submission.get("answers_json"),
+        "files": files_payload,
+    }
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _prepare_grading_inputs(
+    submission: dict[str, Any],
+    submission_files: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], bool, bool]:
+    resolved_files = _resolve_grading_files(submission_files)
+    has_files = bool(resolved_files)
+    has_answers = bool(submission["answers_json"])
+    if not has_files and not has_answers:
+        raise AIGradingQueueError(400, "该提交没有可批改的内容（无文件也无答案）。")
+
+    try:
+        ensure_ai_grading_attachments_supported(resolved_files)
+    except ValueError as exc:
+        raise AIGradingQueueError(400, str(exc)) from exc
+
+    context_by_file = _extract_answer_attachment_context(submission["answers_json"] if has_answers else None)
+    resolved_files = [_apply_attachment_context_to_file(item, context_by_file) for item in resolved_files]
+    return resolved_files, has_files, has_answers
 
 
 def _clip_profile_field(value: Any, *, limit: int = 360) -> str:
@@ -244,19 +388,8 @@ async def submit_submission_for_ai_grading(
 
         submission_files = _load_submission_files_for_grading(conn, submission_id)
 
-    resolved_files = _resolve_grading_files(submission_files)
-    has_files = bool(resolved_files)
-    has_answers = bool(submission["answers_json"])
-    if not has_files and not has_answers:
-        raise AIGradingQueueError(400, "该提交没有可批改的内容（无文件也无答案）。")
-
-    try:
-        ensure_ai_grading_attachments_supported(resolved_files)
-    except ValueError as exc:
-        raise AIGradingQueueError(400, str(exc)) from exc
-
-    context_by_file = _extract_answer_attachment_context(submission["answers_json"] if has_answers else None)
-    resolved_files = [_apply_attachment_context_to_file(item, context_by_file) for item in resolved_files]
+    submission_fingerprint = build_submission_grading_fingerprint(submission, submission_files)
+    resolved_files, has_files, has_answers = _prepare_grading_inputs(submission, submission_files)
 
     with get_db_connection() as conn:
         current = _load_submission_for_grading(conn, submission_id, teacher_id=teacher_id)
@@ -266,10 +399,25 @@ async def submit_submission_for_ai_grading(
             return {"status": "already_grading"}
         if not allow_graded and current["status"] == "graded":
             return {"status": "already_graded"}
-        conn.execute(
-            "UPDATE submissions SET status = 'grading' WHERE id = ? AND COALESCE(resubmission_allowed, 0) = 0",
-            (submission_id,),
+        current_files = _load_submission_files_for_grading(conn, submission_id)
+        current_fingerprint = build_submission_grading_fingerprint(current, current_files)
+        if current_fingerprint != submission_fingerprint:
+            submission = current
+            submission_files = current_files
+            submission_fingerprint = current_fingerprint
+            resolved_files, has_files, has_answers = _prepare_grading_inputs(submission, submission_files)
+        cursor = conn.execute(
+            """
+            UPDATE submissions
+            SET status = 'grading',
+                grading_started_at = ?,
+                grading_attempt_fingerprint = ?
+            WHERE id = ? AND COALESCE(resubmission_allowed, 0) = 0
+            """,
+            (datetime.now().isoformat(), submission_fingerprint, submission_id),
         )
+        if cursor.rowcount != 1:
+            raise AIGradingQueueError(409, "该提交状态刚刚发生变化，请刷新后重试")
         conn.commit()
         student_profile_context = _build_hidden_student_profile_context(conn, current)
 
@@ -293,6 +441,8 @@ async def submit_submission_for_ai_grading(
         "file_paths": [item["resolved_path"] for item in resolved_files] if has_files else [],
         "answers_json": submission["answers_json"] if has_answers else None,
         "student_profile_context": student_profile_context,
+        "submitted_at": submission.get("submitted_at"),
+        "submission_fingerprint": submission_fingerprint,
     }
 
     try:
@@ -314,7 +464,13 @@ def _reset_submission_after_queue_failure(submission_id: int) -> None:
     try:
         with get_db_connection() as conn:
             conn.execute(
-                "UPDATE submissions SET status = 'submitted' WHERE id = ? AND status = 'grading'",
+                """
+                UPDATE submissions
+                SET status = 'submitted',
+                    grading_started_at = NULL,
+                    grading_attempt_fingerprint = NULL
+                WHERE id = ? AND status = 'grading'
+                """,
                 (submission_id,),
             )
             conn.commit()

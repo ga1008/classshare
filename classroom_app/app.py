@@ -11,7 +11,16 @@ from starlette.middleware.gzip import GZipMiddleware
 # 修复：导入 templates 以便在错误处理程序中使用
 from .core import app, ai_client, templates
 # 修复：移除 CONFIG_FILE 和 CHAT_LOG_DIR (后者在 V4.0 services/chat_handler.py 中管理)
-from .config import AI_ASSISTANT_URL, BASE_DIR, DB_PATH, MAIN_THREADPOOL_TOKENS, STATIC_DIR, ensure_runtime_directories
+from .config import (
+    AI_ASSISTANT_URL,
+    AI_GRADING_STALE_MINUTES,
+    BASE_DIR,
+    DB_PATH,
+    EXAM_GENERATION_STALE_MINUTES,
+    MAIN_THREADPOOL_TOKENS,
+    STATIC_DIR,
+    ensure_runtime_directories,
+)
 from .database import init_database
 from .dependencies import build_login_redirect_url, build_permission_warning_url
 from .dependencies import clear_access_token_cookie, get_active_user_from_request
@@ -29,6 +38,8 @@ from .services.message_center_service import schedule_pending_private_ai_reply_j
 from .services.runtime_metrics_service import begin_http_request, finish_http_request, get_runtime_metrics_snapshot
 from .services.submission_file_alignment import repair_stale_stored_paths
 from .services.assignment_lifecycle_service import close_overdue_assignments
+from .services.ai_grading_service import expire_stale_ai_grading_submissions
+from .services.exam_generation_recovery_service import expire_stale_exam_generation_tasks
 from .time_utils import app_timezone_name, local_iso
 from .database import get_db_connection
 
@@ -105,6 +116,14 @@ async def startup_event():
         with get_db_connection() as align_conn:
             repair_report = repair_stale_stored_paths(align_conn)
             closed_count = close_overdue_assignments(align_conn)
+            stale_exam_gen_count = expire_stale_exam_generation_tasks(
+                align_conn,
+                stale_minutes=EXAM_GENERATION_STALE_MINUTES,
+            )
+            stale_grading_count = expire_stale_ai_grading_submissions(
+                align_conn,
+                stale_minutes=AI_GRADING_STALE_MINUTES,
+            )
             align_conn.commit()
         if repair_report.paths_repaired > 0 or repair_report.paths_still_missing > 0:
             print(
@@ -115,6 +134,10 @@ async def startup_event():
             )
         if closed_count > 0:
             print(f"[ASSIGNMENT] startup auto-close completed: {closed_count} assignment(s) closed")
+        if stale_exam_gen_count > 0:
+            print(f"[AI_GEN] reclaimed {stale_exam_gen_count} stale exam generation task(s)")
+        if stale_grading_count > 0:
+            print(f"[AI_GRADING] reclaimed {stale_grading_count} stale grading submission(s)")
     except Exception as exc:
         print(f"[ALIGNMENT] stored_path auto-repair failed (non-fatal): {exc}")
 

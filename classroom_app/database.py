@@ -704,11 +704,21 @@ def init_database():
                              TEXT,
                              today_mood
                              TEXT,
-                             today_mood_updated_at
-                             TEXT,
-                             created_at
-                             TEXT
-                             DEFAULT
+                              today_mood_updated_at
+                              TEXT,
+                              enrollment_status
+                              TEXT
+                              NOT
+                              NULL
+                              DEFAULT
+                              'active',
+                              enrollment_status_updated_at
+                              TEXT,
+                              enrollment_note
+                              TEXT,
+                              created_at
+                              TEXT
+                              DEFAULT
                              CURRENT_TIMESTAMP,
                              FOREIGN
                              KEY
@@ -744,11 +754,25 @@ def init_database():
                 "avatar_updated_at": "TEXT",
                 "today_mood": "TEXT",
                 "today_mood_updated_at": "TEXT",
+                "enrollment_status": "TEXT NOT NULL DEFAULT 'active'",
+                "enrollment_status_updated_at": "TEXT",
+                "enrollment_note": "TEXT",
             }.items():
                 try:
                     conn.execute(f"ALTER TABLE students ADD COLUMN {column_name} {column_def}")
                 except sqlite3.OperationalError:
                     pass
+            conn.execute(
+                """
+                UPDATE students
+                SET enrollment_status = 'active'
+                WHERE enrollment_status IS NULL OR TRIM(enrollment_status) = ''
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_students_class_status_lookup "
+                "ON students (class_id, enrollment_status, student_id_number, id)"
+            )
 
             # 4. 课程 (模板)
             conn.execute('''
@@ -1142,6 +1166,8 @@ def init_database():
                 ("is_absence_score", "INTEGER NOT NULL DEFAULT 0"),
                 ("absence_scored_at", "TEXT"),
                 ("absence_scored_by_teacher_id", "INTEGER"),
+                ("grading_started_at", "TEXT"),
+                ("grading_attempt_fingerprint", "TEXT"),
             )
             for column_name, column_def in submission_extension_columns:
                 try:
@@ -1384,6 +1410,10 @@ def init_database():
                              score
                              INTEGER,
                              feedback_md
+                             TEXT,
+                             grading_started_at
+                             TEXT,
+                             grading_attempt_fingerprint
                              TEXT,
                              answers_json
                              TEXT,
@@ -2985,6 +3015,26 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_submissions_resubmission_window "
                 "ON submissions (assignment_id, resubmission_allowed, resubmission_due_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_submissions_grading_started "
+                "ON submissions (status, grading_started_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_submission_files_submission "
+                "ON submission_files (submission_id, id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_assignments_exam_offering "
+                "ON assignments (exam_paper_id, class_offering_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_exam_papers_teacher_updated "
+                "ON exam_papers (teacher_id, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_exam_papers_ai_generation "
+                "ON exam_papers (teacher_id, status, ai_gen_status, updated_at)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_submission_drafts_assignment_student "
