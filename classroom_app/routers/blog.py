@@ -22,6 +22,7 @@ from ..services.blog_service import (
     delete_post,
     feature_post,
     get_bookmarked_posts,
+    get_blog_discovery,
     get_blog_topbar_summary,
     get_media_asset_for_user,
     get_my_posts,
@@ -103,10 +104,20 @@ def api_list_posts(
     limit: int = Query(default=20, ge=1, le=50),
     author: Optional[str] = Query(default=None),
     tag: Optional[str] = Query(default=None),
+    q: Optional[str] = Query(default=None),
     user: dict = Depends(get_current_user),
 ):
     with get_db_connection() as conn:
-        result = list_posts(conn, user, sort=sort, page=page, limit=limit, author_identity=author, tag=tag)
+        result = list_posts(
+            conn,
+            user,
+            sort=sort,
+            page=page,
+            limit=limit,
+            author_identity=author,
+            tag=tag,
+            query=q,
+        )
         return {"status": "success", **result}
 
 
@@ -117,6 +128,12 @@ def api_blog_summary(user: dict = Depends(get_current_user)):
             "status": "success",
             "summary": get_blog_topbar_summary(conn, user),
         }
+
+
+@router.get("/api/blog/discovery", response_class=JSONResponse)
+def api_blog_discovery(user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        return {"status": "success", **get_blog_discovery(conn, user)}
 
 
 @router.get("/api/blog/posts/{post_id}", response_class=JSONResponse)

@@ -102,6 +102,13 @@ function timeAgo(value) {
     return `${Math.floor(diffMonths / 12)} 年前`;
 }
 
+function formatCompactNumber(value) {
+    const number = Number(value || 0);
+    if (number >= 10000) return `${(number / 10000).toFixed(number >= 100000 ? 0 : 1)}万`;
+    if (number >= 1000) return `${(number / 1000).toFixed(number >= 10000 ? 0 : 1)}k`;
+    return String(number);
+}
+
 function normalizeFileHash(item) {
     return String(item?.file_hash || item?.hash || '').trim().toLowerCase();
 }
@@ -138,6 +145,7 @@ class BlogCenter {
             posts: [],
             myPosts: [],
             bookmarkPosts: [],
+            discovery: null,
             page: 1,
             myPage: 1,
             bmPage: 1,
@@ -149,6 +157,7 @@ class BlogCenter {
             selectedUsers: [],
             myPostsFilter: null,
             authorFilter: null,
+            tagFilter: null,
             composeClassesLoaded: false,
             customEmojiLibrary: [],
         };
@@ -167,6 +176,7 @@ class BlogCenter {
     init() {
         this.bindEvents();
         this.ensureCustomEmojiLibrary();
+        this.loadDiscovery();
 
         const url = new URL(window.location.href);
         const postId = Number(url.searchParams.get('post') || 0);
@@ -219,7 +229,10 @@ class BlogCenter {
         if (sortButton) {
             this.state.currentSort = sortButton.dataset.blogSort || 'latest';
             this.state.page = 1;
+            this.state.currentNav = 'feed';
+            this.updateNavTabs();
             this.updateSortTabs();
+            this.showView('feed');
             this.loadFeed();
             return;
         }
@@ -246,6 +259,12 @@ class BlogCenter {
         const clearAuthorFilterButton = event.target.closest('[data-blog-clear-author-filter]');
         if (clearAuthorFilterButton) {
             this.clearAuthorFilter();
+            return;
+        }
+
+        const clearTagFilterButton = event.target.closest('[data-blog-clear-tag-filter]');
+        if (clearTagFilterButton) {
+            this.clearTagFilter();
             return;
         }
 
@@ -440,10 +459,13 @@ class BlogCenter {
         const tagButton = event.target.closest('[data-blog-tag]');
         if (tagButton) {
             const tag = tagButton.dataset.blogTag || '';
-            const searchInput = $('[data-blog-search]', this.shell);
-            if (searchInput) searchInput.value = tag;
-            this.state.page = 1;
-            this.loadFeed();
+            this.setTagFilter(tag);
+            return;
+        }
+
+        const openPostButton = event.target.closest('[data-blog-open-post]');
+        if (openPostButton) {
+            this.showDetail(Number(openPostButton.dataset.blogOpenPost));
             return;
         }
 
@@ -593,6 +615,18 @@ class BlogCenter {
         label.textContent = filter?.identity ? `正在查看 ${filter.name || '该用户'} 的帖子` : '';
     }
 
+    updateTagFilterBanner() {
+        const banner = $('[data-blog-tag-filter]', this.shell);
+        const label = $('[data-blog-tag-filter-label]', this.shell);
+        if (!banner || !label) return;
+        const tag = this.state.tagFilter;
+        banner.hidden = !tag;
+        label.textContent = tag ? `正在浏览 #${tag}` : '';
+        $$('[data-blog-tag]', this.shell).forEach((button) => {
+            button.classList.toggle('is-active', button.dataset.blogTag === tag);
+        });
+    }
+
     filterByAuthor(identity, name = '') {
         const normalizedIdentity = String(identity || '').trim();
         if (!normalizedIdentity) return;
@@ -600,6 +634,7 @@ class BlogCenter {
             identity: normalizedIdentity,
             name: String(name || '').trim() || '该用户',
         };
+        this.state.tagFilter = null;
         this.state.currentNav = 'feed';
         this.state.currentView = 'feed';
         this.state.page = 1;
@@ -608,6 +643,7 @@ class BlogCenter {
         this.updateNavTabs();
         this.showView('feed');
         this.updateAuthorFilterBanner();
+        this.updateTagFilterBanner();
         this.closeUserPopover();
         this.loadFeed();
     }
@@ -617,6 +653,31 @@ class BlogCenter {
         this.state.authorFilter = null;
         this.state.page = 1;
         this.updateAuthorFilterBanner();
+        this.loadFeed();
+    }
+
+    setTagFilter(tag) {
+        const normalizedTag = String(tag || '').trim();
+        if (!normalizedTag) return;
+        this.state.tagFilter = normalizedTag;
+        this.state.authorFilter = null;
+        this.state.currentNav = 'feed';
+        this.state.currentView = 'feed';
+        this.state.page = 1;
+        const searchInput = $('[data-blog-search]', this.shell);
+        if (searchInput) searchInput.value = '';
+        this.updateNavTabs();
+        this.showView('feed');
+        this.updateAuthorFilterBanner();
+        this.updateTagFilterBanner();
+        this.loadFeed();
+    }
+
+    clearTagFilter() {
+        if (!this.state.tagFilter) return;
+        this.state.tagFilter = null;
+        this.state.page = 1;
+        this.updateTagFilterBanner();
         this.loadFeed();
     }
 
@@ -674,6 +735,159 @@ class BlogCenter {
         popover.style.top = `${nextTop}px`;
     }
 
+    async loadDiscovery() {
+        this.renderDiscoveryLoading();
+        try {
+            const data = await api.get('/api/blog/discovery');
+            this.state.discovery = data;
+            this.renderDiscovery(data);
+        } catch (error) {
+            this.renderDiscoveryError(error.message || '探索内容加载失败');
+        }
+    }
+
+    renderDiscoveryLoading() {
+        const spotlight = $('[data-blog-spotlight]', this.shell);
+        if (spotlight && !spotlight.innerHTML.trim()) {
+            spotlight.innerHTML = this.skeletonHtml(1);
+        }
+        const trending = $('[data-blog-trending-list]', this.shell);
+        if (trending && !trending.innerHTML.trim()) {
+            trending.innerHTML = this.railEmptyHtml('正在整理热议内容...');
+        }
+        const tags = $('[data-blog-hot-tags]', this.shell);
+        if (tags && !tags.innerHTML.trim()) {
+            tags.innerHTML = this.railEmptyHtml('正在读取热门标签...');
+        }
+        const authors = $('[data-blog-active-authors]', this.shell);
+        if (authors && !authors.innerHTML.trim()) {
+            authors.innerHTML = this.railEmptyHtml('正在计算活跃作者...');
+        }
+    }
+
+    renderDiscoveryError(message) {
+        const spotlight = $('[data-blog-spotlight]', this.shell);
+        if (spotlight) spotlight.innerHTML = `<div class="blog-discovery-empty">${escapeHtml(message)}</div>`;
+        $('[data-blog-trending-list]', this.shell)?.replaceChildren();
+        $('[data-blog-hot-tags]', this.shell)?.replaceChildren();
+        $('[data-blog-active-authors]', this.shell)?.replaceChildren();
+    }
+
+    renderDiscovery(data = {}) {
+        const summary = data.summary || {};
+        this.setHeroStat('today', summary.today_new_count);
+        this.setHeroStat('visible', summary.visible_count);
+        this.setHeroStat('comments', summary.comment_count);
+        this.setHeroStat('likes', summary.like_count);
+
+        const spotlightPosts = data.spotlight_posts || [];
+        const spotlight = $('[data-blog-spotlight]', this.shell);
+        if (spotlight) {
+            spotlight.innerHTML = spotlightPosts.length
+                ? `
+                    <div class="blog-spotlight__header">
+                        <div>
+                            <h2>先看这些</h2>
+                            <p>精选、置顶和高讨论内容会优先出现在这里。</p>
+                        </div>
+                        <button type="button" data-blog-sort="featured">全部精华</button>
+                    </div>
+                    <div class="blog-spotlight__grid">
+                        ${spotlightPosts.map((post, index) => this.spotlightPostHtml(post, index)).join('')}
+                    </div>
+                `
+                : '<div class="blog-discovery-empty">还没有精选内容，发一篇高质量帖子来点亮这里。</div>';
+        }
+
+        const trending = $('[data-blog-trending-list]', this.shell);
+        if (trending) {
+            const posts = data.trending_posts || [];
+            trending.innerHTML = posts.length
+                ? posts.map((post, index) => this.trendingPostHtml(post, index)).join('')
+                : this.railEmptyHtml('还没有形成热议榜');
+        }
+
+        const tags = $('[data-blog-hot-tags]', this.shell);
+        if (tags) {
+            const hotTags = data.hot_tags || [];
+            tags.innerHTML = hotTags.length
+                ? hotTags.map((tag) => `
+                    <button type="button" class="blog-tag blog-tag--hot" data-blog-tag="${escapeHtml(tag.name)}">
+                        #${escapeHtml(tag.name)}
+                        <span>${formatCompactNumber(tag.count)}</span>
+                    </button>
+                `).join('')
+                : this.railEmptyHtml('暂无热门标签');
+        }
+
+        const authors = $('[data-blog-active-authors]', this.shell);
+        if (authors) {
+            const activeAuthors = data.active_authors || [];
+            authors.innerHTML = activeAuthors.length
+                ? activeAuthors.map((author) => this.activeAuthorHtml(author)).join('')
+                : this.railEmptyHtml('还没有活跃作者');
+        }
+        this.updateTagFilterBanner();
+    }
+
+    setHeroStat(name, value) {
+        const node = $(`[data-blog-stat="${name}"]`, this.shell);
+        if (node) node.textContent = formatCompactNumber(value || 0);
+    }
+
+    spotlightPostHtml(post, index) {
+        const cover = post.cover_image_hash
+            ? `<img src="/api/blog/image/${escapeHtml(post.cover_image_hash)}" alt="" loading="lazy" decoding="async">`
+            : `<div class="blog-spotlight-card__fallback">${index === 0 ? '精选' : '热帖'}</div>`;
+        return `
+            <button type="button" class="blog-spotlight-card${index === 0 ? ' blog-spotlight-card--lead' : ''}" data-blog-open-post="${post.id}">
+                <div class="blog-spotlight-card__media">${cover}</div>
+                <div class="blog-spotlight-card__body">
+                    <div class="blog-spotlight-card__meta">
+                        <span>${escapeHtml(timeAgo(post.created_at))}</span>
+                        <span>${post.reading_minutes || 1} 分钟读完</span>
+                        <span>${formatCompactNumber(post.hot_score)} 热度</span>
+                    </div>
+                    <h3>${escapeHtml(post.title || '')}</h3>
+                    <p>${escapeHtml(post.summary || '打开看看这篇帖子里发生了什么。')}</p>
+                </div>
+            </button>
+        `;
+    }
+
+    trendingPostHtml(post, index) {
+        return `
+            <button type="button" class="blog-rail-post" data-blog-open-post="${post.id}">
+                <span class="blog-rail-post__rank">${index + 1}</span>
+                <span class="blog-rail-post__body">
+                    <strong>${escapeHtml(post.title || '')}</strong>
+                    <span>${formatCompactNumber(post.comment_count)} 评 · ${formatCompactNumber(post.like_count)} 赞 · ${formatCompactNumber(post.hot_score)} 热度</span>
+                </span>
+            </button>
+        `;
+    }
+
+    activeAuthorHtml(author = {}) {
+        const badge = this.authorCultivationBadgeHtml({
+            cultivation_badge: author.cultivation_badge,
+            is_anonymous: false,
+        }, 'blog-author-cultivation--rank');
+        return `
+            <button type="button" class="blog-author-rank__item" data-blog-author-posts="${escapeHtml(author.identity || '')}" data-author-name="${escapeHtml(author.display_name || '')}">
+                <img src="${escapeHtml(author.avatar_url || '/api/profile/avatar')}" alt="${escapeHtml(author.display_name || '')}" loading="lazy" decoding="async">
+                <span class="blog-author-rank__body">
+                    <strong>${escapeHtml(author.display_name || '未命名用户')}</strong>
+                    <span>${escapeHtml(author.role_label || '')} · ${formatCompactNumber(author.post_count)} 篇 · ${formatCompactNumber(author.hot_score)} 热度</span>
+                    ${badge}
+                </span>
+            </button>
+        `;
+    }
+
+    railEmptyHtml(text) {
+        return `<div class="blog-rail-empty">${escapeHtml(text || '暂无内容')}</div>`;
+    }
+
     async loadFeed({ append = false } = {}) {
         const container = $('[data-blog-feed]', this.shell);
         if (!container) return;
@@ -685,11 +899,13 @@ class BlogCenter {
         url.searchParams.set('sort', this.state.currentSort);
         url.searchParams.set('page', String(this.state.page));
         url.searchParams.set('limit', String(POSTS_PAGE_SIZE));
-        if (search) url.searchParams.set('tag', search);
+        if (search) url.searchParams.set('q', search);
+        if (this.state.tagFilter) url.searchParams.set('tag', this.state.tagFilter);
         if (this.state.authorFilter?.identity) {
             url.searchParams.set('author', this.state.authorFilter.identity);
         }
         this.updateAuthorFilterBanner();
+        this.updateTagFilterBanner();
 
         try {
             const data = await api.get(`${url.pathname}${url.search}`);
@@ -937,6 +1153,7 @@ class BlogCenter {
             } else {
                 this.refreshCurrentList();
             }
+            this.loadDiscovery();
         } catch (error) {
             showToast(error.message || '帖子保存失败', 'error');
         }
@@ -959,8 +1176,7 @@ class BlogCenter {
                 {},
             );
             const selector = targetType === 'post' ? `[data-like-post="${id}"]` : `[data-like-comment="${id}"]`;
-            const button = $(selector, this.shell);
-            if (button) {
+            $$(selector, this.shell).forEach((button) => {
                 const isLiked = Boolean(data.liked);
                 button.classList.toggle('is-active--like', isLiked);
                 button.classList.toggle('blog-comment-action--liked', isLiked);
@@ -968,8 +1184,14 @@ class BlogCenter {
                 if (icon) {
                     icon.outerHTML = isLiked ? SVG.heartFill : SVG.heart;
                 }
-                const count = $('.blog-interact-btn__count, .blog-comment-action__count', button);
-                if (count) count.textContent = String(data.like_count ?? 0);
+                const count = $('.blog-interact-btn__count, .blog-comment-action__count, .blog-card-action__count', button);
+                if (count) count.textContent = formatCompactNumber(data.like_count ?? 0);
+            });
+            if (targetType === 'post') {
+                $$(`[data-blog-like-count="${id}"]`, this.shell).forEach((node) => {
+                    node.textContent = formatCompactNumber(data.like_count ?? 0);
+                });
+                this.loadDiscovery();
             }
         } catch (error) {
             showToast(error.message || '点赞失败', 'error');
@@ -979,17 +1201,20 @@ class BlogCenter {
     async toggleBookmark(postId) {
         try {
             const data = await api.post(`/api/blog/posts/${postId}/bookmark`, {});
-            const button = $(`[data-bookmark-post="${postId}"]`, this.shell);
-            if (button) {
+            $$(`[data-bookmark-post="${postId}"]`, this.shell).forEach((button) => {
                 const bookmarked = Boolean(data.bookmarked);
                 button.classList.toggle('is-active--bookmark', bookmarked);
                 const icon = $('svg', button);
                 if (icon) {
                     icon.outerHTML = bookmarked ? SVG.bookmarkFill : SVG.bookmark;
                 }
-                const count = $('.blog-interact-btn__count', button);
-                if (count) count.textContent = String(data.bookmark_count ?? 0);
-            }
+                const count = $('.blog-interact-btn__count, .blog-card-action__count', button);
+                if (count) count.textContent = formatCompactNumber(data.bookmark_count ?? 0);
+            });
+            $$(`[data-blog-bookmark-count="${postId}"]`, this.shell).forEach((node) => {
+                node.textContent = formatCompactNumber(data.bookmark_count ?? 0);
+            });
+            this.loadDiscovery();
         } catch (error) {
             showToast(error.message || '收藏失败', 'error');
         }
@@ -1000,6 +1225,7 @@ class BlogCenter {
             const data = await api.post(`/api/blog/posts/${postId}/pin`, {});
             showToast(data.is_pinned ? '已置顶' : '已取消置顶', 'success');
             await this.refreshAfterDetailMutation(postId);
+            this.loadDiscovery();
         } catch (error) {
             showToast(error.message || '置顶操作失败', 'error');
         }
@@ -1010,6 +1236,7 @@ class BlogCenter {
             const data = await api.post(`/api/blog/posts/${postId}/feature`, {});
             showToast(data.is_featured ? '已设为精华' : '已取消精华', 'success');
             await this.refreshAfterDetailMutation(postId);
+            this.loadDiscovery();
         } catch (error) {
             showToast(error.message || '精华操作失败', 'error');
         }
@@ -1022,6 +1249,7 @@ class BlogCenter {
             const data = await api.post(`/api/blog/posts/${postId}/hide`, { reason: '' });
             showToast(data.status === 'moderated' ? '帖子已转为私密' : '帖子已恢复可见', 'success');
             await this.refreshAfterDetailMutation(postId);
+            this.loadDiscovery();
         } catch (error) {
             showToast(error.message || '可见性操作失败', 'error');
         }
@@ -1045,6 +1273,7 @@ class BlogCenter {
             this.state.detailPostId = null;
             this.showCurrentListView();
             this.refreshCurrentList();
+            this.loadDiscovery();
             window.history.replaceState({}, '', '/blog');
         } catch (error) {
             showToast(error.message || '删除失败', 'error');
@@ -1059,6 +1288,7 @@ class BlogCenter {
             if (this.state.detailPostId) {
                 await this.showDetail(this.state.detailPostId);
             }
+            this.loadDiscovery();
         } catch (error) {
             showToast(error.message || '删除评论失败', 'error');
         }
@@ -1108,6 +1338,7 @@ class BlogCenter {
             this.autoSizeCommentInput(input);
             this.closeCommentPanels();
             await this.showDetail(this.state.detailPostId);
+            this.loadDiscovery();
         } catch (error) {
             showToast(error.message || '评论失败', 'error');
         }
@@ -1578,29 +1809,51 @@ class BlogCenter {
         const tags = (post.tags || []).map((tag) => (
             `<button type="button" class="blog-tag" data-blog-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`
         )).join('');
+        const cover = post.cover_image_hash
+            ? `<div class="blog-post-card__media"><img class="blog-post-card__cover" src="/api/blog/image/${escapeHtml(post.cover_image_hash)}" alt="" loading="lazy" decoding="async"></div>`
+            : '';
+        const likedClass = post.is_liked ? ' is-active--like' : '';
+        const bookmarkedClass = post.is_bookmarked ? ' is-active--bookmark' : '';
 
         return `
-            <article class="blog-post-card${post.is_pinned ? ' is-pinned' : ''}${post.is_featured ? ' is-featured' : ''}" data-blog-post-id="${post.id}">
-                ${badges.length ? `<div class="blog-post-card__badges">${badges.join('')}</div>` : ''}
-                <h3 class="blog-post-card__title">${escapeHtml(post.title || '')}</h3>
-                <p class="blog-post-card__summary">${escapeHtml(post.summary || '')}</p>
-                ${post.cover_image_hash ? `<img class="blog-post-card__cover" src="/api/blog/image/${escapeHtml(post.cover_image_hash)}" alt="" loading="lazy" decoding="async">` : ''}
-                <div class="blog-post-card__meta">
-                    <div class="blog-post-card__author">
-                        ${this.authorAvatarHtml(post.author, 'blog-post-card__avatar')}
-                        ${this.authorNameHtml(post.author, 'blog-post-card__author-name')}
-                        ${this.authorCultivationBadgeHtml(post.author)}
-                        <span class="blog-post-card__author-role">${escapeHtml(ROLE_LABELS[post.author?.role] || '')}</span>
-                        <span class="blog-post-card__time">${escapeHtml(timeAgo(post.created_at))}</span>
+            <article class="blog-post-card${cover ? ' blog-post-card--with-cover' : ''}${post.is_pinned ? ' is-pinned' : ''}${post.is_featured ? ' is-featured' : ''}" data-blog-post-id="${post.id}">
+                <div class="blog-post-card__content">
+                    ${badges.length ? `<div class="blog-post-card__badges">${badges.join('')}</div>` : ''}
+                    <div class="blog-post-card__signal">
+                        <span>${post.reading_minutes || 1} 分钟读完</span>
+                        <span>${formatCompactNumber(post.hot_score)} 热度</span>
                     </div>
-                    <div class="blog-post-card__stats">
-                        <span class="blog-stat">${SVG.eye}<span>${post.view_count || 0}</span></span>
-                        <span class="blog-stat">${SVG.heart}<span>${post.like_count || 0}</span></span>
-                        <span class="blog-stat">${SVG.comment}<span>${post.comment_count || 0}</span></span>
+                    <h3 class="blog-post-card__title">${escapeHtml(post.title || '')}</h3>
+                    <p class="blog-post-card__summary">${escapeHtml(post.summary || '')}</p>
+                    ${tags ? `<div class="blog-post-card__tags">${tags}</div>` : ''}
+                    <div class="blog-post-card__meta">
+                        <div class="blog-post-card__author">
+                            ${this.authorAvatarHtml(post.author, 'blog-post-card__avatar')}
+                            ${this.authorNameHtml(post.author, 'blog-post-card__author-name')}
+                            ${this.authorCultivationBadgeHtml(post.author)}
+                            <span class="blog-post-card__author-role">${escapeHtml(ROLE_LABELS[post.author?.role] || '')}</span>
+                            <span class="blog-post-card__time">${escapeHtml(timeAgo(post.created_at))}</span>
+                        </div>
+                        <div class="blog-post-card__stats">
+                            <span class="blog-stat">${SVG.eye}<span>${formatCompactNumber(post.view_count)}</span></span>
+                            <span class="blog-stat">${SVG.comment}<span>${formatCompactNumber(post.comment_count)}</span></span>
+                        </div>
                     </div>
+                    <div class="blog-post-card__actions">
+                        <button type="button" class="blog-card-action${likedClass}" data-like-post="${post.id}">
+                            ${post.is_liked ? SVG.heartFill : SVG.heart}
+                            <span>点赞</span>
+                            <span class="blog-card-action__count" data-blog-like-count="${post.id}">${formatCompactNumber(post.like_count)}</span>
+                        </button>
+                        <button type="button" class="blog-card-action${bookmarkedClass}" data-bookmark-post="${post.id}">
+                            ${post.is_bookmarked ? SVG.bookmarkFill : SVG.bookmark}
+                            <span>收藏</span>
+                            <span class="blog-card-action__count" data-blog-bookmark-count="${post.id}">${formatCompactNumber(post.bookmark_count)}</span>
+                        </button>
+                    </div>
+                    ${ownView ? `<div class="blog-post-card__footnote">状态：${escapeHtml(this.statusLabel(post.status))}</div>` : ''}
                 </div>
-                ${tags ? `<div class="blog-post-card__tags">${tags}</div>` : ''}
-                ${ownView ? `<div class="blog-post-card__footnote">状态：${escapeHtml(this.statusLabel(post.status))}</div>` : ''}
+                ${cover}
             </article>
         `;
     }
@@ -1638,6 +1891,12 @@ class BlogCenter {
             <article class="blog-detail">
                 ${metaBadges.length ? `<div class="blog-detail__badges">${metaBadges.join('')}</div>` : ''}
                 <h1 class="blog-detail__title">${escapeHtml(post.title || '')}</h1>
+                <div class="blog-detail__reading-meta">
+                    <span>${post.reading_minutes || 1} 分钟读完</span>
+                    <span>${formatCompactNumber(post.hot_score)} 热度</span>
+                    <span>${formatCompactNumber(post.comment_count)} 条讨论</span>
+                    <span>${formatCompactNumber(post.bookmark_count)} 人收藏</span>
+                </div>
                 <div class="blog-detail__author-row">
                     <div class="blog-detail__author">
                         ${this.authorAvatarHtml(post.author, 'blog-detail__avatar')}
@@ -1661,12 +1920,12 @@ class BlogCenter {
                     <button type="button" class="blog-interact-btn${post.is_liked ? ' is-active--like' : ''}" data-like-post="${post.id}">
                         ${post.is_liked ? SVG.heartFill : SVG.heart}
                         <span class="blog-interact-btn__label">点赞</span>
-                        <span class="blog-interact-btn__count">${post.like_count || 0}</span>
+                        <span class="blog-interact-btn__count" data-blog-like-count="${post.id}">${formatCompactNumber(post.like_count)}</span>
                     </button>
                     <button type="button" class="blog-interact-btn${post.is_bookmarked ? ' is-active--bookmark' : ''}" data-bookmark-post="${post.id}">
                         ${post.is_bookmarked ? SVG.bookmarkFill : SVG.bookmark}
                         <span class="blog-interact-btn__label">收藏</span>
-                        <span class="blog-interact-btn__count">${post.bookmark_count || 0}</span>
+                        <span class="blog-interact-btn__count" data-blog-bookmark-count="${post.id}">${formatCompactNumber(post.bookmark_count)}</span>
                     </button>
                 </div>
                 ${this.commentSectionHtml(post)}

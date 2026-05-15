@@ -1,3 +1,4 @@
+{% from "macros/app_topbar.html" import app_topbar_icon %}
 <!DOCTYPE html>
 <html lang="zh-CN" data-theme="lanshare">
 <head>
@@ -6,10 +7,166 @@
     <title>{{ paper.title }} - 在线考试</title>
     {% include "partials/ui_system_assets.html" %}
     <style>
+        :root {
+            --exam-topbar-offset: 88px;
+        }
+
         body {
             background-color: var(--bg-color);
             min-height: 100vh;
             overflow-x: hidden;
+        }
+
+        body.exam-page {
+            color: var(--text-primary);
+        }
+
+        .exam-topbar {
+            --app-topbar-accent: #4f46e5;
+            --app-topbar-accent-dark: #4338ca;
+            --app-topbar-accent-rgb: 79, 70, 229;
+            --app-topbar-accent-soft: rgba(79, 70, 229, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 1020;
+            min-height: 76px;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.7rem 1rem;
+            padding: 0.72rem clamp(1rem, 2vw, 1.6rem);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 18px 40px -34px rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+        }
+
+        .exam-topbar-brand {
+            flex: 1 1 18rem;
+            min-width: min(18rem, 100%);
+            max-width: min(34rem, 32vw);
+        }
+
+        .exam-topbar-brand .app-topbar-brand__copy {
+            min-width: 0;
+        }
+
+        .exam-topbar-brand .app-topbar-brand__copy strong,
+        .exam-topbar-brand .app-topbar-brand__copy small {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .exam-topbar-brand .app-topbar-brand__copy small {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            white-space: nowrap;
+        }
+
+        .exam-topbar-brand .app-topbar-brand__copy small span:not(:last-child)::after {
+            content: "/";
+            margin-left: 0.35rem;
+            color: rgba(100, 116, 139, 0.58);
+        }
+
+        .exam-topbar-status {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(6rem, auto));
+            gap: 0.45rem;
+            align-items: stretch;
+            flex: 0 1 auto;
+        }
+
+        .exam-topbar-status__item {
+            display: grid;
+            gap: 0.1rem;
+            min-width: 0;
+            padding: 0.48rem 0.7rem;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 9px;
+            background: rgba(248, 250, 252, 0.86);
+            color: var(--text-primary);
+            line-height: 1.2;
+        }
+
+        .exam-topbar-status__item span {
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            font-weight: 700;
+        }
+
+        .exam-topbar-status__item strong {
+            overflow: hidden;
+            font-size: 0.88rem;
+            font-weight: 800;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .exam-topbar-nav {
+            flex: 999 1 42rem;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.5rem;
+            min-width: 0;
+        }
+
+        .exam-topbar-actions {
+            justify-content: flex-end;
+            gap: 0.42rem;
+            min-width: 0;
+        }
+
+        .exam-topbar-actions .app-topbar-action {
+            min-width: 88px;
+            min-height: 52px;
+            border-radius: 9px;
+            padding-inline: 0.58rem;
+        }
+
+        .exam-topbar-actions .app-topbar-action:disabled {
+            cursor: not-allowed;
+            border-color: rgba(148, 163, 184, 0.2);
+            background: rgba(248, 250, 252, 0.78);
+            color: var(--text-muted);
+            opacity: 1;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .exam-topbar-actions .app-topbar-action:disabled:hover,
+        .exam-topbar-actions .app-topbar-action:disabled:focus-visible {
+            border-color: rgba(148, 163, 184, 0.2);
+            background: rgba(248, 250, 252, 0.78);
+            color: var(--text-muted);
+        }
+
+        .exam-topbar-actions .app-topbar-action:disabled .app-topbar-action__icon {
+            background: rgba(148, 163, 184, 0.14);
+            color: #94a3b8;
+        }
+
+        .exam-topbar-submit {
+            --app-topbar-accent: #16a34a;
+            --app-topbar-accent-dark: #15803d;
+            --app-topbar-accent-rgb: 22, 163, 74;
+            --app-topbar-accent-soft: rgba(34, 197, 94, 0.12);
+        }
+
+        .exam-topbar-clear-all {
+            --app-topbar-accent: #be123c;
+            --app-topbar-accent-dark: #9f1239;
+            --app-topbar-accent-rgb: 190, 18, 60;
+            --app-topbar-accent-soft: rgba(244, 63, 94, 0.1);
+        }
+
+        .exam-topbar .exam-icon-next svg {
+            transform: rotate(180deg);
+        }
+
+        .exam-is-submitted .exam-edit-action {
+            display: none;
         }
 
         /* === Exam Layout === */
@@ -17,7 +174,7 @@
             display: flex;
             max-width: 1400px;
             margin: 0 auto;
-            min-height: 100vh;
+            min-height: calc(100vh - var(--exam-topbar-offset));
         }
 
         /* === Sidebar Navigation === */
@@ -27,8 +184,8 @@
             background: var(--surface-color);
             border-right: 1px solid var(--border-color);
             position: sticky;
-            top: 0;
-            height: 100vh;
+            top: var(--exam-topbar-offset);
+            height: calc(100vh - var(--exam-topbar-offset));
             display: flex;
             flex-direction: column;
             z-index: 40;
@@ -312,7 +469,7 @@
             padding: var(--spacing-5);
             border: 1px solid var(--border-color);
             transition: all var(--transition-normal);
-            scroll-margin-top: 100px;
+            scroll-margin-top: calc(var(--exam-topbar-offset) + 24px);
         }
 
         .question-card:hover {
@@ -909,22 +1066,67 @@
         }
 
         @media (max-width: 900px) {
-            .mobile-nav-bar { display: flex; }
-            .exam-main { padding: calc(56px + var(--spacing-4)) var(--spacing-2) var(--spacing-4); }
+            .exam-topbar {
+                align-items: flex-start;
+                padding: 0.7rem 0.9rem;
+            }
+
+            .exam-topbar-brand {
+                width: 100%;
+                max-width: none;
+                flex-basis: 100%;
+            }
+
+            .exam-topbar-brand .app-topbar-brand__copy small span:last-child {
+                display: none;
+            }
+
+            .exam-topbar-status {
+                width: 100%;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .exam-topbar-nav {
+                display: grid;
+                width: 100%;
+                flex-basis: 100%;
+                gap: 0.5rem;
+                justify-content: stretch;
+                margin-left: 0;
+            }
+
+            .exam-topbar-actions {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                width: 100%;
+                justify-content: stretch;
+                justify-items: stretch;
+            }
+
+            .exam-topbar-actions .app-topbar-action {
+                width: 100%;
+                min-width: 0;
+                justify-content: center;
+            }
+
+            .exam-main { padding: var(--spacing-4) var(--spacing-2); }
 
             .exam-sidebar {
                 position: fixed;
                 left: 0;
                 top: 0;
                 bottom: 0;
+                height: 100vh;
                 transform: translateX(-100%);
                 width: 280px;
                 max-width: 85vw;
                 box-shadow: var(--shadow-lg);
+                z-index: 1040;
             }
 
             .exam-sidebar.show { transform: translateX(0); }
             .sidebar-backdrop.show { display: block; opacity: 1; }
+            .sidebar-backdrop { z-index: 1030; }
 
             .paper-content { padding: var(--spacing-4) var(--spacing-3); }
             .paper-header { padding: var(--spacing-4) var(--spacing-3); }
@@ -944,17 +1146,107 @@
                 flex-basis: 100%;
             }
         }
+
+        @media (max-width: 560px) {
+            .exam-topbar-brand {
+                min-width: 0;
+            }
+
+            .exam-topbar-brand .app-topbar-brand__copy small,
+            .exam-topbar-actions .app-topbar-action__text small {
+                display: none;
+            }
+
+            .exam-topbar-actions {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .exam-topbar-status {
+                grid-template-columns: 1fr;
+            }
+
+            .exam-topbar-status__item {
+                grid-template-columns: auto minmax(0, 1fr);
+                align-items: center;
+                padding-block: 0.42rem;
+            }
+
+            .exam-topbar-actions .app-topbar-action {
+                min-height: 48px;
+            }
+        }
     </style>
 </head>
-<body>
+<body class="exam-page{% if submission %} exam-is-submitted{% endif %}">
 
-<!-- Mobile Header -->
-<div class="mobile-nav-bar">
-    <button class="sidebar-toggle-btn" id="mobileSidebarToggle" title="题目导航">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-    </button>
-    <div class="mobile-title">{{ paper.title }}</div>
-</div>
+<header class="navbar app-topbar exam-topbar role-{{ user_info.role }}" id="examTopbar" aria-label="考试快捷工具栏">
+    <a href="{{ assignment_back_url }}" class="navbar-brand app-topbar-brand exam-topbar-brand" aria-label="返回课堂">
+        <span class="app-topbar-brand__mark" aria-hidden="true">{{ app_topbar_icon('arrow-left') }}</span>
+        <span class="app-topbar-brand__copy">
+            <strong>返回课堂</strong>
+            <small>
+                <span>{{ assignment.title }}</span>
+                <span>{{ paper.title }}</span>
+            </small>
+        </span>
+    </a>
+    <div class="exam-topbar-status" aria-live="polite">
+        <div class="exam-topbar-status__item">
+            <span>当前页</span>
+            <strong id="topbarPageLabel">第 1 页</strong>
+        </div>
+        <div class="exam-topbar-status__item">
+            <span>进度</span>
+            <strong id="topbarAnsweredLabel">已答 0 / 0</strong>
+        </div>
+    </div>
+    <nav class="navbar-user app-topbar-nav exam-topbar-nav" aria-label="考试快捷操作">
+        <div class="app-topbar-actions app-topbar-actions--primary exam-topbar-actions" aria-label="答题操作">
+            <button type="button" class="app-topbar-action app-topbar-action--tone-slate" id="topbarSidebarToggle" title="打开答题卡" aria-label="打开答题卡">
+                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('list') }}</span>
+                <span class="app-topbar-action__text">
+                    <strong>题目</strong>
+                    <small>答题卡</small>
+                </span>
+            </button>
+            <button type="button" class="app-topbar-action app-topbar-action--tone-slate exam-edit-action" id="topbarPrevBtn" title="上一页" aria-label="上一页">
+                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('arrow-left') }}</span>
+                <span class="app-topbar-action__text">
+                    <strong>上一页</strong>
+                    <small>回看</small>
+                </span>
+            </button>
+            <button type="button" class="app-topbar-action app-topbar-action--primary exam-edit-action" id="topbarNextBtn" title="下一页" aria-label="下一页">
+                <span class="app-topbar-action__icon exam-icon-next" aria-hidden="true">{{ app_topbar_icon('arrow-left') }}</span>
+                <span class="app-topbar-action__text">
+                    <strong>下一页</strong>
+                    <small>继续</small>
+                </span>
+            </button>
+            <button type="button" class="app-topbar-action app-topbar-action--tone-amber exam-edit-action" id="topbarClearPageBtn" title="清空当前页" aria-label="清空当前页">
+                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('refresh') }}</span>
+                <span class="app-topbar-action__text">
+                    <strong>清本页</strong>
+                    <small>当前</small>
+                </span>
+            </button>
+            <button type="button" class="app-topbar-action exam-topbar-clear-all exam-edit-action" id="topbarClearAllBtn" title="清空整张试卷" aria-label="清空整张试卷">
+                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('refresh') }}</span>
+                <span class="app-topbar-action__text">
+                    <strong>清空</strong>
+                    <small>整卷</small>
+                </span>
+            </button>
+            <button type="button" class="app-topbar-action app-topbar-action--primary exam-topbar-submit exam-edit-action" id="topbarSubmitBtn" title="确认交卷" aria-label="确认交卷">
+                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('upload') }}</span>
+                <span class="app-topbar-action__text">
+                    <strong>交卷</strong>
+                    <small>提交</small>
+                </span>
+            </button>
+        </div>
+    </nav>
+</header>
 
 <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
@@ -1162,6 +1454,15 @@
         navContainer: document.getElementById('navContainer'),
         prevBtn: document.getElementById('prevBtn'),
         nextBtn: document.getElementById('nextBtn'),
+        examTopbar: document.getElementById('examTopbar'),
+        topbarPageLabel: document.getElementById('topbarPageLabel'),
+        topbarAnsweredLabel: document.getElementById('topbarAnsweredLabel'),
+        topbarSidebarToggle: document.getElementById('topbarSidebarToggle'),
+        topbarPrevBtn: document.getElementById('topbarPrevBtn'),
+        topbarNextBtn: document.getElementById('topbarNextBtn'),
+        topbarClearPageBtn: document.getElementById('topbarClearPageBtn'),
+        topbarClearAllBtn: document.getElementById('topbarClearAllBtn'),
+        topbarSubmitBtn: document.getElementById('topbarSubmitBtn'),
         answeredCount: document.getElementById('answeredCount'),
         totalCount: document.getElementById('totalCount'),
         progressBadge: document.getElementById('sidebarProgressBadge'),
@@ -1191,6 +1492,44 @@
             await loadServerDraft();
             renderCurrentPage();
         }
+        syncExamTopbarOffset();
+    }
+
+    function syncExamTopbarOffset() {
+        if (!elements.examTopbar) return;
+        const height = Math.ceil(elements.examTopbar.getBoundingClientRect().height || 0);
+        document.documentElement.style.setProperty('--exam-topbar-offset', `${Math.max(height, 64)}px`);
+    }
+
+    function updateTopbarPageState(labelOverride = '') {
+        if (!elements.topbarPageLabel) return;
+        if (labelOverride) {
+            elements.topbarPageLabel.textContent = labelOverride;
+            return;
+        }
+        const totalPages = state.pages.length || 1;
+        elements.topbarPageLabel.textContent = `第 ${state.currentPageIdx + 1} 页 / 共 ${totalPages} 页`;
+    }
+
+    function updateTopbarAnsweredState(answeredCount = 0, totalCount = state.totalQuestions) {
+        if (!elements.topbarAnsweredLabel) return;
+        elements.topbarAnsweredLabel.textContent = `已答 ${answeredCount} / ${totalCount || 0}`;
+    }
+
+    function updateTopbarNavButtons() {
+        const isEditable = !SUBMISSION_EXISTS || isEditingResubmission;
+        const atFirst = state.currentPageIdx <= 0;
+        const atLast = state.currentPageIdx >= state.pages.length - 1;
+        if (elements.topbarPrevBtn) elements.topbarPrevBtn.disabled = !isEditable || atFirst;
+        if (elements.topbarNextBtn) elements.topbarNextBtn.disabled = !isEditable || atLast;
+        if (elements.topbarClearPageBtn) elements.topbarClearPageBtn.disabled = !isEditable;
+        if (elements.topbarClearAllBtn) elements.topbarClearAllBtn.disabled = !isEditable;
+        if (elements.topbarSubmitBtn) elements.topbarSubmitBtn.disabled = !isEditable;
+    }
+
+    function openQuestionNavigator() {
+        elements.sidebar?.classList.add('show');
+        elements.sidebarBackdrop?.classList.add('show');
     }
 
     function initExamAiChat() {
@@ -1692,6 +2031,7 @@
 
         elements.answeredCount.textContent = answeredCount;
         elements.totalCount.textContent = state.totalQuestions;
+        updateTopbarAnsweredState(answeredCount, state.totalQuestions);
 
         if (answeredCount === state.totalQuestions && state.totalQuestions > 0) {
             elements.progressBadge.classList.add('complete');
@@ -1979,8 +2319,10 @@
     }
 
     function updateProgress() {
-        elements.pageNameLabel.textContent = state.pages[state.currentPageIdx].name;
+        const page = state.pages[state.currentPageIdx] || {};
+        elements.pageNameLabel.textContent = page.name || '当前页';
         elements.pageIdxLabel.textContent = `第 ${state.currentPageIdx + 1} 页 / 共 ${state.pages.length} 页`;
+        updateTopbarPageState();
 
         const progressPct = state.pages.length > 1
             ? (state.currentPageIdx / (state.pages.length - 1)) * 100
@@ -1994,6 +2336,8 @@
         } else {
             elements.nextBtn.style.display = 'inline-flex';
         }
+        updateTopbarNavButtons();
+        syncExamTopbarOffset();
     }
 
     function bindQuestionInputs() {
@@ -2245,6 +2589,87 @@
         closeMobileSidebar();
     }
 
+    function resetQuestionDraftState(qId) {
+        const key = String(qId || '');
+        if (!key) return;
+        state.answers[key] = '';
+        delete state.drawings[key];
+        state.questionFiles[key] = [];
+        if (state.serverQuestionFiles) state.serverQuestionFiles[key] = [];
+        const manager = questionUploadManagers.get(key) || questionUploadManagers.get(qId) || questionUploadManagers.get(Number(key));
+        if (manager) {
+            manager.entries = [];
+            manager.render();
+        }
+    }
+
+    function questionHasAnyDraftState(q) {
+        if (!q) return false;
+        const qId = String(q.id || '');
+        return Boolean(String(state.answers[qId] || '').trim()
+            || hasDrawing(qId)
+            || getQuestionFileEntries(qId).length
+            || getServerQuestionFileEntries(qId).length);
+    }
+
+    function currentPageQuestions() {
+        return state.pages[state.currentPageIdx]?.questions || [];
+    }
+
+    async function syncClearedQuestionDrafts(questionIds) {
+        const ids = Array.from(new Set((questionIds || []).map(qId => String(qId || '')).filter(Boolean)));
+        if (!ids.length || (SUBMISSION_EXISTS && !isEditingResubmission)) return;
+        const versions = new Map(ids.map((qId) => [qId, markQuestionDraftDirty(qId)]));
+        try {
+            await saveServerDraft({
+                uploadItems: [],
+                replaceQuestionIds: ids,
+            });
+            ids.forEach((qId) => markQuestionDraftClean(qId, versions.get(qId)));
+        } catch (error) {
+            console.warn('Failed to sync cleared exam draft questions:', error);
+            showMessage('本地已清空，服务器草稿稍后会重试同步。', 'warning');
+        }
+    }
+
+    function clearCurrentPage() {
+        if (SUBMISSION_EXISTS && !isEditingResubmission) return;
+        const questions = currentPageQuestions();
+        const shouldClearFooterUploads = state.currentPageIdx === state.pages.length - 1 && uploadManager?.hasFiles();
+        const hasContent = questions.some(questionHasAnyDraftState) || shouldClearFooterUploads;
+        if (!hasContent) {
+            showMessage('当前页没有可清空的作答内容。', 'info');
+            return;
+        }
+        const pageName = state.pages[state.currentPageIdx]?.name || `第 ${state.currentPageIdx + 1} 页`;
+        if (!confirm(`确定清空“${pageName}”的作答内容吗？${shouldClearFooterUploads ? '本页的提交附件也会清空。' : ''}`)) return;
+
+        questions.forEach((q) => resetQuestionDraftState(q.id));
+        if (shouldClearFooterUploads) uploadManager.clear();
+        saveToLocal();
+        renderCurrentPage();
+        showMessage('已清空当前页。', 'success');
+        syncClearedQuestionDrafts(questions.map((q) => q.id));
+    }
+
+    function clearEntirePaper() {
+        if (SUBMISSION_EXISTS && !isEditingResubmission) return;
+        const allQuestions = getAllQuestions();
+        const hasContent = allQuestions.some(questionHasAnyDraftState) || (uploadManager?.hasFiles() ?? false);
+        if (!hasContent) {
+            showMessage('整张试卷还没有可清空的作答内容。', 'info');
+            return;
+        }
+        if (!confirm('确定清空整张试卷吗？本地答案、题目附件、附图和已同步的服务器草稿附件都会清空。')) return;
+
+        allQuestions.forEach((q) => resetQuestionDraftState(q.id));
+        if (uploadManager) uploadManager.clear();
+        saveToLocal();
+        renderCurrentPage();
+        showMessage('已清空整张试卷。', 'success');
+        syncClearedQuestionDrafts(allQuestions.map((q) => q.id));
+    }
+
     async function dataUrlToFile(dataUrl, fileName) {
         const response = await fetch(dataUrl);
         const blob = await response.blob();
@@ -2460,6 +2885,30 @@
         }
     }
 
+    function setTopbarSubmitBusy(isBusy) {
+        const btn = elements.topbarSubmitBtn;
+        if (!btn) return;
+        btn.disabled = isBusy;
+        const strong = btn.querySelector('.app-topbar-action__text strong');
+        const small = btn.querySelector('.app-topbar-action__text small');
+        if (strong) strong.textContent = isBusy ? '提交中' : '交卷';
+        if (small) small.textContent = isBusy ? '请稍候' : '提交';
+    }
+
+    function setFooterSubmitBusy(isBusy) {
+        const btn = document.getElementById('submitExamBtn');
+        if (!btn) return;
+        btn.disabled = isBusy;
+        btn.innerHTML = isBusy
+            ? '<span class="spinner" style="width:16px;height:16px;border-width:2px;margin-right:8px;"></span> 提交中...'
+            : '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> 确认交卷';
+    }
+
+    function setSubmitBusy(isBusy) {
+        setFooterSubmitBusy(isBusy);
+        setTopbarSubmitBusy(isBusy);
+    }
+
     async function handleSubmission() {
         const allQuestions = [];
         state.pages.forEach(p => (p.questions || []).forEach(q => allQuestions.push(q)));
@@ -2496,9 +2945,7 @@
             if (!confirm(confirmText)) return;
         }
 
-        const btn = document.getElementById('submitExamBtn');
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;margin-right:8px;"></span> 提交中...';
+        setSubmitBusy(true);
 
         try {
             clearTimeout(serverDraftSaveTimer);
@@ -2528,8 +2975,7 @@
             if (refreshedAttachmentRequirementError) {
                 showMessage(refreshedAttachmentRequirementError.message, 'warning');
                 scrollToQuestion(refreshedAttachmentRequirementError.question.id);
-                btn.disabled = false;
-                btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> 确认交卷';
+                setSubmitBusy(false);
                 return;
             }
             const formData = uploadManager ? uploadManager.buildFormData() : new FormData();
@@ -2593,8 +3039,7 @@
 
         } catch(e) {
             showMessage(e.message || '提交失败，请重试', 'error');
-            btn.disabled = false;
-            btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> 确认交卷';
+            setSubmitBusy(false);
         }
     }
 
@@ -2617,6 +3062,9 @@
     // --- Submitted View (Read-Only) ---
 
     function renderSubmittedView() {
+        document.body.classList.add('exam-is-submitted');
+        updateTopbarPageState('已提交');
+        updateTopbarNavButtons();
         // Hide nav controls
         if(elements.navContainer) elements.navContainer.style.display = 'none';
         if(elements.progressContainer) elements.progressContainer.style.display = 'none';
@@ -2854,6 +3302,7 @@
     function startExamResubmission() {
         if (!CAN_RESUBMIT_SUBMISSION) return;
         isEditingResubmission = true;
+        document.body.classList.remove('exam-is-submitted');
         state.answers = extractSubmittedAnswers();
         state.drawings = extractSubmittedDrawings();
         state.questionFiles = {};
@@ -2881,6 +3330,7 @@
 
         elements.answeredCount.textContent = done;
         elements.totalCount.textContent = allQuestions.length;
+        updateTopbarAnsweredState(done, allQuestions.length);
         if(elements.saveStatus) elements.saveStatus.style.display = 'none';
         if (done === allQuestions.length) elements.progressBadge.classList.add('complete');
 
@@ -2914,13 +3364,19 @@
     function setupEventListeners() {
         if (elements.prevBtn) elements.prevBtn.addEventListener('click', () => goToPage(state.currentPageIdx - 1));
         if (elements.nextBtn) elements.nextBtn.addEventListener('click', () => goToPage(state.currentPageIdx + 1));
+        if (elements.topbarPrevBtn) elements.topbarPrevBtn.addEventListener('click', () => goToPage(state.currentPageIdx - 1));
+        if (elements.topbarNextBtn) elements.topbarNextBtn.addEventListener('click', () => goToPage(state.currentPageIdx + 1));
+        if (elements.topbarSubmitBtn) elements.topbarSubmitBtn.addEventListener('click', handleSubmission);
+        if (elements.topbarClearPageBtn) elements.topbarClearPageBtn.addEventListener('click', clearCurrentPage);
+        if (elements.topbarClearAllBtn) elements.topbarClearAllBtn.addEventListener('click', clearEntirePaper);
+        if (elements.topbarSidebarToggle) elements.topbarSidebarToggle.addEventListener('click', openQuestionNavigator);
 
         // Mobile sidebar
         if (elements.mobileToggle) elements.mobileToggle.addEventListener('click', () => {
-            elements.sidebar.classList.add('show');
-            elements.sidebarBackdrop.classList.add('show');
+            openQuestionNavigator();
         });
         if (elements.sidebarBackdrop) elements.sidebarBackdrop.addEventListener('click', closeMobileSidebar);
+        window.addEventListener('resize', syncExamTopbarOffset);
 
         window.addEventListener('beforeunload', () => {
             if(!SUBMISSION_EXISTS || isEditingResubmission) saveToLocal();

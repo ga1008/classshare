@@ -14,50 +14,97 @@
      data-current-user-name="{{ user_info.name }}"
      data-current-user-nickname="{{ user_info.nickname }}">
     <!-- Header -->
-    <div class="blog-shell__header">
-        <div class="blog-shell__title-row">
-            <svg class="blog-shell__title-icon" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
-            </svg>
-            <h2>博客中心</h2>
+    <header class="blog-hero">
+        <div class="blog-hero__content">
+            <div class="blog-shell__title-row">
+                <svg class="blog-shell__title-icon" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
+                </svg>
+                <h1>博客中心</h1>
+            </div>
+            <p class="blog-hero__lead">把课堂外的灵感、问题、作品和新鲜事放到一起，让好帖子更容易被看见，也让讨论自然长出来。</p>
+            <div class="blog-hero__stats" aria-label="博客概览">
+                <span><strong data-blog-stat="today">0</strong>今日新帖</span>
+                <span><strong data-blog-stat="visible">0</strong>可读内容</span>
+                <span><strong data-blog-stat="comments">0</strong>讨论</span>
+                <span><strong data-blog-stat="likes">0</strong>点赞</span>
+            </div>
         </div>
         <div class="blog-shell__actions">
+            <button class="blog-hero__ghost" data-blog-nav="bookmarks" type="button">我的收藏</button>
             <button class="btn btn-primary btn-sm" data-blog-action="compose" title="写帖子">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                 写帖子
             </button>
         </div>
+    </header>
+
+    <div class="blog-sidebar-nav blog-channel-tabs">
+        <button class="blog-sidebar-tab is-active" data-blog-nav="feed">全部帖子</button>
+        <button class="blog-sidebar-tab" data-blog-nav="my-posts">我的帖子</button>
+        <button class="blog-sidebar-tab" data-blog-nav="bookmarks">我的收藏</button>
     </div>
 
     <!-- Feed View -->
     <div data-blog-view="feed">
-        <!-- Sub-navigation: feed / my posts / bookmarks -->
-        <div class="blog-sidebar-nav">
-            <button class="blog-sidebar-tab is-active" data-blog-nav="feed">全部帖子</button>
-            <button class="blog-sidebar-tab" data-blog-nav="my-posts">我的帖子</button>
-            <button class="blog-sidebar-tab" data-blog-nav="bookmarks">我的收藏</button>
-        </div>
+        <div class="blog-layout">
+            <main class="blog-stream">
+                <section class="blog-spotlight" data-blog-spotlight aria-label="精选导读"></section>
 
-        <!-- Sort bar -->
-        <div class="blog-sort-bar" data-blog-sort-bar>
-            <button class="blog-sort-tab is-active" data-blog-sort="latest">最新</button>
-            <button class="blog-sort-tab" data-blog-sort="hot">热门</button>
-            <button class="blog-sort-tab" data-blog-sort="featured">精华</button>
-            <div class="blog-sort-bar__spacer"></div>
-            <input class="blog-sort-bar__search" type="search" placeholder="搜索标签..." data-blog-search>
-        </div>
+                <!-- Sort bar -->
+                <div class="blog-sort-bar" data-blog-sort-bar>
+                    <button class="blog-sort-tab is-active" data-blog-sort="latest">最新</button>
+                    <button class="blog-sort-tab" data-blog-sort="hot">热议</button>
+                    <button class="blog-sort-tab" data-blog-sort="featured">精华</button>
+                    <div class="blog-sort-bar__spacer"></div>
+                    <input class="blog-sort-bar__search" type="search" placeholder="搜标题、正文或标签..." data-blog-search>
+                </div>
 
-        <div class="blog-author-filter" data-blog-author-filter hidden>
-            <span data-blog-author-filter-label></span>
-            <button type="button" class="blog-author-filter__clear" data-blog-clear-author-filter>查看全部帖子</button>
-        </div>
+                <div class="blog-author-filter" data-blog-author-filter hidden>
+                    <span data-blog-author-filter-label></span>
+                    <button type="button" class="blog-author-filter__clear" data-blog-clear-author-filter>查看全部帖子</button>
+                </div>
 
-        <!-- Post feed list -->
-        <div class="blog-feed" data-blog-feed></div>
+                <div class="blog-author-filter blog-tag-filter" data-blog-tag-filter hidden>
+                    <span data-blog-tag-filter-label></span>
+                    <button type="button" class="blog-author-filter__clear" data-blog-clear-tag-filter>清除标签</button>
+                </div>
 
-        <!-- Load more -->
-        <div class="blog-load-more" data-blog-load-more hidden>
-            <button class="btn btn-outline btn-sm">加载更多</button>
+                <!-- Post feed list -->
+                <div class="blog-feed" data-blog-feed></div>
+
+                <!-- Load more -->
+                <div class="blog-load-more" data-blog-load-more hidden>
+                    <button class="btn btn-outline btn-sm">加载更多</button>
+                </div>
+            </main>
+
+            <aside class="blog-rail" aria-label="博客探索">
+                <section class="blog-rail-card" data-blog-trending-card>
+                    <div class="blog-rail-card__header">
+                        <h2>正在热议</h2>
+                        <button type="button" data-blog-sort="hot">看热榜</button>
+                    </div>
+                    <div class="blog-rail-list" data-blog-trending-list></div>
+                </section>
+                <section class="blog-rail-card">
+                    <div class="blog-rail-card__header">
+                        <h2>热门标签</h2>
+                    </div>
+                    <div class="blog-tag-cloud" data-blog-hot-tags></div>
+                </section>
+                <section class="blog-rail-card">
+                    <div class="blog-rail-card__header">
+                        <h2>活跃作者</h2>
+                    </div>
+                    <div class="blog-author-rank" data-blog-active-authors></div>
+                </section>
+                <section class="blog-rail-card blog-rail-card--compose">
+                    <h2>今天写点什么？</h2>
+                    <p>一段踩坑记录、一个作品截图、一道题的新解法，都会成为别人继续往下看的理由。</p>
+                    <button class="btn btn-primary btn-sm" data-blog-action="compose" type="button">开始写</button>
+                </section>
+            </aside>
         </div>
     </div>
 

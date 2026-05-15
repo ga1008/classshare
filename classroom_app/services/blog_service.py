@@ -124,6 +124,14 @@ def _generate_summary(content_md: str, limit: int = MAX_SUMMARY_LENGTH) -> str:
     return text[:max(limit - 3, 0)].rstrip() + "..."
 
 
+def _estimate_reading_minutes(row: dict) -> int:
+    content = str(row.get("content_md") or "")
+    content_length = len(content) if content else int(row.get("content_length") or 0)
+    if content_length <= 0:
+        content_length = len(str(row.get("summary") or "")) + len(str(row.get("title") or ""))
+    return max(1, (content_length + 499) // 500)
+
+
 def _extract_blog_image_hashes(content_md: str) -> list[str]:
     seen: set[str] = set()
     hashes: list[str] = []
@@ -811,6 +819,7 @@ def list_posts(
     limit: int = POSTS_PER_PAGE,
     author_identity: Optional[str] = None,
     tag: Optional[str] = None,
+    query: Optional[str] = None,
     visibility_filter: Optional[str] = None,
 ) -> dict:
     user_pk, role, identity = _ensure_identity(user)
@@ -833,6 +842,22 @@ def list_posts(
         normalized_tag = str(tag or "").strip()
         conditions.append("(tags_json LIKE ? OR system_tags_json LIKE ?)")
         params.extend([f'%"{normalized_tag}"%', f'%"{normalized_tag}"%'])
+    if query:
+        normalized_query = str(query or "").strip()
+        if normalized_query:
+            like_query = f"%{normalized_query}%"
+            conditions.append(
+                """
+                (
+                    title LIKE ?
+                    OR summary LIKE ?
+                    OR content_md LIKE ?
+                    OR tags_json LIKE ?
+                    OR system_tags_json LIKE ?
+                )
+                """.strip()
+            )
+            params.extend([like_query, like_query, like_query, like_query, like_query])
     if visibility_filter in {VISIBILITY_PUBLIC, VISIBILITY_CLASS, VISIBILITY_SELECTED}:
         conditions.append("visibility = ?")
         params.append(visibility_filter)
@@ -857,13 +882,25 @@ def list_posts(
                title, summary, cover_image_hash,
                status, visibility, allow_comments, is_pinned, is_featured,
                view_count, like_count, comment_count, bookmark_count,
-               system_tags_json, tags_json, created_at, edited_at, updated_at
+               system_tags_json, tags_json, created_at, edited_at, updated_at,
+               LENGTH(content_md) AS content_length,
+               EXISTS(
+                   SELECT 1 FROM blog_likes bl
+                   WHERE bl.target_type = '{TARGET_TYPE_POST}'
+                     AND bl.target_id = blog_posts.id
+                     AND bl.user_identity = ?
+               ) AS is_liked,
+               EXISTS(
+                   SELECT 1 FROM blog_bookmarks bb
+                   WHERE bb.post_id = blog_posts.id
+                     AND bb.user_identity = ?
+               ) AS is_bookmarked
         FROM blog_posts
         WHERE {where_clause}
         ORDER BY {order_clause}
         LIMIT ? OFFSET ?
         """,
-        params + [limit, offset],
+        [identity, identity, *params, limit, offset],
     ).fetchall()
 
     row_items = [dict(row) for row in rows]
@@ -912,6 +949,190 @@ def get_blog_topbar_summary(conn, user: dict) -> dict[str, Any]:
     return {
         "today": today_iso,
         "today_new_count": today_new_count,
+    }
+
+
+def get_blog_discovery(conn, user: dict) -> dict[str, Any]:
+    user_pk, _role, identity = _ensure_identity(user)
+    visibility_sql, visibility_params = _build_post_visibility_sql(
+        user,
+        viewer_identity=identity,
+        viewer_user_pk=user_pk,
+    )
+    published_where = f"({visibility_sql}) AND status = ?"
+    published_params = [*visibility_params, POST_STATUS_PUBLISHED]
+
+    summary = get_blog_topbar_summary(conn, user)
+    stats_row = conn.execute(
+        f"""
+        SELECT COUNT(*) AS visible_count,
+               COALESCE(SUM(like_count), 0) AS like_count,
+               COALESCE(SUM(comment_count), 0) AS comment_count,
+               COALESCE(SUM(bookmark_count), 0) AS bookmark_count
+        FROM blog_posts
+        WHERE {published_where}
+        """,
+        published_params,
+    ).fetchone()
+
+    post_fields = f"""
+        id, author_identity, author_role, author_user_pk, author_display_name, author_display_mode,
+        author_avatar_hash, author_avatar_mime,
+        title, summary, cover_image_hash,
+        status, visibility, allow_comments, is_pinned, is_featured,
+        view_count, like_count, comment_count, bookmark_count,
+        system_tags_json, tags_json, created_at, edited_at, updated_at,
+        LENGTH(content_md) AS content_length,
+        EXISTS(
+            SELECT 1 FROM blog_likes bl
+            WHERE bl.target_type = '{TARGET_TYPE_POST}'
+              AND bl.target_id = blog_posts.id
+              AND bl.user_identity = ?
+        ) AS is_liked,
+        EXISTS(
+            SELECT 1 FROM blog_bookmarks bb
+            WHERE bb.post_id = blog_posts.id
+              AND bb.user_identity = ?
+        ) AS is_bookmarked
+    """
+
+    def serialize_rows(rows) -> list[dict]:
+        row_items = [dict(row) for row in rows]
+        badge_map = _build_author_cultivation_badge_map(conn, row_items)
+        return [
+            _serialize_post_summary(
+                row,
+                viewer_identity=identity,
+                cultivation_badge_map=badge_map,
+            )
+            for row in row_items
+        ]
+
+    spotlight_rows = conn.execute(
+        f"""
+        SELECT {post_fields}
+        FROM blog_posts
+        WHERE {published_where}
+          AND (is_pinned = 1 OR is_featured = 1)
+        ORDER BY is_pinned DESC, is_featured DESC, featured_at DESC, created_at DESC, id DESC
+        LIMIT 3
+        """,
+        [identity, identity, *published_params],
+    ).fetchall()
+
+    if len(spotlight_rows) < 3:
+        fallback_rows = conn.execute(
+            f"""
+            SELECT {post_fields}
+            FROM blog_posts
+            WHERE {published_where}
+            ORDER BY is_pinned DESC, is_featured DESC,
+                     (like_count * 3 + comment_count * 2 + view_count) DESC,
+                     created_at DESC, id DESC
+            LIMIT ?
+            """,
+            [identity, identity, *published_params, 3],
+        ).fetchall()
+        seen_ids = {int(row["id"]) for row in spotlight_rows}
+        merged_rows = [*spotlight_rows]
+        for row in fallback_rows:
+            if int(row["id"]) in seen_ids:
+                continue
+            merged_rows.append(row)
+            seen_ids.add(int(row["id"]))
+            if len(merged_rows) >= 3:
+                break
+        spotlight_rows = merged_rows
+
+    trending_rows = conn.execute(
+        f"""
+        SELECT {post_fields}
+        FROM blog_posts
+        WHERE {published_where}
+        ORDER BY (like_count * 3 + comment_count * 2 + view_count) DESC,
+                 comment_count DESC, like_count DESC, created_at DESC, id DESC
+        LIMIT 6
+        """,
+        [identity, identity, *published_params],
+    ).fetchall()
+
+    tag_rows = conn.execute(
+        f"""
+        SELECT system_tags_json, tags_json, like_count, comment_count, view_count
+        FROM blog_posts
+        WHERE {published_where}
+        ORDER BY created_at DESC, id DESC
+        LIMIT 160
+        """,
+        published_params,
+    ).fetchall()
+    tag_map: dict[str, dict[str, Any]] = {}
+    for row in tag_rows:
+        row_dict = dict(row)
+        heat = 1 + _calculate_hot_score(row_dict)
+        for tag in _merge_post_tags(row_dict.get("system_tags_json"), row_dict.get("tags_json")):
+            bucket = tag_map.setdefault(tag, {"name": tag, "count": 0, "heat": 0})
+            bucket["count"] += 1
+            bucket["heat"] += heat
+    hot_tags = sorted(
+        tag_map.values(),
+        key=lambda item: (int(item["heat"]), int(item["count"]), str(item["name"])),
+        reverse=True,
+    )[:12]
+
+    author_rows = conn.execute(
+        f"""
+        SELECT author_identity, author_role, author_user_pk, author_display_name,
+               author_display_mode, author_avatar_hash,
+               COUNT(*) AS post_count,
+               COALESCE(SUM(like_count * 3 + comment_count * 2 + view_count), 0) AS hot_score,
+               MAX(created_at) AS latest_at
+        FROM blog_posts
+        WHERE {published_where}
+          AND author_display_mode != ?
+        GROUP BY author_identity, author_role, author_user_pk, author_display_name, author_display_mode, author_avatar_hash
+        ORDER BY hot_score DESC, post_count DESC, latest_at DESC
+        LIMIT 6
+        """,
+        [*published_params, AUTHOR_DISPLAY_ANONYMOUS],
+    ).fetchall()
+    author_badge_map = _build_author_cultivation_badge_map(conn, [dict(row) for row in author_rows])
+    active_authors = []
+    for row in author_rows:
+        row_dict = dict(row)
+        role = str(row_dict.get("author_role") or "")
+        user_pk = _safe_int(row_dict.get("author_user_pk"))
+        author_identity = str(row_dict.get("author_identity") or "")
+        active_authors.append(
+            {
+                "identity": author_identity,
+                "display_name": str(row_dict.get("author_display_name") or ""),
+                "role": role,
+                "role_label": "教师" if role == "teacher" else ("AI助教" if role == "assistant" else "学生"),
+                "avatar_url": _build_post_author_avatar_url(
+                    role,
+                    user_pk,
+                    str(row_dict.get("author_avatar_hash") or ""),
+                    str(row_dict.get("author_display_mode") or ""),
+                ),
+                "post_count": int(row_dict.get("post_count") or 0),
+                "hot_score": int(row_dict.get("hot_score") or 0),
+                "cultivation_badge": author_badge_map.get(author_identity),
+            }
+        )
+
+    return {
+        "summary": {
+            **summary,
+            "visible_count": int(stats_row["visible_count"] or 0) if stats_row else 0,
+            "like_count": int(stats_row["like_count"] or 0) if stats_row else 0,
+            "comment_count": int(stats_row["comment_count"] or 0) if stats_row else 0,
+            "bookmark_count": int(stats_row["bookmark_count"] or 0) if stats_row else 0,
+        },
+        "spotlight_posts": serialize_rows(spotlight_rows),
+        "trending_posts": serialize_rows(trending_rows),
+        "hot_tags": hot_tags,
+        "active_authors": active_authors,
     }
 
 
@@ -968,13 +1189,25 @@ def get_my_posts(
                title, summary, cover_image_hash,
                status, visibility, allow_comments, is_pinned, is_featured,
                view_count, like_count, comment_count, bookmark_count,
-               system_tags_json, tags_json, created_at, edited_at, updated_at
+               system_tags_json, tags_json, created_at, edited_at, updated_at,
+               LENGTH(content_md) AS content_length,
+               EXISTS(
+                   SELECT 1 FROM blog_likes bl
+                   WHERE bl.target_type = '{TARGET_TYPE_POST}'
+                     AND bl.target_id = blog_posts.id
+                     AND bl.user_identity = ?
+               ) AS is_liked,
+               EXISTS(
+                   SELECT 1 FROM blog_bookmarks bb
+                   WHERE bb.post_id = blog_posts.id
+                     AND bb.user_identity = ?
+               ) AS is_bookmarked
         FROM blog_posts
         WHERE {where_clause}
         ORDER BY created_at DESC, id DESC
         LIMIT ? OFFSET ?
         """,
-        params + [limit, offset],
+        [identity, identity, *params, limit, offset],
     ).fetchall()
     row_items = [dict(row) for row in rows]
     cultivation_badge_map = _build_author_cultivation_badge_map(conn, row_items)
@@ -2029,6 +2262,10 @@ def _serialize_post_summary(
         "like_count": int(row.get("like_count") or 0),
         "comment_count": int(row.get("comment_count") or 0),
         "bookmark_count": int(row.get("bookmark_count") or 0),
+        "hot_score": _calculate_hot_score(row),
+        "reading_minutes": _estimate_reading_minutes(row),
+        "is_liked": bool(row.get("is_liked")),
+        "is_bookmarked": bool(row.get("is_bookmarked")),
         "author_display_mode": author_display_mode,
         "system_tags": _normalize_tags(system_tags),
         "custom_tags": _normalize_tags(custom_tags),
