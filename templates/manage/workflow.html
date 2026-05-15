@@ -4,8 +4,9 @@
 {% endblock %}
 
 {% block header_actions %}
-<a href="/manage/offerings" class="btn btn-outline">查看已开课堂</a>
-<button type="button" class="btn btn-primary" data-teacher-onboarding-open>开设新课堂</button>
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('课堂列表', '已开课堂', 'list', href='/manage/offerings', variant='solid', tone='blue') }}
+{{ topbar_action('开设课堂', '流程向导', 'plus', button_id='workflowTopbarOnboardingBtn', variant='primary', tone='teal', attrs='data-teacher-onboarding-open') }}
 {% endblock %}
 
 {% block content %}

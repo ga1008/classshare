@@ -1,5 +1,13 @@
 import { apiFetch } from './api.js';
 import { escapeHtml, formatDate, showToast } from './ui.js';
+import {
+    ChatImagePreviewController,
+    getChatImageAttachmentDisplayMeta,
+    getChatImageAttachmentOriginalUrl,
+    getChatImageAttachmentPreviewUrl,
+    getChatImageAttachmentThumbnailUrl,
+    normalizeChatImageAttachment,
+} from './chat_image_preview.js';
 
 const PRIVATE_ATTACHMENT_MAX_BYTES = 100 * 1024 * 1024;
 const PRIVATE_ATTACHMENT_LIMIT = 8;
@@ -93,6 +101,12 @@ export class ClassroomPrivateMessages {
         this.isContactListOpen = false;
         this.attachmentLimit = PRIVATE_ATTACHMENT_LIMIT;
         this.attachmentMaxBytes = PRIVATE_ATTACHMENT_MAX_BYTES;
+        this.imagePreviewController = new ChatImagePreviewController({
+            formatBytes,
+            onError: (message) => showToast(message, 'error'),
+            onMissingPreview: (message) => showToast(message, 'warning'),
+        });
+        this.attachmentPreviewItems = new Map();
     }
 
     init() {
@@ -194,6 +208,15 @@ export class ClassroomPrivateMessages {
         this.form.addEventListener('submit', (event) => {
             event.preventDefault();
             this.sendMessage();
+        });
+        this.conversationEl.addEventListener('click', (event) => {
+            const trigger = event.target.closest('[data-private-image-preview-key]');
+            if (!trigger) {
+                return;
+            }
+            event.preventDefault();
+            const attachment = this.attachmentPreviewItems.get(trigger.dataset.privateImagePreviewKey);
+            this.openAttachmentPreview(attachment);
         });
         this.input.addEventListener('keydown', (event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
@@ -492,6 +515,7 @@ export class ClassroomPrivateMessages {
 
     renderConversation() {
         const messages = Array.isArray(this.conversation?.messages) ? this.conversation.messages : [];
+        this.attachmentPreviewItems.clear();
         if (!this.currentContact) {
             this.renderConversationEmpty('选择同学开始一对一', '这里的内容只会进入你和对方的一对一会话。');
             return;
@@ -523,6 +547,30 @@ export class ClassroomPrivateMessages {
         `;
     }
 
+    normalizeAttachmentPayload(item) {
+        return normalizeChatImageAttachment(item);
+    }
+
+    getAttachmentThumbnailUrl(item) {
+        return getChatImageAttachmentThumbnailUrl(item);
+    }
+
+    getAttachmentPreviewUrl(item) {
+        return getChatImageAttachmentPreviewUrl(item);
+    }
+
+    getAttachmentOriginalUrl(item) {
+        return getChatImageAttachmentOriginalUrl(item);
+    }
+
+    getAttachmentDisplayMeta(item) {
+        return getChatImageAttachmentDisplayMeta(item, formatBytes);
+    }
+
+    openAttachmentPreview(item) {
+        this.imagePreviewController.open(this.normalizeAttachmentPayload(item));
+    }
+
     renderMessageAttachments(attachments) {
         const items = Array.isArray(attachments) ? attachments : [];
         if (!items.length) {
@@ -531,18 +579,23 @@ export class ClassroomPrivateMessages {
         return `
             <div class="classroom-private-message__attachments">
                 ${items.map((attachment) => {
-                    const name = escapeHtml(attachment.name || '附件');
-                    const size = escapeHtml(formatBytes(attachment.file_size));
-                    if (attachment.is_image || attachment.type === 'image') {
+                    const normalizedAttachment = this.normalizeAttachmentPayload(attachment) || {};
+                    const name = escapeHtml(normalizedAttachment.name || '附件');
+                    const size = escapeHtml(formatBytes(normalizedAttachment.file_size));
+                    if (normalizedAttachment.is_image || normalizedAttachment.type === 'image') {
+                        const previewKey = `private-attachment-${normalizedAttachment.id || normalizedAttachment.attachment_id || Math.random().toString(36).slice(2)}`;
+                        this.attachmentPreviewItems.set(previewKey, normalizedAttachment);
+                        const thumbnailUrl = escapeHtml(this.getAttachmentThumbnailUrl(normalizedAttachment));
+                        const meta = escapeHtml(this.getAttachmentDisplayMeta(normalizedAttachment) || size);
                         return `
-                            <a class="classroom-private-attachment is-image" href="${escapeHtml(attachment.url || '#')}" target="_blank" rel="noreferrer noopener">
-                                <img src="${escapeHtml(attachment.url || '')}" alt="${name}" loading="lazy" decoding="async">
-                                <span>${name}${size ? ` · ${size}` : ''}</span>
-                            </a>
+                            <button type="button" class="classroom-private-attachment is-image" data-private-image-preview-key="${escapeHtml(previewKey)}">
+                                <img src="${thumbnailUrl}" alt="${name}" loading="lazy" decoding="async">
+                                <span>${name}${meta ? ` · ${meta}` : ''}</span>
+                            </button>
                         `;
                     }
                     return `
-                        <a class="classroom-private-attachment is-file" href="${escapeHtml(attachment.download_url || attachment.url || '#')}" target="_blank" rel="noreferrer noopener">
+                        <a class="classroom-private-attachment is-file" href="${escapeHtml(normalizedAttachment.download_url || normalizedAttachment.url || '#')}" target="_blank" rel="noreferrer noopener">
                             <span class="classroom-private-file-icon" aria-hidden="true">📎</span>
                             <span>${name}${size ? `<small>${size}</small>` : ''}</span>
                         </a>

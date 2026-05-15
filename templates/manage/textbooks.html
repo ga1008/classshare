@@ -121,7 +121,8 @@
 {% endblock %}
 
 {% block header_actions %}
-<button type="button" class="btn btn-primary" id="openTextbookCreateBtn">新增教材</button>
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('新增教材', '书籍与版本', 'book', button_id='openTextbookCreateBtn', variant='primary', tone='amber') }}
 {% endblock %}
 
 {% block content %}

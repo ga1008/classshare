@@ -51,6 +51,7 @@ from ..services.materials_git_service import (
     refresh_root_git_metadata,
     save_material_repository_credential,
 )
+from ..services.message_center_service import is_super_admin_teacher
 from ..services.session_material_generation_service import (
     create_generation_task,
     extract_example_documents,
@@ -712,6 +713,7 @@ async def manage_materials_page(request: Request, user: dict = Depends(get_curre
             (user["id"],),
         ).fetchall()
         stats = _get_teacher_material_stats(conn, user["id"])
+        current_teacher_is_super_admin = is_super_admin_teacher(conn, user.get("id"))
 
     type_registry = []
     seen_labels = set()
@@ -738,6 +740,7 @@ async def manage_materials_page(request: Request, user: dict = Depends(get_curre
             "page_title": "课程材料",
             "active_page": "materials",
             "embedded_mode": str(request.query_params.get("embed") or "").strip().lower() in {"1", "true", "yes", "on"},
+            "current_teacher_is_super_admin": current_teacher_is_super_admin,
             "offerings": [dict(row) for row in offerings],
             "material_stats": stats,
             "type_registry": type_registry,

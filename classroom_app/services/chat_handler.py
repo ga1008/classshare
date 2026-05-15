@@ -14,6 +14,7 @@ from fastapi import WebSocket
 from ..config import CHAT_LOG_DIR
 from ..database import get_db_connection
 from ..time_utils import aware_local_now, format_local_time, local_iso, local_now
+from .discussion_attachment_service import normalize_discussion_attachment_payloads
 
 REFRESH_DEBOUNCE_SECONDS = 5
 INITIAL_HISTORY_WINDOW_HOURS = 24
@@ -335,6 +336,7 @@ def ensure_room_history_migrated(room_id: int) -> None:
 
 def row_to_chat_message(row) -> dict:
     logged_at = row["logged_at"] if "logged_at" in row.keys() else None
+    class_offering_id = row["class_offering_id"] if "class_offering_id" in row.keys() else None
     payload = {
         "id": row["id"],
         "type": "chat",
@@ -354,14 +356,23 @@ def row_to_chat_message(row) -> dict:
             payload["custom_emojis"] = []
     if "attachments_json" in row.keys() and row["attachments_json"]:
         try:
-            payload["attachments"] = json.loads(row["attachments_json"])
+            payload["attachments"] = normalize_discussion_attachment_payloads(
+                json.loads(row["attachments_json"]),
+                class_offering_id,
+            )
         except json.JSONDecodeError:
             payload["attachments"] = []
     if "quote_message_id" in row.keys() and row["quote_message_id"] is not None:
         payload["quote_message_id"] = row["quote_message_id"]
     if "quote_payload_json" in row.keys() and row["quote_payload_json"]:
         try:
-            payload["quote"] = json.loads(row["quote_payload_json"])
+            quote_payload = json.loads(row["quote_payload_json"])
+            if isinstance(quote_payload, dict) and quote_payload.get("attachments"):
+                quote_payload["attachments"] = normalize_discussion_attachment_payloads(
+                    quote_payload.get("attachments"),
+                    class_offering_id,
+                )
+            payload["quote"] = quote_payload
         except json.JSONDecodeError:
             payload["quote"] = None
     return payload
@@ -376,6 +387,7 @@ def get_initial_history_payload(room_id: int) -> dict:
             """
             SELECT
                 id,
+                class_offering_id,
                 user_id,
                 user_name,
                 user_role,
@@ -433,6 +445,7 @@ def get_older_history_payload(room_id: int, before_id: Optional[int]) -> dict:
                 """
                 SELECT
                     id,
+                    class_offering_id,
                     user_id,
                     user_name,
                     user_role,
@@ -456,6 +469,7 @@ def get_older_history_payload(room_id: int, before_id: Optional[int]) -> dict:
                 """
                 SELECT
                     id,
+                    class_offering_id,
                     user_id,
                     user_name,
                     user_role,

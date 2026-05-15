@@ -1,6 +1,14 @@
 import { apiFetch } from './api.js';
 import { escapeHtml, formatDate, showToast } from './ui.js';
 import { createEmojiPicker } from './emoji_picker.js';
+import {
+    ChatImagePreviewController,
+    getChatImageAttachmentDisplayMeta,
+    getChatImageAttachmentOriginalUrl,
+    getChatImageAttachmentPreviewUrl,
+    getChatImageAttachmentThumbnailUrl,
+    normalizeChatImageAttachment,
+} from './chat_image_preview.js';
 
 const app = document.querySelector('[data-message-center-app]');
 
@@ -64,9 +72,15 @@ if (app) {
         isSendingMessage: false,
         pendingAttachments: [],
         nextAttachmentId: 1,
+        attachmentPreviewItems: new Map(),
     };
 
     let emojiPicker = null;
+    const imagePreviewController = new ChatImagePreviewController({
+        formatBytes,
+        onError: (message) => showToast(message, 'error'),
+        onMissingPreview: (message) => showToast(message, 'warning'),
+    });
 
     if (isNotificationsMode && state.currentTab === PRIVATE_TAB) {
         state.currentTab = 'all';
@@ -271,6 +285,30 @@ if (app) {
         return PRIVATE_IMAGE_TYPES.has(type) || /\.(png|jpe?g|gif|webp)$/.test(name);
     }
 
+    function normalizeAttachmentPayload(item) {
+        return normalizeChatImageAttachment(item);
+    }
+
+    function getAttachmentThumbnailUrl(item) {
+        return getChatImageAttachmentThumbnailUrl(item);
+    }
+
+    function getAttachmentPreviewUrl(item) {
+        return getChatImageAttachmentPreviewUrl(item);
+    }
+
+    function getAttachmentOriginalUrl(item) {
+        return getChatImageAttachmentOriginalUrl(item);
+    }
+
+    function getAttachmentDisplayMeta(item) {
+        return getChatImageAttachmentDisplayMeta(item, formatBytes);
+    }
+
+    function openAttachmentPreview(item) {
+        imagePreviewController.open(normalizeAttachmentPayload(item));
+    }
+
     function revokeAttachmentPreview(attachment) {
         if (attachment?.previewUrl) {
             URL.revokeObjectURL(attachment.previewUrl);
@@ -384,18 +422,23 @@ if (app) {
         return `
             <div class="message-center-message__attachments">
                 ${items.map((attachment) => {
-                    const name = escapeHtml(attachment.name || '附件');
-                    const size = escapeHtml(formatBytes(attachment.file_size));
-                    if (attachment.is_image || attachment.type === 'image') {
+                    const normalizedAttachment = normalizeAttachmentPayload(attachment) || {};
+                    const name = escapeHtml(normalizedAttachment.name || '附件');
+                    const size = escapeHtml(formatBytes(normalizedAttachment.file_size));
+                    if (normalizedAttachment.is_image || normalizedAttachment.type === 'image') {
+                        const previewKey = `message-center-attachment-${normalizedAttachment.id || normalizedAttachment.attachment_id || Math.random().toString(36).slice(2)}`;
+                        state.attachmentPreviewItems.set(previewKey, normalizedAttachment);
+                        const thumbnailUrl = escapeHtml(getAttachmentThumbnailUrl(normalizedAttachment));
+                        const meta = escapeHtml(getAttachmentDisplayMeta(normalizedAttachment) || size);
                         return `
-                            <a class="message-center-message__attachment is-image" href="${escapeHtml(attachment.url || '#')}" target="_blank" rel="noreferrer noopener">
-                                <img src="${escapeHtml(attachment.url || '')}" alt="${name}" loading="lazy" decoding="async">
-                                <span>${name}${size ? ` · ${size}` : ''}</span>
-                            </a>
+                            <button type="button" class="message-center-message__attachment is-image" data-private-image-preview-key="${escapeHtml(previewKey)}">
+                                <img src="${thumbnailUrl}" alt="${name}" loading="lazy" decoding="async">
+                                <span>${name}${meta ? ` · ${meta}` : ''}</span>
+                            </button>
                         `;
                     }
                     return `
-                        <a class="message-center-message__attachment is-file" href="${escapeHtml(attachment.download_url || attachment.url || '#')}" target="_blank" rel="noreferrer noopener">
+                        <a class="message-center-message__attachment is-file" href="${escapeHtml(normalizedAttachment.download_url || normalizedAttachment.url || '#')}" target="_blank" rel="noreferrer noopener">
                             <span class="message-center-message__attachment-icon" aria-hidden="true">📎</span>
                             <span>${name}${size ? `<small>${size}</small>` : ''}</span>
                         </a>
@@ -899,6 +942,7 @@ if (app) {
     function renderConversation() {
         const conversation = state.conversation;
         const contact = conversation?.contact;
+        state.attachmentPreviewItems.clear();
         if (!contact) {
             conversationHeaderEl.innerHTML = `
                 <div>
@@ -1391,6 +1435,13 @@ if (app) {
     });
 
     conversationBodyEl.addEventListener('click', async (event) => {
+        const imageButton = event.target.closest('[data-private-image-preview-key]');
+        if (imageButton) {
+            event.preventDefault();
+            openAttachmentPreview(state.attachmentPreviewItems.get(imageButton.dataset.privateImagePreviewKey));
+            return;
+        }
+
         const blockButton = event.target.closest('[data-block-sender]');
         if (!blockButton) {
             return;

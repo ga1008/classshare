@@ -607,7 +607,7 @@
             </section>
 
             {% elif active_section in ['notifications', 'private'] %}
-            <section class="message-center-shell profile-message-center" data-message-center-app data-message-center-mode="{{ 'private' if active_section == 'private' else 'notifications' }}" data-initial-tab="{{ initial_tab }}" data-initial-contact="{{ initial_contact }}" data-initial-scope="{{ initial_scope if initial_scope is not none else '' }}">
+            <section id="profile-message-center" class="message-center-shell profile-message-center" data-message-center-app data-message-center-mode="{{ 'private' if active_section == 'private' else 'notifications' }}" data-initial-tab="{{ initial_tab }}" data-initial-contact="{{ initial_contact }}" data-initial-scope="{{ initial_scope if initial_scope is not none else '' }}">
                 <section class="profile-band profile-stream-head profile-reveal">
                     <div>
                         <span class="profile-eyebrow">{{ 'Private Messages' if active_section == 'private' else 'Notifications' }}</span>
@@ -706,6 +706,6 @@
 <script src="{{ asset_url('js/echarts.min.js') }}"></script>
 <script type="module" src="{{ asset_url('js/profile.js') }}"></script>
 {% if active_section in ['notifications', 'private'] %}
-<script type="module" src="/static/js/message_center.js?v=private-attachments-20260513"></script>
+<script type="module" src="/static/js/message_center.js?v=chat-image-derivatives-20260515"></script>
 {% endif %}
 {% endblock %}

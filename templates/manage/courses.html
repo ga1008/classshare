@@ -319,7 +319,8 @@
 {% endblock %}
 
 {% block header_actions %}
-<button type="button" class="btn btn-primary" id="openCourseCreateBtn">新增课程</button>
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('新增课程', '模板与课时', 'course', button_id='openCourseCreateBtn', variant='primary', tone='blue') }}
 {% endblock %}
 
 {% block content %}

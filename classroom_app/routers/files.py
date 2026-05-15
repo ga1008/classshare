@@ -45,7 +45,7 @@ from ..services.discussion_attachment_service import (
     DISCUSSION_ATTACHMENT_MAX_BYTES,
     MAX_DISCUSSION_ATTACHMENTS_PER_MESSAGE,
     create_discussion_attachment,
-    load_discussion_attachment_row,
+    ensure_discussion_attachment_file_payload,
     resolve_discussion_attachment_payloads,
 )
 from ..services.emoji_service import increment_emoji_usage, resolve_custom_emoji_payloads
@@ -261,6 +261,7 @@ def _load_discussion_quote_payload(conn, class_offering_id: int, quote_message_i
         """
         SELECT
             id,
+            class_offering_id,
             user_id,
             user_name,
             user_role,
@@ -1470,36 +1471,62 @@ async def get_discussion_mood(
 async def download_discussion_attachment(
         class_offering_id: int,
         attachment_id: int,
+        download: bool = False,
         user: dict = Depends(get_current_user)
 ):
     with get_db_connection() as conn:
         _ensure_classroom_access_for_user(conn, class_offering_id, user)
-        attachment_row = load_discussion_attachment_row(conn, class_offering_id, attachment_id)
+    attachment_payload = await ensure_discussion_attachment_file_payload(
+        class_offering_id,
+        attachment_id,
+        "original",
+    )
+    return _stream_discussion_attachment_payload(attachment_payload, download=download)
 
-    if attachment_row is None:
-        raise HTTPException(status_code=404, detail="讨论区图片不存在")
+@router.get("/api/classrooms/{class_offering_id}/discussion-attachments/{attachment_id}/{variant}")
+async def download_discussion_attachment_variant(
+        class_offering_id: int,
+        attachment_id: int,
+        variant: str,
+        download: bool = False,
+        user: dict = Depends(get_current_user)
+):
+    normalized_variant = str(variant or "").strip().lower()
+    if normalized_variant not in {"thumbnail", "preview", "original"}:
+        raise HTTPException(status_code=404, detail="Discussion image variant not found")
 
-    file_path = resolve_global_file_path(str(attachment_row["file_hash"]))
-    if not file_path:
-        raise HTTPException(status_code=404, detail="讨论区图片不存在")
+    with get_db_connection() as conn:
+        _ensure_classroom_access_for_user(conn, class_offering_id, user)
+
+    attachment_payload = await ensure_discussion_attachment_file_payload(
+        class_offering_id,
+        attachment_id,
+        normalized_variant,
+    )
+    return _stream_discussion_attachment_payload(attachment_payload, download=download)
+
+
+def _stream_discussion_attachment_payload(attachment_payload: dict, *, download: bool = False):
+    file_path = attachment_payload["path"]
 
     async def streamed_file():
         async with windows_io_semaphore:
             async for chunk in stream_file(file_path):
                 yield chunk
 
-    safe_filename = quote(str(attachment_row["original_filename"] or "image"))
+    safe_filename = quote(str(attachment_payload.get("filename") or "image"))
+    disposition = "attachment" if download else "inline"
     return StreamingResponse(
         streamed_file(),
-        media_type=str(attachment_row["mime_type"] or "application/octet-stream"),
+        media_type=str(attachment_payload.get("mime_type") or "application/octet-stream"),
         headers={
-            "Content-Disposition": f"inline; filename*=utf-8''{safe_filename}",
-            "Content-Length": str(int(attachment_row["file_size"] or 0)),
+            "Content-Disposition": f"{disposition}; filename*=utf-8''{safe_filename}",
+            "Content-Length": str(int(attachment_payload.get("file_size") or 0)),
+            "Cache-Control": "private, max-age=604800",
+            "X-Content-Type-Options": "nosniff",
         },
     )
 
-
-# (原有的 download_submission_file V4.0)
 
 @router.get("/api/submission-files/{file_id}/preview", response_class=JSONResponse)
 async def get_submission_file_preview(file_id: int, user: Optional[dict] = Depends(get_current_user)):

@@ -1715,10 +1715,36 @@ def init_database():
                              file_size INTEGER NOT NULL,
                              image_width INTEGER,
                              image_height INTEGER,
+                             thumbnail_file_hash TEXT,
+                             thumbnail_mime_type TEXT,
+                             thumbnail_file_size INTEGER NOT NULL DEFAULT 0,
+                             thumbnail_width INTEGER,
+                             thumbnail_height INTEGER,
+                             preview_file_hash TEXT,
+                             preview_mime_type TEXT,
+                             preview_file_size INTEGER NOT NULL DEFAULT 0,
+                             preview_width INTEGER,
+                             preview_height INTEGER,
                              created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                              FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE
                          )
                          ''')
+            for column_name, column_type in {
+                "thumbnail_file_hash": "TEXT",
+                "thumbnail_mime_type": "TEXT",
+                "thumbnail_file_size": "INTEGER NOT NULL DEFAULT 0",
+                "thumbnail_width": "INTEGER",
+                "thumbnail_height": "INTEGER",
+                "preview_file_hash": "TEXT",
+                "preview_mime_type": "TEXT",
+                "preview_file_size": "INTEGER NOT NULL DEFAULT 0",
+                "preview_width": "INTEGER",
+                "preview_height": "INTEGER",
+            }.items():
+                try:
+                    conn.execute(f"ALTER TABLE discussion_attachments ADD COLUMN {column_name} {column_type}")
+                except sqlite3.OperationalError:
+                    pass
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_discussion_attachments_room_created "
                 "ON discussion_attachments (class_offering_id, created_at DESC, id DESC)"
@@ -2545,11 +2571,41 @@ def init_database():
                              mime_type TEXT NOT NULL,
                              file_size INTEGER NOT NULL,
                              attachment_kind TEXT NOT NULL DEFAULT 'file',
+                             image_width INTEGER,
+                             image_height INTEGER,
+                             thumbnail_file_hash TEXT,
+                             thumbnail_mime_type TEXT,
+                             thumbnail_file_size INTEGER NOT NULL DEFAULT 0,
+                             thumbnail_width INTEGER,
+                             thumbnail_height INTEGER,
+                             preview_file_hash TEXT,
+                             preview_mime_type TEXT,
+                             preview_file_size INTEGER NOT NULL DEFAULT 0,
+                             preview_width INTEGER,
+                             preview_height INTEGER,
                              created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                              FOREIGN KEY (message_id) REFERENCES private_messages (id) ON DELETE CASCADE,
                              FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL
                          )
                          ''')
+            for column_name, column_type in {
+                "image_width": "INTEGER",
+                "image_height": "INTEGER",
+                "thumbnail_file_hash": "TEXT",
+                "thumbnail_mime_type": "TEXT",
+                "thumbnail_file_size": "INTEGER NOT NULL DEFAULT 0",
+                "thumbnail_width": "INTEGER",
+                "thumbnail_height": "INTEGER",
+                "preview_file_hash": "TEXT",
+                "preview_mime_type": "TEXT",
+                "preview_file_size": "INTEGER NOT NULL DEFAULT 0",
+                "preview_width": "INTEGER",
+                "preview_height": "INTEGER",
+            }.items():
+                try:
+                    conn.execute(f"ALTER TABLE private_message_attachments ADD COLUMN {column_name} {column_type}")
+                except sqlite3.OperationalError:
+                    pass
 
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS private_message_ai_jobs

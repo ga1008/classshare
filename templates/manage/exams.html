@@ -3,10 +3,8 @@
 {% block title %}试卷库{% endblock %}
 
 {% block header_actions %}
-<a href="/exam/new" class="btn btn-primary">
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-    新建试卷
-</a>
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('新建试卷', '题库与考试', 'file-plus', href='/exam/new', variant='primary', tone='rose') }}
 {% endblock %}
 
 {% block content %}

@@ -11,9 +11,10 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from ..core import templates
 from ..database import get_db_connection
 from ..dependencies import get_current_user
-from ..services.file_service import resolve_global_file_path, stream_file
+from ..services.file_service import stream_file
 from ..services.message_center_service import (
     add_private_message_block,
+    ensure_private_message_attachment_file_payload,
     get_message_center_bootstrap,
     get_latest_unread_notification,
     get_message_center_summary,
@@ -23,7 +24,6 @@ from ..services.message_center_service import (
     list_message_center_items,
     list_private_message_blocks,
     list_private_message_contacts,
-    load_private_message_attachment_for_user,
     mark_message_center_items_read,
     open_message_center_notification,
     process_private_ai_reply_job,
@@ -93,7 +93,7 @@ async def message_center_page(
         params["section"] = "notifications"
         if normalized_tab and normalized_tab != "all":
             params["tab"] = normalized_tab
-    return RedirectResponse(url=f"/profile?{urlencode(params)}", status_code=303)
+    return RedirectResponse(url=f"/profile?{urlencode(params)}#profile-message-center", status_code=303)
 
 
 @router.get("/api/message-center/bootstrap", response_class=JSONResponse)
@@ -160,9 +160,9 @@ def open_notification_detail(notification_id: int, user: dict = Depends(get_curr
             conn.commit()
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-    target_url = str(item.get("link_url") or "").strip() or "/profile?section=notifications"
+    target_url = str(item.get("link_url") or "").strip() or "/profile?section=notifications#profile-message-center"
     if target_url.startswith("/message-center/notifications/"):
-        target_url = "/profile?section=notifications"
+        target_url = "/profile?section=notifications#profile-message-center"
     return RedirectResponse(url=target_url, status_code=303)
 
 
@@ -300,32 +300,66 @@ async def api_private_message_attachment(
     download: bool = Query(default=False),
     user: dict = Depends(get_current_user),
 ):
-    with get_db_connection() as conn:
-        try:
-            attachment = load_private_message_attachment_for_user(conn, user, attachment_id)
-        except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+    try:
+        attachment_payload = await ensure_private_message_attachment_file_payload(
+            user,
+            attachment_id,
+            "original",
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    if attachment is None:
-        raise HTTPException(status_code=404, detail="私信附件不存在")
+    return _stream_private_attachment_payload(attachment_payload, download=download)
 
-    file_path = resolve_global_file_path(str(attachment["file_hash"]))
-    if not file_path:
-        raise HTTPException(status_code=404, detail="私信附件不存在")
+
+@router.get("/api/message-center/private/attachments/{attachment_id}/{variant}")
+async def api_private_message_attachment_variant(
+    attachment_id: int,
+    variant: str,
+    download: bool = Query(default=False),
+    user: dict = Depends(get_current_user),
+):
+    normalized_variant = str(variant or "").strip().lower()
+    if normalized_variant not in {"thumbnail", "preview", "original"}:
+        raise HTTPException(status_code=404, detail="Private message attachment variant not found")
+    try:
+        attachment_payload = await ensure_private_message_attachment_file_payload(
+            user,
+            attachment_id,
+            normalized_variant,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return _stream_private_attachment_payload(attachment_payload, download=download)
+
+
+def _stream_private_attachment_payload(attachment_payload: dict, *, download: bool = False):
+    file_path = attachment_payload["path"]
 
     async def streamed_file():
         async with private_attachment_io_semaphore:
             async for chunk in stream_file(file_path):
                 yield chunk
 
-    filename = quote(str(attachment["original_filename"] or "attachment"))
-    disposition = "attachment" if download or str(attachment["attachment_kind"] or "") != "image" else "inline"
+    filename = quote(str(attachment_payload.get("filename") or "attachment"))
+    is_inline_image = (
+        str(attachment_payload.get("attachment_kind") or "") == "image"
+        and str(attachment_payload.get("variant") or "") in {"thumbnail", "preview", "original"}
+    )
+    disposition = "attachment" if download or not is_inline_image else "inline"
     return StreamingResponse(
         streamed_file(),
-        media_type=str(attachment["mime_type"] or "application/octet-stream"),
+        media_type=str(attachment_payload.get("mime_type") or "application/octet-stream"),
         headers={
             "Content-Disposition": f"{disposition}; filename*=utf-8''{filename}",
-            "Content-Length": str(int(attachment["file_size"] or 0)),
+            "Content-Length": str(int(attachment_payload.get("file_size") or 0)),
+            "Cache-Control": "private, max-age=604800",
+            "X-Content-Type-Options": "nosniff",
         },
     )
 

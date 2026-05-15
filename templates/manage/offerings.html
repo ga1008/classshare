@@ -271,8 +271,8 @@
 {% endblock %}
 
 {% block header_actions %}
-<a href="/manage/semesters" class="btn btn-outline">学期管理</a>
-<button type="button" class="btn btn-primary" data-teacher-onboarding-open>开设新课堂</button>
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('开课向导', '逐步开设', 'plus', button_id='offeringTopbarOnboardingBtn', variant='primary', tone='teal', attrs='data-teacher-onboarding-open') }}
 {% endblock %}
 
 {% block content %}

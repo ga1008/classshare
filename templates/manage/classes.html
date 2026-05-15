@@ -4,8 +4,9 @@
 {% endblock %}
 
 {% block header_actions %}
-<button type="button" class="btn btn-outline" id="classTemplateDownloadBtn">下载名单模板</button>
-<button type="button" class="btn btn-primary" id="focusClassCreateBtn">导入班级</button>
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('名单模板', '下载导入表', 'download', button_id='classTemplateDownloadBtn', variant='solid', tone='slate') }}
+{{ topbar_action('导入班级', '批量建班', 'upload', button_id='focusClassCreateBtn', variant='primary', tone='blue') }}
 {% endblock %}
 
 {% block content %}

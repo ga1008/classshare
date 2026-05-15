@@ -6,6 +6,14 @@ import {
     getEmojiMeta,
     buildTwemojiUrl,
 } from './chat_emoji_catalog.js';
+import {
+    ChatImagePreviewController,
+    getChatImageAttachmentDisplayMeta,
+    getChatImageAttachmentOriginalUrl,
+    getChatImageAttachmentPreviewUrl,
+    getChatImageAttachmentThumbnailUrl,
+    normalizeChatImageAttachment,
+} from './chat_image_preview.js';
 
 const FALLBACK_EMOJI_SET_NOTE = '标准表情采用 Twemoji';
 const DEFAULT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -129,6 +137,17 @@ export class ClassroomChat {
         this.messageMenuHoverTimer = null;
         this.messageMenuCloseTimer = null;
         this.messageHighlightTimer = null;
+        this.attachmentPreviewModal = null;
+        this.attachmentPreviewImage = null;
+        this.attachmentPreviewTitle = null;
+        this.attachmentPreviewMeta = null;
+        this.attachmentPreviewOriginalLink = null;
+        this.attachmentPreviewReturnFocus = null;
+        this.imagePreviewController = new ChatImagePreviewController({
+            formatBytes: (size) => this.formatBytes(size),
+            onError: (message) => this.showToast(message, 'error'),
+            onMissingPreview: (message) => this.showToast(message, 'warning'),
+        });
         this.emojiPanelLoaded = false;
         this.composerExpanded = false;
         this.emojiPanelData = {
@@ -1208,6 +1227,10 @@ export class ClassroomChat {
 
     handleDocumentKeydown(event) {
         if (event.key === 'Escape') {
+            if (this.isAttachmentPreviewOpen()) {
+                this.closeAttachmentPreview();
+                return;
+            }
             if (this.isEmojiPopoverOpen()) {
                 this.closeEmojiPopover();
             }
@@ -1764,6 +1787,32 @@ export class ClassroomChat {
         return `${(value / (1024 * 1024)).toFixed(1).replace(/\.0$/, '')} MB`;
     }
 
+    normalizeAttachmentPayload(item) {
+        return normalizeChatImageAttachment(item);
+    }
+
+    normalizeAttachmentList(items) {
+        return Array.isArray(items)
+            ? items.map((item) => this.normalizeAttachmentPayload(item)).filter(Boolean)
+            : [];
+    }
+
+    getAttachmentThumbnailUrl(item) {
+        return getChatImageAttachmentThumbnailUrl(item);
+    }
+
+    getAttachmentPreviewUrl(item) {
+        return getChatImageAttachmentPreviewUrl(item);
+    }
+
+    getAttachmentOriginalUrl(item) {
+        return getChatImageAttachmentOriginalUrl(item);
+    }
+
+    getAttachmentDisplayMeta(item) {
+        return getChatImageAttachmentDisplayMeta(item, (size) => this.formatBytes(size));
+    }
+
     renderPendingAttachments() {
         if (!this.attachmentPreviewRow) {
             return;
@@ -1783,12 +1832,15 @@ export class ClassroomChat {
 
             const previewLink = document.createElement('a');
             previewLink.className = 'chat-attachment-preview-link';
-            previewLink.href = attachment.url || '#';
-            previewLink.target = '_blank';
-            previewLink.rel = 'noreferrer noopener';
+            previewLink.href = this.getAttachmentPreviewUrl(attachment) || '#';
+            previewLink.title = '\u9884\u89c8\u56fe\u7247';
+            previewLink.addEventListener('click', (event) => {
+                event.preventDefault();
+                this.openAttachmentPreview(attachment);
+            });
 
             const image = document.createElement('img');
-            image.src = attachment.url || '';
+            image.src = this.getAttachmentThumbnailUrl(attachment);
             image.alt = attachment.name || `图片 ${index + 1}`;
             image.loading = 'lazy';
             image.decoding = 'async';
@@ -2155,15 +2207,16 @@ export class ClassroomChat {
         list.className = `chat-message-attachments${options.compact ? ' is-compact' : ''}`;
 
         items.forEach((item, index) => {
-            const link = document.createElement('a');
+            const attachment = this.normalizeAttachmentPayload(item) || {};
+            const link = document.createElement('button');
+            link.type = 'button';
             link.className = `chat-message-attachment-link${options.quote ? ' chat-quote-attachment-link' : ''}`;
-            link.href = item?.url || '#';
-            link.target = '_blank';
-            link.rel = 'noreferrer noopener';
+            link.title = '\u9884\u89c8\u56fe\u7247';
+            link.addEventListener('click', () => this.openAttachmentPreview(attachment));
 
             const image = document.createElement('img');
             image.className = 'chat-message-attachment-image';
-            image.src = item?.url || '';
+            image.src = this.getAttachmentThumbnailUrl(attachment);
             image.alt = item?.name || `图片 ${index + 1}`;
             image.loading = 'lazy';
             image.decoding = 'async';
@@ -2178,6 +2231,22 @@ export class ClassroomChat {
         });
 
         return list;
+    }
+
+    ensureAttachmentPreviewModal() {
+        return this.imagePreviewController.ensure();
+    }
+
+    isAttachmentPreviewOpen() {
+        return this.imagePreviewController.isOpen();
+    }
+
+    openAttachmentPreview(item) {
+        this.imagePreviewController.open(this.normalizeAttachmentPayload(item));
+    }
+
+    closeAttachmentPreview() {
+        this.imagePreviewController.close();
     }
 
     renderQuoteBlock(quote, options = {}) {
@@ -2390,7 +2459,7 @@ export class ClassroomChat {
             logged_at: quote?.logged_at || null,
             message_type: String(quote?.message_type || 'text'),
             custom_emojis: Array.isArray(quote?.custom_emojis) ? quote.custom_emojis : [],
-            attachments: Array.isArray(quote?.attachments) ? quote.attachments : [],
+            attachments: this.normalizeAttachmentList(quote?.attachments),
         };
     }
 
@@ -2405,7 +2474,7 @@ export class ClassroomChat {
             logged_at: message?.logged_at || null,
             message_type: String(message?.message_type || 'text'),
             custom_emojis: Array.isArray(message?.custom_emojis) ? message.custom_emojis : [],
-            attachments: Array.isArray(message?.attachments) ? message.attachments : [],
+            attachments: this.normalizeAttachmentList(message?.attachments),
             quote: this.normalizeQuotePayload(message?.quote, message?.quote_message_id),
             quote_message_id: Number(message?.quote_message_id || 0) || null,
         };
@@ -2610,7 +2679,7 @@ export class ClassroomChat {
         const label = options.label || '[图片]';
         return attachments.map((item, index) => {
             const name = String(item?.name || `图片 ${index + 1}`);
-            const absoluteUrl = this.buildAbsoluteUrl(item?.url || '');
+            const absoluteUrl = this.buildAbsoluteUrl(this.getAttachmentOriginalUrl(item));
             return absoluteUrl ? `${label} ${name} (${absoluteUrl})` : `${label} ${name}`;
         });
     }
@@ -2635,11 +2704,13 @@ export class ClassroomChat {
         const itemWidth = options.compact ? 108 : 144;
         const cards = attachments.map((item, index) => {
             const name = this.escape(item?.name || `${title} ${index + 1}`);
-            const absoluteUrl = this.buildAbsoluteUrl(item?.url || '');
-            const safeUrl = this.escape(absoluteUrl || item?.url || '');
+            const absoluteUrl = this.buildAbsoluteUrl(this.getAttachmentOriginalUrl(item));
+            const thumbnailUrl = this.buildAbsoluteUrl(this.getAttachmentThumbnailUrl(item));
+            const safeUrl = this.escape(absoluteUrl || thumbnailUrl || item?.url || '');
+            const safeImageUrl = this.escape(thumbnailUrl || absoluteUrl || item?.url || '');
             return [
                 `<a href="${safeUrl}" style="display:flex;flex-direction:column;gap:6px;width:${itemWidth}px;padding:6px;border:1px solid rgba(148,163,184,0.28);border-radius:14px;text-decoration:none;background:#fff;color:#0f172a;">`,
-                `<img src="${safeUrl}" alt="${name}" style="display:block;width:100%;aspect-ratio:1 / 1;object-fit:cover;border-radius:10px;background:#e2e8f0;">`,
+                `<img src="${safeImageUrl}" alt="${name}" style="display:block;width:100%;aspect-ratio:1 / 1;object-fit:cover;border-radius:10px;background:#e2e8f0;">`,
                 `<span style="font-size:12px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</span>`,
                 '</a>',
             ].join('');

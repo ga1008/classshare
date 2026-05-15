@@ -6,10 +6,10 @@
 {% endblock %}
 
 {% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
 <div class="materials-toolbar-group materials-header-actions">
-    <button type="button" class="btn btn-outline" id="materials-refresh-btn">刷新</button>
-    <button type="button" class="btn btn-outline" id="materials-upload-folder-btn">上传文件夹</button>
-    <button type="button" class="btn btn-primary" id="materials-upload-file-btn">上传文件</button>
+    {{ topbar_action('上传文件夹', '批量资料', 'folder-up', button_id='materials-upload-folder-btn', variant='solid', tone='cyan') }}
+    {{ topbar_action('上传文件', '单个资料', 'upload', button_id='materials-upload-file-btn', variant='primary', tone='teal') }}
 </div>
 {% endblock %}
 
@@ -68,6 +68,7 @@
                 <button type="button" class="btn btn-ghost btn-sm" id="materials-back-btn">返回</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="materials-up-btn">上一级</button>
                 <button type="button" class="btn btn-outline btn-sm" id="materials-repository-btn" hidden>仓库</button>
+                <button type="button" class="btn btn-outline btn-sm" id="materials-refresh-btn">刷新</button>
             </div>
             <div class="materials-breadcrumbs" id="materials-breadcrumbs">
                 <span class="text-muted">材料库根目录</span>

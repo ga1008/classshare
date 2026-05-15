@@ -13,7 +13,8 @@
 {% endblock %}
 
 {% block header_actions %}
-<a class="btn btn-outline btn-sm" href="/manage/classes">返回学生名单</a>
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('学生名单', '返回班级页', 'arrow-left', href='/manage/classes', variant='solid', tone='blue') }}
 {% endblock %}
 
 {% block content %}

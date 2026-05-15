@@ -4,11 +4,21 @@ import asyncio
 import json
 import mimetypes
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import quote
 
 from ..core import ai_client
 from ..database import get_db_connection
+from .chat_image_derivatives import (
+    CHAT_IMAGE_DERIVATIVE_MIME_TYPE,
+    CHAT_IMAGE_TYPES,
+    ChatImageDerivativeError,
+    ChatImageTooLargeError,
+    build_chat_image_derivative_sync,
+    prepare_chat_image_derivatives,
+    run_chat_image_processing,
+)
 from .file_service import resolve_global_file_path, save_file_globally
 from .psych_profile_service import (
     build_explicit_user_profile_prompt,
@@ -61,12 +71,43 @@ PRIVATE_MESSAGE_RATE_LIMIT = 5
 PRIVATE_MESSAGE_RATE_WINDOW_SECONDS = 60
 PRIVATE_MESSAGE_ATTACHMENT_MAX_BYTES = 100 * 1024 * 1024
 PRIVATE_MESSAGE_ATTACHMENT_LIMIT = 8
-PRIVATE_MESSAGE_IMAGE_TYPES = {
-    "image/png",
-    "image/jpeg",
-    "image/gif",
-    "image/webp",
+PRIVATE_MESSAGE_IMAGE_TYPES = CHAT_IMAGE_TYPES
+PRIVATE_MESSAGE_DERIVATIVE_MIME_TYPE = CHAT_IMAGE_DERIVATIVE_MIME_TYPE
+
+PRIVATE_MESSAGE_ATTACHMENT_EXTRA_COLUMNS = {
+    "image_width": "INTEGER",
+    "image_height": "INTEGER",
+    "thumbnail_file_hash": "TEXT",
+    "thumbnail_mime_type": "TEXT",
+    "thumbnail_file_size": "INTEGER NOT NULL DEFAULT 0",
+    "thumbnail_width": "INTEGER",
+    "thumbnail_height": "INTEGER",
+    "preview_file_hash": "TEXT",
+    "preview_mime_type": "TEXT",
+    "preview_file_size": "INTEGER NOT NULL DEFAULT 0",
+    "preview_width": "INTEGER",
+    "preview_height": "INTEGER",
 }
+
+PRIVATE_MESSAGE_VARIANT_COLUMNS = {
+    "thumbnail": {
+        "hash": "thumbnail_file_hash",
+        "mime_type": "thumbnail_mime_type",
+        "file_size": "thumbnail_file_size",
+        "width": "thumbnail_width",
+        "height": "thumbnail_height",
+    },
+    "preview": {
+        "hash": "preview_file_hash",
+        "mime_type": "preview_mime_type",
+        "file_size": "preview_file_size",
+        "width": "preview_width",
+        "height": "preview_height",
+    },
+}
+
+_private_attachment_derivative_locks: dict[str, asyncio.Lock] = {}
+_private_attachment_derivative_locks_guard = asyncio.Lock()
 
 ALL_NOTIFICATION_CATEGORIES = (
     MESSAGE_CATEGORY_PRIVATE,
@@ -316,12 +357,34 @@ def ensure_private_message_attachment_schema(conn) -> None:
             mime_type TEXT NOT NULL,
             file_size INTEGER NOT NULL,
             attachment_kind TEXT NOT NULL DEFAULT 'file',
+            image_width INTEGER,
+            image_height INTEGER,
+            thumbnail_file_hash TEXT,
+            thumbnail_mime_type TEXT,
+            thumbnail_file_size INTEGER NOT NULL DEFAULT 0,
+            thumbnail_width INTEGER,
+            thumbnail_height INTEGER,
+            preview_file_hash TEXT,
+            preview_mime_type TEXT,
+            preview_file_size INTEGER NOT NULL DEFAULT 0,
+            preview_width INTEGER,
+            preview_height INTEGER,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (message_id) REFERENCES private_messages (id) ON DELETE CASCADE,
             FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL
         )
         """
     )
+    existing_columns = {
+        str(row["name"] if hasattr(row, "keys") and "name" in row.keys() else row[1])
+        for row in conn.execute("PRAGMA table_info(private_message_attachments)").fetchall()
+    }
+    for column_name, column_type in PRIVATE_MESSAGE_ATTACHMENT_EXTRA_COLUMNS.items():
+        if column_name not in existing_columns:
+            try:
+                conn.execute(f"ALTER TABLE private_message_attachments ADD COLUMN {column_name} {column_type}")
+            except Exception:
+                pass
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_private_message_attachments_message "
         "ON private_message_attachments (message_id, id ASC)"
@@ -362,6 +425,28 @@ def _private_attachment_kind(mime_type: str) -> str:
     return "image" if str(mime_type or "").lower() in PRIVATE_MESSAGE_IMAGE_TYPES else "file"
 
 
+def _row_value(row, key: str, default=None):
+    if row is None:
+        return default
+    try:
+        if hasattr(row, "keys") and key not in row.keys():
+            return default
+        value = row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+    return default if value is None else value
+
+
+async def _get_private_attachment_derivative_lock(attachment_id: int, variant: str) -> asyncio.Lock:
+    key = f"{int(attachment_id)}:{variant}"
+    async with _private_attachment_derivative_locks_guard:
+        lock = _private_attachment_derivative_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _private_attachment_derivative_locks[key] = lock
+        return lock
+
+
 async def prepare_private_message_uploads(files: list[Any] | tuple[Any, ...] | None) -> list[dict[str, Any]]:
     selected_files = [file for file in (files or []) if file is not None]
     if not selected_files:
@@ -385,13 +470,41 @@ async def prepare_private_message_uploads(files: list[Any] | tuple[Any, ...] | N
         if saved_size > PRIVATE_MESSAGE_ATTACHMENT_MAX_BYTES:
             raise ValueError("私信附件不能超过 100MB")
 
-        prepared.append({
+        attachment_kind = _private_attachment_kind(mime_type)
+        derivative_payload = None
+        if attachment_kind == "image":
+            try:
+                derivative_payload = await prepare_chat_image_derivatives(Path(save_result["path"]))
+            except ChatImageTooLargeError as exc:
+                raise ValueError(f"Image {filename} dimensions are too large") from exc
+            except ChatImageDerivativeError as exc:
+                raise ValueError(f"Image {filename} is invalid") from exc
+
+        prepared_item = {
             "file_hash": str(save_result["hash"]),
             "original_filename": filename,
             "mime_type": mime_type,
             "file_size": saved_size,
-            "attachment_kind": _private_attachment_kind(mime_type),
-        })
+            "attachment_kind": attachment_kind,
+        }
+        if derivative_payload:
+            thumbnail = derivative_payload["thumbnail"]
+            preview = derivative_payload["preview"]
+            prepared_item.update({
+                "image_width": int(derivative_payload["width"] or 0),
+                "image_height": int(derivative_payload["height"] or 0),
+                "thumbnail_file_hash": str(thumbnail["file_hash"]),
+                "thumbnail_mime_type": str(thumbnail["mime_type"]),
+                "thumbnail_file_size": int(thumbnail["file_size"] or 0),
+                "thumbnail_width": int(thumbnail["width"] or 0),
+                "thumbnail_height": int(thumbnail["height"] or 0),
+                "preview_file_hash": str(preview["file_hash"]),
+                "preview_mime_type": str(preview["mime_type"]),
+                "preview_file_size": int(preview["file_size"] or 0),
+                "preview_width": int(preview["width"] or 0),
+                "preview_height": int(preview["height"] or 0),
+            })
+        prepared.append(prepared_item)
     return prepared
 
 
@@ -399,7 +512,11 @@ def _build_private_attachment_payload(row) -> dict[str, Any]:
     attachment_id = int(row["id"])
     mime_type = str(row["mime_type"] or "application/octet-stream")
     kind = str(row["attachment_kind"] or _private_attachment_kind(mime_type))
-    return {
+    base_url = _private_attachment_variant_url(attachment_id, "")
+    original_url = _private_attachment_variant_url(attachment_id, "original")
+    thumbnail_url = _private_attachment_variant_url(attachment_id, "thumbnail")
+    preview_url = _private_attachment_variant_url(attachment_id, "preview")
+    payload = {
         "attachment_id": attachment_id,
         "id": attachment_id,
         "type": kind,
@@ -407,10 +524,92 @@ def _build_private_attachment_payload(row) -> dict[str, Any]:
         "name": str(row["original_filename"] or "attachment"),
         "mime_type": mime_type,
         "file_size": int(row["file_size"] or 0),
-        "url": f"/api/message-center/private/attachments/{attachment_id}",
-        "download_url": f"/api/message-center/private/attachments/{attachment_id}?download=1",
+        "width": int(_row_value(row, "image_width", 0) or 0),
+        "height": int(_row_value(row, "image_height", 0) or 0),
+        "url": base_url,
+        "download_url": f"{base_url}?download=1",
         "created_at": str(row["created_at"] or ""),
     }
+    if kind == "image":
+        payload.update({
+            "url": thumbnail_url,
+            "thumbnail_url": thumbnail_url,
+            "thumbnail_file_size": int(_row_value(row, "thumbnail_file_size", 0) or 0),
+            "thumbnail_width": int(_row_value(row, "thumbnail_width", 0) or 0),
+            "thumbnail_height": int(_row_value(row, "thumbnail_height", 0) or 0),
+            "preview_url": preview_url,
+            "preview_file_size": int(_row_value(row, "preview_file_size", 0) or 0),
+            "preview_width": int(_row_value(row, "preview_width", 0) or 0),
+            "preview_height": int(_row_value(row, "preview_height", 0) or 0),
+            "original_url": original_url,
+            "download_url": f"{original_url}?download=1",
+        })
+    return payload
+
+
+def _private_attachment_variant_url(attachment_id: int, variant: str) -> str:
+    base_url = f"/api/message-center/private/attachments/{int(attachment_id)}"
+    normalized_variant = str(variant or "").strip().lower()
+    return f"{base_url}/{normalized_variant}" if normalized_variant else base_url
+
+
+def _resolve_private_original_file_payload(row) -> dict[str, Any] | None:
+    file_path = resolve_global_file_path(str(row["file_hash"]))
+    if not file_path:
+        return None
+    mime_type = str(row["mime_type"] or "application/octet-stream")
+    kind = str(row["attachment_kind"] or _private_attachment_kind(mime_type))
+    return {
+        "path": file_path,
+        "mime_type": mime_type,
+        "file_size": int(row["file_size"] or 0),
+        "filename": str(row["original_filename"] or "attachment"),
+        "attachment_kind": kind,
+        "width": int(_row_value(row, "image_width", 0) or 0),
+        "height": int(_row_value(row, "image_height", 0) or 0),
+        "variant": "original",
+    }
+
+
+def _resolve_private_variant_file_payload(row, variant: str) -> dict[str, Any] | None:
+    if str(row["attachment_kind"] or _private_attachment_kind(str(row["mime_type"] or ""))) != "image":
+        return None
+    columns = PRIVATE_MESSAGE_VARIANT_COLUMNS.get(variant)
+    if not columns:
+        return None
+
+    file_hash = str(_row_value(row, columns["hash"], "") or "").strip()
+    if not file_hash:
+        return None
+    file_path = resolve_global_file_path(file_hash)
+    if not file_path:
+        return None
+
+    original_name = str(row["original_filename"] or "image")
+    stem = Path(original_name).stem or "image"
+    suffix = "thumb" if variant == "thumbnail" else "preview"
+    return {
+        "path": file_path,
+        "mime_type": str(
+            _row_value(row, columns["mime_type"], PRIVATE_MESSAGE_DERIVATIVE_MIME_TYPE)
+            or PRIVATE_MESSAGE_DERIVATIVE_MIME_TYPE
+        ),
+        "file_size": int(_row_value(row, columns["file_size"], 0) or file_path.stat().st_size),
+        "filename": f"{stem}-{suffix}.jpg",
+        "attachment_kind": "image",
+        "width": int(_row_value(row, columns["width"], 0) or 0),
+        "height": int(_row_value(row, columns["height"], 0) or 0),
+        "variant": variant,
+    }
+
+
+def resolve_private_message_attachment_file_payload(row, variant: str) -> dict[str, Any] | None:
+    normalized_variant = str(variant or "original").lower()
+    if normalized_variant == "original":
+        return _resolve_private_original_file_payload(row)
+    if normalized_variant in PRIVATE_MESSAGE_VARIANT_COLUMNS:
+        return _resolve_private_variant_file_payload(row, normalized_variant)
+    return None
 
 
 def _load_private_message_attachments(conn, message_ids: list[int]) -> dict[int, list[dict[str, Any]]]:
@@ -1357,9 +1556,12 @@ def _insert_private_message_attachments(
             INSERT INTO private_message_attachments (
                 message_id, conversation_key, class_offering_id,
                 uploaded_by_identity, uploaded_by_role,
-                file_hash, original_filename, mime_type, file_size, attachment_kind
+                file_hash, original_filename, mime_type, file_size, attachment_kind,
+                image_width, image_height,
+                thumbnail_file_hash, thumbnail_mime_type, thumbnail_file_size, thumbnail_width, thumbnail_height,
+                preview_file_hash, preview_mime_type, preview_file_size, preview_width, preview_height
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(message_row["id"]),
@@ -1372,6 +1574,18 @@ def _insert_private_message_attachments(
                 str(item["mime_type"]),
                 int(item["file_size"] or 0),
                 str(item.get("attachment_kind") or _private_attachment_kind(str(item.get("mime_type") or ""))),
+                int(item.get("image_width") or 0) if item.get("image_width") is not None else None,
+                int(item.get("image_height") or 0) if item.get("image_height") is not None else None,
+                item.get("thumbnail_file_hash"),
+                item.get("thumbnail_mime_type"),
+                int(item.get("thumbnail_file_size") or 0),
+                int(item.get("thumbnail_width") or 0) if item.get("thumbnail_width") is not None else None,
+                int(item.get("thumbnail_height") or 0) if item.get("thumbnail_height") is not None else None,
+                item.get("preview_file_hash"),
+                item.get("preview_mime_type"),
+                int(item.get("preview_file_size") or 0),
+                int(item.get("preview_width") or 0) if item.get("preview_width") is not None else None,
+                int(item.get("preview_height") or 0) if item.get("preview_height") is not None else None,
             ),
         )
         inserted_ids.append(int(cursor.lastrowid))
@@ -2211,6 +2425,107 @@ def load_private_message_attachment_for_user(conn, user: dict, attachment_id: in
     if current_identity not in {str(row["sender_identity"]), str(row["recipient_identity"])}:
         raise PermissionError("permission denied")
     return row
+
+
+def _update_private_derivative_columns(conn, attachment_id: int, variant: str, derivative: dict) -> None:
+    columns = PRIVATE_MESSAGE_VARIANT_COLUMNS[variant]
+    conn.execute(
+        f"""
+        UPDATE private_message_attachments
+        SET
+            {columns["hash"]} = ?,
+            {columns["mime_type"]} = ?,
+            {columns["file_size"]} = ?,
+            {columns["width"]} = ?,
+            {columns["height"]} = ?
+        WHERE id = ?
+        """,
+        (
+            str(derivative["file_hash"]),
+            str(derivative["mime_type"]),
+            int(derivative["file_size"] or 0),
+            int(derivative["width"] or 0),
+            int(derivative["height"] or 0),
+            int(attachment_id),
+        ),
+    )
+
+
+def _ensure_private_message_attachment_derivative_sync(
+    user: dict,
+    attachment_id: int,
+    variant: str,
+) -> dict[str, Any]:
+    with get_db_connection() as conn:
+        row = load_private_message_attachment_for_user(conn, user, attachment_id)
+        if row is None:
+            raise ValueError("Private message attachment not found")
+        existing = resolve_private_message_attachment_file_payload(row, variant)
+        if existing:
+            return existing
+        if str(row["attachment_kind"] or _private_attachment_kind(str(row["mime_type"] or ""))) != "image":
+            raise ValueError("Private message attachment variant not found")
+        original_file = _resolve_private_original_file_payload(row)
+        if not original_file:
+            raise ValueError("Private message attachment not found")
+
+    try:
+        derivative = build_chat_image_derivative_sync(original_file["path"], variant)
+    except ChatImageTooLargeError as exc:
+        raise ValueError("Private message image dimensions are too large") from exc
+    except ChatImageDerivativeError as exc:
+        raise ValueError("Private message image is invalid") from exc
+
+    with get_db_connection() as conn:
+        row = load_private_message_attachment_for_user(conn, user, attachment_id)
+        if row is None:
+            raise ValueError("Private message attachment not found")
+        existing = resolve_private_message_attachment_file_payload(row, variant)
+        if existing:
+            return existing
+        _update_private_derivative_columns(conn, attachment_id, variant, derivative)
+        conn.commit()
+        row = load_private_message_attachment_for_user(conn, user, attachment_id)
+        payload = resolve_private_message_attachment_file_payload(row, variant)
+        if not payload:
+            raise ValueError("Private message image derivative unavailable")
+        return payload
+
+
+async def ensure_private_message_attachment_file_payload(
+    user: dict,
+    attachment_id: int,
+    variant: str = "original",
+) -> dict[str, Any]:
+    normalized_variant = str(variant or "original").strip().lower()
+    if normalized_variant == "original":
+        with get_db_connection() as conn:
+            row = load_private_message_attachment_for_user(conn, user, attachment_id)
+        if row is None:
+            raise ValueError("Private message attachment not found")
+        payload = resolve_private_message_attachment_file_payload(row, "original")
+        if not payload:
+            raise ValueError("Private message attachment not found")
+        return payload
+    if normalized_variant not in PRIVATE_MESSAGE_VARIANT_COLUMNS:
+        raise ValueError("Private message attachment variant not found")
+
+    with get_db_connection() as conn:
+        row = load_private_message_attachment_for_user(conn, user, attachment_id)
+    if row is None:
+        raise ValueError("Private message attachment not found")
+    payload = resolve_private_message_attachment_file_payload(row, normalized_variant)
+    if payload:
+        return payload
+
+    lock = await _get_private_attachment_derivative_lock(attachment_id, normalized_variant)
+    async with lock:
+        return await run_chat_image_processing(
+            _ensure_private_message_attachment_derivative_sync,
+            user,
+            attachment_id,
+            normalized_variant,
+        )
 
 
 def _insert_notification_if_allowed(

@@ -36,30 +36,65 @@
 
 {% block body %}
 <!-- Navbar -->
-<header class="navbar">
-    <a href="/dashboard" class="navbar-brand">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary">
-            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
-        </svg>
-        课堂互动平台
+<header class="navbar app-topbar role-{{ user_info.role }}" aria-label="全局导航">
+    <a href="/dashboard" class="navbar-brand app-topbar-brand" aria-label="返回首页">
+        <span class="app-topbar-brand__mark" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
+                <path d="M9 7h6"></path>
+                <path d="M9 11h6"></path>
+            </svg>
+        </span>
+        <span class="app-topbar-brand__copy">
+            <strong>课堂互动平台</strong>
+            <small>{{ '教师工作台' if user_info.role == 'teacher' else '学生学习台' }}</small>
+        </span>
     </a>
-    <div class="navbar-user">
-        <span class="user-name">欢迎, {{ user_info.name }} <span class="text-muted">({{ user_info.nickname if user_info.nickname else ('教师' if user_info.role == 'teacher' else '学生') }})</span></span>
-        <div class="flex items-center gap-2">
-            {% include "partials/message_center_bell.html" %}
-            {% include "partials/blog_button.html" %}
-            {% include "partials/feedback_button.html" %}
-            {% include "partials/profile_button.html" %}
+    <nav class="navbar-user app-topbar-nav" aria-label="首页入口">
+        <div class="app-topbar-user-card" aria-label="当前用户">
+            <span class="app-topbar-user-card__label">当前账号</span>
+            <span class="user-name app-topbar-user-card__name">
+                {{ user_info.name }}
+                <span>{{ user_info.nickname if user_info.nickname else ('教师' if user_info.role == 'teacher' else '学生') }}</span>
+            </span>
+        </div>
+        <div class="app-topbar-actions app-topbar-actions--primary" aria-label="主要入口">
             {% block navbar_actions %}
             {% if user_info.role == 'teacher' %}
-            <a href="/manage" class="btn btn-outline btn-sm">管理中心</a>
+            <a href="/manage" class="app-topbar-action app-topbar-action--solid">
+                <span class="app-topbar-action__icon" aria-hidden="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 3h7v7H3z"></path>
+                        <path d="M14 3h7v7h-7z"></path>
+                        <path d="M14 14h7v7h-7z"></path>
+                        <path d="M3 14h7v7H3z"></path>
+                    </svg>
+                </span>
+                <span class="app-topbar-action__text">
+                    <strong>管理中心</strong>
+                    <small>班级与课程</small>
+                </span>
+            </a>
             {% elif user_info.role == 'student' %}
-            <button type="button" class="btn btn-outline btn-sm" data-open-student-security>修改密码</button>
+            <button type="button" class="app-topbar-action app-topbar-action--solid" data-open-student-security>
+                <span class="app-topbar-action__icon" aria-hidden="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"></path>
+                        <path d="m9 12 2 2 4-4"></path>
+                    </svg>
+                </span>
+                <span class="app-topbar-action__text">
+                    <strong>修改密码</strong>
+                    <small>登录安全</small>
+                </span>
+            </button>
             {% endif %}
             {% endblock %}
-            <a href="/logout" class="btn btn-ghost btn-sm text-danger">退出登录</a>
         </div>
-    </div>
+        <div class="app-topbar-actions app-topbar-actions--utility" aria-label="常用入口">
+            {% include "partials/app_topbar_utility_actions.html" %}
+        </div>
+    </nav>
 </header>
 
 {% if user_info.role == 'student' %}

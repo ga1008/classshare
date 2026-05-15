@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Optional
 from urllib.parse import quote
 
+from .academic_service import china_today
 from .learning_progress_service import build_student_public_cultivation_badge
 
 
@@ -881,6 +882,36 @@ def list_posts(
         "page": page,
         "limit": limit,
         "has_more": offset + limit < total,
+    }
+
+
+def get_blog_topbar_summary(conn, user: dict) -> dict[str, Any]:
+    user_pk, _role, identity = _ensure_identity(user)
+    today_iso = china_today().isoformat()
+
+    if _can_override_post_visibility(user):
+        visibility_sql = "status = ?"
+        params: list[Any] = [POST_STATUS_PUBLISHED]
+    else:
+        visibility_sql, params = _build_post_visibility_sql(
+            user,
+            viewer_identity=identity,
+            viewer_user_pk=user_pk,
+        )
+
+    row = conn.execute(
+        f"""
+        SELECT COUNT(*) AS today_new_count
+        FROM blog_posts
+        WHERE ({visibility_sql})
+          AND substr(created_at, 1, 10) = ?
+        """,
+        [*params, today_iso],
+    ).fetchone()
+    today_new_count = int(row["today_new_count"] or 0) if row else 0
+    return {
+        "today": today_iso,
+        "today_new_count": today_new_count,
     }
 
 

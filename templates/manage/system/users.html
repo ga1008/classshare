@@ -3,10 +3,8 @@
 {% block title %}用户管理{% endblock %}
 
 {% block header_actions %}
-<a class="btn btn-outline btn-sm" href="/manage/system/password-resets">
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-    找回申请
-</a>
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('找回申请', '学生安全', 'shield', href='/manage/system/password-resets', variant='solid', tone='amber') }}
 {% endblock %}
 
 {% block extra_head %}

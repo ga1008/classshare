@@ -4,7 +4,8 @@
 {% endblock %}
 
 {% block header_actions %}
-<button type="button" class="btn btn-primary" id="openSemesterCreateBtn">新增学期</button>
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('新增学期', '校历周期', 'calendar', button_id='openSemesterCreateBtn', variant='primary', tone='amber') }}
 {% endblock %}
 
 {% block content %}

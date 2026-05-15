@@ -146,6 +146,79 @@
             min-width: 0;
         }
 
+        .manage-topbar {
+            --app-topbar-accent: #0f766e;
+            --app-topbar-accent-dark: #0f5f59;
+            --app-topbar-accent-rgb: 15, 118, 110;
+            --app-topbar-accent-soft: rgba(20, 184, 166, 0.12);
+            z-index: 30;
+            flex-wrap: nowrap;
+            min-height: 78px;
+        }
+
+        .manage-topbar-start {
+            display: flex;
+            align-items: center;
+            gap: 0.72rem;
+            min-width: 0;
+            flex: 0 1 33rem;
+        }
+
+        .manage-topbar .mobile-toggle {
+            flex: 0 0 auto;
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            background: rgba(255, 255, 255, 0.76);
+        }
+
+        .manage-topbar-brand {
+            min-width: 0;
+            flex: 0 1 auto;
+        }
+
+        .manage-topbar-page {
+            min-width: 9rem;
+            display: grid;
+            gap: 0.08rem;
+            padding: 0.42rem 0.72rem;
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            border-radius: 10px;
+            background: rgba(248, 250, 252, 0.68);
+        }
+
+        .manage-topbar-page span {
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            line-height: 1.15;
+            font-weight: 800;
+        }
+
+        .manage-topbar-page strong {
+            min-width: 0;
+            overflow: hidden;
+            color: var(--text-primary);
+            font-size: 0.92rem;
+            line-height: 1.2;
+            font-weight: 820;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .manage-topbar-nav {
+            align-items: center;
+        }
+
+        .manage-context-actions {
+            padding: 0.28rem;
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            border-radius: 12px;
+            background: rgba(248, 250, 252, 0.72);
+        }
+
+        .manage-context-actions .materials-toolbar-group {
+            display: contents;
+        }
+
         .manage-header {
             height: 70px;
             padding: 0 var(--spacing-6);
@@ -265,6 +338,45 @@
 
             .manage-content.is-embedded {
                 padding: 0;
+            }
+
+            .manage-topbar {
+                min-height: auto;
+                flex-wrap: nowrap;
+                align-items: flex-start;
+            }
+
+            .manage-topbar-start,
+            .manage-topbar-nav {
+                width: 100%;
+            }
+
+            .manage-topbar-start {
+                flex: 1 1 100%;
+                flex-wrap: wrap;
+            }
+
+            .manage-topbar .app-topbar-brand {
+                width: auto;
+                flex: 1 1 0;
+            }
+
+            .manage-topbar-page {
+                flex: 1 0 100%;
+                min-width: 0;
+                margin-left: calc(42px + 0.72rem);
+            }
+
+            .manage-topbar-nav {
+                flex-direction: column;
+                align-items: stretch;
+                margin-left: 0;
+            }
+
+            .manage-context-actions {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                width: 100%;
             }
 
             .manage-header {
@@ -392,21 +504,38 @@
 
         <main class="manage-main">
             {% if not embedded_mode %}
-            <header class="manage-header">
-                <div class="manage-header-start">
-                    <button class="mobile-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">
+            {% from "macros/app_topbar.html" import topbar_action %}
+            <header class="navbar app-topbar manage-topbar role-teacher manage-page-{{ active_page }}" aria-label="管理中心顶栏">
+                <div class="manage-topbar-start">
+                    <button type="button" class="mobile-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')" aria-label="展开管理菜单">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
                     </button>
-                    <h1 class="manage-header-title">{{ page_title }}</h1>
-                </div>
-                <div class="manage-header-end">
-                    <div class="manage-header-bell-slot">
-                        {% include "partials/message_center_bell.html" %}
-                        {% include "partials/feedback_button.html" %}
-                        {% include "partials/profile_button.html" %}
+                    <a href="/dashboard" class="navbar-brand app-topbar-brand manage-topbar-brand" aria-label="返回教学首页">
+                        <span class="app-topbar-brand__mark" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
+                                <path d="M9 7h6"></path>
+                                <path d="M9 11h6"></path>
+                            </svg>
+                        </span>
+                        <span class="app-topbar-brand__copy">
+                            <strong>课堂互动平台</strong>
+                            <small>教师管理中心</small>
+                        </span>
+                    </a>
+                    <div class="manage-topbar-page" aria-label="当前管理页面">
+                        <span>当前页面</span>
+                        <strong>{{ page_title }}</strong>
                     </div>
-                    <div class="manage-header-page-actions">{% block header_actions %}{% endblock %}</div>
                 </div>
+                <nav class="navbar-user app-topbar-nav manage-topbar-nav" aria-label="管理中心入口">
+                    <div class="app-topbar-actions app-topbar-actions--primary manage-context-actions" aria-label="本页常用操作">
+                        {% block header_actions %}
+                        {{ topbar_action('开设课堂', '新学期入口', 'plus', href='/manage/offerings', variant='solid', tone='teal') }}
+                        {% endblock %}
+                        {{ topbar_action('教学首页', '返回平台首页', 'gauge', href='/dashboard', variant='solid', tone='slate') }}
+                    </div>
+                </nav>
             </header>
             {% endif %}
 

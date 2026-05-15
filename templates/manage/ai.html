@@ -22,8 +22,9 @@
 {% endblock %}
 
 {% block header_actions %}
-<a href="/manage/offerings" class="btn btn-outline">开设课堂</a>
-<a href="/manage/textbooks" class="btn btn-primary">教材管理</a>
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('开设课堂', '选择配置对象', 'list', href='/manage/offerings', variant='solid', tone='teal') }}
+{{ topbar_action('教材管理', '补齐知识源', 'book', href='/manage/textbooks', variant='primary', tone='amber') }}
 {% endblock %}
 
 {% block content %}
