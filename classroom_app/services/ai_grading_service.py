@@ -108,6 +108,19 @@ def expire_stale_ai_grading_submissions(
                 """,
                 (datetime.now().isoformat(), class_offering_id, student_id, stage_key),
             )
+    if stale_rows:
+        try:
+            from .message_center_service import create_teacher_grading_issue_notification
+
+            for row in stale_rows:
+                create_teacher_grading_issue_notification(
+                    conn,
+                    int(row["id"]),
+                    issue_detail=STALE_GRADING_MESSAGE,
+                    ref_suffix="grading_stale",
+                )
+        except Exception as exc:
+            print(f"[AI_GRADING] stale grading notification failed: {exc}")
     return int(cursor.rowcount or 0)
 
 
@@ -344,13 +357,13 @@ def _build_hidden_student_profile_context(conn, submission: dict[str, Any]) -> s
             "student",
         )
     except Exception as exc:
-        print(f"[AI_GRADING] 加载学生侧写失败，已跳过个性化参考: {exc}")
+        print(f"[AI_GRADING] 加载学生支持参考失败，已跳过个性化参考: {exc}")
         return ""
     if not profile:
         return ""
 
     fields = (
-        ("学习画像摘要", profile.get("profile_summary")),
+        ("学习支持摘要", profile.get("profile_summary")),
         ("近期状态", profile.get("mental_state_summary")),
         ("支持策略", profile.get("support_strategy")),
         ("表达习惯", profile.get("language_habit_summary")),
@@ -450,17 +463,20 @@ async def submit_submission_for_ai_grading(
         response.raise_for_status()
         return response.json()
     except httpx.ConnectError as exc:
-        _reset_submission_after_queue_failure(submission_id)
-        raise AIGradingQueueError(503, "AI 助手服务未运行，请先启动 ai_assistant.py。") from exc
+        detail = "AI 助手服务未运行，请先启动 ai_assistant.py。"
+        _reset_submission_after_queue_failure(submission_id, detail)
+        raise AIGradingQueueError(503, detail) from exc
     except httpx.HTTPStatusError as exc:
-        _reset_submission_after_queue_failure(submission_id)
-        raise AIGradingQueueError(exc.response.status_code, _extract_ai_service_http_error(exc)) from exc
+        detail = _extract_ai_service_http_error(exc)
+        _reset_submission_after_queue_failure(submission_id, detail)
+        raise AIGradingQueueError(exc.response.status_code, detail) from exc
     except Exception as exc:
-        _reset_submission_after_queue_failure(submission_id)
-        raise AIGradingQueueError(500, f"AI 任务提交失败: {exc}") from exc
+        detail = f"AI 任务提交失败: {exc}"
+        _reset_submission_after_queue_failure(submission_id, detail)
+        raise AIGradingQueueError(500, detail) from exc
 
 
-def _reset_submission_after_queue_failure(submission_id: int) -> None:
+def _reset_submission_after_queue_failure(submission_id: int, error_message: str = "") -> None:
     try:
         with get_db_connection() as conn:
             conn.execute(
@@ -473,6 +489,17 @@ def _reset_submission_after_queue_failure(submission_id: int) -> None:
                 """,
                 (submission_id,),
             )
+            try:
+                from .message_center_service import create_teacher_grading_issue_notification
+
+                create_teacher_grading_issue_notification(
+                    conn,
+                    int(submission_id),
+                    issue_detail=error_message or "AI 批改任务未能进入队列，需要教师查看并处理。",
+                    ref_suffix="grading_queue_failed",
+                )
+            except Exception as notify_exc:
+                print(f"[AI_GRADING] queue failure notification failed: {notify_exc}")
             conn.commit()
     except Exception as exc:
         print(f"[AI_GRADING] failed to reset submission {submission_id} after queue failure: {exc}")

@@ -5,6 +5,9 @@
 {% set activity = insight.activity_summary %}
 {% set public_badge = insight.public_badge %}
 {% set best_course = insight.best_course %}
+{% set support_profile = insight.support_profile %}
+{% set teacher_note = insight.teacher_note %}
+{% set related_teacher_names = insight.related_teacher_names %}
 
 {% block extra_head %}
 {% endblock %}
@@ -55,6 +58,74 @@
             <p>{{ item.note }}</p>
         </article>
         {% endfor %}
+    </section>
+
+    <section class="student-support-grid">
+        <article class="student-insight-band student-support-card">
+            <div class="student-insight-band__head">
+                <div>
+                    <h3>学习支持摘要</h3>
+                    <p>仅教师端可见，用于理解沟通节奏、支持方式和课堂关怀重点，不向学生展示。</p>
+                </div>
+                {% if support_profile.confidence %}
+                <span class="student-sect-badge">置信度 {{ support_profile.confidence }}</span>
+                {% endif %}
+            </div>
+            {% if support_profile.has_profile %}
+            <div class="student-support-list">
+                {% for item in support_profile["items"] %}
+                <div class="student-support-item">
+                    <span>{{ item.label }}</span>
+                    <p>{{ item.text }}</p>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="student-support-foot">
+                {% if support_profile.updated_at %}<span>更新 {{ support_profile.updated_at | datetime_format }}</span>{% endif %}
+                {% if support_profile.source_course_name %}<span>{{ support_profile.source_course_name }}</span>{% endif %}
+                {% if support_profile.source_teacher_name %}<span>{{ support_profile.source_teacher_name }}</span>{% endif %}
+            </div>
+            {% else %}
+            <div class="student-support-empty">
+                <strong>暂未形成可展示的学习支持摘要</strong>
+                <span>系统会继续根据课堂行为、学习进度和教师补充说明积累更稳妥的支持参考。</span>
+            </div>
+            {% endif %}
+        </article>
+
+        <article class="student-insight-band student-support-card">
+            <div class="student-insight-band__head">
+                <div>
+                    <h3>教师共享说明</h3>
+                    <p>同一学生的相关任课教师可共同查看和维护，适合记录 AI 难以从课堂行为判断的现实情况。</p>
+                </div>
+            </div>
+            {% if related_teacher_names %}
+            <div class="student-support-teachers" aria-label="相关教师">
+                {% for teacher_name in related_teacher_names[:8] %}
+                <span>{{ teacher_name }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+            <form class="student-support-note-form" data-student-support-note-form data-student-id="{{ student.id }}">
+                <label for="student-support-note">补充说明</label>
+                <textarea id="student-support-note" name="note_text" maxlength="2400" placeholder="例如：长期请病假、家庭照护压力、无障碍支持需要、情绪状态、课堂外困难、需要避开的刺激点或更适合的沟通方式。">{{ teacher_note.note_text }}</textarea>
+                <div class="student-support-note-meta">
+                    <span data-student-support-note-status>
+                        {% if teacher_note.has_note %}
+                        上次由 {{ teacher_note.updated_by_name or '教师' }} 更新{% if teacher_note.updated_at %} · {{ teacher_note.updated_at | datetime_format }}{% endif %}
+                        {% else %}
+                        暂无共享说明
+                        {% endif %}
+                    </span>
+                    <span><b data-student-support-note-count>{{ teacher_note.note_text | length }}</b>/2400</span>
+                </div>
+                <div class="student-support-note-actions">
+                    <button type="button" class="btn btn-ghost btn-sm" data-student-support-note-clear>清空</button>
+                    <button type="submit" class="btn btn-primary btn-sm">保存说明</button>
+                </div>
+            </form>
+        </article>
     </section>
 
     <section class="student-insight-grid">
@@ -196,4 +267,61 @@
         </aside>
     </section>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    const form = document.querySelector('[data-student-support-note-form]');
+    const textarea = form?.querySelector('textarea[name="note_text"]');
+    const counter = document.querySelector('[data-student-support-note-count]');
+    const statusNode = document.querySelector('[data-student-support-note-status]');
+    const clearButton = document.querySelector('[data-student-support-note-clear]');
+
+    const updateCount = () => {
+        if (counter && textarea) counter.textContent = String(textarea.value.length);
+    };
+
+    textarea?.addEventListener('input', updateCount);
+    clearButton?.addEventListener('click', () => {
+        if (!textarea) return;
+        textarea.value = '';
+        textarea.focus();
+        updateCount();
+    });
+
+    form?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const studentId = Number(form.dataset.studentId || 0);
+        const submitButton = form.querySelector('button[type="submit"]');
+        if (!studentId || !textarea) return;
+        const originalText = submitButton?.textContent || '';
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.textContent = '保存中...';
+        }
+        try {
+            const result = await window.apiFetch(`/api/manage/students/${studentId}/support-note`, {
+                method: 'PUT',
+                body: { note_text: textarea.value },
+                silent: true,
+            });
+            window.showMessage?.(result.message || '已保存', 'success');
+            if (statusNode) {
+                const note = result.note || {};
+                statusNode.textContent = note.has_note
+                    ? `上次由 ${note.updated_by_name || '教师'} 更新`
+                    : '暂无共享说明';
+            }
+        } catch (error) {
+            window.showMessage?.(error.message || '保存失败', 'error');
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.textContent = originalText;
+            }
+        }
+    });
+
+    updateCount();
+</script>
 {% endblock %}

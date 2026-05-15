@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import html
 import imaplib
+import json
 import os
 import smtplib
 import socket
@@ -60,6 +61,7 @@ EMAIL_ELIGIBLE_CATEGORIES = {
     "submission",
     "grading_result",
     "learning_progress",
+    "ai_feedback",
     "app_feedback",
     "password_reset_request",
 }
@@ -180,6 +182,7 @@ EMAIL_CATEGORY_ACTION_LABELS = {
     "submission": "查看学生提交",
     "grading_result": "查看批改结果",
     "learning_progress": "查看学习进度",
+    "ai_feedback": "查看并处理",
     "app_feedback": "查看反馈",
     "password_reset_request": "处理申请",
 }
@@ -190,6 +193,7 @@ EMAIL_CATEGORY_COPY = {
     "submission": "学生已有新的作业提交，点开即可查看详情或继续批改。",
     "grading_result": "你的作业已有新的批改结果，可以查看得分、反馈和后续建议。",
     "learning_progress": "学习进度有新的变化，可以查看当前阶段和下一步安排。",
+    "ai_feedback": "批改流程遇到需要教师处理的情况，请点开详情页查看提交内容并决定下一步处理方式。",
     "app_feedback": "有新的平台反馈需要处理，点开即可进入后台查看。",
     "password_reset_request": "有学生提交了找回密码申请，请及时核对并处理。",
 }
@@ -820,6 +824,44 @@ def _polished_email_copy(payload: dict[str, Any]) -> str:
     return base_copy
 
 
+def _payload_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    metadata = payload.get("metadata")
+    if isinstance(metadata, dict):
+        return metadata
+    raw = payload.get("metadata_json")
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(str(raw))
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _email_detail_lines(payload: dict[str, Any]) -> list[tuple[str, str]]:
+    category = str(payload.get("category") or "").strip().lower()
+    if category not in {"submission", "ai_feedback"}:
+        return []
+    metadata = _payload_metadata(payload)
+    fields = (
+        ("系别", metadata.get("department")),
+        ("班级", metadata.get("class_name")),
+        ("学生", metadata.get("student_name")),
+        ("类型", metadata.get("work_type")),
+        ("任务", metadata.get("assignment_title")),
+        ("耗时", metadata.get("duration_label")),
+    )
+    lines = [
+        (label, _normalize_text(value, limit=180))
+        for label, value in fields
+        if _normalize_text(value, limit=180)
+    ]
+    issue_detail = _normalize_text(metadata.get("issue_detail"), limit=240)
+    if issue_detail:
+        lines.append(("处理提示", issue_detail))
+    return lines
+
+
 def _build_email_content(payload: dict[str, Any], recipient_name: str, *, notification_id: int) -> tuple[str, str]:
     title = _normalize_text(payload.get("title") or "新的通知", limit=160)
     summary = _polished_email_copy(payload)
@@ -829,6 +871,7 @@ def _build_email_content(payload: dict[str, Any], recipient_name: str, *, notifi
     action_url = _email_action_url(notification_id)
     action_label = _email_action_label(category)
     greeting_name = recipient_name or "同学/老师"
+    detail_lines = _email_detail_lines(payload)
     lines = [
         f"{greeting_name}，你好：",
         "",
@@ -838,8 +881,11 @@ def _build_email_content(payload: dict[str, Any], recipient_name: str, *, notifi
         "",
         summary,
         "",
-        f"{action_label}：{action_url}",
     ]
+    if detail_lines:
+        lines.extend(f"{label}：{value}" for label, value in detail_lines)
+        lines.append("")
+    lines.append(f"{action_label}：{action_url}")
     lines.extend([
         "",
         "这封邮件由通知中心自动发送。普通通知仅保留站内提醒，重要与系统类通知才会进入邮件队列。",
@@ -852,6 +898,20 @@ def _build_email_content(payload: dict[str, Any], recipient_name: str, *, notifi
     safe_greeting = html.escape(greeting_name)
     safe_action_label = html.escape(action_label)
     safe_action_url = html.escape(action_url, quote=True)
+    detail_html = ""
+    if detail_lines:
+        detail_items = "".join(
+            "<tr>"
+            f"<td style=\"padding:7px 10px;color:#64748b;font-size:13px;border-bottom:1px solid #e2e8f0;width:72px;\">{html.escape(label)}</td>"
+            f"<td style=\"padding:7px 10px;color:#0f172a;font-size:13px;border-bottom:1px solid #e2e8f0;\">{html.escape(value)}</td>"
+            "</tr>"
+            for label, value in detail_lines
+        )
+        detail_html = (
+            '<table role="presentation" style="width:100%;border-collapse:collapse;margin:0 0 22px;'
+            'background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">'
+            f"{detail_items}</table>"
+        )
     html_body = f"""<!doctype html>
 <html lang="zh-CN">
 <body style="margin:0;padding:0;background:#edf2fb;color:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;">
@@ -862,6 +922,7 @@ def _build_email_content(payload: dict[str, Any], recipient_name: str, *, notifi
       <h1 style="margin:16px 0 10px;font-size:22px;line-height:1.35;color:#0f172a;">{safe_title}</h1>
       <p style="margin:0 0 16px;font-size:15px;line-height:1.8;color:#475569;">{safe_greeting}，你好。</p>
       <p style="margin:0 0 22px;font-size:15px;line-height:1.8;color:#475569;">{safe_summary}</p>
+      {detail_html}
       <a href="{safe_action_url}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#4f46e5;color:#ffffff;text-decoration:none;font-size:14px;font-weight:800;">{safe_action_label}</a>
       <p style="margin:22px 0 0;font-size:12px;line-height:1.7;color:#64748b;">若按钮无法打开，请复制此链接到浏览器：<br><span style="word-break:break-all;">{safe_action_url}</span></p>
     </div>

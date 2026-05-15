@@ -774,6 +774,36 @@ def init_database():
                 "ON students (class_id, enrollment_status, student_id_number, id)"
             )
 
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS student_shared_teacher_notes
+                         (
+                             student_id
+                                 INTEGER
+                                 PRIMARY KEY,
+                             note_text
+                                 TEXT
+                                 NOT NULL
+                                 DEFAULT '',
+                             created_by_teacher_id
+                                 INTEGER,
+                             updated_by_teacher_id
+                                 INTEGER,
+                             created_at
+                                 TEXT
+                                 DEFAULT CURRENT_TIMESTAMP,
+                             updated_at
+                                 TEXT
+                                 DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                             FOREIGN KEY (created_by_teacher_id) REFERENCES teachers (id) ON DELETE SET NULL,
+                             FOREIGN KEY (updated_by_teacher_id) REFERENCES teachers (id) ON DELETE SET NULL
+                         )
+                         ''')
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_student_shared_teacher_notes_updated "
+                "ON student_shared_teacher_notes (updated_at DESC, student_id)"
+            )
+
             # 4. 课程 (模板)
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS courses
@@ -1168,6 +1198,7 @@ def init_database():
                 ("absence_scored_by_teacher_id", "INTEGER"),
                 ("grading_started_at", "TEXT"),
                 ("grading_attempt_fingerprint", "TEXT"),
+                ("started_at", "TEXT"),
             )
             for column_name, column_def in submission_extension_columns:
                 try:
@@ -1455,6 +1486,8 @@ def init_database():
                              TEXT,
                              absence_scored_by_teacher_id
                              INTEGER,
+                             started_at
+                             TEXT,
                              submitted_at
                              TEXT
                              NOT
@@ -1895,7 +1928,7 @@ def init_database():
             except sqlite3.OperationalError:
                 pass  # 列已存在
 
-            # 13.5 隐藏心理侧写快照
+            # 13.5 内部学习支持快照
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS ai_psychology_profiles
                          (
@@ -2207,7 +2240,7 @@ def init_database():
             except sqlite3.OperationalError:
                 pass
 
-            # 13.8 课堂研讨室隐藏心理侧写快照
+            # 13.8 课堂研讨室内部学习支持快照
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS classroom_behavior_profiles
                          (

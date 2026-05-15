@@ -3,6 +3,7 @@
 # ==============================================================================
 import asyncio
 import base64
+import copy
 import heapq
 import json
 import mimetypes
@@ -38,7 +39,7 @@ from ai_assistant_doc_extract import (
     render_pdf_pages_to_data_urls as _render_pdf_pages,
 )
 from classroom_app.services.ai_grading_attachments import classify_ai_grading_attachment
-from classroom_app.services.grading_feedback_service import normalize_grading_result
+from classroom_app.services.grading_feedback_service import normalize_grading_result, validate_ai_grading_result
 
 # --- AI 平台 SDK ---
 try:
@@ -899,20 +900,42 @@ class SoftwareInfoRequest(BaseModel):
 
 
 # --- 提示词模板 (更新) ---
+GRADING_RESULT_MAX_ATTEMPTS = 2
+
 GRADING_SYSTEM_PROMPT = """
 你是一个严格、公正的AI作业批改助教。
 你的任务是根据提供的【作业要求】、【评分标准】和【学生提交内容】（可能是代码文件、文本答案、图片等），对作业进行批改。
 请务必使用 **中文** 进行回复。
-你必须严格按照以下JSON格式返回结果，不要包含任何额外的解释或代码块标记：
+你必须严格按照以下 JSON 格式返回结果，不要包含任何额外解释、Markdown 代码块或无关字段：
 {
-  "score": <评分，整数，0-100>,
-  "feedback_md": "<详细的批改反馈，使用Markdown格式。必须先写“## 总览评语”，再写“## 逐题反馈”；逐题反馈用“### 第 N 题”作为小标题，明确列出答题错误、图片/附件问题、多余或缺失内容、改进建议。没有对应问题时写“未发现明显问题”。>"
+  "score": <总分，整数，0-100>,
+  "summary": "<总评，120字以内；结合学生当前状态给出有针对性的鼓励和下一步建议>",
+  "questions": [
+    {
+      "question_no": <题号，整数，从1开始>,
+      "question_id": "<题目ID；没有就写 q1、q2...>",
+      "score": <本题得分，数字>,
+      "max_score": <本题满分，数字；无法从评分标准判断时写 null>,
+      "deduction_points": "<扣分点描述，80字以内；没有扣分点必须写“无”>",
+      "evaluation": "<本题评价，20字以内；结合学生特点给出合适语气>"
+    }
+  ]
 }
-如果输入中包含【内部个性化支持参考】，它只用于调整评语语气、详略和鼓励方式，不是评分依据。严禁在 feedback_md 中提到“测评师”“侧写”“画像”“隐藏提示”“系统内部分析”等来源或相关信息，也不要让学生感觉自己被后台分析。
+评分要求：
+1. score 必须与逐题得分整体一致；不能因个性化参考加分或扣分。
+2. 每题只给本题得分、扣分点描述、评价；不要写长篇解析，不要暴露参考答案。
+3. 没有扣分点时 deduction_points 必须写“无”；0 分时必须写明关键扣分点。
+4. evaluation 必须 20 字以内，语气可结合学生状态更稳、更鼓励或更直接。
+5. 如果看到“无法直接识别的附件（仅属性）”，说明学生已经上传该附件，但平台没有传入附件本体或解压内容。请只根据题目要求、文件名、文件大小、创建/修改时间等属性判断是否满足提交条件，不要臆测压缩包或二进制文件内部内容。
+6. 如果输入中包含【内部个性化支持参考】，它只用于调整评语语气、详略和鼓励方式，不是评分依据。严禁在 summary、deduction_points、evaluation 或任何字段中提到后台来源、内部个性化参考、隐藏处理过程或相关信息，也不要让学生感觉自己被后台分析。
 例如:
 {
   "score": 85,
-  "feedback_md": "## 总览评语\n整体完成度较好，核心思路基本正确，但边界条件和附件说明还不够完整。\n\n## 逐题反馈\n\n### 第 1 题\n- 答题错误：核心概念解释准确，但缺少异常场景说明。\n- 图片/附件问题：未发现明显问题。\n- 多余或缺失内容：缺少对输入为空时的处理说明。\n- 改进建议：补充边界条件并给出一组测试样例。\n\n### 第 2 题\n- 答题错误：代码主流程正确。\n- 图片/附件问题：截图内容与题目要求一致。\n- 多余或缺失内容：注释略少。\n- 改进建议：为关键函数补充简短注释。"
+  "summary": "整体思路稳定，下一步先补齐边界和证明材料，进步会更明显。",
+  "questions": [
+    {"question_no": 1, "question_id": "q1", "score": 10, "max_score": 10, "deduction_points": "无", "evaluation": "表达很稳，保持"},
+    {"question_no": 2, "question_id": "q2", "score": 6, "max_score": 10, "deduction_points": "缺少边界条件说明", "evaluation": "先补关键步骤"}
+  ]
 }
 """
 
@@ -1410,8 +1433,8 @@ def _build_hidden_grading_profile_prompt(student_profile_context: str | None) ->
         return ""
     return (
         "【内部个性化支持参考】\n"
-        "以下内容来自平台内部的学习支持侧写，只能用于调整评语的语气、详略、鼓励方式和改进建议的颗粒度；"
-        "不能作为加分或扣分依据，也不能在反馈中透露来源、侧写、测评、画像、后台分析或隐藏提示等信息。\n"
+        "以下内容来自平台内部的学习支持参考，只能用于调整评语的语气、详略、鼓励方式和改进建议的颗粒度；"
+        "不能作为加分或扣分依据，也不能在反馈中透露来源、测评、后台判断或隐藏规则等信息。\n"
         f"{context[:4000]}"
     )
 
@@ -1460,6 +1483,47 @@ def _human_size(num_bytes: int | None) -> str:
     return f"{size / 1024 / 1024:.1f} MB"
 
 
+def _format_file_timestamp(timestamp: float | int | None) -> str:
+    if timestamp in (None, ""):
+        return "未知"
+    try:
+        return datetime.fromtimestamp(float(timestamp)).isoformat(timespec="seconds")
+    except Exception:
+        return "未知"
+
+
+def _format_metadata_only_grading_file(file_info: dict[str, Any]) -> str:
+    path = file_info.get("path")
+    display_name = str(
+        file_info.get("display_name")
+        or file_info.get("relative_path")
+        or file_info.get("original_filename")
+        or (Path(path).name if path else "附件")
+    )
+    original_filename = str(file_info.get("original_filename") or display_name)
+    relative_path = str(file_info.get("relative_path") or "")
+    mime_type = str(file_info.get("mime_type") or "")
+    ext = str(file_info.get("ext") or file_info.get("file_ext") or (Path(original_filename).suffix if original_filename else ""))
+    size = _human_size(int(file_info.get("size") or file_info.get("file_size") or 0))
+    created_at = str(file_info.get("created_at") or "未知")
+    modified_at = str(file_info.get("modified_at") or "未知")
+    lines = [
+        f"\n--- 无法直接识别的附件（仅属性）: {display_name} ---",
+        "[系统说明] 学生已上传此附件；平台未向 AI 传入附件本体或解压内容，只提供属性信息。请结合题目要求、文件名、大小和时间判断提交是否满足要求，不要臆测压缩包内部内容。",
+        f"- 文件名：{original_filename}",
+        f"- 文件大小：{size}",
+        f"- 创建/元数据时间：{created_at}",
+        f"- 修改时间：{modified_at}",
+    ]
+    if relative_path and relative_path != original_filename:
+        lines.append(f"- 题目/相对路径：{relative_path}")
+    if mime_type:
+        lines.append(f"- MIME 类型：{mime_type}")
+    if ext:
+        lines.append(f"- 扩展名：{ext}")
+    return "\n".join(lines) + "\n"
+
+
 def _guess_mime_type(file_path: Path, explicit_mime_type: str | None = None) -> str:
     if explicit_mime_type:
         return explicit_mime_type.lower()
@@ -1489,8 +1553,9 @@ def _normalize_grading_files(job: GradingJob) -> list[dict[str, Any]]:
             file_path = Path(file.stored_path)
             if not file_path.exists():
                 continue
+            stat = file_path.stat()
             try:
-                file_size = int(file.file_size or file_path.stat().st_size)
+                file_size = int(file.file_size or stat.st_size)
             except OSError:
                 file_size = int(file.file_size or 0)
             display_name = file.relative_path or file.original_filename or file_path.name
@@ -1504,6 +1569,8 @@ def _normalize_grading_files(job: GradingJob) -> list[dict[str, Any]]:
                     "size": file_size,
                     "ext": (file.file_ext or file_path.suffix).lower(),
                     "hash": file.file_hash,
+                    "created_at": _format_file_timestamp(getattr(stat, "st_ctime", None)),
+                    "modified_at": _format_file_timestamp(getattr(stat, "st_mtime", None)),
                 }
             )
         return normalized_files
@@ -1512,6 +1579,7 @@ def _normalize_grading_files(job: GradingJob) -> list[dict[str, Any]]:
         file_path = Path(raw_path)
         if not file_path.exists():
             continue
+        stat = file_path.stat()
         normalized_files.append(
             {
                 "path": file_path,
@@ -1519,9 +1587,11 @@ def _normalize_grading_files(job: GradingJob) -> list[dict[str, Any]]:
                 "original_filename": file_path.name,
                 "relative_path": file_path.name,
                 "mime_type": _guess_mime_type(file_path),
-                "size": int(file_path.stat().st_size),
+                "size": int(stat.st_size),
                 "ext": file_path.suffix.lower(),
                 "hash": None,
+                "created_at": _format_file_timestamp(getattr(stat, "st_ctime", None)),
+                "modified_at": _format_file_timestamp(getattr(stat, "st_mtime", None)),
             }
         )
     return normalized_files
@@ -1537,6 +1607,8 @@ def _categorize_grading_file(file_info: dict[str, Any]) -> str:
         return "document_extractable"
     if profile["category"] == "text":
         return "text"
+    if profile["category"] == "metadata_only":
+        return "metadata_only"
     return "binary"
 
 
@@ -1544,7 +1616,11 @@ def _validate_grading_file_limits(grading_files: list[dict[str, Any]]) -> None:
     if len(grading_files) > AI_GRADING_MAX_FILE_COUNT:
         raise ValueError(f"附件数量超过 AI 批改上限 {AI_GRADING_MAX_FILE_COUNT} 个")
 
-    total_bytes = sum(int(file_info.get("size") or 0) for file_info in grading_files)
+    total_bytes = sum(
+        int(file_info.get("size") or 0)
+        for file_info in grading_files
+        if file_info.get("category") != "metadata_only"
+    )
     if total_bytes > AI_GRADING_MAX_TOTAL_FILE_BYTES:
         raise ValueError(f"附件总大小超过 AI 批改上限 {_human_size(AI_GRADING_MAX_TOTAL_FILE_BYTES)}")
 
@@ -1552,6 +1628,8 @@ def _validate_grading_file_limits(grading_files: list[dict[str, Any]]) -> None:
         category = file_info.get("category")
         file_size = int(file_info.get("size") or 0)
         display_name = file_info.get("display_name") or file_info["path"].name
+        if category == "metadata_only":
+            continue
         if category == "document_native" and file_size > VOLCENGINE_DOCUMENT_MAX_BYTES:
             raise ValueError(f"PDF文档 '{display_name}' 超过火山方舟文档上限 {_human_size(VOLCENGINE_DOCUMENT_MAX_BYTES)}")
         if category == "image" and file_size > VOLCENGINE_IMAGE_MAX_BYTES:
@@ -2141,6 +2219,8 @@ def _build_text_grading_message(
                 text_content += f"\n--- PDF文档: {display_name} ({file_size}) ---\n该PDF文档将以原始文件方式提交给模型。\n"
             elif category == "image":
                 text_content += f"\n--- 图片文件: {display_name} ({file_size}) ---\n该图片将以图像输入方式提交给模型。\n"
+            elif category == "metadata_only":
+                text_content += _format_metadata_only_grading_file(file_info)
             else:
                 text_content += f"\n--- 文件: {display_name} ({file_size}) ---\n[系统说明] 当前平台不支持直接解析该类型文件。\n"
 
@@ -2174,12 +2254,20 @@ def _build_volcengine_responses_input(
     content_items: list[dict[str, Any]] = [
         {
             "type": "input_text",
-            "text": "\n\n".join(prompt_lines + ["【学生提交文件】请结合以下原始文件进行批改。"]),
+            "text": "\n\n".join(prompt_lines + ["【学生提交文件】请结合以下原始文件、可提取内容和仅属性附件进行批改。"]),
         }
     ]
 
     for file_info in grading_files:
         category = file_info["category"]
+        if category == "metadata_only":
+            content_items.append(
+                {
+                    "type": "input_text",
+                    "text": _format_metadata_only_grading_file(file_info),
+                }
+            )
+            continue
         if category == "document_native":
             content_items.append(
                 {
@@ -2243,6 +2331,50 @@ def _build_volcengine_responses_input(
             )
 
     return [{"role": "user", "content": content_items}]
+
+
+def _build_grading_repair_instruction(error_detail: str) -> str:
+    detail = str(error_detail or "结构校验失败").strip()
+    return (
+        "【后端结构校验失败，请重新输出批改结果】\n"
+        f"错误信息：{detail[:1200]}\n"
+        "请基于前面已经给出的作业要求、评分标准、学生提交内容和内部个性化支持参考重新评分。"
+        "只返回一个合法 JSON 对象，必须包含 score、summary、questions。"
+        "questions 中每题必须包含 question_no、question_id、score、max_score、deduction_points、evaluation；"
+        "evaluation 20 字以内，deduction_points 没有扣分必须写“无”，不要出现后台来源、内部个性化参考、隐藏处理过程等字样。"
+    )
+
+
+def _append_grading_repair_to_responses_input(
+    input_payload: list[dict[str, Any]],
+    error_detail: str,
+) -> list[dict[str, Any]]:
+    repaired_payload = copy.deepcopy(input_payload)
+    repair_item = {
+        "type": "input_text",
+        "text": _build_grading_repair_instruction(error_detail),
+    }
+    for message in reversed(repaired_payload):
+        content = message.get("content")
+        if isinstance(content, list):
+            content.append(repair_item)
+            return repaired_payload
+    repaired_payload.append({"role": "user", "content": [repair_item]})
+    return repaired_payload
+
+
+def _is_grading_result_format_error(exc: Exception) -> bool:
+    if isinstance(exc, ValueError):
+        if any(marker in str(exc) for marker in ("API Key", "未配置", "没有找到可批改的内容")):
+            return False
+        return True
+    if isinstance(exc, HTTPException):
+        detail = str(getattr(exc, "detail", "") or "")
+        return exc.status_code == 500 and any(
+            marker in detail
+            for marker in ("JSON", "解析", "批改结果", "score", "summary", "questions", "结构")
+        )
+    return False
 
 
 async def _call_volcengine_responses_api(
@@ -2332,12 +2464,12 @@ def build_vision_messages(rubric: str, files: List[Any], platform_type: str,
     answers_text = _extract_answers_text(answers_json)
     profile_prompt = _build_hidden_grading_profile_prompt(student_profile_context)
 
-    def _coerce_file_item(file_item: Any) -> tuple[Path, str]:
+    def _coerce_file_item(file_item: Any) -> tuple[Path, str, dict[str, Any]]:
         if isinstance(file_item, dict):
             file_path = Path(file_item["path"])
-            return file_path, str(file_item.get("display_name") or file_item.get("relative_path") or file_path.name)
+            return file_path, str(file_item.get("display_name") or file_item.get("relative_path") or file_path.name), file_item
         file_path = Path(file_item)
-        return file_path, file_path.name
+        return file_path, file_path.name, {"path": file_path, "display_name": file_path.name, "size": file_path.stat().st_size}
 
     def _read_file_text_safe(fp: Path) -> str:
         """安全读取文件文本：先尝试直接读取，失败则用文档提取。"""
@@ -2363,7 +2495,10 @@ def build_vision_messages(rubric: str, files: List[Any], platform_type: str,
             text_content += answers_text + "\n"
         text_content += "【学生提交文件】\n"
         for file_item in files:
-            file_path, display_name = _coerce_file_item(file_item)
+            file_path, display_name, file_info = _coerce_file_item(file_item)
+            if file_info.get("category") == "metadata_only":
+                text_content += _format_metadata_only_grading_file(file_info)
+                continue
             if is_image_file(file_path):
                 text_content += f"- 图片文件: {display_name}\n"
                 b64_url = file_to_base64_url(file_path)
@@ -2393,7 +2528,10 @@ def build_vision_messages(rubric: str, files: List[Any], platform_type: str,
         header_text += "【学生提交文件】\n请根据以上内容进行评分:"
         content = [{"type": "text", "text": header_text}]
         for file_item in files:
-            file_path, display_name = _coerce_file_item(file_item)
+            file_path, display_name, file_info = _coerce_file_item(file_item)
+            if file_info.get("category") == "metadata_only":
+                content.append({"type": "text", "text": _format_metadata_only_grading_file(file_info)})
+                continue
             if is_image_file(file_path):
                 b64_url = file_to_base64_url(file_path)
                 if b64_url:
@@ -3532,14 +3670,11 @@ async def run_grading_job(job: GradingJob):
                 except Exception:
                     pass
 
-            # AI 批改要求每个附件都能被模型或本地预处理理解，不能静默跳过压缩包等文件。
+            # 无法解析的二进制附件仍参与批改，但只提供文件属性，绝不传入附件本体。
             still_binary = [f for f in grading_files if f["category"] == "binary"]
-            if still_binary:
-                skipped_names = [f["display_name"] for f in still_binary]
-                raise ValueError(
-                    "AI 批改前检查未通过：存在当前批改链路无法提交给模型理解的附件，请删除后重新提交。"
-                    "不支持的文件: " + ", ".join(skipped_names[:10])
-                )
+            for file_info in still_binary:
+                file_info["category"] = "metadata_only"
+                print(f"[AI WORKER] 无法直接识别的附件改为仅属性输入: {file_info['display_name']}")
 
         # 预提取文档内容，发现嵌入图片后作为独立图片条目加入评分文件
         _pre_extract_documents(grading_files)
@@ -3557,66 +3692,88 @@ async def run_grading_job(job: GradingJob):
             f"[AI WORKER] 将使用平台 {execution['platform_name']} / 能力 {selected_capability} / 任务 {selected_task_type} / 模式 {execution['mode']}"
         )
 
-        if execution["mode"] == "volcengine_responses":
-            model_name = (
-                selected_platform.get("task_models", {}).get(selected_task_type)
-                or selected_platform["models"][selected_capability]
-            )
-            api_key = selected_platform["api_key"]
-            if not api_key:
-                raise ValueError("火山方舟 API Key 未配置")
-            result = await _call_volcengine_responses_api(
-                model_name=model_name,
-                api_key=api_key,
-                input_payload=_build_volcengine_responses_input(
-                    job.rubric_md,
-                    grading_files,
-                    job.requirements_md,
-                    job.answers_json,
-                    job.student_profile_context,
-                ),
-                capability=selected_capability,
-                task_type=selected_task_type,
-                task_priority="default",
-                task_label=f"grading:{job.submission_id}",
-            )
-        else:
-            messages = [{"role": "system", "content": GRADING_SYSTEM_PROMPT}]
-            if execution["mode"] == "vision_messages" and has_files:
-                messages.extend(
-                    build_vision_messages(
-                        job.rubric_md,
-                        grading_files,
-                        selected_platform["type"],
-                        job.requirements_md,
-                        job.answers_json,
-                        job.student_profile_context,
+        result: dict[str, Any] | None = None
+        validation_error = ""
+        for attempt in range(1, GRADING_RESULT_MAX_ATTEMPTS + 1):
+            try:
+                if execution["mode"] == "volcengine_responses":
+                    model_name = (
+                        selected_platform.get("task_models", {}).get(selected_task_type)
+                        or selected_platform["models"][selected_capability]
                     )
-                )
-            else:
-                messages.extend(
-                    _build_text_grading_message(
+                    api_key = selected_platform["api_key"]
+                    if not api_key:
+                        raise ValueError("火山方舟 API Key 未配置")
+                    input_payload = _build_volcengine_responses_input(
                         job.rubric_md,
                         grading_files,
                         job.requirements_md,
                         job.answers_json,
                         job.student_profile_context,
                     )
+                    if validation_error:
+                        input_payload = _append_grading_repair_to_responses_input(input_payload, validation_error)
+                    raw_result = await _call_volcengine_responses_api(
+                        model_name=model_name,
+                        api_key=api_key,
+                        input_payload=input_payload,
+                        capability=selected_capability,
+                        task_type=selected_task_type,
+                        task_priority="default",
+                        task_label=f"grading:{job.submission_id}:attempt:{attempt}",
+                    )
+                else:
+                    messages = [{"role": "system", "content": GRADING_SYSTEM_PROMPT}]
+                    if execution["mode"] == "vision_messages" and has_files:
+                        messages.extend(
+                            build_vision_messages(
+                                job.rubric_md,
+                                grading_files,
+                                selected_platform["type"],
+                                job.requirements_md,
+                                job.answers_json,
+                                job.student_profile_context,
+                            )
+                        )
+                    else:
+                        messages.extend(
+                            _build_text_grading_message(
+                                job.rubric_md,
+                                grading_files,
+                                job.requirements_md,
+                                job.answers_json,
+                                job.student_profile_context,
+                            )
+                        )
+                    if validation_error:
+                        messages.append({"role": "user", "content": _build_grading_repair_instruction(validation_error)})
+
+                    # 批改任务总是要求 JSON 输出
+                    raw_result = await _call_ai_platform(
+                        messages,
+                        capability=selected_capability,
+                        require_json_output=True,
+                        task_priority="default",
+                        task_label=f"grading:{job.submission_id}:attempt:{attempt}",
+                        preferred_platform=execution["platform_name"],
+                        task_type=selected_task_type,
+                    )
+
+                if not isinstance(raw_result, dict):
+                    raise ValueError(f"AI 返回的批改结果不是 JSON 对象：{str(raw_result)[:200]}")
+                result = validate_ai_grading_result(raw_result, answers_json=job.answers_json)
+                break
+            except Exception as exc:
+                if not _is_grading_result_format_error(exc) or attempt >= GRADING_RESULT_MAX_ATTEMPTS:
+                    raise
+                validation_error = str(getattr(exc, "detail", None) or exc)
+                print(
+                    f"[AI WORKER] 批改结果结构校验失败，将重试 {attempt + 1}/{GRADING_RESULT_MAX_ATTEMPTS}: "
+                    f"{validation_error}"
                 )
 
-            # 批改任务总是要求 JSON 输出
-            result = await _call_ai_platform(
-                messages,
-                capability=selected_capability,
-                require_json_output=True,
-                task_priority="default",
-                task_label=f"grading:{job.submission_id}",
-                preferred_platform=execution["platform_name"],
-                task_type=selected_task_type,
-            )
-
-        if not isinstance(result, dict) or ("score" not in result and "feedback_md" not in result):
-            raise ValueError(f"AI 返回的批改结果缺少 score/feedback_md 字段：{str(result)[:200]}")
+        if result is None:
+            raise ValueError("AI 批改未返回可用结果")
         result = normalize_grading_result(result, answers_json=job.answers_json)
         if result.get("score") is None:
             raise ValueError(f"AI 返回的批改分数无效：{str(result)[:200]}")

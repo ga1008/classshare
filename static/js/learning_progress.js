@@ -147,7 +147,7 @@ function initStudentInsightModal() {
         activeTrigger = trigger;
         if (titleEl) {
             const studentName = String(trigger.dataset.studentName || '').trim();
-            titleEl.textContent = studentName ? `${studentName} · 学生详情统计` : '学生详情统计';
+            titleEl.textContent = studentName ? `${studentName} · 成员详情` : '成员详情';
         }
         if (loading) loading.hidden = false;
         frame.classList.add('is-loading');

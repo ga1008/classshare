@@ -71,6 +71,12 @@ from ..services.student_lifecycle_service import (
     normalize_student_enrollment_status,
     student_enrollment_status_label,
 )
+from ..services.student_support_service import (
+    MAX_SHARED_NOTE_LENGTH,
+    normalize_shared_teacher_note,
+    save_shared_student_teacher_note,
+    teacher_can_access_student,
+)
 from ..services.submission_file_alignment import run_full_alignment
 from ..services.teacher_account_service import (
     TEACHER_PASSWORD_HINT,
@@ -1028,6 +1034,37 @@ async def api_update_class_student_status(
             "enrollment_status_label": student_enrollment_status_label(normalized_status),
             "enrollment_note": note,
         },
+    }
+
+
+@router.put("/students/{student_id}/support-note", response_class=JSONResponse)
+async def api_update_student_support_note(
+    request: Request,
+    student_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    """保存教师共享补充说明；同一学生的任课教师可共同查看和维护。"""
+    data = await _parse_json_request(request)
+    note_text = normalize_shared_teacher_note(data.get("note_text"))
+
+    with get_db_connection() as conn:
+        if not teacher_can_access_student(conn, teacher_id=int(user["id"]), student_id=int(student_id)):
+            raise HTTPException(status_code=404, detail="学生不存在或无权操作")
+        note = save_shared_student_teacher_note(
+            conn,
+            student_id=int(student_id),
+            teacher_id=int(user["id"]),
+            note_text=note_text,
+            now_text=local_iso(),
+        )
+        conn.commit()
+
+    message = "教师共享说明已保存。" if note_text else "教师共享说明已清空。"
+    return {
+        "status": "success",
+        "message": message,
+        "note": note,
+        "limit": MAX_SHARED_NOTE_LENGTH,
     }
 
 

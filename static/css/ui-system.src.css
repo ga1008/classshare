@@ -15609,13 +15609,17 @@ body.has-cultivation-login-reveal {
 
 .classroom-page .learning-overview-panel .learning-overview-meta {
     grid-area: overview-meta;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
     margin: 0;
     align-content: start;
 }
 
 .classroom-page .learning-overview-panel .learning-overview-meta > div {
+    display: grid;
+    align-content: center;
+    min-width: 0;
+    min-height: 76px;
     padding: 12px;
     border-radius: 8px;
 }
@@ -25505,6 +25509,123 @@ body.has-class-student-modal {
     font-size: 0.86rem;
 }
 
+.student-support-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+    gap: 20px;
+}
+
+.student-support-card {
+    align-content: start;
+}
+
+.student-support-list {
+    display: grid;
+    gap: 12px;
+}
+
+.student-support-item {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.9), rgba(255, 255, 255, 0.95));
+}
+
+.student-support-item span {
+    color: #0369a1;
+    font-size: 0.78rem;
+    font-weight: 850;
+}
+
+.student-support-item p {
+    margin: 0;
+    color: var(--text-primary);
+    line-height: 1.68;
+    overflow-wrap: anywhere;
+}
+
+.student-support-foot,
+.student-support-note-meta,
+.student-support-note-actions,
+.student-support-teachers {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.student-support-foot span,
+.student-support-teachers span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: rgba(240, 249, 255, 0.86);
+    color: #0369a1;
+    font-size: 0.76rem;
+    font-weight: 800;
+}
+
+.student-support-empty {
+    display: grid;
+    gap: 6px;
+    padding: 16px;
+    border: 1px dashed rgba(148, 163, 184, 0.34);
+    border-radius: 14px;
+    background: rgba(248, 250, 252, 0.74);
+    color: var(--text-secondary);
+    line-height: 1.62;
+}
+
+.student-support-empty strong {
+    color: var(--text-primary);
+}
+
+.student-support-note-form {
+    display: grid;
+    gap: 10px;
+}
+
+.student-support-note-form label {
+    color: var(--text-primary);
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+.student-support-note-form textarea {
+    width: 100%;
+    min-height: 180px;
+    resize: vertical;
+    padding: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.94);
+    color: var(--text-primary);
+    font: inherit;
+    line-height: 1.62;
+    outline: none;
+}
+
+.student-support-note-form textarea:focus {
+    border-color: rgba(14, 165, 233, 0.46);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.12);
+}
+
+.student-support-note-meta {
+    justify-content: space-between;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+.student-support-note-actions {
+    justify-content: flex-end;
+}
+
 .student-insight-grid {
     display: grid;
     grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
@@ -25792,6 +25913,7 @@ body.has-class-student-modal {
 @media (max-width: 1080px) {
     .student-insight-hero,
     .student-insight-grid,
+    .student-support-grid,
     .student-radar-wrap,
     .student-task-layout {
         grid-template-columns: 1fr;

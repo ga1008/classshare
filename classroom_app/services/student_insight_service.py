@@ -13,6 +13,11 @@ from .learning_progress_service import (
     safe_float,
     safe_int,
 )
+from .student_support_service import (
+    load_shared_student_teacher_note,
+    load_student_teacher_names,
+    teacher_visible_support_profile,
+)
 
 
 RADAR_SIZE = 168
@@ -360,6 +365,40 @@ def _build_radar_axes(
     }
 
 
+def _load_latest_student_support_profile(conn, *, student_id: int, class_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT cbp.id,
+               cbp.class_offering_id,
+               cbp.profile_summary,
+               cbp.mental_state_summary,
+               cbp.support_strategy,
+               cbp.personality_traits,
+               cbp.preference_summary,
+               cbp.language_habit_summary,
+               cbp.preferred_ai_style,
+               cbp.interest_hypothesis,
+               cbp.evidence_summary,
+               cbp.confidence,
+               cbp.raw_payload,
+               cbp.created_at,
+               c.name AS course_name,
+               t.name AS teacher_name
+        FROM classroom_behavior_profiles cbp
+        JOIN class_offerings o ON o.id = cbp.class_offering_id
+        JOIN courses c ON c.id = o.course_id
+        JOIN teachers t ON t.id = o.teacher_id
+        WHERE o.class_id = ?
+          AND cbp.user_pk = ?
+          AND cbp.user_role = 'student'
+        ORDER BY cbp.created_at DESC, cbp.id DESC
+        LIMIT 1
+        """,
+        (int(class_id), int(student_id)),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def build_teacher_student_insight(conn, teacher_id: int, student_id: int) -> dict[str, Any] | None:
     student = _load_teacher_student_row(conn, teacher_id=int(teacher_id), student_id=int(student_id))
     if not student:
@@ -389,6 +428,17 @@ def build_teacher_student_insight(conn, teacher_id: int, student_id: int) -> dic
         activity_summary=activity_summary,
     )
     public_badge = build_student_public_cultivation_badge(conn, int(student_id))
+    raw_support_profile = _load_latest_student_support_profile(
+        conn,
+        student_id=int(student_id),
+        class_id=int(student["class_id"]),
+    )
+    support_profile = teacher_visible_support_profile(raw_support_profile)
+    if raw_support_profile:
+        support_profile["source_course_name"] = raw_support_profile.get("course_name") or ""
+        support_profile["source_teacher_name"] = raw_support_profile.get("teacher_name") or ""
+    teacher_note = load_shared_student_teacher_note(conn, int(student_id))
+    related_teacher_names = load_student_teacher_names(conn, int(student_id))
     best_course = courses[0] if courses else None
     average_cultivation_score = (
         round(sum(safe_float(item.get("score")) for item in courses) / len(courses), 1)
@@ -407,6 +457,9 @@ def build_teacher_student_insight(conn, teacher_id: int, student_id: int) -> dic
         "courses": courses,
         "task_summary": task_summary,
         "activity_summary": activity_summary,
+        "support_profile": support_profile,
+        "teacher_note": teacher_note,
+        "related_teacher_names": related_teacher_names,
         "radar": radar,
         "hero_stats": [
             {"label": "参与课堂", "value": len(courses), "suffix": "门", "note": "当前教师名下课堂"},

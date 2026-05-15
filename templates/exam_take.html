@@ -753,6 +753,64 @@
         .result-feedback-overview .md-content > :last-child {
             margin-bottom: 0;
         }
+        .grading-question-feedback.is-structured {
+            border-color: rgba(245, 158, 11, 0.28);
+            border-left-color: #f59e0b;
+            background: linear-gradient(135deg, rgba(255, 251, 235, 0.9), rgba(255, 255, 255, 0.96));
+            box-shadow: 0 12px 30px -24px rgba(120, 53, 15, 0.5);
+            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+        }
+        .grading-question-feedback.is-structured:hover,
+        .grading-question-feedback.is-structured:focus-visible {
+            transform: translateY(-2px);
+            border-color: rgba(245, 158, 11, 0.48);
+            box-shadow: 0 18px 36px -26px rgba(120, 53, 15, 0.62);
+            outline: none;
+        }
+        .grading-feedback-grid {
+            display: grid;
+            grid-template-columns: minmax(98px, auto) minmax(0, 1fr);
+            gap: 8px;
+        }
+        .grading-feedback-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+            padding: 8px 10px;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.72);
+        }
+        .grading-feedback-field__name {
+            color: var(--text-muted);
+            font-size: 0.74rem;
+            font-weight: 700;
+        }
+        .grading-feedback-score {
+            font-size: 1rem;
+            line-height: 1.1;
+        }
+        .grading-feedback-score.is-full { color: #047857; }
+        .grading-feedback-score.is-partial { color: #b45309; }
+        .grading-feedback-score.is-zero { color: #dc2626; }
+        .grading-feedback-deduction,
+        .grading-feedback-evaluation {
+            overflow-wrap: anywhere;
+            line-height: 1.45;
+        }
+        .grading-feedback-deduction.has-deduction {
+            color: #dc2626;
+            font-weight: 800;
+        }
+        .grading-feedback-deduction.is-none {
+            color: #047857;
+            font-weight: 800;
+        }
+        .grading-feedback-evaluation {
+            color: var(--text-primary);
+            font-weight: 650;
+        }
         .result-feedback-overview .md-content {
             color: #334155;
         }
@@ -788,11 +846,18 @@
             .grading-question-feedback {
                 margin-left: 0;
             }
+            .grading-feedback-grid {
+                grid-template-columns: 1fr;
+            }
         }
         @media (prefers-reduced-motion: reduce) {
             .result-feedback-overview,
             .grading-question-feedback {
                 animation: none;
+            }
+            .grading-question-feedback.is-structured:hover,
+            .grading-question-feedback.is-structured:focus-visible {
+                transform: none;
             }
         }
 
@@ -1011,13 +1076,14 @@
         parseGradingFeedback,
         renderMarkdownHtml,
         renderQuestionFeedbackHtml
-    } from '/static/js/grading_feedback.js?v=20260513';
+    } from '/static/js/grading_feedback.js?v=20260517';
 
     window.showMessage = showMessage;
     window.UI = Object.assign({}, window.UI || {}, { showMessage, showToast: showMessage });
 
     // Global configurations injected by Jinja2
     const ASSIGNMENT_ID = "{{ assignment.id }}";
+    const EXAM_STARTED_AT = new Date().toISOString();
     const PAPER_TITLE = {{ paper.title | tojson }};
     const USER_ROLE = "{{ user_info.role }}";
     const MAX_UPLOAD_MB = {{ max_upload_mb }};
@@ -2505,6 +2571,7 @@
                 };
             });
             formData.append('answers_json', JSON.stringify({ answers: answersList }));
+            formData.append('started_at', EXAM_STARTED_AT);
             formData.append('use_server_draft', useServerDraftFiles ? '1' : '0');
 
             const resp = await apiFetch(`/api/assignments/${ASSIGNMENT_ID}/submit`, {
@@ -2643,8 +2710,8 @@
                 <div class="result-feedback-note">
                     <span aria-hidden="true">●</span>
                     <span>${gradingFeedback.hasQuestionFeedback
-                        ? `已识别 ${gradingFeedback.questions.length} 条逐题反馈，错误点会显示在对应题目下方。`
-                        : '本次批改只有总览评语，未包含可自动对应到每一题的错误点。后续结构化批改会把错误点显示在题目旁。'}</span>
+                        ? `已识别 ${gradingFeedback.questions.length} 条逐题反馈，扣分点会显示在对应题目下方。`
+                        : '本次批改只有总览评语，未包含可自动对应到每一题的扣分点。后续结构化批改会把扣分点显示在题目旁。'}</span>
                 </div>
             ` : ''}
             <div class="question-list">

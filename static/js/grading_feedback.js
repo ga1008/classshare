@@ -15,12 +15,99 @@ function stripMarkdown(text) {
         .trim();
 }
 
+function compactText(text, maxLength) {
+    const plain = stripMarkdown(text);
+    if (!plain) return '';
+    return plain.length > maxLength ? `${plain.slice(0, maxLength).trim()}...` : plain;
+}
+
 function normalizeQuestionId(value) {
     const text = String(value || '').trim().toLowerCase();
     if (!text) return '';
-    const numberMatch = text.match(/(?:^|[^0-9])(\d+)(?:[^0-9]|$)/);
-    if (numberMatch) return `q${Number(numberMatch[1])}`;
+    const chineseQuestionMatch = text.match(/第\s*(\d+)\s*(?:题|问|小题)/);
+    if (chineseQuestionMatch) return `q${Number(chineseQuestionMatch[1])}`;
+    const plainQuestionMatch = text.match(/^(?:question|q)?\s*(\d+)$/i);
+    if (plainQuestionMatch) return `q${Number(plainQuestionMatch[1])}`;
     return text.replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '');
+}
+
+function parseScoreValue(text) {
+    const raw = String(text || '').trim();
+    const numbers = raw.match(/\d+(?:\.\d+)?/g) || [];
+    const score = numbers.length ? Number(numbers[0]) : null;
+    const maxScore = numbers.length > 1 ? Number(numbers[1]) : null;
+    return {
+        text: raw,
+        score: Number.isFinite(score) ? score : null,
+        maxScore: Number.isFinite(maxScore) ? maxScore : null,
+    };
+}
+
+function parseLabeledFeedbackLine(line) {
+    const normalized = String(line || '')
+        .trim()
+        .replace(/^\s*(?:[-*+]|\d+[.)、])\s*/, '')
+        .replace(/\*\*/g, '')
+        .trim();
+    const match = normalized.match(/^(本题得分|得分|score|扣分点描述|扣分点|失分点|评价|评语|evaluation)\s*[：:]\s*(.*)$/i);
+    if (!match) return null;
+    const label = match[1].toLowerCase();
+    const value = match[2].trim();
+    if (label === '本题得分' || label === '得分' || label === 'score') {
+        return { key: 'score', value };
+    }
+    if (label === '评价' || label === '评语' || label === 'evaluation') {
+        return { key: 'evaluation', value };
+    }
+    return { key: 'deductionPoints', value };
+}
+
+function parseQuestionDetails(markdown) {
+    const details = {
+        scoreText: '',
+        score: null,
+        maxScore: null,
+        deductionPoints: '',
+        evaluation: '',
+    };
+    let hasStructuredFields = false;
+    String(markdown || '').split(/\r?\n/).forEach((line) => {
+        const parsed = parseLabeledFeedbackLine(line);
+        if (!parsed) return;
+        hasStructuredFields = true;
+        if (parsed.key === 'score') {
+            const score = parseScoreValue(parsed.value);
+            details.scoreText = score.text;
+            details.score = score.score;
+            details.maxScore = score.maxScore;
+            return;
+        }
+        if (parsed.key === 'deductionPoints') {
+            details.deductionPoints = compactText(parsed.value || '无', 80) || '无';
+            return;
+        }
+        if (parsed.key === 'evaluation') {
+            details.evaluation = compactText(parsed.value, 20);
+        }
+    });
+
+    if (!hasStructuredFields) return null;
+    if (!details.deductionPoints) details.deductionPoints = '无';
+    if (!details.evaluation) details.evaluation = '继续稳步完善';
+    const noDeduction = /^(无|没有|未发现|暂无)$/.test(details.deductionPoints);
+    let scoreState = 'partial';
+    if (Number(details.score) === 0) {
+        scoreState = 'zero';
+    } else if (noDeduction || (
+        Number.isFinite(details.score)
+        && Number.isFinite(details.maxScore)
+        && details.score >= details.maxScore
+    )) {
+        scoreState = 'full';
+    }
+    details.noDeduction = noDeduction;
+    details.scoreState = scoreState;
+    return details;
 }
 
 function readQuestionHeading(line) {
@@ -46,6 +133,7 @@ function pushQuestionSection(sections, current) {
         title: current.title,
         markdown,
         plain: stripMarkdown(markdown),
+        details: parseQuestionDetails(markdown),
     });
 }
 
@@ -88,6 +176,7 @@ export function parseGradingFeedback(markdown) {
                 title: `第 ${index} 题`,
                 markdown: `- ${bullet[2].trim()}`,
                 plain: stripMarkdown(bullet[2]),
+                details: null,
             });
             return;
         }
@@ -162,6 +251,34 @@ export function renderQuestionFeedbackHtml(feedback, emptyText = '') {
         return emptyText
             ? `<div class="grading-question-feedback is-empty">${escapeHtml(emptyText)}</div>`
             : '';
+    }
+    if (feedback.details) {
+        const details = feedback.details;
+        const scoreText = details.scoreText || (
+            details.score != null
+                ? `${details.score}${details.maxScore != null ? `/${details.maxScore}` : ''}`
+                : '-'
+        );
+        const deductionClass = details.noDeduction ? 'is-none' : 'has-deduction';
+        return `
+            <div class="grading-question-feedback is-structured" tabindex="0">
+                <div class="grading-question-feedback__label">本题批改</div>
+                <div class="grading-feedback-grid">
+                    <div class="grading-feedback-field">
+                        <span class="grading-feedback-field__name">本题得分</span>
+                        <strong class="grading-feedback-score is-${details.scoreState}">${escapeHtml(scoreText)}</strong>
+                    </div>
+                    <div class="grading-feedback-field grading-feedback-field--wide">
+                        <span class="grading-feedback-field__name">扣分点</span>
+                        <strong class="grading-feedback-deduction ${deductionClass}" title="${escapeHtml(details.deductionPoints)}">${escapeHtml(details.deductionPoints)}</strong>
+                    </div>
+                    <div class="grading-feedback-field grading-feedback-field--wide">
+                        <span class="grading-feedback-field__name">评价</span>
+                        <span class="grading-feedback-evaluation" title="${escapeHtml(details.evaluation)}">${escapeHtml(details.evaluation)}</span>
+                    </div>
+                </div>
+            </div>
+        `;
     }
     return `
         <div class="grading-question-feedback">

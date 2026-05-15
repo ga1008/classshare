@@ -5,6 +5,10 @@ import re
 from typing import Any
 
 
+QUESTION_EVALUATION_MAX_CHARS = 20
+QUESTION_DEDUCTION_MAX_CHARS = 80
+SUMMARY_MAX_CHARS = 120
+
 FORBIDDEN_GRADING_FEEDBACK_MARKERS = (
     "测评师",
     "侧写",
@@ -118,6 +122,225 @@ def _default_question_feedback(target: dict[str, str]) -> str:
     )
 
 
+def _compact_inline_text(value: Any, *, limit: int | None = None, default: str = "") -> str:
+    text = sanitize_student_feedback_text(value)
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return default
+    if limit is not None and len(text) > limit:
+        return text[:limit].rstrip()
+    return text
+
+
+def _coerce_number(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number < 0:
+        return None
+    return round(number, 1) if number % 1 else int(number)
+
+
+def _format_score_value(value: Any) -> str:
+    number = _coerce_number(value)
+    if number is None:
+        return ""
+    if isinstance(number, int):
+        return str(number)
+    return f"{number:.1f}".rstrip("0").rstrip(".")
+
+
+def _extract_question_number(item: dict[str, Any], fallback: int) -> int:
+    for key in ("question_no", "question_number", "question_index", "index", "no"):
+        raw_value = item.get(key)
+        if raw_value in (None, ""):
+            continue
+        match = re.search(r"\d+", str(raw_value))
+        if match:
+            return max(1, int(match.group(0)))
+
+    raw_id = str(item.get("question_id") or item.get("id") or "").strip()
+    match = re.search(r"\d+", raw_id)
+    if match:
+        return max(1, int(match.group(0)))
+    return fallback
+
+
+def _extract_question_items(payload: dict[str, Any]) -> list[Any]:
+    for key in (
+        "questions",
+        "question_feedback",
+        "question_feedbacks",
+        "per_question_feedback",
+        "per_question_feedbacks",
+        "items",
+    ):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+    return []
+
+
+def normalize_structured_grading_payload(
+    payload: dict[str, Any] | None,
+    *,
+    answers_json: str | dict[str, Any] | list[Any] | None = None,
+    strict: bool = False,
+) -> dict[str, Any]:
+    item = payload or {}
+    if not isinstance(item, dict):
+        raise ValueError("批改结果必须是 JSON 对象")
+
+    score = clamp_score(item.get("score"))
+    if score is None:
+        raise ValueError("总分 score 必须是 0-100 的数字")
+
+    summary = _compact_inline_text(
+        item.get("summary")
+        or item.get("overall_feedback")
+        or item.get("overall_comment")
+        or item.get("general_comment")
+        or item.get("总评"),
+        limit=SUMMARY_MAX_CHARS if not strict else None,
+    )
+    if strict and not summary:
+        raise ValueError("缺少总评 summary")
+    if strict and len(summary) > SUMMARY_MAX_CHARS:
+        raise ValueError(f"总评 summary 需控制在 {SUMMARY_MAX_CHARS} 字以内")
+
+    targets = extract_answer_question_targets(answers_json)
+    raw_questions = _extract_question_items(item)
+    if strict and not raw_questions:
+        raise ValueError("缺少逐题评分 questions 数组")
+    if strict and targets and len(raw_questions) < len(targets):
+        raise ValueError(f"逐题评分数量不足：期望至少 {len(targets)} 条，实际 {len(raw_questions)} 条")
+
+    normalized_questions: list[dict[str, Any]] = []
+    seen_numbers: set[int] = set()
+    for index, raw_question in enumerate(raw_questions, start=1):
+        if not isinstance(raw_question, dict):
+            if strict:
+                raise ValueError(f"第 {index} 条逐题评分必须是对象")
+            continue
+
+        question_no = _extract_question_number(raw_question, index)
+        question_id = _compact_inline_text(
+            raw_question.get("question_id") or raw_question.get("id") or f"q{question_no}",
+            limit=40,
+            default=f"q{question_no}",
+        )
+        question_score = _coerce_number(
+            raw_question.get("score")
+            if "score" in raw_question
+            else raw_question.get("question_score")
+            or raw_question.get("earned_score")
+            or raw_question.get("points")
+            or raw_question.get("得分")
+        )
+        max_score = _coerce_number(
+            raw_question.get("max_score")
+            or raw_question.get("full_score")
+            or raw_question.get("total_score")
+            or raw_question.get("满分")
+        )
+        deduction_points = _compact_inline_text(
+            raw_question.get("deduction_points")
+            or raw_question.get("deduction_point")
+            or raw_question.get("deduction")
+            or raw_question.get("lost_points")
+            or raw_question.get("mistakes")
+            or raw_question.get("扣分点")
+            or raw_question.get("失分点"),
+            default="无",
+        )
+        evaluation = _compact_inline_text(
+            raw_question.get("evaluation")
+            or raw_question.get("comment")
+            or raw_question.get("feedback")
+            or raw_question.get("评价"),
+        )
+
+        if strict:
+            if question_no in seen_numbers:
+                raise ValueError(f"第 {question_no} 题重复返回")
+            if question_score is None:
+                raise ValueError(f"第 {question_no} 题缺少本题得分 score")
+            if max_score is not None and question_score > max_score:
+                raise ValueError(f"第 {question_no} 题得分不能大于满分")
+            if not deduction_points:
+                raise ValueError(f"第 {question_no} 题缺少扣分点描述")
+            if len(deduction_points) > QUESTION_DEDUCTION_MAX_CHARS:
+                raise ValueError(f"第 {question_no} 题扣分点描述需控制在 {QUESTION_DEDUCTION_MAX_CHARS} 字以内")
+            if not evaluation:
+                raise ValueError(f"第 {question_no} 题缺少评价")
+            if len(evaluation) > QUESTION_EVALUATION_MAX_CHARS:
+                raise ValueError(f"第 {question_no} 题评价需控制在 {QUESTION_EVALUATION_MAX_CHARS} 字以内")
+            if question_score == 0 and deduction_points == "无":
+                raise ValueError(f"第 {question_no} 题为 0 分时必须写明扣分点")
+            if max_score is not None and question_score < max_score and deduction_points == "无":
+                raise ValueError(f"第 {question_no} 题非满分时扣分点不能写“无”")
+
+        if not deduction_points:
+            deduction_points = "无"
+        normalized_questions.append(
+            {
+                "question_no": question_no,
+                "question_id": question_id,
+                "score": question_score,
+                "max_score": max_score,
+                "deduction_points": deduction_points,
+                "evaluation": evaluation or "继续稳步完善",
+            }
+        )
+        seen_numbers.add(question_no)
+
+    if strict and not normalized_questions:
+        raise ValueError("缺少可展示的逐题评分")
+
+    return {
+        **item,
+        "score": score,
+        "summary": summary,
+        "questions": sorted(normalized_questions, key=lambda question: question["question_no"]),
+    }
+
+
+def build_structured_feedback_markdown(result: dict[str, Any]) -> str:
+    summary = _compact_inline_text(result.get("summary"), default=_default_overview(result.get("score")))
+    lines = ["## 总览评语", summary, "", "## 逐题反馈"]
+    for question in result.get("questions") or []:
+        question_no = question.get("question_no") or "?"
+        score_text = _format_score_value(question.get("score")) or "-"
+        max_score_text = _format_score_value(question.get("max_score"))
+        if max_score_text:
+            score_text = f"{score_text}/{max_score_text}"
+        lines.extend(
+            [
+                "",
+                f"### 第 {question_no} 题",
+                f"- 本题得分：{score_text}",
+                f"- 扣分点：{question.get('deduction_points') or '无'}",
+                f"- 评价：{question.get('evaluation') or '继续稳步完善'}",
+            ]
+        )
+    return "\n".join(lines).strip()
+
+
+def validate_ai_grading_result(
+    payload: dict[str, Any] | None,
+    *,
+    answers_json: str | dict[str, Any] | list[Any] | None = None,
+) -> dict[str, Any]:
+    result = normalize_structured_grading_payload(payload, answers_json=answers_json, strict=True)
+    return {
+        **result,
+        "feedback_md": build_structured_feedback_markdown(result),
+    }
+
+
 def normalize_feedback_markdown(
     feedback_md: Any,
     *,
@@ -168,6 +391,19 @@ def normalize_grading_result(
     fallback_reason: str = "",
 ) -> dict[str, Any]:
     item = payload or {}
+    if isinstance(item, dict) and _extract_question_items(item):
+        try:
+            structured = normalize_structured_grading_payload(item, answers_json=answers_json, strict=False)
+            return {
+                **item,
+                "score": structured["score"],
+                "summary": structured.get("summary"),
+                "questions": structured.get("questions") or [],
+                "feedback_md": build_structured_feedback_markdown(structured),
+            }
+        except ValueError:
+            pass
+
     score = clamp_score(item.get("score"))
     feedback_md = normalize_feedback_markdown(
         item.get("feedback_md") or item.get("feedback") or item.get("comment"),

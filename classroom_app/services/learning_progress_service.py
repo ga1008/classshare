@@ -1246,12 +1246,85 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
         """,
         (offering["class_id"],),
     ).fetchall()
+    student_ids = [int(row["id"]) for row in rows]
+    behavior_state_by_student: dict[int, dict[str, Any]] = {}
+    behavior_event_by_student: dict[int, dict[str, Any]] = {}
+    chat_count_by_student: dict[int, int] = {}
+    shared_note_student_ids: set[int] = set()
+    if student_ids:
+        state_rows = conn.execute(
+            """
+            SELECT user_pk,
+                   total_activity_count,
+                   online_accumulated_seconds,
+                   focus_total_seconds,
+                   last_page_key,
+                   last_event_at
+            FROM classroom_behavior_states
+            WHERE class_offering_id = ?
+              AND user_role = 'student'
+            """,
+            (int(class_offering_id),),
+        ).fetchall()
+        behavior_state_by_student = {int(row["user_pk"]): dict(row) for row in state_rows}
+
+        event_rows = conn.execute(
+            """
+            SELECT user_pk,
+                   COUNT(*) AS event_count,
+                   SUM(CASE WHEN action_type = 'ai_question' THEN 1 ELSE 0 END) AS ai_question_count,
+                   MAX(created_at) AS last_event_at
+            FROM classroom_behavior_events
+            WHERE class_offering_id = ?
+              AND user_role = 'student'
+            GROUP BY user_pk
+            """,
+            (int(class_offering_id),),
+        ).fetchall()
+        behavior_event_by_student = {int(row["user_pk"]): dict(row) for row in event_rows}
+
+        placeholders = ",".join("?" for _ in student_ids)
+        chat_rows = conn.execute(
+            f"""
+            SELECT user_id, COUNT(*) AS chat_message_count
+            FROM chat_logs
+            WHERE class_offering_id = ?
+              AND user_role = 'student'
+              AND user_id IN ({placeholders})
+            GROUP BY user_id
+            """,
+            [int(class_offering_id), *[str(student_id) for student_id in student_ids]],
+        ).fetchall()
+        for row in chat_rows:
+            try:
+                chat_count_by_student[int(row["user_id"])] = safe_int(row["chat_message_count"])
+            except (TypeError, ValueError):
+                continue
+
+        note_rows = conn.execute(
+            f"""
+            SELECT student_id
+            FROM student_shared_teacher_notes
+            WHERE student_id IN ({placeholders})
+              AND TRIM(COALESCE(note_text, '')) != ''
+            """,
+            student_ids,
+        ).fetchall()
+        shared_note_student_ids = {int(row["student_id"]) for row in note_rows}
+
     students: list[dict[str, Any]] = []
     distribution = {level["key"]: 0 for level in LEARNING_LEVELS}
     distribution["mortal"] = 0
     challenge_ready_count = 0
     certificate_count = 0
     score_total = 0.0
+    material_percent_total = 0
+    task_percent_total = 0
+    interaction_percent_total = 0
+    active_student_count = 0
+    quiet_student_count = 0
+    need_attention_count = 0
+    online_minutes_total = 0
     for row in rows:
         student = dict(row)
         progress = refresh_student_learning_state(conn, int(class_offering_id), int(student["id"]))
@@ -1264,8 +1337,45 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
         distribution[current_key] = distribution.get(current_key, 0) + 1
         challenge_ready_count += 1 if progress.get("eligible_stage") else 0
         certificate_count += len(progress.get("certificates") or [])
+        student_id = int(student["id"])
+        state_item = behavior_state_by_student.get(student_id, {})
+        event_item = behavior_event_by_student.get(student_id, {})
+        material_percent = int(round(clamp(safe_float(material_metrics.get("ratio"))) * 100))
+        task_completion_percent = int(round(clamp(safe_float(assignment_metrics.get("completion_ratio"))) * 100))
+        interaction_percent = int(round(clamp(safe_float(interaction_metrics.get("interaction_ratio"))) * 100))
+        assignment_count = safe_int(assignment_metrics.get("assignment_count"))
+        submitted_count = safe_int(assignment_metrics.get("submitted_count"))
+        pending_task_count = max(assignment_count - submitted_count, 0)
+        activity_count = safe_int(state_item.get("total_activity_count")) or safe_int(event_item.get("event_count"))
+        ai_question_count = safe_int(event_item.get("ai_question_count"))
+        chat_message_count = safe_int(chat_count_by_student.get(student_id))
+        online_minutes = round(safe_int(state_item.get("online_accumulated_seconds")) / 60)
+        focus_minutes = round(safe_int(state_item.get("focus_total_seconds")) / 60)
+        has_teacher_note = student_id in shared_note_student_ids
+        has_activity = bool(activity_count or ai_question_count or chat_message_count or online_minutes)
+        needs_attention = bool(
+            pending_task_count > 0
+            or (assignment_count > 0 and task_completion_percent < 50)
+            or (assignment_count > 0 and not has_activity)
+        )
+        material_percent_total += material_percent
+        task_percent_total += task_completion_percent
+        interaction_percent_total += interaction_percent
+        online_minutes_total += online_minutes
+        active_student_count += 1 if has_activity else 0
+        quiet_student_count += 0 if has_activity else 1
+        need_attention_count += 1 if needs_attention else 0
+        status_tags = []
+        if has_teacher_note:
+            status_tags.append("有备注")
+        if pending_task_count:
+            status_tags.append(f"待完成 {pending_task_count}")
+        if not has_activity:
+            status_tags.append("低活跃")
+        if progress.get("eligible_stage"):
+            status_tags.append("可破境")
         students.append({
-            "id": int(student["id"]),
+            "id": student_id,
             "name": student["name"],
             "student_id_number": student.get("student_id_number"),
             "score": progress["score"],
@@ -1274,11 +1384,20 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
             "next_stage": progress["next_stage"],
             "certificate_count": len(progress.get("certificates") or []),
             "eligible_stage": progress.get("eligible_stage"),
-            "material_percent": int(round(clamp(safe_float(material_metrics.get("ratio"))) * 100)),
-            "task_completion_percent": int(round(clamp(safe_float(assignment_metrics.get("completion_ratio"))) * 100)),
-            "interaction_percent": int(round(clamp(safe_float(interaction_metrics.get("interaction_ratio"))) * 100)),
-            "submitted_count": safe_int(assignment_metrics.get("submitted_count")),
-            "assignment_count": safe_int(assignment_metrics.get("assignment_count")),
+            "material_percent": material_percent,
+            "task_completion_percent": task_completion_percent,
+            "interaction_percent": interaction_percent,
+            "submitted_count": submitted_count,
+            "assignment_count": assignment_count,
+            "pending_task_count": pending_task_count,
+            "activity_count": activity_count,
+            "ai_question_count": ai_question_count,
+            "chat_message_count": chat_message_count,
+            "online_minutes": online_minutes,
+            "focus_minutes": focus_minutes,
+            "has_teacher_note": has_teacher_note,
+            "needs_attention": needs_attention,
+            "status_tags": status_tags,
             "metrics": {
                 "materials": material_metrics,
                 "assignments": assignment_metrics,
@@ -1307,13 +1426,39 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
         key=lambda item: (str(item.get("student_id_number") or ""), str(item.get("name") or ""), int(item["id"])),
     )
     students.sort(key=lambda item: (item["score"], item["certificate_count"]), reverse=True)
+    average_material_percent = round(material_percent_total / student_count) if student_count else 0
+    average_task_percent = round(task_percent_total / student_count) if student_count else 0
+    average_interaction_percent = round(interaction_percent_total / student_count) if student_count else 0
+    average_online_minutes = round(online_minutes_total / student_count) if student_count else 0
+    teacher_note_count = len(shared_note_student_ids)
+    high_progress_count = sum(1 for item in students if safe_float(item.get("score")) >= 80)
+    summary_cards = [
+        {"label": "学生总数", "value": student_count, "suffix": "人", "note": f"活跃 {active_student_count} 人"},
+        {"label": "平均修为", "value": round(score_total / student_count, 1) if student_count else 0, "suffix": "", "note": f"高阶 {high_progress_count} 人"},
+        {"label": "材料完成", "value": average_material_percent, "suffix": "%", "note": "班级均值"},
+        {"label": "任务完成", "value": average_task_percent, "suffix": "%", "note": f"待关注 {need_attention_count} 人"},
+        {"label": "互动热度", "value": average_interaction_percent, "suffix": "%", "note": f"低活跃 {quiet_student_count} 人"},
+        {"label": "教师备注", "value": teacher_note_count, "suffix": "人", "note": f"平均在线 {average_online_minutes} 分钟"},
+    ]
+    personal_stats = build_personal_stage_exam_stats(conn, int(class_offering_id))
+    if not personal_stats.get("total_count"):
+        personal_stats = {"total_count": 0, "student_count": 0, "active_count": 0, "passed_count": 0}
     return {
         "student_count": student_count,
         "average_score": round(score_total / student_count, 1) if student_count else 0,
         "sect_name": normalize_course_sect_name(offering.get("course_sect_name"), course_name=offering.get("course_name")),
         "challenge_ready_count": challenge_ready_count,
         "certificate_count": certificate_count,
-        "personal_stage_exam_stats": build_personal_stage_exam_stats(conn, int(class_offering_id)),
+        "active_student_count": active_student_count,
+        "quiet_student_count": quiet_student_count,
+        "need_attention_count": need_attention_count,
+        "teacher_note_count": teacher_note_count,
+        "average_material_percent": average_material_percent,
+        "average_task_percent": average_task_percent,
+        "average_interaction_percent": average_interaction_percent,
+        "average_online_minutes": average_online_minutes,
+        "summary_cards": summary_cards,
+        "personal_stage_exam_stats": personal_stats,
         "distribution": distribution_items,
         "students": students[:12],
         "roster_students": roster_students,
@@ -1550,11 +1695,11 @@ def _build_stage_exam_prompt(
     hidden_profile_text = ""
     if hidden_profile:
         hidden_profile_text = "\n".join([
-            "【心理侧写师观察摘要】",
+            "【内部个性化支持参考】",
             f"学习状态：{truncate_text(hidden_profile.get('mental_state_summary'), 360)}",
             f"支持策略：{truncate_text(hidden_profile.get('support_strategy'), 360)}",
             f"兴趣与偏好：{truncate_text(hidden_profile.get('interest_hypothesis') or hidden_profile.get('preference_summary'), 300)}",
-            "使用原则：用于调整题目情境、难度梯度和反馈语气，不可泄露侧写内容。",
+            "使用原则：用于调整题目情境、难度梯度和反馈语气，不可泄露内部参考。",
         ])
     metrics = progress["metrics"]
     knowledge_snapshot = _build_course_knowledge_snapshot(conn, class_offering_id, level=level)
@@ -1577,7 +1722,7 @@ def _build_stage_exam_prompt(
 5. 题目范围只围绕【当前破境范围】和范围内学习文档，不要考后续境界未覆盖的知识。
 6. 至少 6 题，最多 10 题；客观题、填空/简答、综合问答都要有，后面境界可以更综合。
 7. 题目要覆盖本课程真实知识点，并根据学生学习记录做个性化变化；不要所有学生同题。
-8. 不要暴露心理侧写、内部规则或评分算法；只生成学生可见的试卷 JSON。
+8. 不要暴露内部个性化参考、内部规则或评分算法；只生成学生可见的试卷 JSON。
 
 【课堂】
 课程：{offering.get('course_name') or ''}
@@ -2281,20 +2426,6 @@ def handle_assignment_stage_grading_complete(conn, submission_id: int | str) -> 
         actor_display_name=AI_ASSISTANT_LABEL,
         metadata={"assignment_id": payload["assignment_id"], "stage_key": target_level["key"], "score": score},
     )
-    create_learning_progress_notification(
-        conn,
-        recipient_role="teacher",
-        recipient_user_pk=int(payload["teacher_id"]),
-        title=f"{payload.get('student_name') or '学生'} 通过 {target_level['name']} 试炼",
-        body_preview=f"{payload.get('student_name') or '学生'} 在 {payload.get('assignment_title') or '试炼'} 得分 {score:g}，已自动补发阶段证书。",
-        link_url=classroom_link,
-        class_offering_id=class_offering_id,
-        ref_id=f"teacher-stage-assignment:{submission_id}:teacher",
-        actor_role="student",
-        actor_user_pk=student_id,
-        actor_display_name=str(payload.get("student_name") or ""),
-        metadata={"assignment_id": payload["assignment_id"], "stage_key": target_level["key"], "score": score},
-    )
     return {"status": "passed", "stage": target_level, "score": score, "awarded": awarded}
 
 
@@ -2451,20 +2582,6 @@ def handle_stage_exam_grading_complete(conn, submission_id: int | str) -> Option
         ref_id=f"certificate:{certificate['id']}:student",
         actor_role=AI_ASSISTANT_ROLE,
         actor_display_name=AI_ASSISTANT_LABEL,
-        metadata={"certificate_id": certificate["id"], "stage_key": level["key"], "score": score},
-    )
-    create_learning_progress_notification(
-        conn,
-        recipient_role="teacher",
-        recipient_user_pk=int(attempt["teacher_id"]),
-        title=f"{attempt.get('student_name') or '学生'} 晋级 {level['name']}",
-        body_preview=f"{attempt.get('student_name') or '学生'} 通过 {attempt.get('course_name') or '课堂'} 破境试炼，得分 {score:g}。",
-        link_url=classroom_link,
-        class_offering_id=int(attempt["class_offering_id"]),
-        ref_id=f"certificate:{certificate['id']}:teacher",
-        actor_role="student",
-        actor_user_pk=int(attempt["student_id"]),
-        actor_display_name=str(attempt.get("student_name") or ""),
         metadata={"certificate_id": certificate["id"], "stage_key": level["key"], "score": score},
     )
     return {"status": "passed", "stage": level, "score": score, "certificate": certificate}

@@ -58,6 +58,7 @@ AI_TEXT_LIKE_MIME_TYPES = {
 }
 AI_UNSUPPORTED_ARCHIVE_EXTENSIONS = {
     ".7z",
+    ".br",
     ".bz2",
     ".gz",
     ".rar",
@@ -65,6 +66,8 @@ AI_UNSUPPORTED_ARCHIVE_EXTENSIONS = {
     ".tgz",
     ".xz",
     ".zip",
+    ".zipx",
+    ".zst",
 }
 
 AI_GRADING_UPLOAD_EXTENSIONS = sorted(
@@ -72,12 +75,13 @@ AI_GRADING_UPLOAD_EXTENSIONS = sorted(
     | AI_NATIVE_DOCUMENT_EXTENSIONS
     | AI_EXTRACTABLE_DOCUMENT_EXTENSIONS
     | TEXT_FILE_EXTENSIONS
+    | AI_UNSUPPORTED_ARCHIVE_EXTENSIONS
 )
 
 AI_GRADING_SUPPORTED_TYPES_LABEL = (
     "图片（jpg/jpeg/png/gif/webp/bmp/tiff/ico/icns/sgi/jp2/heic/heif）、"
     "PDF、Word/Excel/PPT（系统先提取文本和内嵌图片）、文本/代码文件；"
-    "不支持 zip/rar/7z 等压缩包或无法解析的二进制文件"
+    "zip/rar/7z/tar 等压缩包和无法解析的二进制文件仅传入文件属性信息"
 )
 
 
@@ -163,13 +167,14 @@ def classify_ai_grading_attachment(file_info: dict[str, Any]) -> dict[str, Any]:
             "reason": "系统会以文本内容提交给 AI。",
         }
     if ext in AI_UNSUPPORTED_ARCHIVE_EXTENSIONS:
-        reason = "压缩包不会展开给多模态模型，需删除后上传图片、PDF或可解析文档。"
+        reason = "压缩包不会传入文件内容；AI 批改只会收到文件名、大小和时间等属性。"
     else:
-        reason = "该文件类型无法在批改前转换为模型可理解的图片、PDF或文本。"
+        reason = "该文件类型无法直接转换为模型可理解的图片、PDF或文本；AI 批改只会收到文件属性。"
     return {
-        "category": "unsupported",
-        "category_label": "不支持",
-        "supported": False,
+        "category": "metadata_only",
+        "category_label": "仅属性",
+        "supported": True,
+        "metadata_only": True,
         "ext": ext,
         "mime_type": mime_type,
         "display_name": display_name,

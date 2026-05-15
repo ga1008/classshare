@@ -16,7 +16,9 @@ from .psych_profile_service import (
     load_ai_class_config,
     load_explicit_user_profile,
     load_latest_hidden_profile,
+    sanitize_hidden_profile_leaks,
 )
+from .student_support_service import build_student_support_signal_prompt
 from .academic_service import build_classroom_ai_context
 from .prompt_utils import build_time_context_text, polite_address
 from .rate_limit_service import (
@@ -149,6 +151,7 @@ BROADCAST_DISCUSSION_TOKENS = (
 
 FORBIDDEN_AI_MARKERS = (
     "侧写",
+    "画像",
     "后端分析",
     "系统提示",
     "隐藏提示",
@@ -184,6 +187,117 @@ def _safe_json_loads(raw_value: Any, fallback: Any) -> Any:
         return json.loads(raw_value)
     except (TypeError, json.JSONDecodeError):
         return fallback
+
+
+def _parse_local_datetime(value: Any) -> Optional[datetime]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed.replace(microsecond=0)
+
+
+def _format_duration_label(started_at: Any, submitted_at: Any) -> str:
+    submitted_dt = _parse_local_datetime(submitted_at)
+    started_dt = _parse_local_datetime(started_at) or submitted_dt
+    if not submitted_dt or not started_dt:
+        return "待确认"
+    total_seconds = max(0, int((submitted_dt - started_dt).total_seconds()))
+    total_minutes = (total_seconds + 59) // 60 if total_seconds else 0
+    hours, minutes = divmod(total_minutes, 60)
+    return f"{hours}小时{minutes}分"
+
+
+def _sanitize_student_notification_text(value: Any, *, limit: int = 140) -> str:
+    lines = []
+    for line in str(value or "").splitlines():
+        if any(marker in line for marker in FORBIDDEN_AI_MARKERS):
+            continue
+        lines.append(line)
+    text = " ".join(" ".join(lines).split())
+    if any(marker in text for marker in FORBIDDEN_AI_MARKERS):
+        return ""
+    return _truncate_text(text, limit)
+
+
+def _load_student_support_profile(conn, class_offering_id: Any, student_id: Any) -> str:
+    normalized_offering_id = _safe_int(class_offering_id)
+    normalized_student_id = _safe_int(student_id)
+    if normalized_offering_id is None or normalized_student_id is None:
+        return ""
+    try:
+        profile = load_latest_hidden_profile(conn, normalized_offering_id, normalized_student_id, "student")
+    except Exception as exc:
+        print(f"[MESSAGE_CENTER] student support profile skipped: {exc}")
+        return ""
+    if not profile:
+        return ""
+    parts = [
+        profile.get("mental_state_summary"),
+        profile.get("support_strategy"),
+        profile.get("language_habit_summary"),
+        profile.get("preferred_ai_style"),
+        profile.get("interest_hypothesis") or profile.get("preference_summary"),
+    ]
+    return " ".join(str(item or "").strip() for item in parts if str(item or "").strip())
+
+
+def _student_support_sentence(profile_text: str, *, event: str) -> str:
+    text = str(profile_text or "")
+    stress_tokens = ("焦虑", "紧张", "压力", "挫败", "自责", "不安", "害怕", "敏感")
+    concise_tokens = ("简洁", "直接", "高效", "少废话", "要点")
+    confidence_tokens = ("主动", "挑战", "自信", "好胜", "探索", "投入")
+    if any(token in text for token in stress_tokens):
+        if event == "progress":
+            return "先别急着给自己加码，这一步已经很扎实；按自己的节奏往前走就好。"
+        return "先别只盯着分数，反馈是帮你找到下一步的，不是给你贴标签。"
+    if any(token in text for token in concise_tokens):
+        if event == "progress":
+            return "新的进度已经点亮，重点看下一步要做什么。"
+        return "结果已更新，点开看得分、扣分点和下一步建议。"
+    if any(token in text for token in confidence_tokens):
+        if event == "progress":
+            return "这一步走得很有劲，新的阶段已经向你打开。"
+        return "这次反馈已经到位，看看哪些地方可以继续拔高。"
+    if event == "progress":
+        return "这一步值得认真记下，也值得给自己一点肯定。"
+    return "这份反馈已经准备好，点开慢慢看，先抓住最有用的一两条建议。"
+
+
+def _personalize_student_grading_body(conn, submission: dict[str, Any], score_text: str, feedback_preview: str) -> str:
+    profile_text = _load_student_support_profile(
+        conn,
+        submission.get("class_offering_id"),
+        submission.get("student_pk_id"),
+    )
+    support_sentence = _student_support_sentence(profile_text, event="grading")
+    parts = [support_sentence]
+    if score_text:
+        parts.append(f"本次{score_text}。")
+    if feedback_preview:
+        parts.append(f"老师的反馈摘要：{feedback_preview}")
+    return _sanitize_student_notification_text(" ".join(parts), limit=140)
+
+
+def _personalize_student_learning_body(
+    conn,
+    *,
+    class_offering_id: Any,
+    student_id: Any,
+    body_preview: str,
+) -> str:
+    profile_text = _load_student_support_profile(conn, class_offering_id, student_id)
+    support_sentence = _student_support_sentence(profile_text, event="progress")
+    base = _sanitize_student_notification_text(body_preview, limit=96)
+    message = f"{support_sentence} {base}".strip() if base else support_sentence
+    return _sanitize_student_notification_text(message, limit=140)
 
 
 def ensure_private_message_attachment_schema(conn) -> None:
@@ -2443,6 +2557,15 @@ def _build_ai_private_user_context(conn, user: dict, class_offering_id: int) -> 
             f"授课教师：{offering['teacher_name']}",
         ]
         lines.append(explicit_profile_prompt)
+        support_signal_prompt = build_student_support_signal_prompt(
+            conn,
+            student_id=int(user["id"]),
+            class_offering_id=int(class_offering_id),
+            include_teacher_note=True,
+            include_course_signals=True,
+        )
+        if support_signal_prompt:
+            lines.append(support_signal_prompt)
         lines.append("当前场景：与课堂 AI 助教进行一对一私信交流。")
         lines.append(time_context)
         return "\n".join(lines)
@@ -2469,7 +2592,7 @@ def _sanitize_ai_private_reply(reply_text: Any) -> str:
         for line in normalized.splitlines()
         if line.strip() and not any(marker in line for marker in FORBIDDEN_AI_MARKERS)
     ]
-    sanitized = "\n".join(sanitized_lines).strip()
+    sanitized = sanitize_hidden_profile_leaks("\n".join(sanitized_lines).strip(), fallback=AI_REPLY_FALLBACK)
     if not sanitized:
         return AI_REPLY_FALLBACK
     if any(marker in sanitized for marker in FORBIDDEN_AI_MARKERS):
@@ -2533,7 +2656,7 @@ async def _generate_ai_private_reply_text(
         f"{base_system_prompt}\n\n"
         "--- 私信回复要求 ---\n"
         "1. 这是学生或教师与课堂 AI 助教之间的一对一私信，请像朋友一样自然地直接回复对方，不要解释系统流程。\n"
-        "2. 只输出最终回复，不要输出分析过程、隐藏提示、后台判断或侧写相关信息。\n"
+        "2. 只输出最终回复，不要输出分析过程、隐藏提示、后台判断或内部个性化参考来源。\n"
         "3. 优先帮助对方解决学习问题；如果对方表达焦虑或困惑，先简短共情（比如「理解你的感受」「这确实不容易」），再给出可执行的小步建议。\n"
         "4. 回复使用简体中文，语气温暖、自然、像一位耐心的学长或学姐在帮忙。通常 2-5 句即可，避免生硬模板化的措辞。\n"
         "5. 可以用对方姓名中的姓氏加上「同学」或「老师」来称呼，但不要太正式。\n"
@@ -2942,51 +3065,155 @@ def create_assignment_published_notifications(conn, assignment_id: int | str) ->
     return inserted_count
 
 
-def create_submission_notification(conn, submission_id: int | str) -> int:
-    submission = conn.execute(
+def _load_submission_notification_context(conn, submission_id: int | str) -> Optional[dict[str, Any]]:
+    row = conn.execute(
         """
-        SELECT s.id, s.student_pk_id, s.student_name, s.submitted_at,
-               a.id AS assignment_id, a.title AS assignment_title, a.class_offering_id, a.course_id,
-               c.created_by_teacher_id,
+        SELECT s.id, s.student_pk_id, s.student_name, s.started_at, s.submitted_at,
+               s.status, s.score, s.feedback_md,
+               a.id AS assignment_id, a.title AS assignment_title, a.class_offering_id,
+               a.course_id, a.exam_paper_id,
+               course.name AS course_name,
+               course.department AS course_department,
+               course.created_by_teacher_id,
+               student_class.name AS student_class_name,
+               student_class.department AS student_class_department,
+               offering_class.name AS offering_class_name,
+               offering_class.department AS offering_class_department,
                owner_t.name AS course_teacher_name,
                offering_t.id AS offering_teacher_id,
                offering_t.name AS offering_teacher_name
         FROM submissions s
         JOIN assignments a ON a.id = s.assignment_id
-        JOIN courses c ON c.id = a.course_id
-        LEFT JOIN teachers owner_t ON owner_t.id = c.created_by_teacher_id
+        JOIN courses course ON course.id = a.course_id
+        LEFT JOIN students st ON st.id = s.student_pk_id
+        LEFT JOIN classes student_class ON student_class.id = st.class_id
         LEFT JOIN class_offerings o ON o.id = a.class_offering_id
+        LEFT JOIN classes offering_class ON offering_class.id = o.class_id
+        LEFT JOIN teachers owner_t ON owner_t.id = course.created_by_teacher_id
         LEFT JOIN teachers offering_t ON offering_t.id = o.teacher_id
         WHERE s.id = ?
         LIMIT 1
         """,
         (submission_id,),
     ).fetchone()
+    if not row:
+        return None
+    item = dict(row)
+    item["teacher_id"] = _safe_int(item.get("offering_teacher_id")) or _safe_int(item.get("created_by_teacher_id"))
+    item["teacher_name"] = str(item.get("offering_teacher_name") or item.get("course_teacher_name") or "")
+    item["class_name"] = str(item.get("offering_class_name") or item.get("student_class_name") or "").strip()
+    item["department"] = str(
+        item.get("offering_class_department")
+        or item.get("student_class_department")
+        or item.get("course_department")
+        or ""
+    ).strip()
+    item["work_type"] = "考试" if str(item.get("exam_paper_id") or "").strip() else "作业"
+    item["duration_label"] = _format_duration_label(item.get("started_at"), item.get("submitted_at"))
+    return item
+
+
+def _teacher_submission_body_preview(context: dict[str, Any], *, issue_detail: str = "") -> str:
+    department = str(context.get("department") or "未填写系别")
+    class_name = str(context.get("class_name") or "未填写班级")
+    student_name = str(context.get("student_name") or "学生")
+    work_type = str(context.get("work_type") or "作业")
+    assignment_title = str(context.get("assignment_title") or "未命名任务")
+    duration_label = str(context.get("duration_label") or "待确认")
+    parts = [
+        f"系别：{department}",
+        f"班级：{class_name}",
+        f"姓名：{student_name}",
+        f"完成：{work_type}《{assignment_title}》",
+        f"耗时：{duration_label}",
+    ]
+    if issue_detail:
+        parts.append(f"处理：{_truncate_text(issue_detail, 80)}")
+    return " | ".join(parts)
+
+
+def _teacher_submission_metadata(context: dict[str, Any], *, issue_detail: str = "") -> dict[str, Any]:
+    metadata = {
+        "submission_id": context.get("id"),
+        "assignment_id": context.get("assignment_id"),
+        "course_id": context.get("course_id"),
+        "course_name": context.get("course_name"),
+        "department": context.get("department"),
+        "class_name": context.get("class_name"),
+        "student_name": context.get("student_name"),
+        "work_type": context.get("work_type"),
+        "assignment_title": context.get("assignment_title"),
+        "started_at": context.get("started_at"),
+        "submitted_at": context.get("submitted_at"),
+        "duration_label": context.get("duration_label"),
+    }
+    if issue_detail:
+        metadata["issue_detail"] = _truncate_text(issue_detail, 500)
+    return metadata
+
+
+def create_submission_notification(conn, submission_id: int | str) -> int:
+    submission = _load_submission_notification_context(conn, submission_id)
     if not submission:
         return 0
 
-    teacher_id = _safe_int(submission["offering_teacher_id"]) or _safe_int(submission["created_by_teacher_id"])
-    teacher_name = str(submission["offering_teacher_name"] or submission["course_teacher_name"] or "")
+    teacher_id = _safe_int(submission.get("teacher_id"))
     if teacher_id is None:
         return 0
 
+    work_type = str(submission.get("work_type") or "作业")
     payload = _build_notification_payload(
         recipient_role="teacher",
         recipient_user_pk=teacher_id,
         category=MESSAGE_CATEGORY_SUBMISSION,
-        title=f"{submission['student_name']} 提交了作业",
-        body_preview=f"{submission['assignment_title']}",
+        title=f"{submission['student_name']} 提交了{work_type}",
+        body_preview=_teacher_submission_body_preview(submission),
         actor_role="student",
         actor_user_pk=int(submission["student_pk_id"]),
         actor_display_name=str(submission["student_name"] or "学生"),
         link_url=f"/submission/{submission['id']}",
         class_offering_id=_safe_int(submission["class_offering_id"]),
         ref_type=MESSAGE_CATEGORY_SUBMISSION,
-        ref_id=str(submission["id"]),
-        metadata={
-            "submission_id": submission["id"],
-            "assignment_id": submission["assignment_id"],
-        },
+        ref_id=f"{submission['id']}:{submission.get('submitted_at') or ''}",
+        metadata=_teacher_submission_metadata(submission),
+    )
+    return 1 if _insert_notification_if_allowed(conn, payload) else 0
+
+
+def create_teacher_grading_issue_notification(
+    conn,
+    submission_id: int | str,
+    *,
+    issue_detail: str = "",
+    ref_suffix: str = "grading_failed",
+) -> int:
+    submission = _load_submission_notification_context(conn, submission_id)
+    if not submission:
+        return 0
+
+    teacher_id = _safe_int(submission.get("teacher_id"))
+    if teacher_id is None:
+        return 0
+
+    work_type = str(submission.get("work_type") or "作业")
+    detail = _truncate_text(issue_detail or "批改过程遇到异常，需要教师查看并处理。", 180)
+    timestamp = _now_iso()
+    payload = _build_notification_payload(
+        recipient_role="teacher",
+        recipient_user_pk=teacher_id,
+        category=MESSAGE_CATEGORY_AI_FEEDBACK,
+        severity="system",
+        title=f"批改需要处理：{submission['student_name']} 的{work_type}",
+        body_preview=_teacher_submission_body_preview(submission, issue_detail=detail),
+        actor_role=AI_ASSISTANT_ROLE,
+        actor_user_pk=None,
+        actor_display_name=AI_ASSISTANT_LABEL,
+        link_url=f"/submission/{submission['id']}",
+        class_offering_id=_safe_int(submission["class_offering_id"]),
+        ref_type=MESSAGE_CATEGORY_AI_FEEDBACK,
+        ref_id=f"{submission['id']}:{ref_suffix}:{submission.get('submitted_at') or ''}",
+        metadata=_teacher_submission_metadata(submission, issue_detail=detail),
+        created_at=timestamp,
     )
     return 1 if _insert_notification_if_allowed(conn, payload) else 0
 
@@ -2999,7 +3226,7 @@ def create_student_grading_notification(
     actor_user_pk: Optional[int] = None,
     actor_display_name: str = "",
 ) -> int:
-    submission = conn.execute(
+    submission_row = conn.execute(
         """
         SELECT s.id, s.student_pk_id, s.student_name, s.score, s.feedback_md,
                a.id AS assignment_id, a.title AS assignment_title, a.class_offering_id
@@ -3010,8 +3237,9 @@ def create_student_grading_notification(
         """,
         (submission_id,),
     ).fetchone()
-    if not submission:
+    if not submission_row:
         return 0
+    submission = dict(submission_row)
 
     normalized_actor_role = str(actor_role or "").strip().lower()
     normalized_actor_name = str(actor_display_name or "").strip()
@@ -3020,7 +3248,7 @@ def create_student_grading_notification(
     timestamp = _now_iso()
     score_text = "待公布" if submission["score"] is None else f"得分 {submission['score']}"
     feedback_preview = _truncate_text(submission["feedback_md"] or "", 80)
-    body_preview = score_text if not feedback_preview else f"{score_text} 路 {feedback_preview}"
+    body_preview = _personalize_student_grading_body(conn, submission, score_text, feedback_preview)
     payload = _build_notification_payload(
         recipient_role="student",
         recipient_user_pk=int(submission["student_pk_id"]),
@@ -3061,12 +3289,21 @@ def create_learning_progress_notification(
     allow_duplicates: bool = False,
 ) -> int:
     timestamp = _now_iso()
+    normalized_recipient_role = str(recipient_role or "").strip().lower()
+    normalized_body_preview = _truncate_text(body_preview, 140)
+    if normalized_recipient_role == "student":
+        normalized_body_preview = _personalize_student_learning_body(
+            conn,
+            class_offering_id=class_offering_id,
+            student_id=recipient_user_pk,
+            body_preview=normalized_body_preview,
+        )
     payload = _build_notification_payload(
-        recipient_role=str(recipient_role or "").strip().lower(),
+        recipient_role=normalized_recipient_role,
         recipient_user_pk=int(recipient_user_pk),
         category=MESSAGE_CATEGORY_LEARNING_PROGRESS,
         title=_truncate_text(title, 80),
-        body_preview=_truncate_text(body_preview, 140),
+        body_preview=normalized_body_preview,
         actor_role=str(actor_role or "").strip().lower(),
         actor_user_pk=actor_user_pk,
         actor_display_name=str(actor_display_name or "").strip(),
@@ -3117,59 +3354,7 @@ def create_todo_notification(
 
 
 def create_teacher_ai_feedback_notification(conn, submission_id: int | str) -> int:
-    submission = conn.execute(
-        """
-        SELECT s.id, s.student_name, s.score, s.feedback_md,
-               a.id AS assignment_id, a.title AS assignment_title, a.class_offering_id, a.course_id,
-               c.created_by_teacher_id,
-               owner_t.name AS course_teacher_name,
-               offering_t.id AS offering_teacher_id,
-               offering_t.name AS offering_teacher_name
-        FROM submissions s
-        JOIN assignments a ON a.id = s.assignment_id
-        JOIN courses c ON c.id = a.course_id
-        LEFT JOIN teachers owner_t ON owner_t.id = c.created_by_teacher_id
-        LEFT JOIN class_offerings o ON o.id = a.class_offering_id
-        LEFT JOIN teachers offering_t ON offering_t.id = o.teacher_id
-        WHERE s.id = ?
-        LIMIT 1
-        """,
-        (submission_id,),
-    ).fetchone()
-    if not submission:
-        return 0
-
-    teacher_id = _safe_int(submission["offering_teacher_id"]) or _safe_int(submission["created_by_teacher_id"])
-    if teacher_id is None:
-        return 0
-
-    timestamp = _now_iso()
-    score_text = "未评分" if submission["score"] is None else f"得分 {submission['score']}"
-    feedback_preview = _truncate_text(submission["feedback_md"] or "", 90)
-    body_preview = f"{submission['student_name']} 路 {score_text}"
-    if feedback_preview:
-        body_preview = f"{body_preview} 路 {feedback_preview}"
-    payload = _build_notification_payload(
-        recipient_role="teacher",
-        recipient_user_pk=teacher_id,
-        category=MESSAGE_CATEGORY_AI_FEEDBACK,
-        title=f"AI 已完成批改：{submission['assignment_title']}",
-        body_preview=body_preview,
-        actor_role=AI_ASSISTANT_ROLE,
-        actor_user_pk=None,
-        actor_display_name=AI_ASSISTANT_LABEL,
-        link_url=f"/submission/{submission['id']}",
-        class_offering_id=_safe_int(submission["class_offering_id"]),
-        ref_type=MESSAGE_CATEGORY_AI_FEEDBACK,
-        ref_id=f"{submission['id']}:{timestamp}",
-        metadata={
-            "submission_id": submission["id"],
-            "assignment_id": submission["assignment_id"],
-            "score": submission["score"],
-        },
-        created_at=timestamp,
-    )
-    return 1 if _insert_notification_if_allowed(conn, payload, allow_duplicates=True) else 0
+    return 0
 
 
 def _contains_broadcast_discussion_mention(text: str) -> bool:

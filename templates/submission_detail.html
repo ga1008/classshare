@@ -129,6 +129,68 @@
     .grading-question-feedback__body > :last-child {
         margin-bottom: 0;
     }
+    .grading-question-feedback.is-structured {
+        border-color: rgba(245, 158, 11, 0.28);
+        border-left-color: #f59e0b;
+        background: linear-gradient(135deg, rgba(255, 251, 235, 0.9), rgba(255, 255, 255, 0.96));
+        box-shadow: 0 12px 30px -24px rgba(120, 53, 15, 0.5);
+        transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    }
+    .grading-question-feedback.is-structured:hover,
+    .grading-question-feedback.is-structured:focus-visible {
+        transform: translateY(-2px);
+        border-color: rgba(245, 158, 11, 0.48);
+        box-shadow: 0 18px 36px -26px rgba(120, 53, 15, 0.62);
+        outline: none;
+    }
+    .grading-feedback-grid {
+        display: grid;
+        grid-template-columns: minmax(98px, auto) minmax(0, 1fr);
+        gap: 8px;
+        align-items: stretch;
+    }
+    .grading-feedback-field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+        padding: 8px 10px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.72);
+    }
+    .grading-feedback-field--wide {
+        grid-column: span 1;
+    }
+    .grading-feedback-field__name {
+        color: var(--text-muted);
+        font-size: 0.74rem;
+        font-weight: 700;
+    }
+    .grading-feedback-score {
+        font-size: 1rem;
+        line-height: 1.1;
+    }
+    .grading-feedback-score.is-full { color: #047857; }
+    .grading-feedback-score.is-partial { color: #b45309; }
+    .grading-feedback-score.is-zero { color: #dc2626; }
+    .grading-feedback-deduction,
+    .grading-feedback-evaluation {
+        overflow-wrap: anywhere;
+        line-height: 1.45;
+    }
+    .grading-feedback-deduction.has-deduction {
+        color: #dc2626;
+        font-weight: 800;
+    }
+    .grading-feedback-deduction.is-none {
+        color: #047857;
+        font-weight: 800;
+    }
+    .grading-feedback-evaluation {
+        color: var(--text-primary);
+        font-weight: 650;
+    }
     @keyframes feedback-rise {
         from { opacity: 0; transform: translateY(6px); }
         to { opacity: 1; transform: translateY(0); }
@@ -507,6 +569,15 @@
         .grading-question-feedback {
             animation: none;
         }
+        .grading-question-feedback.is-structured:hover,
+        .grading-question-feedback.is-structured:focus-visible {
+            transform: none;
+        }
+    }
+    @media (max-width: 560px) {
+        .grading-feedback-grid {
+            grid-template-columns: 1fr;
+        }
     }
 </style>
 {% endblock %}
@@ -756,7 +827,7 @@
                 </div>
                 <textarea id="grade-feedback" class="form-control" rows="5"
                           placeholder="输入评语，给出具体反馈...">{{ submission.feedback_md or '' }}</textarea>
-                <p class="grading-feedback-hint">建议保留“总览评语 + 逐题反馈”结构，学生端会自动把第 N 题的错误点显示到对应答案旁。</p>
+                <p class="grading-feedback-hint">建议保留“总览评语 + 逐题反馈”结构；每题只写本题得分、扣分点、评价，学生端会自动高亮显示。</p>
             </div>
             <div class="grading-actions">
                 <button class="btn btn-outline" onclick="history.back()">取消</button>
@@ -786,7 +857,7 @@
         parseGradingFeedback,
         renderMarkdownHtml,
         renderQuestionFeedbackHtml
-    } from '/static/js/grading_feedback.js?v=20260513';
+    } from '/static/js/grading_feedback.js?v=20260517';
 
     const submissionId = {{ submission.id }};
     const assignmentId = "{{ assignment.id }}";
@@ -1060,13 +1131,13 @@
         if (gradingFeedback.hasQuestionFeedback) {
             note.innerHTML = `
                 <span aria-hidden="true">●</span>
-                <span>已识别 ${gradingFeedback.questions.length} 条逐题反馈，错误点会跟随对应题目显示。</span>
+                <span>已识别 ${gradingFeedback.questions.length} 条逐题反馈，扣分点会跟随对应题目显示。</span>
             `;
             return;
         }
         note.innerHTML = `
             <span aria-hidden="true">●</span>
-            <span>本次评语尚未写成逐题结构，学生端会先展示总览评语；之后使用模板或 AI 批改会自动把错误点放到对应题目下。</span>
+            <span>本次评语尚未写成逐题结构，学生端会先展示总览评语；之后使用模板或 AI 批改会自动把扣分点放到对应题目下。</span>
         `;
     }
 
@@ -1306,10 +1377,9 @@
         const questions = collectQuestionsForFeedbackTemplate();
         const questionSections = questions.map((question, index) => (
             `### 第 ${index + 1} 题\n`
-            + `- 错误点：\n`
-            + `- 图片/附件问题：\n`
-            + `- 多余或缺失内容：\n`
-            + `- 改进建议：\n`
+            + `- 本题得分：\n`
+            + `- 扣分点：无\n`
+            + `- 评价：继续稳步完善\n`
         )).join('\n');
         return `## 总览评语\n\n## 逐题反馈\n\n${questionSections}`.trim();
     }

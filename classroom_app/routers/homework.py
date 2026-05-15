@@ -678,6 +678,33 @@ def _form_bool(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _parse_client_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed.replace(microsecond=0)
+
+
+def _normalize_submission_started_at(value: Any, submitted_at: str) -> str:
+    submitted_dt = _parse_client_datetime(submitted_at) or datetime.now().replace(microsecond=0)
+    started_dt = _parse_client_datetime(value)
+    if started_dt is None:
+        return submitted_dt.isoformat()
+    if started_dt > submitted_dt:
+        return submitted_dt.isoformat()
+    if (submitted_dt - started_dt).total_seconds() > 7 * 24 * 60 * 60:
+        return submitted_dt.isoformat()
+    return started_dt.isoformat()
+
+
 def _parse_answers_payload(answers_json: str) -> Any:
     try:
         answers_data = json.loads(answers_json) if answers_json else {}
@@ -829,12 +856,14 @@ async def _save_submission_payload(
     actor_role: str,
     actor_user_pk: int | None,
     channel: str,
+    started_at: str = "",
     existing_submission: dict[str, Any] | None = None,
     notify_teacher: bool = False,
     use_server_draft_files: bool = False,
 ) -> dict[str, Any]:
     prepared_entries = _validate_upload_entries(files, manifest)
     submitted_at = datetime.now().isoformat()
+    started_at_normalized = _normalize_submission_started_at(started_at, submitted_at)
     answers_payload = _parse_answers_payload(answers_json)
     has_answer_content_before_storage = answers_have_content(answers_payload)
     allowed_file_types = decode_allowed_file_types_json(assignment.get("allowed_file_types_json"))
@@ -906,6 +935,7 @@ async def _save_submission_payload(
         "student_id": student.get("student_id_number", ""),
         "student_name": student.get("name", ""),
         "student_pk_id": student_pk_id,
+        "started_at": started_at_normalized,
         "submitted_at": submitted_at,
         "assignment_id": assignment["id"],
         "course_id": assignment["course_id"],
@@ -945,6 +975,7 @@ async def _save_submission_payload(
                     grading_attempt_fingerprint = NULL,
                     answers_json = ?,
                     submitted_at = ?,
+                    started_at = ?,
                     submitted_by_role = ?,
                     submitted_by_teacher_id = ?,
                     submission_channel = ?,
@@ -962,6 +993,7 @@ async def _save_submission_payload(
                     student.get("name", ""),
                     full_submission_json,
                     submitted_at,
+                    started_at_normalized,
                     actor_role,
                     actor_user_pk if actor_role == "teacher" else None,
                     channel,
@@ -972,17 +1004,18 @@ async def _save_submission_payload(
             cursor.execute(
                 """
                 INSERT INTO submissions (
-                    assignment_id, student_pk_id, student_name, status, submitted_at, answers_json,
+                    assignment_id, student_pk_id, student_name, status, submitted_at, started_at, answers_json,
                     submitted_by_role, submitted_by_teacher_id, submission_channel,
                     resubmission_allowed, resubmission_due_at, returned_at, returned_by_teacher_id, returned_reason,
                     is_absence_score, absence_scored_at, absence_scored_by_teacher_id
-                ) VALUES (?, ?, ?, 'submitted', ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, NULL, 0, NULL, NULL)
+                ) VALUES (?, ?, ?, 'submitted', ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, NULL, 0, NULL, NULL)
                 """,
                 (
                     assignment["id"],
                     student_pk_id,
                     student.get("name", ""),
                     submitted_at,
+                    started_at_normalized,
                     full_submission_json,
                     actor_role,
                     actor_user_pk if actor_role == "teacher" else None,
@@ -2286,6 +2319,7 @@ async def download_assignment_draft_file(
 async def submit_assignment(assignment_id: str,
                             answers_json: str = Form(""),
                             manifest: str = Form(""),
+                            started_at: str = Form(""),
                             use_server_draft: bool = Form(False),
                             files: List[UploadFile] = File(default=[]),
                             user: dict = Depends(get_current_student)):
@@ -2332,6 +2366,7 @@ async def submit_assignment(assignment_id: str,
             actor_role="student",
             actor_user_pk=int(user["id"]),
             channel="online",
+            started_at=started_at,
             existing_submission=existing_submission,
             notify_teacher=personal_stage_target is None,
             use_server_draft_files=_form_bool(use_server_draft),

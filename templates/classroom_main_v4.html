@@ -180,7 +180,7 @@
                 {% if (user_info.role == 'student' and classroom_page.learning_progress) or (user_info.role == 'teacher' and classroom_page.learning_overview) %}
                 <button class="workspace-hero-action-btn is-cultivation" id="hero-learning-btn" type="button" data-learning-modal-open aria-haspopup="dialog" aria-controls="learning-progress-modal" aria-expanded="false">
                     <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 16.3 6.4 19.2 7.5 13 3 8.6l6.2-.9z"/></svg>
-                    <span>{% if user_info.role == 'teacher' %}修为统计{% else %}修为{% endif %}</span>
+                    <span>{% if user_info.role == 'teacher' %}班级成员{% else %}修为{% endif %}</span>
                 </button>
                 {% endif %}
                 <button class="workspace-hero-action-btn" id="hero-course-detail-btn" type="button" data-course-popover-target="details" data-popover-title="课程详情" data-popover-kicker="课程资料" aria-haspopup="dialog" aria-controls="course-info-popover" aria-expanded="false">
@@ -439,10 +439,10 @@
             <div class="learning-modal-shell" role="dialog" aria-modal="true" aria-labelledby="learning-modal-title" tabindex="-1">
                 <div class="learning-modal-header">
                     <div>
-                        <p class="workspace-kicker">{% if user_info.role == 'teacher' %}Class Cultivation{% else %}Cultivation Path{% endif %}</p>
-                        <h3 id="learning-modal-title">{% if user_info.role == 'teacher' %}修为统计{% else %}修为{% endif %}</h3>
+                        <p class="workspace-kicker">{% if user_info.role == 'teacher' %}Class Members{% else %}Cultivation Path{% endif %}</p>
+                        <h3 id="learning-modal-title">{% if user_info.role == 'teacher' %}班级成员{% else %}修为{% endif %}</h3>
                     </div>
-                    <button class="learning-modal-close" id="learning-modal-close" type="button" aria-label="关闭修为弹窗">&times;</button>
+                    <button class="learning-modal-close" id="learning-modal-close" type="button" aria-label="关闭弹窗">&times;</button>
                 </div>
                 <div class="learning-modal-body">
         {% if user_info.role == 'student' and classroom_page.learning_progress %}
@@ -560,12 +560,12 @@
             <div class="learning-progress-head">
                 <div>
                     <p class="workspace-kicker">Class Growth</p>
-                    <h2>班级修行境界概览</h2>
-                    <p>当前课堂 {{ lo.student_count }} 名学生，平均修为 {{ lo.average_score }}，已发放 {{ lo.certificate_count }} 枚晋级道印。学生个人试炼只进入班级汇总，不进入作业与考试明细。</p>
+                    <h2>班级成员概览</h2>
+                    <p>当前课堂 {{ lo.student_count }} 名学生，活跃 {{ lo.active_student_count }} 人，待关注 {{ lo.need_attention_count }} 人，{{ lo.teacher_note_count }} 名学生已有教师共享说明。个人试炼只进入班级汇总，不进入作业与考试明细。</p>
                 </div>
                 <div class="learning-progress-score">
-                    <span>可破境</span>
-                    <strong>{{ lo.challenge_ready_count }}</strong>
+                    <span>待关注</span>
+                    <strong>{{ lo.need_attention_count }}</strong>
                     <small>人</small>
                 </div>
             </div>
@@ -578,43 +578,29 @@
                 </div>
                 {% endfor %}
             </div>
-            <div class="learning-overview-meta" aria-label="学生个人试炼汇总">
+            <div class="learning-overview-meta" aria-label="班级成员统计">
+                {% for item in lo.summary_cards %}
+                <div>
+                    <span>{{ item.label }}</span>
+                    <strong>{{ item.value }}{{ item.suffix }}</strong>
+                    <small>{{ item.note }}</small>
+                </div>
+                {% endfor %}
                 {% if lo.personal_stage_exam_stats and lo.personal_stage_exam_stats.total_count %}
                 <div>
-                    <span>个人试炼汇总</span>
-                    <strong>{{ lo.personal_stage_exam_stats.total_count }}</strong>
-                    <small>{{ lo.personal_stage_exam_stats.student_count }} 人发起</small>
-                </div>
-                <div>
-                    <span>进行中</span>
+                    <span>个人试炼</span>
                     <strong>{{ lo.personal_stage_exam_stats.active_count }}</strong>
-                    <small>生成、作答或批改中</small>
+                    <small>{{ lo.personal_stage_exam_stats.total_count }} 次，{{ lo.personal_stage_exam_stats.student_count }} 人发起</small>
                 </div>
                 <div>
-                    <span>已通过</span>
+                    <span>试炼通过</span>
                     <strong>{{ lo.personal_stage_exam_stats.passed_count }}</strong>
                     <small>仅显示班级总量</small>
                 </div>
-                {% else %}
-                <div>
-                    <span>学生总数</span>
-                    <strong>{{ lo.student_count }}</strong>
-                    <small>人</small>
-                </div>
-                <div>
-                    <span>平均修为</span>
-                    <strong>{{ lo.average_score }}</strong>
-                    <small>班级状态</small>
-                </div>
-                <div>
-                    <span>晋级道印</span>
-                    <strong>{{ lo.certificate_count }}</strong>
-                    <small>已发放</small>
-                </div>
                 {% endif %}
             </div>
-            <div class="learning-roster-strip" aria-label="班级修行榜">
-                <span class="learning-roster-strip__label">修行榜</span>
+            <div class="learning-roster-strip" aria-label="班级成员速览">
+                <span class="learning-roster-strip__label">成员速览</span>
                 <div class="learning-roster-strip__items">
                     {% for item in lo.students %}
                     <div class="learning-roster-pill">
@@ -627,11 +613,11 @@
                 </div>
             </div>
             {% set roster_students = lo.roster_students if lo.roster_students is defined and lo.roster_students else lo.students %}
-            <div class="learning-roster-board" aria-label="学生名单与本课进度">
+            <div class="learning-roster-board" aria-label="班级成员与本课进度">
                 <div class="learning-roster-board__head">
                     <div>
-                        <h3>学生名单与本课进度</h3>
-                        <p>点击学生姓名可在当前课堂内查看管理中心同源详情统计。</p>
+                        <h3>班级成员与本课进度</h3>
+                        <p>点击成员可在当前课堂内查看同源详情、学习支持摘要和教师共享说明。</p>
                     </div>
                     <label class="learning-roster-search">
                         <span>筛选学生</span>
@@ -647,7 +633,7 @@
                         data-student-insight-url="/manage/students/{{ item.id }}?embed=1"
                         data-student-name="{{ item.name }}"
                         data-learning-roster-item
-                        data-search-text="{{ (item.name ~ ' ' ~ (item.student_id_number or '') ~ ' ' ~ item.current_level.level_name) | lower }}"
+                        data-search-text="{{ (item.name ~ ' ' ~ (item.student_id_number or '') ~ ' ' ~ item.current_level.level_name ~ ' ' ~ (item.status_tags | join(' '))) | lower }}"
                     >
                         <span class="learning-roster-student__identity">
                             <strong>{{ item.name }}</strong>
@@ -663,6 +649,9 @@
                             <b>材 {{ item.material_percent }}%</b>
                             <b>任 {{ item.task_completion_percent }}%</b>
                             <b>互 {{ item.interaction_percent }}%</b>
+                            <b>活 {{ item.activity_count }}</b>
+                            {% if item.pending_task_count %}<b>待 {{ item.pending_task_count }}</b>{% endif %}
+                            {% if item.has_teacher_note %}<b>备注</b>{% endif %}
                         </span>
                     </a>
                     {% else %}
@@ -684,7 +673,7 @@
                 <div class="student-insight-modal-header">
                     <div>
                         <p class="workspace-kicker">Student Insight</p>
-                        <h3 id="student-insight-modal-title">学生详情统计</h3>
+                        <h3 id="student-insight-modal-title">成员详情</h3>
                     </div>
                     <button class="student-insight-modal-close" id="student-insight-modal-close" type="button" aria-label="关闭学生详情弹窗">&times;</button>
                 </div>
@@ -1546,7 +1535,7 @@
     import * as materialsApp from '/static/js/classroom_materials.js?v=learning-progress-20260503';
     import * as examApp from '/static/js/app_exams.js';
     import { initClassroomPage } from '/static/js/classroom_page.js?v=premium-classroom-20260504';
-    import { initLearningProgress } from '/static/js/learning_progress.js?v=teacher-roster-detail-fix-20260508';
+    import { initLearningProgress } from '/static/js/learning_progress.js?v=class-members-support-20260515';
 
     window.UI = ui;
     window.fileApp = fileApp;
