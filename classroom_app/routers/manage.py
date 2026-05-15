@@ -2809,9 +2809,9 @@ async def api_approve_password_reset_request(
             (request_row["student_id"],),
         )
         mark_password_reset_request_notification_read(conn, request_id, user["id"])
+        invalidate_session_for_user(str(request_row["student_id"]), "student", conn=conn)
         conn.commit()
 
-    invalidate_session_for_user(str(request_row["student_id"]), "student")
     return {
         "status": "success",
         "message": "已通过该申请，学生可重新使用姓名和学号登录并设置新密码。",

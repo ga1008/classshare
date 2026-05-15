@@ -63,6 +63,113 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_USER_SESSIONS_TABLE_SQL = '''
+                CREATE TABLE IF NOT EXISTS user_sessions
+                (
+                    session_user_key TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT '',
+                    name TEXT DEFAULT '',
+                    ip TEXT DEFAULT '',
+                    last_login TEXT DEFAULT '',
+                    expires_at TEXT NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                '''
+
+_USER_SESSIONS_INDEX_SQLS = (
+    "CREATE INDEX IF NOT EXISTS idx_user_sessions_user_role "
+    "ON user_sessions (user_id, role, updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at "
+    "ON user_sessions (expires_at)",
+)
+
+
+def _ensure_user_sessions_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(_USER_SESSIONS_TABLE_SQL)
+    for statement in _USER_SESSIONS_INDEX_SQLS:
+        conn.execute(statement)
+
+
+def _user_sessions_quick_check(conn: sqlite3.Connection) -> str:
+    try:
+        row = conn.execute("PRAGMA quick_check('user_sessions')").fetchone()
+    except sqlite3.DatabaseError:
+        row = conn.execute("PRAGMA quick_check").fetchone()
+    return str(row[0] if row else "").strip()
+
+
+def _is_user_sessions_storage_issue(message: object) -> bool:
+    text = str(message or "").lower()
+    if not text:
+        return False
+    return any(
+        marker in text
+        for marker in (
+            "user_sessions",
+            "idx_user_sessions",
+            "sqlite_autoindex_user_sessions",
+            "database disk image is malformed",
+            "malformed",
+        )
+    )
+
+
+def repair_user_sessions_storage(
+    conn: sqlite3.Connection | None = None,
+    *,
+    force: bool = False,
+) -> bool:
+    """Repair the high-churn user_sessions indexes without touching business data."""
+    owns_connection = conn is None
+    active_conn = conn or get_db_connection()
+    try:
+        _ensure_user_sessions_schema(active_conn)
+        check_result = "forced" if force else _user_sessions_quick_check(active_conn)
+        if not force and check_result == "ok":
+            return False
+        if not force and not _is_user_sessions_storage_issue(check_result):
+            return False
+
+        print(f"[SESSION] Repairing user_sessions storage: {check_result}")
+        active_conn.execute("REINDEX user_sessions")
+        active_conn.execute(
+            "DELETE FROM user_sessions WHERE expires_at <= ?",
+            (_utcnow_iso(),),
+        )
+        verify_result = _user_sessions_quick_check(active_conn)
+        if verify_result != "ok":
+            raise sqlite3.DatabaseError(
+                f"user_sessions quick_check failed after repair: {verify_result}"
+            )
+        if owns_connection:
+            active_conn.commit()
+        return True
+    except Exception:
+        if owns_connection:
+            try:
+                active_conn.rollback()
+            except Exception:
+                pass
+        raise
+    finally:
+        if owns_connection:
+            active_conn.close()
+
+
+def _run_user_session_operation(operation):
+    try:
+        return operation()
+    except sqlite3.DatabaseError as exc:
+        if not _is_user_sessions_storage_issue(exc):
+            raise
+        print(f"[SESSION] user_sessions operation failed; repairing and retrying once: {exc}")
+        repair_user_sessions_storage(force=True)
+        return operation()
+
+
 _teacher_seed_pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 
@@ -248,55 +355,58 @@ def save_user_session(
     if not normalized_user_key:
         raise ValueError("session_user_key is required")
 
-    timestamp = _utcnow_iso()
-    with get_db_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO user_sessions (
-                session_user_key,
-                session_id,
-                user_id,
-                role,
-                name,
-                ip,
-                last_login,
-                expires_at,
-                updated_at
+    def _save() -> dict:
+        timestamp = _utcnow_iso()
+        with get_db_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO user_sessions (
+                    session_user_key,
+                    session_id,
+                    user_id,
+                    role,
+                    name,
+                    ip,
+                    last_login,
+                    expires_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(session_user_key) DO UPDATE SET
+                    session_id = excluded.session_id,
+                    user_id = excluded.user_id,
+                    role = excluded.role,
+                    name = excluded.name,
+                    ip = excluded.ip,
+                    last_login = excluded.last_login,
+                    expires_at = excluded.expires_at,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    normalized_user_key,
+                    str(session_id or "").strip(),
+                    str(user_id or "").strip(),
+                    str(role or "").strip(),
+                    str(name or "").strip(),
+                    str(ip or "").strip(),
+                    str(last_login or "").strip(),
+                    str(expires_at or "").strip(),
+                    timestamp,
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(session_user_key) DO UPDATE SET
-                session_id = excluded.session_id,
-                user_id = excluded.user_id,
-                role = excluded.role,
-                name = excluded.name,
-                ip = excluded.ip,
-                last_login = excluded.last_login,
-                expires_at = excluded.expires_at,
-                updated_at = excluded.updated_at
-            """,
-            (
-                normalized_user_key,
-                str(session_id or "").strip(),
-                str(user_id or "").strip(),
-                str(role or "").strip(),
-                str(name or "").strip(),
-                str(ip or "").strip(),
-                str(last_login or "").strip(),
-                str(expires_at or "").strip(),
-                timestamp,
-            ),
-        )
-        row = conn.execute(
-            """
-            SELECT session_user_key, session_id, user_id, role, name, ip, last_login, expires_at, updated_at
-            FROM user_sessions
-            WHERE session_user_key = ?
-            LIMIT 1
-            """,
-            (normalized_user_key,),
-        ).fetchone()
-        conn.commit()
-    return _normalize_session_row(row) or {}
+            row = conn.execute(
+                """
+                SELECT session_user_key, session_id, user_id, role, name, ip, last_login, expires_at, updated_at
+                FROM user_sessions
+                WHERE session_user_key = ?
+                LIMIT 1
+                """,
+                (normalized_user_key,),
+            ).fetchone()
+            conn.commit()
+        return _normalize_session_row(row) or {}
+
+    return _run_user_session_operation(_save)
 
 
 def get_user_session(session_user_key: str) -> dict | None:
@@ -304,64 +414,70 @@ def get_user_session(session_user_key: str) -> dict | None:
     if not normalized_user_key:
         return None
 
-    now_iso = _utcnow_iso()
-    with get_db_connection() as conn:
-        row = conn.execute(
-            """
-            SELECT session_user_key, session_id, user_id, role, name, ip, last_login, expires_at, updated_at
-            FROM user_sessions
-            WHERE session_user_key = ?
-            LIMIT 1
-            """,
-            (normalized_user_key,),
-        ).fetchone()
-        if row is None:
-            return None
-
-        expires_at = str(row["expires_at"] or "")
-        if expires_at and expires_at <= now_iso:
-            conn.execute(
-                "DELETE FROM user_sessions WHERE session_user_key = ?",
+    def _get() -> dict | None:
+        now_iso = _utcnow_iso()
+        with get_db_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT session_user_key, session_id, user_id, role, name, ip, last_login, expires_at, updated_at
+                FROM user_sessions
+                WHERE session_user_key = ?
+                LIMIT 1
+                """,
                 (normalized_user_key,),
-            )
-            conn.commit()
-            return None
+            ).fetchone()
+            if row is None:
+                return None
 
-    return _normalize_session_row(row)
+            expires_at = str(row["expires_at"] or "")
+            if expires_at and expires_at <= now_iso:
+                conn.execute(
+                    "DELETE FROM user_sessions WHERE session_user_key = ?",
+                    (normalized_user_key,),
+                )
+                conn.commit()
+                return None
+
+        return _normalize_session_row(row)
+
+    return _run_user_session_operation(_get)
 
 
 def list_user_sessions() -> dict[str, dict]:
-    now_iso = _utcnow_iso()
-    sessions: dict[str, dict] = {}
-    with get_db_connection() as conn:
-        conn.execute(
-            "DELETE FROM user_sessions WHERE expires_at <= ?",
-            (now_iso,),
-        )
-        rows = conn.execute(
-            """
-            SELECT session_user_key, session_id, user_id, role, name, ip, last_login, expires_at, updated_at
-            FROM user_sessions
-            ORDER BY updated_at DESC, session_user_key ASC
-            """
-        ).fetchall()
-        conn.commit()
+    def _list() -> dict[str, dict]:
+        now_iso = _utcnow_iso()
+        sessions: dict[str, dict] = {}
+        with get_db_connection() as conn:
+            conn.execute(
+                "DELETE FROM user_sessions WHERE expires_at <= ?",
+                (now_iso,),
+            )
+            rows = conn.execute(
+                """
+                SELECT session_user_key, session_id, user_id, role, name, ip, last_login, expires_at, updated_at
+                FROM user_sessions
+                ORDER BY updated_at DESC, session_user_key ASC
+                """
+            ).fetchall()
+            conn.commit()
 
-    for row in rows:
-        normalized_row = _normalize_session_row(row)
-        if not normalized_row:
-            continue
-        sessions[normalized_row["session_user_key"]] = {
-            "session_id": normalized_row["session_id"],
-            "ip": normalized_row["ip"],
-            "last_login": normalized_row["last_login"],
-            "user_id": normalized_row["user_id"],
-            "role": normalized_row["role"],
-            "name": normalized_row["name"],
-            "expires_at": normalized_row["expires_at"],
-            "updated_at": normalized_row["updated_at"],
-        }
-    return sessions
+        for row in rows:
+            normalized_row = _normalize_session_row(row)
+            if not normalized_row:
+                continue
+            sessions[normalized_row["session_user_key"]] = {
+                "session_id": normalized_row["session_id"],
+                "ip": normalized_row["ip"],
+                "last_login": normalized_row["last_login"],
+                "user_id": normalized_row["user_id"],
+                "role": normalized_row["role"],
+                "name": normalized_row["name"],
+                "expires_at": normalized_row["expires_at"],
+                "updated_at": normalized_row["updated_at"],
+            }
+        return sessions
+
+    return _run_user_session_operation(_list)
 
 
 def list_user_session_roles(user_id: str) -> list[str]:
@@ -369,23 +485,26 @@ def list_user_session_roles(user_id: str) -> list[str]:
     if not normalized_user_id:
         return []
 
-    now_iso = _utcnow_iso()
-    with get_db_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT DISTINCT role
-            FROM user_sessions
-            WHERE user_id = ?
-              AND expires_at > ?
-            ORDER BY role ASC
-            """,
-            (normalized_user_id, now_iso),
-        ).fetchall()
-    return [
-        str(row["role"] or "").strip().lower()
-        for row in rows
-        if str(row["role"] or "").strip()
-    ]
+    def _list_roles() -> list[str]:
+        now_iso = _utcnow_iso()
+        with get_db_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT role
+                FROM user_sessions
+                WHERE user_id = ?
+                  AND expires_at > ?
+                ORDER BY role ASC
+                """,
+                (normalized_user_id, now_iso),
+            ).fetchall()
+        return [
+            str(row["role"] or "").strip().lower()
+            for row in rows
+            if str(row["role"] or "").strip()
+        ]
+
+    return _run_user_session_operation(_list_roles)
 
 
 def delete_user_sessions(
@@ -401,20 +520,32 @@ def delete_user_sessions(
 
     owns_connection = conn is None
     active_conn = conn or get_db_connection()
-    try:
+
+    def _delete(active_connection: sqlite3.Connection) -> int:
         if normalized_role:
-            cursor = active_conn.execute(
+            cursor = active_connection.execute(
                 "DELETE FROM user_sessions WHERE user_id = ? AND role = ?",
                 (normalized_user_id, normalized_role),
             )
         else:
-            cursor = active_conn.execute(
+            cursor = active_connection.execute(
                 "DELETE FROM user_sessions WHERE user_id = ?",
                 (normalized_user_id,),
             )
+        return int(cursor.rowcount or 0)
+
+    try:
+        try:
+            removed_count = _delete(active_conn)
+        except sqlite3.DatabaseError as exc:
+            if not _is_user_sessions_storage_issue(exc):
+                raise
+            print(f"[SESSION] Failed to delete user_sessions; repairing and retrying once: {exc}")
+            repair_user_sessions_storage(active_conn, force=True)
+            removed_count = _delete(active_conn)
         if owns_connection:
             active_conn.commit()
-        return int(cursor.rowcount or 0)
+        return removed_count
     except Exception:
         if owns_connection:
             try:
@@ -578,31 +709,8 @@ def init_database():
             )
             _seed_initial_super_admin(conn)
 
-            conn.execute(
-                '''
-                CREATE TABLE IF NOT EXISTS user_sessions
-                (
-                    session_user_key TEXT PRIMARY KEY,
-                    session_id TEXT NOT NULL,
-                    user_id TEXT NOT NULL,
-                    role TEXT NOT NULL DEFAULT '',
-                    name TEXT DEFAULT '',
-                    ip TEXT DEFAULT '',
-                    last_login TEXT DEFAULT '',
-                    expires_at TEXT NOT NULL,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-                '''
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_user_sessions_user_role "
-                "ON user_sessions (user_id, role, updated_at DESC)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at "
-                "ON user_sessions (expires_at)"
-            )
+            _ensure_user_sessions_schema(conn)
+            repair_user_sessions_storage(conn)
 
             # 2. 班级
             conn.execute('''
