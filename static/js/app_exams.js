@@ -66,6 +66,7 @@ function syncScheduleFields(prefix) {
     const mode = getTrimmedInputValue(`${prefix}-availability-mode`) || DEFAULT_SCHEDULE_MODE;
     const deadlineGroup = document.getElementById(`${prefix}-deadline-group`);
     const countdownGroup = document.getElementById(`${prefix}-countdown-group`);
+    const lateEnabledEl = document.getElementById(`${prefix}-late-submission-enabled`);
 
     if (deadlineGroup) {
         deadlineGroup.style.display = mode === 'deadline' ? '' : 'none';
@@ -73,13 +74,43 @@ function syncScheduleFields(prefix) {
     if (countdownGroup) {
         countdownGroup.style.display = mode === 'countdown' ? '' : 'none';
     }
+    if (lateEnabledEl) {
+        lateEnabledEl.disabled = mode === DEFAULT_SCHEDULE_MODE;
+        if (mode === DEFAULT_SCHEDULE_MODE) {
+            lateEnabledEl.checked = false;
+        }
+    }
+    syncLatePolicyFields(prefix);
+}
+
+function syncLatePolicyFields(prefix) {
+    const enabled = document.getElementById(`${prefix}-late-submission-enabled`)?.checked || false;
+    const group = document.getElementById(`${prefix}-late-policy-group`);
+    const strategy = getTrimmedInputValue(`${prefix}-late-penalty-strategy`) || 'fixed';
+    if (group) {
+        group.style.display = enabled ? '' : 'none';
+    }
+    group?.querySelectorAll('[data-late-gradient-field]').forEach((node) => {
+        node.style.display = enabled && strategy === 'gradient' ? '' : 'none';
+    });
 }
 
 function bindScheduleMode(prefix) {
     const modeEl = document.getElementById(`${prefix}-availability-mode`);
-    if (!modeEl || modeEl.dataset.bound === '1') return;
-    modeEl.dataset.bound = '1';
-    modeEl.addEventListener('change', () => syncScheduleFields(prefix));
+    if (modeEl && modeEl.dataset.bound !== '1') {
+        modeEl.dataset.bound = '1';
+        modeEl.addEventListener('change', () => syncScheduleFields(prefix));
+    }
+    const lateEnabledEl = document.getElementById(`${prefix}-late-submission-enabled`);
+    if (lateEnabledEl && lateEnabledEl.dataset.bound !== '1') {
+        lateEnabledEl.dataset.bound = '1';
+        lateEnabledEl.addEventListener('change', () => syncLatePolicyFields(prefix));
+    }
+    const strategyEl = document.getElementById(`${prefix}-late-penalty-strategy`);
+    if (strategyEl && strategyEl.dataset.bound !== '1') {
+        strategyEl.dataset.bound = '1';
+        strategyEl.addEventListener('change', () => syncLatePolicyFields(prefix));
+    }
     syncScheduleFields(prefix);
 }
 
@@ -88,12 +119,93 @@ function resetScheduleFields(prefix, mode = DEFAULT_SCHEDULE_MODE) {
     const dueEl = document.getElementById(`${prefix}-due-at`);
     const durationEl = document.getElementById(`${prefix}-duration-minutes`);
     const startsEl = document.getElementById(`${prefix}-starts-at`);
+    const lateEnabledEl = document.getElementById(`${prefix}-late-submission-enabled`);
+    const lateUntilEl = document.getElementById(`${prefix}-late-submission-until`);
+    const lateStrategyEl = document.getElementById(`${prefix}-late-penalty-strategy`);
+    const lateIntervalEl = document.getElementById(`${prefix}-late-penalty-interval-hours`);
+    const latePointsEl = document.getElementById(`${prefix}-late-penalty-points`);
+    const lateMinScoreEl = document.getElementById(`${prefix}-late-penalty-min-score`);
+    const lateScoreCapEl = document.getElementById(`${prefix}-late-score-cap`);
 
     if (modeEl) modeEl.value = mode;
     if (dueEl) dueEl.value = '';
     if (durationEl) durationEl.value = '';
     if (startsEl) startsEl.value = '';
+    if (lateEnabledEl) lateEnabledEl.checked = false;
+    if (lateUntilEl) lateUntilEl.value = '';
+    if (lateStrategyEl) lateStrategyEl.value = 'fixed';
+    if (lateIntervalEl) lateIntervalEl.value = '1';
+    if (latePointsEl) latePointsEl.value = '0';
+    if (lateMinScoreEl) lateMinScoreEl.value = '0';
+    if (lateScoreCapEl) lateScoreCapEl.value = '';
     syncScheduleFields(prefix);
+}
+
+function readNumericValue(elementId, label, { required = false, min = null, max = null, fallback = null } = {}) {
+    const raw = getTrimmedInputValue(elementId);
+    if (!raw) {
+        if (required) return { error: `${label}不能为空` };
+        return { value: fallback };
+    }
+    const value = Number(raw);
+    if (!Number.isFinite(value)) {
+        return { error: `${label}必须是数字` };
+    }
+    if (min !== null && value < min) {
+        return { error: `${label}不能小于 ${min}` };
+    }
+    if (max !== null && value > max) {
+        return { error: `${label}不能大于 ${max}` };
+    }
+    return { value };
+}
+
+function readLatePolicyPayload(prefix, mode) {
+    const enabled = document.getElementById(`${prefix}-late-submission-enabled`)?.checked || false;
+    const strategy = getTrimmedInputValue(`${prefix}-late-penalty-strategy`) === 'gradient' ? 'gradient' : 'fixed';
+    const lateUntil = getTrimmedInputValue(`${prefix}-late-submission-until`);
+    const interval = readNumericValue(`${prefix}-late-penalty-interval-hours`, '梯度间隔小时', {
+        required: enabled && strategy === 'gradient',
+        min: 0.1,
+        fallback: 1,
+    });
+    if (interval.error) return { error: interval.error };
+    const points = readNumericValue(`${prefix}-late-penalty-points`, '补交扣分', {
+        required: enabled,
+        min: 0,
+        max: 100,
+        fallback: 0,
+    });
+    if (points.error) return { error: points.error };
+    const minScore = readNumericValue(`${prefix}-late-penalty-min-score`, '最低保留分', {
+        min: 0,
+        max: 100,
+        fallback: 0,
+    });
+    if (minScore.error) return { error: minScore.error };
+    const scoreCap = readNumericValue(`${prefix}-late-score-cap`, '补交最高分', {
+        min: 0,
+        max: 100,
+        fallback: null,
+    });
+    if (scoreCap.error) return { error: scoreCap.error };
+    if (enabled && mode === DEFAULT_SCHEDULE_MODE) {
+        return { error: '补交扣分需要先设置首次截止时间或倒计时' };
+    }
+    if (enabled && scoreCap.value !== null && scoreCap.value < minScore.value) {
+        return { error: '补交最高分不能低于最低保留分' };
+    }
+    return {
+        payload: {
+            late_submission_enabled: enabled ? 1 : 0,
+            late_submission_until: enabled && lateUntil ? lateUntil : null,
+            late_penalty_strategy: strategy,
+            late_penalty_interval_hours: interval.value,
+            late_penalty_points: points.value,
+            late_penalty_min_score: minScore.value,
+            late_score_cap: scoreCap.value,
+        }
+    };
 }
 
 function readSchedulePayload(prefix) {
@@ -101,6 +213,10 @@ function readSchedulePayload(prefix) {
     const dueAt = getTrimmedInputValue(`${prefix}-due-at`);
     const durationText = getTrimmedInputValue(`${prefix}-duration-minutes`);
     const startsAt = getTrimmedInputValue(`${prefix}-starts-at`);
+    const lateResult = readLatePolicyPayload(prefix, mode);
+    if (lateResult.error) {
+        return { error: lateResult.error };
+    }
 
     if (mode === 'deadline') {
         if (!dueAt) {
@@ -112,6 +228,7 @@ function readSchedulePayload(prefix) {
                 due_at: dueAt,
                 duration_minutes: null,
                 starts_at: null,
+                ...lateResult.payload,
             }
         };
     }
@@ -130,6 +247,7 @@ function readSchedulePayload(prefix) {
                 due_at: null,
                 duration_minutes: Math.floor(duration),
                 starts_at: startsAt || null,
+                ...lateResult.payload,
             }
         };
     }
@@ -140,6 +258,7 @@ function readSchedulePayload(prefix) {
             due_at: null,
             duration_minutes: null,
             starts_at: null,
+            ...lateResult.payload,
         }
     };
 }
@@ -354,6 +473,7 @@ export function editAssignment(
     allowedFileTypes = '',
     schedule = null,
     learningStageKey = '',
+    latePolicy = null,
 ) {
     const idEl = document.getElementById('assignment-id');
     const titleEl = document.getElementById('assignment-title');
@@ -366,6 +486,13 @@ export function editAssignment(
     const dueAtEl = document.getElementById('assignment-due-at');
     const durationEl = document.getElementById('assignment-duration-minutes');
     const startsAtEl = document.getElementById('assignment-starts-at');
+    const lateEnabledEl = document.getElementById('assignment-late-submission-enabled');
+    const lateUntilEl = document.getElementById('assignment-late-submission-until');
+    const lateStrategyEl = document.getElementById('assignment-late-penalty-strategy');
+    const lateIntervalEl = document.getElementById('assignment-late-penalty-interval-hours');
+    const latePointsEl = document.getElementById('assignment-late-penalty-points');
+    const lateMinScoreEl = document.getElementById('assignment-late-penalty-min-score');
+    const lateScoreCapEl = document.getElementById('assignment-late-score-cap');
 
     if (idEl) idEl.value = assignmentId || '';
     if (titleEl) titleEl.value = title || '';
@@ -378,6 +505,13 @@ export function editAssignment(
     if (dueAtEl) dueAtEl.value = toDateTimeLocalValue(schedule?.due_at);
     if (durationEl) durationEl.value = schedule?.duration_minutes || '';
     if (startsAtEl) startsAtEl.value = toDateTimeLocalValue(schedule?.starts_at);
+    if (lateEnabledEl) lateEnabledEl.checked = Boolean(latePolicy?.late_submission_enabled);
+    if (lateUntilEl) lateUntilEl.value = toDateTimeLocalValue(latePolicy?.late_submission_until);
+    if (lateStrategyEl) lateStrategyEl.value = latePolicy?.late_penalty_strategy || 'fixed';
+    if (lateIntervalEl) lateIntervalEl.value = latePolicy?.late_penalty_interval_hours || '1';
+    if (latePointsEl) latePointsEl.value = latePolicy?.late_penalty_points ?? '0';
+    if (lateMinScoreEl) lateMinScoreEl.value = latePolicy?.late_penalty_min_score ?? '0';
+    if (lateScoreCapEl) lateScoreCapEl.value = latePolicy?.late_score_cap ?? '';
     syncScheduleFields('assignment');
 
     setExamAssignFeedback(null, '');

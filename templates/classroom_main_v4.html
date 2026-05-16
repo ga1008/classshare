@@ -90,6 +90,101 @@
         flex-wrap: wrap;
     }
 
+    .assignment-time-strip {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 4px 10px;
+        align-items: center;
+        margin-top: var(--spacing-md);
+        padding: 10px 12px;
+        border: 1px solid rgba(14, 165, 233, 0.2);
+        border-radius: 8px;
+        background: linear-gradient(135deg, rgba(236, 253, 245, 0.82), rgba(239, 246, 255, 0.9));
+    }
+
+    .assignment-time-strip__label,
+    .assignment-time-strip__detail {
+        min-width: 0;
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+        line-height: 1.35;
+    }
+
+    .assignment-time-strip__value {
+        color: #0f766e;
+        font-size: 1rem;
+        font-weight: 850;
+        line-height: 1.1;
+        white-space: nowrap;
+    }
+
+    .assignment-time-strip__detail {
+        grid-column: 1 / -1;
+        font-weight: 600;
+    }
+
+    .assignment-time-strip.is-urgent {
+        border-color: rgba(245, 158, 11, 0.32);
+        background: linear-gradient(135deg, rgba(255, 251, 235, 0.94), rgba(255, 247, 237, 0.88));
+    }
+
+    .assignment-time-strip.is-urgent .assignment-time-strip__value {
+        color: #b45309;
+    }
+
+    .assignment-time-strip.is-late {
+        border-color: rgba(239, 68, 68, 0.28);
+        background: linear-gradient(135deg, rgba(254, 242, 242, 0.92), rgba(255, 251, 235, 0.86));
+    }
+
+    .assignment-time-strip.is-late .assignment-time-strip__value,
+    .assignment-time-strip.is-expired .assignment-time-strip__value {
+        color: #dc2626;
+    }
+
+    .late-policy-toggle-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.82);
+    }
+
+    .late-policy-toggle-row input {
+        margin-top: 3px;
+    }
+
+    .late-policy-mini-panel {
+        margin: 0 0 var(--spacing-md);
+        padding: 12px;
+        border: 1px solid rgba(245, 158, 11, 0.28);
+        border-radius: 8px;
+        background: rgba(255, 251, 235, 0.72);
+    }
+
+    .late-policy-fields {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--spacing-md);
+    }
+
+    @media (max-width: 720px) {
+        .assignment-time-strip {
+            grid-template-columns: 1fr;
+        }
+
+        .assignment-time-strip__value {
+            white-space: normal;
+        }
+
+        .late-policy-fields {
+            grid-template-columns: 1fr;
+        }
+    }
+
 </style>
 {% endblock %}
 
@@ -847,6 +942,7 @@
                     {% set teacher_grading_count = teacher_metrics.grading_count | default(0, true) %}
                     {% set teacher_returned_count = teacher_metrics.returned_count | default(0, true) %}
                     {% set teacher_unsubmitted_count = teacher_metrics.unsubmitted_count | default(0, true) %}
+                    {% set teacher_late_count = teacher_metrics.late_submission_count | default(0, true) %}
                     {% set teacher_total_students = teacher_metrics.total_students | default(0, true) %}
                     <article class="card assignment-card assignment-card-unified hover-lift cursor-pointer" data-assignment-link="/assignment/{{ assignment.id }}" onclick="location.href='/assignment/{{ assignment.id }}'">
                         <div class="card-body">
@@ -870,6 +966,9 @@
                                     {% if user_info.role == 'teacher' and teacher_returned_count %}
                                     <span class="badge badge-warning">待重交 {{ teacher_returned_count }}</span>
                                     {% endif %}
+                                    {% if user_info.role == 'teacher' and teacher_late_count %}
+                                    <span class="badge badge-warning">补交 {{ teacher_late_count }}</span>
+                                    {% endif %}
                                 </div>
                                 <span class="assignment-arrow" aria-hidden="true">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
@@ -885,6 +984,28 @@
                                 暂未填写详细说明，点击进入查看完整作业内容与提交要求。
                                 {% endif %}
                             </p>
+                            {% if assignment.countdown_at or assignment.late_submission_enabled %}
+                            <div
+                                class="assignment-time-strip{% if assignment.is_late_submission_open %} is-late{% endif %}"
+                                data-assignment-clock
+                                data-assignment-id="{{ assignment.id }}"
+                                data-server-now="{{ assignment.server_now or '' }}"
+                                data-countdown-at="{{ assignment.countdown_at or '' }}"
+                                data-late-until="{{ assignment.late_submission_until or '' }}"
+                                data-deadline-phase="{{ assignment.deadline_phase or 'none' }}"
+                                data-accepting="{{ '1' if assignment.is_accepting_submissions else '0' }}"
+                                data-late-open="{{ '1' if assignment.is_late_submission_open else '0' }}"
+                                data-late-policy-label="{{ assignment.late_policy_label or '' }}"
+                            >
+                                <span class="assignment-time-strip__label" data-assignment-clock-label>
+                                    {% if assignment.is_late_submission_open %}补交开放中{% else %}剩余时间{% endif %}
+                                </span>
+                                <strong class="assignment-time-strip__value" data-assignment-clock-value>--:--:--</strong>
+                                <small class="assignment-time-strip__detail" data-assignment-clock-detail>
+                                    {{ assignment.late_policy_label if assignment.is_late_submission_open and assignment.late_policy_label else assignment.availability_mode_label or '' }}
+                                </small>
+                            </div>
+                            {% endif %}
                             {% if user_info.role == 'student' and assignment.submission_status == 'graded' and assignment.submission_feedback_preview %}
                             <div class="assignment-card-feedback-preview" aria-label="批改总览评语">
                                 <span class="assignment-card-feedback-preview__label">总览评语</span>
@@ -1379,6 +1500,46 @@
                         <p class="form-hint">留空表示发布后从当前时间开始计时。</p>
                     </div>
                 </div>
+                <div class="form-group">
+                    <label class="late-policy-toggle-row" for="assignment-late-submission-enabled">
+                        <input type="checkbox" id="assignment-late-submission-enabled">
+                        <span>
+                            <strong>首次截止后仍开放补交</strong>
+                            <span class="block text-xs text-muted mt-1">AI 或教师先给出原始分，系统再按补交策略统一扣分和封顶。</span>
+                        </span>
+                    </label>
+                </div>
+                <div id="assignment-late-policy-group" class="late-policy-mini-panel" style="display:none;">
+                    <div class="late-policy-fields">
+                        <div class="form-group">
+                            <label class="form-label" for="assignment-late-submission-until">二次截止时间（可选）</label>
+                            <input type="datetime-local" id="assignment-late-submission-until" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="assignment-late-penalty-strategy">扣分策略</label>
+                            <select id="assignment-late-penalty-strategy" class="form-select">
+                                <option value="fixed">定量扣分</option>
+                                <option value="gradient">梯度扣分</option>
+                            </select>
+                        </div>
+                        <div class="form-group" data-late-gradient-field>
+                            <label class="form-label" for="assignment-late-penalty-interval-hours">每多少小时增加扣分</label>
+                            <input type="number" id="assignment-late-penalty-interval-hours" class="form-control" min="0.1" step="0.1" value="1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="assignment-late-penalty-points">每次/统一扣分</label>
+                            <input type="number" id="assignment-late-penalty-points" class="form-control" min="0" max="100" step="0.5" value="0">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="assignment-late-penalty-min-score">最低保留分</label>
+                            <input type="number" id="assignment-late-penalty-min-score" class="form-control" min="0" max="100" step="1" value="0">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="assignment-late-score-cap">补交最高分（可选）</label>
+                            <input type="number" id="assignment-late-score-cap" class="form-control" min="0" max="100" step="1" placeholder="例如 80">
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" data-dismiss="modal">取消</button>
@@ -1439,6 +1600,46 @@
                         <label class="form-label" for="exam-starts-at">开始时间（可选）</label>
                         <input type="datetime-local" id="exam-starts-at" class="form-control">
                         <p class="form-hint">留空表示发布后从当前时间开始计时。</p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="late-policy-toggle-row" for="exam-late-submission-enabled">
+                        <input type="checkbox" id="exam-late-submission-enabled">
+                        <span>
+                            <strong>首次截止后仍开放补交</strong>
+                            <span class="block text-xs text-muted mt-1">交卷后系统按补交策略在原始批改分上自动扣分。</span>
+                        </span>
+                    </label>
+                </div>
+                <div id="exam-late-policy-group" class="late-policy-mini-panel" style="display:none;">
+                    <div class="late-policy-fields">
+                        <div class="form-group">
+                            <label class="form-label" for="exam-late-submission-until">二次截止时间（可选）</label>
+                            <input type="datetime-local" id="exam-late-submission-until" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="exam-late-penalty-strategy">扣分策略</label>
+                            <select id="exam-late-penalty-strategy" class="form-select">
+                                <option value="fixed">定量扣分</option>
+                                <option value="gradient">梯度扣分</option>
+                            </select>
+                        </div>
+                        <div class="form-group" data-late-gradient-field>
+                            <label class="form-label" for="exam-late-penalty-interval-hours">每多少小时增加扣分</label>
+                            <input type="number" id="exam-late-penalty-interval-hours" class="form-control" min="0.1" step="0.1" value="1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="exam-late-penalty-points">每次/统一扣分</label>
+                            <input type="number" id="exam-late-penalty-points" class="form-control" min="0" max="100" step="0.5" value="0">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="exam-late-penalty-min-score">最低保留分</label>
+                            <input type="number" id="exam-late-penalty-min-score" class="form-control" min="0" max="100" step="1" value="0">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="exam-late-score-cap">补交最高分（可选）</label>
+                            <input type="number" id="exam-late-score-cap" class="form-control" min="0" max="100" step="1" placeholder="例如 80">
+                        </div>
                     </div>
                 </div>
                 <div id="exam-list-container" class="exam-list-container">
@@ -1617,7 +1818,7 @@
     import * as fileApp from '/static/js/app_files.js';
     import * as materialsApp from '/static/js/classroom_materials.js?v=learning-progress-20260503';
     import * as examApp from '/static/js/app_exams.js';
-    import { initClassroomPage } from '/static/js/classroom_page.js?v=premium-classroom-20260504';
+    import { initClassroomPage } from '/static/js/classroom_page.js?v=late-clock-20260516';
     import { initLearningProgress } from '/static/js/learning_progress.js?v=class-members-support-20260515';
 
     window.UI = ui;

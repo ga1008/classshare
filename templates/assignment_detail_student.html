@@ -296,6 +296,55 @@
         border-radius: var(--radius-md);
         text-align: center;
     }
+    .assignment-live-clock {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 6px 14px;
+        align-items: center;
+        padding: var(--spacing-md) var(--spacing-lg);
+        border: 1px solid rgba(14, 165, 233, 0.22);
+        border-radius: 8px;
+        background: linear-gradient(135deg, rgba(236, 253, 245, 0.86), rgba(239, 246, 255, 0.92));
+    }
+    .assignment-live-clock__label,
+    .assignment-live-clock__detail {
+        min-width: 0;
+        color: var(--text-muted);
+        font-size: 0.86rem;
+        font-weight: 700;
+    }
+    .assignment-live-clock__value {
+        color: #0f766e;
+        font-size: clamp(1.35rem, 2.4vw, 2rem);
+        font-weight: 850;
+        line-height: 1;
+        white-space: nowrap;
+    }
+    .assignment-live-clock__detail {
+        grid-column: 1 / -1;
+        line-height: 1.45;
+    }
+    .assignment-live-clock.is-urgent {
+        border-color: rgba(245, 158, 11, 0.34);
+        background: linear-gradient(135deg, rgba(255, 251, 235, 0.96), rgba(255, 247, 237, 0.9));
+    }
+    .assignment-live-clock.is-urgent .assignment-live-clock__value {
+        color: #b45309;
+    }
+    .assignment-live-clock.is-late {
+        border-color: rgba(239, 68, 68, 0.3);
+        background: linear-gradient(135deg, rgba(254, 242, 242, 0.96), rgba(255, 251, 235, 0.86));
+    }
+    .assignment-live-clock.is-late .assignment-live-clock__value,
+    .assignment-live-clock.is-expired .assignment-live-clock__value {
+        color: #dc2626;
+    }
+    .late-score-summary {
+        display: grid;
+        gap: 3px;
+        color: var(--text-muted);
+        font-size: 0.86rem;
+    }
     @media (max-width: 720px) {
         .grade-result-layout {
             grid-template-columns: 1fr;
@@ -306,6 +355,12 @@
         }
         .grading-feedback-grid {
             grid-template-columns: 1fr;
+        }
+        .assignment-live-clock {
+            grid-template-columns: 1fr;
+        }
+        .assignment-live-clock__value {
+            white-space: normal;
         }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -422,6 +477,29 @@
     </div>
     {% endif %}
 
+    {% if assignment.countdown_at or assignment.late_submission_enabled %}
+    <div
+        class="assignment-live-clock{% if assignment.is_late_submission_open %} is-late{% endif %}"
+        data-assignment-clock
+        data-assignment-id="{{ assignment.id }}"
+        data-server-now="{{ assignment.server_now or '' }}"
+        data-countdown-at="{{ assignment.countdown_at or '' }}"
+        data-late-until="{{ assignment.late_submission_until or '' }}"
+        data-deadline-phase="{{ assignment.deadline_phase or 'none' }}"
+        data-accepting="{{ '1' if assignment.is_accepting_submissions else '0' }}"
+        data-late-open="{{ '1' if assignment.is_late_submission_open else '0' }}"
+        data-late-policy-label="{{ assignment.late_policy_label or '' }}"
+    >
+        <span class="assignment-live-clock__label" data-assignment-clock-label>
+            {% if assignment.is_late_submission_open %}补交剩余{% else %}剩余时间{% endif %}
+        </span>
+        <strong class="assignment-live-clock__value" data-assignment-clock-value>--:--:--</strong>
+        <small class="assignment-live-clock__detail" data-assignment-clock-detail>
+            {{ assignment.late_policy_label if assignment.is_late_submission_open and assignment.late_policy_label else assignment.availability_mode_label or '' }}
+        </small>
+    </div>
+    {% endif %}
+
     <!-- Submission / Results Area -->
     <div class="card">
         <div class="card-header">
@@ -439,6 +517,14 @@
                             <div class="grade-result-score">
                                 <div class="score-display">{{ submission.score or 0 }}<span class="text-lg text-muted font-normal ml-1">/ 100</span></div>
                                 <span class="text-sm text-muted">批改结果已返回</span>
+                                {% if submission.is_late_submission %}
+                                <div class="late-score-summary">
+                                    <span>补交提交，系统已按教师规则扣分。</span>
+                                    {% if submission.score_before_late_penalty is not none %}
+                                    <span>原始分：{{ submission.score_before_late_penalty }}；补交扣分：{{ submission.late_penalty_points or 0 }}</span>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
                             </div>
                             {% if submission.feedback_md %}
                             <div class="grade-feedback-overview">
@@ -629,6 +715,7 @@
 <script type="module">
     import { showToast, renderMarkdown, formatDateLocal } from '{{ asset_url("js/ui.js") }}';
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
+    import { initAssignmentClocks } from '{{ asset_url("js/assignment_time.js") }}';
     import {
         findQuestionFeedback,
         parseGradingFeedback,
@@ -643,6 +730,7 @@
     const ASSIGNMENT_STARTED_AT = new Date().toISOString();
     const ALLOWED_FILE_TYPES = {{ assignment.allowed_file_types | tojson }};
     const CAN_RESUBMIT_SUBMISSION = {{ can_resubmit_submission | tojson }};
+    let assignmentAcceptingSubmissions = {{ assignment.is_accepting_submissions | default(false) | tojson }};
     const SUBMISSION_FEEDBACK_MD = {{ (submission.feedback_md if submission else '') | tojson }};
     const gradingFeedback = parseGradingFeedback(SUBMISSION_FEEDBACK_MD);
     let uploadManager = null;
@@ -654,6 +742,7 @@
                 pageKey: 'assignment_detail'
             }).start();
         }
+        initAssignmentClocks({ onStateChange: updateAssignmentSubmitAvailability });
 
         // Render Markdown
         renderMarkdown('requirements-content', {{ assignment.requirements_md | tojson }});
@@ -688,6 +777,22 @@
         const d = document.createElement('div');
         d.textContent = text;
         return d.innerHTML;
+    }
+
+    function updateAssignmentSubmitAvailability(stateMap) {
+        const current = stateMap?.get?.(ASSIGNMENT_ID);
+        if (current) {
+            assignmentAcceptingSubmissions = Boolean(current.is_accepting_submissions);
+        }
+        const submitBtn = document.getElementById('submit-btn');
+        if (!submitBtn) return;
+        if (!assignmentAcceptingSubmissions) {
+            submitBtn.disabled = true;
+            submitBtn.title = '已超过允许提交时间';
+            return;
+        }
+        submitBtn.disabled = false;
+        submitBtn.removeAttribute('title');
     }
 
     function initAnswerArea() {
@@ -867,6 +972,10 @@
     }
 
     window.submitAnswers = async function() {
+        if (!assignmentAcceptingSubmissions) {
+            showToast('已超过允许提交时间，系统正在以服务器时间为准拦截提交。', 'warning');
+            return;
+        }
         const textareas = document.querySelectorAll('.answer-textarea');
         const answers = [];
         let hasContent = false;
@@ -911,7 +1020,7 @@
             const droppedCount = Number(payload.dropped_file_count || 0);
             const successMessage = droppedCount > 0
                 ? `${droppedCount} filtered file(s) were ignored during submission.`
-                : 'Submission completed.';
+                : (payload.is_late_submission ? '提交成功，已按补交规则记录，批改后会自动扣分。' : 'Submission completed.');
             showToast(successMessage, droppedCount > 0 ? 'warning' : 'success');
             setTimeout(() => location.reload(), 1200);
         } catch (e) {

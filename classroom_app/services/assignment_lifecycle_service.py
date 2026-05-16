@@ -3,6 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
+from .late_submission_policy import (
+    assignment_is_accepting_by_time,
+    assignment_late_window_accepts,
+    assignment_should_auto_close,
+    build_late_submission_policy_fields,
+    serialize_assignment_time_state,
+)
+
 ASSIGNMENT_STATUS_NEW = "new"
 ASSIGNMENT_STATUS_PUBLISHED = "published"
 ASSIGNMENT_STATUS_CLOSED = "closed"
@@ -166,8 +174,25 @@ def build_assignment_schedule_fields(
         if status == ASSIGNMENT_STATUS_PUBLISHED and duration_minutes is None:
             raise ValueError("倒计时模式必须设置时长")
 
+    late_policy_fields = build_late_submission_policy_fields(
+        payload,
+        existing=existing,
+        due_at=due_dt,
+        require_due=not (
+            mode == ASSIGNMENT_MODE_COUNTDOWN
+            and due_dt is None
+            and duration_minutes is not None
+        ),
+    )
+    runtime_assignment = {
+        **existing,
+        **late_policy_fields,
+        "status": status,
+        "due_at": _dt_to_iso(due_dt),
+    }
+
     closed_at = _parse_iso_like_datetime(existing.get("closed_at"))
-    if status == ASSIGNMENT_STATUS_PUBLISHED and auto_close and due_dt is not None and due_dt <= now_dt:
+    if status == ASSIGNMENT_STATUS_PUBLISHED and auto_close and assignment_should_auto_close(runtime_assignment, now_dt=now_dt):
         status = ASSIGNMENT_STATUS_CLOSED
         if closed_at is None:
             closed_at = now_dt
@@ -185,6 +210,7 @@ def build_assignment_schedule_fields(
         "duration_minutes": duration_minutes,
         "auto_close": 1 if auto_close else 0,
         "closed_at": _dt_to_iso(closed_at),
+        **late_policy_fields,
     }
 
 
@@ -229,10 +255,7 @@ def is_assignment_overdue(assignment: dict[str, Any], now_dt: datetime | None = 
         return False
     if not _is_truthy(assignment.get("auto_close"), default=True):
         return False
-    due_dt = _parse_iso_like_datetime(assignment.get("due_at"))
-    if due_dt is None:
-        return False
-    return due_dt <= now_dt
+    return assignment_should_auto_close(assignment, now_dt=now_dt)
 
 
 def refresh_assignment_runtime_status(conn, assignment_row, now_dt: datetime | None = None) -> dict[str, Any]:
@@ -273,11 +296,20 @@ def close_overdue_assignments(conn, now_dt: datetime | None = None) -> int:
           AND due_at IS NOT NULL
           AND due_at <> ''
           AND due_at <= ?
+          AND (
+              COALESCE(late_submission_enabled, 0) = 0
+              OR (
+                  late_submission_until IS NOT NULL
+                  AND late_submission_until <> ''
+                  AND late_submission_until <= ?
+              )
+          )
         """,
         (
             ASSIGNMENT_STATUS_CLOSED,
             now_iso,
             ASSIGNMENT_STATUS_PUBLISHED,
+            now_iso,
             now_iso,
         ),
     )
@@ -296,12 +328,16 @@ def enrich_assignment_runtime_view(assignment_row, now_dt: datetime | None = Non
     status = _normalize_status(assignment.get("status"), ASSIGNMENT_STATUS_NEW)
 
     if status == ASSIGNMENT_STATUS_PUBLISHED and _is_truthy(assignment.get("auto_close"), default=True):
-        if due_dt is not None and due_dt <= now_dt:
+        if assignment_should_auto_close(assignment, now_dt=now_dt):
             status = ASSIGNMENT_STATUS_CLOSED
 
     remaining_seconds = None
-    if status == ASSIGNMENT_STATUS_PUBLISHED and due_dt is not None:
+    if status == ASSIGNMENT_STATUS_PUBLISHED and due_dt is not None and due_dt > now_dt:
         remaining_seconds = max(0, int((due_dt - now_dt).total_seconds()))
+    elif status == ASSIGNMENT_STATUS_PUBLISHED and assignment_late_window_accepts(assignment, now_dt=now_dt):
+        late_until_dt = _parse_iso_like_datetime(assignment.get("late_submission_until"))
+        if late_until_dt is not None:
+            remaining_seconds = max(0, int((late_until_dt - now_dt).total_seconds()))
 
     mode_label = {
         ASSIGNMENT_MODE_PERMANENT: "长期有效",
@@ -317,7 +353,16 @@ def enrich_assignment_runtime_view(assignment_row, now_dt: datetime | None = Non
     assignment["effective_status"] = status
     assignment["remaining_seconds"] = remaining_seconds
     assignment["has_time_limit"] = mode in {ASSIGNMENT_MODE_DEADLINE, ASSIGNMENT_MODE_COUNTDOWN}
-    assignment["is_accepting_submissions"] = status == ASSIGNMENT_STATUS_PUBLISHED
+    assignment["is_accepting_submissions"] = (
+        status == ASSIGNMENT_STATUS_PUBLISHED
+        and assignment_is_accepting_by_time(assignment, now_dt=now_dt)
+    )
+    time_state = serialize_assignment_time_state(assignment, now_dt=now_dt)
+    assignment["server_now"] = time_state["server_now"]
+    assignment["deadline_phase"] = time_state["deadline_phase"]
+    assignment["countdown_at"] = time_state["countdown_at"]
+    assignment["is_late_submission_open"] = time_state["is_late_submission_open"]
+    assignment["late_policy_label"] = time_state["late_policy_label"]
     return assignment
 
 

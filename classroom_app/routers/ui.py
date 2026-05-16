@@ -295,7 +295,10 @@ def _attach_teacher_assignment_card_metrics(
                    THEN student_pk_id END) AS returned_count,
                COUNT(DISTINCT CASE
                    WHEN COALESCE(is_absence_score, 0) = 1
-                   THEN student_pk_id END) AS absence_zero_count
+                   THEN student_pk_id END) AS absence_zero_count,
+               COUNT(DISTINCT CASE
+                   WHEN COALESCE(is_late_submission, 0) = 1
+                   THEN student_pk_id END) AS late_submission_count
         FROM submissions
         WHERE assignment_id IN ({placeholders})
         GROUP BY assignment_id
@@ -312,6 +315,7 @@ def _attach_teacher_assignment_card_metrics(
         graded_count = _safe_int(row.get("graded_count"))
         returned_count = _safe_int(row.get("returned_count"))
         absence_zero_count = _safe_int(row.get("absence_zero_count"))
+        late_submission_count = _safe_int(row.get("late_submission_count"))
         unsubmitted_count = max(0, total_students - submitted_count - absence_zero_count)
         review_queue_count = pending_grade_count
         assignment["teacher_submission_metrics"] = {
@@ -322,6 +326,7 @@ def _attach_teacher_assignment_card_metrics(
             "graded_count": graded_count,
             "returned_count": returned_count,
             "absence_zero_count": absence_zero_count,
+            "late_submission_count": late_submission_count,
             "unsubmitted_count": unsubmitted_count,
             "review_queue_count": review_queue_count,
             "review_activity_count": pending_grade_count + grading_count,
@@ -2834,6 +2839,7 @@ async def submission_detail_page(request: Request, submission_id: int, user: dic
                                  (assignment['exam_paper_id'],)).fetchone()
             if paper:
                 exam_questions = json.loads(paper['questions_json'])
+        conn.commit()
 
     can_manage_submission_files = bool(
         user.get("role") == "teacher"
@@ -2923,6 +2929,7 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
                     (submission['id'],)
                 )
                 submission_files = _serialize_submission_file_rows(files_cursor)
+        conn.commit()
 
     can_resubmit_submission = bool(
         submission

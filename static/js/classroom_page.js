@@ -1,6 +1,7 @@
 import { apiFetch } from '/static/js/api.js';
 import { initLearningMaterialSelector } from '/static/js/learning_material_selector.js';
 import { initSessionMaterialAiAssistant } from '/static/js/session_material_ai_assistant.js';
+import { initAssignmentClocks } from '/static/js/assignment_time.js';
 import { showToast } from '/static/js/ui.js';
 
 const learningMaterialSelector = initLearningMaterialSelector();
@@ -2230,6 +2231,7 @@ export function initClassroomPage() {
     initCoursePopover();
     initWorkspaceNav();
     initTeachingTimeline();
+    initAssignmentClocks();
     personalizeClassroomCopy();
     document.addEventListener('classroom:alias-change', (event) => {
         personalizeClassroomCopy(event.detail || {});

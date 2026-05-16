@@ -29,11 +29,11 @@
             position: sticky;
             top: 0;
             z-index: 1020;
-            min-height: 76px;
+            min-height: 68px;
             flex-wrap: wrap;
             align-items: center;
-            gap: 0.7rem 1rem;
-            padding: 0.72rem clamp(1rem, 2vw, 1.6rem);
+            gap: 0.52rem 0.72rem;
+            padding: 0.58rem clamp(0.85rem, 1.8vw, 1.35rem);
             border-bottom: 1px solid rgba(148, 163, 184, 0.18);
             background: rgba(255, 255, 255, 0.92);
             box-shadow: 0 18px 40px -34px rgba(15, 23, 42, 0.6);
@@ -42,9 +42,9 @@
         }
 
         .exam-topbar-brand {
-            flex: 1 1 18rem;
-            min-width: min(18rem, 100%);
-            max-width: min(34rem, 32vw);
+            flex: 1 1 17rem;
+            min-width: min(17rem, 100%);
+            max-width: min(32rem, 34vw);
         }
 
         .exam-topbar-brand .app-topbar-brand__copy {
@@ -71,18 +71,20 @@
         }
 
         .exam-topbar-status {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(6rem, auto));
-            gap: 0.45rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.38rem;
             align-items: stretch;
             flex: 0 1 auto;
         }
 
         .exam-topbar-status__item {
-            display: grid;
-            gap: 0.1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.38rem;
             min-width: 0;
-            padding: 0.48rem 0.7rem;
+            min-height: 38px;
+            padding: 0.34rem 0.58rem;
             border: 1px solid rgba(148, 163, 184, 0.22);
             border-radius: 9px;
             background: rgba(248, 250, 252, 0.86);
@@ -98,31 +100,73 @@
 
         .exam-topbar-status__item strong {
             overflow: hidden;
-            font-size: 0.88rem;
+            font-size: 0.86rem;
             font-weight: 800;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
 
-        .exam-topbar-nav {
-            flex: 999 1 42rem;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 0.5rem;
-            min-width: 0;
+        .exam-topbar-clock {
+            border-color: rgba(14, 165, 233, 0.22);
+            background: linear-gradient(135deg, rgba(236, 253, 245, 0.86), rgba(239, 246, 255, 0.92));
         }
 
-        .exam-topbar-actions {
+        .exam-topbar-clock strong {
+            color: #0f766e;
+        }
+
+        .exam-topbar-clock small {
+            overflow: hidden;
+            color: var(--text-muted);
+            font-size: 0.68rem;
+            font-weight: 650;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .exam-topbar-clock.is-urgent {
+            border-color: rgba(245, 158, 11, 0.34);
+            background: linear-gradient(135deg, rgba(255, 251, 235, 0.96), rgba(255, 247, 237, 0.9));
+        }
+
+        .exam-topbar-clock.is-urgent strong {
+            color: #b45309;
+        }
+
+        .exam-topbar-clock.is-late {
+            border-color: rgba(239, 68, 68, 0.3);
+            background: linear-gradient(135deg, rgba(254, 242, 242, 0.96), rgba(255, 251, 235, 0.88));
+        }
+
+        .exam-topbar-clock.is-late strong,
+        .exam-topbar-clock.is-expired strong {
+            color: #dc2626;
+        }
+
+        .exam-topbar-nav {
+            flex: 999 1 30rem;
+            align-items: center;
             justify-content: flex-end;
             gap: 0.42rem;
             min-width: 0;
         }
 
+        .exam-topbar-actions {
+            justify-content: flex-end;
+            gap: 0.38rem;
+            min-width: 0;
+        }
+
         .exam-topbar-actions .app-topbar-action {
-            min-width: 88px;
-            min-height: 52px;
+            min-width: 74px;
+            min-height: 42px;
             border-radius: 9px;
-            padding-inline: 0.58rem;
+            padding: 0.36rem 0.5rem;
+        }
+
+        .exam-topbar-actions .app-topbar-action--primary,
+        .exam-topbar-submit {
+            min-width: 96px;
         }
 
         .exam-topbar-actions .app-topbar-action:disabled {
@@ -163,6 +207,92 @@
 
         .exam-topbar .exam-icon-next svg {
             transform: rotate(180deg);
+        }
+
+        .exam-topbar-more-dropdown {
+            position: relative;
+            display: inline-flex;
+        }
+
+        .exam-topbar-more-dropdown > summary {
+            list-style: none;
+        }
+
+        .exam-topbar-more-dropdown > summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .exam-topbar-more-dropdown[open] > summary {
+            border-color: rgba(var(--app-topbar-accent-rgb), 0.3);
+            background: rgba(var(--app-topbar-accent-rgb), 0.1);
+            color: var(--app-topbar-accent);
+        }
+
+        .exam-topbar-more-menu {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            z-index: 1120;
+            min-width: 190px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            background: var(--surface-color);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .exam-topbar-menu-label {
+            padding: 9px 12px 7px;
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            font-weight: 800;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+            background: rgba(248, 250, 252, 0.72);
+        }
+
+        .exam-topbar-menu-item {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 10px 12px;
+            border: 0;
+            background: transparent;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-weight: 720;
+            text-align: left;
+        }
+
+        .exam-topbar-menu-item:hover,
+        .exam-topbar-menu-item:focus-visible {
+            background: var(--surface-hover);
+            outline: none;
+        }
+
+        .exam-topbar-menu-item svg {
+            width: 16px;
+            height: 16px;
+            color: var(--app-topbar-accent);
+        }
+
+        .exam-topbar-menu-item.is-danger {
+            color: #be123c;
+        }
+
+        .exam-topbar-menu-item.is-danger svg {
+            color: #be123c;
+        }
+
+        .exam-topbar-menu-item:disabled {
+            cursor: not-allowed;
+            color: var(--text-muted);
+            opacity: 0.58;
+        }
+
+        .exam-topbar-menu-item:disabled svg {
+            color: #94a3b8;
         }
 
         .exam-is-submitted .exam-edit-action {
@@ -1068,7 +1198,8 @@
         @media (max-width: 900px) {
             .exam-topbar {
                 align-items: flex-start;
-                padding: 0.7rem 0.9rem;
+                padding: 0.62rem 0.75rem;
+                gap: 0.46rem;
             }
 
             .exam-topbar-brand {
@@ -1083,30 +1214,52 @@
 
             .exam-topbar-status {
                 width: 100%;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
+                display: flex;
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                padding-bottom: 0.08rem;
+                scrollbar-width: thin;
             }
 
             .exam-topbar-nav {
-                display: grid;
+                display: flex;
                 width: 100%;
                 flex-basis: 100%;
-                gap: 0.5rem;
-                justify-content: stretch;
+                gap: 0.38rem;
+                justify-content: flex-start;
                 margin-left: 0;
+                overflow-x: auto;
+                padding-bottom: 0.08rem;
+                scrollbar-width: thin;
             }
 
             .exam-topbar-actions {
-                display: grid;
-                grid-template-columns: repeat(3, minmax(0, 1fr));
-                width: 100%;
-                justify-content: stretch;
-                justify-items: stretch;
+                display: flex;
+                flex-wrap: nowrap;
+                width: max-content;
+                justify-content: flex-start;
+                align-items: stretch;
             }
 
             .exam-topbar-actions .app-topbar-action {
-                width: 100%;
-                min-width: 0;
+                width: auto;
+                min-width: 4.75rem;
                 justify-content: center;
+                flex: 0 0 auto;
+            }
+
+            .exam-topbar-actions .app-topbar-action--primary,
+            .exam-topbar-submit {
+                min-width: 5.6rem;
+            }
+
+            .exam-topbar-more-dropdown {
+                flex: 0 0 auto;
+            }
+
+            .exam-topbar-more-menu {
+                right: 0;
+                left: auto;
             }
 
             .exam-main { padding: var(--spacing-4) var(--spacing-2); }
@@ -1157,22 +1310,62 @@
                 display: none;
             }
 
-            .exam-topbar-actions {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-
             .exam-topbar-status {
-                grid-template-columns: 1fr;
+                gap: 0.3rem;
             }
 
             .exam-topbar-status__item {
-                grid-template-columns: auto minmax(0, 1fr);
-                align-items: center;
-                padding-block: 0.42rem;
+                min-height: 34px;
+                padding: 0.28rem 0.48rem;
+            }
+
+            .exam-topbar-nav {
+                overflow: visible;
+                padding-bottom: 0;
+            }
+
+            .exam-topbar-actions {
+                width: 100%;
+                display: grid;
+                grid-template-columns: repeat(5, minmax(0, 1fr));
+                gap: 0.26rem;
+                overflow: visible;
             }
 
             .exam-topbar-actions .app-topbar-action {
-                min-height: 48px;
+                width: 100%;
+                min-height: 40px;
+                min-width: 0;
+                gap: 0.22rem;
+                padding: 0.28rem 0.16rem;
+                flex-direction: row;
+                justify-content: center;
+                text-align: center;
+            }
+
+            .exam-topbar-actions .app-topbar-action--primary,
+            .exam-topbar-submit {
+                min-width: 0;
+            }
+
+            .exam-topbar-actions .app-topbar-action__icon {
+                width: 23px;
+                height: 23px;
+                border-radius: 7px;
+            }
+
+            .exam-topbar-actions .app-topbar-action__text strong {
+                font-size: 0.72rem;
+            }
+
+            .exam-topbar-more-dropdown,
+            .exam-topbar-more-dropdown > summary {
+                width: 100%;
+                min-width: 0;
+            }
+
+            .exam-topbar-more-menu {
+                min-width: min(84vw, 210px);
             }
         }
     </style>
@@ -1199,6 +1392,24 @@
             <span>进度</span>
             <strong id="topbarAnsweredLabel">已答 0 / 0</strong>
         </div>
+        {% if assignment.countdown_at or assignment.late_submission_enabled %}
+        <div
+            class="exam-topbar-status__item exam-topbar-clock{% if assignment.is_late_submission_open %} is-late{% endif %}"
+            data-assignment-clock
+            data-assignment-id="{{ assignment.id }}"
+            data-server-now="{{ assignment.server_now or '' }}"
+            data-countdown-at="{{ assignment.countdown_at or '' }}"
+            data-late-until="{{ assignment.late_submission_until or '' }}"
+            data-deadline-phase="{{ assignment.deadline_phase or 'none' }}"
+            data-accepting="{{ '1' if assignment.is_accepting_submissions else '0' }}"
+            data-late-open="{{ '1' if assignment.is_late_submission_open else '0' }}"
+            data-late-policy-label="{{ assignment.late_policy_label or '' }}"
+        >
+            <span data-assignment-clock-label>{% if assignment.is_late_submission_open %}补交剩余{% else %}剩余时间{% endif %}</span>
+            <strong data-assignment-clock-value>--:--:--</strong>
+            <small data-assignment-clock-detail>{{ assignment.late_policy_label if assignment.is_late_submission_open and assignment.late_policy_label else assignment.availability_mode_label or '' }}</small>
+        </div>
+        {% endif %}
     </div>
     <nav class="navbar-user app-topbar-nav exam-topbar-nav" aria-label="考试快捷操作">
         <div class="app-topbar-actions app-topbar-actions--primary exam-topbar-actions" aria-label="答题操作">
@@ -1223,20 +1434,26 @@
                     <small>继续</small>
                 </span>
             </button>
-            <button type="button" class="app-topbar-action app-topbar-action--tone-amber exam-edit-action" id="topbarClearPageBtn" title="清空当前页" aria-label="清空当前页">
-                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('refresh') }}</span>
-                <span class="app-topbar-action__text">
-                    <strong>清本页</strong>
-                    <small>当前</small>
-                </span>
-            </button>
-            <button type="button" class="app-topbar-action exam-topbar-clear-all exam-edit-action" id="topbarClearAllBtn" title="清空整张试卷" aria-label="清空整张试卷">
-                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('refresh') }}</span>
-                <span class="app-topbar-action__text">
-                    <strong>清空</strong>
-                    <small>整卷</small>
-                </span>
-            </button>
+            <details class="exam-topbar-more-dropdown exam-edit-action">
+                <summary class="app-topbar-action app-topbar-action--tone-amber" title="整理答卷" aria-label="打开整理答卷菜单">
+                    <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('plus') }}</span>
+                    <span class="app-topbar-action__text">
+                        <strong>整理</strong>
+                        <small>清理答卷</small>
+                    </span>
+                </summary>
+                <div class="exam-topbar-more-menu" role="menu" aria-label="整理答卷">
+                    <div class="exam-topbar-menu-label">低频操作</div>
+                    <button type="button" class="exam-topbar-menu-item" id="topbarClearPageBtn" title="清空当前页" aria-label="清空当前页" role="menuitem">
+                        {{ app_topbar_icon('refresh') }}
+                        清空当前页
+                    </button>
+                    <button type="button" class="exam-topbar-menu-item is-danger" id="topbarClearAllBtn" title="清空整张试卷" aria-label="清空整张试卷" role="menuitem">
+                        {{ app_topbar_icon('refresh') }}
+                        清空整张试卷
+                    </button>
+                </div>
+            </details>
             <button type="button" class="app-topbar-action app-topbar-action--primary exam-topbar-submit exam-edit-action" id="topbarSubmitBtn" title="确认交卷" aria-label="确认交卷">
                 <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('upload') }}</span>
                 <span class="app-topbar-action__text">
@@ -1363,6 +1580,7 @@
     import { apiFetch } from '/static/js/api.js';
     import { SubmissionUploadManager } from '/static/js/submission_upload.js';
     import { initExamDrawingWhiteboard } from '/static/js/teacher_whiteboard.js';
+    import { initAssignmentClocks } from '/static/js/assignment_time.js';
     import {
         findQuestionFeedback,
         parseGradingFeedback,
@@ -1389,6 +1607,7 @@
     const CAN_WITHDRAW_SUBMISSION = {{ can_withdraw_submission | tojson }};
     const CAN_RESUBMIT_SUBMISSION = {{ can_resubmit_submission | tojson }};
     const RESUBMISSION_DUE_AT = {{ resubmission_due_at | tojson }};
+    let assignmentAcceptingSubmissions = {{ assignment.is_accepting_submissions | default(false) | tojson }};
     const SUBMISSION_FEEDBACK_MD = {{ (submission.feedback_md if submission else '') | tojson }};
     const EXAM_AI_ALLOWED = {{ exam_ai_allowed | default(false) | tojson }};
     const EXAM_AI_CONTEXT = {{ exam_ai_context | default('') | tojson }};
@@ -1477,6 +1696,7 @@
                 pageKey: 'exam_take'
             }).start();
         }
+        initAssignmentClocks({ onStateChange: updateExamSubmitAvailability });
 
         // Calculate total questions
         state.totalQuestions = state.pages.reduce((acc, page) => acc + (page.questions ? page.questions.length : 0), 0);
@@ -1517,7 +1737,7 @@
     }
 
     function updateTopbarNavButtons() {
-        const isEditable = !SUBMISSION_EXISTS || isEditingResubmission;
+        const isEditable = (!SUBMISSION_EXISTS || isEditingResubmission) && assignmentAcceptingSubmissions;
         const atFirst = state.currentPageIdx <= 0;
         const atLast = state.currentPageIdx >= state.pages.length - 1;
         if (elements.topbarPrevBtn) elements.topbarPrevBtn.disabled = !isEditable || atFirst;
@@ -1527,9 +1747,28 @@
         if (elements.topbarSubmitBtn) elements.topbarSubmitBtn.disabled = !isEditable;
     }
 
+    function updateExamSubmitAvailability(stateMap) {
+        const current = stateMap?.get?.(ASSIGNMENT_ID);
+        if (current) {
+            assignmentAcceptingSubmissions = Boolean(current.is_accepting_submissions);
+        }
+        updateTopbarNavButtons();
+        const footerSubmitBtn = document.getElementById('submitExamBtn');
+        if (footerSubmitBtn) {
+            footerSubmitBtn.disabled = !assignmentAcceptingSubmissions;
+            footerSubmitBtn.title = assignmentAcceptingSubmissions ? '' : '已超过允许提交时间';
+        }
+    }
+
     function openQuestionNavigator() {
         elements.sidebar?.classList.add('show');
         elements.sidebarBackdrop?.classList.add('show');
+    }
+
+    function closeExamTopbarMenus() {
+        document.querySelectorAll('.exam-topbar-more-dropdown[open]').forEach((menu) => {
+            menu.removeAttribute('open');
+        });
     }
 
     function initExamAiChat() {
@@ -2888,7 +3127,7 @@
     function setTopbarSubmitBusy(isBusy) {
         const btn = elements.topbarSubmitBtn;
         if (!btn) return;
-        btn.disabled = isBusy;
+        btn.disabled = isBusy || !assignmentAcceptingSubmissions;
         const strong = btn.querySelector('.app-topbar-action__text strong');
         const small = btn.querySelector('.app-topbar-action__text small');
         if (strong) strong.textContent = isBusy ? '提交中' : '交卷';
@@ -2898,7 +3137,7 @@
     function setFooterSubmitBusy(isBusy) {
         const btn = document.getElementById('submitExamBtn');
         if (!btn) return;
-        btn.disabled = isBusy;
+        btn.disabled = isBusy || !assignmentAcceptingSubmissions;
         btn.innerHTML = isBusy
             ? '<span class="spinner" style="width:16px;height:16px;border-width:2px;margin-right:8px;"></span> 提交中...'
             : '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> 确认交卷';
@@ -2910,6 +3149,10 @@
     }
 
     async function handleSubmission() {
+        if (!assignmentAcceptingSubmissions) {
+            showMessage('已超过允许提交时间，系统正在以服务器时间为准拦截交卷。', 'warning');
+            return;
+        }
         const allQuestions = [];
         state.pages.forEach(p => (p.questions || []).forEach(q => allQuestions.push(q)));
 
@@ -3029,7 +3272,7 @@
             showMessage(
                 droppedCount > 0
                     ? `交卷成功，${droppedCount} 个不符合要求的文件已被过滤。`
-                    : '交卷成功！',
+                    : (resp?.is_late_submission ? '交卷成功，已按补交规则记录，批改后会自动扣分。' : '交卷成功！'),
                 droppedCount > 0 ? 'warning' : 'success'
             );
             localStorage.removeItem(LOCAL_DRAFT_KEY);
@@ -3367,15 +3610,35 @@
         if (elements.topbarPrevBtn) elements.topbarPrevBtn.addEventListener('click', () => goToPage(state.currentPageIdx - 1));
         if (elements.topbarNextBtn) elements.topbarNextBtn.addEventListener('click', () => goToPage(state.currentPageIdx + 1));
         if (elements.topbarSubmitBtn) elements.topbarSubmitBtn.addEventListener('click', handleSubmission);
-        if (elements.topbarClearPageBtn) elements.topbarClearPageBtn.addEventListener('click', clearCurrentPage);
-        if (elements.topbarClearAllBtn) elements.topbarClearAllBtn.addEventListener('click', clearEntirePaper);
+        if (elements.topbarClearPageBtn) elements.topbarClearPageBtn.addEventListener('click', () => {
+            closeExamTopbarMenus();
+            clearCurrentPage();
+        });
+        if (elements.topbarClearAllBtn) elements.topbarClearAllBtn.addEventListener('click', () => {
+            closeExamTopbarMenus();
+            clearEntirePaper();
+        });
         if (elements.topbarSidebarToggle) elements.topbarSidebarToggle.addEventListener('click', openQuestionNavigator);
+        document.querySelectorAll('.exam-topbar-more-dropdown').forEach((menu) => {
+            menu.addEventListener('toggle', () => {
+                if (!menu.open) return;
+                document.querySelectorAll('.exam-topbar-more-dropdown[open]').forEach((otherMenu) => {
+                    if (otherMenu !== menu) otherMenu.removeAttribute('open');
+                });
+            });
+        });
 
         // Mobile sidebar
         if (elements.mobileToggle) elements.mobileToggle.addEventListener('click', () => {
             openQuestionNavigator();
         });
         if (elements.sidebarBackdrop) elements.sidebarBackdrop.addEventListener('click', closeMobileSidebar);
+        document.addEventListener('click', (event) => {
+            if (!event.target.closest?.('.exam-topbar-more-dropdown')) closeExamTopbarMenus();
+        });
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') closeExamTopbarMenus();
+        });
         window.addEventListener('resize', syncExamTopbarOffset);
 
         window.addEventListener('beforeunload', () => {

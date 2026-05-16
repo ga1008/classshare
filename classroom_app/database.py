@@ -1307,6 +1307,12 @@ def init_database():
                 ("grading_started_at", "TEXT"),
                 ("grading_attempt_fingerprint", "TEXT"),
                 ("started_at", "TEXT"),
+                ("is_late_submission", "INTEGER NOT NULL DEFAULT 0"),
+                ("late_by_seconds", "INTEGER NOT NULL DEFAULT 0"),
+                ("late_policy_snapshot_json", "TEXT"),
+                ("score_before_late_penalty", "REAL"),
+                ("late_penalty_points", "REAL NOT NULL DEFAULT 0"),
+                ("late_score_cap_applied", "INTEGER NOT NULL DEFAULT 0"),
             )
             for column_name, column_def in submission_extension_columns:
                 try:
@@ -1359,6 +1365,20 @@ def init_database():
                 conn.execute("ALTER TABLE assignments ADD COLUMN closed_at TEXT")
             except sqlite3.OperationalError:
                 pass  # 列已存在
+            assignment_late_policy_columns = (
+                ("late_submission_enabled", "INTEGER NOT NULL DEFAULT 0"),
+                ("late_submission_until", "TEXT"),
+                ("late_penalty_strategy", "TEXT NOT NULL DEFAULT 'fixed'"),
+                ("late_penalty_interval_hours", "REAL NOT NULL DEFAULT 1"),
+                ("late_penalty_points", "REAL NOT NULL DEFAULT 0"),
+                ("late_penalty_min_score", "REAL NOT NULL DEFAULT 0"),
+                ("late_score_cap", "REAL"),
+            )
+            for column_name, column_def in assignment_late_policy_columns:
+                try:
+                    conn.execute(f"ALTER TABLE assignments ADD COLUMN {column_name} {column_def}")
+                except sqlite3.OperationalError:
+                    pass  # 列已存在
             if assignments_table_exists:
                 conn.execute(
                     """
@@ -1508,6 +1528,40 @@ def init_database():
                              1,
                              closed_at
                              TEXT,
+                             late_submission_enabled
+                             INTEGER
+                             NOT
+                             NULL
+                             DEFAULT
+                             0,
+                             late_submission_until
+                             TEXT,
+                             late_penalty_strategy
+                             TEXT
+                             NOT
+                             NULL
+                             DEFAULT
+                             'fixed',
+                             late_penalty_interval_hours
+                             REAL
+                             NOT
+                             NULL
+                             DEFAULT
+                             1,
+                             late_penalty_points
+                             REAL
+                             NOT
+                             NULL
+                             DEFAULT
+                             0,
+                             late_penalty_min_score
+                             REAL
+                             NOT
+                             NULL
+                             DEFAULT
+                             0,
+                             late_score_cap
+                             REAL,
                              FOREIGN
                              KEY
                          (
@@ -1596,6 +1650,34 @@ def init_database():
                              INTEGER,
                              started_at
                              TEXT,
+                             is_late_submission
+                             INTEGER
+                             NOT
+                             NULL
+                             DEFAULT
+                             0,
+                             late_by_seconds
+                             INTEGER
+                             NOT
+                             NULL
+                             DEFAULT
+                             0,
+                             late_policy_snapshot_json
+                             TEXT,
+                             score_before_late_penalty
+                             REAL,
+                             late_penalty_points
+                             REAL
+                             NOT
+                             NULL
+                             DEFAULT
+                             0,
+                             late_score_cap_applied
+                             INTEGER
+                             NOT
+                             NULL
+                             DEFAULT
+                             0,
                              submitted_at
                              TEXT
                              NOT
@@ -3206,6 +3288,10 @@ def init_database():
                 "ON assignments (status, auto_close, due_at)"
             )
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_assignments_late_window "
+                "ON assignments (late_submission_enabled, due_at, late_submission_until)"
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_submissions_assignment_status "
                 "ON submissions (assignment_id, status)"
             )
@@ -3216,6 +3302,10 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_submissions_grading_started "
                 "ON submissions (status, grading_started_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_submissions_late_assignment "
+                "ON submissions (assignment_id, is_late_submission, submitted_at)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_submission_files_submission "

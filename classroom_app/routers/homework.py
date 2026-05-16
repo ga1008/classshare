@@ -42,6 +42,13 @@ from ..services.assignment_lifecycle_service import (
     refresh_assignment_runtime_status,
     submission_resubmission_accepts,
 )
+from ..services.late_submission_policy import (
+    append_late_policy_feedback,
+    apply_late_policy_to_score,
+    build_late_submission_snapshot,
+    serialize_assignment_time_state,
+    utc_like_now,
+)
 from ..services.exam_json_service import (
     EXAM_JSON_MAX_BYTES,
     get_exam_json_template_text,
@@ -82,6 +89,10 @@ from ..services.learning_progress_service import (
 )
 
 router = APIRouter(prefix="/api")
+
+# 并发控制：限制同时进行的 AI 批改提交数量，避免大量学生同时提交时
+# 创建过多 SQLite 连接导致 WAL 锁争用。
+_ai_grading_submit_semaphore = asyncio.Semaphore(10)
 
 PERSONAL_STAGE_TEACHER_HIDDEN_MESSAGE = "学生个人试炼属于学生资产，不在教师作业与考试中展示；请查看班级修行统计。"
 
@@ -127,6 +138,22 @@ def _ensure_accepting_submission(assignment: dict[str, Any]) -> None:
     if assignment_accepts_submissions(assignment):
         return
     status = str(assignment.get("status") or "").strip().lower()
+    # 倒计时模式：实时检查 due_at 是否已过期，避免前端倒计时结束后仍可 API 提交
+    if status == "published":
+        due_at_raw = assignment.get("due_at")
+        if due_at_raw:
+            try:
+                from datetime import datetime as _dt
+                try:
+                    due_dt = _dt.fromisoformat(str(due_at_raw).replace(" ", "T"))
+                except (TypeError, ValueError):
+                    due_dt = None
+                if due_dt is not None and due_dt <= _dt.now().replace(microsecond=0):
+                    raise HTTPException(400, "作业已截止，当前只能查看，不能作答或提交")
+            except HTTPException:
+                raise
+            except Exception:
+                pass
     if status == "new":
         raise HTTPException(400, "作业尚未开始，当前不可作答或提交")
     raise HTTPException(400, "作业已截止，当前只能查看，不能作答或提交")
@@ -189,6 +216,14 @@ def _get_submission_for_teacher(conn, submission_id: int, teacher_id: int) -> di
                a.course_id,
                a.class_offering_id,
                a.allowed_file_types_json,
+               a.due_at AS assignment_due_at,
+               a.late_submission_enabled AS assignment_late_submission_enabled,
+               a.late_submission_until AS assignment_late_submission_until,
+               a.late_penalty_strategy AS assignment_late_penalty_strategy,
+               a.late_penalty_interval_hours AS assignment_late_penalty_interval_hours,
+               a.late_penalty_points AS assignment_late_penalty_points,
+               a.late_penalty_min_score AS assignment_late_penalty_min_score,
+               a.late_score_cap AS assignment_late_score_cap,
                a.title AS assignment_title,
                c.created_by_teacher_id,
                o.teacher_id AS offering_teacher_id,
@@ -620,6 +655,15 @@ def _assignment_uses_ai_grading(assignment: dict[str, Any]) -> bool:
     return str(assignment.get("grading_mode") or "").strip().lower() in {"ai", "auto", "mixed"}
 
 
+def _resolve_grading_status(assignment: dict[str, Any], auto_scheduled: bool) -> str:
+    """推断批改状态摘要，用于提交响应中通知学生批改进度。"""
+    if auto_scheduled:
+        return "queued"
+    if _assignment_uses_ai_grading(assignment):
+        return "failed"
+    return "manual"
+
+
 def _ensure_submission_files_manageable(submission: dict[str, Any]) -> None:
     if int(submission.get("is_absence_score") or 0):
         raise HTTPException(400, "缺交记 0 记录没有可管理的学生附件")
@@ -657,7 +701,8 @@ def _reset_submission_after_attachment_edit(conn, submission_id: int, teacher_id
 
 async def _submit_ai_grading_background(submission_id: int, *, reason: str = "auto") -> None:
     try:
-        await submit_submission_for_ai_grading(int(submission_id), allow_graded=False)
+        async with _ai_grading_submit_semaphore:
+            await submit_submission_for_ai_grading(int(submission_id), allow_graded=False)
     except AIGradingQueueError as exc:
         print(f"[AI_GRADING] {reason} submit skipped for submission {submission_id}: {exc.detail}")
     except Exception as exc:
@@ -863,6 +908,10 @@ async def _save_submission_payload(
 ) -> dict[str, Any]:
     prepared_entries = _validate_upload_entries(files, manifest)
     submitted_at = datetime.now().isoformat()
+    late_snapshot = build_late_submission_snapshot(assignment, submitted_at)
+    is_late_submission = 1 if late_snapshot.get("is_late_submission") else 0
+    late_by_seconds = int(late_snapshot.get("late_by_seconds") or 0)
+    late_snapshot_json = json.dumps(late_snapshot, ensure_ascii=False) if is_late_submission else None
     started_at_normalized = _normalize_submission_started_at(started_at, submitted_at)
     answers_payload = _parse_answers_payload(answers_json)
     has_answer_content_before_storage = answers_have_content(answers_payload)
@@ -976,6 +1025,12 @@ async def _save_submission_payload(
                     answers_json = ?,
                     submitted_at = ?,
                     started_at = ?,
+                    is_late_submission = ?,
+                    late_by_seconds = ?,
+                    late_policy_snapshot_json = ?,
+                    score_before_late_penalty = NULL,
+                    late_penalty_points = 0,
+                    late_score_cap_applied = 0,
                     submitted_by_role = ?,
                     submitted_by_teacher_id = ?,
                     submission_channel = ?,
@@ -994,6 +1049,9 @@ async def _save_submission_payload(
                     full_submission_json,
                     submitted_at,
                     started_at_normalized,
+                    is_late_submission,
+                    late_by_seconds,
+                    late_snapshot_json,
                     actor_role,
                     actor_user_pk if actor_role == "teacher" else None,
                     channel,
@@ -1005,10 +1063,11 @@ async def _save_submission_payload(
                 """
                 INSERT INTO submissions (
                     assignment_id, student_pk_id, student_name, status, submitted_at, started_at, answers_json,
+                    is_late_submission, late_by_seconds, late_policy_snapshot_json,
                     submitted_by_role, submitted_by_teacher_id, submission_channel,
                     resubmission_allowed, resubmission_due_at, returned_at, returned_by_teacher_id, returned_reason,
                     is_absence_score, absence_scored_at, absence_scored_by_teacher_id
-                ) VALUES (?, ?, ?, 'submitted', ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, NULL, 0, NULL, NULL)
+                ) VALUES (?, ?, ?, 'submitted', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, NULL, 0, NULL, NULL)
                 """,
                 (
                     assignment["id"],
@@ -1017,6 +1076,9 @@ async def _save_submission_payload(
                     submitted_at,
                     started_at_normalized,
                     full_submission_json,
+                    is_late_submission,
+                    late_by_seconds,
+                    late_snapshot_json,
                     actor_role,
                     actor_user_pk if actor_role == "teacher" else None,
                     channel,
@@ -1094,6 +1156,8 @@ async def _save_submission_payload(
         "dropped_file_count": len(storage_result.dropped_files),
         "has_text_answers": bool(has_answer_content),
         "is_replacement": is_replacement,
+        "is_late_submission": bool(is_late_submission),
+        "late_by_seconds": late_by_seconds,
     }
 
 
@@ -1139,8 +1203,10 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
                 course_id, title, status, requirements_md, rubric_md, grading_mode,
                 class_offering_id, created_at, allowed_file_types_json,
                 availability_mode, starts_at, due_at, duration_minutes, auto_close, closed_at,
+                late_submission_enabled, late_submission_until, late_penalty_strategy,
+                late_penalty_interval_hours, late_penalty_points, late_penalty_min_score, late_score_cap,
                 learning_stage_key
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 actual_course_id,
@@ -1158,6 +1224,13 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
                 schedule_fields["duration_minutes"],
                 schedule_fields["auto_close"],
                 schedule_fields["closed_at"],
+                schedule_fields["late_submission_enabled"],
+                schedule_fields["late_submission_until"],
+                schedule_fields["late_penalty_strategy"],
+                schedule_fields["late_penalty_interval_hours"],
+                schedule_fields["late_penalty_points"],
+                schedule_fields["late_penalty_min_score"],
+                schedule_fields["late_score_cap"],
                 learning_stage_key,
             )
         )
@@ -1223,6 +1296,8 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
             SET title = ?, requirements_md = ?, rubric_md = ?, grading_mode = ?,
                 status = ?, allowed_file_types_json = ?,
                 availability_mode = ?, starts_at = ?, due_at = ?, duration_minutes = ?, auto_close = ?, closed_at = ?,
+                late_submission_enabled = ?, late_submission_until = ?, late_penalty_strategy = ?,
+                late_penalty_interval_hours = ?, late_penalty_points = ?, late_penalty_min_score = ?, late_score_cap = ?,
                 learning_stage_key = ?
             WHERE id = ?
             """,
@@ -1239,6 +1314,13 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
                 schedule_fields["duration_minutes"],
                 schedule_fields["auto_close"],
                 schedule_fields["closed_at"],
+                schedule_fields["late_submission_enabled"],
+                schedule_fields["late_submission_until"],
+                schedule_fields["late_penalty_strategy"],
+                schedule_fields["late_penalty_interval_hours"],
+                schedule_fields["late_penalty_points"],
+                schedule_fields["late_penalty_min_score"],
+                schedule_fields["late_score_cap"],
                 learning_stage_key,
                 assignment_id,
             )
@@ -1278,6 +1360,58 @@ async def delete_assignment(assignment_id: str, user: dict = Depends(get_current
         conn.commit()
     delete_storage_tree(_build_assignment_storage_dir(assignment['course_id'], assignment_id))
     return {"status": "success", "deleted_assignment_id": assignment_id}
+
+
+@router.get("/assignments/time-state", response_class=JSONResponse)
+async def get_assignment_time_state(request: Request, user: dict = Depends(get_current_user)):
+    raw_ids = request.query_params.get("ids") or request.query_params.get("assignment_ids") or ""
+    assignment_ids = []
+    for part in str(raw_ids).split(","):
+        text = part.strip()
+        if not text:
+            continue
+        try:
+            assignment_ids.append(int(text))
+        except ValueError as exc:
+            raise HTTPException(400, "作业 ID 格式无效") from exc
+    assignment_ids = list(dict.fromkeys(assignment_ids))[:50]
+    now_dt = utc_like_now()
+    if not assignment_ids:
+        return {"status": "success", "server_now": now_dt.isoformat(), "assignments": []}
+
+    with get_db_connection() as conn:
+        close_overdue_assignments(conn, now_dt=now_dt)
+        placeholders = ",".join("?" for _ in assignment_ids)
+        rows = conn.execute(
+            f"""
+            SELECT a.*,
+                   c.created_by_teacher_id,
+                   o.teacher_id AS offering_teacher_id
+            FROM assignments a
+            JOIN courses c ON c.id = a.course_id
+            LEFT JOIN class_offerings o ON o.id = a.class_offering_id
+            WHERE a.id IN ({placeholders})
+            """,
+            tuple(assignment_ids),
+        ).fetchall()
+        assignments = []
+        for row in rows:
+            item = dict(row)
+            if user.get("role") == "teacher":
+                if not _teacher_can_access_assignment(item, int(user["id"])):
+                    continue
+            elif user.get("role") == "student":
+                if str(item.get("status") or "").strip().lower() == "new":
+                    continue
+                if not student_can_access_assignment(conn, str(item["id"]), int(user["id"])):
+                    continue
+            else:
+                continue
+            item = enrich_assignment_runtime_view(item, now_dt=now_dt)
+            assignments.append(serialize_assignment_time_state(item, now_dt=now_dt))
+        conn.commit()
+
+    return {"status": "success", "server_now": now_dt.isoformat(), "assignments": assignments}
 
 
 @router.get("/assignments/{assignment_id}/submissions", response_class=JSONResponse)
@@ -1350,6 +1484,7 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
                     )
                 roster = [dict(row) for row in students_cursor]
                 total_students = len(roster)
+        conn.commit()
 
     files_by_submission: dict[int, list[dict[str, Any]]] = {}
     for row in submission_file_rows:
@@ -1400,6 +1535,11 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
                 'is_absence_score': 0,
                 'absence_scored_at': None,
                 'absence_scored_by_teacher_id': None,
+                'is_late_submission': 0,
+                'late_by_seconds': 0,
+                'score_before_late_penalty': None,
+                'late_penalty_points': 0,
+                'late_score_cap_applied': 0,
                 'attachment_type_summary': [],
                 'has_unsupported_ai_attachments': False,
             })
@@ -1426,7 +1566,7 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
     stats = {
         "total_students": total_students,
         "total_submissions": len(submitted_entries),
-        "unsubmitted_count": total_students - len(submitted_entries),
+        "unsubmitted_count": none_count,
         "graded_count": len(graded_entries),
         "absence_zero_count": len(absence_zero_entries),
         "submitted_count": len([s for s in submitted_entries if s['status'] == 'submitted']),
@@ -1438,6 +1578,7 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
         ]),
         "grading_count": len([s for s in submitted_entries if s['status'] == 'grading']),
         "returned_count": len(returned_entries),
+        "late_submission_count": len([s for s in submitted_entries if int(s.get("is_late_submission") or 0)]),
         "average_score": round(sum(scores) / len(scores), 1) if scores else 0,
         "max_score": max(scores) if scores else 0,
         "min_score": min(scores) if scores else 0,
@@ -1458,6 +1599,65 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
         "submissions": all_entries,
         "assignment": enrich_assignment_runtime_view(assignment),
     }
+
+
+@router.get("/courses/{course_id}/assignment-stats", response_class=JSONResponse)
+async def get_course_assignment_stats(course_id: int, user: dict = Depends(get_current_teacher)):
+    """课程维度统计：汇总某课程下所有作业的提交率、批改进度和平均分。"""
+    with get_db_connection() as conn:
+        owned = conn.execute(
+            "SELECT id FROM courses WHERE id = ? AND created_by_teacher_id = ?",
+            (course_id, user["id"]),
+        ).fetchone()
+        if not owned:
+            raise HTTPException(404, "课程不存在或无权访问")
+
+        assignments = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT a.id, a.title, a.status, a.grading_mode, a.class_offering_id,
+                       a.due_at, a.availability_mode
+                FROM assignments a
+                WHERE a.course_id = ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM learning_stage_exam_attempts lsea
+                      WHERE lsea.assignment_id = a.id
+                  )
+                ORDER BY a.created_at DESC
+                """,
+                (course_id,),
+            )
+        ]
+
+        stats_list = []
+        for a in assignments:
+            sub_stats = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN status = 'graded' THEN 1 ELSE 0 END) AS graded,
+                    SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) AS submitted,
+                    SUM(CASE WHEN status = 'grading' THEN 1 ELSE 0 END) AS grading,
+                    SUM(CASE WHEN is_absence_score = 1 THEN 1 ELSE 0 END) AS absence,
+                    ROUND(AVG(CASE WHEN status = 'graded' THEN score END), 1) AS avg_score,
+                    MAX(CASE WHEN status = 'graded' THEN score END) AS max_score,
+                    MIN(CASE WHEN status = 'graded' THEN score END) AS min_score
+                FROM submissions
+                WHERE assignment_id = ?
+                """,
+                (a["id"],),
+            ).fetchone()
+            row = dict(sub_stats)
+            stats_list.append({
+                "assignment_id": a["id"],
+                "title": a["title"],
+                "status": a.get("effective_status") or a["status"],
+                **row,
+            })
+        conn.commit()
+
+    return {"status": "success", "course_id": course_id, "assignments": stats_list}
 
 
 @router.post("/assignments/{assignment_id}/submissions/zero-unsubmitted", response_class=JSONResponse)
@@ -1618,12 +1818,33 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
         submission = _get_submission_for_teacher(conn, submission_id, int(user["id"]))
         if int(submission.get("resubmission_allowed") or 0):
             raise HTTPException(400, "该提交已撤回并等待重交，不能批改旧版本")
+        assignment_for_late_policy = {
+            "id": submission.get("assignment_id"),
+            "due_at": submission.get("assignment_due_at"),
+            "late_submission_enabled": submission.get("assignment_late_submission_enabled"),
+            "late_submission_until": submission.get("assignment_late_submission_until"),
+            "late_penalty_strategy": submission.get("assignment_late_penalty_strategy"),
+            "late_penalty_interval_hours": submission.get("assignment_late_penalty_interval_hours"),
+            "late_penalty_points": submission.get("assignment_late_penalty_points"),
+            "late_penalty_min_score": submission.get("assignment_late_penalty_min_score"),
+            "late_score_cap": submission.get("assignment_late_score_cap"),
+        }
+        adjustment = apply_late_policy_to_score(
+            data.get("score"),
+            submission=submission,
+            assignment=assignment_for_late_policy,
+        )
+        final_score = adjustment.get("final_score")
+        feedback_md = append_late_policy_feedback(data.get("feedback_md"), adjustment)
         conn.execute(
             """
             UPDATE submissions
             SET status = 'graded',
                 score = ?,
                 feedback_md = ?,
+                score_before_late_penalty = ?,
+                late_penalty_points = ?,
+                late_score_cap_applied = ?,
                 grading_started_at = NULL,
                 grading_attempt_fingerprint = NULL,
                 resubmission_allowed = 0,
@@ -1633,7 +1854,14 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
                 returned_reason = NULL
             WHERE id = ?
             """,
-            (data['score'], data['feedback_md'], submission_id),
+            (
+                final_score,
+                feedback_md,
+                adjustment.get("original_score") if adjustment.get("applied") else None,
+                adjustment.get("penalty_points") or 0,
+                1 if adjustment.get("score_cap_applied") else 0,
+                submission_id,
+            ),
         )
         try:
             create_student_grading_notification(
@@ -1655,6 +1883,91 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
             print(f"[LEARNING_PROGRESS] manual grading teacher-stage handling failed: {exc}")
         conn.commit()
     return {"status": "success", "graded_submission_id": submission_id}
+
+
+@router.post("/assignments/{assignment_id}/submissions/batch-grade", response_class=JSONResponse)
+async def batch_grade_submissions(assignment_id: str, request: Request, user: dict = Depends(get_current_teacher)):
+    """教师批量发起 AI 批改：可指定 submission_ids 或自动处理所有待批改提交。"""
+    data = await request.json()
+    submission_ids_input = _parse_int_set(data.get("submission_ids", []), "submission_ids")
+
+    with get_db_connection() as conn:
+        close_overdue_assignments(conn)
+        assignment = _get_assignment_for_teacher(conn, assignment_id, int(user["id"]))
+
+        if submission_ids_input:
+            placeholders = ",".join("?" for _ in submission_ids_input)
+            rows = conn.execute(
+                f"""
+                SELECT id, status FROM submissions
+                WHERE assignment_id = ? AND id IN ({placeholders})
+                ORDER BY id
+                """,
+                (assignment_id, *sorted(submission_ids_input)),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, status FROM submissions
+                WHERE assignment_id = ?
+                  AND status NOT IN ('graded', 'grading')
+                  AND COALESCE(resubmission_allowed, 0) = 0
+                  AND COALESCE(is_absence_score, 0) = 0
+                ORDER BY id
+                LIMIT 50
+                """,
+                (assignment_id,),
+            ).fetchall()
+        conn.commit()
+
+    targets = [dict(row) for row in rows]
+    if not targets:
+        return {
+            "status": "success",
+            "queued_count": 0,
+            "skipped_count": 0,
+            "failed_count": 0,
+            "message": "没有可批改的提交（可能已全部批改完毕或正在批改中）。",
+        }
+
+    # 最多同时提交 5 个，避免压垮 AI 服务
+    sem = asyncio.Semaphore(5)
+
+    async def _grade_one(sub_id: int) -> str:
+        async with sem:
+            try:
+                result = await submit_submission_for_ai_grading(sub_id, teacher_id=int(user["id"]), allow_graded=False)
+                status = str(result.get("status") or "")
+                if status in ("already_grading", "already_graded"):
+                    return "skipped"
+                return "queued"
+            except AIGradingQueueError as exc:
+                print(f"[BATCH_GRADE] submission {sub_id} failed: {exc.detail}")
+                return "failed"
+            except Exception as exc:
+                print(f"[BATCH_GRADE] submission {sub_id} unexpected error: {exc}")
+                return "failed"
+
+    tasks = [_grade_one(int(t["id"])) for t in targets]
+    results = await asyncio.gather(*tasks)
+    queued = 0
+    skipped = 0
+    failed = 0
+    for r in (results or []):
+        if r == "queued":
+            queued += 1
+        elif r == "skipped":
+            skipped += 1
+        else:
+            failed += 1
+
+    return {
+        "status": "success",
+        "total_targets": len(targets),
+        "queued_count": queued,
+        "skipped_count": skipped,
+        "failed_count": failed,
+    }
 
 
 @router.delete("/submissions/{submission_id}", response_class=JSONResponse)
@@ -2415,6 +2728,7 @@ async def submit_assignment(assignment_id: str,
             await _submit_ai_grading_background(int(result["submission_id"]), reason="assignment_auto")
             auto_ai_grading_scheduled = True
 
+    grading_status = _resolve_grading_status(assignment, auto_ai_grading_scheduled)
     return {
         "status": "success",
         "submission_id": result["submission_id"],
@@ -2422,6 +2736,9 @@ async def submit_assignment(assignment_id: str,
         "dropped_file_count": result["dropped_file_count"],
         "is_resubmission": result["is_replacement"],
         "auto_ai_grading_scheduled": auto_ai_grading_scheduled,
+        "grading_status": grading_status,
+        "is_late_submission": result.get("is_late_submission", False),
+        "late_by_seconds": result.get("late_by_seconds", 0),
     }
 
 
@@ -2620,7 +2937,10 @@ async def withdraw_submission(assignment_id: str, user: dict = Depends(get_curre
             """
             SELECT s.*, a.course_id, a.class_offering_id, a.title,
                    a.status AS assignment_status,
-                   a.availability_mode, a.starts_at, a.due_at, a.duration_minutes, a.auto_close
+                   a.availability_mode, a.starts_at, a.due_at, a.duration_minutes, a.auto_close,
+                   a.late_submission_enabled, a.late_submission_until,
+                   a.late_penalty_strategy, a.late_penalty_interval_hours,
+                   a.late_penalty_points, a.late_penalty_min_score, a.late_score_cap
             FROM submissions s
             JOIN assignments a ON a.id = s.assignment_id
             WHERE s.assignment_id = ? AND s.student_pk_id = ?
@@ -2637,6 +2957,13 @@ async def withdraw_submission(assignment_id: str, user: dict = Depends(get_curre
             "due_at": submission.get("due_at"),
             "duration_minutes": submission.get("duration_minutes"),
             "auto_close": submission.get("auto_close"),
+            "late_submission_enabled": submission.get("late_submission_enabled"),
+            "late_submission_until": submission.get("late_submission_until"),
+            "late_penalty_strategy": submission.get("late_penalty_strategy"),
+            "late_penalty_interval_hours": submission.get("late_penalty_interval_hours"),
+            "late_penalty_points": submission.get("late_penalty_points"),
+            "late_penalty_min_score": submission.get("late_penalty_min_score"),
+            "late_score_cap": submission.get("late_score_cap"),
         }
         if not assignment_accepts_submissions(assignment_snapshot):
             raise HTTPException(400, "作业已截止，当前只能查看，不能撤回提交")
@@ -2917,9 +3244,11 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
                 course_id, title, status, requirements_md, rubric_md, grading_mode,
                 exam_paper_id, class_offering_id, created_at, allowed_file_types_json,
                 availability_mode, starts_at, due_at, duration_minutes, auto_close, closed_at,
+                late_submission_enabled, late_submission_until, late_penalty_strategy,
+                late_penalty_interval_hours, late_penalty_points, late_penalty_min_score, late_score_cap,
                 learning_stage_key
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(offering['course_id']),
@@ -2938,6 +3267,13 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
                 schedule_fields["duration_minutes"],
                 schedule_fields["auto_close"],
                 schedule_fields["closed_at"],
+                schedule_fields["late_submission_enabled"],
+                schedule_fields["late_submission_until"],
+                schedule_fields["late_penalty_strategy"],
+                schedule_fields["late_penalty_interval_hours"],
+                schedule_fields["late_penalty_points"],
+                schedule_fields["late_penalty_min_score"],
+                schedule_fields["late_score_cap"],
                 learning_stage_key,
             )
         )

@@ -400,11 +400,10 @@ async def submit_submission_for_ai_grading(
             return {"status": "already_graded"}
 
         submission_files = _load_submission_files_for_grading(conn, submission_id)
+        submission_fingerprint = build_submission_grading_fingerprint(submission, submission_files)
+        resolved_files, has_files, has_answers = _prepare_grading_inputs(submission, submission_files)
 
-    submission_fingerprint = build_submission_grading_fingerprint(submission, submission_files)
-    resolved_files, has_files, has_answers = _prepare_grading_inputs(submission, submission_files)
-
-    with get_db_connection() as conn:
+        # 同一连接内二次确认指纹，消除 TOCTOU 窗口
         current = _load_submission_for_grading(conn, submission_id, teacher_id=teacher_id)
         if int(current.get("resubmission_allowed") or 0):
             raise AIGradingQueueError(400, "该提交已撤回并等待重交，不能批改旧版本")

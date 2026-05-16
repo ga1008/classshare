@@ -47,6 +47,7 @@ from ..services.ai_grading_service import (
     submit_submission_for_ai_grading,
 )
 from ..services.grading_feedback_service import normalize_grading_result, sanitize_student_feedback_text
+from ..services.late_submission_policy import append_late_policy_feedback, apply_late_policy_to_score
 from ..services.learning_progress_service import (
     build_student_global_cultivation_profile,
     handle_assignment_stage_grading_complete,
@@ -252,7 +253,7 @@ async def handle_ai_grading_callback(request: Request):
         submission_id = data['submission_id']
         with get_db_connection() as conn:
             submission = conn.execute(
-                "SELECT id, status, resubmission_allowed, answers_json, submitted_at FROM submissions WHERE id = ?",
+                "SELECT * FROM submissions WHERE id = ?",
                 (submission_id,),
             ).fetchone()
             if not submission:
@@ -286,6 +287,12 @@ async def handle_ai_grading_callback(request: Request):
             status = str(data.get("status") or "").strip().lower()
             score = data.get("score")
             feedback_md = data.get("feedback_md")
+            late_adjustment = {
+                "applied": False,
+                "original_score": None,
+                "penalty_points": 0,
+                "score_cap_applied": False,
+            }
             if status == "graded":
                 normalized = normalize_grading_result(
                     data,
@@ -297,6 +304,18 @@ async def handle_ai_grading_callback(request: Request):
                 if score is None:
                     status = "grading_failed"
                     feedback_md = "AI 批改返回的分数无效，已保留提交内容，请教师手动复核。"
+                else:
+                    assignment = conn.execute(
+                        "SELECT * FROM assignments WHERE id = ?",
+                        (submission["assignment_id"],),
+                    ).fetchone()
+                    late_adjustment = apply_late_policy_to_score(
+                        score,
+                        submission=dict(submission),
+                        assignment=dict(assignment) if assignment else {},
+                    )
+                    score = late_adjustment.get("final_score")
+                    feedback_md = append_late_policy_feedback(feedback_md, late_adjustment)
             elif feedback_md:
                 feedback_md = sanitize_student_feedback_text(feedback_md)
             conn.execute(
@@ -305,11 +324,22 @@ async def handle_ai_grading_callback(request: Request):
                 SET status = ?,
                     score = ?,
                     feedback_md = ?,
+                    score_before_late_penalty = ?,
+                    late_penalty_points = ?,
+                    late_score_cap_applied = ?,
                     grading_started_at = NULL,
                     grading_attempt_fingerprint = NULL
                 WHERE id = ?
                 """,
-                (status, score, feedback_md, submission_id),
+                (
+                    status,
+                    score,
+                    feedback_md,
+                    late_adjustment.get("original_score") if late_adjustment.get("applied") else None,
+                    late_adjustment.get("penalty_points") or 0,
+                    1 if late_adjustment.get("score_cap_applied") else 0,
+                    submission_id,
+                ),
             )
             if status == 'graded':
                 try:
