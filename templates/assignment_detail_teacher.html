@@ -298,9 +298,15 @@
 
     /* Main layout - single column */
     .workspace-container {
+        width: 100%;
         max-width: 1200px; margin: 0 auto;
         padding: var(--spacing-lg) var(--spacing-md);
         display: flex; flex-direction: column; gap: var(--spacing-lg);
+    }
+    .workspace-container > .card {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
     }
     #submission-section { scroll-margin-top: 104px; }
     @media (max-width: 760px) { #submission-section { scroll-margin-top: 168px; } }
@@ -436,6 +442,12 @@
     }
     .filter-btn:hover, .filter-btn.active {
         background: var(--primary-color); color: white; border-color: var(--primary-color);
+    }
+    .filter-bar .filter-btn.active {
+        background: var(--primary-color);
+        color: white;
+        border-color: var(--primary-color);
+        box-shadow: 0 10px 20px rgba(79, 70, 229, 0.18);
     }
     .submissions-table {
         min-width: 900px;
@@ -699,15 +711,39 @@
     @keyframes popIn { 0% { opacity: 0; transform: scale(0.3); } 60% { transform: scale(1.1); } 100% { opacity: 1; transform: scale(1); } }
 
     @media (max-width: 900px) {
+        body {
+            overflow-x: hidden;
+        }
+        .assignment-header,
+        .workspace-container {
+            width: 100%;
+            max-width: 100%;
+        }
+        .workspace-container {
+            padding: var(--spacing-md) clamp(0.7rem, 3.5vw, var(--spacing-md));
+            gap: var(--spacing-md);
+            overflow-x: hidden;
+        }
+        .workspace-container > .card,
+        #submission-section {
+            overflow: hidden;
+        }
         .offline-modal-grid { grid-template-columns: 1fr; }
         .selection-toolbar { width: 100%; margin-left: 0; }
         .submission-header-actions { width: 100%; justify-content: flex-start; }
         .filter-bar .filter-input { flex-basis: 100%; }
         .table-responsive {
-            overflow: visible;
+            max-width: 100%;
+            overflow: hidden;
+            border-inline: 0;
+            border-radius: 0;
+            margin-bottom: 0;
+            padding: 0 0.25rem 0.75rem;
         }
         .submissions-table {
+            width: 100%;
             min-width: 0;
+            table-layout: fixed;
             border-collapse: separate;
             border-spacing: 0 10px;
         }
@@ -721,6 +757,8 @@
             width: 100%;
         }
         .submissions-table tbody tr {
+            max-width: 100%;
+            overflow: hidden;
             border: 1px solid var(--border-color);
             border-radius: var(--radius-md);
             background: var(--surface-color);
@@ -733,9 +771,21 @@
         }
         .submissions-table tbody td[data-label] {
             display: grid;
-            grid-template-columns: 82px minmax(0, 1fr);
+            grid-template-columns: minmax(68px, 22vw) minmax(0, 1fr);
             gap: 10px;
             align-items: start;
+        }
+        .submissions-table tbody td[data-label] > * {
+            min-width: 0;
+        }
+        .attachment-type-chips,
+        .score-cell,
+        .action-btns {
+            min-width: 0;
+            max-width: 100%;
+        }
+        .filter-btn {
+            flex: 1 1 auto;
         }
         .submissions-table tbody td[data-label]::before {
             content: attr(data-label);
@@ -816,6 +866,9 @@
                     <div class="assignment-more-menu__label">快速筛选</div>
                     <button type="button" class="dropdown-item" data-topbar-filter="submitted" onclick="this.closest('details')?.removeAttribute('open'); quickFilterSubmissions('submitted')" title="只看待批改提交" aria-label="只看待批改提交" aria-pressed="false" role="menuitem">
                         {{ app_topbar_icon('file-plus') }} 待批提交
+                    </button>
+                    <button type="button" class="dropdown-item" data-topbar-filter="returned" onclick="this.closest('details')?.removeAttribute('open'); quickFilterSubmissions('returned')" title="只看待重交学生" aria-label="只看待重交学生" aria-pressed="false" role="menuitem">
+                        {{ app_topbar_icon('folder-up') }} 待重交
                     </button>
                     <button type="button" class="dropdown-item" data-topbar-filter="unsubmitted" onclick="this.closest('details')?.removeAttribute('open'); quickFilterSubmissions('unsubmitted')" title="只看未提交学生" aria-label="只看未提交学生" aria-pressed="false" role="menuitem">
                         {{ app_topbar_icon('users') }} 未交学生
@@ -1087,6 +1140,7 @@
             <input type="text" class="filter-input" id="submission-filter" placeholder="搜索学生姓名 / 学号 / 附件后缀..." oninput="filterSubmissions()">
             <button class="filter-btn active" data-filter="all" onclick="setFilter('all', this)">全部</button>
             <button class="filter-btn" data-filter="submitted" onclick="setFilter('submitted', this)">待批改</button>
+            <button class="filter-btn" data-filter="returned" onclick="setFilter('returned', this)">待重交</button>
             <button class="filter-btn" data-filter="graded" onclick="setFilter('graded', this)">已批改</button>
             <button class="filter-btn" data-filter="unsubmitted" onclick="setFilter('unsubmitted', this)">未提交</button>
             <button class="filter-btn" data-filter="fail" onclick="setFilter('fail', this)">不及格</button>
@@ -1867,6 +1921,9 @@
         if (currentFilter === 'fail') return isFailingEntry(entry);
         if (currentFilter === 'submitted') {
             return entry.status === 'submitted' && Number(entry.resubmission_allowed || 0) !== 1;
+        }
+        if (currentFilter === 'returned') {
+            return Number(entry.resubmission_allowed || 0) === 1;
         }
         return entry.status === currentFilter;
     }

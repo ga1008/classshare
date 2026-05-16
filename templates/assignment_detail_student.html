@@ -507,7 +507,25 @@
         </div>
         <div class="card-body">
             {% if submission %}
-                {% if submission.status == 'graded' %}
+                {% if submission_returned %}
+                    <div class="status-card warning card-body rounded-lg mb-lg">
+                        <div class="status-card-header" style="color: var(--warning-color);">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-15-6.7L3 13"></path></svg>
+                            待重交
+                        </div>
+                        {% if can_resubmit_submission %}
+                        <p class="text-muted">
+                            教师已撤回本次提交，请在
+                            <span class="format-date">{{ resubmission_due_at }}</span>
+                            前重新提交。旧提交内容仍可查看和下载，新的提交会替换当前版本。
+                        </p>
+                        {% else %}
+                        <p class="text-muted">
+                            教师已撤回本次提交，但当前重交窗口已关闭。旧提交内容仍可查看，请联系教师重新开放重交时间。
+                        </p>
+                        {% endif %}
+                    </div>
+                {% elif submission.status == 'graded' %}
                     <div class="status-card success card-body rounded-lg mb-lg">
                         <div class="status-card-header text-success">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
@@ -606,17 +624,6 @@
                 {% endif %}
 
                 {% if can_resubmit_submission %}
-                <div class="status-card warning card-body rounded-lg mt-lg mb-lg">
-                    <div class="status-card-header" style="color: var(--warning-color);">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-15-6.7L3 13"></path></svg>
-                        教师已撤回批改结果
-                    </div>
-                    <p class="text-muted">
-                        旧提交仍可查看和下载。请在
-                        <span class="format-date">{{ resubmission_due_at }}</span>
-                        前重新提交，新的提交会替换当前版本。
-                    </p>
-                </div>
                 {{ submission_form('重新提交作业', '重新提交会替换当前答案和附件', '确认重新提交') }}
                 {% endif %}
 
@@ -730,7 +737,8 @@
     const ASSIGNMENT_STARTED_AT = new Date().toISOString();
     const ALLOWED_FILE_TYPES = {{ assignment.allowed_file_types | tojson }};
     const CAN_RESUBMIT_SUBMISSION = {{ can_resubmit_submission | tojson }};
-    let assignmentAcceptingSubmissions = {{ assignment.is_accepting_submissions | default(false) | tojson }};
+    const RESUBMISSION_DUE_AT = {{ resubmission_due_at | tojson }};
+    let assignmentAcceptingSubmissions = {{ (assignment.is_accepting_submissions or can_resubmit_submission) | tojson }};
     const SUBMISSION_FEEDBACK_MD = {{ (submission.feedback_md if submission else '') | tojson }};
     const gradingFeedback = parseGradingFeedback(SUBMISSION_FEEDBACK_MD);
     let uploadManager = null;
@@ -782,7 +790,9 @@
     function updateAssignmentSubmitAvailability(stateMap) {
         const current = stateMap?.get?.(ASSIGNMENT_ID);
         if (current) {
-            assignmentAcceptingSubmissions = Boolean(current.is_accepting_submissions);
+            assignmentAcceptingSubmissions = Boolean(current.is_accepting_submissions) || resubmissionAcceptingNow();
+        } else {
+            assignmentAcceptingSubmissions = assignmentAcceptingSubmissions || resubmissionAcceptingNow();
         }
         const submitBtn = document.getElementById('submit-btn');
         if (!submitBtn) return;
@@ -793,6 +803,13 @@
         }
         submitBtn.disabled = false;
         submitBtn.removeAttribute('title');
+    }
+
+    function resubmissionAcceptingNow() {
+        if (!CAN_RESUBMIT_SUBMISSION) return false;
+        if (!RESUBMISSION_DUE_AT) return true;
+        const dueTime = Date.parse(RESUBMISSION_DUE_AT);
+        return Number.isNaN(dueTime) || dueTime > Date.now();
     }
 
     function initAnswerArea() {

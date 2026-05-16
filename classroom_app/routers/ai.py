@@ -2420,9 +2420,11 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
         prompt += "\n8. 确保题目覆盖出题范围的所有主要知识点"
         prompt += "\n9. 返回格式必须为JSON，包含pages数组，每个page对象包含name和questions数组"
         prompt += "\n10. 不要包含任何额外的解释或代码块标记，只返回JSON数据"
+        prompt += "\n11. 必须同时生成统一评分标准：根字段 grading.total_score、grading.description、grading.style；style 只能为 strict、medium、loose、rescue（严格、中等、宽松、捞一捞），默认 medium"
+        prompt += "\n12. 每道题必须包含 answer、points、grading_guidance、deduction_points；points 合计必须等于 grading.total_score；评分指导只写得分点和失分点，保持简明"
         if has_source_files:
-            prompt += "\n11. 如果上传文档本身是题库，请优先解析并整理其中已有题目，必要时补全答案和解析；如果文档是知识点、章节、大纲或复习范围，请据此原创生成题目。"
-            prompt += "\n12. 文档模式必须以上传文档为主要依据，不要脱离文档主题随意扩展。"
+            prompt += "\n13. 如果上传文档本身是题库，请优先解析并整理其中已有题目，必要时补全答案、解析和评分标准；如果文档是知识点、章节、大纲或复习范围，请据此原创生成题目。"
+            prompt += "\n14. 文档模式必须以上传文档为主要依据，不要脱离文档主题随意扩展。"
 
         # 在后台启动生成任务
         background_tasks.add_task(

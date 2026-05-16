@@ -39,6 +39,7 @@ from ai_assistant_doc_extract import (
     render_pdf_pages_to_data_urls as _render_pdf_pages,
 )
 from classroom_app.services.ai_grading_attachments import classify_ai_grading_attachment
+from classroom_app.services.exam_json_service import normalize_exam_scoring_payload
 from classroom_app.services.grading_feedback_service import normalize_grading_result, validate_ai_grading_result
 
 # --- AI 平台 SDK ---
@@ -957,11 +958,16 @@ GENERATION_SYSTEM_PROMPT = """
 
 EXAM_GENERATION_SYSTEM_PROMPT = """
 你是一个AI试卷生成专家，擅长根据教师的要求生成高质量的试卷题目。
-你的任务是生成完整的试卷题目，包括题目内容、选项（如果是选择题）、答案和解析。
+你的任务是生成完整的试卷题目和统一评分标准，包括题目内容、选项（如果是选择题）、标准答案、解析、每题分值、评分指导和扣分点。
 请务必使用 **中文** 进行回复。
 
 你必须严格按照以下JSON格式返回结果，不要包含任何额外的解释或代码块标记：
 {
+  "grading": {
+    "total_score": 100,
+    "description": "整卷评分描述，说明评分依据、总分和统一原则",
+    "style": "medium"
+  },
   "pages": [
     {
       "name": "第一部分",
@@ -972,7 +978,10 @@ EXAM_GENERATION_SYSTEM_PROMPT = """
           "text": "题目内容",
           "options": ["选项A", "选项B", "选项C", "选项D"],
           "answer": "A",
-          "explanation": "解析内容"
+          "explanation": "解析内容",
+          "points": 10,
+          "grading_guidance": "得分点：选 A 且理解核心概念得满分。",
+          "deduction_points": "失分点：选错不得分；混淆关键概念不得分。"
         },
         {
           "id": "q2",
@@ -980,7 +989,10 @@ EXAM_GENERATION_SYSTEM_PROMPT = """
           "text": "多选题内容",
           "options": ["选项A", "选项B", "选项C", "选项D"],
           "answer": ["A", "B"],
-          "explanation": "解析内容"
+          "explanation": "解析内容",
+          "points": 15,
+          "grading_guidance": "得分点：A、B 全选且无错选得满分。",
+          "deduction_points": "失分点：漏选按比例扣分；错选无关项最多得一半。"
         },
         {
           "id": "q3",
@@ -988,7 +1000,10 @@ EXAM_GENERATION_SYSTEM_PROMPT = """
           "text": "填空题内容",
           "placeholder": "提示文本",
           "answer": "正确答案",
-          "explanation": "解析内容"
+          "explanation": "解析内容",
+          "points": 15,
+          "grading_guidance": "得分点：答案与参考答案含义一致得满分。",
+          "deduction_points": "失分点：核心概念错误不得分；格式小错可少量扣分。"
         },
         {
           "id": "q4",
@@ -997,6 +1012,9 @@ EXAM_GENERATION_SYSTEM_PROMPT = """
           "placeholder": "提示文本",
           "answer": "参考答案",
           "explanation": "解析内容",
+          "points": 60,
+          "grading_guidance": "得分点：写出关键步骤、结论和必要证据，逻辑完整可得满分。",
+          "deduction_points": "失分点：缺少关键步骤、结论错误、证据不足或附件不符合要求时按比例扣分。",
           "allow_ai": false,
           "attachment_requirements": {
             "enabled": true,
@@ -1025,6 +1043,8 @@ EXAM_GENERATION_SYSTEM_PROMPT = """
 8. 根据教师要求的总题数、题型分布和难度生成题目
 9. 如果问答题要求学生上传截图、代码文件、报告或绘图，请只在textarea题目中添加attachment_requirements字段；required表示是否硬性要求，min_count/max_count表示本题附件数量约束，min_count大于0时必须同时视为required=true，allowed_file_types可写建议后缀或MIME类型，description写清楚附件条件
 10. 开放性题目可设置 allow_ai=true，表示学生答题页允许打开课堂 AI；闭卷题、记忆性客观题不要开启
+11. 必须生成 grading.total_score、grading.description、grading.style。style 只能是 strict、medium、loose、rescue 之一，对应严格、中等、宽松、捞一捞；默认用 medium。
+12. 每道题必须生成 points、grading_guidance、deduction_points，points 合计必须等于 grading.total_score；评分指导只写得分点和失分点，不要冗长。
 """
 
 # --- Lifespan (替换旧的 Startup/Shutdown) ---
@@ -2166,6 +2186,14 @@ def _normalize_exam_generation_result(raw_result: Any) -> dict[str, Any]:
     normalized = {"pages": pages}
     if description:
         normalized["description"] = description
+    if isinstance(result, dict):
+        raw_grading = result.get("grading") or result.get("scoring") or result.get("rubric") or result.get("评分标准")
+        if isinstance(raw_grading, dict):
+            normalized["grading"] = raw_grading
+    try:
+        normalized = normalize_exam_scoring_payload(normalized, require_complete=False)
+    except ValueError:
+        pass
     return normalized
 
 

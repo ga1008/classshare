@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from .academic_service import china_now, parse_date_input
+from .assignment_lifecycle_service import submission_effective_status, submission_resubmission_accepts
 from .course_planning_service import weekday_label
 from .learning_progress_service import get_learning_level, personal_stage_assignment_filter_sql, public_level_payload
 from .message_center_service import create_todo_notification
@@ -431,8 +432,8 @@ def _assignment_items(conn: sqlite3.Connection, *, class_offering_id: int, user:
         assignment_due_at = parse_datetime_input(row.get("due_at"), "截止时间")
         created_at = parse_datetime_input(row.get("created_at"), "创建时间")
         if role == "student":
-            submission_status = str(row.get("submission_status") or "unsubmitted")
-            can_resubmit = bool(_safe_int(row.get("resubmission_allowed")) and row.get("resubmission_due_at"))
+            submission_status = submission_effective_status(row, now_dt=now) if row.get("submission_id") else "unsubmitted"
+            can_resubmit = submission_resubmission_accepts(row, now_dt=now)
             resubmission_due_at = parse_datetime_input(row.get("resubmission_due_at"), "重交截止时间") if can_resubmit else None
             due_at = resubmission_due_at or assignment_due_at
             status_label = {
@@ -440,7 +441,7 @@ def _assignment_items(conn: sqlite3.Connection, *, class_offering_id: int, user:
                 "grading": "批改中",
                 "graded": "已评分",
                 "returned": "待重交",
-            }.get("returned" if can_resubmit else submission_status, "待提交")
+            }.get(submission_status, "待提交")
             is_completed = submission_status in {"submitted", "grading", "graded"} and not can_resubmit
         else:
             due_at = assignment_due_at

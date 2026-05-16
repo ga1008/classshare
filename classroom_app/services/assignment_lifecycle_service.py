@@ -236,16 +236,39 @@ def build_resubmission_due_at(
     return _dt_to_iso(due_dt)
 
 
-def submission_resubmission_accepts(submission_row, now_dt: datetime | None = None) -> bool:
+def submission_is_returned(submission_row) -> bool:
     submission = dict(submission_row or {})
     if not submission:
         return False
-    if not _is_truthy(submission.get("resubmission_allowed"), default=False):
-        return False
-    due_dt = _parse_iso_like_datetime(submission.get("resubmission_due_at"))
+    return _is_truthy(submission.get("resubmission_allowed"), default=False)
+
+
+def submission_resubmission_state(submission_row, now_dt: datetime | None = None) -> str:
+    if not submission_is_returned(submission_row):
+        return "none"
+    submission = dict(submission_row or {})
+    try:
+        due_dt = _parse_iso_like_datetime(submission.get("resubmission_due_at"))
+    except ValueError:
+        return "invalid"
     if due_dt is None:
+        return "invalid"
+    return "open" if due_dt > (now_dt or _utc_like_now()) else "expired"
+
+
+def submission_effective_status(submission_row, now_dt: datetime | None = None) -> str:
+    submission = dict(submission_row or {})
+    if not submission:
+        return "unsubmitted"
+    if submission_resubmission_state(submission, now_dt=now_dt) in {"open", "expired", "invalid"}:
+        return "returned"
+    return str(submission.get("submission_status") or submission.get("status") or "submitted")
+
+
+def submission_resubmission_accepts(submission_row, now_dt: datetime | None = None) -> bool:
+    if not submission_is_returned(submission_row):
         return False
-    return due_dt > (now_dt or _utc_like_now())
+    return submission_resubmission_state(submission_row, now_dt=now_dt) == "open"
 
 
 def is_assignment_overdue(assignment: dict[str, Any], now_dt: datetime | None = None) -> bool:

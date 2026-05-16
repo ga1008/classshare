@@ -29009,11 +29009,11 @@ body.has-class-student-modal {
     position: sticky;
     top: 0;
     z-index: 1020;
-    min-height: 76px;
+    min-height: 68px;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.85rem 1rem;
-    padding: 0.78rem clamp(1rem, 2vw, 1.6rem);
+    gap: 0.58rem 0.78rem;
+    padding: 0.64rem clamp(0.9rem, 1.8vw, 1.35rem);
     border-bottom: 1px solid rgba(148, 163, 184, 0.18);
     background: rgba(255, 255, 255, 0.92);
     box-shadow: 0 18px 40px -34px rgba(15, 23, 42, 0.6);
@@ -29036,9 +29036,9 @@ body.has-class-student-modal {
 }
 
 .classroom-page .classroom-topbar-brand {
-    flex: 1 1 18rem;
-    min-width: min(18rem, 100%);
-    max-width: min(35rem, 34vw);
+    flex: 1 1 16rem;
+    min-width: min(16rem, 100%);
+    max-width: min(31rem, 32vw);
 }
 
 .classroom-page .classroom-topbar-brand__copy {
@@ -29082,11 +29082,20 @@ body.has-class-student-modal {
 }
 
 .classroom-page .classroom-topbar-section-link {
-    min-width: 108px;
+    min-width: 92px;
 }
 
 .classroom-page .classroom-topbar .app-topbar-action {
     border-radius: 9px;
+    min-height: 42px;
+    min-width: 84px;
+    padding: 0.38rem 0.52rem;
+    gap: 0.42rem;
+}
+
+.classroom-page .classroom-topbar .app-topbar-action__icon {
+    width: 28px;
+    height: 28px;
 }
 
 .classroom-page .classroom-topbar .app-topbar-action.is-active:not(.app-topbar-action--primary),
@@ -29116,19 +29125,148 @@ body.has-class-student-modal {
     min-width: 102px;
 }
 
+.classroom-page .classroom-topbar-menu {
+    position: relative;
+    display: flex;
+    min-width: 0;
+}
+
+.classroom-page .classroom-topbar-menu > summary {
+    list-style: none;
+}
+
+.classroom-page .classroom-topbar-menu > summary::-webkit-details-marker {
+    display: none;
+}
+
+.classroom-page .classroom-topbar-menu[open] > summary {
+    border-color: rgba(var(--app-topbar-accent-rgb), 0.3);
+    background: rgba(var(--app-topbar-accent-rgb), 0.1);
+    color: var(--app-topbar-accent);
+    box-shadow: 0 16px 30px -28px rgba(var(--app-topbar-accent-rgb), 0.56);
+}
+
+.classroom-page .classroom-topbar-menu__panel {
+    position: absolute;
+    top: calc(100% + 0.48rem);
+    right: 0;
+    z-index: 1045;
+    min-width: 236px;
+    max-width: min(88vw, 320px);
+    display: grid;
+    gap: 0.22rem;
+    padding: 0.56rem;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 24px 54px -32px rgba(15, 23, 42, 0.48);
+}
+
+.classroom-page .classroom-topbar-menu__label {
+    padding: 0.2rem 0.38rem 0.32rem;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 820;
+}
+
+.classroom-page .classroom-topbar-menu__item {
+    position: relative;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    align-items: center;
+    gap: 0.52rem;
+    width: 100%;
+    min-height: 42px;
+    padding: 0.46rem 0.52rem;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+    text-decoration: none;
+}
+
+.classroom-page .classroom-topbar-menu__item:hover,
+.classroom-page .classroom-topbar-menu__item:focus-visible {
+    background: rgba(var(--app-topbar-accent-rgb), 0.08);
+    color: var(--app-topbar-accent);
+    text-decoration: none;
+    outline: none;
+}
+
+.classroom-page .classroom-topbar-menu__item > svg,
+.classroom-page .classroom-topbar-menu__item .app-topbar-profile__avatar {
+    width: 30px;
+    height: 30px;
+    justify-self: center;
+}
+
+.classroom-page .classroom-topbar-menu__item > svg {
+    padding: 6px;
+    border-radius: 8px;
+    background: var(--app-topbar-accent-soft);
+    color: var(--app-topbar-accent);
+}
+
+.classroom-page .classroom-topbar-menu__item span:not(.app-topbar-action__count):not(.message-center-bell__count) {
+    min-width: 0;
+    display: grid;
+    gap: 0.04rem;
+}
+
+.classroom-page .classroom-topbar-menu__item strong,
+.classroom-page .classroom-topbar-menu__item small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.classroom-page .classroom-topbar-menu__item strong {
+    font-size: 0.82rem;
+    font-weight: 820;
+}
+
+.classroom-page .classroom-topbar-menu__item small {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.classroom-page .classroom-topbar-menu__item.is-danger {
+    color: var(--danger-color);
+}
+
+.classroom-page .classroom-topbar-menu__item.is-danger > svg {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--danger-color);
+}
+
+.classroom-page .classroom-topbar-menu .message-center-bell__count {
+    top: 3px;
+    right: 4px;
+}
+
+.classroom-page .classroom-topbar-menu .message-center-bell-toast {
+    right: 0;
+    top: calc(100% + 0.75rem);
+}
+
 @media (max-width: 1380px) {
     .classroom-page .classroom-topbar-brand {
-        flex-basis: 16rem;
-        max-width: 28rem;
+        flex-basis: 15rem;
+        max-width: 26rem;
     }
 
     .classroom-page .classroom-topbar .app-topbar-action {
-        min-width: 88px;
-        padding-inline: 0.56rem;
+        min-width: 78px;
+        padding-inline: 0.46rem;
     }
 
     .classroom-page .classroom-topbar-section-link {
-        min-width: 98px;
+        min-width: 82px;
     }
 }
 
@@ -29146,7 +29284,7 @@ body.has-class-student-modal {
     }
 
     .classroom-page .classroom-topbar-sections {
-        flex: 1 1 26rem;
+        flex: 1 1 25rem;
         justify-content: flex-start;
     }
 
@@ -29158,7 +29296,7 @@ body.has-class-student-modal {
 @media (max-width: 768px) {
     .classroom-page .classroom-topbar {
         align-items: flex-start;
-        padding: 0.72rem 0.9rem;
+        padding: 0.66rem 0.78rem;
     }
 
     .classroom-page .classroom-topbar-brand__copy small span:last-child {
@@ -29175,16 +29313,18 @@ body.has-class-student-modal {
     .classroom-page .classroom-topbar-tools {
         width: 100%;
         display: grid;
-        gap: 0.42rem;
+        gap: 0.34rem;
         margin-left: 0;
     }
 
     .classroom-page .classroom-topbar-sections {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(4.35rem, 1fr));
     }
 
     .classroom-page .classroom-topbar-tools {
-        grid-template-columns: repeat(auto-fit, minmax(5.2rem, 1fr));
+        width: min(7.4rem, 100%);
+        justify-self: end;
+        grid-template-columns: 1fr;
     }
 
     .classroom-page .classroom-topbar .app-topbar-action,
@@ -29193,6 +29333,21 @@ body.has-class-student-modal {
         width: 100%;
         min-width: 0;
         justify-content: center;
+    }
+
+    .classroom-page .classroom-topbar-menu,
+    .classroom-page .classroom-topbar-menu > summary {
+        width: 100%;
+    }
+
+    .classroom-page .classroom-topbar-menu__panel {
+        left: auto;
+        right: 0;
+    }
+
+    .classroom-page .classroom-topbar-section-menu .classroom-topbar-menu__panel {
+        left: auto;
+        right: 0;
     }
 }
 
@@ -29206,15 +29361,35 @@ body.has-class-student-modal {
     }
 
     .classroom-page .classroom-topbar-sections {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(4.05rem, 1fr));
     }
 
     .classroom-page .classroom-topbar-tools {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        width: min(6.8rem, 100%);
     }
 
     .classroom-page .classroom-topbar .app-topbar-action {
-        min-height: 52px;
+        min-height: 40px;
+        gap: 0.22rem;
+        padding: 0.34rem 0.34rem;
+    }
+
+    .classroom-page .classroom-topbar .app-topbar-action__icon {
+        width: 24px;
+        height: 24px;
+        flex-basis: 24px;
+    }
+
+    .classroom-page .classroom-topbar .app-topbar-action__text strong {
+        font-size: 0.76rem;
+    }
+
+    .classroom-page .classroom-topbar .app-topbar-action__text small {
+        display: none;
+    }
+
+    .classroom-page .classroom-topbar-menu__panel {
+        min-width: min(88vw, 250px);
     }
 }
 

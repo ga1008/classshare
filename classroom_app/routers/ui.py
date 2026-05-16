@@ -35,13 +35,17 @@ from ..services.discussion_mood_service import maybe_schedule_discussion_mood_re
 from ..services.submission_assets import decode_allowed_file_types_json, summarize_allowed_file_types
 from ..services.ai_grading_attachments import AI_GRADING_UPLOAD_EXTENSIONS, AI_GRADING_SUPPORTED_TYPES_LABEL
 from ..services.dashboard_service import build_dashboard_context
+from ..services.exam_json_service import strip_exam_scoring_for_student
 from ..services.classroom_page_service import build_classroom_page_context
 from ..services.assignment_lifecycle_service import (
     assignment_accepts_submissions,
     close_overdue_assignments,
     enrich_assignment_runtime_view,
     refresh_assignment_runtime_status,
+    submission_effective_status,
+    submission_is_returned,
     submission_resubmission_accepts,
+    submission_resubmission_state,
 )
 from ..services.academic_service import (
     build_semester_calendar_payload,
@@ -1078,8 +1082,9 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
                     submission_dict = dict(submission)
                     can_resubmit = submission_resubmission_accepts(submission_dict)
                     assignment['can_resubmit_submission'] = can_resubmit
+                    assignment['resubmission_state'] = submission_resubmission_state(submission_dict)
                     assignment['resubmission_due_at'] = submission_dict.get('resubmission_due_at')
-                    assignment['submission_status'] = 'returned' if can_resubmit else submission_dict['status']
+                    assignment['submission_status'] = submission_effective_status(submission_dict)
                     assignment['submission_score'] = submission['score']
                     assignment['submission_id'] = submission['id']
                     assignment['submission_feedback_md'] = submission['feedback_md']
@@ -1087,6 +1092,7 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
                 else:
                     assignment['submission_status'] = 'unsubmitted'
                     assignment['can_resubmit_submission'] = False
+                    assignment['resubmission_state'] = 'none'
                     assignment['submission_id'] = None
                     assignment['submission_feedback_md'] = None
                     assignment['submission_feedback_preview'] = ""
@@ -1322,16 +1328,18 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
             )
             submission_files = _serialize_submission_file_rows(files_cursor)
 
+    submission_returned = bool(submission and submission_is_returned(submission))
+    resubmission_state = submission_resubmission_state(submission) if submission else "none"
     can_resubmit_submission = bool(
         submission
         and submission.get("status") == "submitted"
-        and submission_resubmission_accepts(submission)
+        and resubmission_state == "open"
     )
     can_withdraw_submission = bool(
         submission
         and submission.get("status") == "submitted"
         and assignment_accepts_submissions(assignment)
-        and not int(submission.get("resubmission_allowed") or 0)
+        and not submission_returned
     )
 
     if assignment.get("class_offering_id"):
@@ -1360,6 +1368,8 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
         "submission": submission, "submission_files": submission_files,
         "can_withdraw_submission": can_withdraw_submission,
         "can_resubmit_submission": can_resubmit_submission,
+        "submission_returned": submission_returned,
+        "resubmission_state": resubmission_state,
         "resubmission_due_at": submission.get("resubmission_due_at") if submission else None,
         "max_upload_mb": MAX_UPLOAD_SIZE_MB,
         "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
@@ -2911,6 +2921,8 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
             and _exam_allows_student_ai(paper_data, exam_config)
         )
         exam_ai_context = _build_exam_ai_context(assignment, paper_dict, paper_data) if exam_ai_allowed else ""
+        if user["role"] == "student":
+            paper_dict["questions_json"] = json.dumps(strip_exam_scoring_for_student(paper_data), ensure_ascii=False)
 
         # 检查学生是否已提交
         submission = None
@@ -2931,16 +2943,18 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
                 submission_files = _serialize_submission_file_rows(files_cursor)
         conn.commit()
 
+    submission_returned = bool(submission and submission_is_returned(submission))
+    resubmission_state = submission_resubmission_state(submission) if submission else "none"
     can_resubmit_submission = bool(
         submission
         and submission.get("status") == "submitted"
-        and submission_resubmission_accepts(submission)
+        and resubmission_state == "open"
     )
     can_withdraw_submission = bool(
         submission
         and submission.get("status") == "submitted"
         and assignment_accepts_submissions(assignment)
-        and not int(submission.get("resubmission_allowed") or 0)
+        and not submission_returned
     )
 
     if assignment.get("class_offering_id"):
@@ -2975,6 +2989,8 @@ async def exam_take_page(request: Request, assignment_id: str, user: dict = Depe
         "exam_ai_context": exam_ai_context,
         "can_withdraw_submission": can_withdraw_submission,
         "can_resubmit_submission": can_resubmit_submission,
+        "submission_returned": submission_returned,
+        "resubmission_state": resubmission_state,
         "resubmission_due_at": submission.get("resubmission_due_at") if submission else None,
         "max_upload_mb": MAX_UPLOAD_SIZE_MB,
         "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,

@@ -1606,8 +1606,10 @@
     const CLASS_OFFERING_ID = {{ assignment.class_offering_id or 'null' }};
     const CAN_WITHDRAW_SUBMISSION = {{ can_withdraw_submission | tojson }};
     const CAN_RESUBMIT_SUBMISSION = {{ can_resubmit_submission | tojson }};
+    const SUBMISSION_RETURNED = {{ submission_returned | tojson }};
+    const RESUBMISSION_STATE = {{ resubmission_state | tojson }};
     const RESUBMISSION_DUE_AT = {{ resubmission_due_at | tojson }};
-    let assignmentAcceptingSubmissions = {{ assignment.is_accepting_submissions | default(false) | tojson }};
+    let assignmentAcceptingSubmissions = {{ (assignment.is_accepting_submissions or can_resubmit_submission) | tojson }};
     const SUBMISSION_FEEDBACK_MD = {{ (submission.feedback_md if submission else '') | tojson }};
     const EXAM_AI_ALLOWED = {{ exam_ai_allowed | default(false) | tojson }};
     const EXAM_AI_CONTEXT = {{ exam_ai_context | default('') | tojson }};
@@ -1750,7 +1752,9 @@
     function updateExamSubmitAvailability(stateMap) {
         const current = stateMap?.get?.(ASSIGNMENT_ID);
         if (current) {
-            assignmentAcceptingSubmissions = Boolean(current.is_accepting_submissions);
+            assignmentAcceptingSubmissions = Boolean(current.is_accepting_submissions) || resubmissionAcceptingNow();
+        } else {
+            assignmentAcceptingSubmissions = assignmentAcceptingSubmissions || resubmissionAcceptingNow();
         }
         updateTopbarNavButtons();
         const footerSubmitBtn = document.getElementById('submitExamBtn');
@@ -1758,6 +1762,13 @@
             footerSubmitBtn.disabled = !assignmentAcceptingSubmissions;
             footerSubmitBtn.title = assignmentAcceptingSubmissions ? '' : '已超过允许提交时间';
         }
+    }
+
+    function resubmissionAcceptingNow() {
+        if (!CAN_RESUBMIT_SUBMISSION) return false;
+        if (!RESUBMISSION_DUE_AT) return true;
+        const dueTime = Date.parse(RESUBMISSION_DUE_AT);
+        return Number.isNaN(dueTime) || dueTime > Date.now();
     }
 
     function openQuestionNavigator() {
@@ -3306,7 +3317,7 @@
 
     function renderSubmittedView() {
         document.body.classList.add('exam-is-submitted');
-        updateTopbarPageState('已提交');
+        updateTopbarPageState(SUBMISSION_RETURNED ? '待重交' : '已提交');
         updateTopbarNavButtons();
         // Hide nav controls
         if(elements.navContainer) elements.navContainer.style.display = 'none';
@@ -3315,7 +3326,17 @@
         let html = '';
 
         // Status Banner
-        if (SUBMISSION_STATUS === 'graded') {
+        if (SUBMISSION_RETURNED) {
+            const dueText = RESUBMISSION_DUE_AT ? new Date(RESUBMISSION_DUE_AT).toLocaleString('zh-CN') : '教师设定的重交截止时间';
+            html += `
+                <div class="result-banner warning">
+                    <div class="result-icon">!</div>
+                    <h3>${CAN_RESUBMIT_SUBMISSION ? '待重交' : '重交窗口已关闭'}</h3>
+                    <p>${CAN_RESUBMIT_SUBMISSION ? `教师已撤回本次提交，请在 ${dueText} 前重新提交。` : '教师已撤回本次提交，但当前重交窗口已关闭，请联系教师重新开放重交时间。'}</p>
+                    ${CAN_RESUBMIT_SUBMISSION ? '<button class="btn btn-primary" id="resubmitExamBtn" style="margin-top: 1rem;">重新作答并提交</button>' : ''}
+                </div>
+            `;
+        } else if (SUBMISSION_STATUS === 'graded') {
             html += `
                 <div class="result-banner success">
                     <div class="result-icon">🎉</div>
@@ -3360,16 +3381,6 @@
                 <div class="mb-4 text-center">
                     <button class="btn btn-outline btn-sm" id="withdrawExamBtn">撤回并继续作答</button>
                     <p class="text-sm text-muted mt-2">在截止前可撤回提交并修改答案，截止后只可查看。</p>
-                </div>
-            `;
-        }
-
-        if (CAN_RESUBMIT_SUBMISSION && SUBMISSION_STATUS === 'submitted') {
-            html += `
-                <div class="result-banner warning">
-                    <h3>教师已撤回批改结果</h3>
-                    <p>旧答卷和附件仍可查看下载，请在 ${RESUBMISSION_DUE_AT ? new Date(RESUBMISSION_DUE_AT).toLocaleString('zh-CN') : '重交截止时间'} 前重新提交。</p>
-                    <button class="btn btn-primary" id="resubmitExamBtn" style="margin-top: 1rem;">重新作答并提交</button>
                 </div>
             `;
         }

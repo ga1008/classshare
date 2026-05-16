@@ -11,6 +11,7 @@ import httpx
 from ..core import ai_client
 from ..database import get_db_connection
 from .ai_grading_attachments import ensure_ai_grading_attachments_supported
+from .exam_json_service import build_exam_rubric_md
 from .psych_profile_service import load_latest_hidden_profile
 from .submission_file_alignment import resolve_submission_file_path
 
@@ -227,14 +228,20 @@ def _load_submission_for_grading(
         SELECT s.*,
                a.requirements_md,
                a.rubric_md,
+               a.title AS assignment_title,
+               a.exam_paper_id,
                a.allowed_file_types_json,
                a.class_offering_id,
+               ep.title AS exam_title,
+               ep.description AS exam_description,
+               ep.questions_json AS exam_questions_json,
                c.created_by_teacher_id,
                o.teacher_id AS offering_teacher_id
         FROM submissions s
         JOIN assignments a ON a.id = s.assignment_id
         JOIN courses c ON c.id = a.course_id
         LEFT JOIN class_offerings o ON o.id = a.class_offering_id
+        LEFT JOIN exam_papers ep ON ep.id = a.exam_paper_id
         WHERE s.id = ?
         LIMIT 1
         """,
@@ -384,6 +391,27 @@ def _build_hidden_student_profile_context(conn, submission: dict[str, Any]) -> s
     return "\n".join(lines)
 
 
+def _resolve_grading_rubric(submission: dict[str, Any]) -> str:
+    if submission.get("exam_paper_id"):
+        try:
+            exam_data = json.loads(submission.get("exam_questions_json") or "{}")
+            if not isinstance(exam_data, dict):
+                exam_data = {"pages": []}
+            return build_exam_rubric_md(
+                title=str(submission.get("exam_title") or submission.get("assignment_title") or ""),
+                description=str(submission.get("exam_description") or ""),
+                exam_data=exam_data,
+                require_complete=True,
+            )
+        except (TypeError, json.JSONDecodeError, ValueError) as exc:
+            raise AIGradingQueueError(
+                400,
+                "试卷评分标准不完整，AI 批改已停止。请教师回到试卷编辑器补齐标准答案、"
+                f"每题分值、评分指导和扣分点后重新发布或更新作业评分标准。详情：{exc}",
+            ) from exc
+    return str(submission.get("rubric_md") or "").strip()
+
+
 async def submit_submission_for_ai_grading(
     submission_id: int,
     *,
@@ -418,6 +446,8 @@ async def submit_submission_for_ai_grading(
             submission_files = current_files
             submission_fingerprint = current_fingerprint
             resolved_files, has_files, has_answers = _prepare_grading_inputs(submission, submission_files)
+
+        rubric_md = _resolve_grading_rubric(submission)
         cursor = conn.execute(
             """
             UPDATE submissions
@@ -435,7 +465,7 @@ async def submit_submission_for_ai_grading(
 
     job_data = {
         "submission_id": submission_id,
-        "rubric_md": submission["rubric_md"],
+        "rubric_md": rubric_md,
         "requirements_md": submission["requirements_md"] or "",
         "allowed_file_types_json": submission["allowed_file_types_json"],
         "files": [

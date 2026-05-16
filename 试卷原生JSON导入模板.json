@@ -5,11 +5,23 @@
     "allow_student_ai": false,
     "ai_policy_note": "开放性实验、项目题或综合论述题可设为 true；客观闭卷题建议保持 false"
   },
+  "grading": {
+    "total_score": 100,
+    "description": "整卷按各题标准答案、关键步骤和附件要求综合评分；总分为每题 points 之和。",
+    "style": "medium",
+    "style_options": {
+      "strict": "严格",
+      "medium": "中等",
+      "loose": "宽松",
+      "rescue": "捞一捞"
+    }
+  },
   "json_authoring_notes": [
     "题干、选项、解析均支持简易 Markdown，例如 **重点**、`命令`、列表和 ```代码块```。",
     "Markdown 中的反斜杠、双引号和换行必须保持合法 JSON 转义；推荐先让第三方 AI 输出 JSON，再用 JSON 校验器检查。",
     "如果某题允许学生答题时使用课堂 AI，可在题目上写 allow_ai: true；也可以只在 exam_config.allow_student_ai 开启整卷允许。",
-    "附件要求只应写在 textarea 问答题里；min_count 大于 0 会被视为必传附件并在学生端显示必传标记。"
+    "附件要求只应写在 textarea 问答题里；min_count 大于 0 会被视为必传附件并在学生端显示必传标记。",
+    "导入 JSON 必须包含 grading.total_score、grading.description、grading.style，以及每题 answer、points、grading_guidance、deduction_points；points 合计必须等于 total_score。"
   ],
   "pages": [
     {
@@ -26,7 +38,10 @@
             "D. 选项四"
           ],
           "answer": "A",
-          "explanation": "解析说明，可留空"
+          "explanation": "解析说明，可留空",
+          "points": 10,
+          "grading_guidance": "选 A 得满分；答案等价表达可视为正确。",
+          "deduction_points": "选错不得分；多写无关内容不加分。"
         },
         {
           "id": "p1_q2",
@@ -42,7 +57,10 @@
             "A",
             "C"
           ],
-          "explanation": "解析说明，可留空"
+          "explanation": "解析说明，可留空",
+          "points": 20,
+          "grading_guidance": "A、C 全选且无错选得满分；漏选或错选按扣分点处理。",
+          "deduction_points": "漏选一个正确项扣 50%；错选无关项最多得一半；关键项全错不得分。"
         },
         {
           "id": "p1_q3",
@@ -50,7 +68,10 @@
           "text": "填空题题干",
           "placeholder": "请输入简短答案",
           "answer": "参考答案",
-          "explanation": "解析说明，可留空"
+          "explanation": "解析说明，可留空",
+          "points": 20,
+          "grading_guidance": "答案与参考答案含义一致得满分；大小写、同义词等按学科规则酌情接受。",
+          "deduction_points": "核心概念错误不得分；仅格式瑕疵可少量扣分。"
         },
         {
           "id": "p1_q4",
@@ -59,6 +80,9 @@
           "placeholder": "请写出完整作答过程",
           "answer": "参考答案",
           "explanation": "解析说明，可留空",
+          "points": 50,
+          "grading_guidance": "围绕参考答案中的关键步骤、结论和证据评分；能用附件支撑过程可计入得分点。",
+          "deduction_points": "缺少关键步骤、结论错误、证据与题目无关或未满足附件要求时按比例扣分。",
           "allow_ai": false,
           "attachment_requirements": {
             "enabled": true,

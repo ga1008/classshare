@@ -802,6 +802,109 @@
             0%, 100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.2); }
             50% { box-shadow: 0 0 0 8px rgba(79, 70, 229, 0); }
         }
+        .scoring-modal-box {
+            max-width: 980px;
+            width: min(96vw, 980px);
+        }
+        .scoring-modal-body {
+            max-height: min(76vh, 760px);
+            overflow-y: auto;
+        }
+        .scoring-overview-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.4fr) 180px 150px;
+            gap: 14px;
+            align-items: start;
+        }
+        .scoring-summary-strip {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 12px;
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            background: var(--surface-color);
+            border-radius: 8px;
+            font-size: 0.86rem;
+            color: var(--text-secondary);
+        }
+        .scoring-question-list {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            margin-top: 16px;
+        }
+        .scoring-question-card {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-color);
+            padding: 16px;
+        }
+        .scoring-question-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .scoring-question-title {
+            min-width: 0;
+            color: var(--text-primary);
+            font-weight: 700;
+            line-height: 1.45;
+        }
+        .scoring-question-title small {
+            display: block;
+            margin-top: 3px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+        .scoring-points-input {
+            width: 96px;
+            flex: 0 0 96px;
+        }
+        .scoring-answer-options {
+            display: grid;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .scoring-answer-option {
+            display: flex;
+            gap: 9px;
+            align-items: flex-start;
+            padding: 8px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--surface-color);
+            font-size: 0.9rem;
+        }
+        .scoring-answer-option input {
+            margin-top: 3px;
+        }
+        .scoring-fields-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: 12px;
+            margin-top: 12px;
+        }
+        .scoring-warning {
+            margin-top: 12px;
+            color: var(--danger-color);
+            font-size: 0.86rem;
+        }
+        @media (max-width: 860px) {
+            .scoring-overview-grid,
+            .scoring-fields-grid {
+                grid-template-columns: 1fr;
+            }
+            .scoring-question-head {
+                flex-direction: column;
+            }
+            .scoring-points-input {
+                width: 100%;
+            }
+        }
     </style>
 </head>
 <body>
@@ -825,6 +928,10 @@
             <button class="btn btn-sm editor-assist-btn is-json" onclick="openNativeJsonImportModal()">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m10 13-2 2 2 2"/><path d="m14 17 2-2-2-2"/></svg>
                 导入 JSON
+            </button>
+            <button class="btn btn-outline btn-sm" onclick="openScoringModal(false)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/><path d="m15 5 3 3"/></svg>
+                评分标准
             </button>
             <button class="btn btn-primary btn-sm" onclick="saveExam()">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 0-2-2V5a2 2 0 0 0 2-2h11l5 5v11a2 2 0 0 0 2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
@@ -891,6 +998,73 @@
     </div>
 
     <div id="toast-container" class="toast-container"></div>
+
+    <!-- 评分标准浮窗 -->
+    <div class="modal-overlay" id="scoring-modal" style="display: none;">
+        <div class="modal-box scoring-modal-box">
+            <div class="modal-header">
+                <div class="assist-modal-title">
+                    <span class="assist-modal-kicker">Rubric</span>
+                    <h3>补充评分标准</h3>
+                </div>
+                <button class="modal-close" onclick="closeScoringModal()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body scoring-modal-body">
+                <div class="assist-intro-band">
+                    <div class="assist-intro-copy">
+                        <strong>统一标准答案、分值和扣分点</strong>
+                        <span>这些内容不会展示给学生，会在发布试卷后作为 AI 批改的统一评分依据。</span>
+                    </div>
+                    <span class="assist-path-badge is-json">AI 批改依据</span>
+                </div>
+                <div class="assist-section">
+                    <div class="assist-section-head">
+                        <strong>整卷评分设置</strong>
+                        <small>总分由每题分值合计得到</small>
+                    </div>
+                    <div class="scoring-overview-grid">
+                        <div class="form-group mb-0">
+                            <label class="form-label">整体评分描述</label>
+                            <textarea id="scoring-description" class="form-control" rows="3" placeholder="例如：按标准答案、关键步骤和附件证据综合评分，重点看核心概念、过程完整度和结论准确性。"></textarea>
+                        </div>
+                        <div class="form-group mb-0">
+                            <label class="form-label">评分风格</label>
+                            <select id="scoring-style" class="form-control">
+                                <option value="strict">严格</option>
+                                <option value="medium" selected>中等</option>
+                                <option value="loose">宽松</option>
+                                <option value="rescue">捞一捞</option>
+                            </select>
+                        </div>
+                        <div class="form-group mb-0">
+                            <label class="form-label">目标总分</label>
+                            <input type="number" id="scoring-target-total" class="form-control" min="1" max="1000" step="1" value="100">
+                        </div>
+                    </div>
+                    <div class="scoring-summary-strip">
+                        <span id="scoring-total-summary">当前合计：0 分</span>
+                        <button type="button" class="btn btn-outline btn-sm" onclick="distributeScoringPoints()">按目标总分均分</button>
+                    </div>
+                    <div class="scoring-warning" id="scoring-warning" style="display:none;"></div>
+                </div>
+                <div class="assist-section">
+                    <div class="assist-section-head">
+                        <strong>逐题评分标准</strong>
+                        <small>选择题可直接点选正确答案</small>
+                    </div>
+                    <div class="scoring-question-list" id="scoring-question-list"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeScoringModal()">取消</button>
+                <button class="btn btn-primary" onclick="applyScoringModal()" id="apply-scoring-btn">
+                    应用评分标准
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- AI 辅助出题模态框 -->
     <div class="modal-overlay" id="ai-exam-modal" style="display: none;">
@@ -1061,7 +1235,7 @@
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>
                             选择 JSON 文件
                         </button>
-                        <div class="text-sm text-muted mt-3">支持四种题型：radio、checkbox、text、textarea</div>
+                        <div class="text-sm text-muted mt-3">支持四种题型，并要求包含整卷评分标准与每题分值、标准答案、得分点、失分点。</div>
                     </div>
                 </div>
                 <div class="json-file-chip" id="json-file-chip"></div>
@@ -1101,6 +1275,7 @@
         let examConfig = {};
         let currentPageIdx = -1;
         let nativeJsonFile = null;
+        let scoringSaveAfterApply = false;
 
         try {
             examConfig = typeof EXAM_CONFIG_RAW === 'string'
@@ -1116,6 +1291,12 @@
             checkbox: '多选题',
             text: '填空题',
             textarea: '问答题'
+        };
+        const scoringStyleLabels = {
+            strict: '严格',
+            medium: '中等',
+            loose: '宽松',
+            rescue: '捞一捞'
         };
 
         function renderEditorMarkdown(value, emptyText = '') {
@@ -1140,10 +1321,11 @@
             {% if paper and paper.questions_json %}
             try {
                 const loaded = JSON.parse({{ paper.questions_json | tojson }});
-                if (loaded.pages) examData.pages = loaded.pages;
+                if (loaded && Array.isArray(loaded.pages)) examData = { ...loaded, pages: loaded.pages };
             } catch(e) { console.error('解析试卷数据失败', e); }
             {% endif %}
 
+            if (!Array.isArray(examData.pages)) examData.pages = [];
             if (examData.pages.length === 0) {
                 window.addPage();
             } else {
@@ -1217,7 +1399,7 @@
                 return false;
             }
 
-            examData.pages = questions.pages;
+            examData = { ...questions, pages: questions.pages };
             if (imported.exam_config || questions.exam_config || imported.config || questions.config) {
                 examConfig = imported.exam_config || questions.exam_config || imported.config || questions.config || {};
                 const aiPolicyInput = document.getElementById('exam-allow-student-ai');
@@ -1249,6 +1431,324 @@
                 .map(type => `${typeLabels[type]} ${byType[type]}`);
             return `${stats.pages || 0} 个部分，${stats.questions || 0} 题${parts.length ? '（' + parts.join('，') + '）' : ''}`;
         }
+
+        function getAllEditorQuestions() {
+            const items = [];
+            (examData.pages || []).forEach((page, pageIdx) => {
+                (page.questions || []).forEach((q, questionIdx) => {
+                    items.push({ page, pageIdx, questionIdx, q });
+                });
+            });
+            return items;
+        }
+
+        function optionAnswerValue(optionText, optionIdx) {
+            const match = String(optionText || '').trim().match(/^([A-Za-z])[\.\、\)\s]/);
+            return match ? match[1].toUpperCase() : String.fromCharCode(65 + optionIdx);
+        }
+
+        function splitCheckboxAnswer(answer) {
+            if (Array.isArray(answer)) return answer.map(item => String(item).trim()).filter(Boolean);
+            return String(answer || '')
+                .replace(/[;；|、，]/g, ',')
+                .split(',')
+                .map(item => item.trim())
+                .filter(Boolean);
+        }
+
+        function getQuestionPoints(q) {
+            const raw = q.points ?? q.score ?? q.max_score ?? q.grading?.points ?? q.grading?.score;
+            const parsed = Number(raw);
+            return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+        }
+
+        function getQuestionGuidance(q) {
+            return String(q.grading_guidance || q.grading?.guidance || q.scoring_guidance || '').trim();
+        }
+
+        function getQuestionDeduction(q) {
+            return String(q.deduction_points || q.grading?.deduction_points || q.deductions || '').trim();
+        }
+
+        function formatScoreValue(score) {
+            const value = Number(score || 0);
+            return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+        }
+
+        function answerHasValueForQuestion(q) {
+            if (q.type === 'checkbox') return splitCheckboxAnswer(q.answer).length > 0;
+            return String(q.answer ?? '').trim().length > 0;
+        }
+
+        function defaultGuidanceForQuestion(q) {
+            if (q.type === 'radio') return '选中标准答案得满分；答案明确且无歧义。';
+            if (q.type === 'checkbox') return '标准答案全部选中且无错选得满分；漏选或错选按扣分点处理。';
+            if (q.type === 'text') return '答案与参考答案含义一致得满分；等价表达可酌情认可。';
+            return '围绕参考答案中的关键步骤、结论和证据评分；过程完整、表达清楚可得满分。';
+        }
+
+        function defaultDeductionForQuestion(q) {
+            if (q.type === 'radio') return '选错不得分；多写无关内容不加分。';
+            if (q.type === 'checkbox') return '漏选按比例扣分；错选无关项最多得一半；关键项全错不得分。';
+            if (q.type === 'text') return '核心概念错误不得分；仅格式瑕疵可少量扣分。';
+            return '缺少关键步骤、结论错误、证据不足或未满足附件要求时按比例扣分。';
+        }
+
+        function calculateScoringTotal() {
+            return getAllEditorQuestions().reduce((total, item) => total + getQuestionPoints(item.q), 0);
+        }
+
+        function ensureScoringDefaults() {
+            const questions = getAllEditorQuestions();
+            if (!examData.grading || typeof examData.grading !== 'object') {
+                examData.grading = {
+                    description: '',
+                    style: 'medium',
+                    total_score: 100,
+                };
+            }
+            if (!examData.grading.style) examData.grading.style = 'medium';
+
+            const hasAnyPoints = questions.some(item => getQuestionPoints(item.q) > 0);
+            if (!hasAnyPoints && questions.length) {
+                distributePointsAcrossQuestions(Number(examData.grading.total_score || 100) || 100);
+            }
+            questions.forEach(({ q }) => {
+                if (!q.grading || typeof q.grading !== 'object') q.grading = {};
+                if (!getQuestionGuidance(q)) {
+                    q.grading_guidance = defaultGuidanceForQuestion(q);
+                    q.grading.guidance = q.grading_guidance;
+                }
+                if (!getQuestionDeduction(q)) {
+                    q.deduction_points = defaultDeductionForQuestion(q);
+                    q.grading.deduction_points = q.deduction_points;
+                }
+                if (getQuestionPoints(q) > 0) q.grading.points = getQuestionPoints(q);
+            });
+            examData.grading.total_score = calculateScoringTotal() || Number(examData.grading.total_score || 100) || 100;
+        }
+
+        function distributePointsAcrossQuestions(totalScore) {
+            const questions = getAllEditorQuestions();
+            if (!questions.length) return;
+            const total = Math.max(questions.length, Number(totalScore) || 100);
+            const base = Math.floor((total / questions.length) * 100) / 100;
+            let remaining = Math.round(total * 100);
+            questions.forEach(({ q }, idx) => {
+                const value = idx === questions.length - 1 ? remaining / 100 : base;
+                remaining -= Math.round(value * 100);
+                q.points = Number(value.toFixed(2));
+                if (!q.grading || typeof q.grading !== 'object') q.grading = {};
+                q.grading.points = q.points;
+            });
+            if (!examData.grading || typeof examData.grading !== 'object') examData.grading = {};
+            examData.grading.total_score = total;
+        }
+
+        function renderScoringAnswerControl(q, idx) {
+            if (q.type === 'radio' || q.type === 'checkbox') {
+                const isCheckbox = q.type === 'checkbox';
+                const selected = new Set(isCheckbox ? splitCheckboxAnswer(q.answer) : [String(q.answer || '').trim()].filter(Boolean));
+                const inputType = isCheckbox ? 'checkbox' : 'radio';
+                const name = isCheckbox ? '' : `name="scoring-answer-${idx}"`;
+                return `
+                    <div class="scoring-answer-options">
+                        ${(q.options || []).map((option, optionIdx) => {
+                            const value = optionAnswerValue(option, optionIdx);
+                            return `
+                                <label class="scoring-answer-option">
+                                    <input type="${inputType}" ${name} value="${escapeHtml(value)}" ${selected.has(value) ? 'checked' : ''} onchange="window.updateScoringChoiceAnswer(${idx})">
+                                    <span><strong>${escapeHtml(value)}.</strong> ${escapeHtml(String(option || '').replace(/^[A-Za-z][\.\、\)\s]+/, ''))}</span>
+                                </label>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            }
+            return `
+                <textarea class="form-control" rows="${q.type === 'textarea' ? 4 : 2}" placeholder="${q.type === 'text' ? '填写填空题参考答案' : '填写问答题参考答案、关键步骤或参考结论'}" oninput="window.updateScoringTextAnswer(${idx}, this.value)">${escapeHtml(q.answer || '')}</textarea>
+            `;
+        }
+
+        function renderScoringModal() {
+            ensureScoringDefaults();
+            const descriptionEl = document.getElementById('scoring-description');
+            const styleEl = document.getElementById('scoring-style');
+            const targetEl = document.getElementById('scoring-target-total');
+            if (descriptionEl) descriptionEl.value = examData.grading.description || '';
+            if (styleEl) styleEl.value = examData.grading.style || 'medium';
+            if (targetEl) targetEl.value = formatScoreValue(examData.grading.total_score || calculateScoringTotal() || 100);
+
+            const questions = getAllEditorQuestions();
+            const list = document.getElementById('scoring-question-list');
+            if (!list) return;
+            list.innerHTML = questions.map(({ page, q }, idx) => `
+                <section class="scoring-question-card">
+                    <div class="scoring-question-head">
+                        <div class="scoring-question-title">
+                            第 ${idx + 1} 题 · ${typeLabels[q.type] || q.type || '题目'}
+                            <small>${escapeHtml(page.name || '')}${q.id ? ` · ${escapeHtml(q.id)}` : ''}</small>
+                            <div class="text-sm text-muted mt-2">${escapeHtml(String(q.text || '未填写题干')).slice(0, 180)}</div>
+                        </div>
+                        <div class="form-group mb-0 scoring-points-input">
+                            <label class="form-label">分值</label>
+                            <input type="number" min="0.5" max="1000" step="0.5" class="form-control" value="${escapeHtml(formatScoreValue(getQuestionPoints(q) || 1))}" oninput="window.updateScoringPoints(${idx}, this.value)">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">标准答案</label>
+                        ${renderScoringAnswerControl(q, idx)}
+                    </div>
+                    <div class="scoring-fields-grid">
+                        <div class="form-group mb-0">
+                            <label class="form-label">评分指导 / 得分点</label>
+                            <textarea class="form-control" rows="3" oninput="window.updateScoringGuidance(${idx}, this.value)">${escapeHtml(getQuestionGuidance(q))}</textarea>
+                        </div>
+                        <div class="form-group mb-0">
+                            <label class="form-label">扣分点 / 失分点</label>
+                            <textarea class="form-control" rows="3" oninput="window.updateScoringDeduction(${idx}, this.value)">${escapeHtml(getQuestionDeduction(q))}</textarea>
+                        </div>
+                    </div>
+                </section>
+            `).join('');
+            updateScoringSummary();
+        }
+
+        function updateScoringSummary() {
+            if (examData.grading && typeof examData.grading === 'object') {
+                examData.grading.total_score = calculateScoringTotal();
+            }
+            const summary = document.getElementById('scoring-total-summary');
+            if (summary) summary.textContent = `当前合计：${formatScoreValue(calculateScoringTotal())} 分`;
+        }
+
+        function validateScoringCompleteness() {
+            const errors = [];
+            const questions = getAllEditorQuestions();
+            const grading = examData.grading || {};
+            if (!questions.length) errors.push('请至少添加一道题目');
+            if (!String(grading.description || '').trim()) errors.push('请填写整体评分描述');
+            if (!grading.style || !scoringStyleLabels[grading.style]) errors.push('请选择评分风格');
+            questions.forEach(({ q }, idx) => {
+                const label = `第 ${idx + 1} 题`;
+                if (!answerHasValueForQuestion(q)) errors.push(`${label} 缺少标准答案`);
+                if (getQuestionPoints(q) <= 0) errors.push(`${label} 缺少有效分值`);
+                if (!getQuestionGuidance(q)) errors.push(`${label} 缺少评分指导`);
+                if (!getQuestionDeduction(q)) errors.push(`${label} 缺少扣分点`);
+            });
+            if (calculateScoringTotal() <= 0) errors.push('每题分值合计必须大于 0');
+            return errors;
+        }
+
+        function showScoringWarning(message) {
+            const warning = document.getElementById('scoring-warning');
+            if (!warning) return;
+            warning.textContent = message || '';
+            warning.style.display = message ? 'block' : 'none';
+        }
+
+        function scoringIsComplete() {
+            return validateScoringCompleteness().length === 0;
+        }
+
+        window.openScoringModal = function(saveAfterApply = false) {
+            if (!getAllEditorQuestions().length) {
+                showToast('请先添加题目，再设置评分标准', 'warning');
+                return;
+            }
+            scoringSaveAfterApply = Boolean(saveAfterApply);
+            window.closeAIGenerateModal?.();
+            window.closeNativeJsonImportModal?.();
+            const modal = document.getElementById('scoring-modal');
+            if (!modal) return;
+            renderScoringModal();
+            showScoringWarning('');
+            const applyBtn = document.getElementById('apply-scoring-btn');
+            if (applyBtn) applyBtn.textContent = scoringSaveAfterApply ? '应用并保存试卷' : '应用评分标准';
+            modal.style.display = 'flex';
+            setTimeout(() => modal.classList.add('active'), 10);
+        };
+
+        window.closeScoringModal = function() {
+            const modal = document.getElementById('scoring-modal');
+            if (!modal) return;
+            modal.classList.remove('active');
+            setTimeout(() => modal.style.display = 'none', 200);
+            scoringSaveAfterApply = false;
+        };
+
+        window.distributeScoringPoints = function() {
+            const target = Number(document.getElementById('scoring-target-total')?.value || 100);
+            distributePointsAcrossQuestions(target);
+            renderScoringModal();
+        };
+
+        window.updateScoringPoints = function(idx, value) {
+            const item = getAllEditorQuestions()[idx];
+            if (!item) return;
+            const parsed = Number(value);
+            item.q.points = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+            if (!item.q.grading || typeof item.q.grading !== 'object') item.q.grading = {};
+            item.q.grading.points = item.q.points;
+            updateScoringSummary();
+        };
+
+        window.updateScoringChoiceAnswer = function(idx) {
+            const item = getAllEditorQuestions()[idx];
+            if (!item) return;
+            const list = document.getElementById('scoring-question-list');
+            const card = list?.children?.[idx];
+            if (!card) return;
+            const checked = Array.from(card.querySelectorAll('input[type="radio"]:checked, input[type="checkbox"]:checked'))
+                .map(input => input.value)
+                .filter(Boolean);
+            item.q.answer = item.q.type === 'checkbox' ? checked : (checked[0] || '');
+        };
+
+        window.updateScoringTextAnswer = function(idx, value) {
+            const item = getAllEditorQuestions()[idx];
+            if (item) item.q.answer = value;
+        };
+
+        window.updateScoringGuidance = function(idx, value) {
+            const item = getAllEditorQuestions()[idx];
+            if (!item) return;
+            item.q.grading_guidance = value;
+            if (!item.q.grading || typeof item.q.grading !== 'object') item.q.grading = {};
+            item.q.grading.guidance = value;
+        };
+
+        window.updateScoringDeduction = function(idx, value) {
+            const item = getAllEditorQuestions()[idx];
+            if (!item) return;
+            item.q.deduction_points = value;
+            if (!item.q.grading || typeof item.q.grading !== 'object') item.q.grading = {};
+            item.q.grading.deduction_points = value;
+        };
+
+        window.applyScoringModal = async function() {
+            if (!examData.grading || typeof examData.grading !== 'object') examData.grading = {};
+            examData.grading.description = document.getElementById('scoring-description')?.value.trim() || '';
+            examData.grading.style = document.getElementById('scoring-style')?.value || 'medium';
+            examData.grading.style_label = scoringStyleLabels[examData.grading.style] || '中等';
+            examData.grading.total_score = calculateScoringTotal();
+
+            const errors = validateScoringCompleteness();
+            if (errors.length) {
+                showScoringWarning(errors.slice(0, 6).join('；'));
+                return;
+            }
+
+            showScoringWarning('');
+            const shouldSave = scoringSaveAfterApply;
+            window.closeScoringModal();
+            window.renderQuestionEditor();
+            window.renderPreview();
+            showToast(`评分标准已应用，总分 ${formatScoreValue(examData.grading.total_score)} 分`, 'success');
+            if (shouldSave) {
+                await persistExam();
+            }
+        };
 
         // === 页面管理 ===
         window.addPage = function() {
@@ -1468,6 +1968,12 @@
             if ((newType === 'radio' || newType === 'checkbox') && !q.options) {
                 q.options = ['', '', '', ''];
             }
+            if (newType === 'checkbox' && !Array.isArray(q.answer)) {
+                q.answer = q.answer ? [String(q.answer)] : [];
+            }
+            if (newType !== 'checkbox' && Array.isArray(q.answer)) {
+                q.answer = q.answer[0] || '';
+            }
             if (newType === 'text' || newType === 'textarea') {
                 delete q.options;
                 if (!q.placeholder) q.placeholder = '';
@@ -1584,9 +2090,13 @@
         }
 
         // === 保存 ===
-        window.saveExam = async function() {
+        async function persistExam() {
             const title = document.getElementById('exam-title').value.trim();
             if (!title) { showToast('请输入试卷标题', 'warning'); return; }
+            if (examData.grading && typeof examData.grading === 'object') {
+                examData.grading.total_score = calculateScoringTotal();
+                examData.grading.style_label = scoringStyleLabels[examData.grading.style] || '中等';
+            }
 
             const payload = {
                 title: title,
@@ -1619,6 +2129,17 @@
             } catch(e) {
                 showToast('保存失败: ' + e.message, 'error');
             }
+        }
+
+        window.saveExam = async function() {
+            if (getAllEditorQuestions().length && !scoringIsComplete()) {
+                const wantsScoring = confirm('当前试卷还没有完整评分标准。确定：现在补充标准答案、分值和扣分点；取消：仅保存草稿，发布到课堂前仍需补齐。');
+                if (wantsScoring) {
+                    window.openScoringModal(true);
+                    return;
+                }
+            }
+            await persistExam();
         }
 
         window.previewExam = function() {
@@ -1989,7 +2510,7 @@ ${questionsHtml || '<div class="preview-empty">暂无题目</div>'}
                 const effectiveScope = attachmentRequirements
                     ? `${scope}\n\n问答题附件要求：${attachmentRequirements}`
                     : scope;
-                payload.append('scope', `${effectiveScope}\n\n出题格式要求：题干、选项和解析可以使用简易 Markdown（列表、加粗、行内代码、代码块），但返回内容必须是合法 JSON 字符串；开放性题目可按需设置 allow_ai=true。`);
+                payload.append('scope', `${effectiveScope}\n\n出题格式要求：题干、选项和解析可以使用简易 Markdown（列表、加粗、行内代码、代码块），但返回内容必须是合法 JSON 字符串；开放性题目可按需设置 allow_ai=true；必须同时生成 grading.total_score、grading.description、grading.style，以及每题 answer、points、grading_guidance、deduction_points。`);
                 payload.append('difficulty', difficulty);
                 if (totalQuestions !== null) {
                     payload.append('total_questions', String(totalQuestions));

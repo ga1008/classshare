@@ -50,8 +50,10 @@ from ..services.late_submission_policy import (
     utc_like_now,
 )
 from ..services.exam_json_service import (
+    build_exam_rubric_md,
     EXAM_JSON_MAX_BYTES,
     get_exam_json_template_text,
+    normalize_exam_scoring_payload,
     parse_exam_json_text,
 )
 from ..services.submission_assets import (
@@ -3095,13 +3097,17 @@ async def create_exam_paper(request: Request, user: dict = Depends(get_current_t
     data = await request.json()
     paper_id = data.get('id') or str(uuid.uuid4())
     now = datetime.now().isoformat()
+    try:
+        questions_payload = normalize_exam_scoring_payload(data.get('questions', {"pages": []}))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
     with get_db_connection() as conn:
         conn.execute(
             """INSERT INTO exam_papers (id, teacher_id, title, description, questions_json, exam_config_json, status, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (paper_id, user['id'], data['title'], data.get('description', ''),
-             json.dumps(data.get('questions', {"pages": []}), ensure_ascii=False),
+             json.dumps(questions_payload, ensure_ascii=False),
              json.dumps(data.get('config', {}), ensure_ascii=False),
              data.get('status', 'draft'), now, now)
         )
@@ -3139,6 +3145,10 @@ async def update_exam_paper(paper_id: str, request: Request, user: dict = Depend
     """更新试卷"""
     data = await request.json()
     now = datetime.now().isoformat()
+    try:
+        questions_payload = normalize_exam_scoring_payload(data.get('questions', {"pages": []}))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
     with get_db_connection() as conn:
         _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]))
@@ -3148,7 +3158,7 @@ async def update_exam_paper(paper_id: str, request: Request, user: dict = Depend
                SET title = ?, description = ?, questions_json = ?, exam_config_json = ?, status = ?, updated_at = ?
                WHERE id = ?""",
             (data['title'], data.get('description', ''),
-             json.dumps(data.get('questions', {"pages": []}), ensure_ascii=False),
+             json.dumps(questions_payload, ensure_ascii=False),
              json.dumps(data.get('config', {}), ensure_ascii=False),
              data.get('status', 'draft'), now, paper_id)
         )
@@ -3237,6 +3247,28 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
             raise HTTPException(409, "该试卷已添加到当前课堂，请勿重复发布")
 
         created_at = datetime.now().isoformat()
+        try:
+            paper_questions = json.loads(paper["questions_json"] or "{}")
+            if not isinstance(paper_questions, dict):
+                paper_questions = {"pages": []}
+            paper_questions = normalize_exam_scoring_payload(paper_questions, require_complete=True)
+            exam_rubric_md = build_exam_rubric_md(
+                title=str(paper["title"] or ""),
+                description=str(paper["description"] or ""),
+                exam_data=paper_questions,
+                require_complete=True,
+            )
+        except (json.JSONDecodeError, ValueError, TypeError) as exc:
+            raise HTTPException(
+                400,
+                f"试卷评分标准不完整，请先回到试卷编辑器补齐标准答案、分值、评分指导和扣分点：{exc}",
+            ) from exc
+
+        conn.execute(
+            "UPDATE exam_papers SET questions_json = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(paper_questions, ensure_ascii=False), created_at, paper_id),
+        )
+
         allowed_file_types_json = encode_allowed_file_types_json(_get_allowed_file_types(data))
         cursor = conn.execute(
             """
@@ -3255,7 +3287,7 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
                 data.get('title', paper['title']),
                 schedule_fields["status"],
                 f"**试卷**: {paper['title']}\n\n{paper['description'] or ''}",
-                "按试卷各题评分",
+                exam_rubric_md,
                 'ai',
                 paper_id,
                 int(class_offering_id),

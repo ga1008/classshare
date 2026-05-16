@@ -2227,8 +2227,44 @@ function personalizeClassroomCopy(overrides = {}) {
     });
 }
 
+function initClassroomTopbarMenus() {
+    const menus = Array.from(document.querySelectorAll('.classroom-topbar-menu'));
+    if (!menus.length) return;
+
+    const closeMenus = (exceptMenu = null) => {
+        menus.forEach((menu) => {
+            if (menu !== exceptMenu) {
+                menu.removeAttribute('open');
+            }
+        });
+    };
+
+    menus.forEach((menu) => {
+        menu.addEventListener('toggle', () => {
+            if (menu.open) closeMenus(menu);
+        });
+
+        menu.addEventListener('click', (event) => {
+            const actionableItem = event.target.closest('.classroom-topbar-menu__item');
+            if (!actionableItem) return;
+            menu.removeAttribute('open');
+        }, true);
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!event.target.closest('.classroom-topbar-menu')) {
+            closeMenus();
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeMenus();
+    });
+}
+
 export function initClassroomPage() {
     initCoursePopover();
+    initClassroomTopbarMenus();
     initWorkspaceNav();
     initTeachingTimeline();
     initAssignmentClocks();

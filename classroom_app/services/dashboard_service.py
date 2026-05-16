@@ -1368,8 +1368,14 @@ def _load_student_assignment_stats(conn, offering_ids: list[int], student_id: in
         SELECT o.id AS offering_id,
                COUNT(DISTINCT CASE WHEN a.status != 'new' THEN a.id END) AS assignment_count,
                COUNT(DISTINCT CASE WHEN a.status != 'new' AND a.exam_paper_id IS NOT NULL THEN a.id END) AS exam_count,
-               COUNT(DISTINCT CASE WHEN a.status = 'published' AND s.id IS NULL THEN a.id END) AS pending_count,
-               COUNT(DISTINCT CASE WHEN s.id IS NOT NULL THEN a.id END) AS submitted_count,
+               COUNT(DISTINCT CASE
+                   WHEN a.status = 'published'
+                    AND (s.id IS NULL OR COALESCE(s.resubmission_allowed, 0) = 1)
+                   THEN a.id END) AS pending_count,
+               COUNT(DISTINCT CASE
+                   WHEN s.id IS NOT NULL
+                    AND COALESCE(s.resubmission_allowed, 0) = 0
+                   THEN a.id END) AS submitted_count,
                COUNT(DISTINCT CASE WHEN s.status = 'graded' THEN a.id END) AS graded_count,
                COUNT(DISTINCT CASE WHEN s.status = 'grading' THEN a.id END) AS grading_count,
                MAX(COALESCE(s.submitted_at, a.created_at)) AS last_activity_at
