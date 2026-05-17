@@ -41,6 +41,7 @@ const elements = {
     endInput: document.getElementById('semesterEndInput'),
     weekCountValue: document.getElementById('semesterWeekCountValue'),
     weekCountHint: document.getElementById('semesterWeekCountHint'),
+    syncCurrentBtn: document.getElementById('semesterSyncCurrentBtn'),
     submitBtn: document.getElementById('semesterSubmitBtn'),
 };
 
@@ -227,6 +228,11 @@ function openModal(mode, semester = null) {
     const defaults = config.defaults || {};
     elements.modalTitle.textContent = mode === 'edit' ? '编辑学期' : '新增学期';
     elements.submitBtn.textContent = mode === 'edit' ? '保存修改' : '保存学期';
+    if (elements.syncCurrentBtn) {
+        elements.syncCurrentBtn.hidden = mode !== 'create';
+        elements.syncCurrentBtn.disabled = false;
+        elements.syncCurrentBtn.textContent = '从教务系统同步';
+    }
     elements.form.dataset.mode = mode;
     elements.form.dataset.autoName = mode === 'create' ? 'true' : 'false';
     elements.nameInput.dataset.touched = 'false';
@@ -313,6 +319,39 @@ async function handleSyncCalendar(semesterId, button = null) {
         if (button) {
             button.disabled = false;
             button.textContent = originalText;
+        }
+    }
+}
+
+async function handleSyncCurrentSemester(button = null) {
+    const originalText = button?.textContent || '';
+    if (button) {
+        button.disabled = true;
+        button.textContent = '正在同步...';
+    }
+    if (elements.submitBtn) {
+        elements.submitBtn.disabled = true;
+    }
+    try {
+        const result = await apiFetch('/api/manage/semesters/calendar/sync-current', { method: 'POST' });
+        showMessage(result.message || '已从教务系统同步本学期', 'success');
+        closeModal();
+        window.setTimeout(() => {
+            const semesterId = Number(result.semester_id || 0);
+            if (semesterId) {
+                window.location.href = `${window.location.pathname}?semester_id=${semesterId}`;
+            } else {
+                window.location.reload();
+            }
+        }, 1200);
+    } catch (error) {
+        showMessage(error.message || '从教务系统同步失败', 'error');
+        if (button) {
+            button.disabled = false;
+            button.textContent = originalText;
+        }
+        if (elements.submitBtn) {
+            elements.submitBtn.disabled = false;
         }
     }
 }
@@ -427,6 +466,7 @@ function initEvents() {
         elements.nameInput.dataset.touched = value ? 'true' : 'false';
     });
     elements.form?.addEventListener('submit', handleSubmit);
+    elements.syncCurrentBtn?.addEventListener('click', () => handleSyncCurrentSemester(elements.syncCurrentBtn));
 }
 
 function initDefaultState() {
@@ -450,6 +490,10 @@ function initDefaultState() {
 
 function handleQueryOpen() {
     const searchParams = new URLSearchParams(window.location.search);
+    const semesterId = Number(searchParams.get('semester_id') || 0);
+    if (semesterId && getSemesterById(semesterId)) {
+        setActiveSemester(semesterId);
+    }
     if (searchParams.get('open') === 'new') {
         openModal('create');
     }

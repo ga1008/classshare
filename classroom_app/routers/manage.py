@@ -98,6 +98,7 @@ from ..services.academic_integration_service import (
 )
 from ..services.academic_calendar_sync_service import (
     mark_semester_calendar_sync_queued,
+    prepare_current_semester_from_academic_system,
     sync_semester_calendar_background,
 )
 from ..storage_paths import resolve_migrated_file_path
@@ -1556,6 +1557,32 @@ async def api_sync_semester_calendar(
         "status": "success",
         "message": "校历同步已开始，系统会自动拉取教务系统并核对广西节假日/补课日期。",
         "semester_id": int(semester_id),
+    }
+
+
+@router.post("/semesters/calendar/sync-current", response_class=JSONResponse)
+async def api_sync_current_semester_from_academic_system(
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_teacher),
+):
+    result = await prepare_current_semester_from_academic_system(int(user["id"]))
+    if result.get("status") == "missing_credential":
+        raise HTTPException(400, result.get("message") or "请先配置教务系统账号。")
+    if result.get("status") != "success":
+        detail = result.get("message") or "未能从教务系统同步当前学期。"
+        source_message = str(result.get("source_message") or "").strip()
+        if source_message:
+            detail = f"{detail}（{source_message}）"
+        raise HTTPException(502, detail)
+
+    semester_id = int(result["semester_id"])
+    background_tasks.add_task(sync_semester_calendar_background, int(user["id"]), semester_id)
+    return {
+        "status": "success",
+        "message": result.get("message") or "已从教务系统同步本学期，校历处理已开始。",
+        "semester_id": semester_id,
+        "action": result.get("action") or "",
+        "calendar_sync_status": "pending",
     }
 
 

@@ -22,6 +22,7 @@ from .academic_service import (
     build_holiday_lookup,
     china_now,
     compute_semester_week_count,
+    infer_semester_name,
     parse_date_input,
 )
 
@@ -166,6 +167,36 @@ def _pick_best_alignment(candidates: list[CalendarAlignment], requested_start: d
     return max(plausible, key=score)
 
 
+def _pick_current_alignment(candidates: list[CalendarAlignment], reference_date: date) -> CalendarAlignment | None:
+    valid: list[tuple[CalendarAlignment, date, date]] = []
+    for item in candidates:
+        start = parse_date_input(item.start_date)
+        end = parse_date_input(item.end_date)
+        if not start or not end or end < start:
+            continue
+        valid.append((item, start, end))
+    if not valid:
+        return None
+
+    def score(entry: tuple[CalendarAlignment, date, date]) -> tuple[int, int, float, int]:
+        item, start, end = entry
+        contains_today = start <= reference_date <= end
+        if contains_today:
+            distance = 0
+        elif reference_date < start:
+            distance = (start - reference_date).days
+        else:
+            distance = (reference_date - end).days
+        duration = max(1, (end - start).days + 1)
+        return (1 if contains_today else 0, -distance, float(item.confidence or 0.0), -duration)
+
+    best, start, end = max(valid, key=score)
+    if start <= reference_date <= end:
+        return best
+    nearest_days = min(abs((start - reference_date).days), abs((end - reference_date).days))
+    return best if nearest_days <= 45 else None
+
+
 def _parse_academic_calendar_alignment(page_html: str, *, source_url: str) -> list[CalendarAlignment]:
     text = _strip_html(page_html)
     candidates: list[CalendarAlignment] = []
@@ -210,14 +241,11 @@ def _parse_academic_calendar_alignment(page_html: str, *, source_url: str) -> li
     return candidates
 
 
-async def _fetch_academic_alignment(
+async def _fetch_academic_alignment_candidates(
     access_payload: dict[str, Any] | None,
-    *,
-    requested_start: date,
-    requested_end: date,
-) -> tuple[CalendarAlignment | None, list[dict[str, Any]]]:
+) -> tuple[list[CalendarAlignment], list[dict[str, Any]]]:
     if not access_payload:
-        return None, [{"source": "academic_system", "status": "skipped", "message": "未配置可用教务系统账号"}]
+        return [], [{"source": "academic_system", "status": "skipped", "message": "未配置可用教务系统账号"}]
 
     candidates: list[CalendarAlignment] = []
     source_summaries: list[dict[str, Any]] = []
@@ -260,6 +288,16 @@ async def _fetch_academic_alignment(
             }
         )
 
+    return candidates, source_summaries
+
+
+async def _fetch_academic_alignment(
+    access_payload: dict[str, Any] | None,
+    *,
+    requested_start: date,
+    requested_end: date,
+) -> tuple[CalendarAlignment | None, list[dict[str, Any]]]:
+    candidates, source_summaries = await _fetch_academic_alignment_candidates(access_payload)
     return _pick_best_alignment(candidates, requested_start, requested_end), source_summaries
 
 
@@ -621,6 +659,155 @@ def mark_semester_calendar_sync_queued(conn, *, teacher_id: int, semester_id: in
         """,
         (SYNC_STATUS_PENDING, "校历同步已排队，系统会自动拉取教务日历并核对广西节假日。", int(semester_id), int(teacher_id)),
     )
+
+
+def _find_existing_semester_for_alignment(conn, *, teacher_id: int, name: str, start_date: str, end_date: str):
+    row = conn.execute(
+        """
+        SELECT *
+        FROM academic_semesters
+        WHERE teacher_id = ?
+          AND (
+              name = ?
+              OR (start_date = ? AND end_date = ?)
+          )
+        ORDER BY
+          CASE
+            WHEN name = ? THEN 0
+            WHEN start_date = ? AND end_date = ? THEN 1
+            ELSE 2
+          END,
+          updated_at DESC,
+          id DESC
+        LIMIT 1
+        """,
+        (int(teacher_id), name, start_date, end_date, name, start_date, end_date),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+async def prepare_current_semester_from_academic_system(teacher_id: int) -> dict[str, Any]:
+    """Create or reuse the teacher's current semester from the academic system.
+
+    This does the login and term-range discovery synchronously so the UI knows
+    which semester was created. The heavier holiday crawler and AI verification
+    still runs through the normal background calendar sync.
+    """
+    with get_db_connection() as conn:
+        access_payload = load_teacher_academic_access_method(conn, teacher_id, school_code="gxufl")
+    if not access_payload:
+        return {
+            "status": "missing_credential",
+            "message": "请先在系统设置中配置并通过校验的教务系统账号，再从教务系统同步学期。",
+        }
+
+    candidates, academic_sources = await _fetch_academic_alignment_candidates(access_payload)
+    alignment = _pick_current_alignment(candidates, china_now().date())
+    if not alignment:
+        source_message = ""
+        failed_source = next((item for item in academic_sources if item.get("status") == "failed"), None)
+        if failed_source:
+            source_message = str(failed_source.get("message") or "")[:160]
+        return {
+            "status": "no_current_semester",
+            "message": "已尝试登录教务系统，但未解析到当前学期教学日历。请确认教务系统首页已显示本学期校历后再试。",
+            "source_message": source_message,
+            "source_summary": academic_sources,
+        }
+
+    start_date = parse_date_input(alignment.start_date)
+    end_date = parse_date_input(alignment.end_date)
+    if not start_date or not end_date or end_date < start_date:
+        return {
+            "status": "invalid_alignment",
+            "message": "教务系统返回的学期日期无效，未写入本系统。",
+            "source_summary": academic_sources,
+        }
+
+    semester_name = _normalize_space(alignment.name) or infer_semester_name(start_date)
+    start_iso = start_date.isoformat()
+    end_iso = end_date.isoformat()
+    week_count = compute_semester_week_count(start_date, end_date)
+    sync_message = "已从教务系统识别本学期，节假日和补课处理已排队。"
+
+    with get_db_connection() as conn:
+        existing = _find_existing_semester_for_alignment(
+            conn,
+            teacher_id=teacher_id,
+            name=semester_name,
+            start_date=start_iso,
+            end_date=end_iso,
+        )
+        try:
+            if existing:
+                semester_id = int(existing["id"])
+                conn.execute(
+                    """
+                    UPDATE academic_semesters
+                    SET name = ?,
+                        start_date = ?,
+                        end_date = ?,
+                        week_count = ?,
+                        calendar_sync_status = ?,
+                        calendar_sync_message = ?,
+                        calendar_source_summary_json = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND teacher_id = ?
+                    """,
+                    (
+                        semester_name,
+                        start_iso,
+                        end_iso,
+                        week_count,
+                        SYNC_STATUS_PENDING,
+                        sync_message,
+                        _json_dumps(academic_sources),
+                        semester_id,
+                        int(teacher_id),
+                    ),
+                )
+                action = "reused"
+            else:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO academic_semesters (
+                        teacher_id, name, start_date, end_date, week_count,
+                        calendar_sync_status, calendar_sync_message, calendar_source_summary_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        int(teacher_id),
+                        semester_name,
+                        start_iso,
+                        end_iso,
+                        week_count,
+                        SYNC_STATUS_PENDING,
+                        sync_message,
+                        _json_dumps(academic_sources),
+                    ),
+                )
+                semester_id = int(cursor.lastrowid)
+                action = "created"
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+    return {
+        "status": "success",
+        "action": action,
+        "semester_id": semester_id,
+        "semester_name": semester_name,
+        "start_date": start_iso,
+        "end_date": end_iso,
+        "week_count": week_count,
+        "message": (
+            f"已从教务系统{'复用' if action == 'reused' else '创建'}本学期：{semester_name}，"
+            "系统会继续核对广西节假日和补课日期。"
+        ),
+        "source_summary": academic_sources,
+    }
 
 
 def _mark_sync_running(conn, *, teacher_id: int, semester_id: int) -> None:
