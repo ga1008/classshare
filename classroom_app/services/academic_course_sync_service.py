@@ -26,7 +26,12 @@ ACADEMIC_COURSE_SOURCE = "gxufl_jwxt"
 ZF_TEACHER_TIMETABLE_INDEX_PATH = (
     "/kbcx/jskbcx_cxJskbcxIndex.html?doType=details&gnmkdm=N2150&layout=default"
 )
-ZF_TEACHER_TIMETABLE_QUERY_PATH = "/kbcx/jskbcx_cxJskbcx.html?gnmkdm=N2150"
+ZF_TIMETABLE_FIELD_PATH = "/kbdy/bjkbdy_cxKbzdxsxx.html?gnmkdm=N2150"
+ZF_TEACHER_TIMETABLE_QUERY_PATH = "/kbcx/jskbcx_cxJskb1.html?gnmkdm=N2150"
+ZF_LAB_TIMETABLE_LIST_PATH = "/sykbcx_cxSykbcxList.html?doType=query&gnmkdm=N2150"
+ZF_LAB_TIMETABLE_QUERY_PATH = "/sykbcx_cxKfxSykbcxIndex.html?doType=query&gnmkdm=N2150"
+ZF_TIMETABLE_WEEK_SLOTS_PATH = "/kbcx/jskbcx_cxRsd.html?gnmkdm=N2150"
+ZF_TIMETABLE_SECTION_SLOTS_PATH = "/kbcx/jskbcx_cxRjc.html?gnmkdm=N2150"
 
 FOLLOW_UP_ITEMS = [
     "补充课程简介、教学目标和平台内使用说明",
@@ -79,23 +84,71 @@ HTML_FIELD_LABELS = [
 ]
 HTML_FIELD_PATTERN = "|".join(re.escape(item) for item in HTML_FIELD_LABELS)
 
+ZF_TIMETABLE_FIELD_KEYS = [
+    "kch",
+    "sj",
+    "cd",
+    "jsxm",
+    "jxb",
+    "ktmc",
+    "jxbzc",
+    "kcxzjc",
+    "jxbrs",
+    "xkrs",
+    "khfs",
+    "ksfs",
+    "xkbz",
+    "kcxszz",
+    "zhxs",
+    "zxs",
+    "kczxs",
+    "bklxdjmc",
+    "cdlbmc",
+    "fx",
+    "xf",
+    "xq",
+]
+
+ZF_OPTIONAL_FALSE_FIELD_KEYS = ["yjsxxx", "skpthyh", "zxxx"]
+
 
 @dataclass
 class AcademicCourseScheduleItem:
+    academic_year: str = ""
+    academic_year_name: str = ""
+    academic_term: str = ""
+    academic_term_name: str = ""
+    teacher_name: str = ""
+    teacher_org_id: str = ""
+    teacher_org_name: str = ""
     course_name: str = ""
     course_code: str = ""
     teaching_class_name: str = ""
+    time_text: str = ""
     weeks_text: str = ""
     weekday: int | None = None
     weekday_label: str = ""
     section_text: str = ""
     campus: str = ""
+    campus_id: str = ""
     location: str = ""
+    classroom_id: str = ""
+    classroom_code: str = ""
+    classroom_type: str = ""
     class_composition: str = ""
     course_nature: str = ""
     exam_method: str = ""
     exam_mode: str = ""
     course_hour_text: str = ""
+    weekly_hours_text: str = ""
+    total_hours_text: str = ""
+    course_total_hours_text: str = ""
+    major_direction: str = ""
+    course_note: str = ""
+    online_info: str = ""
+    course_topic_name: str = ""
+    block_level: str = ""
+    teaching_class_student_count: int = 0
     credits: float = 0.0
     student_count: int = 0
     raw_text: str = ""
@@ -313,49 +366,127 @@ def _first_text(data: dict[str, Any], *keys: str) -> str:
     return ""
 
 
+def _payload_context(payload: Any) -> dict[str, str]:
+    if not isinstance(payload, dict):
+        return {}
+    xsxx = payload.get("xsxx") if isinstance(payload.get("xsxx"), dict) else {}
+    return {
+        "academic_year": _first_text(xsxx, "XNM", "xnm"),
+        "academic_year_name": _first_text(xsxx, "XNMC", "xnmc"),
+        "academic_term": _first_text(xsxx, "XQM", "xqm"),
+        "academic_term_name": _first_text(xsxx, "XQMMC", "xqmmc"),
+        "teacher_name": _first_text(xsxx, "XM", "xm"),
+        "teacher_org_id": _first_text(xsxx, "JG_ID", "jg_id"),
+        "teacher_org_name": _first_text(xsxx, "JGMC", "jgmc"),
+    }
+
+
+def _field_key_from_definition(raw: dict[str, Any]) -> str:
+    key = _first_text(raw, "ZDM", "zdm", "field", "name", "key").strip()
+    if key:
+        return key
+    return ""
+
+
+def _field_keys_from_response(payload: Any) -> list[str]:
+    keys: list[str] = []
+    for raw in _walk_json_dicts(payload):
+        key = _field_key_from_definition(raw)
+        if key and key not in keys:
+            keys.append(key)
+    return keys
+
+
+def _candidate_course_dicts(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        kb_list = payload.get("kbList")
+        if isinstance(kb_list, list) and kb_list:
+            return [item for item in kb_list if isinstance(item, dict)]
+    return [
+        raw
+        for raw in _walk_json_dicts(payload)
+        if any(key in raw for key in ("kcmc", "kch", "kch_id", "jxbmc", "jxb", "zcd", "cdmc"))
+    ]
+
+
 def _parse_schedule_items_from_json(payload: Any, source_url: str) -> list[AcademicCourseScheduleItem]:
     items: list[AcademicCourseScheduleItem] = []
-    for raw in _walk_json_dicts(payload):
-        course_name = _first_text(raw, "kcmc", "courseName", "course_name", "name")
+    context = _payload_context(payload)
+    for raw in _candidate_course_dicts(payload):
+        course_name = _first_text(raw, "kcmc", "kcmc_zw", "courseName", "course_name", "name")
+        course_code = _first_text(raw, "kch", "kch_id", "kcdm", "kcbh", "courseCode")
         if not course_name:
-            continue
-        if not any(key in raw for key in ("kch", "kch_id", "jxbmc", "zcd", "xqj", "jc", "cdmc", "xqmc")):
+            course_name = _first_text(raw, "ktmc", "jxbmc", "jxb")
+        if not course_name or not any(
+            key in raw
+            for key in ("kch", "kch_id", "jxbmc", "jxb", "zcd", "xqj", "jc", "cdmc", "sj", "kcxszz")
+        ):
             continue
 
-        weekday = _parse_weekday(_first_text(raw, "xqj", "weekday", "weekDay"))
-        course_hour_text = _first_text(raw, "kcxszc", "xs", "xszc", "hourComposition", "course_hour_text")
+        time_text = _first_text(raw, "sj", "time_text", "time")
+        weekday = _parse_weekday(_first_text(raw, "xqj", "xqjmc", "weekday", "weekDay") or time_text)
+        section_text = _parse_section_text(_first_text(raw, "jc", "jcs", "jcdm", "sections", "section_text") or time_text)
+        course_hour_text = _first_text(raw, "kcxszz", "kcxszc", "xs", "xszc", "hourComposition", "course_hour_text")
+        weekly_hours_text = _first_text(raw, "zhxs", "weeklyHours", "weekly_hours_text")
+        total_hours_text = _first_text(raw, "zxs", "totalHours", "total_hours_text")
+        course_total_hours_text = _first_text(raw, "kczxs", "courseTotalHours", "course_total_hours_text")
+        raw_text = _normalize_space(
+            " ".join(
+                filter(
+                    None,
+                    [
+                        course_name,
+                        course_code,
+                        time_text,
+                        _first_text(raw, "zcd", "skzcmc", "zc"),
+                        _first_text(raw, "cdmc", "jxdd", "classroom", "room"),
+                        _first_text(raw, "jxbzc", "jxbmc", "jxb"),
+                        course_hour_text,
+                    ],
+                )
+            )
+        )
+
         item = AcademicCourseScheduleItem(
+            academic_year=context.get("academic_year", "")[:24],
+            academic_year_name=context.get("academic_year_name", "")[:40],
+            academic_term=context.get("academic_term", "")[:24],
+            academic_term_name=context.get("academic_term_name", "")[:40],
+            teacher_name=context.get("teacher_name", "")[:80],
+            teacher_org_id=context.get("teacher_org_id", "")[:80],
+            teacher_org_name=context.get("teacher_org_name", "")[:160],
             course_name=course_name[:160],
-            course_code=_first_text(raw, "kch", "kch_id", "kcdm", "kcbh", "courseCode")[:80],
+            course_code=course_code[:80],
             teaching_class_name=_first_text(raw, "jxbmc", "jxb", "jxb_id", "teachingClassName")[:180],
+            time_text=time_text[:180],
             weeks_text=_first_text(raw, "zcd", "skzcmc", "zc", "weeks", "weeks_text")[:180],
             weekday=weekday,
             weekday_label=_weekday_label(weekday),
-            section_text=_parse_section_text(_first_text(raw, "jc", "jcs", "jcdm", "sections", "section_text"))[:40],
-            campus=_first_text(raw, "xqmc", "campus", "campusName")[:120],
+            section_text=section_text[:40],
+            campus=_first_text(raw, "xqmc", "xq", "campus", "campusName")[:120],
+            campus_id=_first_text(raw, "xq_id", "xqid", "xqh_id")[:80],
             location=_first_text(raw, "cdmc", "jxdd", "classroom", "room", "location")[:220],
-            class_composition=_first_text(raw, "jxbmc", "bj", "classComposition", "class_composition")[:260],
-            course_nature=_first_text(raw, "kcxzmc", "kcxz", "courseNature")[:80],
-            exam_method=_first_text(raw, "khfsmc", "khfs", "examMethod")[:80],
-            exam_mode=_first_text(raw, "ksfsmc", "ksfs", "examMode")[:80],
+            classroom_id=_first_text(raw, "cd_id", "cdid", "classroomId")[:120],
+            classroom_code=_first_text(raw, "cdbh", "cdh", "classroomCode")[:80],
+            classroom_type=_first_text(raw, "cdlbmc", "cdlb", "classroomType")[:120],
+            class_composition=_first_text(raw, "jxbzc", "jxbmc", "bj", "classComposition", "class_composition")[:260],
+            course_nature=_first_text(raw, "kcxzjc", "kcxzmc", "kcxz", "courseNature")[:80],
+            exam_method=_first_text(raw, "khfs", "khfsmc", "examMethod")[:80],
+            exam_mode=_first_text(raw, "ksfs", "ksfsmc", "examMode")[:80],
             course_hour_text=course_hour_text[:160],
+            weekly_hours_text=weekly_hours_text[:80],
+            total_hours_text=total_hours_text[:80],
+            course_total_hours_text=course_total_hours_text[:80],
+            major_direction=_first_text(raw, "fx", "zyfx", "majorDirection")[:120],
+            course_note=_first_text(raw, "xkbz", "note", "remark")[:180],
+            online_info=_first_text(raw, "zxxx", "onlineInfo")[:180],
+            course_topic_name=_first_text(raw, "ktmc", "topicName")[:160],
+            block_level=_first_text(raw, "bklxdjmc", "bklx", "blockLevel")[:120],
+            teaching_class_student_count=_parse_int(_first_text(raw, "jxbrs", "teachingClassStudentCount")),
             credits=_parse_float(_first_text(raw, "xf", "credits", "credit")),
-            student_count=_parse_int(_first_text(raw, "xkrs", "jxbrs", "studentCount", "student_count")),
-            raw_text=_normalize_space(
-                " ".join(
-                    filter(
-                        None,
-                        [
-                            course_name,
-                            _first_text(raw, "kch", "kch_id", "kcdm"),
-                            _first_text(raw, "zcd", "skzcmc", "zc"),
-                            _first_text(raw, "jc", "jcs", "jcdm"),
-                            _first_text(raw, "cdmc", "jxdd", "classroom", "room"),
-                        ],
-                    )
-                )
-            )[:1600],
-            raw_json=dict(raw),
+            student_count=_parse_int(_first_text(raw, "xkrs", "studentCount", "student_count")),
+            raw_text=raw_text[:1600],
+            raw_json={"row": dict(raw), "context": context},
             source_url=source_url,
         )
         items.append(item)
@@ -370,6 +501,7 @@ def _dedupe_schedule_items(items: list[AcademicCourseScheduleItem]) -> list[Acad
             item.course_code.casefold(),
             item.course_name.casefold(),
             item.teaching_class_name.casefold(),
+            item.time_text.casefold(),
             item.weeks_text.casefold(),
             item.weekday,
             item.section_text.casefold(),
@@ -441,6 +573,161 @@ def _term_param_candidates(semester: dict[str, Any]) -> list[dict[str, str]]:
     return candidates
 
 
+def _ajax_headers(client: httpx.AsyncClient, *, accept: str = "application/json,text/javascript,*/*;q=0.8") -> dict[str, str]:
+    return {
+        "Accept": accept,
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest",
+        "Origin": str(client.base_url).rstrip("/"),
+        "Referer": str(client.base_url).rstrip("/") + ZF_TEACHER_TIMETABLE_INDEX_PATH,
+    }
+
+
+def _build_timetable_form(term_params: dict[str, str], field_keys: list[str]) -> dict[str, Any]:
+    form: dict[str, Any] = {
+        **term_params,
+        "kzlx": "ck",
+        "djskkb": "0",
+        "xsdm": "",
+        "ccdm": "",
+        "xsewkbnr": "0",
+    }
+    keys = field_keys or ZF_TIMETABLE_FIELD_KEYS
+    for key in keys:
+        if key:
+            form[f"xszd[{key}]"] = "true"
+    for key in ZF_OPTIONAL_FALSE_FIELD_KEYS:
+        form[f"xszd[{key}]"] = "false"
+    return form
+
+
+async def _fetch_timetable_field_keys(
+    client: httpx.AsyncClient,
+    sources: list[dict[str, Any]],
+) -> list[str]:
+    try:
+        response = await client.post(
+            ZF_TIMETABLE_FIELD_PATH,
+            data={"kbzl": "jsgr", "doType": "query"},
+            headers=_ajax_headers(client, accept="*/*"),
+        )
+        payload: Any = None
+        try:
+            payload = response.json()
+        except (json.JSONDecodeError, ValueError):
+            payload = None
+        field_keys = _field_keys_from_response(payload)
+        sources.append(
+            {
+                "path": ZF_TIMETABLE_FIELD_PATH,
+                "method": "POST",
+                "status_code": response.status_code,
+                "parser": "field_definitions" if field_keys else "empty",
+                "field_keys": field_keys[:32],
+                "field_count": len(field_keys),
+                "url": str(response.url),
+            }
+        )
+        selected_keys = list(ZF_TIMETABLE_FIELD_KEYS)
+        for key in field_keys:
+            if key in ZF_TIMETABLE_FIELD_KEYS and key not in selected_keys:
+                selected_keys.append(key)
+        return selected_keys
+    except httpx.HTTPError as exc:
+        sources.append(
+            {
+                "path": ZF_TIMETABLE_FIELD_PATH,
+                "method": "POST",
+                "status": "failed",
+                "message": str(exc)[:180],
+            }
+        )
+        return ZF_TIMETABLE_FIELD_KEYS
+
+
+async def _fetch_supplemental_timetable_sources(
+    client: httpx.AsyncClient,
+    *,
+    term_params: dict[str, str],
+    field_keys: list[str],
+    sources: list[dict[str, Any]],
+) -> None:
+    supplemental_requests = [
+        (
+            ZF_TIMETABLE_WEEK_SLOTS_PATH,
+            {**term_params, "xqh_id": "1", "xsewkbnr": "0"},
+            "week_slots",
+        ),
+        (
+            ZF_TIMETABLE_SECTION_SLOTS_PATH,
+            {**term_params, "xqh_id": "1"},
+            "section_slots",
+        ),
+        (
+            ZF_LAB_TIMETABLE_LIST_PATH,
+            {
+                **term_params,
+                "kzlx": "ck",
+                "djskkb": "0",
+                "xsewkbnr": "0",
+            },
+            "lab_list",
+        ),
+        (
+            ZF_LAB_TIMETABLE_QUERY_PATH,
+            {
+                **_build_timetable_form(term_params, field_keys),
+                "_search": "false",
+                "nd": str(int(china_now().timestamp() * 1000)),
+                "queryModel.showCount": "1000",
+                "queryModel.currentPage": "1",
+                "queryModel.sortName": "",
+                "queryModel.sortOrder": "asc",
+                "time": "5",
+            },
+            "lab_timetable",
+        ),
+    ]
+    for path, form, parser_name in supplemental_requests:
+        try:
+            response = await client.post(path, data=form, headers=_ajax_headers(client))
+            payload: Any = None
+            try:
+                payload = response.json()
+            except (json.JSONDecodeError, ValueError):
+                payload = None
+            rows = []
+            if isinstance(payload, dict):
+                for key in ("kbList", "items", "rows"):
+                    if isinstance(payload.get(key), list):
+                        rows = payload[key]
+                        break
+            elif isinstance(payload, list):
+                rows = payload
+            sources.append(
+                {
+                    "path": path,
+                    "method": "POST",
+                    "params": term_params,
+                    "status_code": response.status_code,
+                    "parser": parser_name,
+                    "item_count": len(rows),
+                    "url": str(response.url),
+                }
+            )
+        except httpx.HTTPError as exc:
+            sources.append(
+                {
+                    "path": path,
+                    "method": "POST",
+                    "params": term_params,
+                    "status": "failed",
+                    "parser": parser_name,
+                    "message": str(exc)[:180],
+                }
+            )
+
+
 async def _fetch_teacher_timetable(
     client: httpx.AsyncClient,
     semester: dict[str, Any],
@@ -476,52 +763,47 @@ async def _fetch_teacher_timetable(
             }
         )
 
+    field_keys = await _fetch_timetable_field_keys(client, sources)
     for term_params in _term_param_candidates(semester):
-        base_form = {
-            **term_params,
-            "doType": "query",
-            "queryModel.showCount": "1000",
-            "queryModel.currentPage": "1",
-            "queryModel.sortName": "",
-            "queryModel.sortOrder": "asc",
-            "time": str(int(china_now().timestamp() * 1000)),
-        }
-        for method in ("POST", "GET"):
-            try:
-                headers = {
-                    "Accept": "application/json,text/javascript,*/*;q=0.8",
-                    "X-Requested-With": "XMLHttpRequest",
-                    "Referer": str(client.base_url).rstrip("/") + ZF_TEACHER_TIMETABLE_INDEX_PATH,
+        form = _build_timetable_form(term_params, field_keys)
+        try:
+            response = await client.post(
+                ZF_TEACHER_TIMETABLE_QUERY_PATH,
+                data=form,
+                headers=_ajax_headers(client),
+            )
+            source_url = str(response.url)
+            items, parser = _parse_schedule_response(response, source_url=source_url)
+            sources.append(
+                {
+                    "path": ZF_TEACHER_TIMETABLE_QUERY_PATH,
+                    "method": "POST",
+                    "params": term_params,
+                    "status_code": response.status_code,
+                    "parser": parser,
+                    "field_count": len(field_keys),
+                    "item_count": len(items),
+                    "url": source_url,
                 }
-                if method == "POST":
-                    response = await client.post(ZF_TEACHER_TIMETABLE_QUERY_PATH, data=base_form, headers=headers)
-                else:
-                    response = await client.get(ZF_TEACHER_TIMETABLE_QUERY_PATH, params=base_form, headers=headers)
-                source_url = str(response.url)
-                items, parser = _parse_schedule_response(response, source_url=source_url)
-                sources.append(
-                    {
-                        "path": ZF_TEACHER_TIMETABLE_QUERY_PATH,
-                        "method": method,
-                        "params": term_params,
-                        "status_code": response.status_code,
-                        "parser": parser,
-                        "item_count": len(items),
-                        "url": source_url,
-                    }
+            )
+            if items:
+                await _fetch_supplemental_timetable_sources(
+                    client,
+                    term_params=term_params,
+                    field_keys=field_keys,
+                    sources=sources,
                 )
-                if items:
-                    return items, sources
-            except httpx.HTTPError as exc:
-                sources.append(
-                    {
-                        "path": ZF_TEACHER_TIMETABLE_QUERY_PATH,
-                        "method": method,
-                        "params": term_params,
-                        "status": "failed",
-                        "message": str(exc)[:180],
-                    }
-                )
+                return items, sources
+        except httpx.HTTPError as exc:
+            sources.append(
+                {
+                    "path": ZF_TEACHER_TIMETABLE_QUERY_PATH,
+                    "method": "POST",
+                    "params": term_params,
+                    "status": "failed",
+                    "message": str(exc)[:180],
+                }
+            )
 
     return [], sources
 
@@ -605,6 +887,8 @@ def _course_metadata(
     locations = sorted({item.location for item in items if item.location})
     teaching_classes = sorted({item.teaching_class_name for item in items if item.teaching_class_name})
     weeks = sorted({item.weeks_text for item in items if item.weeks_text})
+    classroom_types = sorted({item.classroom_type for item in items if item.classroom_type})
+    teacher_names = sorted({item.teacher_name for item in items if item.teacher_name})
     return {
         "source": ACADEMIC_COURSE_SOURCE,
         "semester_id": int(semester["id"]),
@@ -612,6 +896,8 @@ def _course_metadata(
         "schedule_item_count": len(items),
         "locations": locations[:24],
         "teaching_classes": teaching_classes[:24],
+        "classroom_types": classroom_types[:12],
+        "teacher_names": teacher_names[:8],
         "weeks": weeks[:24],
         "source_summary": source_summary[-8:],
         "follow_up_items": FOLLOW_UP_ITEMS,
@@ -647,7 +933,17 @@ def _upsert_courses_and_schedule_items(
         first_item = group_items[0]
         existing = _find_existing_course(conn, teacher_id, first_item)
         credits = next((item.credits for item in group_items if item.credits > 0), 0.0)
-        total_hours = max((_parse_total_hours(item.course_hour_text) for item in group_items), default=0)
+        total_hours = max(
+            (
+                _parse_total_hours(
+                    item.course_total_hours_text
+                    or item.total_hours_text
+                    or item.course_hour_text
+                )
+                for item in group_items
+            ),
+            default=0,
+        )
         department = normalize_department(infer_department_from_text(first_item.course_name, first_item.raw_text))
         metadata = _course_metadata(semester=semester, items=group_items, source_summary=source_summary)
 
@@ -709,26 +1005,48 @@ def _upsert_courses_and_schedule_items(
             conn.execute(
                 """
                 INSERT OR IGNORE INTO teacher_academic_course_sync_items (
-                    teacher_id, semester_id, course_id, course_name, course_code, teaching_class_name,
-                    weeks_text, weekday, weekday_label, section_text, campus, location, class_composition,
+                    teacher_id, semester_id, course_id,
+                    academic_year, academic_year_name, academic_term, academic_term_name,
+                    teacher_name, teacher_org_id, teacher_org_name,
+                    course_name, course_code, teaching_class_name, time_text,
+                    weeks_text, weekday, weekday_label, section_text,
+                    campus, campus_id, location, classroom_id, classroom_code, classroom_type, class_composition,
                     course_nature, exam_method, exam_mode, course_hour_text, credits, student_count,
+                    weekly_hours_text, total_hours_text, course_total_hours_text,
+                    major_direction, course_note, online_info, course_topic_name, block_level,
+                    teaching_class_student_count,
                     raw_text, raw_json, source_url, synced_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP
+                )
                 """,
                 (
                     int(teacher_id),
                     int(semester["id"]),
                     course_id,
+                    item.academic_year,
+                    item.academic_year_name,
+                    item.academic_term,
+                    item.academic_term_name,
+                    item.teacher_name,
+                    item.teacher_org_id,
+                    item.teacher_org_name,
                     item.course_name,
                     item.course_code,
                     item.teaching_class_name,
+                    item.time_text,
                     item.weeks_text,
                     item.weekday,
                     item.weekday_label,
                     item.section_text,
                     item.campus,
+                    item.campus_id,
                     item.location,
+                    item.classroom_id,
+                    item.classroom_code,
+                    item.classroom_type,
                     item.class_composition,
                     item.course_nature,
                     item.exam_method,
@@ -736,6 +1054,15 @@ def _upsert_courses_and_schedule_items(
                     item.course_hour_text,
                     float(item.credits or 0),
                     int(item.student_count or 0),
+                    item.weekly_hours_text,
+                    item.total_hours_text,
+                    item.course_total_hours_text,
+                    item.major_direction,
+                    item.course_note,
+                    item.online_info,
+                    item.course_topic_name,
+                    item.block_level,
+                    int(item.teaching_class_student_count or 0),
                     item.raw_text,
                     _json_dumps(item.raw_json or {}),
                     item.source_url,
@@ -851,20 +1178,41 @@ def summarize_academic_course_sync_item(row: Any) -> dict[str, Any]:
         "id": int(item["id"]),
         "semester_id": int(item["semester_id"]) if item.get("semester_id") else None,
         "course_id": int(item["course_id"]) if item.get("course_id") else None,
+        "academic_year": str(item.get("academic_year") or ""),
+        "academic_year_name": str(item.get("academic_year_name") or ""),
+        "academic_term": str(item.get("academic_term") or ""),
+        "academic_term_name": str(item.get("academic_term_name") or ""),
+        "teacher_name": str(item.get("teacher_name") or ""),
+        "teacher_org_id": str(item.get("teacher_org_id") or ""),
+        "teacher_org_name": str(item.get("teacher_org_name") or ""),
         "course_name": str(item.get("course_name") or ""),
         "course_code": str(item.get("course_code") or ""),
         "teaching_class_name": str(item.get("teaching_class_name") or ""),
+        "time_text": str(item.get("time_text") or ""),
         "weeks_text": str(item.get("weeks_text") or ""),
         "weekday": int(item["weekday"]) if item.get("weekday") is not None else None,
         "weekday_label": weekday_label,
         "section_text": str(item.get("section_text") or ""),
         "campus": str(item.get("campus") or ""),
+        "campus_id": str(item.get("campus_id") or ""),
         "location": str(item.get("location") or ""),
+        "classroom_id": str(item.get("classroom_id") or ""),
+        "classroom_code": str(item.get("classroom_code") or ""),
+        "classroom_type": str(item.get("classroom_type") or ""),
         "class_composition": str(item.get("class_composition") or ""),
         "course_nature": str(item.get("course_nature") or ""),
         "exam_method": str(item.get("exam_method") or ""),
         "exam_mode": str(item.get("exam_mode") or ""),
         "course_hour_text": str(item.get("course_hour_text") or ""),
+        "weekly_hours_text": str(item.get("weekly_hours_text") or ""),
+        "total_hours_text": str(item.get("total_hours_text") or ""),
+        "course_total_hours_text": str(item.get("course_total_hours_text") or ""),
+        "major_direction": str(item.get("major_direction") or ""),
+        "course_note": str(item.get("course_note") or ""),
+        "online_info": str(item.get("online_info") or ""),
+        "course_topic_name": str(item.get("course_topic_name") or ""),
+        "block_level": str(item.get("block_level") or ""),
+        "teaching_class_student_count": int(item.get("teaching_class_student_count") or 0),
         "credits": float(item.get("credits") or 0),
         "student_count": int(item.get("student_count") or 0),
         "source_url": str(item.get("source_url") or ""),

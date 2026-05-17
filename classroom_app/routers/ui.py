@@ -1769,7 +1769,9 @@ def _load_teacher_course_rows(conn, teacher_id: int):
                     item["academic_course_code"],
                     item["academic_sync_message"],
                     " ".join(str(sync_item.get("teaching_class_name") or "") for sync_item in sync_items),
+                    " ".join(str(sync_item.get("time_text") or "") for sync_item in sync_items),
                     " ".join(str(sync_item.get("location") or "") for sync_item in sync_items),
+                    " ".join(str(sync_item.get("classroom_type") or "") for sync_item in sync_items),
                     " ".join(str(sync_item.get("weeks_text") or "") for sync_item in sync_items),
                 ],
             )

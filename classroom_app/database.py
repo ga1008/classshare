@@ -1017,20 +1017,41 @@ def init_database():
                     teacher_id INTEGER NOT NULL,
                     semester_id INTEGER,
                     course_id INTEGER,
+                    academic_year TEXT NOT NULL DEFAULT '',
+                    academic_year_name TEXT NOT NULL DEFAULT '',
+                    academic_term TEXT NOT NULL DEFAULT '',
+                    academic_term_name TEXT NOT NULL DEFAULT '',
+                    teacher_name TEXT NOT NULL DEFAULT '',
+                    teacher_org_id TEXT NOT NULL DEFAULT '',
+                    teacher_org_name TEXT NOT NULL DEFAULT '',
                     course_name TEXT NOT NULL DEFAULT '',
                     course_code TEXT NOT NULL DEFAULT '',
                     teaching_class_name TEXT NOT NULL DEFAULT '',
+                    time_text TEXT NOT NULL DEFAULT '',
                     weeks_text TEXT NOT NULL DEFAULT '',
                     weekday INTEGER,
                     weekday_label TEXT NOT NULL DEFAULT '',
                     section_text TEXT NOT NULL DEFAULT '',
                     campus TEXT NOT NULL DEFAULT '',
+                    campus_id TEXT NOT NULL DEFAULT '',
                     location TEXT NOT NULL DEFAULT '',
+                    classroom_id TEXT NOT NULL DEFAULT '',
+                    classroom_code TEXT NOT NULL DEFAULT '',
+                    classroom_type TEXT NOT NULL DEFAULT '',
                     class_composition TEXT NOT NULL DEFAULT '',
                     course_nature TEXT NOT NULL DEFAULT '',
                     exam_method TEXT NOT NULL DEFAULT '',
                     exam_mode TEXT NOT NULL DEFAULT '',
                     course_hour_text TEXT NOT NULL DEFAULT '',
+                    weekly_hours_text TEXT NOT NULL DEFAULT '',
+                    total_hours_text TEXT NOT NULL DEFAULT '',
+                    course_total_hours_text TEXT NOT NULL DEFAULT '',
+                    major_direction TEXT NOT NULL DEFAULT '',
+                    course_note TEXT NOT NULL DEFAULT '',
+                    online_info TEXT NOT NULL DEFAULT '',
+                    course_topic_name TEXT NOT NULL DEFAULT '',
+                    block_level TEXT NOT NULL DEFAULT '',
+                    teaching_class_student_count INTEGER NOT NULL DEFAULT 0,
                     credits REAL NOT NULL DEFAULT 0,
                     student_count INTEGER NOT NULL DEFAULT 0,
                     raw_text TEXT NOT NULL DEFAULT '',
@@ -1055,6 +1076,33 @@ def init_database():
                 )
                 '''
             )
+            for statement in (
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN academic_year TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN academic_year_name TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN academic_term TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN academic_term_name TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN teacher_name TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN teacher_org_id TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN teacher_org_name TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN time_text TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN campus_id TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN classroom_id TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN classroom_code TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN classroom_type TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN weekly_hours_text TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN total_hours_text TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN course_total_hours_text TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN major_direction TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN course_note TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN online_info TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN course_topic_name TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN block_level TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN teaching_class_student_count INTEGER NOT NULL DEFAULT 0",
+            ):
+                try:
+                    conn.execute(statement)
+                except sqlite3.OperationalError:
+                    pass
 
             conn.execute(
                 '''
@@ -3390,6 +3438,14 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_teacher_academic_course_sync_items_course "
                 "ON teacher_academic_course_sync_items (course_id, weekday, section_text)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_course_sync_items_term "
+                "ON teacher_academic_course_sync_items (teacher_id, academic_year, academic_term, course_code COLLATE NOCASE)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_course_sync_items_classroom "
+                "ON teacher_academic_course_sync_items (teacher_id, classroom_id, classroom_code)"
             )
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_class_offerings_unique_semester_id "

@@ -572,12 +572,16 @@
                                 {% for schedule in course.academic_schedule_preview %}
                                 <li>
                                     <strong>
-                                        {{ schedule.weekday_label or '时间待确认' }}
+                                        {{ schedule.weekday_label or schedule.time_text or '时间待确认' }}
                                         {% if schedule.section_text %} {{ schedule.section_text }}节{% endif %}
                                         {% if schedule.weeks_text %} · {{ schedule.weeks_text }}{% endif %}
                                     </strong>
                                     <span>
                                         {{ schedule.location or '地点待确认' }}
+                                        {% if schedule.classroom_type %} · {{ schedule.classroom_type }}{% endif %}
+                                        {% if schedule.course_hour_text or schedule.course_total_hours_text %}
+                                        · {{ schedule.course_total_hours_text or schedule.course_hour_text }}
+                                        {% endif %}
                                         {% if schedule.teaching_class_name %} · {{ schedule.teaching_class_name }}{% endif %}
                                     </span>
                                 </li>
