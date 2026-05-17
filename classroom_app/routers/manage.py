@@ -10,7 +10,7 @@ from typing import Any
 
 import aiofiles
 import httpx
-from fastapi import APIRouter, Request, Form, HTTPException, Depends, UploadFile, File
+from fastapi import APIRouter, Request, Form, HTTPException, Depends, UploadFile, File, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
 
 from ..config import ROSTER_DIR, TEXTBOOK_ATTACHMENT_DIR, TEXTBOOK_ATTACHMENT_LEGACY_DIRS
@@ -95,6 +95,10 @@ from ..services.academic_integration_service import (
     save_verified_academic_credential,
     update_academic_credential_verification_status,
     verify_academic_credential,
+)
+from ..services.academic_calendar_sync_service import (
+    mark_semester_calendar_sync_queued,
+    sync_semester_calendar_background,
 )
 from ..storage_paths import resolve_migrated_file_path
 from ..time_utils import local_iso
@@ -1440,6 +1444,7 @@ async def api_upload_course_file(
 # --- 学期与教材管理 ---
 @router.post("/semesters/save", response_class=JSONResponse)
 async def api_save_semester(
+    background_tasks: BackgroundTasks,
     semester_id: str = Form(default=""),
     name: str = Form(default=""),
     start_date: str = Form(...),
@@ -1459,6 +1464,7 @@ async def api_save_semester(
 
     with get_db_connection() as conn:
         try:
+            saved_semester_id: int | None = semester_id_value
             if semester_id_value:
                 _ensure_teacher_owned_record(
                     conn,
@@ -1484,7 +1490,7 @@ async def api_save_semester(
                 )
                 action_text = "更新"
             else:
-                conn.execute(
+                cursor = conn.execute(
                     """
                     INSERT INTO academic_semesters (teacher_id, name, start_date, end_date, week_count)
                     VALUES (?, ?, ?, ?, ?)
@@ -1497,14 +1503,59 @@ async def api_save_semester(
                         week_count,
                     ),
                 )
+                saved_semester_id = int(cursor.lastrowid)
                 action_text = "创建"
+            if saved_semester_id:
+                mark_semester_calendar_sync_queued(
+                    conn,
+                    teacher_id=int(user["id"]),
+                    semester_id=int(saved_semester_id),
+                )
             conn.commit()
         except sqlite3.IntegrityError as exc:
             raise HTTPException(400, f"保存失败，学期名称“{semester_name}”已存在") from exc
 
+    if saved_semester_id:
+        background_tasks.add_task(
+            sync_semester_calendar_background,
+            int(user["id"]),
+            int(saved_semester_id),
+        )
+
     return {
         "status": "success",
-        "message": f"学期已{action_text}：{semester_name}",
+        "message": f"学期已{action_text}：{semester_name}，校历同步已开始。",
+        "semester_id": saved_semester_id,
+        "calendar_sync_status": "pending",
+    }
+
+
+@router.post("/semesters/{semester_id}/calendar/sync", response_class=JSONResponse)
+async def api_sync_semester_calendar(
+    semester_id: int,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        _ensure_teacher_owned_record(
+            conn,
+            table="academic_semesters",
+            record_id=semester_id,
+            teacher_id=user["id"],
+            owner_column="teacher_id",
+        )
+        mark_semester_calendar_sync_queued(
+            conn,
+            teacher_id=int(user["id"]),
+            semester_id=int(semester_id),
+        )
+        conn.commit()
+
+    background_tasks.add_task(sync_semester_calendar_background, int(user["id"]), int(semester_id))
+    return {
+        "status": "success",
+        "message": "校历同步已开始，系统会自动拉取教务系统并核对广西节假日/补课日期。",
+        "semester_id": int(semester_id),
     }
 
 

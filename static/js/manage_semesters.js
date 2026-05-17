@@ -52,12 +52,19 @@ function normalizeSemester(item) {
         ...item,
         id: Number(item.id),
         week_count: Number.isFinite(weekCount) ? weekCount : 0,
+        calendar_sync_status: String(item.calendar_sync_status || 'pending'),
+        calendar_sync_message: String(item.calendar_sync_message || ''),
+        calendar_sync_at: String(item.calendar_sync_at || ''),
+        calendar_holiday_count: Number(item.calendar_holiday_count || 0),
+        calendar_workday_count: Number(item.calendar_workday_count || 0),
         searchText: [
             item.name,
             item.start_date,
             item.end_date,
             item.display_range,
             weekCount ? `${weekCount}周` : '',
+            item.calendar_sync_status,
+            item.calendar_sync_message,
         ].filter(Boolean).join(' ').toLowerCase(),
     };
 }
@@ -101,6 +108,19 @@ function getCurrentWeekText(semester) {
     return `今天位于第 ${Math.max(currentWeek, 1)} 周`;
 }
 
+function calendarSyncMeta(semester) {
+    const status = String(semester?.calendar_sync_status || 'pending');
+    const map = {
+        synced: { label: '教务校历已对齐', className: 'is-success' },
+        generated: { label: '系统校历已生成', className: 'is-accent' },
+        partial: { label: '校历部分同步', className: 'is-accent' },
+        running: { label: '校历同步中', className: 'is-accent' },
+        pending: { label: '校历待同步', className: 'is-muted' },
+        failed: { label: '校历同步失败', className: 'is-accent' },
+    };
+    return map[status] || map.pending;
+}
+
 function renderSemesterList() {
     if (!elements.list) {
         return;
@@ -112,6 +132,9 @@ function renderSemesterList() {
         : state.semesters;
 
     elements.list.innerHTML = items.map((semester) => `
+        ${(() => {
+            const sync = calendarSyncMeta(semester);
+            return `
         <div
             class="academic-list-item${semester.id === state.activeSemesterId ? ' is-active' : ''}"
             data-semester-id="${semester.id}"
@@ -123,14 +146,18 @@ function renderSemesterList() {
                 <div class="academic-badge-row">
                     ${semester.is_current ? '<span class="academic-badge is-success">当前学期</span>' : '<span class="academic-badge is-muted">历史或未来学期</span>'}
                     <span class="academic-badge">开学首周自动计为第 1 周</span>
+                    <span class="academic-badge ${sync.className}">${sync.label}</span>
                 </div>
             </div>
             <div class="academic-list-side">
                 <button type="button" class="btn btn-ghost btn-sm" data-action="focus" data-semester-id="${semester.id}">查看日历</button>
+                <button type="button" class="btn btn-outline btn-sm" data-action="sync-calendar" data-semester-id="${semester.id}">同步校历</button>
                 <button type="button" class="btn btn-outline btn-sm" data-action="edit" data-semester-id="${semester.id}">编辑</button>
                 <button type="button" class="btn btn-danger btn-sm" data-action="delete" data-semester-id="${semester.id}">删除</button>
             </div>
         </div>
+            `;
+        })()}
     `).join('');
 
     if (elements.listEmpty) {
@@ -155,8 +182,13 @@ function renderSummary() {
         `起止日期：${semester.start_date || '--'} 至 ${semester.end_date || '--'}`,
         `自动周数：第 1 周至第 ${semester.week_count || 0} 周`,
         `当前状态：${semester.is_current ? '进行中' : '非进行中'}`,
+        `校历同步：${calendarSyncMeta(semester).label}${semester.calendar_sync_at ? `（${semester.calendar_sync_at}）` : ''}`,
+        `节假日/补课：${semester.calendar_holiday_count || 0} 个假期，${semester.calendar_workday_count || 0} 个调休补课日`,
         getCurrentWeekText(semester),
     ];
+    if (semester.calendar_sync_message) {
+        summaryLines.push(`同步说明：${semester.calendar_sync_message}`);
+    }
     if (elements.summaryText) {
         elements.summaryText.textContent = summaryLines.join('\n');
     }
@@ -262,6 +294,29 @@ async function handleDeleteSemester(semesterId) {
     window.location.reload();
 }
 
+async function handleSyncCalendar(semesterId, button = null) {
+    const semester = getSemesterById(semesterId);
+    if (!semester) {
+        return;
+    }
+    const originalText = button?.textContent || '';
+    if (button) {
+        button.disabled = true;
+        button.textContent = '同步中...';
+    }
+    try {
+        const result = await apiFetch(`/api/manage/semesters/${semester.id}/calendar/sync`, { method: 'POST' });
+        showMessage(result.message || '校历同步已开始', 'success');
+        window.setTimeout(() => window.location.reload(), 1200);
+    } catch (error) {
+        showMessage(error.message || '校历同步启动失败', 'error');
+        if (button) {
+            button.disabled = false;
+            button.textContent = originalText;
+        }
+    }
+}
+
 async function handleSubmit(event) {
     event.preventDefault();
     if (!elements.form || !elements.submitBtn) {
@@ -354,6 +409,10 @@ function initEvents() {
             if (semester) {
                 openModal('edit', semester);
             }
+            return;
+        }
+        if (actionButton.dataset.action === 'sync-calendar') {
+            await handleSyncCalendar(semesterId, actionButton);
             return;
         }
         if (actionButton.dataset.action === 'delete') {

@@ -1008,10 +1008,49 @@ def init_database():
                     start_date TEXT NOT NULL,
                     end_date TEXT NOT NULL,
                     week_count INTEGER NOT NULL DEFAULT 1,
+                    calendar_sync_status TEXT NOT NULL DEFAULT 'pending',
+                    calendar_sync_at TEXT,
+                    calendar_sync_message TEXT DEFAULT '',
+                    calendar_source_summary_json TEXT NOT NULL DEFAULT '[]',
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
                     UNIQUE (teacher_id, name)
+                )
+                '''
+            )
+            for statement in (
+                "ALTER TABLE academic_semesters ADD COLUMN calendar_sync_status TEXT NOT NULL DEFAULT 'pending'",
+                "ALTER TABLE academic_semesters ADD COLUMN calendar_sync_at TEXT",
+                "ALTER TABLE academic_semesters ADD COLUMN calendar_sync_message TEXT DEFAULT ''",
+                "ALTER TABLE academic_semesters ADD COLUMN calendar_source_summary_json TEXT NOT NULL DEFAULT '[]'",
+            ):
+                try:
+                    conn.execute(statement)
+                except sqlite3.OperationalError:
+                    pass
+
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS academic_semester_calendar_days
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    semester_id INTEGER NOT NULL,
+                    teacher_id INTEGER NOT NULL,
+                    date TEXT NOT NULL,
+                    week_index INTEGER NOT NULL DEFAULT 1,
+                    weekday INTEGER NOT NULL DEFAULT 0,
+                    day_type TEXT NOT NULL DEFAULT 'teaching_day',
+                    label TEXT NOT NULL DEFAULT '',
+                    source TEXT NOT NULL DEFAULT 'generated',
+                    source_url TEXT DEFAULT '',
+                    confidence REAL NOT NULL DEFAULT 0.5,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (semester_id) REFERENCES academic_semesters (id) ON DELETE CASCADE,
+                    FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                    UNIQUE (semester_id, date)
                 )
                 '''
             )
@@ -3241,6 +3280,14 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_academic_semesters_teacher_period "
                 "ON academic_semesters (teacher_id, start_date DESC, end_date DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_academic_semester_calendar_days_lookup "
+                "ON academic_semester_calendar_days (semester_id, date)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_academic_semester_calendar_days_teacher "
+                "ON academic_semester_calendar_days (teacher_id, date)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_textbooks_teacher_updated "

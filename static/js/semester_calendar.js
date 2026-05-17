@@ -80,9 +80,32 @@ function normalizeSemester(item) {
         id: Number.isFinite(numericId) ? numericId : item?.id,
         week_count: Number.isFinite(weekCount) ? weekCount : 0,
         is_current: Boolean(item?.is_current),
+        calendar_days: Array.isArray(item?.calendar_days) ? item.calendar_days : [],
+        calendar_sync_status: String(item?.calendar_sync_status || 'pending'),
+        calendar_sync_at: String(item?.calendar_sync_at || ''),
+        calendar_sync_message: String(item?.calendar_sync_message || ''),
         todo_overview: item?.todo_overview || { items: [], weeks: [], summary: {}, role_policy: {} },
         todo_create_options: Array.isArray(item?.todo_create_options) ? item.todo_create_options : [],
     };
+}
+
+function buildSemesterDayLookup(semester) {
+    const lookup = {};
+    (Array.isArray(semester?.calendar_days) ? semester.calendar_days : []).forEach((day) => {
+        const isoDate = String(day?.date || '').trim();
+        if (!isoDate) return;
+        const kind = String(day?.kind || day?.day_type || '').trim();
+        if (!kind) return;
+        lookup[isoDate] = {
+            kind,
+            label: day?.label || (kind === 'workday' ? '调休上课' : '节假日'),
+            scope: day?.scope || day?.source || 'semester',
+            source: day?.source || '',
+            source_url: day?.source_url || '',
+            confidence: day?.confidence ?? null,
+        };
+    });
+    return lookup;
 }
 
 function computeMonthGroups(weeks) {
@@ -130,6 +153,8 @@ function buildSemesterModel(semester, holidayLookup, todayIso, modelCache, extra
         semester.start_date,
         semester.end_date,
         semester.week_count,
+        semester.calendar_sync_at,
+        semester.calendar_days?.length || 0,
         todayIso,
         paddingWeekCount,
     ].join(':');
@@ -144,6 +169,7 @@ function buildSemesterModel(semester, holidayLookup, todayIso, modelCache, extra
     }
 
     const todayDate = parseIsoDate(todayIso);
+    const semesterDayLookup = buildSemesterDayLookup(semester);
     const semesterCalendarStart = getMonday(startDate);
     const semesterCalendarEnd = getSunday(endDate);
     const calendarStart = addDays(semesterCalendarStart, -7 * paddingWeekCount);
@@ -174,7 +200,7 @@ function buildSemesterModel(semester, holidayLookup, todayIso, modelCache, extra
         for (let dayIndex = 0; dayIndex < 7; dayIndex += 1) {
             const currentDate = addDays(weekStart, dayIndex);
             const isoDate = formatIsoDate(currentDate);
-            const holidayInfo = holidayLookup[isoDate] || null;
+            const holidayInfo = semesterDayLookup[isoDate] || holidayLookup[isoDate] || null;
             const inSemester = currentDate >= startDate && currentDate <= endDate;
             const isWeekend = currentDate.getDay() === 0 || currentDate.getDay() === 6;
             const isHoliday = holidayInfo?.kind === 'holiday';

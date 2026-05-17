@@ -9,9 +9,10 @@ import json
 import os
 import re
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, AsyncIterator
 
 import httpx
 import rsa
@@ -312,7 +313,6 @@ async def _verify_zfsoft_v9_password(
     username: str,
     password: str,
 ) -> dict[str, Any]:
-    started_at = time.monotonic()
     headers = {
         "User-Agent": "LanShare Academic Integration/1.0",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -325,106 +325,15 @@ async def _verify_zfsoft_v9_password(
         headers=headers,
         follow_redirects=False,
     ) as client:
-        try:
-            login_response = await client.get(profile.login_path)
-            login_response.raise_for_status()
-            login_html = login_response.text
-            csrf_token = _extract_input_value(login_html, "csrftoken")
-            if not csrf_token:
-                return _failure_result(
-                    profile,
-                    STATUS_UNAVAILABLE,
-                    "教务系统登录页未返回 CSRF 令牌，暂时无法自动校验。",
-                    elapsed_ms=int((time.monotonic() - started_at) * 1000),
-                )
-
-            password_for_submit = password
-            if _extract_input_value(login_html, "mmsfjm") != "0":
-                public_key_response = await client.get(
-                    profile.public_key_path,
-                    params={"time": int(time.time() * 1000)},
-                    headers={"Accept": "application/json,*/*;q=0.8"},
-                )
-                public_key_response.raise_for_status()
-                public_key = public_key_response.json()
-                password_for_submit = _rsa_encrypt_password(
-                    password,
-                    str(public_key.get("modulus") or ""),
-                    str(public_key.get("exponent") or ""),
-                )
-
-            language = _extract_input_value(login_html, "language") or "zh_CN"
-            post_response = await client.post(
-                profile.login_path,
-                params={"time": int(time.time() * 1000)},
-                data={
-                    "csrftoken": csrf_token,
-                    "language": language,
-                    "yhm": username,
-                    "mm": password_for_submit,
-                    "ydType": "",
-                },
-                headers={
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    "Origin": profile.base_url,
-                    "Referer": profile.login_url,
-                },
-            )
-        except ValueError as exc:
-            return _failure_result(
-                profile,
-                STATUS_UNAVAILABLE,
-                str(exc),
-                elapsed_ms=int((time.monotonic() - started_at) * 1000),
-            )
-        except (httpx.HTTPError, json.JSONDecodeError) as exc:
-            return _failure_result(
-                profile,
-                STATUS_UNAVAILABLE,
-                f"无法连接教务系统或教务系统响应异常：{str(exc)[:180]}",
-                elapsed_ms=int((time.monotonic() - started_at) * 1000),
-            )
-
-        elapsed_ms = int((time.monotonic() - started_at) * 1000)
-        location = post_response.headers.get("location", "")
-        if post_response.status_code in {301, 302, 303, 307, 308}:
-            if _location_requires_interaction(location):
-                return _failure_result(
-                    profile,
-                    STATUS_CHALLENGE,
-                    "账号密码可能正确，但教务系统要求完成二次验证或改密后才能对接。",
-                    elapsed_ms=elapsed_ms,
-                )
-            if not _is_login_location(location):
-                return _success_result(profile, username=username, elapsed_ms=elapsed_ms)
-
-        tip = _extract_login_tip(post_response.text)
-        if tip:
-            return _failure_result(profile, STATUS_FAILED, tip, elapsed_ms=elapsed_ms)
-
-        if "验证码" in post_response.text and _looks_like_login_page(post_response.text):
-            return _failure_result(
-                profile,
-                STATUS_CHALLENGE,
-                "教务系统要求输入验证码，请稍后在教务系统网页完成一次正常登录后再回来保存。",
-                elapsed_ms=elapsed_ms,
-            )
-
-        home_result = await _probe_zfsoft_home(
+        result = await _login_zfsoft_v9_client(
             client,
             profile,
             username=username,
-            started_at=started_at,
+            password=password,
         )
-        if home_result is not None:
-            return home_result
-
-        return _failure_result(
-            profile,
-            STATUS_UNAVAILABLE,
-            "教务系统未返回明确登录结果，已取消保存以避免写入不可用凭据。",
-            elapsed_ms=elapsed_ms,
-        )
+        if result.get("status") == STATUS_UNAVAILABLE and result.get("message") == "教务系统未返回明确登录结果，已取消自动会话。":
+            result["message"] = "教务系统未返回明确登录结果，已取消保存以避免写入不可用凭据。"
+        return result
 
 
 async def verify_academic_credential(payload: dict[str, Any]) -> dict[str, Any]:
@@ -437,6 +346,157 @@ async def verify_academic_credential(payload: dict[str, Any]) -> dict[str, Any]:
             password=normalized["password"],
         )
     return _failure_result(profile, STATUS_UNAVAILABLE, "该学校适配器尚未实现账号密码校验。")
+
+
+@asynccontextmanager
+async def open_authenticated_academic_client(
+    access_payload: dict[str, Any],
+) -> AsyncIterator[tuple[httpx.AsyncClient, AcademicSystemProfile, dict[str, Any]]]:
+    """Open an authenticated academic-system HTTP client for internal sync jobs.
+
+    The returned client keeps the login cookies alive only inside the context
+    manager. Callers must not expose the access payload or password.
+    """
+    profile = get_academic_system_profile(access_payload.get("school_code") or "gxufl")
+    username = _normalize_username(access_payload.get("username"))
+    password = _normalize_password(access_payload.get("password"))
+    if profile.adapter_key != "zfsoft_v9" or profile.auth_method != "password_rsa":
+        raise ValueError("该教务系统适配器暂不支持自动登录会话。")
+
+    headers = {
+        "User-Agent": "LanShare Academic Calendar Sync/1.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Referer": profile.login_url,
+    }
+    timeout = httpx.Timeout(ACADEMIC_HTTP_TIMEOUT_SECONDS, connect=8.0)
+    client = httpx.AsyncClient(
+        base_url=profile.base_url,
+        timeout=timeout,
+        headers=headers,
+        follow_redirects=False,
+    )
+    try:
+        login_result = await _login_zfsoft_v9_client(
+            client,
+            profile,
+            username=username,
+            password=password,
+        )
+        if login_result.get("status") != STATUS_VERIFIED:
+            raise ValueError(str(login_result.get("message") or "教务系统登录校验未通过。"))
+        yield client, profile, login_result
+    finally:
+        await client.aclose()
+
+
+async def _login_zfsoft_v9_client(
+    client: httpx.AsyncClient,
+    profile: AcademicSystemProfile,
+    *,
+    username: str,
+    password: str,
+) -> dict[str, Any]:
+    started_at = time.monotonic()
+    try:
+        login_response = await client.get(profile.login_path)
+        login_response.raise_for_status()
+        login_html = login_response.text
+        csrf_token = _extract_input_value(login_html, "csrftoken")
+        if not csrf_token:
+            return _failure_result(
+                profile,
+                STATUS_UNAVAILABLE,
+                "教务系统登录页未返回 CSRF 令牌，暂时无法自动校验。",
+                elapsed_ms=int((time.monotonic() - started_at) * 1000),
+            )
+
+        password_for_submit = password
+        if _extract_input_value(login_html, "mmsfjm") != "0":
+            public_key_response = await client.get(
+                profile.public_key_path,
+                params={"time": int(time.time() * 1000)},
+                headers={"Accept": "application/json,*/*;q=0.8"},
+            )
+            public_key_response.raise_for_status()
+            public_key = public_key_response.json()
+            password_for_submit = _rsa_encrypt_password(
+                password,
+                str(public_key.get("modulus") or ""),
+                str(public_key.get("exponent") or ""),
+            )
+
+        language = _extract_input_value(login_html, "language") or "zh_CN"
+        post_response = await client.post(
+            profile.login_path,
+            params={"time": int(time.time() * 1000)},
+            data={
+                "csrftoken": csrf_token,
+                "language": language,
+                "yhm": username,
+                "mm": password_for_submit,
+                "ydType": "",
+            },
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Origin": profile.base_url,
+                "Referer": profile.login_url,
+            },
+        )
+    except ValueError as exc:
+        return _failure_result(
+            profile,
+            STATUS_UNAVAILABLE,
+            str(exc),
+            elapsed_ms=int((time.monotonic() - started_at) * 1000),
+        )
+    except (httpx.HTTPError, json.JSONDecodeError) as exc:
+        return _failure_result(
+            profile,
+            STATUS_UNAVAILABLE,
+            f"无法连接教务系统或教务系统响应异常：{str(exc)[:180]}",
+            elapsed_ms=int((time.monotonic() - started_at) * 1000),
+        )
+
+    elapsed_ms = int((time.monotonic() - started_at) * 1000)
+    location = post_response.headers.get("location", "")
+    if post_response.status_code in {301, 302, 303, 307, 308}:
+        if _location_requires_interaction(location):
+            return _failure_result(
+                profile,
+                STATUS_CHALLENGE,
+                "账号密码可能正确，但教务系统要求完成二次验证或改密后才能对接。",
+                elapsed_ms=elapsed_ms,
+            )
+        if not _is_login_location(location):
+            return _success_result(profile, username=username, elapsed_ms=elapsed_ms)
+
+    tip = _extract_login_tip(post_response.text)
+    if tip:
+        return _failure_result(profile, STATUS_FAILED, tip, elapsed_ms=elapsed_ms)
+
+    if "验证码" in post_response.text and _looks_like_login_page(post_response.text):
+        return _failure_result(
+            profile,
+            STATUS_CHALLENGE,
+            "教务系统要求输入验证码，请稍后在教务系统网页完成一次正常登录后再回来保存。",
+            elapsed_ms=elapsed_ms,
+        )
+
+    home_result = await _probe_zfsoft_home(
+        client,
+        profile,
+        username=username,
+        started_at=started_at,
+    )
+    if home_result is not None:
+        return home_result
+
+    return _failure_result(
+        profile,
+        STATUS_UNAVAILABLE,
+        "教务系统未返回明确登录结果，已取消自动会话。",
+        elapsed_ms=elapsed_ms,
+    )
 
 
 def _load_access_method(raw_value: Any, profile: AcademicSystemProfile) -> dict[str, Any]:

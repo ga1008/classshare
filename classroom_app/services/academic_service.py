@@ -305,16 +305,78 @@ def build_holiday_lookup(years: Iterable[int]) -> dict[str, dict[str, str]]:
     return lookup
 
 
+def _json_dumps_compact(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _safe_json_list(raw_value: Any) -> list[Any]:
+    if isinstance(raw_value, list):
+        return raw_value
+    if raw_value in (None, ""):
+        return []
+    try:
+        parsed = json.loads(str(raw_value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _serialize_calendar_day_row(row: Any) -> dict[str, Any]:
+    item = dict(row)
+    day_type = str(item.get("day_type") or "").strip()
+    frontend_kind = "workday" if day_type == "workday" else ("holiday" if day_type == "holiday" else day_type)
+    return {
+        "date": str(item.get("date") or ""),
+        "kind": frontend_kind,
+        "day_type": day_type,
+        "label": str(item.get("label") or ""),
+        "source": str(item.get("source") or ""),
+        "source_url": str(item.get("source_url") or ""),
+        "confidence": float(item.get("confidence") or 0.0),
+        "week_index": int(item.get("week_index") or 0),
+        "weekday": int(item.get("weekday") or 0),
+    }
+
+
+def _attach_semester_calendar_days(conn, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    semester_ids = sorted({int(row.get("id") or 0) for row in rows if row.get("id") not in (None, "")})
+    if not semester_ids:
+        return rows
+    placeholders = ",".join("?" for _ in semester_ids)
+    day_rows = conn.execute(
+        f"""
+        SELECT semester_id, date, week_index, weekday, day_type, label, source, source_url, confidence
+        FROM academic_semester_calendar_days
+        WHERE semester_id IN ({placeholders})
+          AND day_type IN ('holiday', 'workday')
+        ORDER BY date ASC
+        """,
+        tuple(semester_ids),
+    ).fetchall()
+    grouped: dict[int, list[dict[str, Any]]] = {semester_id: [] for semester_id in semester_ids}
+    for day_row in day_rows:
+        grouped.setdefault(int(day_row["semester_id"]), []).append(_serialize_calendar_day_row(day_row))
+    for row in rows:
+        row["calendar_days_json"] = _json_dumps_compact(grouped.get(int(row.get("id") or 0), []))
+    return rows
+
+
 def load_teacher_semester_rows(conn, teacher_id: int):
-    return conn.execute(
+    rows = [
+        dict(row)
+        for row in conn.execute(
         """
-        SELECT id, name, start_date, end_date, week_count, created_at, updated_at
+        SELECT id, teacher_id, name, start_date, end_date, week_count,
+               calendar_sync_status, calendar_sync_at, calendar_sync_message,
+               calendar_source_summary_json, created_at, updated_at
         FROM academic_semesters
         WHERE teacher_id = ?
         ORDER BY start_date DESC, updated_at DESC, id DESC
         """,
         (teacher_id,),
-    ).fetchall()
+        ).fetchall()
+    ]
+    return _attach_semester_calendar_days(conn, rows)
 
 
 def load_student_semester_rows(conn, student_id: int):
@@ -362,7 +424,9 @@ def load_student_semester_rows(conn, student_id: int):
         dict(row)
         for row in conn.execute(
             f"""
-            SELECT id, teacher_id, name, start_date, end_date, week_count, created_at, updated_at
+            SELECT id, teacher_id, name, start_date, end_date, week_count,
+                   calendar_sync_status, calendar_sync_at, calendar_sync_message,
+                   calendar_source_summary_json, created_at, updated_at
             FROM academic_semesters
             WHERE teacher_id IN ({placeholders})
             ORDER BY teacher_id ASC, start_date DESC, updated_at DESC, id DESC
@@ -442,7 +506,7 @@ def load_student_semester_rows(conn, student_id: int):
         ),
         reverse=True,
     )
-    return matched_items
+    return _attach_semester_calendar_days(conn, matched_items)
 
 
 def build_semester_calendar_payload(
@@ -508,6 +572,17 @@ def serialize_semester_row(row: Any, *, reference_date: date | None = None) -> d
         if start_date_value and end_date_value
         else ""
     )
+    item["calendar_sync_status"] = str(item.get("calendar_sync_status") or "pending")
+    item["calendar_sync_at"] = str(item.get("calendar_sync_at") or "")
+    item["calendar_sync_message"] = str(item.get("calendar_sync_message") or "")
+    item["calendar_source_summary"] = [
+        entry for entry in _safe_json_list(item.get("calendar_source_summary_json")) if isinstance(entry, dict)
+    ]
+    item["calendar_days"] = [
+        entry for entry in _safe_json_list(item.get("calendar_days_json")) if isinstance(entry, dict)
+    ]
+    item["calendar_holiday_count"] = sum(1 for day in item["calendar_days"] if day.get("kind") == "holiday")
+    item["calendar_workday_count"] = sum(1 for day in item["calendar_days"] if day.get("kind") == "workday")
     return item
 
 
