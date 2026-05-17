@@ -628,9 +628,9 @@ async def _fetch_timetable_field_keys(
                 "url": str(response.url),
             }
         )
-        selected_keys = list(ZF_TIMETABLE_FIELD_KEYS)
-        for key in field_keys:
-            if key in ZF_TIMETABLE_FIELD_KEYS and key not in selected_keys:
+        selected_keys: list[str] = []
+        for key in [*field_keys, *ZF_TIMETABLE_FIELD_KEYS]:
+            if key and key not in ZF_OPTIONAL_FALSE_FIELD_KEYS and key not in selected_keys:
                 selected_keys.append(key)
         return selected_keys
     except httpx.HTTPError as exc:
