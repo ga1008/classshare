@@ -27,9 +27,9 @@ ZF_TEACHER_TIMETABLE_INDEX_PATH = (
     "/kbcx/jskbcx_cxJskbcxIndex.html?doType=details&gnmkdm=N2150&layout=default"
 )
 ZF_TIMETABLE_FIELD_PATH = "/kbdy/bjkbdy_cxKbzdxsxx.html?gnmkdm=N2150"
-ZF_TEACHER_TIMETABLE_QUERY_PATH = "/kbcx/jskbcx_cxJskb1.html?gnmkdm=N2150"
-ZF_LAB_TIMETABLE_LIST_PATH = "/sykbcx_cxSykbcxList.html?doType=query&gnmkdm=N2150"
-ZF_LAB_TIMETABLE_QUERY_PATH = "/sykbcx_cxKfxSykbcxIndex.html?doType=query&gnmkdm=N2150"
+ZF_TEACHER_TIMETABLE_QUERY_PATH = "/kbcx/jskbcx_cxJsKb1.html?gnmkdm=N2150"
+ZF_LAB_TIMETABLE_LIST_PATH = "/jssygl/sykbcx_cxSykbcxList.html?doType=query&gnmkdm=N2150"
+ZF_LAB_TIMETABLE_QUERY_PATH = "/jssygl/sykbcx_cxKfxSykbcxIndex.html?doType=query&gnmkdm=N2150"
 ZF_TIMETABLE_WEEK_SLOTS_PATH = "/kbcx/jskbcx_cxRsd.html?gnmkdm=N2150"
 ZF_TIMETABLE_SECTION_SLOTS_PATH = "/kbcx/jskbcx_cxRjc.html?gnmkdm=N2150"
 
@@ -98,7 +98,7 @@ ZF_TIMETABLE_FIELD_KEYS = [
     "khfs",
     "ksfs",
     "xkbz",
-    "kcxszz",
+    "kcxszc",
     "zhxs",
     "zxs",
     "kczxs",
@@ -109,7 +109,7 @@ ZF_TIMETABLE_FIELD_KEYS = [
     "xq",
 ]
 
-ZF_OPTIONAL_FALSE_FIELD_KEYS = ["yjsxxx", "skpthyh", "zxxx"]
+ZF_OPTIONAL_FALSE_FIELD_KEYS = ["zxxx"]
 
 
 @dataclass
@@ -370,14 +370,16 @@ def _payload_context(payload: Any) -> dict[str, str]:
     if not isinstance(payload, dict):
         return {}
     xsxx = payload.get("xsxx") if isinstance(payload.get("xsxx"), dict) else {}
+    jsxx = payload.get("jsxx") if isinstance(payload.get("jsxx"), dict) else {}
+    context = {**xsxx, **jsxx}
     return {
-        "academic_year": _first_text(xsxx, "XNM", "xnm"),
-        "academic_year_name": _first_text(xsxx, "XNMC", "xnmc"),
-        "academic_term": _first_text(xsxx, "XQM", "xqm"),
-        "academic_term_name": _first_text(xsxx, "XQMMC", "xqmmc"),
-        "teacher_name": _first_text(xsxx, "XM", "xm"),
-        "teacher_org_id": _first_text(xsxx, "JG_ID", "jg_id"),
-        "teacher_org_name": _first_text(xsxx, "JGMC", "jgmc"),
+        "academic_year": _first_text(context, "XNM", "xnm"),
+        "academic_year_name": _first_text(context, "XNMC", "xnmc"),
+        "academic_term": _first_text(context, "XQM", "xqm"),
+        "academic_term_name": _first_text(context, "XQMMC", "xqmmc"),
+        "teacher_name": _first_text(context, "XM", "xm"),
+        "teacher_org_id": _first_text(context, "JG_ID", "jg_id"),
+        "teacher_org_name": _first_text(context, "JGMC", "jgmc"),
     }
 
 
@@ -419,7 +421,7 @@ def _parse_schedule_items_from_json(payload: Any, source_url: str) -> list[Acade
             course_name = _first_text(raw, "ktmc", "jxbmc", "jxb")
         if not course_name or not any(
             key in raw
-            for key in ("kch", "kch_id", "jxbmc", "jxb", "zcd", "xqj", "jc", "cdmc", "sj", "kcxszz")
+            for key in ("kch", "kch_id", "jxbmc", "jxb", "zcd", "xqj", "jc", "cdmc", "sj", "kcxszc")
         ):
             continue
 
@@ -464,7 +466,7 @@ def _parse_schedule_items_from_json(payload: Any, source_url: str) -> list[Acade
             weekday_label=_weekday_label(weekday),
             section_text=section_text[:40],
             campus=_first_text(raw, "xqmc", "xq", "campus", "campusName")[:120],
-            campus_id=_first_text(raw, "xq_id", "xqid", "xqh_id")[:80],
+            campus_id=_first_text(raw, "xqdm", "xq_id", "xqid", "xqh_id")[:80],
             location=_first_text(raw, "cdmc", "jxdd", "classroom", "room", "location")[:220],
             classroom_id=_first_text(raw, "cd_id", "cdid", "classroomId")[:120],
             classroom_code=_first_text(raw, "cdbh", "cdh", "classroomCode")[:80],
@@ -587,7 +589,7 @@ def _build_timetable_form(term_params: dict[str, str], field_keys: list[str]) ->
     form: dict[str, Any] = {
         **term_params,
         "kzlx": "ck",
-        "djskkb": "0",
+        "djsktkb": "0",
         "xsdm": "",
         "ccdm": "",
         "xsewkbnr": "0",
@@ -668,7 +670,7 @@ async def _fetch_supplemental_timetable_sources(
             {
                 **term_params,
                 "kzlx": "ck",
-                "djskkb": "0",
+                "djsktkb": "0",
                 "xsewkbnr": "0",
             },
             "lab_list",

@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import parse_qsl, urlparse, urlunparse
 
 try:
     from playwright.sync_api import (
@@ -44,6 +44,7 @@ SENSITIVE_HEADER_KEYS = {
     "set-cookie",
 }
 SENSITIVE_FIELD_PATTERNS = (
+    re.compile(r"^(jgh|jgh_id|jsxm|xm|sjhm|su|sessionUserKey|yhm)$", re.I),
     re.compile(r"pass(word)?", re.I),
     re.compile(r"pwd", re.I),
     re.compile(r"mm$", re.I),
@@ -128,9 +129,36 @@ def parse_post_data(post_data: str | None, content_type: str = "") -> dict[str, 
     return {"kind": "raw", "fields": {}, "raw_preview": redact_text(raw[:2000])}
 
 
+def sanitize_query(query: str) -> str:
+    if not query:
+        return ""
+    pairs = parse_qsl(query, keep_blank_values=True)
+    return "&".join(f"{key}={sanitize_key_value(key, value)}" for key, value in pairs)
+
+
+def sanitize_url(url: str) -> str:
+    parsed = urlparse(url)
+    return urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            sanitize_query(parsed.query),
+            "",
+        )
+    )
+
+
 def redact_text(text: str) -> str:
     redacted = str(text or "")
-    redacted = re.sub(r"(?i)(mm|password|pwd|csrftoken|token|yhm|username)=([^&\s]+)", r"\1=[REDACTED]", redacted)
+    redacted = re.sub(r"(?i)(mm|password|pwd|csrftoken|token|yhm|username)=([^&\s\"'>]+)", r"\1=[REDACTED]", redacted)
+    redacted = re.sub(r"(?i)(jgh|jgh_id|jsxm|xm|sjhm|su|sessionUserKey)=([^&\s\"'>]+)", r"\1=[REDACTED]", redacted)
+    redacted = re.sub(
+        r"(?i)(id=[\"']sessionUserKey[\"'][^>]*value=[\"'])[^\"']+",
+        r"\1[REDACTED]",
+        redacted,
+    )
     redacted = re.sub(r"(?i)(JSESSIONID|route)=([^;,\s]+)", r"\1=[REDACTED]", redacted)
     return redacted
 
@@ -141,6 +169,15 @@ def redact_json(value: Any) -> Any:
     if isinstance(value, list):
         return [redact_json(item) for item in value]
     return value
+
+
+def redact_response_text(text: str, content_type: str) -> str:
+    if "json" in (content_type or "").lower():
+        try:
+            return json.dumps(redact_json(json.loads(text)), ensure_ascii=False, separators=(",", ":"))
+        except json.JSONDecodeError:
+            pass
+    return redact_text(text)
 
 
 def is_textual_response(content_type: str, resource_type: str) -> bool:
@@ -167,9 +204,10 @@ def decode_body(raw_body: bytes, content_type: str) -> str:
 def compact_body_summary(text: str, content_type: str) -> dict[str, Any]:
     content = text or ""
     lowered = (content_type or "").lower()
+    redacted_content = redact_response_text(content, content_type)
     summary: dict[str, Any] = {
         "char_count": len(content),
-        "preview": redact_text(re.sub(r"\s+", " ", content[:1200])).strip(),
+        "preview": re.sub(r"\s+", " ", redacted_content[:1200]).strip(),
     }
     if "json" in lowered:
         try:
@@ -267,11 +305,11 @@ class CaptureStore:
             "id": self.sequence,
             "elapsed_ms": int((time.monotonic() - self.started_at) * 1000),
             "method": request.method,
-            "url": request.url,
+            "url": sanitize_url(request.url),
             "scheme": parsed_url.scheme,
             "host": parsed_url.netloc,
             "path": parsed_url.path,
-            "query": parsed_url.query,
+            "query": sanitize_query(parsed_url.query),
             "resource_type": request.resource_type,
             "request_headers": headers,
             "post_data": parse_post_data(post_data, content_type),
@@ -318,7 +356,7 @@ class CaptureStore:
         if text:
             body_path = self.output_dir / "bodies" / f"{record['id']:04d}_{safe_file_stem(record['path'])}.txt"
             ensure_dir(body_path.parent)
-            body_path.write_text(redact_text(trimmed), encoding="utf-8")
+            body_path.write_text(redact_response_text(trimmed, content_type), encoding="utf-8")
             record["response_body_file"] = str(body_path.relative_to(self.output_dir))
 
     def write_outputs(self, console_messages: list[dict[str, Any]], page_info: dict[str, Any]) -> None:
@@ -482,14 +520,23 @@ def attach_capture(page: Page, store: CaptureStore, console_messages: list[dict[
 def fill_login_form(page: Page, username: str, password: str) -> bool:
     try:
         page.goto(DEFAULT_LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
-        page.locator("input[name='yhm'], #yhm").first.fill(username, timeout=10000)
-        page.locator("input[name='mm'], #mm, input[type='password']").first.fill(password, timeout=10000)
-        submit = page.locator("#dl, button[type='submit'], input[type='submit'], .btn-primary").first
-        if submit.count():
-            submit.click(timeout=10000)
-        else:
-            page.keyboard.press("Enter")
-        page.wait_for_load_state("networkidle", timeout=30000)
+        try:
+            page.wait_for_load_state("networkidle", timeout=15000)
+        except PlaywrightError:
+            page.wait_for_timeout(1500)
+        page.locator("#yhm").fill(username, timeout=10000)
+        page.locator("#mm").fill(password, timeout=10000)
+        page.locator("#dl").click(timeout=10000)
+        try:
+            page.wait_for_url(lambda url: "login_slogin" not in url, timeout=30000)
+        except PlaywrightError:
+            pass
+        try:
+            page.wait_for_load_state("networkidle", timeout=30000)
+        except PlaywrightError:
+            pass
+        if "login_slogin" in page.url:
+            return False
         return True
     except PlaywrightError:
         return False
@@ -638,9 +685,9 @@ def main(argv: list[str]) -> int:
             context.storage_state(path=str(state_path))
 
         page_info = {
-            "url": page.url,
+            "url": sanitize_url(page.url),
             "title": page.title(),
-            "target_url": args.url,
+            "target_url": sanitize_url(args.url),
             "credentials_available": credentials_available,
             "manual_login_seconds": args.manual_login_seconds,
         }
