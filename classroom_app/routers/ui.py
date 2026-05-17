@@ -107,6 +107,10 @@ from ..services.teacher_account_service import (
     build_teacher_account_summary,
     list_teacher_accounts,
 )
+from ..services.academic_integration_service import (
+    list_academic_system_profiles,
+    list_teacher_academic_credentials,
+)
 
 router = APIRouter()
 
@@ -2472,6 +2476,29 @@ async def get_manage_system_redirect(request: Request, user: dict = Depends(get_
         if is_super_admin_teacher(conn, user["id"]):
             return RedirectResponse(url="/manage/system/users", status_code=302)
     return RedirectResponse(url="/manage/system/password-resets", status_code=302)
+
+
+@router.get("/manage/system/academic-integrations", response_class=HTMLResponse)
+async def get_manage_system_academic_integrations_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """教师个人教务系统账号与适配器管理页面。"""
+    profiles = list_academic_system_profiles()
+    with get_db_connection() as conn:
+        credentials = list_teacher_academic_credentials(conn, int(user["id"]))
+
+    return templates.TemplateResponse(
+        request,
+        "manage/system/academic_integrations.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="教务系统对接",
+            active_page="system_academic_integrations",
+            extra={
+                "academic_profiles": profiles,
+                "academic_credentials": credentials,
+            },
+        ),
+    )
 
 
 @router.get("/manage/system/users", response_class=HTMLResponse)

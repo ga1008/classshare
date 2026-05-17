@@ -87,6 +87,15 @@ from ..services.teacher_account_service import (
     revoke_teacher_super_admin,
     update_teacher_account,
 )
+from ..services.academic_integration_service import (
+    build_saved_credential_verification_payload,
+    delete_teacher_academic_credential,
+    get_teacher_academic_credential,
+    list_teacher_academic_credentials,
+    save_verified_academic_credential,
+    update_academic_credential_verification_status,
+    verify_academic_credential,
+)
 from ..storage_paths import resolve_migrated_file_path
 from ..time_utils import local_iso
 
@@ -2510,6 +2519,102 @@ async def api_list_offerings(user: dict = Depends(get_current_teacher)):
         return {"status": "success", "offerings": offerings}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/system/academic-credentials", response_class=JSONResponse)
+async def api_list_academic_credentials(user: dict = Depends(get_current_teacher)):
+    """列出当前教师自己的教务系统对接凭据。"""
+    with get_db_connection() as conn:
+        credentials = list_teacher_academic_credentials(conn, int(user["id"]))
+    return {"status": "success", "credentials": credentials}
+
+
+@router.post("/system/academic-credentials", response_class=JSONResponse)
+async def api_save_academic_credential(request: Request, user: dict = Depends(get_current_teacher)):
+    """保存教务系统账号：先真实登录校验，成功后再加密落库。"""
+    payload = await _parse_json_request(request)
+
+    try:
+        verification = await verify_academic_credential(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not verification.get("ok"):
+        raise HTTPException(status_code=400, detail=verification.get("message") or "教务系统账号校验失败。")
+
+    with get_db_connection() as conn:
+        try:
+            credential = save_verified_academic_credential(conn, int(user["id"]), payload, verification)
+            credentials = list_teacher_academic_credentials(conn, int(user["id"]))
+            conn.commit()
+        except ValueError as exc:
+            conn.rollback()
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "status": "success",
+        "message": "教务系统账号已验证并保存。",
+        "verification": verification,
+        "credential": credential,
+        "credentials": credentials,
+    }
+
+
+@router.post("/system/academic-credentials/{credential_id}/verify", response_class=JSONResponse)
+async def api_verify_academic_credential(credential_id: int, user: dict = Depends(get_current_teacher)):
+    """使用已保存的加密密码重新校验教务系统连接。"""
+    with get_db_connection() as conn:
+        try:
+            row = get_teacher_academic_credential(conn, int(user["id"]), credential_id)
+            payload = build_saved_credential_verification_payload(row)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        verification = await verify_academic_credential(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    with get_db_connection() as conn:
+        try:
+            credential = update_academic_credential_verification_status(
+                conn,
+                int(user["id"]),
+                credential_id,
+                verification,
+            )
+            credentials = list_teacher_academic_credentials(conn, int(user["id"]))
+            conn.commit()
+        except ValueError as exc:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return {
+        "status": "success" if verification.get("ok") else "failed",
+        "message": verification.get("message") or "教务系统连接校验完成。",
+        "verification": verification,
+        "credential": credential,
+        "credentials": credentials,
+    }
+
+
+@router.delete("/system/academic-credentials/{credential_id}", response_class=JSONResponse)
+async def api_delete_academic_credential(credential_id: int, user: dict = Depends(get_current_teacher)):
+    """删除当前教师自己的教务系统凭据。"""
+    with get_db_connection() as conn:
+        try:
+            removed_count = delete_teacher_academic_credential(conn, int(user["id"]), credential_id)
+            credentials = list_teacher_academic_credentials(conn, int(user["id"]))
+            conn.commit()
+        except ValueError as exc:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "status": "success",
+        "message": "教务系统对接已删除。",
+        "removed_count": removed_count,
+        "credentials": credentials,
+    }
 
 
 @router.get("/system/password-resets/{request_id}", response_class=JSONResponse)

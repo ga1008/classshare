@@ -3170,6 +3170,33 @@ def init_database():
                         )
                          ''')
 
+            conn.execute('''
+                        CREATE TABLE IF NOT EXISTS teacher_academic_system_credentials
+                        (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            teacher_id INTEGER NOT NULL,
+                            school_code TEXT NOT NULL,
+                            school_name TEXT NOT NULL,
+                            adapter_key TEXT NOT NULL,
+                            auth_method TEXT NOT NULL DEFAULT 'password_rsa',
+                            base_url TEXT NOT NULL,
+                            login_url TEXT NOT NULL,
+                            username TEXT NOT NULL,
+                            password_encrypted TEXT NOT NULL,
+                            display_name TEXT DEFAULT '',
+                            enabled INTEGER NOT NULL DEFAULT 1,
+                            last_status TEXT NOT NULL DEFAULT 'unchecked',
+                            last_status_at TEXT,
+                            last_error TEXT DEFAULT '',
+                            last_verified_at TEXT,
+                            access_method_json TEXT NOT NULL DEFAULT '{}',
+                            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                            UNIQUE (teacher_id, school_code, auth_method)
+                        )
+                         ''')
+
             try:
                 conn.execute("ALTER TABLE course_materials ADD COLUMN git_repo_status TEXT NOT NULL DEFAULT 'unscanned'")
             except sqlite3.OperationalError:
@@ -3348,6 +3375,10 @@ def init_database():
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_teacher_git_credentials_lookup ON teacher_git_credentials (teacher_id, remote_host, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_credentials_lookup "
+                "ON teacher_academic_system_credentials (teacher_id, school_code, enabled, updated_at DESC)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_session_material_generation_tasks_session "
