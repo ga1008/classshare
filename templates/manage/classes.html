@@ -6,6 +6,7 @@
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
 {{ topbar_action('名单模板', '下载导入表', 'download', button_id='classTemplateDownloadBtn', variant='solid', tone='slate') }}
+{{ topbar_action('教务同步', '班级学生', 'refresh', button_id='syncAcademicRosterTopBtn', variant='solid', tone='teal') }}
 {{ topbar_action('导入班级', '批量建班', 'upload', button_id='focusClassCreateBtn', variant='primary', tone='blue') }}
 {% endblock %}
 
@@ -21,6 +22,7 @@
             </p>
         </div>
         <div class="class-hero-actions">
+            <button type="button" class="btn btn-outline" id="syncAcademicRosterBtn">从教务系统同步</button>
             <button type="button" class="btn btn-primary" id="heroClassCreateBtn">导入新班级</button>
             <button type="button" class="btn btn-outline" id="heroTemplateDownloadBtn">名单模板</button>
         </div>
@@ -52,6 +54,11 @@
             <strong>{{ class_stats.active_class_count }}</strong>
             <small>已进入教学流程的班级</small>
         </article>
+        <article class="class-stat-card{% if class_stats.academic_synced_class_count %} is-academic{% endif %}">
+            <span>教务同步</span>
+            <strong>{{ class_stats.academic_synced_class_count }}</strong>
+            <small>{{ class_stats.academic_synced_student_count }} 条教务学生记录</small>
+        </article>
     </section>
 
     <section class="class-control-panel" aria-label="班级筛选与搜索">
@@ -78,6 +85,7 @@
                         <option value="missing-email">有学生缺邮箱</option>
                         <option value="complete-email">邮箱完整</option>
                         <option value="has-suspended">含休学学生</option>
+                        <option value="academic-synced">已教务同步</option>
                         <option value="bound">已绑定课堂</option>
                         <option value="unbound">未绑定课堂</option>
                     </select>
@@ -128,6 +136,7 @@
                     data-student-count="{{ class_item.student_count }}"
                     data-suspended-student-count="{{ class_item.suspended_student_count }}"
                     data-missing-email-count="{{ class_item.missing_email_count }}"
+                    data-academic-synced-student-count="{{ class_item.academic_synced_student_count }}"
                     data-offering-count="{{ class_item.offering_count }}"
                     data-latest-time="{{ latest_time }}"
                 >
@@ -135,6 +144,13 @@
                         <div class="class-card-title-block">
                             <span class="class-card-kicker">{{ class_item.department_label }}</span>
                             <h4>{{ class_item.name }}</h4>
+                            {% if class_item.is_academic_synced %}
+                            <div class="academic-badge-row class-card-badges">
+                                <span class="academic-badge is-success">教务同步</span>
+                                {% if class_item.academic_grade %}<span class="academic-badge">{{ class_item.academic_grade }} 级</span>{% endif %}
+                                {% if class_item.academic_major %}<span class="academic-badge">{{ class_item.academic_major }}</span>{% endif %}
+                            </div>
+                            {% endif %}
                             <p>
                                 {{ class_item.student_count }} 名在读学生
                                 {% if class_item.suspended_student_count %}
@@ -172,6 +188,10 @@
                         <div>
                             <span>课堂</span>
                             <strong>{{ class_item.offering_count }}</strong>
+                        </div>
+                        <div>
+                            <span>教务</span>
+                            <strong>{{ class_item.academic_synced_student_count }}</strong>
                         </div>
                     </div>
 
@@ -324,6 +344,24 @@
     </section>
 </div>
 
+<div class="class-academic-sync-backdrop" id="classAcademicSyncModal" hidden aria-hidden="true">
+    <section class="class-academic-sync-modal" role="dialog" aria-modal="true" aria-labelledby="classAcademicSyncTitle" tabindex="-1">
+        <div class="class-student-modal-head">
+            <div>
+                <span>Academic Roster Sync</span>
+                <h3 id="classAcademicSyncTitle">教务班级同步结果</h3>
+                <p id="classAcademicSyncLead">正在对齐教务系统的教学班、行政班和学生名单。</p>
+            </div>
+            <button type="button" class="class-student-drawer-close" id="classAcademicSyncClose" aria-label="关闭教务同步结果">&times;</button>
+        </div>
+        <div class="class-academic-sync-body" id="classAcademicSyncSummary"></div>
+        <div class="class-student-modal-actions">
+            <button type="button" class="btn btn-outline" id="classAcademicSyncDismiss">稍后查看</button>
+            <button type="button" class="btn btn-primary" id="classAcademicSyncReload">刷新名单</button>
+        </div>
+    </section>
+</div>
+
 <script>
     window.MANAGE_CLASSES_DATA = {
         classes: {{ my_classes | tojson }}
@@ -332,5 +370,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_classes.js?v=class-student-lifecycle-20260514"></script>
+<script type="module" src="/static/js/manage_classes.js?v=class-academic-roster-sync-20260518"></script>
 {% endblock %}

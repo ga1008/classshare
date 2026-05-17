@@ -24820,6 +24820,11 @@ body.page-wrapper:has(.blog-shell) {
     background: rgba(255, 251, 235, 0.72);
 }
 
+.class-stat-card.is-academic {
+    border-color: rgba(20, 184, 166, 0.3);
+    background: rgba(240, 253, 250, 0.74);
+}
+
 .class-control-panel {
     display: grid;
     gap: 14px;
@@ -24983,6 +24988,10 @@ body.page-wrapper:has(.blog-shell) {
     color: #64748b;
     font-size: 0.86rem;
     line-height: 1.5;
+}
+
+.class-card-badges {
+    margin-top: 8px;
 }
 
 .class-card-status {
@@ -25306,6 +25315,11 @@ body.page-wrapper:has(.blog-shell) {
     background: rgba(241, 245, 249, 0.96);
 }
 
+.class-student-row__status.is-academic {
+    color: #0f766e;
+    background: rgba(204, 251, 241, 0.86);
+}
+
 .class-student-drawer-empty {
     margin: 14px 18px;
     border-radius: 8px;
@@ -25352,6 +25366,148 @@ body.page-wrapper:has(.blog-shell) {
     transform: translateY(0) scale(1);
 }
 
+.class-academic-sync-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1240;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(15, 23, 42, 0.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 160ms ease;
+}
+
+.class-academic-sync-backdrop[hidden] {
+    display: none;
+}
+
+.class-academic-sync-backdrop.is-open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.class-academic-sync-modal {
+    width: min(820px, 100%);
+    max-height: min(820px, calc(100vh - 36px));
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 30px 68px -46px rgba(15, 23, 42, 0.78);
+    transform: translateY(10px) scale(0.98);
+    transition: transform 160ms ease;
+}
+
+.class-academic-sync-backdrop.is-open .class-academic-sync-modal {
+    transform: translateY(0) scale(1);
+}
+
+.class-academic-sync-body {
+    display: grid;
+    gap: 16px;
+    min-height: 0;
+    overflow: auto;
+    padding: 18px;
+    background: rgba(248, 250, 252, 0.72);
+}
+
+.class-academic-sync-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.class-academic-sync-item,
+.class-academic-sync-list,
+.class-academic-sync-rosters {
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.94);
+}
+
+.class-academic-sync-item {
+    display: grid;
+    gap: 6px;
+    padding: 12px;
+}
+
+.class-academic-sync-item span,
+.class-academic-sync-item small {
+    color: #64748b;
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+
+.class-academic-sync-item strong {
+    color: #0f172a;
+    font-size: 1.42rem;
+    line-height: 1;
+}
+
+.class-academic-sync-list,
+.class-academic-sync-rosters {
+    padding: 14px;
+}
+
+.class-academic-sync-list h4,
+.class-academic-sync-rosters h4 {
+    margin: 0 0 10px;
+    color: #0f172a;
+    font-size: 0.94rem;
+}
+
+.class-academic-sync-list ul {
+    display: grid;
+    gap: 7px;
+    margin: 0;
+    padding-left: 18px;
+    color: #475569;
+    line-height: 1.55;
+}
+
+.class-academic-sync-warning {
+    border-color: rgba(245, 158, 11, 0.28);
+    background: rgba(255, 251, 235, 0.82);
+}
+
+.class-academic-sync-roster-list {
+    display: grid;
+    gap: 8px;
+}
+
+.class-academic-sync-roster-list div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(140px, 0.75fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 10px;
+    border-radius: 8px;
+    background: rgba(248, 250, 252, 0.92);
+}
+
+.class-academic-sync-roster-list strong,
+.class-academic-sync-roster-list span,
+.class-academic-sync-roster-list small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.class-academic-sync-roster-list strong {
+    color: #0f172a;
+}
+
+.class-academic-sync-roster-list span,
+.class-academic-sync-roster-list small {
+    color: #64748b;
+}
+
 .class-student-modal-head {
     display: flex;
     justify-content: space-between;
@@ -25396,7 +25552,8 @@ body.page-wrapper:has(.blog-shell) {
 }
 
 body.has-class-student-drawer,
-body.has-class-student-modal {
+body.has-class-student-modal,
+body.has-class-academic-sync-modal {
     overflow: hidden;
 }
 
@@ -25405,7 +25562,9 @@ body.has-class-student-modal {
     .class-student-drawer,
     .class-student-drawer-backdrop,
     .class-student-modal,
-    .class-student-modal-backdrop {
+    .class-student-modal-backdrop,
+    .class-academic-sync-modal,
+    .class-academic-sync-backdrop {
         transition: none;
     }
 
@@ -25485,6 +25644,11 @@ body.has-class-student-modal {
     .class-student-modal-actions .btn {
         width: 100%;
         justify-content: center;
+    }
+
+    .class-academic-sync-grid,
+    .class-academic-sync-roster-list div {
+        grid-template-columns: 1fr;
     }
 }
 

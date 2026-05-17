@@ -106,6 +106,7 @@ from ..services.academic_calendar_sync_service import (
     sync_semester_calendar_background,
 )
 from ..services.academic_course_sync_service import sync_current_teacher_courses_from_academic_system
+from ..services.academic_roster_sync_service import sync_current_teacher_rosters_from_academic_system
 from ..storage_paths import resolve_migrated_file_path
 from ..time_utils import local_iso
 
@@ -1011,6 +1012,18 @@ async def api_create_class(request: Request, class_name: str = Form(), file: Upl
     if missing_email_count:
         message += f" 其中 {missing_email_count} 名学生缺少邮箱，后续只能收到站内通知，可提醒学生在个人中心补充。"
     return {"status": "success", "message": message, "missing_email_count": missing_email_count}
+
+
+@router.post("/classes/sync-current-academic", response_class=JSONResponse)
+async def api_sync_current_classes_from_academic_system(
+    user: dict = Depends(get_current_teacher),
+):
+    result = await sync_current_teacher_rosters_from_academic_system(int(user["id"]))
+    if result.get("status") == "missing_credential":
+        raise HTTPException(400, result.get("message") or "请先配置教务系统账号。")
+    if result.get("status") != "success":
+        raise HTTPException(502, result.get("message") or "未能从教务系统同步班级和学生名单。")
+    return result
 
 
 @router.post("/classes/{class_id}/students", response_class=JSONResponse)

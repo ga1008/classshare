@@ -1437,6 +1437,14 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
                    c.name,
                    c.department,
                    c.description,
+                   c.academic_source,
+                   c.academic_class_code,
+                   c.academic_class_name,
+                   c.academic_college,
+                   c.academic_grade,
+                   c.academic_major,
+                   c.academic_sync_at,
+                   c.academic_sync_message,
                    c.created_at,
                    COUNT(DISTINCT CASE
                        WHEN COALESCE(s.enrollment_status, 'active') = 'active'
@@ -1454,22 +1462,30 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
                              AND (s.email IS NULL OR TRIM(s.email) = '')
                             THEN 1 ELSE 0
                        END
-                   ) AS missing_email_count,
-                   COUNT(DISTINCT o.id) AS offering_count,
-                   MAX(
-                       CASE
-                           WHEN COALESCE(s.enrollment_status, 'active') = 'active'
-                           THEN s.created_at
-                       END
-                   ) AS latest_student_created_at
-            FROM classes c
-            LEFT JOIN students s ON c.id = s.class_id
+                    ) AS missing_email_count,
+                    COUNT(DISTINCT CASE
+                       WHEN s.academic_source = 'gxufl_jwxt'
+                       THEN s.id END
+                    ) AS academic_synced_student_count,
+                    COUNT(DISTINCT o.id) AS offering_count,
+                    MAX(
+                        CASE
+                            WHEN COALESCE(s.enrollment_status, 'active') = 'active'
+                            THEN s.created_at
+                        END
+                    ) AS latest_student_created_at,
+                    MAX(s.academic_sync_at) AS latest_student_academic_sync_at
+             FROM classes c
+             LEFT JOIN students s ON c.id = s.class_id
             LEFT JOIN class_offerings o
                    ON o.class_id = c.id
                   AND o.teacher_id = c.created_by_teacher_id
             WHERE c.created_by_teacher_id = ?
-            GROUP BY c.id, c.name, c.department, c.description, c.created_at
-            ORDER BY COALESCE(NULLIF(TRIM(c.department), ''), '未分类'), c.name
+             GROUP BY c.id, c.name, c.department, c.description,
+                      c.academic_source, c.academic_class_code, c.academic_class_name,
+                      c.academic_college, c.academic_grade, c.academic_major,
+                      c.academic_sync_at, c.academic_sync_message, c.created_at
+             ORDER BY COALESCE(NULLIF(TRIM(c.department), ''), '未分类'), c.name
             """,
             (user["id"],),
         )
@@ -1484,8 +1500,15 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
             class_item["suspended_student_count"] = int(class_item.get("suspended_student_count") or 0)
             class_item["total_student_count"] = int(class_item.get("total_student_count") or 0)
             class_item["missing_email_count"] = int(class_item.get("missing_email_count") or 0)
+            class_item["academic_synced_student_count"] = int(class_item.get("academic_synced_student_count") or 0)
             class_item["offering_count"] = int(class_item.get("offering_count") or 0)
             class_item["department_label"] = str(class_item.get("department") or "").strip() or "未分类"
+            class_item["is_academic_synced"] = str(class_item.get("academic_source") or "").strip() == "gxufl_jwxt"
+            class_item["latest_academic_sync_at"] = (
+                class_item.get("latest_student_academic_sync_at")
+                or class_item.get("academic_sync_at")
+                or ""
+            )
             class_item["email_coverage_percent"] = (
                 round(
                     (class_item["student_count"] - class_item["missing_email_count"])
@@ -1512,6 +1535,8 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
         "missing_email_count": missing_email_total,
         "active_class_count": active_class_count,
         "department_count": len({item.get("department_label") for item in my_classes if item.get("department_label")}),
+        "academic_synced_class_count": sum(1 for item in my_classes if item.get("is_academic_synced")),
+        "academic_synced_student_count": sum(int(item.get("academic_synced_student_count") or 0) for item in my_classes),
     }
 
     return templates.TemplateResponse(
@@ -1654,9 +1679,20 @@ def _load_teacher_class_student_rows(conn, teacher_id: int, class_ids: list[int]
                s.student_id_number,
                s.email,
                s.phone,
-               COALESCE(s.enrollment_status, 'active') AS enrollment_status,
-               s.enrollment_status_updated_at,
-               s.enrollment_note,
+                s.academic_source,
+                s.academic_student_id,
+                s.academic_class_code,
+                s.academic_class_name,
+                s.academic_college,
+                s.academic_grade,
+                s.academic_major,
+                s.academic_school_status,
+                s.academic_student_flags,
+                s.academic_sync_at,
+                s.academic_sync_message,
+                COALESCE(s.enrollment_status, 'active') AS enrollment_status,
+                s.enrollment_status_updated_at,
+                s.enrollment_note,
                s.created_at
         FROM students s
         JOIN classes c ON c.id = s.class_id
@@ -1678,6 +1714,7 @@ def _load_teacher_class_student_rows(conn, teacher_id: int, class_ids: list[int]
         item["is_active"] = item["enrollment_status"] == STUDENT_STATUS_ACTIVE
         item["display_name"] = item.get("nickname") or item.get("name") or "学生"
         item["has_email"] = bool(str(item.get("email") or "").strip())
+        item["is_academic_synced"] = str(item.get("academic_source") or "").strip() == "gxufl_jwxt"
         grouped.setdefault(int(item["class_id"]), []).append(item)
     return grouped
 

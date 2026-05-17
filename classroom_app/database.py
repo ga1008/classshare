@@ -754,6 +754,21 @@ def init_database():
                 conn.execute("ALTER TABLE classes ADD COLUMN department TEXT DEFAULT ''")
             except sqlite3.OperationalError:
                 pass
+            for statement in (
+                "ALTER TABLE classes ADD COLUMN academic_source TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE classes ADD COLUMN academic_class_code TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE classes ADD COLUMN academic_class_name TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE classes ADD COLUMN academic_college TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE classes ADD COLUMN academic_grade TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE classes ADD COLUMN academic_major TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE classes ADD COLUMN academic_sync_at TEXT",
+                "ALTER TABLE classes ADD COLUMN academic_sync_message TEXT DEFAULT ''",
+                "ALTER TABLE classes ADD COLUMN academic_metadata_json TEXT NOT NULL DEFAULT '{}'",
+            ):
+                try:
+                    conn.execute(statement)
+                except sqlite3.OperationalError:
+                    pass
 
             # 3. 学生
             conn.execute('''
@@ -865,6 +880,18 @@ def init_database():
                 "enrollment_status": "TEXT NOT NULL DEFAULT 'active'",
                 "enrollment_status_updated_at": "TEXT",
                 "enrollment_note": "TEXT",
+                "academic_source": "TEXT NOT NULL DEFAULT ''",
+                "academic_student_id": "TEXT NOT NULL DEFAULT ''",
+                "academic_class_code": "TEXT NOT NULL DEFAULT ''",
+                "academic_class_name": "TEXT NOT NULL DEFAULT ''",
+                "academic_college": "TEXT NOT NULL DEFAULT ''",
+                "academic_grade": "TEXT NOT NULL DEFAULT ''",
+                "academic_major": "TEXT NOT NULL DEFAULT ''",
+                "academic_school_status": "TEXT NOT NULL DEFAULT ''",
+                "academic_student_flags": "TEXT NOT NULL DEFAULT ''",
+                "academic_sync_at": "TEXT",
+                "academic_sync_message": "TEXT DEFAULT ''",
+                "academic_metadata_json": "TEXT NOT NULL DEFAULT '{}'",
             }.items():
                 try:
                     conn.execute(f"ALTER TABLE students ADD COLUMN {column_name} {column_def}")
@@ -1156,6 +1183,83 @@ def init_database():
                         section_text,
                         location
                     )
+                )
+                '''
+            )
+
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS teacher_academic_roster_sync_items
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    teacher_id INTEGER NOT NULL,
+                    semester_id INTEGER,
+                    course_id INTEGER,
+                    class_id INTEGER,
+                    school_code TEXT NOT NULL DEFAULT 'gxufl',
+                    academic_year TEXT NOT NULL DEFAULT '',
+                    academic_year_name TEXT NOT NULL DEFAULT '',
+                    academic_term TEXT NOT NULL DEFAULT '',
+                    academic_term_name TEXT NOT NULL DEFAULT '',
+                    course_code TEXT NOT NULL DEFAULT '',
+                    course_name TEXT NOT NULL DEFAULT '',
+                    teaching_class_id TEXT NOT NULL DEFAULT '',
+                    teaching_class_name TEXT NOT NULL DEFAULT '',
+                    class_composition TEXT NOT NULL DEFAULT '',
+                    college TEXT NOT NULL DEFAULT '',
+                    teacher_name TEXT NOT NULL DEFAULT '',
+                    schedule_text TEXT NOT NULL DEFAULT '',
+                    location_text TEXT NOT NULL DEFAULT '',
+                    declared_student_count INTEGER NOT NULL DEFAULT 0,
+                    selected_student_count INTEGER NOT NULL DEFAULT 0,
+                    imported_student_count INTEGER NOT NULL DEFAULT 0,
+                    raw_json TEXT NOT NULL DEFAULT '{}',
+                    source_url TEXT NOT NULL DEFAULT '',
+                    synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                    FOREIGN KEY (semester_id) REFERENCES academic_semesters (id) ON DELETE SET NULL,
+                    FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE SET NULL,
+                    FOREIGN KEY (class_id) REFERENCES classes (id) ON DELETE SET NULL,
+                    UNIQUE (teacher_id, school_code, academic_year, academic_term, teaching_class_id)
+                )
+                '''
+            )
+
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS teacher_academic_roster_memberships
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    teacher_id INTEGER NOT NULL,
+                    semester_id INTEGER,
+                    sync_item_id INTEGER,
+                    class_id INTEGER,
+                    student_id INTEGER,
+                    school_code TEXT NOT NULL DEFAULT 'gxufl',
+                    academic_year TEXT NOT NULL DEFAULT '',
+                    academic_term TEXT NOT NULL DEFAULT '',
+                    course_code TEXT NOT NULL DEFAULT '',
+                    course_name TEXT NOT NULL DEFAULT '',
+                    teaching_class_id TEXT NOT NULL DEFAULT '',
+                    teaching_class_name TEXT NOT NULL DEFAULT '',
+                    admin_class_code TEXT NOT NULL DEFAULT '',
+                    admin_class_name TEXT NOT NULL DEFAULT '',
+                    student_number TEXT NOT NULL DEFAULT '',
+                    student_name TEXT NOT NULL DEFAULT '',
+                    school_status TEXT NOT NULL DEFAULT '',
+                    raw_json TEXT NOT NULL DEFAULT '{}',
+                    source_url TEXT NOT NULL DEFAULT '',
+                    synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                    FOREIGN KEY (semester_id) REFERENCES academic_semesters (id) ON DELETE SET NULL,
+                    FOREIGN KEY (sync_item_id) REFERENCES teacher_academic_roster_sync_items (id) ON DELETE CASCADE,
+                    FOREIGN KEY (class_id) REFERENCES classes (id) ON DELETE SET NULL,
+                    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE SET NULL,
+                    UNIQUE (teacher_id, school_code, academic_year, academic_term, teaching_class_id, student_number)
                 )
                 '''
             )
@@ -3532,6 +3636,22 @@ def init_database():
                 "ON courses (created_by_teacher_id, academic_source, academic_course_code COLLATE NOCASE)"
             )
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classes_teacher_academic_code "
+                "ON classes (created_by_teacher_id, academic_source, academic_class_code COLLATE NOCASE)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classes_teacher_academic_name "
+                "ON classes (created_by_teacher_id, academic_source, academic_class_name COLLATE NOCASE)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_students_academic_student_id "
+                "ON students (academic_source, academic_student_id COLLATE NOCASE)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_students_academic_class_lookup "
+                "ON students (class_id, academic_source, academic_class_code COLLATE NOCASE)"
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_lessons_course_order "
                 "ON course_lessons (course_id, order_index)"
             )
@@ -3566,6 +3686,22 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_teacher_academic_course_occurrences_sync_item "
                 "ON teacher_academic_course_session_occurrences (sync_item_id, session_date)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_roster_items_teacher_semester "
+                "ON teacher_academic_roster_sync_items (teacher_id, semester_id, synced_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_roster_items_class "
+                "ON teacher_academic_roster_sync_items (teacher_id, class_id, academic_year, academic_term)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_roster_memberships_class "
+                "ON teacher_academic_roster_memberships (teacher_id, class_id, synced_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_roster_memberships_student "
+                "ON teacher_academic_roster_memberships (teacher_id, student_id, academic_year, academic_term)"
             )
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_class_offerings_unique_semester_id "

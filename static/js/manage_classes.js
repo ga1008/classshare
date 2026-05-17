@@ -16,6 +16,10 @@ const elements = {
         document.getElementById('classTemplateDownloadBtn'),
         document.getElementById('heroTemplateDownloadBtn'),
     ].filter(Boolean),
+    academicSyncButtons: [
+        document.getElementById('syncAcademicRosterBtn'),
+        document.getElementById('syncAcademicRosterTopBtn'),
+    ].filter(Boolean),
     classList: document.getElementById('classList'),
     cards: Array.from(document.querySelectorAll('[data-class-card]')),
     resultCount: document.getElementById('classResultCount'),
@@ -46,6 +50,13 @@ const elements = {
     addTitle: document.getElementById('classStudentAddTitle'),
     addMeta: document.getElementById('classStudentAddMeta'),
     addName: document.getElementById('classStudentAddName'),
+    syncModal: document.getElementById('classAcademicSyncModal'),
+    syncPanel: document.querySelector('.class-academic-sync-modal'),
+    syncClose: document.getElementById('classAcademicSyncClose'),
+    syncDismiss: document.getElementById('classAcademicSyncDismiss'),
+    syncReload: document.getElementById('classAcademicSyncReload'),
+    syncLead: document.getElementById('classAcademicSyncLead'),
+    syncSummary: document.getElementById('classAcademicSyncSummary'),
 };
 
 let activeDrawerClass = null;
@@ -77,12 +88,20 @@ function classSearchText(classItem) {
             student.nickname,
             student.student_id_number,
             student.email,
+            student.phone,
+            student.academic_class_name,
+            student.academic_college,
+            student.academic_major,
+            student.academic_school_status,
         ].filter(Boolean).join(' '))
         .join(' ');
     return normalize([
         classItem.name,
         classItem.department,
         classItem.department_label,
+        classItem.academic_class_name,
+        classItem.academic_college,
+        classItem.academic_major,
         studentText,
     ].filter(Boolean).join(' '));
 }
@@ -131,11 +150,13 @@ function cardPassesHealthFilter(card) {
     const missingCount = numberValue(card.dataset.missingEmailCount);
     const offeringCount = numberValue(card.dataset.offeringCount);
     const suspendedCount = numberValue(card.dataset.suspendedStudentCount);
+    const academicCount = numberValue(card.dataset.academicSyncedStudentCount);
     if (health === 'missing-email') return missingCount > 0;
     if (health === 'complete-email') return missingCount === 0;
     if (health === 'has-suspended') return suspendedCount > 0;
     if (health === 'bound') return offeringCount > 0;
     if (health === 'unbound') return offeringCount === 0;
+    if (health === 'academic-synced') return academicCount > 0;
     return true;
 }
 
@@ -203,7 +224,7 @@ function downloadRosterTemplate() {
 function exportClassRoster(classItem) {
     if (!classItem) return;
     const rows = [
-        ['班级', '系别', '姓名', '学号', '状态', '昵称', '邮箱', '手机号'],
+        ['班级', '系别', '姓名', '学号', '状态', '昵称', '邮箱', '手机号', '教务班级', '学院', '年级', '专业', '学籍状态', '最近教务同步'],
         ...(classItem.students || []).map((student) => [
             classItem.name || '',
             classItem.department_label || classItem.department || '',
@@ -213,6 +234,12 @@ function exportClassRoster(classItem) {
             student.nickname || '',
             student.email || '',
             student.phone || '',
+            student.academic_class_name || '',
+            student.academic_college || '',
+            student.academic_grade || '',
+            student.academic_major || '',
+            student.academic_school_status || '',
+            student.academic_sync_at || '',
         ]),
     ];
     downloadCsv(`${classItem.name || '班级'}-学生名单.csv`, rows);
@@ -254,6 +281,12 @@ function studentSearchText(student) {
         student.enrollment_status === 'suspended' ? '休学' : '在读',
         student.email,
         student.phone,
+        student.academic_student_id,
+        student.academic_class_name,
+        student.academic_college,
+        student.academic_grade,
+        student.academic_major,
+        student.academic_school_status,
     ].filter(Boolean).join(' '));
 }
 
@@ -268,19 +301,29 @@ function renderStudentRows(classItem) {
         const name = student.name || student.display_name || '学生';
         const hasEmail = Boolean(student.has_email || normalize(student.email));
         const isSuspended = student.enrollment_status === 'suspended';
+        const isAcademicSynced = Boolean(student.is_academic_synced || student.academic_sync_at || student.academic_source === 'gxufl_jwxt');
         const statusText = studentStatusLabel(student);
         const statusActionText = isSuspended ? '恢复在读' : '设为休学';
         const nextStatus = isSuspended ? 'active' : 'suspended';
+        const metaParts = [
+            student.student_id_number || '未填学号',
+            student.email || '',
+            student.phone || '',
+            student.academic_class_name || '',
+            student.academic_major || '',
+        ].filter(Boolean);
         return `
             <article class="class-student-row" data-student-row data-search-text="${escapeHtml(studentSearchText(student))}">
                 <span class="class-student-row__avatar${isSuspended ? ' is-muted' : ''}">${escapeHtml(name.slice(0, 1))}</span>
                 <span class="class-student-row__main">
                     <strong>${escapeHtml(name)}</strong>
-                    <small>${escapeHtml(student.student_id_number || '未填学号')}${student.email ? ` · ${escapeHtml(student.email)}` : ''}</small>
+                    <small>${escapeHtml(metaParts.join(' · '))}</small>
                 </span>
                 <span class="class-student-row__badges">
                     <span class="class-student-row__status${isSuspended ? ' is-muted' : ''}">${escapeHtml(statusText)}</span>
                     <span class="class-student-row__status${hasEmail ? '' : ' is-warning'}">${hasEmail ? '邮箱已填' : '缺邮箱'}</span>
+                    ${isAcademicSynced ? '<span class="class-student-row__status is-academic">教务同步</span>' : ''}
+                    ${student.academic_school_status ? `<span class="class-student-row__status is-muted">${escapeHtml(student.academic_school_status)}</span>` : ''}
                 </span>
                 <span class="class-student-row__actions">
                     <a class="btn btn-outline btn-sm" href="/manage/students/${Number(student.id)}">详情</a>
@@ -460,6 +503,137 @@ async function deleteStudent(button) {
     }
 }
 
+function countValue(result, key) {
+    return Number(result?.[key] || 0) || 0;
+}
+
+function renderSyncCount(label, value, note = '') {
+    return `
+        <article class="class-academic-sync-item">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value)}</strong>
+            ${note ? `<small>${escapeHtml(note)}</small>` : ''}
+        </article>
+    `;
+}
+
+function renderSyncList(title, items, className = '') {
+    const safeItems = Array.isArray(items) ? items.filter(Boolean).slice(0, 8) : [];
+    if (!safeItems.length) {
+        return '';
+    }
+    return `
+        <section class="class-academic-sync-list ${className}">
+            <h4>${escapeHtml(title)}</h4>
+            <ul>
+                ${safeItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
+            </ul>
+        </section>
+    `;
+}
+
+function renderRosterHighlights(rosters) {
+    const safeRosters = Array.isArray(rosters) ? rosters.slice(0, 5) : [];
+    if (!safeRosters.length) {
+        return '';
+    }
+    return `
+        <section class="class-academic-sync-rosters">
+            <h4>本次识别的教学班</h4>
+            <div class="class-academic-sync-roster-list">
+                ${safeRosters.map((roster) => `
+                    <div>
+                        <strong>${escapeHtml(roster.teaching_class_name || roster.course_name || '未命名教学班')}</strong>
+                        <span>${escapeHtml(roster.class_composition || '未提供行政班组成')}</span>
+                        <small>${Number(roster.imported_student_count || 0)} / ${Number(roster.declared_student_count || 0)} 名</small>
+                    </div>
+                `).join('')}
+            </div>
+        </section>
+    `;
+}
+
+function openSyncModal(result) {
+    if (!elements.syncModal || !elements.syncSummary) {
+        return;
+    }
+    if (elements.syncLead) {
+        elements.syncLead.textContent = result?.message || '教务系统同步已结束，请查看本次处理结果。';
+    }
+    elements.syncSummary.innerHTML = `
+        <div class="class-academic-sync-grid">
+            ${renderSyncCount('教学班', countValue(result, 'teaching_class_count'), `${countValue(result, 'course_count')} 门课程`)}
+            ${renderSyncCount('本平台班级', countValue(result, 'touched_class_count'), `新增 ${countValue(result, 'classes_created')} · 更新 ${countValue(result, 'classes_updated')}`)}
+            ${renderSyncCount('学生记录', countValue(result, 'roster_student_count'), `新增 ${countValue(result, 'students_created')} · 更新 ${countValue(result, 'students_updated')} · 转班 ${countValue(result, 'students_moved')}`)}
+            ${renderSyncCount('教学班名单关系', countValue(result, 'memberships_upserted'), '保留教务教学班与行政班差异')}
+        </div>
+        ${renderRosterHighlights(result?.rosters)}
+        ${renderSyncList('需要教师复核', result?.warnings, 'class-academic-sync-warning')}
+        ${renderSyncList('后续建议', result?.follow_up_items)}
+    `;
+    elements.syncModal.hidden = false;
+    elements.syncModal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('has-class-academic-sync-modal');
+    window.requestAnimationFrame(() => {
+        elements.syncModal.classList.add('is-open');
+        elements.syncPanel?.focus({ preventScroll: true });
+    });
+}
+
+function closeSyncModal({ reload = false } = {}) {
+    if (!elements.syncModal) return;
+    if (reload) {
+        window.location.reload();
+        return;
+    }
+    elements.syncModal.classList.remove('is-open');
+    elements.syncModal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('has-class-academic-sync-modal');
+    window.setTimeout(() => {
+        if (!elements.syncModal.classList.contains('is-open')) {
+            elements.syncModal.hidden = true;
+        }
+    }, 160);
+}
+
+function setSyncButtonsLoading(isLoading) {
+    elements.academicSyncButtons.forEach((button) => {
+        if (!button) return;
+        if (isLoading) {
+            button.dataset.originalText = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span> 同步中...';
+        } else {
+            button.disabled = false;
+            if (button.dataset.originalText) {
+                button.innerHTML = button.dataset.originalText;
+                delete button.dataset.originalText;
+            }
+        }
+    });
+}
+
+async function handleAcademicSync() {
+    const confirmed = window.confirm(
+        '将从教务系统读取当前学期的教学班和学生名单，并对齐到本平台班级。已有学生不会被自动删除，本地人工维护的联系方式会优先保留。是否开始同步？'
+    );
+    if (!confirmed) return;
+    setSyncButtonsLoading(true);
+    try {
+        const result = await apiFetch('/api/manage/classes/sync-current-academic', {
+            method: 'POST',
+            body: {},
+            silent: true,
+        });
+        showMessage(result.message || '教务班级和学生名单已同步', result.status === 'success' ? 'success' : 'info');
+        openSyncModal(result);
+    } catch (error) {
+        showMessage(error.message || '教务班级和学生名单同步失败', 'error');
+    } finally {
+        setSyncButtonsLoading(false);
+    }
+}
+
 function bindEvents() {
     elements.form?.addEventListener('submit', (event) => {
         window.handleFormSubmit(event);
@@ -471,6 +645,10 @@ function bindEvents() {
 
     elements.templateButtons.forEach((button) => {
         button.addEventListener('click', downloadRosterTemplate);
+    });
+
+    elements.academicSyncButtons.forEach((button) => {
+        button.addEventListener('click', handleAcademicSync);
     });
 
     [elements.searchInput, elements.departmentFilter, elements.healthFilter, elements.sortSelect].forEach((input) => {
@@ -531,7 +709,17 @@ function bindEvents() {
     elements.addModal?.addEventListener('click', (event) => {
         if (event.target === elements.addModal) closeAddStudentModal();
     });
+    elements.syncClose?.addEventListener('click', () => closeSyncModal({ reload: false }));
+    elements.syncDismiss?.addEventListener('click', () => closeSyncModal({ reload: false }));
+    elements.syncReload?.addEventListener('click', () => closeSyncModal({ reload: true }));
+    elements.syncModal?.addEventListener('click', (event) => {
+        if (event.target === elements.syncModal) closeSyncModal({ reload: false });
+    });
     document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && elements.syncModal && !elements.syncModal.hidden) {
+            closeSyncModal({ reload: false });
+            return;
+        }
         if (event.key === 'Escape' && elements.addModal && !elements.addModal.hidden) {
             closeAddStudentModal();
             return;
