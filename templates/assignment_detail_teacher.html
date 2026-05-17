@@ -617,6 +617,10 @@
         font-weight: 600;
         line-height: 1.5;
     }
+    .offline-question-label-text {
+        min-width: 0;
+        word-break: break-word;
+    }
     .offline-option-list {
         display: grid;
         gap: 0.45rem;
@@ -629,6 +633,51 @@
         border-radius: var(--radius-sm);
         background: var(--surface-color);
         border: 1px solid var(--border-color);
+    }
+    .offline-question-attachment-panel {
+        display: grid;
+        gap: 0.55rem;
+        margin-top: var(--spacing-md);
+        padding: 0.75rem;
+        border: 1px solid rgba(79, 70, 229, 0.16);
+        border-radius: var(--radius-sm);
+        background: rgba(255, 255, 255, 0.72);
+    }
+    .offline-question-attachment-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        font-size: 0.86rem;
+        font-weight: 700;
+    }
+    .offline-question-attachment-status {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0.22rem 0.55rem;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        background: rgba(248, 250, 252, 0.9);
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+    .offline-question-attachment-status.required {
+        border-color: rgba(245, 158, 11, 0.32);
+        background: rgba(255, 251, 235, 0.95);
+        color: var(--warning-dark);
+    }
+    .offline-question-attachment-hint {
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        line-height: 1.5;
+    }
+    .offline-question-attachment-panel .upload-dropzone {
+        padding: 0.85rem;
+        text-align: left;
     }
     .upload-dropzone {
         border: 2px dashed var(--border-color);
@@ -1394,7 +1443,7 @@
 
 <!-- 教师线下代交模态框 -->
 <div class="modal-backdrop" id="offline-submit-modal">
-    <div class="modal-dialog" style="max-width: 980px;">
+    <div class="modal-dialog" style="max-width: 1120px;">
         <div class="modal-content">
             <div class="modal-header">
                 <h3 class="modal-title">线下代交</h3>
@@ -1410,11 +1459,12 @@
                 </div>
                 <div class="offline-modal-grid">
                     <div class="offline-answer-area">
-                        <label class="form-label mb-2 block">答案</label>
+                        <label class="form-label mb-2 block">答案与题目附件</label>
                         <div id="offline-answer-area" class="offline-question-list"></div>
                     </div>
                     <div class="offline-upload-panel">
-                        <label class="form-label mb-2 block">附件上传 <span class="text-muted font-normal">(可选)</span></label>
+                        <label class="form-label mb-2 block">整份附件上传 <span class="text-muted font-normal">(可选)</span></label>
+                        <p class="text-xs text-muted mb-2">需要绑定到某一道题的附件，请在左侧对应题目下上传；这里适合放整份说明、补充材料或不要求题号归属的文件。</p>
                         <div class="flex items-center gap-2 mb-2 flex-wrap">
                             <button type="button" class="btn btn-outline btn-sm" id="offline-pick-files-btn">选择文件</button>
                             <button type="button" class="btn btn-outline btn-sm" id="offline-pick-folder-btn">选择文件夹</button>
@@ -1456,7 +1506,10 @@
     window.openDeleteModal = () => openModal('delete-modal');
     window.closeDeleteModal = () => closeModal('delete-modal');
     window.closeWithdrawModal = () => closeModal('withdraw-submissions-modal');
-    window.closeOfflineSubmitModal = () => closeModal('offline-submit-modal');
+    window.closeOfflineSubmitModal = () => {
+        closeModal('offline-submit-modal');
+        resetOfflineSubmitForm();
+    };
 
     const currentAssignmentId = "{{ assignment.id }}";
     const currentClassOfferingId = {{ assignment.class_offering_id | tojson }};
@@ -1488,6 +1541,8 @@
     let selectedStudentIds = new Set();
     let withdrawScope = { scope: 'selected', studentPkIds: [] };
     let offlineUploadManager = null;
+    let offlineQuestionUploadManagers = new Map();
+    let offlineRenderedQuestions = [];
     let offlineTargetStudent = null;
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -2450,6 +2505,16 @@
         }
     };
 
+    function resetOfflineSubmitForm() {
+        offlineUploadManager?.clear();
+        offlineQuestionUploadManagers.forEach((manager) => manager.clear?.());
+        offlineQuestionUploadManagers = new Map();
+        offlineRenderedQuestions = [];
+        offlineTargetStudent = null;
+        const area = document.getElementById('offline-answer-area');
+        if (area) area.innerHTML = '';
+    }
+
     function initOfflineUpload() {
         if (offlineUploadManager) {
             offlineUploadManager.clear();
@@ -2493,15 +2558,14 @@
         initOfflineUpload();
     };
 
-    function renderOfflineAnswerArea() {
-        const area = document.getElementById('offline-answer-area');
-        if (!area) return;
+    function getOfflineQuestions() {
         const examPages = OFFLINE_EXAM_QUESTIONS?.pages || [];
         const questions = [];
         if (examPages.length) {
             examPages.forEach((page, pageIndex) => {
                 (page.questions || []).forEach((q, qIndex) => {
                     questions.push({
+                        ...q,
                         id: q.id || `${pageIndex + 1}-${qIndex + 1}`,
                         text: q.text || `第 ${questions.length + 1} 题`,
                         type: q.type || 'textarea',
@@ -2509,57 +2573,93 @@
                     });
                 });
             });
-        } else {
-            extractQuestions({{ assignment.requirements_md | tojson }}).forEach((text, index) => {
-                questions.push({ id: `q${index + 1}`, text, type: 'textarea', options: [] });
-            });
-            if (!questions.length) {
-                questions.push({ id: 'answer', text: '综合答题区', type: 'textarea', options: [] });
-            }
+            return questions;
         }
+        extractQuestions({{ assignment.requirements_md | tojson }}).forEach((text, index) => {
+            questions.push({ id: `q${index + 1}`, text, type: 'textarea', options: [] });
+        });
+        if (!questions.length) {
+            questions.push({ id: 'answer', text: '综合答题区', type: 'textarea', options: [] });
+        }
+        return questions;
+    }
 
-        area.innerHTML = questions.map((q, index) => {
-            const question = escapeHtml(q.text || '');
-            const qid = escapeHtml(String(q.id || `q${index + 1}`));
-            if (q.type === 'radio' && q.options?.length) {
-                return `
-                    <div class="offline-question" data-offline-question data-question-id="${qid}" data-question="${question}" data-type="radio">
-                        <div class="offline-question-label"><span class="badge badge-outline">${index + 1}</span><span>${question}</span></div>
-                        <div class="offline-option-list">
-                            ${q.options.map((opt, optIndex) => `
-                                <label><input type="radio" name="offline_${qid}" value="${escapeHtml(opt)}"> <span>${escapeHtml(opt)}</span></label>
-                            `).join('')}
-                        </div>
-                    </div>
-                `;
-            }
-            if (q.type === 'checkbox' && q.options?.length) {
-                return `
-                    <div class="offline-question" data-offline-question data-question-id="${qid}" data-question="${question}" data-type="checkbox">
-                        <div class="offline-question-label"><span class="badge badge-outline">${index + 1}</span><span>${question}</span></div>
-                        <div class="offline-option-list">
-                            ${q.options.map((opt) => `
-                                <label><input type="checkbox" value="${escapeHtml(opt)}"> <span>${escapeHtml(opt)}</span></label>
-                            `).join('')}
-                        </div>
-                    </div>
-                `;
-            }
-            if (q.type === 'text') {
-                return `
-                    <div class="offline-question" data-offline-question data-question-id="${qid}" data-question="${question}" data-type="text">
-                        <div class="offline-question-label"><span class="badge badge-outline">${index + 1}</span><span>${question}</span></div>
-                        <input type="text" class="form-control" placeholder="输入答案">
-                    </div>
-                `;
-            }
-            return `
-                <div class="offline-question" data-offline-question data-question-id="${qid}" data-question="${question}" data-type="textarea">
-                    <div class="offline-question-label"><span class="badge badge-outline">${index + 1}</span><span>${question}</span></div>
-                    <textarea class="form-control" rows="5" placeholder="输入答案"></textarea>
+    function renderOfflineAnswerArea() {
+        const area = document.getElementById('offline-answer-area');
+        if (!area) return;
+        const questions = getOfflineQuestions();
+        offlineRenderedQuestions = questions;
+        area.innerHTML = questions.map((q, index) => renderOfflineQuestion(q, index)).join('');
+        mountOfflineQuestionUploadManagers(questions);
+    }
+
+    function renderOfflineQuestion(q, index) {
+        const question = escapeHtml(q.text || '');
+        const qid = escapeHtml(String(q.id || `q${index + 1}`));
+        const type = String(q.type || 'textarea').toLowerCase();
+        let body = '';
+        if (type === 'radio' && q.options?.length) {
+            const groupName = `offline_${offlineDomIdSegment(q.id || `q${index + 1}`)}`;
+            body = `
+                <div class="offline-option-list">
+                    ${q.options.map((opt) => `
+                        <label><input type="radio" name="${groupName}" value="${escapeHtml(opt)}"> <span>${escapeHtml(opt)}</span></label>
+                    `).join('')}
                 </div>
             `;
-        }).join('');
+        } else if (type === 'checkbox' && q.options?.length) {
+            body = `
+                <div class="offline-option-list">
+                    ${q.options.map((opt) => `
+                        <label><input type="checkbox" value="${escapeHtml(opt)}"> <span>${escapeHtml(opt)}</span></label>
+                    `).join('')}
+                </div>
+            `;
+        } else if (type === 'text') {
+            body = '<input type="text" class="form-control" placeholder="输入答案">';
+        } else {
+            body = '<textarea class="form-control" rows="5" placeholder="输入答案"></textarea>';
+        }
+        return `
+            <div class="offline-question" data-offline-question data-question-id="${qid}" data-question="${question}" data-type="${escapeHtml(type)}">
+                <div class="offline-question-label">
+                    <span class="badge badge-outline">${index + 1}</span>
+                    <span class="offline-question-label-text">${question}</span>
+                </div>
+                ${body}
+                ${renderOfflineQuestionAttachmentPanel(q, index)}
+            </div>
+        `;
+    }
+
+    function renderOfflineQuestionAttachmentPanel(q, index) {
+        const policy = getOfflineAttachmentPolicy(q);
+        if (!policy.enabled) return '';
+        const qid = String(q.id || `q${index + 1}`);
+        const safeQId = offlineDomIdSegment(qid);
+        const statusText = formatOfflineAttachmentStatus(policy, 0);
+        const typeHint = policy.allowedFileTypes.length ? ` 本题要求类型：${escapeHtml(policy.allowedFileTypes.join(', '))}。` : '';
+        const assignmentTypeHint = currentAllowedFileTypes?.length ? ` 交卷允许类型：${escapeHtml({{ assignment.allowed_file_types_label | tojson }})}。` : '';
+        const hint = policy.description || '上传本题对应的截图、报告、代码或线下材料；这些文件会随答案绑定到题号，供教师查看和 AI 批改识别。';
+        return `
+            <div class="offline-question-attachment-panel" data-offline-question-attachment-panel="${escapeHtml(qid)}">
+                <div class="offline-question-attachment-head">
+                    <span>本题附件</span>
+                    <span class="offline-question-attachment-status ${policy.required ? 'required' : ''}" data-offline-question-attachment-status="${escapeHtml(qid)}">${statusText}</span>
+                </div>
+                <div class="offline-question-attachment-hint">${escapeHtml(hint)}${typeHint}${assignmentTypeHint}</div>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <button type="button" class="btn btn-outline btn-sm" id="offline-question-pick-${safeQId}">添加本题文件</button>
+                    <span class="text-xs text-muted" id="offline-question-summary-${safeQId}">未选择文件</span>
+                </div>
+                <div class="upload-dropzone" id="offline-question-drop-zone-${safeQId}">
+                    <p class="mb-1 text-primary font-medium">拖拽本题附件到此处</p>
+                    <p class="text-xs text-muted">附件会绑定到第 ${escapeHtml(qid)} 题；若本题为必传，请至少上传要求数量后再提交。</p>
+                </div>
+                <input type="file" id="offline-question-file-input-${safeQId}" class="hidden" multiple>
+                <div class="file-chips" id="offline-question-file-chips-${safeQId}"></div>
+            </div>
+        `;
     }
 
     function extractQuestions(md) {
@@ -2591,9 +2691,222 @@
         return questions.filter(question => !/^(assignment|requirements|rubric|deadline|note|submit)/i.test(question) && question.length > 1);
     }
 
-    function collectOfflineAnswers() {
+    function normalizeOfflinePolicyFileTypes(rawValue) {
+        if (!rawValue) return [];
+        const values = Array.isArray(rawValue)
+            ? rawValue
+            : String(rawValue).replace(/\r/g, '\n').replace(/[;，、]/g, ',').replace(/\n/g, ',').split(',');
+        return values.map(item => String(item || '').trim()).filter(Boolean);
+    }
+
+    function isOfflinePolicyEnabled(raw) {
+        if (!raw || raw.enabled === undefined || raw.enabled === null || raw.enabled === '') return true;
+        return !['0', 'false', 'no', 'off'].includes(String(raw.enabled).trim().toLowerCase());
+    }
+
+    function isOfflineAttachmentQuestion(q) {
+        const type = String(q?.type || '').toLowerCase();
+        if (type === 'radio' || type === 'checkbox' || type === 'text') return false;
+        return ['textarea', 'essay', 'short_answer', 'short-answer', 'shortanswer', 'subjective', 'open', '简答', '简答题', '问答题'].includes(type) || !type;
+    }
+
+    function getOfflineAttachmentPolicy(q) {
+        const rawSource = q?.attachment_requirements || q?.attachment_requirement || q?.answer_attachments || {};
+        const raw = rawSource && typeof rawSource === 'object' ? rawSource : {};
+        const policyEnabled = isOfflinePolicyEnabled(raw);
+        const rawRequired = Boolean(raw.required || raw.requires_attachment || raw.attachment_required);
+        const minCount = Math.max(0, Number(raw.min_count ?? raw.min ?? (rawRequired ? 1 : 0)) || 0);
+        const maxCountRaw = Number(raw.max_count ?? raw.max ?? MAX_FILE_COUNT);
+        const maxCount = Math.max(minCount || 0, Math.min(MAX_FILE_COUNT, Number.isFinite(maxCountRaw) && maxCountRaw > 0 ? maxCountRaw : MAX_FILE_COUNT));
+        const required = rawRequired || (policyEnabled && minCount > 0);
+        const hasPolicyShape = Object.keys(raw).length > 0;
+        return {
+            enabled: policyEnabled && (isOfflineAttachmentQuestion(q) || required || hasPolicyShape),
+            required,
+            minCount: required ? Math.max(minCount, 1) : minCount,
+            maxCount,
+            allowedFileTypes: normalizeOfflinePolicyFileTypes(raw.allowed_file_types || raw.file_types),
+            description: String(raw.description || raw.requirement || raw.prompt || raw.hint || '').trim(),
+        };
+    }
+
+    function combineOfflineAllowedFileTypes(primaryTypes, secondaryTypes) {
+        const primary = Array.isArray(primaryTypes) ? primaryTypes.filter(Boolean) : [];
+        const secondary = Array.isArray(secondaryTypes) ? secondaryTypes.filter(Boolean) : [];
+        if (!primary.length) return secondary;
+        if (!secondary.length) return primary;
+        const secondarySet = new Set(secondary.map(item => String(item).toLowerCase()));
+        const narrowed = primary.filter(item => secondarySet.has(String(item).toLowerCase()));
+        return narrowed.length ? narrowed : primary;
+    }
+
+    function offlineDomIdSegment(value) {
+        return String(value || 'q')
+            .replace(/[^\w\u4e00-\u9fa5-]/g, '_')
+            .slice(0, 48) || 'q';
+    }
+
+    function offlineCssEscape(value) {
+        return window.CSS?.escape ? CSS.escape(String(value)) : String(value).replace(/"/g, '\\"');
+    }
+
+    function sanitizeOfflineFileSegment(value, fallback) {
+        const cleaned = String(value || '')
+            .replace(/[\\/:*?"<>|\x00-\x1f]/g, '_')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 48);
+        return cleaned || fallback;
+    }
+
+    function normalizeOfflineUploadRelativePath(rawPath, fallbackName = 'upload.bin') {
+        const raw = String(rawPath || fallbackName).replace(/\\/g, '/').trim().replace(/^\/+|\/+$/g, '');
+        const parts = raw.split('/').map(part => part.trim()).filter(part => part && part !== '.' && part !== '..');
+        return (parts.length ? parts : [fallbackName]).map(part => part.replace(/[\\/\0]/g, '_')).join('/');
+    }
+
+    function makeOfflineQuestionAttachmentRelativePath(q, rawPath, index) {
+        const qSegment = sanitizeOfflineFileSegment(`${q.id || `第${index}题`}`, `第${index}题`);
+        return `exam_question_files/${qSegment}/${normalizeOfflineUploadRelativePath(rawPath || 'upload.bin')}`;
+    }
+
+    function getOfflineQuestionFileEntries(qId) {
+        const manager = offlineQuestionUploadManagers.get(String(qId));
+        return Array.isArray(manager?.entries) ? manager.entries : [];
+    }
+
+    function getOfflineQuestionAttachmentCount(qId) {
+        return getOfflineQuestionFileEntries(qId).length;
+    }
+
+    function formatOfflineAttachmentStatus(policy, count) {
+        if (policy.required) {
+            const need = Math.max(policy.minCount, 1);
+            return count >= need ? `已满足：${count}/${need}` : `还需 ${Math.max(need - count, 0)} 个附件`;
+        }
+        return `已选 ${count} 个`;
+    }
+
+    function updateOfflineQuestionAttachmentStatus(qId) {
+        const question = offlineRenderedQuestions.find(item => String(item.id) === String(qId));
+        if (!question) return;
+        const policy = getOfflineAttachmentPolicy(question);
+        const count = getOfflineQuestionAttachmentCount(qId);
+        const status = document.querySelector(`[data-offline-question-attachment-status="${offlineCssEscape(qId)}"]`);
+        if (!status) return;
+        status.classList.toggle('required', policy.required);
+        status.textContent = formatOfflineAttachmentStatus(policy, count);
+    }
+
+    function mountOfflineQuestionUploadManagers(questions) {
+        offlineQuestionUploadManagers.forEach((manager) => manager.clear?.());
+        offlineQuestionUploadManagers = new Map();
+        (questions || []).forEach((q) => {
+            const policy = getOfflineAttachmentPolicy(q);
+            if (!policy.enabled) return;
+            const qId = String(q.id || '');
+            const safeQId = offlineDomIdSegment(qId);
+            const allowedTypes = combineOfflineAllowedFileTypes(policy.allowedFileTypes, currentAllowedFileTypes);
+            const manager = new SubmissionUploadManager({
+                dropZoneId: `offline-question-drop-zone-${safeQId}`,
+                fileInputId: `offline-question-file-input-${safeQId}`,
+                listId: `offline-question-file-chips-${safeQId}`,
+                summaryId: `offline-question-summary-${safeQId}`,
+                allowedFileTypes: allowedTypes,
+                maxBytes: MAX_UPLOAD_BYTES,
+                maxPerFileBytes: MAX_PER_FILE_BYTES,
+                maxFiles: policy.maxCount || MAX_FILE_COUNT,
+                notify: showToast,
+                onChange: () => updateOfflineQuestionAttachmentStatus(qId),
+            });
+            manager.init();
+            offlineQuestionUploadManagers.set(qId, manager);
+            document.getElementById(`offline-question-pick-${safeQId}`)?.addEventListener('click', () => manager.openFilePicker());
+            updateOfflineQuestionAttachmentStatus(qId);
+        });
+    }
+
+    function hasOfflineQuestionFiles() {
+        return [...offlineQuestionUploadManagers.values()].some((manager) => manager.hasFiles?.());
+    }
+
+    function validateOfflineQuestionAttachmentRequirements() {
+        for (const q of offlineRenderedQuestions) {
+            const policy = getOfflineAttachmentPolicy(q);
+            if (!policy.enabled) continue;
+            const count = getOfflineQuestionAttachmentCount(q.id);
+            const minCount = policy.required ? Math.max(policy.minCount, 1) : policy.minCount;
+            if (minCount > 0 && count < minCount) {
+                return { question: q, message: `第 ${q.id} 题需要至少上传 ${minCount} 个附件` };
+            }
+            if (policy.maxCount && count > policy.maxCount) {
+                return { question: q, message: `第 ${q.id} 题附件不能超过 ${policy.maxCount} 个` };
+            }
+        }
+        return null;
+    }
+
+    function appendOfflineQuestionAttachmentFiles(formData) {
+        let manifest = [];
+        const currentManifest = formData.get('manifest');
+        if (currentManifest) {
+            try { manifest = JSON.parse(currentManifest) || []; } catch { manifest = []; }
+        }
+        const attachmentMap = new Map();
+        offlineRenderedQuestions.forEach((q, index) => {
+            const entries = getOfflineQuestionFileEntries(q.id);
+            if (!entries.length) return;
+            entries.forEach((entry) => {
+                const file = entry.file;
+                if (!file) return;
+                const fileName = file.name || 'upload.bin';
+                const relativePath = makeOfflineQuestionAttachmentRelativePath(q, entry.relativePath || fileName, index + 1);
+                formData.append('files', file, fileName);
+                manifest.push({
+                    relative_path: relativePath,
+                    content_type: file.type || '',
+                    kind: 'question_attachment',
+                    question_id: q.id,
+                    question: q.text,
+                });
+                const qKey = String(q.id);
+                if (!attachmentMap.has(qKey)) attachmentMap.set(qKey, []);
+                attachmentMap.get(qKey).push({
+                    kind: file.type && file.type.startsWith('image/') ? 'image' : 'file',
+                    file_name: fileName,
+                    relative_path: relativePath,
+                    mime_type: file.type || '',
+                    file_size: file.size || 0,
+                    question_id: q.id,
+                    question: q.text,
+                });
+            });
+        });
+        formData.set('manifest', JSON.stringify(manifest));
+        return attachmentMap;
+    }
+
+    function validateOfflineFormDataFileLimits(formData) {
+        const files = formData.getAll('files').filter(file => file instanceof File);
+        if (MAX_FILE_COUNT && files.length > MAX_FILE_COUNT) {
+            throw new Error(`文件数量不能超过 ${MAX_FILE_COUNT} 个，请减少题目附件或整份附件。`);
+        }
+        let totalBytes = 0;
+        for (const file of files) {
+            totalBytes += Number(file.size || 0);
+            if (MAX_PER_FILE_BYTES && file.size > MAX_PER_FILE_BYTES) {
+                throw new Error(`文件 ${file.name || '附件'} 超过单文件大小限制 ${(MAX_PER_FILE_BYTES / 1024 / 1024).toFixed(0)}MB。`);
+            }
+        }
+        if (MAX_UPLOAD_BYTES && totalBytes > MAX_UPLOAD_BYTES) {
+            throw new Error(`全部附件总大小不能超过 ${(MAX_UPLOAD_BYTES / 1024 / 1024).toFixed(0)}MB。`);
+        }
+    }
+
+    function collectOfflineAnswers(attachmentMap = new Map()) {
         return [...document.querySelectorAll('[data-offline-question]')].map((node, index) => {
             const type = node.dataset.type || 'textarea';
+            const qid = node.dataset.questionId || `q${index + 1}`;
             let answer = '';
             if (type === 'radio') {
                 answer = node.querySelector('input[type="radio"]:checked')?.value || '';
@@ -2603,9 +2916,11 @@
                 answer = node.querySelector('textarea, input[type="text"]')?.value || '';
             }
             return {
-                question_id: node.dataset.questionId || `q${index + 1}`,
+                question_id: qid,
                 question: node.dataset.question || `第 ${index + 1} 题`,
+                type,
                 answer,
+                attachments: attachmentMap.get(String(qid)) || [],
             };
         });
     }
@@ -2614,20 +2929,29 @@
         if (!offlineTargetStudent) return;
         const answers = collectOfflineAnswers();
         const hasText = answers.some(item => String(item.answer || '').trim());
-        const hasFiles = offlineUploadManager?.hasFiles() ?? false;
+        const hasFiles = (offlineUploadManager?.hasFiles() ?? false) || hasOfflineQuestionFiles();
         if (!hasText && !hasFiles) {
             showToast('请填写答案或上传附件', 'warning');
+            return;
+        }
+        const attachmentRequirementError = validateOfflineQuestionAttachmentRequirements();
+        if (attachmentRequirementError) {
+            showToast(attachmentRequirementError.message, 'warning');
+            const target = document.querySelector(`[data-offline-question][data-question-id="${offlineCssEscape(attachmentRequirementError.question.id)}"]`);
+            target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
             return;
         }
 
         const btn = document.getElementById('confirm-offline-submit-btn');
         btn.disabled = true;
         btn.innerHTML = '<div class="spinner spinner-sm mr-2"></div> 提交中...';
-        const formData = offlineUploadManager ? offlineUploadManager.buildFormData() : new FormData();
-        formData.append('student_pk_id', String(offlineTargetStudent.student_pk_id));
-        formData.append('answers_json', JSON.stringify({ answers }));
 
         try {
+            const formData = offlineUploadManager ? offlineUploadManager.buildFormData() : new FormData();
+            const attachmentMap = appendOfflineQuestionAttachmentFiles(formData);
+            validateOfflineFormDataFileLimits(formData);
+            formData.append('student_pk_id', String(offlineTargetStudent.student_pk_id));
+            formData.append('answers_json', JSON.stringify({ answers: collectOfflineAnswers(attachmentMap) }));
             const response = await fetch(`/api/assignments/${currentAssignmentId}/submissions/offline`, {
                 method: 'POST',
                 body: formData,

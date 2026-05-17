@@ -26,7 +26,11 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-/.tmp_loadtest_run*
+
+# Codex/local automation scratch space
+/.codex-temp/
+/.codex_tmp*
+/.tmp_*
 /logs
 node_modules/
 
