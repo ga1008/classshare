@@ -840,6 +840,11 @@ def _course_group_key(item: AcademicCourseScheduleItem) -> str:
     return f"name:{item.course_name.casefold()}"
 
 
+def _normalize_course_match_text(value: Any) -> str:
+    normalized = _normalize_space(value).casefold()
+    return re.sub(r"[\s\-_—–·•:：,，;；/／\\（）()【】\[\]《》<>]+", "", normalized)
+
+
 def _course_description(item: AcademicCourseScheduleItem, schedule_count: int) -> str:
     pieces = [
         f"从教务系统同步：{item.course_name}",
@@ -850,7 +855,17 @@ def _course_description(item: AcademicCourseScheduleItem, schedule_count: int) -
     return "；".join(part for part in pieces if part)
 
 
-def _find_existing_course(conn, teacher_id: int, item: AcademicCourseScheduleItem):
+def _course_row_with_match(row: Any, match_mode: str) -> dict[str, Any]:
+    row_dict = dict(row)
+    row_dict["_academic_match_mode"] = match_mode
+    return row_dict
+
+
+def _find_existing_course(
+    conn,
+    teacher_id: int,
+    item: AcademicCourseScheduleItem,
+) -> tuple[dict[str, Any] | None, str, int]:
     if item.course_code:
         row = conn.execute(
             """
@@ -865,19 +880,44 @@ def _find_existing_course(conn, teacher_id: int, item: AcademicCourseScheduleIte
             (int(teacher_id), ACADEMIC_COURSE_SOURCE, item.course_code),
         ).fetchone()
         if row:
-            return dict(row)
-    row = conn.execute(
+            return _course_row_with_match(row, "academic_code"), "academic_code", 0
+    exact_rows = conn.execute(
         """
         SELECT *
         FROM courses
         WHERE created_by_teacher_id = ?
           AND name = ? COLLATE NOCASE
         ORDER BY id DESC
-        LIMIT 1
         """,
         (int(teacher_id), item.course_name),
-    ).fetchone()
-    return dict(row) if row else None
+    ).fetchall()
+    if len(exact_rows) == 1:
+        return _course_row_with_match(exact_rows[0], "exact_name"), "exact_name", 0
+    if len(exact_rows) > 1:
+        return None, "ambiguous_name", len(exact_rows)
+
+    target_name = _normalize_course_match_text(item.course_name)
+    if target_name:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM courses
+            WHERE created_by_teacher_id = ?
+            ORDER BY id DESC
+            """,
+            (int(teacher_id),),
+        ).fetchall()
+        normalized_matches = [
+            row
+            for row in rows
+            if _normalize_course_match_text(row["name"]) == target_name
+        ]
+        if len(normalized_matches) == 1:
+            return _course_row_with_match(normalized_matches[0], "normalized_name"), "normalized_name", 0
+        if len(normalized_matches) > 1:
+            return None, "ambiguous_name", len(normalized_matches)
+
+    return None, "new", 0
 
 
 def _course_metadata(
@@ -922,6 +962,7 @@ def _upsert_courses_and_schedule_items(
     created_count = 0
     updated_count = 0
     course_results: list[dict[str, Any]] = []
+    warnings: list[str] = []
     synced_at = _now_iso()
     sync_message = "已同步本学期教务课表；请继续补充教材、课堂设置和本平台班级绑定。"
 
@@ -933,7 +974,11 @@ def _upsert_courses_and_schedule_items(
 
     for group_items in grouped.values():
         first_item = group_items[0]
-        existing = _find_existing_course(conn, teacher_id, first_item)
+        existing, match_mode, ambiguous_count = _find_existing_course(conn, teacher_id, first_item)
+        if ambiguous_count > 0:
+            warnings.append(
+                f"课程“{first_item.course_name}”在本系统已有 {ambiguous_count} 个相似课程，未自动绑定其中任意一个，已创建独立教务同步课程。"
+            )
         credits = next((item.credits for item in group_items if item.credits > 0), 0.0)
         total_hours = max(
             (
@@ -1001,7 +1046,7 @@ def _upsert_courses_and_schedule_items(
             )
             course_id = int(cursor.lastrowid)
             created_count += 1
-            action = "created"
+            action = "created_after_ambiguous_name" if match_mode == "ambiguous_name" else "created"
 
         for item in group_items:
             conn.execute(
@@ -1079,6 +1124,8 @@ def _upsert_courses_and_schedule_items(
                 "course_code": first_item.course_code,
                 "schedule_item_count": len(group_items),
                 "action": action,
+                "match_mode": match_mode,
+                "ambiguous_existing_count": ambiguous_count,
             }
         )
 
@@ -1088,6 +1135,7 @@ def _upsert_courses_and_schedule_items(
         "course_count": len(grouped),
         "schedule_item_count": len(items),
         "courses": course_results,
+        "warnings": warnings,
     }
 
 
@@ -1151,6 +1199,8 @@ async def sync_current_teacher_courses_from_academic_system(teacher_id: int) -> 
             conn.rollback()
             raise
 
+    warnings = result.get("warnings") or []
+
     return {
         "status": "success",
         "message": (
@@ -1164,7 +1214,8 @@ async def sync_current_teacher_courses_from_academic_system(teacher_id: int) -> 
         "course_count": result["course_count"],
         "schedule_item_count": result["schedule_item_count"],
         "courses": result["courses"],
-        "follow_up_items": FOLLOW_UP_ITEMS,
+        "warnings": warnings,
+        "follow_up_items": [*warnings[:3], *FOLLOW_UP_ITEMS],
         "source_summary": source_summary,
         "login_display_name": login_result.get("display_name") if isinstance(login_result, dict) else "",
         "school_name": profile.school_name,
