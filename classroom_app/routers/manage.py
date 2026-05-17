@@ -101,6 +101,7 @@ from ..services.academic_calendar_sync_service import (
     prepare_current_semester_from_academic_system,
     sync_semester_calendar_background,
 )
+from ..services.academic_course_sync_service import sync_current_teacher_courses_from_academic_system
 from ..storage_paths import resolve_migrated_file_path
 from ..time_utils import local_iso
 
@@ -1214,6 +1215,18 @@ async def api_save_course(
         "message": f"课程“{payload['name']}”已{action_text}",
         "course_id": course_id,
     }
+
+
+@router.post("/courses/sync-current-academic", response_class=JSONResponse)
+async def api_sync_current_courses_from_academic_system(
+    user: dict = Depends(get_current_teacher),
+):
+    result = await sync_current_teacher_courses_from_academic_system(int(user["id"]))
+    if result.get("status") == "missing_credential":
+        raise HTTPException(400, result.get("message") or "请先配置教务系统账号。")
+    if result.get("status") != "success":
+        raise HTTPException(502, result.get("message") or "未能从教务系统同步课程。")
+    return result
 
 
 @router.post("/courses/ai-generate-lessons", response_class=JSONResponse)

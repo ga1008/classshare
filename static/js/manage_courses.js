@@ -13,6 +13,11 @@ const elements = {
         document.getElementById('heroCourseCreateBtn'),
         document.getElementById('toolbarCourseCreateBtn'),
     ].filter(Boolean),
+    academicSyncButtons: [
+        document.getElementById('heroCourseAcademicSyncBtn'),
+        document.getElementById('toolbarCourseAcademicSyncBtn'),
+        document.getElementById('courseModalAcademicSyncBtn'),
+    ].filter(Boolean),
     modal: document.getElementById('courseModal'),
     modalTitle: document.getElementById('courseModalTitle'),
     courseIdInput: document.getElementById('courseIdInput'),
@@ -375,8 +380,48 @@ async function handleAiGenerateLessons() {
     }
 }
 
+async function handleAcademicCourseSync(triggerButton) {
+    const buttons = elements.academicSyncButtons || [];
+    const originalLabels = new Map(buttons.map((button) => [button, button.textContent]));
+    buttons.forEach((button) => {
+        button.disabled = true;
+        button.textContent = '同步中...';
+    });
+    if (triggerButton) {
+        triggerButton.textContent = '正在读取教务课表...';
+    }
+
+    try {
+        const result = await apiFetch('/api/manage/courses/sync-current-academic', {
+            method: 'POST',
+            silent: true,
+        });
+        const followUp = Array.isArray(result.follow_up_items) && result.follow_up_items.length
+            ? ` 后续请补充：${result.follow_up_items.slice(0, 3).join('、')}。`
+            : '';
+        const baseMessage = result.message
+            || `已同步 ${result.course_count || 0} 门课程、${result.schedule_item_count || 0} 条课表安排。`;
+        showMessage(
+            `${baseMessage}${followUp}`,
+            'success',
+            5200,
+        );
+        setTimeout(() => {
+            window.location.assign('/manage/courses?academic_course_sync=1');
+        }, 900);
+    } catch (error) {
+        showMessage(error.message || '同步教务课程失败，请确认账号已验证且教务课表可访问。', 'error', 5200);
+    } finally {
+        buttons.forEach((button) => {
+            button.disabled = false;
+            button.textContent = originalLabels.get(button) || '从教务系统同步';
+        });
+    }
+}
+
 function bindEvents() {
     elements.openButtons.forEach((button) => button.addEventListener('click', openCreateModal));
+    elements.academicSyncButtons.forEach((button) => button.addEventListener('click', () => handleAcademicCourseSync(button)));
     elements.addLessonBtn?.addEventListener('click', () => {
         createLessonRow();
         renumberLessonRows();

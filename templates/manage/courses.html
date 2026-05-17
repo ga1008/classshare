@@ -130,6 +130,60 @@
         font-weight: 600;
     }
 
+    .course-academic-sync-panel {
+        display: grid;
+        gap: 10px;
+        padding: 14px 16px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, rgba(240, 253, 250, 0.9), rgba(239, 246, 255, 0.88));
+        border: 1px solid rgba(14, 165, 233, 0.18);
+    }
+
+    .course-academic-sync-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+        color: var(--text-secondary);
+        font-size: 0.86rem;
+    }
+
+    .course-academic-sync-head strong {
+        color: #0f766e;
+    }
+
+    .course-academic-schedule-list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .course-academic-schedule-list li {
+        display: grid;
+        gap: 2px;
+        padding: 9px 10px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        color: var(--text-secondary);
+        font-size: 0.84rem;
+        line-height: 1.5;
+    }
+
+    .course-academic-schedule-list strong {
+        color: var(--text-primary);
+        font-weight: 650;
+    }
+
+    .course-academic-follow-up {
+        margin: 0;
+        color: #0f766e;
+        font-size: 0.84rem;
+        line-height: 1.55;
+    }
+
     .course-result-summary {
         display: flex;
         justify-content: space-between;
@@ -333,7 +387,9 @@
         </p>
         <div class="academic-hero-actions">
             <button type="button" class="btn btn-primary" id="heroCourseCreateBtn">新增课程</button>
+            <button type="button" class="btn btn-outline" id="heroCourseAcademicSyncBtn">从教务系统同步</button>
             <span class="academic-badge is-success">支持 AI 拆课</span>
+            <span class="academic-badge is-success">教务课表对接</span>
             <span class="academic-badge">卡片式检索</span>
             <span class="academic-badge is-accent">宗门称号隔离到课程</span>
             <span class="academic-badge is-accent">模板复用到课堂排期</span>
@@ -387,6 +443,11 @@
                     <strong>{{ textbooks_json|length }} 本教材可作为拆课依据</strong>
                     <p>选择教材后可调用思考模型自动生成课堂设置，再按需做人工微调。</p>
                 </article>
+                <article class="course-info-tile">
+                    <span>教务同步</span>
+                    <strong>{{ course_stats.academic_synced_course_count }} 门课程已对接教务课表</strong>
+                    <p>同步会归集课程号、周次、节次、地点和教学班信息，后续仍需补齐教材与平台班级。</p>
+                </article>
             </div>
         </div>
     </section>
@@ -418,6 +479,7 @@
                             <option value="idle">未开课</option>
                         </select>
                     </label>
+                    <button type="button" class="btn btn-outline" id="toolbarCourseAcademicSyncBtn">从教务系统同步</button>
                     <button type="button" class="btn btn-outline" id="toolbarCourseCreateBtn">新增课程</button>
                 </div>
             </div>
@@ -495,6 +557,36 @@
                                 <strong>{{ course.material_lesson_count }} 次课</strong>
                             </div>
                         </div>
+
+                        {% if course.academic_is_synced %}
+                        <div class="course-academic-sync-panel">
+                            <div class="course-academic-sync-head">
+                                <strong>教务课表已同步</strong>
+                                <span>
+                                    {% if course.academic_course_code %}课程号 {{ course.academic_course_code }} · {% endif %}
+                                    {{ course.academic_schedule_count }} 条安排
+                                </span>
+                            </div>
+                            {% if course.academic_schedule_preview %}
+                            <ul class="course-academic-schedule-list">
+                                {% for schedule in course.academic_schedule_preview %}
+                                <li>
+                                    <strong>
+                                        {{ schedule.weekday_label or '时间待确认' }}
+                                        {% if schedule.section_text %} {{ schedule.section_text }}节{% endif %}
+                                        {% if schedule.weeks_text %} · {{ schedule.weeks_text }}{% endif %}
+                                    </strong>
+                                    <span>
+                                        {{ schedule.location or '地点待确认' }}
+                                        {% if schedule.teaching_class_name %} · {{ schedule.teaching_class_name }}{% endif %}
+                                    </span>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                            <p class="course-academic-follow-up">{{ course.academic_follow_up_hint }}</p>
+                        </div>
+                        {% endif %}
 
                         {% if course.lesson_preview %}
                         <div class="course-lesson-mini-list">
@@ -637,6 +729,7 @@
             <div class="modal-footer">
                 <p class="course-modal-footer-note">保存时会校验“课程总学时”和“课堂设置合计小节数”是否一致，避免后续排课出现错位。</p>
                 <div class="academic-action-group">
+                    <button class="btn btn-outline" type="button" id="courseModalAcademicSyncBtn">从教务系统同步</button>
                     <button class="btn btn-outline" data-dismiss="modal">取消</button>
                     <button class="btn btn-primary" type="button" id="courseSaveBtn">保存课程</button>
                 </div>

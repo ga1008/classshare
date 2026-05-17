@@ -971,6 +971,17 @@ def init_database():
                 )
             except sqlite3.OperationalError:
                 pass
+            for statement in (
+                "ALTER TABLE courses ADD COLUMN academic_source TEXT DEFAULT ''",
+                "ALTER TABLE courses ADD COLUMN academic_course_code TEXT DEFAULT ''",
+                "ALTER TABLE courses ADD COLUMN academic_sync_at TEXT",
+                "ALTER TABLE courses ADD COLUMN academic_sync_message TEXT DEFAULT ''",
+                "ALTER TABLE courses ADD COLUMN academic_metadata_json TEXT NOT NULL DEFAULT '{}'",
+            ):
+                try:
+                    conn.execute(statement)
+                except sqlite3.OperationalError:
+                    pass
 
             conn.execute(
                 '''
@@ -997,6 +1008,53 @@ def init_database():
                 )
             except sqlite3.OperationalError:
                 pass
+
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS teacher_academic_course_sync_items
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    teacher_id INTEGER NOT NULL,
+                    semester_id INTEGER,
+                    course_id INTEGER,
+                    course_name TEXT NOT NULL DEFAULT '',
+                    course_code TEXT NOT NULL DEFAULT '',
+                    teaching_class_name TEXT NOT NULL DEFAULT '',
+                    weeks_text TEXT NOT NULL DEFAULT '',
+                    weekday INTEGER,
+                    weekday_label TEXT NOT NULL DEFAULT '',
+                    section_text TEXT NOT NULL DEFAULT '',
+                    campus TEXT NOT NULL DEFAULT '',
+                    location TEXT NOT NULL DEFAULT '',
+                    class_composition TEXT NOT NULL DEFAULT '',
+                    course_nature TEXT NOT NULL DEFAULT '',
+                    exam_method TEXT NOT NULL DEFAULT '',
+                    exam_mode TEXT NOT NULL DEFAULT '',
+                    course_hour_text TEXT NOT NULL DEFAULT '',
+                    credits REAL NOT NULL DEFAULT 0,
+                    student_count INTEGER NOT NULL DEFAULT 0,
+                    raw_text TEXT NOT NULL DEFAULT '',
+                    raw_json TEXT NOT NULL DEFAULT '{}',
+                    source_url TEXT NOT NULL DEFAULT '',
+                    synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                    FOREIGN KEY (semester_id) REFERENCES academic_semesters (id) ON DELETE SET NULL,
+                    FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE SET NULL,
+                    UNIQUE (
+                        teacher_id,
+                        semester_id,
+                        course_code,
+                        teaching_class_name,
+                        weeks_text,
+                        weekday,
+                        section_text,
+                        location
+                    )
+                )
+                '''
+            )
 
             conn.execute(
                 '''
@@ -3314,12 +3372,24 @@ def init_database():
                 "ON courses (created_by_teacher_id, department COLLATE NOCASE, name COLLATE NOCASE)"
             )
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_courses_teacher_academic_code "
+                "ON courses (created_by_teacher_id, academic_source, academic_course_code COLLATE NOCASE)"
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_lessons_course_order "
                 "ON course_lessons (course_id, order_index)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_lessons_material_lookup "
                 "ON course_lessons (course_id, learning_material_id, order_index)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_course_sync_items_teacher_semester "
+                "ON teacher_academic_course_sync_items (teacher_id, semester_id, synced_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_course_sync_items_course "
+                "ON teacher_academic_course_sync_items (course_id, weekday, section_text)"
             )
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_class_offerings_unique_semester_id "

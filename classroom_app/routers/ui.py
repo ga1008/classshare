@@ -56,6 +56,10 @@ from ..services.academic_service import (
     serialize_semester_row,
     serialize_textbook_row,
 )
+from ..services.academic_course_sync_service import (
+    build_academic_course_metadata,
+    summarize_academic_course_sync_item,
+)
 from ..services.course_planning_service import (
     decorate_offering_sessions,
     load_course_lessons_by_course_id,
@@ -1559,6 +1563,7 @@ async def get_manage_courses_page(request: Request, user: dict = Depends(get_cur
     course_stats = {
         "course_count": len(my_courses),
         "active_course_count": sum(1 for item in my_courses if item.get("is_in_use")),
+        "academic_synced_course_count": sum(1 for item in my_courses if item.get("academic_is_synced")),
         "lesson_count": sum(int(item.get("lesson_count") or 0) for item in my_courses),
         "total_hours": sum(int(item.get("total_hours") or 0) for item in my_courses),
     }
@@ -1660,6 +1665,36 @@ def _load_teacher_class_student_rows(conn, teacher_id: int, class_ids: list[int]
     return grouped
 
 
+def _load_teacher_academic_course_items(conn, teacher_id: int, course_ids: list[int]) -> dict[int, list[dict]]:
+    normalized_ids = [int(course_id) for course_id in course_ids if course_id]
+    if not normalized_ids:
+        return {}
+
+    placeholders = ",".join("?" for _ in normalized_ids)
+    rows = conn.execute(
+        f"""
+        SELECT *
+        FROM teacher_academic_course_sync_items
+        WHERE teacher_id = ?
+          AND course_id IN ({placeholders})
+        ORDER BY
+            COALESCE(semester_id, 0) DESC,
+            CASE WHEN weekday IS NULL THEN 1 ELSE 0 END,
+            weekday,
+            section_text,
+            id
+        """,
+        [int(teacher_id), *normalized_ids],
+    ).fetchall()
+
+    grouped: dict[int, list[dict]] = {course_id: [] for course_id in normalized_ids}
+    for row in rows:
+        item = summarize_academic_course_sync_item(row)
+        if item.get("course_id"):
+            grouped.setdefault(int(item["course_id"]), []).append(item)
+    return grouped
+
+
 def _load_teacher_course_rows(conn, teacher_id: int):
     rows = conn.execute(
         """
@@ -1672,19 +1707,28 @@ def _load_teacher_course_rows(conn, teacher_id: int):
                c.total_hours,
                c.created_at,
                c.created_by_teacher_id,
-               COUNT(DISTINCT o.id) AS offering_count
+               c.academic_source,
+               c.academic_course_code,
+               c.academic_sync_at,
+               c.academic_sync_message,
+               c.academic_metadata_json,
+               COALESCE(o.offering_count, 0) AS offering_count
         FROM courses c
-        LEFT JOIN class_offerings o
+        LEFT JOIN (
+            SELECT teacher_id, course_id, COUNT(DISTINCT id) AS offering_count
+            FROM class_offerings
+            GROUP BY teacher_id, course_id
+        ) o
             ON o.course_id = c.id
            AND o.teacher_id = c.created_by_teacher_id
         WHERE c.created_by_teacher_id = ?
-        GROUP BY c.id, c.name, c.department, c.description, c.sect_name, c.credits, c.total_hours, c.created_at, c.created_by_teacher_id
         ORDER BY c.created_at DESC, c.name
         """,
         (teacher_id,),
     ).fetchall()
     course_ids = [int(row["id"]) for row in rows]
     lessons_by_course = load_course_lessons_by_course_id(conn, course_ids)
+    academic_items_by_course = _load_teacher_academic_course_items(conn, teacher_id, course_ids)
     for course_id, lesson_items in lessons_by_course.items():
         lessons_by_course[course_id] = attach_learning_material_briefs(
             conn,
@@ -1693,14 +1737,46 @@ def _load_teacher_course_rows(conn, teacher_id: int):
             markdown_only=True,
         )
 
-    return [
-        serialize_course_row(
+    result = []
+    for row in rows:
+        course_id = int(row["id"])
+        item = serialize_course_row(
             row,
-            lessons=lessons_by_course.get(int(row["id"]), []),
+            lessons=lessons_by_course.get(course_id, []),
             offering_count=int(row["offering_count"] or 0),
         )
-        for row in rows
-    ]
+        sync_items = academic_items_by_course.get(course_id, [])
+        metadata = build_academic_course_metadata(item.get("academic_metadata_json"))
+        item["academic_metadata"] = metadata
+        item["academic_source"] = str(item.get("academic_source") or "")
+        item["academic_course_code"] = str(item.get("academic_course_code") or "")
+        item["academic_sync_at"] = str(item.get("academic_sync_at") or "")
+        item["academic_sync_message"] = str(item.get("academic_sync_message") or "")
+        item["academic_schedule_items"] = sync_items
+        item["academic_schedule_preview"] = sync_items[:3]
+        item["academic_schedule_count"] = len(sync_items) or int(metadata.get("schedule_item_count") or 0)
+        item["academic_is_synced"] = bool(item["academic_source"] or item["academic_course_code"] or sync_items)
+        item["academic_follow_up_items"] = metadata.get("follow_up_items") if isinstance(metadata.get("follow_up_items"), list) else []
+        item["academic_follow_up_hint"] = (
+            "已同步教务课表，请继续补充教材、课堂设置和本平台班级绑定。"
+            if item["academic_is_synced"]
+            else ""
+        )
+        academic_search = " ".join(
+            filter(
+                None,
+                [
+                    item["academic_course_code"],
+                    item["academic_sync_message"],
+                    " ".join(str(sync_item.get("teaching_class_name") or "") for sync_item in sync_items),
+                    " ".join(str(sync_item.get("location") or "") for sync_item in sync_items),
+                    " ".join(str(sync_item.get("weeks_text") or "") for sync_item in sync_items),
+                ],
+            )
+        )
+        item["search_blob"] = f"{item.get('search_blob') or ''} {academic_search}".lower()
+        result.append(item)
+    return result
 
 
 def _load_teacher_offering_rows(conn, teacher_id: int):
