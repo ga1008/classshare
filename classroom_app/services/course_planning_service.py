@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections import defaultdict
 from datetime import date, timedelta
@@ -20,6 +21,8 @@ MAX_SECTION_COUNT = 12
 
 WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 HOME_TIMELINE_ENTRY_ORDER = "home"
+SCHEDULE_SOURCE_FIXED_CYCLE = "fixed_cycle"
+SCHEDULE_SOURCE_ACADEMIC_SYNC = "academic_sync"
 
 
 class CoursePlanningError(ValueError):
@@ -293,7 +296,23 @@ def replace_offering_sessions(
     offering_id: int,
     sessions: list[dict[str, Any]],
 ) -> None:
-    conn.execute("DELETE FROM class_offering_sessions WHERE class_offering_id = ?", (offering_id,))
+    keep_order_indexes = [
+        int(item["order_index"])
+        for item in sessions
+        if item.get("order_index") not in (None, "")
+    ]
+    if keep_order_indexes:
+        placeholders = ",".join("?" for _ in keep_order_indexes)
+        conn.execute(
+            f"""
+            DELETE FROM class_offering_sessions
+            WHERE class_offering_id = ?
+              AND order_index NOT IN ({placeholders})
+            """,
+            (int(offering_id), *keep_order_indexes),
+        )
+    else:
+        conn.execute("DELETE FROM class_offering_sessions WHERE class_offering_id = ?", (offering_id,))
     if not sessions:
         return
 
@@ -310,13 +329,58 @@ def replace_offering_sessions(
             session_date,
             weekday,
             week_index,
-            learning_material_id
+            learning_material_id,
+            schedule_source,
+            academic_occurrence_id,
+            academic_sync_item_id,
+            academic_course_code,
+            academic_teaching_class_name,
+            academic_weeks_text,
+            academic_section_text,
+            academic_time_text,
+            academic_campus,
+            academic_location,
+            academic_classroom_id,
+            academic_classroom_code,
+            academic_classroom_type,
+            schedule_status,
+            is_non_periodic,
+            schedule_note,
+            schedule_metadata_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(class_offering_id, order_index) DO UPDATE SET
+            course_lesson_id = excluded.course_lesson_id,
+            title = excluded.title,
+            content = excluded.content,
+            section_count = excluded.section_count,
+            slot_section_count = excluded.slot_section_count,
+            session_date = excluded.session_date,
+            weekday = excluded.weekday,
+            week_index = excluded.week_index,
+            learning_material_id = COALESCE(excluded.learning_material_id, class_offering_sessions.learning_material_id),
+            schedule_source = excluded.schedule_source,
+            academic_occurrence_id = excluded.academic_occurrence_id,
+            academic_sync_item_id = excluded.academic_sync_item_id,
+            academic_course_code = excluded.academic_course_code,
+            academic_teaching_class_name = excluded.academic_teaching_class_name,
+            academic_weeks_text = excluded.academic_weeks_text,
+            academic_section_text = excluded.academic_section_text,
+            academic_time_text = excluded.academic_time_text,
+            academic_campus = excluded.academic_campus,
+            academic_location = excluded.academic_location,
+            academic_classroom_id = excluded.academic_classroom_id,
+            academic_classroom_code = excluded.academic_classroom_code,
+            academic_classroom_type = excluded.academic_classroom_type,
+            schedule_status = excluded.schedule_status,
+            is_non_periodic = excluded.is_non_periodic,
+            schedule_note = excluded.schedule_note,
+            schedule_metadata_json = excluded.schedule_metadata_json,
+            updated_at = CURRENT_TIMESTAMP
         """,
         [
             (
-                offering_id,
+                int(offering_id),
                 item.get("course_lesson_id"),
                 int(item["order_index"]),
                 item["title"],
@@ -327,6 +391,31 @@ def replace_offering_sessions(
                 int(item["weekday"]),
                 int(item.get("week_index") or 0),
                 item.get("learning_material_id"),
+                item.get("schedule_source") or SCHEDULE_SOURCE_FIXED_CYCLE,
+                item.get("academic_occurrence_id"),
+                item.get("academic_sync_item_id"),
+                _normalize_text(item.get("academic_course_code")),
+                _normalize_text(item.get("academic_teaching_class_name")),
+                _normalize_text(item.get("academic_weeks_text")),
+                _normalize_text(item.get("academic_section_text")),
+                _normalize_text(item.get("academic_time_text")),
+                _normalize_text(item.get("academic_campus")),
+                _normalize_text(item.get("academic_location")),
+                _normalize_text(item.get("academic_classroom_id")),
+                _normalize_text(item.get("academic_classroom_code")),
+                _normalize_text(item.get("academic_classroom_type")),
+                _normalize_text(item.get("schedule_status")) or "scheduled",
+                1 if item.get("is_non_periodic") else 0,
+                _normalize_text(item.get("schedule_note")),
+                (
+                    item.get("schedule_metadata_json")
+                    if isinstance(item.get("schedule_metadata_json"), str)
+                    else json.dumps(
+                        item.get("schedule_metadata") or {},
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
+                ),
             )
             for item in sessions
         ],
@@ -476,6 +565,210 @@ def _compute_week_index(session_date: date, semester_start_date: date | None) ->
         return 0
     semester_monday = semester_start_date - timedelta(days=semester_start_date.weekday())
     return ((session_date - semester_monday).days // 7) + 1
+
+
+def _schedule_source_label(value: Any) -> str:
+    return "教务实际排课" if str(value or "") == SCHEDULE_SOURCE_ACADEMIC_SYNC else "固定周循环"
+
+
+def _normalize_schedule_match_text(value: Any) -> str:
+    text = _normalize_text(value).casefold()
+    return re.sub(r"[\s\-_—–·•:：,，;；/／\\（）()【】\[\]《》<>]+", "", text)
+
+
+def _coerce_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_section_range(section_text: Any) -> tuple[int, int, int]:
+    text = _normalize_text(section_text)
+    match = re.search(r"(\d{1,2})\s*[-~－—]\s*(\d{1,2})", text)
+    if match:
+        start = int(match.group(1))
+        end = int(match.group(2))
+        if end < start:
+            start, end = end, start
+        return start, end, max(1, end - start + 1)
+    match = re.search(r"\d{1,2}", text)
+    if match:
+        start = int(match.group(0))
+        return start, start, 1
+    return 0, 0, 1
+
+
+def _safe_metadata(raw_value: Any) -> dict[str, Any]:
+    if isinstance(raw_value, dict):
+        return raw_value
+    if raw_value in (None, ""):
+        return {}
+    try:
+        parsed = json.loads(str(raw_value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def load_academic_course_occurrences(
+    conn: sqlite3.Connection,
+    *,
+    teacher_id: int,
+    semester_id: int,
+    course_id: int,
+    teaching_class_name: str = "",
+) -> list[dict[str, Any]]:
+    where_parts = [
+        "teacher_id = ?",
+        "semester_id = ?",
+        "course_id = ?",
+    ]
+    params: list[Any] = [int(teacher_id), int(semester_id), int(course_id)]
+    normalized_class_name = _normalize_text(teaching_class_name)
+    if normalized_class_name:
+        where_parts.append("teaching_class_name = ?")
+        params.append(normalized_class_name)
+
+    rows = conn.execute(
+        f"""
+        SELECT *
+        FROM teacher_academic_course_session_occurrences
+        WHERE {" AND ".join(where_parts)}
+        ORDER BY date(session_date), section_start, section_end, id
+        """,
+        tuple(params),
+    ).fetchall()
+
+    occurrences: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["id"] = _coerce_int(item.get("id"))
+        item["teacher_id"] = _coerce_int(item.get("teacher_id"))
+        item["semester_id"] = _coerce_int(item.get("semester_id"))
+        item["course_id"] = _coerce_int(item.get("course_id"))
+        item["sync_item_id"] = _coerce_int(item.get("sync_item_id")) or None
+        item["week_index"] = _coerce_int(item.get("week_index"))
+        item["weekday"] = _coerce_int(item.get("weekday"))
+        item["section_start"] = _coerce_int(item.get("section_start"))
+        item["section_end"] = _coerce_int(item.get("section_end"))
+        item["section_count"] = max(1, _coerce_int(item.get("section_count"), 1))
+        item["is_non_periodic"] = bool(_coerce_int(item.get("is_non_periodic")))
+        item["raw"] = _safe_metadata(item.get("raw_json"))
+        occurrences.append(item)
+    return occurrences
+
+
+def summarize_academic_teaching_classes(
+    conn: sqlite3.Connection,
+    *,
+    teacher_id: int,
+    semester_id: int,
+    course_id: int,
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT teaching_class_name,
+               class_composition,
+               COUNT(*) AS session_count,
+               MIN(session_date) AS first_session_date,
+               MAX(session_date) AS last_session_date,
+               SUM(CASE WHEN is_non_periodic THEN 1 ELSE 0 END) AS non_periodic_count
+        FROM teacher_academic_course_session_occurrences
+        WHERE teacher_id = ? AND semester_id = ? AND course_id = ?
+        GROUP BY teaching_class_name, class_composition
+        ORDER BY session_count DESC, teaching_class_name
+        """,
+        (int(teacher_id), int(semester_id), int(course_id)),
+    ).fetchall()
+    return [
+        {
+            "teaching_class_name": str(row["teaching_class_name"] or "").strip(),
+            "class_composition": str(row["class_composition"] or "").strip(),
+            "session_count": _coerce_int(row["session_count"]),
+            "first_session_date": str(row["first_session_date"] or ""),
+            "last_session_date": str(row["last_session_date"] or ""),
+            "non_periodic_count": _coerce_int(row["non_periodic_count"]),
+        }
+        for row in rows
+    ]
+
+
+def select_academic_teaching_class_for_offering(
+    conn: sqlite3.Connection,
+    *,
+    teacher_id: int,
+    semester_id: int,
+    course_id: int,
+    class_row: Any | None = None,
+    preferred_teaching_class_name: str = "",
+) -> tuple[str, list[dict[str, Any]], list[str], list[dict[str, Any]]]:
+    class_options = summarize_academic_teaching_classes(
+        conn,
+        teacher_id=teacher_id,
+        semester_id=semester_id,
+        course_id=course_id,
+    )
+    if not class_options:
+        return "", [], ["教务系统暂未同步到该课程的逐次上课安排。"], []
+
+    preferred = _normalize_text(preferred_teaching_class_name)
+    if preferred:
+        for option in class_options:
+            if option["teaching_class_name"] == preferred:
+                return preferred, load_academic_course_occurrences(
+                    conn,
+                    teacher_id=teacher_id,
+                    semester_id=semester_id,
+                    course_id=course_id,
+                    teaching_class_name=preferred,
+                ), [], class_options
+
+    if len(class_options) == 1:
+        selected_name = class_options[0]["teaching_class_name"]
+        return selected_name, load_academic_course_occurrences(
+            conn,
+            teacher_id=teacher_id,
+            semester_id=semester_id,
+            course_id=course_id,
+            teaching_class_name=selected_name,
+        ), [], class_options
+
+    class_texts: list[str] = []
+    if class_row:
+        row_dict = dict(class_row)
+        class_texts.extend([row_dict.get("name"), row_dict.get("department"), row_dict.get("description")])
+    normalized_targets = [_normalize_schedule_match_text(value) for value in class_texts if value]
+
+    scored: list[tuple[int, str]] = []
+    for option in class_options:
+        source_text = _normalize_schedule_match_text(
+            " ".join([option.get("teaching_class_name") or "", option.get("class_composition") or ""])
+        )
+        score = 0
+        for target in normalized_targets:
+            if not target:
+                continue
+            if source_text == target:
+                score = max(score, 100)
+            elif target in source_text or source_text in target:
+                score = max(score, 60)
+        scored.append((score, option["teaching_class_name"]))
+
+    scored.sort(reverse=True)
+    if scored and scored[0][0] > 0 and (len(scored) == 1 or scored[0][0] > scored[1][0]):
+        selected_name = scored[0][1]
+        return selected_name, load_academic_course_occurrences(
+            conn,
+            teacher_id=teacher_id,
+            semester_id=semester_id,
+            course_id=course_id,
+            teaching_class_name=selected_name,
+        ), [], class_options
+
+    return "", [], [
+        "教务系统中该课程存在多个教学班，系统无法自动确认当前平台班级对应哪一个；请选择教学班后再保存。"
+    ], class_options
 
 
 def _build_relative_day_label(session_date: date | None, today: date) -> str:
@@ -719,6 +1012,11 @@ def decorate_offering_sessions(
         week_index = int(item.get("week_index") or 0)
         section_count = int(item.get("section_count") or 0)
         slot_section_count = int(item.get("slot_section_count") or section_count or 0)
+        schedule_source = str(item.get("schedule_source") or SCHEDULE_SOURCE_FIXED_CYCLE).strip()
+        is_academic_schedule = schedule_source == SCHEDULE_SOURCE_ACADEMIC_SYNC
+        schedule_metadata = _safe_metadata(
+            item.get("schedule_metadata") or item.get("schedule_metadata_json")
+        )
 
         normalized_sessions.append(
             {
@@ -734,6 +1032,25 @@ def decorate_offering_sessions(
                 "date_label": f"{session_date.isoformat()} {weekday_label(weekday)}",
                 "content_preview": truncate_text(item.get("content"), 120),
                 "learning_material_id": int(item["learning_material_id"]) if item.get("learning_material_id") else None,
+                "schedule_source": schedule_source,
+                "schedule_source_label": _schedule_source_label(schedule_source),
+                "is_academic_schedule": is_academic_schedule,
+                "academic_occurrence_id": int(item["academic_occurrence_id"]) if item.get("academic_occurrence_id") else None,
+                "academic_sync_item_id": int(item["academic_sync_item_id"]) if item.get("academic_sync_item_id") else None,
+                "academic_course_code": str(item.get("academic_course_code") or "").strip(),
+                "academic_teaching_class_name": str(item.get("academic_teaching_class_name") or "").strip(),
+                "academic_weeks_text": str(item.get("academic_weeks_text") or "").strip(),
+                "academic_section_text": str(item.get("academic_section_text") or "").strip(),
+                "academic_time_text": str(item.get("academic_time_text") or "").strip(),
+                "academic_campus": str(item.get("academic_campus") or "").strip(),
+                "academic_location": str(item.get("academic_location") or "").strip(),
+                "academic_classroom_id": str(item.get("academic_classroom_id") or "").strip(),
+                "academic_classroom_code": str(item.get("academic_classroom_code") or "").strip(),
+                "academic_classroom_type": str(item.get("academic_classroom_type") or "").strip(),
+                "schedule_status": str(item.get("schedule_status") or "scheduled").strip(),
+                "is_non_periodic": bool(_coerce_int(item.get("is_non_periodic"))),
+                "schedule_note": str(item.get("schedule_note") or "").strip(),
+                "schedule_metadata": schedule_metadata,
             }
         )
 
@@ -757,6 +1074,33 @@ def decorate_offering_sessions(
             if line.strip()
         ]
         order_index = int(item.get("order_index") or index + 1)
+        week_index = int(item.get("week_index") or 0)
+        detail_meta_parts = [
+            item.get("date_label"),
+            item.get("week_label"),
+            f"{int(item.get('section_count') or 0)} 节" if int(item.get("section_count") or 0) > 0 else "",
+        ]
+        if item.get("is_academic_schedule"):
+            if item.get("academic_section_text"):
+                detail_meta_parts.append(f"教务节次 {item['academic_section_text']}")
+            if item.get("academic_weeks_text"):
+                detail_meta_parts.append(f"教务周次 {item['academic_weeks_text']}")
+            location_text = " ".join(
+                part for part in [item.get("academic_campus"), item.get("academic_location")] if part
+            )
+            if location_text:
+                detail_meta_parts.append(location_text)
+            if item.get("academic_time_text"):
+                detail_meta_parts.append(str(item["academic_time_text"]))
+        hint_parts: list[str] = []
+        if not item.get("is_section_match"):
+            hint_parts.append(
+                f"排课节数为 {int(item.get('slot_section_count') or 0)} 节，与教学内容配置不一致。"
+            )
+        if item.get("is_non_periodic"):
+            hint_parts.append("该课次来自教务系统的非周期安排，可能是单双周、调课、停课补课或节假日影响后的结果。")
+        if item.get("schedule_note"):
+            hint_parts.append(str(item["schedule_note"]))
 
         if progress_state == "completed":
             completed_count += 1
@@ -790,18 +1134,10 @@ def decorate_offering_sessions(
         item["has_learning_material"] = bool(item.get("learning_material_id"))
         item["detail_meta"] = " · ".join(
             part
-            for part in [
-                item.get("date_label"),
-                item.get("week_label"),
-                f"{int(item.get('section_count') or 0)} 节" if int(item.get("section_count") or 0) > 0 else "",
-            ]
+            for part in detail_meta_parts
             if part
         )
-        item["detail_hint"] = (
-            f"排课节数为 {int(item.get('slot_section_count') or 0)} 节，与教学内容配置不一致。"
-            if not item.get("is_section_match")
-            else ""
-        )
+        item["detail_hint"] = " ".join(hint_parts)
 
     home_entry = build_timeline_home_entry(
         home_material,
@@ -897,6 +1233,9 @@ def build_offering_session_plan(
                 "learning_material_name": lesson.get("learning_material_name"),
                 "learning_material_path": lesson.get("learning_material_path"),
                 "learning_material_viewer_url": lesson.get("learning_material_viewer_url"),
+                "schedule_source": SCHEDULE_SOURCE_FIXED_CYCLE,
+                "schedule_status": "scheduled",
+                "schedule_metadata": {},
             }
         )
 
@@ -914,4 +1253,144 @@ def build_offering_session_plan(
         ),
         "weekly_schedule_summary": summarize_weekly_schedule(weekly_schedule),
         "first_class_date": first_class_date.isoformat(),
+        "schedule_source": SCHEDULE_SOURCE_FIXED_CYCLE,
+        "schedule_source_label": _schedule_source_label(SCHEDULE_SOURCE_FIXED_CYCLE),
+        "academic_teaching_class_name": "",
+    }
+
+
+def build_academic_offering_session_plan(
+    *,
+    course_lessons: list[dict[str, Any]],
+    academic_occurrences: list[dict[str, Any]],
+    semester_start_date: date | None = None,
+    reference_date: date | None = None,
+    course_name: str = "",
+    teaching_class_name: str = "",
+) -> dict[str, Any]:
+    warnings: list[str] = []
+    sorted_occurrences = sorted(
+        academic_occurrences,
+        key=lambda item: (
+            str(item.get("session_date") or ""),
+            _coerce_int(item.get("section_start")),
+            _coerce_int(item.get("id")),
+        ),
+    )
+
+    if not sorted_occurrences:
+        return {
+            **decorate_offering_sessions([], reference_date=reference_date),
+            "warnings": ["教务系统暂未同步到该课程的逐次上课安排。"],
+            "schedule_info": "",
+            "weekly_schedule_summary": "",
+            "first_class_date": "",
+            "schedule_source": SCHEDULE_SOURCE_ACADEMIC_SYNC,
+            "schedule_source_label": _schedule_source_label(SCHEDULE_SOURCE_ACADEMIC_SYNC),
+            "academic_teaching_class_name": teaching_class_name,
+        }
+
+    if course_lessons and len(sorted_occurrences) != len(course_lessons):
+        warnings.append(
+            f"教务实际排课共 {len(sorted_occurrences)} 次，课程模板为 {len(course_lessons)} 次；系统已按日期顺序自动对齐，请复核多出或缺少的课堂内容。"
+        )
+    if not course_lessons:
+        warnings.append("该课程还没有课堂模板，已先按教务实际排课生成占位课次；请补充每次课的教学内容后再正式使用。")
+    if any(item.get("is_non_periodic") for item in sorted_occurrences):
+        warnings.append("教务排课中存在单周、双周、跳周或调课形成的非周期课次，系统已按实际周次保存。")
+
+    generated_sessions: list[dict[str, Any]] = []
+    for occurrence_index, occurrence in enumerate(sorted_occurrences, start=1):
+        session_date = parse_date_input(occurrence.get("session_date"), "上课日期")
+        if not session_date:
+            continue
+        lesson = course_lessons[occurrence_index - 1] if occurrence_index <= len(course_lessons) else {}
+        occurrence_section_count = max(1, _coerce_int(occurrence.get("section_count"), 1))
+        lesson_section_count = _coerce_int(lesson.get("section_count"), occurrence_section_count)
+        section_count = lesson_section_count or occurrence_section_count
+        display_class_name = _normalize_text(teaching_class_name or occurrence.get("teaching_class_name"))
+        location = _normalize_text(occurrence.get("location"))
+        campus = _normalize_text(occurrence.get("campus"))
+        section_text = _normalize_text(occurrence.get("section_text"))
+        weeks_text = _normalize_text(occurrence.get("weeks_text"))
+        schedule_note = _normalize_text(occurrence.get("schedule_note"))
+
+        if occurrence_section_count != section_count:
+            warnings.append(
+                f"{session_date.isoformat()} {weekday_label(session_date.weekday())} 教务排课为 {occurrence_section_count} 节，课程模板为 {section_count} 节。"
+            )
+
+        fallback_title = f"{course_name or occurrence.get('course_name') or '课程'} 第 {occurrence_index} 次课"
+        fallback_content_parts = [
+            "该课次来自教务系统实际排课，请补充本平台课堂内容。",
+            f"教学班：{display_class_name}" if display_class_name else "",
+            f"教务周次：{weeks_text}" if weeks_text else "",
+            f"节次：{section_text}" if section_text else "",
+            f"地点：{campus} {location}".strip() if (campus or location) else "",
+        ]
+        generated_sessions.append(
+            {
+                "course_lesson_id": lesson.get("id"),
+                "order_index": occurrence_index,
+                "title": lesson.get("title") or fallback_title,
+                "content": lesson.get("content") or "\n".join(part for part in fallback_content_parts if part),
+                "content_preview": truncate_text(lesson.get("content") or " ".join(fallback_content_parts), 120),
+                "section_count": section_count,
+                "slot_section_count": occurrence_section_count,
+                "session_date": session_date.isoformat(),
+                "weekday": _coerce_int(occurrence.get("weekday"), session_date.weekday()),
+                "weekday_label": occurrence.get("weekday_label") or weekday_label(session_date.weekday()),
+                "week_index": _coerce_int(occurrence.get("week_index"))
+                or _compute_week_index(session_date, semester_start_date),
+                "learning_material_id": lesson.get("learning_material_id"),
+                "learning_material": lesson.get("learning_material"),
+                "learning_material_name": lesson.get("learning_material_name"),
+                "learning_material_path": lesson.get("learning_material_path"),
+                "learning_material_viewer_url": lesson.get("learning_material_viewer_url"),
+                "schedule_source": SCHEDULE_SOURCE_ACADEMIC_SYNC,
+                "academic_occurrence_id": occurrence.get("id"),
+                "academic_sync_item_id": occurrence.get("sync_item_id"),
+                "academic_course_code": occurrence.get("course_code"),
+                "academic_teaching_class_name": display_class_name,
+                "academic_weeks_text": weeks_text,
+                "academic_section_text": section_text,
+                "academic_time_text": occurrence.get("time_text"),
+                "academic_campus": campus,
+                "academic_location": location,
+                "academic_classroom_id": occurrence.get("classroom_id"),
+                "academic_classroom_code": occurrence.get("classroom_code"),
+                "academic_classroom_type": occurrence.get("classroom_type"),
+                "schedule_status": occurrence.get("schedule_status") or "scheduled",
+                "is_non_periodic": bool(occurrence.get("is_non_periodic")),
+                "schedule_note": schedule_note,
+                "schedule_metadata": {
+                    "source": SCHEDULE_SOURCE_ACADEMIC_SYNC,
+                    "weeks_text": weeks_text,
+                    "section_text": section_text,
+                    "teaching_class_name": display_class_name,
+                    "class_composition": occurrence.get("class_composition") or "",
+                    "location": location,
+                    "campus": campus,
+                },
+            }
+        )
+
+    decorated = decorate_offering_sessions(generated_sessions, reference_date=reference_date)
+    first_session_date = decorated.get("first_session_date") or ""
+    last_session_date = decorated.get("last_session_date") or ""
+    schedule_info = (
+        f"教务实际排课 {decorated['session_count']} 次"
+        + (f"：{first_session_date} 至 {last_session_date}" if first_session_date and last_session_date else "")
+    )
+
+    return {
+        **decorated,
+        "warnings": list(dict.fromkeys(warnings)),
+        "schedule_info": schedule_info,
+        "weekly_schedule_summary": "教务实际排课",
+        "first_class_date": first_session_date,
+        "schedule_source": SCHEDULE_SOURCE_ACADEMIC_SYNC,
+        "schedule_source_label": _schedule_source_label(SCHEDULE_SOURCE_ACADEMIC_SYNC),
+        "academic_teaching_class_name": teaching_class_name
+        or _normalize_text(sorted_occurrences[0].get("teaching_class_name")),
     }

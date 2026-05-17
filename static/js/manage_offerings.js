@@ -15,7 +15,13 @@ const elements = {
     classSelect: document.getElementById('offeringClassSelect'),
     courseSelect: document.getElementById('offeringCourseSelect'),
     textbookSelect: document.getElementById('offeringTextbookSelect'),
+    scheduleSourceSelect: document.getElementById('offeringScheduleSourceSelect'),
+    academicPanel: document.getElementById('offeringAcademicPanel'),
+    academicClassSelect: document.getElementById('offeringAcademicClassSelect'),
+    academicSummary: document.getElementById('offeringAcademicSummary'),
+    academicHelp: document.getElementById('offeringAcademicHelp'),
     firstClassDateInput: document.getElementById('offeringFirstClassDateInput'),
+    fixedSchedulePanel: document.getElementById('fixedSchedulePanel'),
     weeklyScheduleContainer: document.getElementById('weeklyScheduleContainer'),
     weeklyScheduleTemplate: document.getElementById('weeklyScheduleRowTemplate'),
     addWeeklyScheduleBtn: document.getElementById('addWeeklyScheduleBtn'),
@@ -62,6 +68,89 @@ function getSelectedCourse() {
     return courseMap.get(Number(elements.courseSelect?.value || 0)) || null;
 }
 
+function getSelectedSemesterId() {
+    return Number(elements.semesterSelect?.value || 0);
+}
+
+function getAcademicClassesForSelectedCourse() {
+    const course = getSelectedCourse();
+    if (!course || !Array.isArray(course.academic_occurrence_classes)) return [];
+    const semesterId = getSelectedSemesterId();
+    return course.academic_occurrence_classes.filter((item) => {
+        if (!semesterId) return true;
+        return Number(item.semester_id || 0) === semesterId;
+    });
+}
+
+function selectedScheduleSource() {
+    return elements.scheduleSourceSelect?.value || 'fixed_cycle';
+}
+
+function updateScheduleMode({ preserveSelection = true } = {}) {
+    const academicClasses = getAcademicClassesForSelectedCourse();
+    const hasAcademicSchedule = academicClasses.length > 0;
+    const previousAcademicClass = preserveSelection ? (elements.academicClassSelect?.value || '') : '';
+
+    if (elements.academicPanel) {
+        elements.academicPanel.classList.toggle('is-visible', hasAcademicSchedule);
+    }
+    if (elements.scheduleSourceSelect) {
+        const currentValue = elements.scheduleSourceSelect.value;
+        if (!hasAcademicSchedule && currentValue === 'academic_sync') {
+            elements.scheduleSourceSelect.value = 'fixed_cycle';
+        } else if (hasAcademicSchedule && !preserveSelection) {
+            elements.scheduleSourceSelect.value = 'academic_sync';
+        } else if (hasAcademicSchedule && !currentValue) {
+            elements.scheduleSourceSelect.value = 'academic_sync';
+        }
+        const academicOption = elements.scheduleSourceSelect.querySelector('option[value="academic_sync"]');
+        if (academicOption) academicOption.disabled = !hasAcademicSchedule;
+    }
+
+    if (elements.academicClassSelect) {
+        elements.academicClassSelect.innerHTML = '<option value="">自动匹配或请选择教学班</option>';
+        academicClasses.forEach((item) => {
+            const option = document.createElement('option');
+            option.value = item.teaching_class_name || '';
+            option.textContent = [
+                item.teaching_class_name || '未命名教学班',
+                `${item.session_count || 0} 次`,
+                item.first_session_date && item.last_session_date ? `${item.first_session_date} 至 ${item.last_session_date}` : '',
+            ].filter(Boolean).join(' · ');
+            elements.academicClassSelect.appendChild(option);
+        });
+        if (previousAcademicClass && academicClasses.some((item) => item.teaching_class_name === previousAcademicClass)) {
+            elements.academicClassSelect.value = previousAcademicClass;
+        } else if (academicClasses.length === 1) {
+            elements.academicClassSelect.value = academicClasses[0].teaching_class_name || '';
+        }
+    }
+
+    const useAcademic = selectedScheduleSource() === 'academic_sync' && hasAcademicSchedule;
+    if (elements.fixedSchedulePanel) {
+        elements.fixedSchedulePanel.classList.toggle('is-muted', useAcademic);
+    }
+    if (elements.firstClassDateInput) {
+        elements.firstClassDateInput.required = !useAcademic;
+        elements.firstClassDateInput.closest('.form-group')?.classList.toggle('is-muted', useAcademic);
+    }
+    if (elements.academicSummary) {
+        const totalSessions = academicClasses.reduce((sum, item) => sum + Number(item.session_count || 0), 0);
+        const nonPeriodicCount = academicClasses.reduce((sum, item) => sum + Number(item.non_periodic_count || 0), 0);
+        elements.academicSummary.innerHTML = hasAcademicSchedule
+            ? `
+                <span class="academic-badge is-success">${totalSessions} 次真实课次</span>
+                ${nonPeriodicCount ? `<span class="academic-badge is-accent">${nonPeriodicCount} 次非周期</span>` : ''}
+            `
+            : '<span class="academic-badge is-muted">暂无教务课次</span>';
+    }
+    if (elements.academicHelp) {
+        elements.academicHelp.textContent = hasAcademicSchedule
+            ? '保存后课堂时间轴会按教务系统每一周的真实日期、节次和地点生成；若存在多个教学班，请先确认当前平台班级对应哪一个。'
+            : '该课程当前没有可用的教务真实课次，请先同步教务课表或使用固定周循环。';
+    }
+}
+
 function renderCourseSummary() {
     if (!elements.courseSummary) return;
     const course = getSelectedCourse();
@@ -77,6 +166,9 @@ function renderCourseSummary() {
     }
 
     const lessons = Array.isArray(course.lessons) ? course.lessons : [];
+    const academicClasses = getAcademicClassesForSelectedCourse();
+    const academicSessionCount = academicClasses.reduce((sum, item) => sum + Number(item.session_count || 0), 0);
+    const academicClassNames = academicClasses.map((item) => item.teaching_class_name || item.class_composition).filter(Boolean);
     const lessonListHtml = lessons.length
         ? lessons.slice(0, 4).map((lesson) => `
             <div class="offering-course-lesson-item">
@@ -112,6 +204,10 @@ function renderCourseSummary() {
             <div class="academic-meta-row">
                 <span class="academic-meta-label">结构状态</span>
                 <span class="academic-meta-value">${course.coverage_label || '待完善'}</span>
+            </div>
+            <div class="academic-meta-row">
+                <span class="academic-meta-label">教务真实课次</span>
+                <span class="academic-meta-value">${academicSessionCount ? `${academicSessionCount} 次 · ${academicClassNames.slice(0, 2).join(' / ') || '已同步'}` : '未同步或非当前学期'}</span>
             </div>
         </div>
         <div class="offering-course-lesson-list">${lessonListHtml}</div>
@@ -156,6 +252,10 @@ function renderPreview(previewResponse) {
                 <strong>${previewResponse.course_lesson_count || 0} 次课 · ${previewResponse.planned_section_count || 0} 小节</strong>
             </div>
             <div class="offering-preview-meta-row">
+                <span>排课来源</span>
+                <strong>${preview.schedule_source_label || (previewResponse.schedule_source === 'academic_sync' ? '教务实际排课' : '固定周循环')}${preview.academic_teaching_class_name ? ` · ${preview.academic_teaching_class_name}` : ''}</strong>
+            </div>
+            <div class="offering-preview-meta-row">
                 <span>时间轴摘要</span>
                 <strong>${preview.schedule_info || '暂未生成'}</strong>
             </div>
@@ -183,6 +283,10 @@ function renderPreview(previewResponse) {
                     <p>${session.content_preview || session.content || '暂无课堂内容'}</p>
                     <div class="academic-badge-row">
                         <span class="academic-badge">${session.section_count || 0} 小节</span>
+                        ${session.is_academic_schedule ? `<span class="academic-badge is-success">教务实际排课</span>` : ''}
+                        ${session.academic_section_text ? `<span class="academic-badge">节次 ${session.academic_section_text}</span>` : ''}
+                        ${session.academic_location ? `<span class="academic-badge">${session.academic_location}</span>` : ''}
+                        ${session.is_non_periodic ? `<span class="academic-badge is-accent">非周期课次</span>` : ''}
                         ${session.is_section_match ? '' : `<span class="academic-badge is-accent">与排课节数不一致</span>`}
                     </div>
                 </article>
@@ -203,6 +307,8 @@ function collectFormPayload() {
         class_id: elements.classSelect?.value || '',
         course_id: elements.courseSelect?.value || '',
         textbook_id: elements.textbookSelect?.value || '',
+        schedule_source: selectedScheduleSource(),
+        academic_teaching_class_name: elements.academicClassSelect?.value || '',
         first_class_date: elements.firstClassDateInput?.value || '',
         weekly_schedule: collectWeeklySchedule(),
     };
@@ -210,8 +316,11 @@ function collectFormPayload() {
 
 async function fetchPreview({ silent = true } = {}) {
     const payload = collectFormPayload();
-    if (!payload.semester_id || !payload.class_id || !payload.course_id || !payload.textbook_id || !payload.first_class_date) {
-        renderPreviewPlaceholder('先完整选择课程、班级、学期、教材和第一次上课日期。');
+    const needsFixedDate = payload.schedule_source !== 'academic_sync';
+    if (!payload.semester_id || !payload.class_id || !payload.course_id || !payload.textbook_id || (needsFixedDate && !payload.first_class_date)) {
+        renderPreviewPlaceholder(needsFixedDate
+            ? '先完整选择课程、班级、学期、教材和第一次上课日期。'
+            : '先完整选择课程、班级、学期和教材；若存在多个教务教学班，请选择对应教学班。');
         return null;
     }
 
@@ -251,6 +360,8 @@ function resetForm() {
     if (elements.classSelect) elements.classSelect.value = '';
     if (elements.courseSelect) elements.courseSelect.value = '';
     if (elements.textbookSelect) elements.textbookSelect.value = '';
+    if (elements.scheduleSourceSelect) elements.scheduleSourceSelect.value = 'academic_sync';
+    if (elements.academicClassSelect) elements.academicClassSelect.value = '';
     if (elements.firstClassDateInput) elements.firstClassDateInput.value = '';
     if (elements.weeklyScheduleContainer) elements.weeklyScheduleContainer.innerHTML = '';
     ensureOneScheduleRow();
@@ -260,8 +371,9 @@ function resetForm() {
     }
 
     toggleEditorState(false);
+    updateScheduleMode({ preserveSelection: false });
     renderCourseSummary();
-    renderPreviewPlaceholder('先完整选择课程、班级、学期、教材和第一次上课日期。');
+    renderPreviewPlaceholder('先完整选择课程、班级、学期和教材，系统会优先使用教务真实课次。');
 }
 
 function populateForm(offering) {
@@ -273,6 +385,7 @@ function populateForm(offering) {
     if (elements.classSelect) elements.classSelect.value = String(offering.class_id || '');
     if (elements.courseSelect) elements.courseSelect.value = String(offering.course_id || '');
     if (elements.textbookSelect) elements.textbookSelect.value = String(offering.textbook_id || '');
+    if (elements.scheduleSourceSelect) elements.scheduleSourceSelect.value = offering.schedule_source || 'fixed_cycle';
     if (elements.firstClassDateInput) elements.firstClassDateInput.value = offering.first_class_date || '';
 
     if (elements.weeklyScheduleContainer) elements.weeklyScheduleContainer.innerHTML = '';
@@ -280,6 +393,10 @@ function populateForm(offering) {
         ? offering.weekly_schedule
         : [{ weekday: 0, section_count: 2 }];
     weeklySchedule.forEach((item) => createScheduleRow(item));
+    updateScheduleMode({ preserveSelection: false });
+    if (elements.academicClassSelect) {
+        elements.academicClassSelect.value = offering.academic_teaching_class_name || '';
+    }
 
     toggleEditorState(true, `正在编辑：${offering.course_name} / ${offering.class_name}`);
     renderCourseSummary();
@@ -339,6 +456,7 @@ function applyQueryDefaults() {
     if (elements.semesterSelect && config.defaultSemesterId && !elements.semesterSelect.value) {
         elements.semesterSelect.value = String(config.defaultSemesterId);
     }
+    updateScheduleMode({ preserveSelection: false });
 }
 
 function bindEvents() {
@@ -356,10 +474,13 @@ function bindEvents() {
         elements.classSelect,
         elements.courseSelect,
         elements.textbookSelect,
+        elements.scheduleSourceSelect,
+        elements.academicClassSelect,
         elements.firstClassDateInput,
     ].filter(Boolean).forEach((node) => {
         node.addEventListener('change', () => {
-            if (node === elements.courseSelect) {
+            if (node === elements.courseSelect || node === elements.semesterSelect || node === elements.scheduleSourceSelect) {
+                updateScheduleMode({ preserveSelection: node !== elements.courseSelect });
                 renderCourseSummary();
             }
             schedulePreviewRefresh();

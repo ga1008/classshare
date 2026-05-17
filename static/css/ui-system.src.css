@@ -12946,6 +12946,46 @@ body.has-chat-image-preview-open {
     display: none;
 }
 
+.classroom-page .teaching-timeline-segment.is-academic-schedule {
+    border-color: rgba(20, 184, 166, 0.28);
+    background:
+        linear-gradient(180deg, rgba(240, 253, 250, 0.98), rgba(255, 255, 255, 0.95));
+}
+
+.classroom-page .teaching-timeline-segment.is-non-periodic {
+    border-color: rgba(249, 115, 22, 0.32);
+}
+
+.classroom-page .teaching-timeline-segment.is-academic-schedule .teaching-timeline-segment-tags,
+.classroom-page .teaching-timeline-segment.is-non-periodic .teaching-timeline-segment-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.32rem;
+}
+
+.classroom-page .teaching-timeline-segment-doc {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 0.12rem 0.42rem;
+    border-radius: 999px;
+    background: rgba(14, 165, 233, 0.12);
+    color: #0369a1;
+    font-size: 0.66rem;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.classroom-page .teaching-timeline-segment-doc.is-academic {
+    background: rgba(20, 184, 166, 0.14);
+    color: #0f766e;
+}
+
+.classroom-page .teaching-timeline-segment-doc.is-shifted {
+    background: rgba(249, 115, 22, 0.14);
+    color: #c2410c;
+}
+
 .classroom-page .teaching-timeline-segment-meta {
     display: flex;
     flex-wrap: wrap;

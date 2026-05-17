@@ -1121,7 +1121,24 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
                    session_date,
                    weekday,
                    week_index,
-                   learning_material_id
+                   learning_material_id,
+                   schedule_source,
+                   academic_occurrence_id,
+                   academic_sync_item_id,
+                   academic_course_code,
+                   academic_teaching_class_name,
+                   academic_weeks_text,
+                   academic_section_text,
+                   academic_time_text,
+                   academic_campus,
+                   academic_location,
+                   academic_classroom_id,
+                   academic_classroom_code,
+                   academic_classroom_type,
+                   schedule_status,
+                   is_non_periodic,
+                   schedule_note,
+                   schedule_metadata_json
             FROM class_offering_sessions
             WHERE class_offering_id = ?
             ORDER BY order_index, session_date
@@ -1695,6 +1712,58 @@ def _load_teacher_academic_course_items(conn, teacher_id: int, course_ids: list[
     return grouped
 
 
+def _load_teacher_academic_course_occurrence_summaries(
+    conn,
+    teacher_id: int,
+    course_ids: list[int],
+) -> dict[int, list[dict]]:
+    normalized_ids = [int(course_id) for course_id in course_ids if course_id]
+    if not normalized_ids:
+        return {}
+    placeholders = ",".join("?" for _ in normalized_ids)
+    rows = conn.execute(
+        f"""
+        SELECT course_id,
+               semester_id,
+               teaching_class_name,
+               class_composition,
+               COUNT(*) AS session_count,
+               MIN(session_date) AS first_session_date,
+               MAX(session_date) AS last_session_date,
+               SUM(CASE WHEN is_non_periodic THEN 1 ELSE 0 END) AS non_periodic_count,
+               GROUP_CONCAT(DISTINCT location) AS locations
+        FROM teacher_academic_course_session_occurrences
+        WHERE teacher_id = ?
+          AND course_id IN ({placeholders})
+        GROUP BY course_id, semester_id, teaching_class_name, class_composition
+        ORDER BY COALESCE(semester_id, 0) DESC, teaching_class_name
+        """,
+        [int(teacher_id), *normalized_ids],
+    ).fetchall()
+    grouped: dict[int, list[dict]] = {course_id: [] for course_id in normalized_ids}
+    for row in rows:
+        course_id = int(row["course_id"])
+        locations = [
+            value.strip()
+            for value in str(row["locations"] or "").split(",")
+            if value.strip()
+        ]
+        grouped.setdefault(course_id, []).append(
+            {
+                "course_id": course_id,
+                "semester_id": int(row["semester_id"]) if row["semester_id"] else None,
+                "teaching_class_name": str(row["teaching_class_name"] or "").strip(),
+                "class_composition": str(row["class_composition"] or "").strip(),
+                "session_count": int(row["session_count"] or 0),
+                "first_session_date": str(row["first_session_date"] or ""),
+                "last_session_date": str(row["last_session_date"] or ""),
+                "non_periodic_count": int(row["non_periodic_count"] or 0),
+                "locations": locations[:6],
+            }
+        )
+    return grouped
+
+
 def _load_teacher_course_rows(conn, teacher_id: int):
     rows = conn.execute(
         """
@@ -1729,6 +1798,7 @@ def _load_teacher_course_rows(conn, teacher_id: int):
     course_ids = [int(row["id"]) for row in rows]
     lessons_by_course = load_course_lessons_by_course_id(conn, course_ids)
     academic_items_by_course = _load_teacher_academic_course_items(conn, teacher_id, course_ids)
+    academic_occurrences_by_course = _load_teacher_academic_course_occurrence_summaries(conn, teacher_id, course_ids)
     for course_id, lesson_items in lessons_by_course.items():
         lessons_by_course[course_id] = attach_learning_material_briefs(
             conn,
@@ -1746,6 +1816,7 @@ def _load_teacher_course_rows(conn, teacher_id: int):
             offering_count=int(row["offering_count"] or 0),
         )
         sync_items = academic_items_by_course.get(course_id, [])
+        occurrence_items = academic_occurrences_by_course.get(course_id, [])
         metadata = build_academic_course_metadata(item.get("academic_metadata_json"))
         item["academic_metadata"] = metadata
         item["academic_source"] = str(item.get("academic_source") or "")
@@ -1755,6 +1826,9 @@ def _load_teacher_course_rows(conn, teacher_id: int):
         item["academic_schedule_items"] = sync_items
         item["academic_schedule_preview"] = sync_items[:3]
         item["academic_schedule_count"] = len(sync_items) or int(metadata.get("schedule_item_count") or 0)
+        item["academic_occurrence_classes"] = occurrence_items
+        item["academic_occurrence_count"] = sum(int(entry.get("session_count") or 0) for entry in occurrence_items)
+        item["academic_occurrence_preview"] = occurrence_items[:4]
         item["academic_is_synced"] = bool(item["academic_source"] or item["academic_course_code"] or sync_items)
         item["academic_follow_up_items"] = metadata.get("follow_up_items") if isinstance(metadata.get("follow_up_items"), list) else []
         item["academic_follow_up_hint"] = (
@@ -1792,6 +1866,10 @@ def _load_teacher_offering_rows(conn, teacher_id: int):
                o.first_class_date,
                o.weekly_schedule_json,
                o.schedule_info,
+               o.schedule_source,
+               o.academic_teaching_class_name,
+               o.academic_schedule_sync_at,
+               o.academic_schedule_sync_message,
                COALESCE(s.name, o.semester) AS semester,
                c.name AS class_name,
                c.department AS class_department,
@@ -1802,6 +1880,8 @@ def _load_teacher_offering_rows(conn, teacher_id: int):
                co.credits,
                tb.title AS textbook_title,
                COUNT(DISTINCT os.id) AS scheduled_session_count,
+               SUM(CASE WHEN os.schedule_source = 'academic_sync' THEN 1 ELSE 0 END) AS academic_session_count,
+               SUM(CASE WHEN os.is_non_periodic THEN 1 ELSE 0 END) AS non_periodic_session_count,
                MIN(os.session_date) AS scheduled_start_date,
                MAX(os.session_date) AS scheduled_end_date
         FROM class_offerings o
@@ -1819,6 +1899,10 @@ def _load_teacher_offering_rows(conn, teacher_id: int):
                  o.first_class_date,
                  o.weekly_schedule_json,
                  o.schedule_info,
+                 o.schedule_source,
+                 o.academic_teaching_class_name,
+                 o.academic_schedule_sync_at,
+                 o.academic_schedule_sync_message,
                  s.name,
                  c.name,
                  c.department,
@@ -1837,6 +1921,13 @@ def _load_teacher_offering_rows(conn, teacher_id: int):
         item = dict(row)
         item["weekly_schedule"] = _safe_parse_json_list(item.get("weekly_schedule_json"))
         item["scheduled_session_count"] = int(item.get("scheduled_session_count") or 0)
+        item["academic_session_count"] = int(item.get("academic_session_count") or 0)
+        item["non_periodic_session_count"] = int(item.get("non_periodic_session_count") or 0)
+        item["schedule_source"] = str(item.get("schedule_source") or "fixed_cycle")
+        item["schedule_source_label"] = "教务实际排课" if item["schedule_source"] == "academic_sync" else "固定周循环"
+        item["academic_teaching_class_name"] = str(item.get("academic_teaching_class_name") or "")
+        item["academic_schedule_sync_at"] = str(item.get("academic_schedule_sync_at") or "")
+        item["academic_schedule_sync_message"] = str(item.get("academic_schedule_sync_message") or "")
         offerings.append(item)
     return offerings
 

@@ -28,6 +28,9 @@ from ..services.academic_service import (
 )
 from ..services.course_planning_service import (
     CoursePlanningError,
+    SCHEDULE_SOURCE_ACADEMIC_SYNC,
+    SCHEDULE_SOURCE_FIXED_CYCLE,
+    build_academic_offering_session_plan,
     build_offering_session_plan,
     build_schedule_info_text,
     load_course_lessons_by_course_id,
@@ -37,6 +40,7 @@ from ..services.course_planning_service import (
     replace_course_lessons,
     replace_offering_sessions,
     serialize_course_row,
+    select_academic_teaching_class_for_offering,
 )
 from ..services.file_handler import save_upload_file
 from ..services.file_service import save_file_globally
@@ -452,16 +456,6 @@ def _prepare_offering_payload(
         textbook_id=textbook_id,
     )
 
-    first_class_date_value = parse_date_input(data.get("first_class_date"), "第一次上课日期")
-    if require_schedule and not first_class_date_value:
-        raise CoursePlanningError("请先填写第一次上课日期")
-
-    weekly_schedule = normalize_weekly_schedule(
-        data.get("weekly_schedule", data.get("weekly_schedule_json", "[]")),
-        first_class_date=first_class_date_value,
-        require_items=require_schedule,
-    ) if (require_schedule or str(data.get("weekly_schedule", data.get("weekly_schedule_json", ""))).strip()) else []
-
     course_lessons = load_course_lessons_by_course_id(conn, [course_id]).get(course_id, [])
     course_lessons = attach_learning_material_briefs(
         conn,
@@ -474,8 +468,55 @@ def _prepare_offering_payload(
 
     semester_start_date = parse_date_input(semester_row["start_date"], "学期开始日期")
     semester_end_date = parse_date_input(semester_row["end_date"], "学期结束日期")
+    requested_schedule_source = str(data.get("schedule_source") or "").strip()
+    if requested_schedule_source not in {SCHEDULE_SOURCE_ACADEMIC_SYNC, SCHEDULE_SOURCE_FIXED_CYCLE}:
+        requested_schedule_source = ""
+    preferred_teaching_class_name = str(data.get("academic_teaching_class_name") or "").strip()
+    academic_teaching_class_name, academic_occurrences, academic_warnings, academic_class_options = (
+        select_academic_teaching_class_for_offering(
+            conn,
+            teacher_id=teacher_id,
+            semester_id=semester_id,
+            course_id=course_id,
+            class_row=class_row,
+            preferred_teaching_class_name=preferred_teaching_class_name,
+        )
+    )
+    use_academic_schedule = requested_schedule_source == SCHEDULE_SOURCE_ACADEMIC_SYNC or (
+        not requested_schedule_source and bool(academic_class_options)
+    )
 
-    if course_lessons and first_class_date_value and weekly_schedule:
+    first_class_date_value = parse_date_input(data.get("first_class_date"), "第一次上课日期")
+    raw_weekly_schedule = data.get("weekly_schedule", data.get("weekly_schedule_json", "[]"))
+    raw_weekly_schedule_has_value = str(raw_weekly_schedule).strip() not in ("", "[]")
+    if use_academic_schedule:
+        if require_schedule and not academic_occurrences:
+            raise CoursePlanningError("；".join(academic_warnings) if academic_warnings else "未找到可用的教务实际排课。")
+        weekly_schedule = normalize_weekly_schedule(
+            raw_weekly_schedule,
+            first_class_date=first_class_date_value,
+            require_items=False,
+        ) if raw_weekly_schedule_has_value else []
+    else:
+        if require_schedule and not first_class_date_value:
+            raise CoursePlanningError("请先填写第一次上课日期")
+        weekly_schedule = normalize_weekly_schedule(
+            raw_weekly_schedule,
+            first_class_date=first_class_date_value,
+            require_items=require_schedule,
+        ) if (require_schedule or raw_weekly_schedule_has_value) else []
+
+    if use_academic_schedule and academic_occurrences:
+        plan = build_academic_offering_session_plan(
+            course_lessons=course_lessons,
+            academic_occurrences=academic_occurrences,
+            semester_start_date=semester_start_date,
+            course_name=str(course_row["name"] or ""),
+            teaching_class_name=academic_teaching_class_name,
+        )
+        first_class_date_value = parse_date_input(plan.get("first_class_date"), "第一次上课日期")
+        weekly_schedule = []
+    elif course_lessons and first_class_date_value and weekly_schedule:
         plan = build_offering_session_plan(
             course_lessons=course_lessons,
             first_class_date=first_class_date_value,
@@ -499,7 +540,12 @@ def _prepare_offering_payload(
             ),
             "weekly_schedule_summary": "",
             "first_class_date": first_class_date_value.isoformat() if first_class_date_value else "",
+            "schedule_source": SCHEDULE_SOURCE_ACADEMIC_SYNC if use_academic_schedule else SCHEDULE_SOURCE_FIXED_CYCLE,
+            "schedule_source_label": "教务实际排课" if use_academic_schedule else "固定周循环",
+            "academic_teaching_class_name": academic_teaching_class_name,
+            "academic_teaching_class_options": academic_class_options,
         }
+    plan["academic_teaching_class_options"] = academic_class_options
 
     return {
         "offering_id": offering_id,
@@ -514,6 +560,9 @@ def _prepare_offering_payload(
         "first_class_date": first_class_date_value,
         "weekly_schedule": weekly_schedule,
         "weekly_schedule_json": json.dumps(weekly_schedule, ensure_ascii=False),
+        "schedule_source": SCHEDULE_SOURCE_ACADEMIC_SYNC if use_academic_schedule else SCHEDULE_SOURCE_FIXED_CYCLE,
+        "academic_teaching_class_name": academic_teaching_class_name,
+        "academic_teaching_class_options": academic_class_options,
         "course_lessons": course_lessons,
         "plan": plan,
     }
@@ -729,7 +778,11 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                         textbook_id = ?,
                         schedule_info = ?,
                         first_class_date = ?,
-                        weekly_schedule_json = ?
+                        weekly_schedule_json = ?,
+                        schedule_source = ?,
+                        academic_teaching_class_name = ?,
+                        academic_schedule_sync_at = ?,
+                        academic_schedule_sync_message = ?
                     WHERE id = ? AND teacher_id = ?
                     """,
                     (
@@ -739,6 +792,14 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                         offering_payload["plan"]["schedule_info"],
                         offering_payload["first_class_date"].isoformat() if offering_payload["first_class_date"] else "",
                         offering_payload["weekly_schedule_json"],
+                        offering_payload["schedule_source"],
+                        offering_payload["academic_teaching_class_name"],
+                        datetime.now().isoformat(timespec="seconds")
+                        if offering_payload["schedule_source"] == SCHEDULE_SOURCE_ACADEMIC_SYNC
+                        else None,
+                        "开课向导使用教务实际排课生成时间轴。"
+                        if offering_payload["schedule_source"] == SCHEDULE_SOURCE_ACADEMIC_SYNC
+                        else "",
                         offering_id,
                         teacher_id,
                     ),
@@ -756,9 +817,13 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                         textbook_id,
                         schedule_info,
                         first_class_date,
-                        weekly_schedule_json
+                        weekly_schedule_json,
+                        schedule_source,
+                        academic_teaching_class_name,
+                        academic_schedule_sync_at,
+                        academic_schedule_sync_message
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         class_id,
@@ -770,6 +835,14 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                         offering_payload["plan"]["schedule_info"],
                         offering_payload["first_class_date"].isoformat() if offering_payload["first_class_date"] else "",
                         offering_payload["weekly_schedule_json"],
+                        offering_payload["schedule_source"],
+                        offering_payload["academic_teaching_class_name"],
+                        datetime.now().isoformat(timespec="seconds")
+                        if offering_payload["schedule_source"] == SCHEDULE_SOURCE_ACADEMIC_SYNC
+                        else None,
+                        "开课向导使用教务实际排课生成时间轴。"
+                        if offering_payload["schedule_source"] == SCHEDULE_SOURCE_ACADEMIC_SYNC
+                        else "",
                     ),
                 )
                 offering_id = int(cursor.lastrowid)
@@ -2109,6 +2182,9 @@ async def api_preview_class_offering(
         "course_lesson_count": len(payload["course_lessons"]),
         "planned_section_count": planned_section_count,
         "course_total_hours": int(payload["course_row"]["total_hours"] or 0),
+        "schedule_source": payload["schedule_source"],
+        "academic_teaching_class_name": payload["academic_teaching_class_name"],
+        "academic_teaching_class_options": payload["academic_teaching_class_options"],
     }
 
 
@@ -2141,7 +2217,11 @@ async def api_save_class_offering(
                         textbook_id = ?,
                         schedule_info = ?,
                         first_class_date = ?,
-                        weekly_schedule_json = ?
+                        weekly_schedule_json = ?,
+                        schedule_source = ?,
+                        academic_teaching_class_name = ?,
+                        academic_schedule_sync_at = ?,
+                        academic_schedule_sync_message = ?
                     WHERE id = ? AND teacher_id = ?
                     """,
                     (
@@ -2153,6 +2233,14 @@ async def api_save_class_offering(
                         payload["plan"]["schedule_info"],
                         payload["first_class_date"].isoformat() if payload["first_class_date"] else "",
                         payload["weekly_schedule_json"],
+                        payload["schedule_source"],
+                        payload["academic_teaching_class_name"],
+                        datetime.now().isoformat(timespec="seconds")
+                        if payload["schedule_source"] == SCHEDULE_SOURCE_ACADEMIC_SYNC
+                        else None,
+                        "保存课堂时使用教务实际排课生成时间轴。"
+                        if payload["schedule_source"] == SCHEDULE_SOURCE_ACADEMIC_SYNC
+                        else "",
                         payload["offering_id"],
                         user["id"],
                     ),
@@ -2171,9 +2259,13 @@ async def api_save_class_offering(
                         textbook_id,
                         schedule_info,
                         first_class_date,
-                        weekly_schedule_json
+                        weekly_schedule_json,
+                        schedule_source,
+                        academic_teaching_class_name,
+                        academic_schedule_sync_at,
+                        academic_schedule_sync_message
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         payload["class_id"],
@@ -2185,6 +2277,14 @@ async def api_save_class_offering(
                         payload["plan"]["schedule_info"],
                         payload["first_class_date"].isoformat() if payload["first_class_date"] else "",
                         payload["weekly_schedule_json"],
+                        payload["schedule_source"],
+                        payload["academic_teaching_class_name"],
+                        datetime.now().isoformat(timespec="seconds")
+                        if payload["schedule_source"] == SCHEDULE_SOURCE_ACADEMIC_SYNC
+                        else None,
+                        "保存课堂时使用教务实际排课生成时间轴。"
+                        if payload["schedule_source"] == SCHEDULE_SOURCE_ACADEMIC_SYNC
+                        else "",
                     ),
                 )
                 offering_id = int(cursor.lastrowid)

@@ -6,7 +6,7 @@ import re
 import sqlite3
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import httpx
@@ -18,6 +18,13 @@ from .academic_integration_service import (
     open_authenticated_academic_client,
 )
 from .academic_service import china_now, parse_date_input
+from .course_planning_service import (
+    SCHEDULE_SOURCE_ACADEMIC_SYNC,
+    build_academic_offering_session_plan,
+    load_course_lessons_by_course_id,
+    replace_offering_sessions,
+    select_academic_teaching_class_for_offering,
+)
 from .department_service import infer_department_from_text, normalize_department
 from .learning_progress_service import normalize_course_sect_name
 
@@ -249,6 +256,85 @@ def _parse_total_hours(value: Any) -> int:
     if not numbers:
         return 0
     return max(0, sum(numbers))
+
+
+def _parse_week_numbers(value: Any, *, max_week_count: int = 40) -> list[int]:
+    text = _normalize_space(value)
+    if not text:
+        return []
+    weeks: set[int] = set()
+    segments = [segment for segment in re.split(r"[,，、;；]\s*", text) if segment.strip()]
+    for segment in segments or [text]:
+        normalized_segment = _normalize_space(segment)
+        parity = None
+        if "单" in normalized_segment:
+            parity = 1
+        elif "双" in normalized_segment:
+            parity = 0
+        ranges = re.findall(r"(\d{1,2})\s*[-~－—]\s*(\d{1,2})", normalized_segment)
+        consumed = set()
+        for start_text, end_text in ranges:
+            start = int(start_text)
+            end = int(end_text)
+            if end < start:
+                start, end = end, start
+            for week in range(start, min(end, max_week_count) + 1):
+                if parity is None or week % 2 == parity:
+                    weeks.add(week)
+            consumed.update([start_text, end_text])
+        single_numbers = [
+            int(number)
+            for number in re.findall(r"\d{1,2}", normalized_segment)
+            if number not in consumed
+        ]
+        for week in single_numbers:
+            if 1 <= week <= max_week_count and (parity is None or week % 2 == parity):
+                weeks.add(week)
+    return sorted(weeks)
+
+
+def _is_non_periodic_weeks(weeks_text: Any, week_numbers: list[int]) -> bool:
+    text = _normalize_space(weeks_text)
+    if any(marker in text for marker in ("单", "双", ",", "，", "、", ";", "；")):
+        return True
+    if len(week_numbers) <= 1:
+        return False
+    return week_numbers != list(range(week_numbers[0], week_numbers[-1] + 1))
+
+
+def _semester_monday(semester: dict[str, Any]) -> date | None:
+    start_date = parse_date_input(semester.get("start_date"))
+    if not start_date:
+        return None
+    return start_date - timedelta(days=start_date.weekday())
+
+
+def _date_for_academic_week(
+    semester: dict[str, Any],
+    *,
+    week_index: int,
+    weekday: int,
+) -> str:
+    start_monday = _semester_monday(semester)
+    if not start_monday or week_index <= 0 or not 0 <= weekday <= 6:
+        return ""
+    return (start_monday + timedelta(days=(week_index - 1) * 7 + weekday)).isoformat()
+
+
+def _parse_section_range(section_text: Any) -> tuple[int, int, int]:
+    text = _normalize_space(section_text)
+    match = re.search(r"(\d{1,2})\s*[-~－—]\s*(\d{1,2})", text)
+    if match:
+        start = int(match.group(1))
+        end = int(match.group(2))
+        if end < start:
+            start, end = end, start
+        return start, end, max(1, end - start + 1)
+    match = re.search(r"\d{1,2}", text)
+    if match:
+        start = int(match.group(0))
+        return start, start, 1
+    return 0, 0, 1
 
 
 def _extract_cells(row_html: str) -> list[str]:
@@ -947,6 +1033,247 @@ def _course_metadata(
     }
 
 
+def _find_sync_item_id(
+    conn,
+    *,
+    teacher_id: int,
+    semester_id: int,
+    course_id: int,
+    item: AcademicCourseScheduleItem,
+) -> int | None:
+    row = conn.execute(
+        """
+        SELECT id
+        FROM teacher_academic_course_sync_items
+        WHERE teacher_id = ?
+          AND semester_id = ?
+          AND course_id = ?
+          AND course_name = ?
+          AND course_code = ?
+          AND teaching_class_name = ?
+          AND weeks_text = ?
+          AND COALESCE(weekday, -1) = COALESCE(?, -1)
+          AND section_text = ?
+          AND location = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (
+            int(teacher_id),
+            int(semester_id),
+            int(course_id),
+            item.course_name,
+            item.course_code,
+            item.teaching_class_name,
+            item.weeks_text,
+            item.weekday,
+            item.section_text,
+            item.location,
+        ),
+    ).fetchone()
+    return int(row["id"]) if row else None
+
+
+def _insert_academic_occurrences(
+    conn,
+    *,
+    teacher_id: int,
+    semester: dict[str, Any],
+    course_id: int,
+    sync_item_id: int | None,
+    item: AcademicCourseScheduleItem,
+    synced_at: str,
+) -> int:
+    if item.weekday is None:
+        return 0
+    week_numbers = _parse_week_numbers(item.weeks_text)
+    if not week_numbers:
+        return 0
+    section_start, section_end, section_count = _parse_section_range(item.section_text)
+    is_non_periodic = _is_non_periodic_weeks(item.weeks_text, week_numbers)
+    count = 0
+    for week_index in week_numbers:
+        session_date = _date_for_academic_week(
+            semester,
+            week_index=week_index,
+            weekday=int(item.weekday),
+        )
+        if not session_date:
+            continue
+        note_parts = []
+        if is_non_periodic:
+            note_parts.append("教务周次不是完整连续周循环")
+        if item.course_note:
+            note_parts.append(item.course_note)
+        cursor = conn.execute(
+            """
+            INSERT OR IGNORE INTO teacher_academic_course_session_occurrences (
+                teacher_id, semester_id, course_id, sync_item_id,
+                academic_year, academic_term, course_name, course_code,
+                teaching_class_name, class_composition, session_date,
+                week_index, weekday, weekday_label, section_text,
+                section_start, section_end, section_count, time_text,
+                weeks_text, campus, campus_id, location, classroom_id,
+                classroom_code, classroom_type, schedule_source,
+                schedule_status, is_non_periodic, schedule_note,
+                raw_json, synced_at, updated_at
+            )
+            VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP
+            )
+            """,
+            (
+                int(teacher_id),
+                int(semester["id"]),
+                int(course_id),
+                sync_item_id,
+                item.academic_year or str(semester.get("name") or ""),
+                item.academic_term or str(semester.get("term_number") or ""),
+                item.course_name,
+                item.course_code,
+                item.teaching_class_name,
+                item.class_composition,
+                session_date,
+                int(week_index),
+                int(item.weekday),
+                item.weekday_label or _weekday_label(item.weekday),
+                item.section_text,
+                section_start,
+                section_end,
+                section_count,
+                item.time_text,
+                item.weeks_text,
+                item.campus,
+                item.campus_id,
+                item.location,
+                item.classroom_id,
+                item.classroom_code,
+                item.classroom_type,
+                SCHEDULE_SOURCE_ACADEMIC_SYNC,
+                "scheduled",
+                1 if is_non_periodic else 0,
+                "；".join(part for part in note_parts if part),
+                _json_dumps(
+                    {
+                        "source_url": item.source_url,
+                        "sync_item_id": sync_item_id,
+                        "raw": item.raw_json or {},
+                    }
+                ),
+                synced_at,
+            ),
+        )
+        count += int(cursor.rowcount or 0)
+    return count
+
+
+def _sync_existing_offering_academic_sessions(
+    conn,
+    *,
+    teacher_id: int,
+    semester: dict[str, Any],
+    course_ids: list[int],
+    synced_at: str,
+) -> tuple[int, list[str]]:
+    normalized_course_ids = sorted({int(course_id) for course_id in course_ids if int(course_id) > 0})
+    if not normalized_course_ids:
+        return 0, []
+    placeholders = ",".join("?" for _ in normalized_course_ids)
+    rows = conn.execute(
+        f"""
+        SELECT o.*,
+               c.name AS course_name,
+               cl.name AS class_name,
+               cl.department AS class_department,
+               cl.description AS class_description
+        FROM class_offerings o
+        JOIN courses c ON c.id = o.course_id
+        JOIN classes cl ON cl.id = o.class_id
+        WHERE o.teacher_id = ?
+          AND o.semester_id = ?
+          AND o.course_id IN ({placeholders})
+        ORDER BY o.id
+        """,
+        (int(teacher_id), int(semester["id"]), *normalized_course_ids),
+    ).fetchall()
+    if not rows:
+        return 0, []
+
+    lesson_map = load_course_lessons_by_course_id(conn, normalized_course_ids)
+    updated_count = 0
+    warnings: list[str] = []
+    semester_start_date = parse_date_input(semester.get("start_date"))
+
+    for row in rows:
+        offering = dict(row)
+        class_row = {
+            "name": offering.get("class_name") or "",
+            "department": offering.get("class_department") or "",
+            "description": offering.get("class_description") or "",
+        }
+        selected_class, occurrences, selection_warnings, _ = select_academic_teaching_class_for_offering(
+            conn,
+            teacher_id=teacher_id,
+            semester_id=int(semester["id"]),
+            course_id=int(offering["course_id"]),
+            class_row=class_row,
+            preferred_teaching_class_name=str(offering.get("academic_teaching_class_name") or ""),
+        )
+        if selection_warnings:
+            warnings.extend(
+                f"{offering.get('course_name') or '课程'} / {offering.get('class_name') or '班级'}：{message}"
+                for message in selection_warnings
+            )
+            continue
+        if not occurrences:
+            continue
+
+        plan = build_academic_offering_session_plan(
+            course_lessons=lesson_map.get(int(offering["course_id"]), []),
+            academic_occurrences=occurrences,
+            semester_start_date=semester_start_date,
+            course_name=str(offering.get("course_name") or ""),
+            teaching_class_name=selected_class,
+        )
+        replace_offering_sessions(
+            conn,
+            offering_id=int(offering["id"]),
+            sessions=plan["sessions"],
+        )
+        conn.execute(
+            """
+            UPDATE class_offerings
+            SET schedule_source = ?,
+                academic_teaching_class_name = ?,
+                academic_schedule_sync_at = ?,
+                academic_schedule_sync_message = ?,
+                schedule_info = ?,
+                first_class_date = ?,
+                weekly_schedule_json = ?
+            WHERE id = ? AND teacher_id = ?
+            """,
+            (
+                SCHEDULE_SOURCE_ACADEMIC_SYNC,
+                selected_class,
+                synced_at,
+                f"已同步教务实际排课 {plan.get('session_count') or 0} 次。",
+                plan.get("schedule_info") or "",
+                plan.get("first_class_date") or "",
+                "[]",
+                int(offering["id"]),
+                int(teacher_id),
+            ),
+        )
+        warnings.extend(
+            f"{offering.get('course_name') or '课程'} / {offering.get('class_name') or '班级'}：{message}"
+            for message in plan.get("warnings", [])
+        )
+        updated_count += 1
+
+    return updated_count, warnings
+
+
 def _upsert_courses_and_schedule_items(
     conn,
     *,
@@ -961,6 +1288,8 @@ def _upsert_courses_and_schedule_items(
 
     created_count = 0
     updated_count = 0
+    occurrence_count = 0
+    affected_course_ids: list[int] = []
     course_results: list[dict[str, Any]] = []
     warnings: list[str] = []
     synced_at = _now_iso()
@@ -969,6 +1298,10 @@ def _upsert_courses_and_schedule_items(
     conn.execute("BEGIN IMMEDIATE")
     conn.execute(
         "DELETE FROM teacher_academic_course_sync_items WHERE teacher_id = ? AND semester_id = ?",
+        (int(teacher_id), int(semester["id"])),
+    )
+    conn.execute(
+        "DELETE FROM teacher_academic_course_session_occurrences WHERE teacher_id = ? AND semester_id = ?",
         (int(teacher_id), int(semester["id"])),
     )
 
@@ -1048,8 +1381,11 @@ def _upsert_courses_and_schedule_items(
             created_count += 1
             action = "created_after_ambiguous_name" if match_mode == "ambiguous_name" else "created"
 
+        if course_id not in affected_course_ids:
+            affected_course_ids.append(course_id)
+        group_occurrence_count = 0
         for item in group_items:
-            conn.execute(
+            cursor = conn.execute(
                 """
                 INSERT OR IGNORE INTO teacher_academic_course_sync_items (
                     teacher_id, semester_id, course_id,
@@ -1116,24 +1452,53 @@ def _upsert_courses_and_schedule_items(
                     synced_at,
                 ),
             )
+            sync_item_id = int(cursor.lastrowid) if cursor.rowcount else _find_sync_item_id(
+                conn,
+                teacher_id=teacher_id,
+                semester_id=int(semester["id"]),
+                course_id=course_id,
+                item=item,
+            )
+            group_occurrence_count += _insert_academic_occurrences(
+                conn,
+                teacher_id=teacher_id,
+                semester=semester,
+                course_id=course_id,
+                sync_item_id=sync_item_id,
+                item=item,
+                synced_at=synced_at,
+            )
 
+        occurrence_count += group_occurrence_count
         course_results.append(
             {
                 "course_id": course_id,
                 "course_name": first_item.course_name,
                 "course_code": first_item.course_code,
                 "schedule_item_count": len(group_items),
+                "occurrence_count": group_occurrence_count,
                 "action": action,
                 "match_mode": match_mode,
                 "ambiguous_existing_count": ambiguous_count,
             }
         )
 
+    offering_update_count, offering_warnings = _sync_existing_offering_academic_sessions(
+        conn,
+        teacher_id=teacher_id,
+        semester=semester,
+        course_ids=affected_course_ids,
+        synced_at=synced_at,
+    )
+    warnings.extend(offering_warnings)
+
     return {
         "created_count": created_count,
         "updated_count": updated_count,
         "course_count": len(grouped),
         "schedule_item_count": len(items),
+        "occurrence_count": occurrence_count,
+        "offering_update_count": offering_update_count,
         "courses": course_results,
         "warnings": warnings,
     }
@@ -1204,8 +1569,10 @@ async def sync_current_teacher_courses_from_academic_system(teacher_id: int) -> 
     return {
         "status": "success",
         "message": (
-            f"已从教务系统同步 {result['course_count']} 门课程、{result['schedule_item_count']} 条课表安排。"
-            "系统已生成课程模板，请继续补充教材、课堂设置和本平台班级绑定。"
+            f"已从教务系统同步 {result['course_count']} 门课程、{result['schedule_item_count']} 条课表安排，"
+            f"展开为 {result.get('occurrence_count') or 0} 次真实课次。"
+            f"已自动更新 {result.get('offering_update_count') or 0} 个已开设课堂的时间轴。"
+            "请继续补充教材、课堂设置和本平台班级绑定。"
         ),
         "semester_id": int(semester["id"]),
         "semester_name": str(semester.get("name") or ""),
@@ -1213,6 +1580,8 @@ async def sync_current_teacher_courses_from_academic_system(teacher_id: int) -> 
         "updated_count": result["updated_count"],
         "course_count": result["course_count"],
         "schedule_item_count": result["schedule_item_count"],
+        "occurrence_count": result.get("occurrence_count") or 0,
+        "offering_update_count": result.get("offering_update_count") or 0,
         "courses": result["courses"],
         "warnings": warnings,
         "follow_up_items": [*warnings[:3], *FOLLOW_UP_ITEMS],

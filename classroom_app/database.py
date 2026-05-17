@@ -1106,6 +1106,62 @@ def init_database():
 
             conn.execute(
                 '''
+                CREATE TABLE IF NOT EXISTS teacher_academic_course_session_occurrences
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    teacher_id INTEGER NOT NULL,
+                    semester_id INTEGER,
+                    course_id INTEGER,
+                    sync_item_id INTEGER,
+                    academic_year TEXT NOT NULL DEFAULT '',
+                    academic_term TEXT NOT NULL DEFAULT '',
+                    course_name TEXT NOT NULL DEFAULT '',
+                    course_code TEXT NOT NULL DEFAULT '',
+                    teaching_class_name TEXT NOT NULL DEFAULT '',
+                    class_composition TEXT NOT NULL DEFAULT '',
+                    session_date TEXT NOT NULL,
+                    week_index INTEGER NOT NULL DEFAULT 0,
+                    weekday INTEGER NOT NULL DEFAULT 0,
+                    weekday_label TEXT NOT NULL DEFAULT '',
+                    section_text TEXT NOT NULL DEFAULT '',
+                    section_start INTEGER NOT NULL DEFAULT 0,
+                    section_end INTEGER NOT NULL DEFAULT 0,
+                    section_count INTEGER NOT NULL DEFAULT 1,
+                    time_text TEXT NOT NULL DEFAULT '',
+                    weeks_text TEXT NOT NULL DEFAULT '',
+                    campus TEXT NOT NULL DEFAULT '',
+                    campus_id TEXT NOT NULL DEFAULT '',
+                    location TEXT NOT NULL DEFAULT '',
+                    classroom_id TEXT NOT NULL DEFAULT '',
+                    classroom_code TEXT NOT NULL DEFAULT '',
+                    classroom_type TEXT NOT NULL DEFAULT '',
+                    schedule_source TEXT NOT NULL DEFAULT 'academic_sync',
+                    schedule_status TEXT NOT NULL DEFAULT 'scheduled',
+                    is_non_periodic INTEGER NOT NULL DEFAULT 0,
+                    schedule_note TEXT NOT NULL DEFAULT '',
+                    raw_json TEXT NOT NULL DEFAULT '{}',
+                    synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                    FOREIGN KEY (semester_id) REFERENCES academic_semesters (id) ON DELETE CASCADE,
+                    FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE SET NULL,
+                    FOREIGN KEY (sync_item_id) REFERENCES teacher_academic_course_sync_items (id) ON DELETE CASCADE,
+                    UNIQUE (
+                        teacher_id,
+                        semester_id,
+                        course_id,
+                        teaching_class_name,
+                        session_date,
+                        section_text,
+                        location
+                    )
+                )
+                '''
+            )
+
+            conn.execute(
+                '''
                 CREATE TABLE IF NOT EXISTS academic_semesters
                 (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1279,6 +1335,16 @@ def init_database():
                 )
             except sqlite3.OperationalError:
                 pass
+            for statement in (
+                "ALTER TABLE class_offerings ADD COLUMN schedule_source TEXT NOT NULL DEFAULT 'fixed_cycle'",
+                "ALTER TABLE class_offerings ADD COLUMN academic_teaching_class_name TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE class_offerings ADD COLUMN academic_schedule_sync_at TEXT",
+                "ALTER TABLE class_offerings ADD COLUMN academic_schedule_sync_message TEXT DEFAULT ''",
+            ):
+                try:
+                    conn.execute(statement)
+                except sqlite3.OperationalError:
+                    pass
             _backfill_academic_departments(conn)
 
             conn.execute(
@@ -1296,10 +1362,29 @@ def init_database():
                     session_date TEXT NOT NULL,
                     weekday INTEGER NOT NULL,
                     week_index INTEGER NOT NULL DEFAULT 0,
+                    schedule_source TEXT NOT NULL DEFAULT 'fixed_cycle',
+                    academic_occurrence_id INTEGER,
+                    academic_sync_item_id INTEGER,
+                    academic_course_code TEXT NOT NULL DEFAULT '',
+                    academic_teaching_class_name TEXT NOT NULL DEFAULT '',
+                    academic_weeks_text TEXT NOT NULL DEFAULT '',
+                    academic_section_text TEXT NOT NULL DEFAULT '',
+                    academic_time_text TEXT NOT NULL DEFAULT '',
+                    academic_campus TEXT NOT NULL DEFAULT '',
+                    academic_location TEXT NOT NULL DEFAULT '',
+                    academic_classroom_id TEXT NOT NULL DEFAULT '',
+                    academic_classroom_code TEXT NOT NULL DEFAULT '',
+                    academic_classroom_type TEXT NOT NULL DEFAULT '',
+                    schedule_status TEXT NOT NULL DEFAULT 'scheduled',
+                    is_non_periodic INTEGER NOT NULL DEFAULT 0,
+                    schedule_note TEXT NOT NULL DEFAULT '',
+                    schedule_metadata_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
                     FOREIGN KEY (course_lesson_id) REFERENCES course_lessons (id) ON DELETE SET NULL,
+                    FOREIGN KEY (academic_occurrence_id) REFERENCES teacher_academic_course_session_occurrences (id) ON DELETE SET NULL,
+                    FOREIGN KEY (academic_sync_item_id) REFERENCES teacher_academic_course_sync_items (id) ON DELETE SET NULL,
                     UNIQUE (class_offering_id, order_index)
                 )
                 '''
@@ -1311,6 +1396,29 @@ def init_database():
                 )
             except sqlite3.OperationalError:
                 pass
+            for statement in (
+                "ALTER TABLE class_offering_sessions ADD COLUMN schedule_source TEXT NOT NULL DEFAULT 'fixed_cycle'",
+                "ALTER TABLE class_offering_sessions ADD COLUMN academic_occurrence_id INTEGER REFERENCES teacher_academic_course_session_occurrences (id) ON DELETE SET NULL",
+                "ALTER TABLE class_offering_sessions ADD COLUMN academic_sync_item_id INTEGER REFERENCES teacher_academic_course_sync_items (id) ON DELETE SET NULL",
+                "ALTER TABLE class_offering_sessions ADD COLUMN academic_course_code TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE class_offering_sessions ADD COLUMN academic_teaching_class_name TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE class_offering_sessions ADD COLUMN academic_weeks_text TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE class_offering_sessions ADD COLUMN academic_section_text TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE class_offering_sessions ADD COLUMN academic_time_text TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE class_offering_sessions ADD COLUMN academic_campus TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE class_offering_sessions ADD COLUMN academic_location TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE class_offering_sessions ADD COLUMN academic_classroom_id TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE class_offering_sessions ADD COLUMN academic_classroom_code TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE class_offering_sessions ADD COLUMN academic_classroom_type TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE class_offering_sessions ADD COLUMN schedule_status TEXT NOT NULL DEFAULT 'scheduled'",
+                "ALTER TABLE class_offering_sessions ADD COLUMN is_non_periodic INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE class_offering_sessions ADD COLUMN schedule_note TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE class_offering_sessions ADD COLUMN schedule_metadata_json TEXT NOT NULL DEFAULT '{}'",
+            ):
+                try:
+                    conn.execute(statement)
+                except sqlite3.OperationalError:
+                    pass
 
             # 6. 课程资源 (替换旧的 shared_files)
 
@@ -3448,6 +3556,18 @@ def init_database():
                 "ON teacher_academic_course_sync_items (teacher_id, classroom_id, classroom_code)"
             )
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_course_occurrences_course "
+                "ON teacher_academic_course_session_occurrences (teacher_id, semester_id, course_id, session_date)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_course_occurrences_class "
+                "ON teacher_academic_course_session_occurrences (teacher_id, semester_id, course_id, teaching_class_name)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_course_occurrences_sync_item "
+                "ON teacher_academic_course_session_occurrences (sync_item_id, session_date)"
+            )
+            conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_class_offerings_unique_semester_id "
                 "ON class_offerings (class_id, course_id, semester_id) "
                 "WHERE semester_id IS NOT NULL"
@@ -3475,6 +3595,14 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_class_offering_sessions_material_lookup "
                 "ON class_offering_sessions (class_offering_id, learning_material_id, order_index)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_class_offering_sessions_academic_occurrence "
+                "ON class_offering_sessions (academic_occurrence_id, class_offering_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_class_offering_sessions_schedule_source "
+                "ON class_offering_sessions (class_offering_id, schedule_source, session_date)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_materials_teacher_parent ON course_materials (teacher_id, parent_id, name)"

@@ -43,6 +43,30 @@
         border: 1px solid rgba(148, 163, 184, 0.18);
     }
 
+    .offering-schedule-panel.is-muted {
+        opacity: 0.62;
+    }
+
+    .offering-academic-panel {
+        display: none;
+        gap: 12px;
+        padding: 16px;
+        border-radius: 18px;
+        border: 1px solid rgba(20, 184, 166, 0.22);
+        background: linear-gradient(135deg, rgba(240, 253, 250, 0.96), rgba(236, 254, 255, 0.9));
+    }
+
+    .offering-academic-panel.is-visible {
+        display: grid;
+    }
+
+    .offering-academic-class-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(160px, auto);
+        gap: 12px;
+        align-items: end;
+    }
+
     .offering-schedule-head {
         display: flex;
         justify-content: space-between;
@@ -263,6 +287,7 @@
 
     @media (max-width: 900px) {
         .offering-form-grid,
+        .offering-academic-class-grid,
         .offering-schedule-row {
             grid-template-columns: 1fr;
         }
@@ -281,7 +306,7 @@
         <div class="academic-eyebrow">Teaching Schedule</div>
         <h2>开设课堂与生成课程时间轴</h2>
         <p>
-            选择学期、班级、课程和教材后，继续配置第一次上课日期与每周上课安排，系统会自动把课程模板拆到具体日期，直接生成课堂时间轴和任务列表。
+            选择学期、班级、课程和教材后，系统会优先使用教务系统真实课表生成每一次课；没有教务排课时，再使用固定周循环生成课堂时间轴和任务列表。
         </p>
         <div class="academic-hero-actions">
             <a href="/manage/courses" class="academic-link-btn">先完善课程模板</a>
@@ -384,22 +409,45 @@
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label required" for="offeringFirstClassDateInput">第一次上课日期</label>
+                        <label class="form-label required" for="offeringScheduleSourceSelect">排课来源</label>
+                        <select id="offeringScheduleSourceSelect" class="form-control">
+                            <option value="academic_sync">优先使用教务实际排课</option>
+                            <option value="fixed_cycle">手动固定周循环</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="offeringFirstClassDateInput">固定排课首次日期</label>
                         <input id="offeringFirstClassDateInput" class="form-control" type="date">
                     </div>
 
                     <div class="form-group">
                         <label class="form-label">预览提示</label>
                         <div class="offering-inline-help">
-                            第一次上课日期的星期必须包含在“每周上课安排”里。若一周有多天上课，可继续新增多条安排。
+                            使用教务排课时，系统会按真实周次、节假日调课和非周期课次生成时间轴；手动固定周循环时，首次日期的星期必须包含在每周安排里。
                         </div>
                     </div>
 
-                    <div class="offering-schedule-panel full-span">
+                    <div class="offering-academic-panel full-span" id="offeringAcademicPanel">
+                        <div class="offering-academic-class-grid">
+                            <div class="form-group">
+                                <label class="form-label" for="offeringAcademicClassSelect">教务教学班</label>
+                                <select id="offeringAcademicClassSelect" class="form-control">
+                                    <option value="">自动匹配或请选择教学班</option>
+                                </select>
+                            </div>
+                            <div class="academic-badge-row" id="offeringAcademicSummary"></div>
+                        </div>
+                        <div class="offering-inline-help" id="offeringAcademicHelp">
+                            选择课程后，如果已同步教务课表，这里会显示可用的教学班和真实课次范围。
+                        </div>
+                    </div>
+
+                    <div class="offering-schedule-panel full-span" id="fixedSchedulePanel">
                         <div class="offering-schedule-head">
                             <div>
                                 <h4>每周上课安排</h4>
-                                <p class="academic-card-subtitle">支持一周一天或多天上课，每条安排都要填写周几和当天上的节数。</p>
+                                <p class="academic-card-subtitle">用于没有教务真实排课的课程；支持一周一天或多天上课。</p>
                             </div>
                             <div class="academic-action-group">
                                 <button type="button" class="btn btn-outline" id="addWeeklyScheduleBtn">新增一行</button>
@@ -484,6 +532,10 @@
                             {% if offering.course_department %}<span class="academic-badge is-accent">{{ offering.course_department }}</span>{% endif %}
                             {% if offering.class_department %}<span class="academic-badge">{{ offering.class_department }}</span>{% endif %}
                             {% if offering.textbook_title %}<span class="academic-badge is-success">{{ offering.textbook_title }}</span>{% endif %}
+                            <span class="academic-badge {% if offering.schedule_source == 'academic_sync' %}is-success{% else %}is-muted{% endif %}">
+                                {{ offering.schedule_source_label }}
+                            </span>
+                            {% if offering.academic_teaching_class_name %}<span class="academic-badge">{{ offering.academic_teaching_class_name }}</span>{% endif %}
                             {% if offering.first_class_date %}<span class="academic-badge">{{ offering.first_class_date }}</span>{% endif %}
                             <span class="academic-badge {% if offering.scheduled_session_count %}is-accent{% else %}is-muted{% endif %}">
                                 {{ offering.scheduled_session_count }} 次课
@@ -497,10 +549,12 @@
                             <span class="academic-meta-value">{{ offering.first_class_date or '未设置' }}</span>
                         </div>
                         <div class="academic-meta-row">
-                            <span class="academic-meta-label">课堂周期</span>
+                            <span class="academic-meta-label">排课方式</span>
                             <span class="academic-meta-value">
-                                {% if offering.weekly_schedule %}
-                                {{ offering.weekly_schedule | length }} 个上课日 / 周
+                                {% if offering.schedule_source == 'academic_sync' %}
+                                教务 {{ offering.academic_session_count }} 次{% if offering.non_periodic_session_count %}，含 {{ offering.non_periodic_session_count }} 次非周期课{% endif %}
+                                {% elif offering.weekly_schedule %}
+                                固定 {{ offering.weekly_schedule | length }} 个上课日 / 周
                                 {% else %}
                                 未设置
                                 {% endif %}

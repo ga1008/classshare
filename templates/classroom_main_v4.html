@@ -405,7 +405,7 @@
                                     {% for session in timeline_entries %}
                                     <button
                                         type="button"
-                                        class="teaching-timeline-segment is-{{ session.progress_state }}{% if session.is_home_entry %} is-home-entry{% endif %}{% if session.is_anchor %} is-anchor{% endif %}{% if session.order_index == selected_session.order_index %} is-selected{% endif %}"
+                                        class="teaching-timeline-segment is-{{ session.progress_state }}{% if session.is_home_entry %} is-home-entry{% endif %}{% if session.is_academic_schedule %} is-academic-schedule{% endif %}{% if session.is_non_periodic %} is-non-periodic{% endif %}{% if session.is_anchor %} is-anchor{% endif %}{% if session.order_index == selected_session.order_index %} is-selected{% endif %}"
                                         data-session-order="{{ session.order_index }}"
                                         data-session-id="{{ session.id }}"
                                         data-entry-type="{{ session.entry_type or 'lesson' }}"
@@ -428,6 +428,12 @@
                                                 学习文档
                                                 {% endif %}
                                             </span>
+                                            {% if session.is_academic_schedule %}
+                                            <span class="teaching-timeline-segment-doc is-academic">教务</span>
+                                            {% endif %}
+                                            {% if session.is_non_periodic %}
+                                            <span class="teaching-timeline-segment-doc is-shifted">变动</span>
+                                            {% endif %}
                                         </span>
                                         <span
                                             class="teaching-timeline-segment-meta"
