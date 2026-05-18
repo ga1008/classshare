@@ -47,6 +47,10 @@ function getCourseCards() {
     return Array.from(document.querySelectorAll('.course-card[data-course-id]'));
 }
 
+function isCardActionTarget(target) {
+    return Boolean(target?.closest?.('a, button, input, select, textarea, label, [data-action]'));
+}
+
 function normalizeLearningMaterial(data = {}) {
     const materialId = Number(
         data.learning_material?.id
@@ -494,11 +498,36 @@ function bindEvents() {
         const deleteButton = event.target.closest('[data-action="delete-course"]');
         if (deleteButton) {
             handleDeleteCourse(deleteButton);
+            return;
+        }
+
+        const card = event.target.closest('.course-card[data-course-id]');
+        if (card && !isCardActionTarget(event.target)) {
+            openEditModal(card.dataset.courseId);
+        }
+    });
+
+    elements.courseCardGrid?.addEventListener('keydown', (event) => {
+        if (!['Enter', ' '].includes(event.key)) return;
+        const card = event.target.closest('.course-card[data-course-id]');
+        if (!card || event.target !== card) return;
+        event.preventDefault();
+        openEditModal(card.dataset.courseId);
+    });
+}
+
+function syncCardTabState() {
+    getCourseCards().forEach((card) => {
+        card.setAttribute('tabindex', '0');
+        if (!card.getAttribute('aria-label')) {
+            const title = card.querySelector('.course-card-title')?.textContent?.trim() || '课程';
+            card.setAttribute('aria-label', `编辑课程 ${title}`);
         }
     });
 }
 
 bindEvents();
+syncCardTabState();
 ensureOneLessonRow();
 updateAiMeta();
 applyFilters();

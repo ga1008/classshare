@@ -43,145 +43,224 @@
         line-height: 1.6;
     }
 
+    .course-list-body {
+        display: grid;
+        gap: 14px;
+    }
+
+    .course-list-toolbar {
+        display: grid;
+        grid-template-columns: minmax(260px, 1fr) auto;
+        gap: 14px;
+        align-items: end;
+        padding: 14px;
+        border-radius: 14px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: rgba(248, 250, 252, 0.76);
+    }
+
+    .course-card-grid {
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 16px;
+    }
+
     .course-card {
         position: relative;
-        min-height: 100%;
+        min-height: 0;
+        gap: 14px;
+        padding: 18px;
+        border-radius: 12px;
+        cursor: pointer;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 18px 40px -34px rgba(15, 23, 42, 0.5);
     }
 
-    .course-card::after {
+    .course-card::before {
         content: "";
         position: absolute;
-        inset: auto 18px 18px;
-        height: 3px;
-        border-radius: 999px;
-        background: linear-gradient(90deg, rgba(249, 115, 22, 0.68), rgba(14, 165, 233, 0.78));
-        opacity: 0;
-        transform: scaleX(0.6);
-        transform-origin: left center;
-        transition: opacity 0.2s ease, transform 0.2s ease;
+        inset: 0 auto 0 0;
+        width: 3px;
+        background: #0f766e;
+        opacity: 0.7;
     }
 
-    .course-card:hover::after {
-        opacity: 1;
-        transform: scaleX(1);
+    .course-card:hover {
+        transform: translateY(-2px);
+        border-color: rgba(15, 118, 110, 0.26);
+        box-shadow: 0 22px 44px -34px rgba(15, 118, 110, 0.56);
+    }
+
+    .course-card:focus-visible {
+        outline: 3px solid rgba(20, 184, 166, 0.24);
+        outline-offset: 3px;
+    }
+
+    .course-card :is(a, button, input, select, textarea) {
+        cursor: pointer;
+    }
+
+    .course-card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .course-card-statusline {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        min-width: 0;
+    }
+
+    .course-status-pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 26px;
+        padding: 4px 9px;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        background: rgba(248, 250, 252, 0.92);
+        color: var(--text-secondary);
+        font-size: 0.76rem;
+        font-weight: 800;
+        line-height: 1.1;
+    }
+
+    .course-status-pill.is-complete {
+        border-color: rgba(16, 185, 129, 0.22);
+        background: rgba(209, 250, 229, 0.58);
+        color: #047857;
+    }
+
+    .course-status-pill.is-partial {
+        border-color: rgba(245, 158, 11, 0.24);
+        background: rgba(254, 243, 199, 0.64);
+        color: #92400e;
+    }
+
+    .course-status-pill.is-empty {
+        border-color: rgba(148, 163, 184, 0.24);
+        background: rgba(226, 232, 240, 0.62);
+        color: #475569;
+    }
+
+    .course-status-pill.is-synced {
+        border-color: rgba(14, 165, 233, 0.22);
+        background: rgba(224, 242, 254, 0.72);
+        color: #0369a1;
+    }
+
+    .course-card-hours {
+        flex: 0 0 auto;
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        font-weight: 800;
+        white-space: nowrap;
     }
 
     .course-card-main {
         display: grid;
-        gap: 12px;
-    }
-
-    .course-meta-grid {
-        display: grid;
         gap: 10px;
+        min-width: 0;
     }
 
-    .course-meta-row {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        padding-bottom: 10px;
-        border-bottom: 1px dashed rgba(148, 163, 184, 0.28);
-    }
-
-    .course-meta-row:last-child {
-        padding-bottom: 0;
-        border-bottom: none;
-    }
-
-    .course-meta-row span {
-        color: var(--text-muted);
-        font-size: 0.84rem;
-    }
-
-    .course-meta-row strong {
+    .course-card-title {
+        margin: 0;
         color: var(--text-primary);
+        font-size: 1.12rem;
+        line-height: 1.35;
+    }
+
+    .course-card-description {
+        display: -webkit-box;
+        min-height: 4.8em;
+        margin: 0;
+        overflow: hidden;
+        color: var(--text-secondary);
+        line-height: 1.6;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+    }
+
+    .course-card-metrics {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .course-card-metric,
+    .course-card-alignment,
+    .course-card-sync-summary {
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        background: rgba(248, 250, 252, 0.74);
+    }
+
+    .course-card-metric {
+        min-width: 0;
+        padding: 9px 10px;
+    }
+
+    .course-card-metric span,
+    .course-card-alignment span {
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.76rem;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+
+    .course-card-metric strong,
+    .course-card-alignment strong {
+        display: block;
+        min-width: 0;
+        margin-top: 4px;
+        overflow: hidden;
+        color: var(--text-primary);
+        font-size: 0.92rem;
+        font-weight: 800;
+        line-height: 1.25;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .course-card-alignment {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+    }
+
+    .course-card-alignment strong {
+        margin-top: 0;
         text-align: right;
     }
 
-    .course-lesson-mini-list {
+    .course-card-alignment.is-ok {
+        border-color: rgba(16, 185, 129, 0.2);
+        background: rgba(240, 253, 250, 0.76);
+    }
+
+    .course-card-alignment.is-warn {
+        border-color: rgba(245, 158, 11, 0.22);
+        background: rgba(255, 251, 235, 0.8);
+    }
+
+    .course-card-sync-summary {
         display: grid;
-        gap: 10px;
-    }
-
-    .course-lesson-mini-item {
-        display: grid;
-        gap: 4px;
-        padding: 12px 14px;
-        border-radius: 18px;
-        background: rgba(248, 250, 252, 0.88);
-        border: 1px solid rgba(148, 163, 184, 0.18);
-    }
-
-    .course-lesson-mini-item strong {
-        color: var(--text-primary);
-    }
-
-    .course-lesson-mini-item span {
-        color: var(--text-secondary);
-        line-height: 1.55;
-        font-size: 0.88rem;
-    }
-
-    .course-lesson-mini-item em {
-        font-style: normal;
-        color: #0369a1;
-        font-size: 0.78rem;
-        font-weight: 600;
-    }
-
-    .course-academic-sync-panel {
-        display: grid;
-        gap: 10px;
-        padding: 14px 16px;
-        border-radius: 18px;
-        background: linear-gradient(135deg, rgba(240, 253, 250, 0.9), rgba(239, 246, 255, 0.88));
-        border: 1px solid rgba(14, 165, 233, 0.18);
-    }
-
-    .course-academic-sync-head {
-        display: flex;
-        justify-content: space-between;
-        gap: 10px;
-        flex-wrap: wrap;
-        color: var(--text-secondary);
-        font-size: 0.86rem;
-    }
-
-    .course-academic-sync-head strong {
-        color: #0f766e;
-    }
-
-    .course-academic-schedule-list {
-        display: grid;
-        gap: 8px;
-        margin: 0;
-        padding: 0;
-        list-style: none;
-    }
-
-    .course-academic-schedule-list li {
-        display: grid;
-        gap: 2px;
-        padding: 9px 10px;
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.72);
-        border: 1px solid rgba(148, 163, 184, 0.16);
+        gap: 3px;
+        padding: 10px 12px;
         color: var(--text-secondary);
         font-size: 0.84rem;
-        line-height: 1.5;
+        line-height: 1.45;
     }
 
-    .course-academic-schedule-list strong {
-        color: var(--text-primary);
-        font-weight: 650;
-    }
-
-    .course-academic-follow-up {
-        margin: 0;
+    .course-card-sync-summary strong {
         color: #0f766e;
-        font-size: 0.84rem;
-        line-height: 1.55;
+        font-weight: 800;
     }
 
     .course-result-summary {
@@ -189,8 +268,8 @@
         justify-content: space-between;
         gap: 12px;
         flex-wrap: wrap;
-        padding: 14px 16px;
-        border-radius: 18px;
+        padding: 11px 14px;
+        border-radius: 12px;
         background: rgba(248, 250, 252, 0.9);
         color: var(--text-secondary);
         border: 1px solid rgba(148, 163, 184, 0.18);
@@ -201,19 +280,82 @@
     }
 
     .course-toolbar-actions {
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: minmax(160px, 190px) auto auto;
+        align-items: end;
         gap: 10px;
     }
 
+    .course-toolbar-actions .btn {
+        min-height: 44px;
+        white-space: nowrap;
+    }
+
+    .course-modal-dialog {
+        width: min(96vw, 1180px);
+        max-width: min(96vw, 1180px);
+        height: min(92vh, 900px);
+        margin: clamp(8px, 2vh, 18px) auto;
+    }
+
+    .course-modal-dialog .modal-content {
+        height: 100%;
+        border-radius: 16px;
+        overflow: hidden;
+        background: #ffffff;
+    }
+
+    .course-modal-dialog .modal-header {
+        padding: 18px 22px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.9));
+    }
+
     .course-modal-body {
+        display: block;
+        max-height: none;
+        padding: 0;
+        background: rgba(248, 250, 252, 0.88);
+    }
+
+    .course-modal-layout {
         display: grid;
-        gap: 24px;
+        grid-template-columns: minmax(300px, 370px) minmax(0, 1fr);
+        gap: 16px;
+        align-items: start;
+        padding: 18px;
+    }
+
+    .course-modal-side,
+    .course-modal-main {
+        display: grid;
+        gap: 14px;
+        min-width: 0;
+    }
+
+    .course-form-card,
+    .course-ai-panel,
+    .course-lessons-section {
+        display: grid;
+        gap: 16px;
+        padding: 16px;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 16px 36px -34px rgba(15, 23, 42, 0.5);
+    }
+
+    .course-section-heading {
+        display: grid;
+        gap: 4px;
+    }
+
+    .course-section-heading :is(h4, p) {
+        margin: 0;
     }
 
     .course-form-grid {
         display: grid;
-        gap: 18px;
+        gap: 14px;
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
@@ -222,14 +364,9 @@
     }
 
     .course-ai-panel {
-        display: grid;
-        gap: 16px;
-        padding: 18px;
-        border-radius: 22px;
-        border: 1px solid rgba(14, 165, 233, 0.2);
+        border-color: rgba(14, 165, 233, 0.2);
         background:
-            radial-gradient(circle at top right, rgba(14, 165, 233, 0.16), transparent 34%),
-            linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.88));
+            linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.72));
     }
 
     .course-ai-grid {
@@ -270,8 +407,8 @@
     .course-lesson-editor {
         display: grid;
         gap: 14px;
-        padding: 18px;
-        border-radius: 22px;
+        padding: 14px;
+        border-radius: 12px;
         border: 1px solid rgba(148, 163, 184, 0.18);
         background: rgba(248, 250, 252, 0.92);
     }
@@ -298,9 +435,9 @@
         justify-content: center;
         width: 30px;
         height: 30px;
-        border-radius: 999px;
-        background: rgba(79, 70, 229, 0.12);
-        color: var(--primary-color);
+        border-radius: 9px;
+        background: rgba(20, 184, 166, 0.12);
+        color: #0f766e;
         font-size: 0.84rem;
     }
 
@@ -318,7 +455,7 @@
         display: grid;
         gap: 12px;
         padding: 14px 16px;
-        border-radius: 18px;
+        border-radius: 12px;
         border: 1px dashed rgba(14, 165, 233, 0.28);
         background: linear-gradient(135deg, rgba(239, 246, 255, 0.9), rgba(255, 255, 255, 0.96));
     }
@@ -358,9 +495,33 @@
     }
 
     .course-modal-footer-note {
+        flex: 1 1 300px;
+        margin: 0;
         color: var(--text-muted);
         font-size: 0.88rem;
         line-height: 1.6;
+    }
+
+    .course-modal-dialog .modal-footer {
+        justify-content: space-between;
+        gap: 14px;
+        padding: 14px 18px;
+    }
+
+    .course-modal-dialog .modal-footer .academic-action-group {
+        justify-content: flex-end;
+    }
+
+    @media (max-width: 1100px) {
+        .course-list-toolbar,
+        .course-modal-layout {
+            grid-template-columns: 1fr;
+        }
+
+        .course-toolbar-actions {
+            justify-content: start;
+            width: 100%;
+        }
     }
 
     @media (max-width: 960px) {
@@ -369,12 +530,82 @@
             grid-template-columns: 1fr;
         }
     }
+
+    @media (max-width: 640px) {
+        .course-page-shell {
+            gap: 16px;
+        }
+
+        .course-info-grid,
+        .course-card-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .course-list-toolbar {
+            padding: 12px;
+        }
+
+        .course-toolbar-actions {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .course-toolbar-actions .academic-filter-field {
+            grid-column: 1 / -1;
+            min-width: 0;
+            width: 100%;
+        }
+
+        .course-toolbar-actions .btn {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .course-card {
+            padding: 16px;
+        }
+
+        .course-modal-dialog {
+            width: calc(100vw - 12px);
+            max-width: calc(100vw - 12px);
+            height: calc(100vh - 12px);
+            margin: 6px;
+        }
+
+        .course-modal-layout {
+            padding: 12px;
+        }
+
+        .course-modal-dialog .modal-header,
+        .course-modal-dialog .modal-footer {
+            padding: 14px;
+        }
+
+        .course-modal-dialog .modal-footer .academic-action-group,
+        .course-modal-dialog .modal-footer .btn {
+            width: 100%;
+            justify-content: center;
+        }
+    }
+
+    @media (max-width: 460px) {
+        .course-card-head,
+        .course-card-alignment,
+        .course-result-summary {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .course-card-metrics,
+        .course-toolbar-actions {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
 {% endblock %}
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
-{{ topbar_action('新增课程', '模板与课时', 'course', button_id='openCourseCreateBtn', variant='primary', tone='blue') }}
+{{ topbar_action('新增课程', '模板与课时', 'course', button_id='openCourseCreateBtn', variant='primary', tone='teal') }}
 {% endblock %}
 
 {% block content %}
@@ -452,15 +683,15 @@
         </div>
     </section>
 
-    <section class="academic-card">
+    <section class="academic-card course-list-card">
         <div class="academic-card-header">
             <div>
                 <h3 class="academic-card-title">已创建课程</h3>
                 <p class="academic-card-subtitle">支持按课程名称、简介、课堂标题和内容进行搜索，并按状态快速筛选。</p>
             </div>
         </div>
-        <div class="academic-card-body">
-            <div class="academic-toolbar academic-toolbar-between">
+        <div class="academic-card-body course-list-body">
+            <div class="academic-toolbar academic-toolbar-between course-list-toolbar">
                 <label class="academic-search" for="courseSearchInput">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="11" cy="11" r="8"></circle>
@@ -480,7 +711,7 @@
                         </select>
                     </label>
                     <button type="button" class="btn btn-outline" id="toolbarCourseAcademicSyncBtn">从教务系统同步</button>
-                    <button type="button" class="btn btn-outline" id="toolbarCourseCreateBtn">新增课程</button>
+                    <button type="button" class="btn btn-primary" id="toolbarCourseCreateBtn">新增课程</button>
                 </div>
             </div>
 
@@ -489,7 +720,7 @@
                 <span>建议优先完善“待完善”的课程，以便后续直接生成开课时间轴。</span>
             </div>
 
-            <div class="academic-card-grid" id="courseCardGrid">
+            <div class="academic-card-grid course-card-grid" id="courseCardGrid">
                 {% for course in my_courses %}
                 <article
                     class="academic-resource-card course-card"
@@ -497,120 +728,69 @@
                     data-filter-state="{{ 'active' if course.is_in_use else 'idle' }}"
                     data-coverage-state="{{ course.coverage_status }}"
                     data-search="{{ course.search_blob }}"
+                    tabindex="0"
+                    aria-label="编辑课程 {{ course.name }}"
                 >
-                    <div class="academic-card-topline">
-                        <span class="academic-card-kicker">{{ course.coverage_label }}</span>
-                        <div class="academic-badge-row">
-                            {% if course.department %}<span class="academic-badge is-accent">{{ course.department }}</span>{% endif %}
-                            <span class="academic-badge">{{ course.total_hours }} 学时</span>
-                            <span class="academic-badge is-accent">{{ course.sect_name }}</span>
-                            <span class="academic-badge is-success">{{ course.lesson_count }} 次课</span>
-                            <span class="academic-badge {% if course.is_in_use %}is-accent{% else %}is-muted{% endif %}">
-                                {{ course.offering_count }} 个课堂
-                            </span>
+                    <div class="course-card-head">
+                        <div class="course-card-statusline">
+                            <span class="course-status-pill is-{{ course.coverage_status }}">{{ course.coverage_label }}</span>
+                            {% if course.academic_is_synced %}
+                            <span class="course-status-pill is-synced">教务已同步</span>
+                            {% endif %}
                         </div>
+                        <span class="course-card-hours">{{ course.total_hours }} 学时</span>
                     </div>
-
                     <div class="course-card-main">
-                        <div class="academic-card-main">
-                            <h3>{{ course.name }}</h3>
-                            <p>
-                                {% if course.description_preview %}
-                                {{ course.description_preview }}
-                                {% else %}
-                                暂未填写课程简介，建议补充课程定位、目标和使用环境，便于后续 AI 拆课和课堂复用。
-                                {% endif %}
-                            </p>
-                        </div>
-
-                        <div class="course-meta-grid">
-                            <div class="course-meta-row">
-                                <span>所属系别</span>
+                        <h3 class="course-card-title">{{ course.name }}</h3>
+                        <p class="course-card-description">
+                            {% if course.description_preview %}
+                            {{ course.description_preview }}
+                            {% else %}
+                            暂未填写课程简介，建议补充课程定位、目标和使用环境，便于后续 AI 拆课和课堂复用。
+                            {% endif %}
+                        </p>
+                        <div class="course-card-metrics" aria-label="课程摘要">
+                            <div class="course-card-metric">
+                                <span>系别</span>
                                 <strong>{{ course.department or '未设置' }}</strong>
                             </div>
-                            <div class="course-meta-row">
-                                <span>宗门名称</span>
+                            <div class="course-card-metric">
+                                <span>宗门</span>
                                 <strong>{{ course.sect_name }}</strong>
                             </div>
-                            <div class="course-meta-row">
-                                <span>学分</span>
-                                <strong>{{ course.credits }}</strong>
+                            <div class="course-card-metric">
+                                <span>次课</span>
+                                <strong>{{ course.lesson_count }} 次</strong>
                             </div>
-                            <div class="course-meta-row">
-                                <span>课堂设置合计</span>
-                                <strong>{{ course.planned_section_count }} 小节</strong>
-                            </div>
-                            <div class="course-meta-row">
-                                <span>学时匹配</span>
-                                <strong>
-                                    {% if course.hour_gap == 0 %}
-                                    已对齐
-                                    {% elif course.hour_gap > 0 %}
-                                    还差 {{ course.hour_gap }} 小节
-                                    {% else %}
-                                    超出 {{ course.hour_gap | abs }} 小节
-                                    {% endif %}
-                                </strong>
-                            </div>
-                            <div class="course-meta-row">
-                                <span>已配文档</span>
-                                <strong>{{ course.material_lesson_count }} 次课</strong>
+                            <div class="course-card-metric">
+                                <span>课堂</span>
+                                <strong>{{ course.offering_count }} 个</strong>
                             </div>
                         </div>
-
+                        <div class="course-card-alignment {% if course.coverage_status == 'complete' %}is-ok{% else %}is-warn{% endif %}">
+                            <span>{{ course.planned_section_count }} / {{ course.total_hours }} 小节</span>
+                            <strong>
+                                {% if course.coverage_status == 'complete' %}
+                                已对齐
+                                {% elif course.lesson_count == 0 %}
+                                待配置
+                                {% elif course.hour_gap > 0 %}
+                                差 {{ course.hour_gap }} 小节
+                                {% elif course.hour_gap < 0 %}
+                                超 {{ course.hour_gap | abs }} 小节
+                                {% else %}
+                                待填写学时
+                                {% endif %}
+                            </strong>
+                        </div>
                         {% if course.academic_is_synced %}
-                        <div class="course-academic-sync-panel">
-                            <div class="course-academic-sync-head">
-                                <strong>教务课表已同步</strong>
-                                <span>
-                                    {% if course.academic_course_code %}课程号 {{ course.academic_course_code }} · {% endif %}
-                                    {{ course.academic_schedule_count }} 条安排
-                                </span>
-                            </div>
-                            {% if course.academic_schedule_preview %}
-                            <ul class="course-academic-schedule-list">
-                                {% for schedule in course.academic_schedule_preview %}
-                                <li>
-                                    <strong>
-                                        {{ schedule.weekday_label or schedule.time_text or '时间待确认' }}
-                                        {% if schedule.section_text %} {{ schedule.section_text }}节{% endif %}
-                                        {% if schedule.weeks_text %} · {{ schedule.weeks_text }}{% endif %}
-                                    </strong>
-                                    <span>
-                                        {{ schedule.location or '地点待确认' }}
-                                        {% if schedule.classroom_type %} · {{ schedule.classroom_type }}{% endif %}
-                                        {% if schedule.course_hour_text or schedule.course_total_hours_text %}
-                                        · {{ schedule.course_total_hours_text or schedule.course_hour_text }}
-                                        {% endif %}
-                                        {% if schedule.teaching_class_name %} · {{ schedule.teaching_class_name }}{% endif %}
-                                    </span>
-                                </li>
-                                {% endfor %}
-                            </ul>
-                            {% endif %}
-                            <p class="course-academic-follow-up">{{ course.academic_follow_up_hint }}</p>
-                        </div>
-                        {% endif %}
-
-                        {% if course.lesson_preview %}
-                        <div class="course-lesson-mini-list">
-                            {% for lesson in course.lesson_preview %}
-                            <div class="course-lesson-mini-item">
-                                <strong>{{ lesson.title }}</strong>
-                                <span>{{ lesson.content_preview }}</span>
-                                <em>
-                                    {{ lesson.section_count }} 小节
-                                    {% if lesson.learning_material_name %}
-                                    · {{ lesson.learning_material_name }}
-                                    {% endif %}
-                                </em>
-                            </div>
-                            {% endfor %}
-                        </div>
-                        {% else %}
-                        <div class="academic-empty">
-                            <strong>还没有配置课堂设置</strong>
-                            点击“编辑”或“新增课程”，填写至少一条课堂设置后即可用于开课。
+                        <div class="course-card-sync-summary">
+                            <strong>教务课表</strong>
+                            <span>
+                                {% if course.academic_course_code %}课程号 {{ course.academic_course_code }} · {% endif %}
+                                {{ course.academic_schedule_count }} 条安排
+                                {% if course.academic_occurrence_count %} · {{ course.academic_occurrence_count }} 次上课{% endif %}
+                            </span>
                         </div>
                         {% endif %}
                     </div>
@@ -643,7 +823,7 @@
 </div>
 
 <div id="courseModal" class="modal-backdrop" style="display:none;">
-    <div class="modal-dialog modal-dialog-scrollable modal-dialog-wide">
+    <div class="modal-dialog modal-dialog-scrollable modal-dialog-wide course-modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
                 <div>
@@ -655,80 +835,92 @@
             <div class="modal-body course-modal-body">
                 <input type="hidden" id="courseIdInput">
 
-                <section class="course-form-grid">
-                    <div class="form-group">
-                        <label class="form-label required" for="courseNameInput">课程名称</label>
-                        <input id="courseNameInput" class="form-control" type="text" placeholder="例如：动态 Web 程序设计实验">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="courseDepartmentInput">所属系别</label>
-                        <input id="courseDepartmentInput" class="form-control" type="text" list="courseDepartmentOptions" placeholder="例如：网络工程系">
-                        <datalist id="courseDepartmentOptions">
-                            {% for department in department_options %}
-                            <option value="{{ department }}"></option>
-                            {% endfor %}
-                        </datalist>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="courseSectNameInput">宗门名称</label>
-                        <input id="courseSectNameInput" class="form-control" type="text" maxlength="18" placeholder="例如：计网宗">
-                        <div class="academic-hint">用于学生公开修为称号，留空时会按课程名自动生成。</div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="courseCreditsInput">学分</label>
-                        <input id="courseCreditsInput" class="form-control" type="number" min="0" max="100" step="0.5" value="0">
-                    </div>
-                    <div class="form-group full-span">
-                        <label class="form-label" for="courseDescriptionInput">课程简介</label>
-                        <textarea id="courseDescriptionInput" class="form-control" rows="5" placeholder="补充课程定位、教学目标、授课环境和必要说明"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="courseTotalHoursInput">学时</label>
-                        <input id="courseTotalHoursInput" class="form-control" type="number" min="0" max="512" step="1" value="0">
-                    </div>
-                </section>
+                <div class="course-modal-layout">
+                    <div class="course-modal-side">
+                        <section class="course-form-card">
+                            <div class="course-section-heading">
+                                <h4 class="academic-card-title">基础信息</h4>
+                                <p class="academic-card-subtitle">课程名称、学时和简介会被课堂开设、AI 拆课和学生端展示复用。</p>
+                            </div>
+                            <div class="course-form-grid">
+                                <div class="form-group full-span">
+                                    <label class="form-label required" for="courseNameInput">课程名称</label>
+                                    <input id="courseNameInput" class="form-control" type="text" placeholder="例如：动态 Web 程序设计实验">
+                                </div>
+                                <div class="form-group full-span">
+                                    <label class="form-label" for="courseDepartmentInput">所属系别</label>
+                                    <input id="courseDepartmentInput" class="form-control" type="text" list="courseDepartmentOptions" placeholder="例如：网络工程系">
+                                    <datalist id="courseDepartmentOptions">
+                                        {% for department in department_options %}
+                                        <option value="{{ department }}"></option>
+                                        {% endfor %}
+                                    </datalist>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="courseSectNameInput">宗门名称</label>
+                                    <input id="courseSectNameInput" class="form-control" type="text" maxlength="18" placeholder="例如：计网宗">
+                                    <div class="academic-hint">留空时会按课程名自动生成。</div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="courseCreditsInput">学分</label>
+                                    <input id="courseCreditsInput" class="form-control" type="number" min="0" max="100" step="0.5" value="0">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="courseTotalHoursInput">学时</label>
+                                    <input id="courseTotalHoursInput" class="form-control" type="number" min="0" max="512" step="1" value="0">
+                                </div>
+                                <div class="form-group full-span">
+                                    <label class="form-label" for="courseDescriptionInput">课程简介</label>
+                                    <textarea id="courseDescriptionInput" class="form-control" rows="6" placeholder="补充课程定位、教学目标、授课环境和必要说明"></textarea>
+                                </div>
+                            </div>
+                        </section>
 
-                <section class="course-ai-panel">
-                    <div>
-                        <h4 class="academic-card-title">AI 生成课堂设置</h4>
-                        <p class="academic-card-subtitle">选择教材、课程总学时和每次课小节数后，调用思考模型自动拆出完整课堂设置。生成后仍可继续手工微调。</p>
+                        <section class="course-ai-panel">
+                            <div class="course-section-heading">
+                                <h4 class="academic-card-title">AI 生成课堂设置</h4>
+                                <p class="academic-card-subtitle">选择教材、课程总学时和每次课小节数后，自动拆出课堂设置，生成后仍可手工微调。</p>
+                            </div>
+                            <div class="course-ai-grid">
+                                <div class="form-group">
+                                    <label class="form-label" for="courseAiTextbookSelect">教材</label>
+                                    <select id="courseAiTextbookSelect" class="form-control">
+                                        <option value="">请选择教材</option>
+                                        {% for textbook in textbooks_json %}
+                                        <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="courseAiSectionCountInput">每次课小节数</label>
+                                    <input id="courseAiSectionCountInput" class="form-control" type="number" min="1" max="12" step="1" value="2">
+                                </div>
+                            </div>
+                            <div class="course-ai-meta" id="courseAiMeta">
+                                <span>预计生成 <strong id="courseAiSessionCount">0</strong> 次课</span>
+                                <span id="courseAiMetaHint">请先填写课程总学时，并保证能被每次课小节数整除。</span>
+                            </div>
+                            <div class="academic-action-group">
+                                <button type="button" class="btn btn-primary" id="courseAiGenerateBtn">AI 生成课堂设置</button>
+                            </div>
+                        </section>
                     </div>
-                    <div class="course-ai-grid">
-                        <div class="form-group">
-                            <label class="form-label" for="courseAiTextbookSelect">教材</label>
-                            <select id="courseAiTextbookSelect" class="form-control">
-                                <option value="">请选择教材</option>
-                                {% for textbook in textbooks_json %}
-                                <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label" for="courseAiSectionCountInput">每次课小节数</label>
-                            <input id="courseAiSectionCountInput" class="form-control" type="number" min="1" max="12" step="1" value="2">
-                        </div>
-                    </div>
-                    <div class="course-ai-meta" id="courseAiMeta">
-                        <span>预计生成 <strong id="courseAiSessionCount">0</strong> 次课</span>
-                        <span id="courseAiMetaHint">请先填写课程总学时，并保证能被每次课小节数整除。</span>
-                    </div>
-                    <div class="academic-action-group">
-                        <button type="button" class="btn btn-primary" id="courseAiGenerateBtn">AI 生成课堂设置</button>
-                    </div>
-                </section>
 
-                <section class="course-lessons-section">
-                    <div class="course-lessons-head">
-                        <div>
-                            <h4 class="academic-card-title">课堂设置</h4>
-                            <p class="academic-card-subtitle">默认保留一行，可按需增删。每条课堂设置会直接参与后续课堂排期和时间轴生成。</p>
-                        </div>
-                        <span class="academic-badge is-muted" id="courseLessonCounter">0 条课堂设置</span>
-                    </div>
-                    <div class="course-lessons-container" id="courseLessonsContainer"></div>
+                    <div class="course-modal-main">
+                        <section class="course-lessons-section">
+                            <div class="course-lessons-head">
+                                <div class="course-section-heading">
+                                    <h4 class="academic-card-title">课堂设置</h4>
+                                    <p class="academic-card-subtitle">每条课堂设置会参与后续课堂排期和时间轴生成，可继续绑定课程材料。</p>
+                                </div>
+                                <span class="academic-badge is-muted" id="courseLessonCounter">0 条课堂设置</span>
+                            </div>
+                            <div class="course-lessons-container" id="courseLessonsContainer"></div>
 
-                    <button type="button" class="btn btn-outline" id="courseAddLessonBtn">新增一课</button>
-                </section>
+                            <button type="button" class="btn btn-outline" id="courseAddLessonBtn">新增一课</button>
+                        </section>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <p class="course-modal-footer-note">保存时会校验“课程总学时”和“课堂设置合计小节数”是否一致，避免后续排课出现错位。</p>
