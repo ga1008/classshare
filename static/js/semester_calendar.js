@@ -293,6 +293,7 @@ function sourceLabel(todo) {
         assignment: '作业',
         stage_exam: '试炼',
         manual: '我的待办',
+        academic_invigilation: '监考',
     };
     return labels[todo?.source_type] || todo?.subtitle || '待办';
 }

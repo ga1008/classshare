@@ -196,6 +196,72 @@
         justify-content: flex-end;
     }
 
+    .edu-auto-sync {
+        display: grid;
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-md);
+        padding: var(--spacing-md);
+        border: 1px solid rgba(20, 184, 166, 0.24);
+        border-radius: var(--radius-lg);
+        background: rgba(240, 253, 250, 0.78);
+    }
+
+    .edu-auto-sync[hidden] {
+        display: none;
+    }
+
+    .edu-auto-sync h4 {
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 0.96rem;
+    }
+
+    .edu-auto-sync p {
+        margin: 0;
+        color: var(--text-secondary);
+        line-height: 1.6;
+        font-size: 0.88rem;
+    }
+
+    .edu-auto-sync-stages {
+        display: grid;
+        gap: 8px;
+    }
+
+    .edu-auto-sync-stage {
+        display: grid;
+        gap: 6px;
+        padding: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: var(--radius-md);
+        background: rgba(255, 255, 255, 0.9);
+    }
+
+    .edu-auto-sync-stage strong {
+        color: var(--text-primary);
+        font-size: 0.9rem;
+    }
+
+    .edu-auto-sync-stage small {
+        color: var(--text-muted);
+        line-height: 1.5;
+    }
+
+    .edu-auto-sync-counts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .edu-auto-sync-counts span {
+        padding: 4px 8px;
+        border-radius: var(--radius-full);
+        background: rgba(15, 118, 110, 0.08);
+        color: #0f766e;
+        font-size: 0.76rem;
+        font-weight: 700;
+    }
+
     .edu-badge {
         display: inline-flex;
         align-items: center;
@@ -259,7 +325,7 @@
         </div>
         <div>
             <h2>教务系统对接</h2>
-            <p>教师可保存自己的真实教务系统账号。系统会先访问学校教务系统完成一次登录校验，确认可用后再加密保存，后续排课、成绩或名单同步功能可以复用同一套访问方法。</p>
+            <p>教师可保存自己的真实教务系统账号。系统会先访问学校教务系统完成一次登录校验，确认可用后再加密保存，后续排课、班级学生、监考日历与待办提醒可以复用同一套访问方法。</p>
             <div class="edu-status-strip">
                 <span class="edu-chip">先验证后保存</span>
                 <span class="edu-chip">密码加密入库</span>
@@ -302,13 +368,18 @@
             </div>
             <button type="submit" class="btn btn-primary" id="academic-save-btn">验证并保存</button>
         </form>
+        <div class="edu-auto-sync" id="academic-auto-sync-panel" hidden>
+            <h4 id="academic-auto-sync-title">教务数据自动同步</h4>
+            <p id="academic-auto-sync-message"></p>
+            <div class="edu-auto-sync-stages" id="academic-auto-sync-stages"></div>
+        </div>
     </div>
 
     <div class="edu-panel">
         <div class="edu-panel-header">
             <div>
                 <h3>已保存的对接</h3>
-                <p class="edu-form-help">这里只显示账号和校验状态，不显示密码。</p>
+                <p class="edu-form-help">这里只显示账号和校验状态，不显示密码；需要重跑课程、班级学生与监考同步时可直接点击同步数据。</p>
             </div>
             <button type="button" class="btn btn-outline btn-sm" id="academic-refresh-btn">刷新</button>
         </div>

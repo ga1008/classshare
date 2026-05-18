@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-import sqlite3
+import json
 import re
-from datetime import date, datetime, timedelta
+import sqlite3
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from .message_center_service import CATEGORY_LABELS, get_message_center_summary
 from .academic_service import (
     build_semester_calendar_payload,
+    china_now,
     china_today,
     load_student_semester_rows,
     load_teacher_semester_rows,
@@ -57,6 +59,209 @@ def _dashboard_todo_sort_key(item: dict[str, Any]) -> tuple[int, str, str, int]:
         str(item.get("offering_label") or ""),
         _dashboard_int(item.get("source_id")),
     )
+
+
+def _dashboard_parse_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if len(text) == 10:
+        parsed_date = parse_date_input(text)
+        return datetime.combine(parsed_date, time.min) if parsed_date else None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "")).replace(tzinfo=None)
+    except (TypeError, ValueError):
+        parsed_date = parse_date_input(text[:10])
+        return datetime.combine(parsed_date, time.min) if parsed_date else None
+
+
+def _dashboard_week_start(value: date) -> date:
+    return value - timedelta(days=value.weekday())
+
+
+def _dashboard_month_day_label(value: date | datetime | None) -> str:
+    if value is None:
+        return ""
+    day_value = value.date() if isinstance(value, datetime) else value
+    return f"{day_value.month}月{day_value.day}日"
+
+
+def _dashboard_datetime_label(value: datetime | None, *, with_time: bool = True) -> str:
+    if value is None:
+        return ""
+    base = f"{_dashboard_month_day_label(value)} {DASHBOARD_WEEKDAY_LABELS[value.weekday()]}"
+    if with_time:
+        return f"{base} {value.hour:02d}:{value.minute:02d}"
+    return base
+
+
+def _dashboard_relative_event_label(starts_at: datetime | None, now: datetime) -> str:
+    if starts_at is None:
+        return "时间待确认"
+    delta_days = (starts_at.date() - now.date()).days
+    if delta_days < 0:
+        return "已结束"
+    if delta_days == 0:
+        return "今天监考"
+    if delta_days == 1:
+        return "明天监考"
+    return f"{delta_days} 天后监考"
+
+
+def _dashboard_bar_position(start_date: date, end_date: date, week_start: date) -> dict[str, float]:
+    week_end = week_start + timedelta(days=6)
+    start_offset = max(0, min(6, (start_date - week_start).days))
+    end_offset = max(0, min(6, (end_date - week_start).days))
+    if end_date < week_start:
+        start_offset = end_offset = 0
+    elif start_date > week_end:
+        start_offset = end_offset = 6
+    if end_offset < start_offset:
+        end_offset = start_offset
+    return {
+        "bar_left": round(start_offset / 7 * 100, 4),
+        "bar_width": round(((end_offset - start_offset + 1) / 7) * 100, 4),
+        "start_offset": start_offset,
+        "end_offset": end_offset,
+    }
+
+
+def _dashboard_safe_json(raw_value: Any) -> dict[str, Any]:
+    if not raw_value:
+        return {}
+    try:
+        payload = json.loads(str(raw_value))
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _teacher_calendar_event_todo(row: Any, *, now: datetime) -> dict[str, Any] | None:
+    item = dict(row)
+    starts_at = _dashboard_parse_datetime(item.get("starts_at") or item.get("due_at"))
+    ends_at = _dashboard_parse_datetime(item.get("ends_at") or item.get("due_at")) or starts_at
+    created_at = _dashboard_parse_datetime(item.get("created_at")) or starts_at or now
+    if starts_at is None:
+        return None
+    if ends_at is None or ends_at < starts_at:
+        ends_at = starts_at
+    start_date = starts_at.date()
+    end_date = ends_at.date()
+    metadata = _dashboard_safe_json(item.get("metadata_json"))
+    source_id = _dashboard_int(item.get("id"))
+    status_label = _dashboard_relative_event_label(starts_at, now)
+    is_completed = bool(ends_at < now)
+    duration_label = (
+        f"{_dashboard_datetime_label(starts_at)} - {ends_at.hour:02d}:{ends_at.minute:02d}"
+        if starts_at.date() == ends_at.date() and starts_at.time() != ends_at.time()
+        else _dashboard_datetime_label(starts_at)
+    )
+    return {
+        "id": f"academic_invigilation:{source_id}",
+        "source_type": "academic_invigilation",
+        "source_id": source_id,
+        "title": str(item.get("title") or "监考安排"),
+        "subtitle": str(item.get("subtitle") or "教务系统监考"),
+        "notes": str(item.get("notes") or ""),
+        "link_url": str(item.get("link_url") or "/dashboard#dashboard-semester"),
+        "status": "completed" if is_completed else "upcoming",
+        "status_label": status_label,
+        "tone": str(item.get("tone") or "invigilation"),
+        "is_manual": False,
+        "is_completed": is_completed,
+        "can_complete": False,
+        "no_deadline": False,
+        "start_at": starts_at.isoformat(timespec="minutes"),
+        "due_at": starts_at.isoformat(timespec="minutes"),
+        "created_at": created_at.isoformat(timespec="minutes"),
+        "effective_start_at": starts_at.isoformat(timespec="minutes"),
+        "effective_end_at": ends_at.isoformat(timespec="minutes"),
+        "effective_start_date": start_date.isoformat(),
+        "effective_end_date": end_date.isoformat(),
+        "start_label": _dashboard_datetime_label(starts_at),
+        "deadline_label": _dashboard_datetime_label(starts_at),
+        "relative_due_label": status_label,
+        "duration_label": duration_label,
+        "due_time_label": f"{starts_at.hour:02d}:{starts_at.minute:02d}",
+        "offering_label": "教务监考",
+        "course_name": str(metadata.get("course_name") or ""),
+        "class_name": str(metadata.get("teaching_class_name") or ""),
+        "location": str(item.get("location") or ""),
+        "metadata": metadata,
+    }
+
+
+def _attach_teacher_calendar_events_to_buckets(
+    conn: sqlite3.Connection,
+    *,
+    buckets: dict[int, dict[str, Any]],
+    semesters: list[dict[str, Any]],
+    user: dict[str, Any],
+) -> None:
+    if str(user.get("role") or "").strip().lower() != "teacher":
+        return
+    teacher_id = _dashboard_int(user.get("id"))
+    semester_ids = [_dashboard_int(item.get("id")) for item in semesters if _dashboard_int(item.get("id"))]
+    if not teacher_id or not semester_ids:
+        return
+    placeholders = ",".join("?" for _ in semester_ids)
+    rows = conn.execute(
+        f"""
+        SELECT *
+        FROM teacher_calendar_events
+        WHERE teacher_id = ?
+          AND semester_id IN ({placeholders})
+          AND source_type = 'academic_invigilation'
+          AND status = 'active'
+          AND deleted_at IS NULL
+        ORDER BY COALESCE(starts_at, due_at, created_at), id
+        """,
+        (teacher_id, *semester_ids),
+    ).fetchall()
+    if not rows:
+        return
+
+    semesters_by_id = {_dashboard_int(item.get("id")): item for item in semesters}
+    now_dt = china_now().replace(tzinfo=None)
+    for row in rows:
+        semester_id = _dashboard_int(row["semester_id"])
+        bucket = buckets.get(semester_id)
+        semester = semesters_by_id.get(semester_id)
+        if not bucket or not semester:
+            continue
+        todo = _teacher_calendar_event_todo(row, now=now_dt)
+        if not todo:
+            continue
+        bucket["items"].append(todo)
+        event_date = parse_date_input(todo["effective_start_date"])
+        if not event_date:
+            continue
+        week_start = _dashboard_week_start(event_date)
+        week_key = week_start.isoformat()
+        semester_start = parse_date_input(semester.get("start_date"))
+        semester_calendar_start = _dashboard_week_start(semester_start) if semester_start else week_start
+        week_index = max(1, int(((week_start - semester_calendar_start).days // 7) + 1))
+        target_week = bucket["weeks"].setdefault(
+            week_key,
+            {
+                "key": week_key,
+                "week_index": week_index,
+                "label": f"第 {week_index} 周",
+                "range_label": f"{_dashboard_month_day_label(week_start)} - {_dashboard_month_day_label(week_start + timedelta(days=6))}",
+                "todos": [],
+                "is_current": week_start <= now_dt.date() <= week_start + timedelta(days=6),
+            },
+        )
+        positioned = {
+            **todo,
+            **_dashboard_bar_position(
+                parse_date_input(todo["effective_start_date"]) or event_date,
+                parse_date_input(todo["effective_end_date"]) or event_date,
+                week_start,
+            ),
+        }
+        target_week["todos"].append(positioned)
+        target_week["is_current"] = bool(target_week.get("is_current") or week_start <= now_dt.date() <= week_start + timedelta(days=6))
 
 
 def _match_semester_for_offering(
@@ -226,6 +431,13 @@ def _attach_dashboard_todos_to_semester_calendar(
                 if isinstance(todo, dict)
             )
             target_week["is_current"] = bool(target_week.get("is_current") or week.get("is_current"))
+
+    _attach_teacher_calendar_events_to_buckets(
+        conn,
+        buckets=buckets,
+        semesters=semesters,
+        user=user,
+    )
 
     for semester in semesters:
         semester_id = _dashboard_int(semester.get("id"))

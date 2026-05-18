@@ -1266,6 +1266,90 @@ def init_database():
 
             conn.execute(
                 '''
+                CREATE TABLE IF NOT EXISTS teacher_academic_invigilation_items
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    teacher_id INTEGER NOT NULL,
+                    semester_id INTEGER,
+                    school_code TEXT NOT NULL DEFAULT 'gxufl',
+                    academic_year TEXT NOT NULL DEFAULT '',
+                    academic_year_name TEXT NOT NULL DEFAULT '',
+                    academic_term TEXT NOT NULL DEFAULT '',
+                    academic_term_name TEXT NOT NULL DEFAULT '',
+                    exam_batch_id TEXT NOT NULL DEFAULT '',
+                    exam_name TEXT NOT NULL DEFAULT '',
+                    exam_paper_id TEXT NOT NULL DEFAULT '',
+                    exam_paper_code TEXT NOT NULL DEFAULT '',
+                    invigilation_key TEXT NOT NULL,
+                    invigilation_role TEXT NOT NULL DEFAULT '',
+                    invigilation_teachers TEXT NOT NULL DEFAULT '',
+                    course_code TEXT NOT NULL DEFAULT '',
+                    course_name TEXT NOT NULL DEFAULT '',
+                    course_display_name TEXT NOT NULL DEFAULT '',
+                    teaching_class_name TEXT NOT NULL DEFAULT '',
+                    class_composition TEXT NOT NULL DEFAULT '',
+                    student_college TEXT NOT NULL DEFAULT '',
+                    course_college TEXT NOT NULL DEFAULT '',
+                    campus TEXT NOT NULL DEFAULT '',
+                    building TEXT NOT NULL DEFAULT '',
+                    location TEXT NOT NULL DEFAULT '',
+                    location_short_name TEXT NOT NULL DEFAULT '',
+                    location_type TEXT NOT NULL DEFAULT '',
+                    location_type_id TEXT NOT NULL DEFAULT '',
+                    exam_student_count INTEGER NOT NULL DEFAULT 0,
+                    seat_count INTEGER NOT NULL DEFAULT 0,
+                    exam_time_text TEXT NOT NULL DEFAULT '',
+                    exam_date TEXT NOT NULL DEFAULT '',
+                    starts_at TEXT,
+                    ends_at TEXT,
+                    note TEXT NOT NULL DEFAULT '',
+                    raw_json TEXT NOT NULL DEFAULT '{}',
+                    source_url TEXT NOT NULL DEFAULT '',
+                    sync_status TEXT NOT NULL DEFAULT 'active',
+                    synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                    FOREIGN KEY (semester_id) REFERENCES academic_semesters (id) ON DELETE SET NULL,
+                    UNIQUE (teacher_id, school_code, academic_year, academic_term, invigilation_key)
+                )
+                '''
+            )
+
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS teacher_calendar_events
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    teacher_id INTEGER NOT NULL,
+                    semester_id INTEGER,
+                    source_type TEXT NOT NULL,
+                    source_id INTEGER,
+                    source_key TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    subtitle TEXT NOT NULL DEFAULT '',
+                    notes TEXT NOT NULL DEFAULT '',
+                    starts_at TEXT,
+                    ends_at TEXT,
+                    due_at TEXT,
+                    location TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    tone TEXT NOT NULL DEFAULT 'neutral',
+                    link_url TEXT NOT NULL DEFAULT '',
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    synced_at TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TEXT,
+                    FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                    FOREIGN KEY (semester_id) REFERENCES academic_semesters (id) ON DELETE SET NULL,
+                    UNIQUE (teacher_id, source_type, source_key)
+                )
+                '''
+            )
+
+            conn.execute(
+                '''
                 CREATE TABLE IF NOT EXISTS academic_semesters
                 (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3702,6 +3786,22 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_teacher_academic_roster_memberships_student "
                 "ON teacher_academic_roster_memberships (teacher_id, student_id, academic_year, academic_term)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_invigilation_items_teacher_semester "
+                "ON teacher_academic_invigilation_items (teacher_id, semester_id, starts_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_invigilation_items_term "
+                "ON teacher_academic_invigilation_items (teacher_id, academic_year, academic_term, sync_status)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_calendar_events_teacher_semester "
+                "ON teacher_calendar_events (teacher_id, semester_id, starts_at, status)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_calendar_events_source "
+                "ON teacher_calendar_events (teacher_id, source_type, source_key)"
             )
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_class_offerings_unique_semester_id "

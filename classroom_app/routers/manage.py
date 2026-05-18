@@ -105,7 +105,9 @@ from ..services.academic_calendar_sync_service import (
     prepare_current_semester_from_academic_system,
     sync_semester_calendar_background,
 )
+from ..services.academic_auto_sync_service import sync_teacher_academic_data_after_credential_verified
 from ..services.academic_course_sync_service import sync_current_teacher_courses_from_academic_system
+from ..services.academic_invigilation_sync_service import sync_current_teacher_invigilations_from_academic_system
 from ..services.academic_roster_sync_service import sync_current_teacher_rosters_from_academic_system
 from ..storage_paths import resolve_migrated_file_path
 from ..time_utils import local_iso
@@ -2733,6 +2735,28 @@ async def api_list_academic_credentials(user: dict = Depends(get_current_teacher
     return {"status": "success", "credentials": credentials}
 
 
+@router.post("/system/academic-sync", response_class=JSONResponse)
+async def api_sync_academic_data(user: dict = Depends(get_current_teacher)):
+    """Manually rerun the saved academic-system sync chain."""
+    auto_sync = await sync_teacher_academic_data_after_credential_verified(int(user["id"]))
+    return {
+        "status": auto_sync.get("status") or "unknown",
+        "message": auto_sync.get("message") or "教务系统同步已完成。",
+        "auto_sync": auto_sync,
+    }
+
+
+@router.post("/system/academic-invigilations/sync-current", response_class=JSONResponse)
+async def api_sync_academic_invigilations(user: dict = Depends(get_current_teacher)):
+    """Manually sync current-term invigilation assignments into teacher calendar events."""
+    result = await sync_current_teacher_invigilations_from_academic_system(int(user["id"]))
+    return {
+        "status": result.get("status") or "unknown",
+        "message": result.get("message") or "监考安排同步已完成。",
+        "result": result,
+    }
+
+
 @router.post("/system/academic-credentials", response_class=JSONResponse)
 async def api_save_academic_credential(request: Request, user: dict = Depends(get_current_teacher)):
     """保存教务系统账号：先真实登录校验，成功后再加密落库。"""
@@ -2755,12 +2779,15 @@ async def api_save_academic_credential(request: Request, user: dict = Depends(ge
             conn.rollback()
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    auto_sync = await sync_teacher_academic_data_after_credential_verified(int(user["id"]))
+
     return {
         "status": "success",
-        "message": "教务系统账号已验证并保存。",
+        "message": auto_sync.get("message") or "教务系统账号已验证并保存。",
         "verification": verification,
         "credential": credential,
         "credentials": credentials,
+        "auto_sync": auto_sync,
     }
 
 
@@ -2793,12 +2820,21 @@ async def api_verify_academic_credential(credential_id: int, user: dict = Depend
             conn.rollback()
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    auto_sync = None
+    if verification.get("ok"):
+        auto_sync = await sync_teacher_academic_data_after_credential_verified(int(user["id"]))
+
     return {
         "status": "success" if verification.get("ok") else "failed",
-        "message": verification.get("message") or "教务系统连接校验完成。",
+        "message": (
+            auto_sync.get("message")
+            if auto_sync
+            else verification.get("message") or "教务系统连接校验完成。"
+        ),
         "verification": verification,
         "credential": credential,
         "credentials": credentials,
+        "auto_sync": auto_sync,
     }
 
 

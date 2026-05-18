@@ -20495,6 +20495,12 @@ body.has-chat-image-preview-open {
     color: #0f766e;
 }
 
+.semester-calendar-todo-bar.is-invigilation {
+    border-color: rgba(220, 38, 38, 0.2);
+    background: rgba(254, 242, 242, 0.9);
+    color: #b91c1c;
+}
+
 .semester-calendar-todo-bar.is-completed {
     opacity: 0.56;
 }
@@ -20801,6 +20807,10 @@ body.has-chat-image-preview-open {
 
 .semester-week-gantt-row.is-manual .semester-week-gantt-row__bar {
     background: linear-gradient(90deg, #0f766e, #84cc16);
+}
+
+.semester-week-gantt-row.is-invigilation .semester-week-gantt-row__bar {
+    background: linear-gradient(90deg, #dc2626, #f59e0b);
 }
 
 .semester-week-gantt-row.is-completed {
@@ -21110,6 +21120,10 @@ body.has-chat-image-preview-open {
 
 .semester-week-todo-item-card.is-manual .semester-week-todo-progress__bar {
     background: linear-gradient(90deg, #0f766e, #84cc16);
+}
+
+.semester-week-todo-item-card.is-invigilation .semester-week-todo-progress__bar {
+    background: linear-gradient(90deg, #dc2626, #f59e0b);
 }
 
 .semester-todo-modal-shell[hidden] {

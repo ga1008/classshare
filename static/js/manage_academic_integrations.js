@@ -28,6 +28,10 @@ const refs = {
     profileLogin: document.getElementById('edu-profile-login'),
     profileMethod: document.getElementById('edu-profile-method'),
     profileNote: document.getElementById('edu-profile-note'),
+    autoSyncPanel: document.getElementById('academic-auto-sync-panel'),
+    autoSyncTitle: document.getElementById('academic-auto-sync-title'),
+    autoSyncMessage: document.getElementById('academic-auto-sync-message'),
+    autoSyncStages: document.getElementById('academic-auto-sync-stages'),
 };
 
 const statusLabels = {
@@ -81,6 +85,77 @@ function formatStatusTime(item) {
     return item.last_verified_at || item.last_status_at || item.updated_at || '-';
 }
 
+function autoSyncStatusLabel(status) {
+    if (status === 'success') return '已完成';
+    if (status === 'partial_success') return '部分完成';
+    if (status === 'failed') return '未完成';
+    if (status === 'missing_credential') return '缺少凭据';
+    if (status === 'no_current_semester') return '缺少当前学期';
+    return status || '未知';
+}
+
+function countLabel(key, value) {
+    const labels = {
+        course_count: '课程',
+        created_count: '新增课程',
+        updated_count: '更新课程',
+        schedule_item_count: '课表条目',
+        occurrence_count: '真实课次',
+        offering_update_count: '已开课堂更新',
+        teaching_class_count: '教学班',
+        touched_class_count: '平台班级',
+        classes_created: '新增班级',
+        classes_updated: '更新班级',
+        students_created: '新增学生',
+        students_updated: '更新学生',
+        students_moved: '转班学生',
+        memberships_upserted: '名单关系',
+        roster_student_count: '教务名单关系',
+        class_conflicts: '班级冲突',
+        student_conflicts: '学生冲突',
+        contact_conflicts: '联系方式冲突',
+        stale_students: '待复核学生',
+        invigilation_count: '监考安排',
+        event_created_count: '新增日历',
+        event_updated_count: '更新日历',
+        notification_count: '待办提醒',
+        stale_count: '待复核',
+    };
+    return `${labels[key] || key} ${Number(value || 0)}`;
+}
+
+function renderAutoSync(autoSync) {
+    if (!refs.autoSyncPanel || !refs.autoSyncMessage || !refs.autoSyncStages) return;
+    if (!autoSync) {
+        refs.autoSyncPanel.hidden = true;
+        return;
+    }
+    refs.autoSyncPanel.hidden = false;
+    if (refs.autoSyncTitle) {
+        refs.autoSyncTitle.textContent = `教务数据自动同步：${autoSyncStatusLabel(autoSync.status)}`;
+    }
+    refs.autoSyncMessage.textContent = autoSync.message || '系统已完成自动同步流程。';
+    const stages = Array.isArray(autoSync.stages) ? autoSync.stages : [];
+    refs.autoSyncStages.innerHTML = stages.map((stage) => {
+        const counts = stage.counts && typeof stage.counts === 'object' ? stage.counts : {};
+        const countItems = Object.entries(counts)
+            .filter(([, value]) => Number(value || 0) > 0)
+            .map(([key, value]) => `<span>${escapeHtml(countLabel(key, value))}</span>`)
+            .join('');
+        const warnings = Array.isArray(stage.warnings) && stage.warnings.length
+            ? `<small>复核：${escapeHtml(stage.warnings.slice(0, 2).join('；'))}</small>`
+            : '';
+        return `
+            <article class="edu-auto-sync-stage">
+                <strong>${escapeHtml(stage.label || stage.key || '同步任务')} · ${escapeHtml(autoSyncStatusLabel(stage.status))}</strong>
+                ${stage.message ? `<small>${escapeHtml(stage.message)}</small>` : ''}
+                ${countItems ? `<div class="edu-auto-sync-counts">${countItems}</div>` : ''}
+                ${warnings}
+            </article>
+        `;
+    }).join('');
+}
+
 function renderCredentials() {
     if (!refs.list) return;
     if (!state.credentials.length) {
@@ -111,6 +186,7 @@ function renderCredentials() {
                     </div>
                 </div>
                 <div class="edu-credential-actions">
+                    <button type="button" class="btn btn-primary btn-sm" data-action="sync" data-id="${item.id}">同步数据</button>
                     <button type="button" class="btn btn-outline btn-sm" data-action="verify" data-id="${item.id}">重新验证</button>
                     <button type="button" class="btn btn-danger btn-sm" data-action="delete" data-id="${item.id}">删除</button>
                 </div>
@@ -143,6 +219,7 @@ async function saveCredential(event) {
     }
 
     setBusy(refs.saveBtn, true, '正在验证');
+    renderAutoSync(null);
     try {
         const result = await apiFetch('/api/manage/system/academic-credentials', {
             method: 'POST',
@@ -151,7 +228,8 @@ async function saveCredential(event) {
         state.credentials = result.credentials || [];
         refs.password.value = '';
         renderCredentials();
-        showMessage(result.message || '教务系统账号已保存。', 'success');
+        renderAutoSync(result.auto_sync);
+        showMessage(result.message || '教务系统账号已保存，并已尝试自动同步教务数据。', 'success');
     } catch (error) {
         showMessage(error.message || '教务系统账号验证失败。', 'error');
     } finally {
@@ -161,15 +239,33 @@ async function saveCredential(event) {
 
 async function verifyCredential(id, button) {
     setBusy(button, true, '验证中');
+    renderAutoSync(null);
     try {
         const result = await apiFetch(`/api/manage/system/academic-credentials/${id}/verify`, {
             method: 'POST',
         });
         state.credentials = result.credentials || [];
         renderCredentials();
+        renderAutoSync(result.auto_sync);
         showMessage(result.message || '教务系统连接校验完成。', result.status === 'success' ? 'success' : 'warning');
     } catch (error) {
         showMessage(error.message || '重新验证失败。', 'error');
+    } finally {
+        setBusy(button, false);
+    }
+}
+
+async function syncAcademicData(button) {
+    setBusy(button, true, '同步中');
+    renderAutoSync(null);
+    try {
+        const result = await apiFetch('/api/manage/system/academic-sync', {
+            method: 'POST',
+        });
+        renderAutoSync(result.auto_sync);
+        showMessage(result.message || '教务系统数据同步已完成。', result.status === 'failed' ? 'warning' : 'success');
+    } catch (error) {
+        showMessage(error.message || '教务系统数据同步失败。', 'error');
     } finally {
         setBusy(button, false);
     }
@@ -204,6 +300,8 @@ refs.list?.addEventListener('click', (event) => {
     if (!id) return;
     if (button.dataset.action === 'verify') {
         verifyCredential(id, button);
+    } else if (button.dataset.action === 'sync') {
+        syncAcademicData(button);
     } else if (button.dataset.action === 'delete') {
         deleteCredential(id, button);
     }
