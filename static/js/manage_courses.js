@@ -46,6 +46,10 @@ const elements = {
 };
 
 let currentGroupMode = 'none';
+let courseGroupSectionSerial = 0;
+let courseGroupResizeFrame = 0;
+const storedCollapsedCourseGroups = readJsonStorage('manage:courses:collapsed-groups', []);
+const collapsedCourseGroups = new Set(Array.isArray(storedCollapsedCourseGroups) ? storedCollapsedCourseGroups : []);
 
 const groupModeConfig = {
     none: {
@@ -79,6 +83,25 @@ function getCourseCards() {
 
 function isCardActionTarget(target) {
     return Boolean(target?.closest?.('a, button, input, select, textarea, label, [data-action]'));
+}
+
+function readJsonStorage(key, fallback) {
+    try {
+        const rawValue = window.localStorage?.getItem(key);
+        if (!rawValue) return fallback;
+        const parsed = JSON.parse(rawValue);
+        return parsed ?? fallback;
+    } catch (error) {
+        return fallback;
+    }
+}
+
+function writeJsonStorage(key, value) {
+    try {
+        window.localStorage?.setItem(key, JSON.stringify(value));
+    } catch (error) {
+        // Storage is a convenience; the page should still work in private modes.
+    }
 }
 
 function escapeHtml(value) {
@@ -326,25 +349,98 @@ function renderCourseGroups() {
             || left.label.localeCompare(right.label, 'zh-Hans-CN')
         ))
         .forEach((group) => {
+            const collapseKey = `${currentGroupMode}:${group.key}`;
+            const isCollapsed = collapsedCourseGroups.has(collapseKey);
+            const bodyId = `course-group-body-${++courseGroupSectionSerial}`;
+            const headingId = `course-group-heading-${courseGroupSectionSerial}`;
             const section = document.createElement('section');
-            section.className = 'course-group-section';
+            section.className = `course-group-section${isCollapsed ? ' is-collapsed' : ''}`;
             section.dataset.courseGroupKey = group.key;
             section.hidden = group.visibleCount === 0;
             section.innerHTML = `
-                <div class="course-group-header">
+                <button type="button"
+                        class="course-group-header"
+                        data-action="toggle-course-group"
+                        data-course-group-collapse-key="${escapeHtml(collapseKey)}"
+                        aria-expanded="${isCollapsed ? 'false' : 'true'}"
+                        aria-controls="${bodyId}"
+                        aria-labelledby="${headingId}">
                     <div class="course-group-heading">
                         <span>${escapeHtml(config.eyebrow)}</span>
-                        <h4>${escapeHtml(group.label)}</h4>
+                        <h4 id="${headingId}">${escapeHtml(group.label)}</h4>
                         ${group.meta ? `<p>${escapeHtml(group.meta)}</p>` : ''}
                     </div>
-                    <strong class="course-group-count">${group.visibleCount} 门课程</strong>
+                    <span class="course-group-header-actions">
+                        <strong class="course-group-count">${group.visibleCount} 门课程</strong>
+                        <span class="course-group-toggle" aria-hidden="true">
+                            <span class="course-group-toggle-icon"></span>
+                        </span>
+                    </span>
+                </button>
+                <div class="course-group-body" id="${bodyId}" aria-hidden="${isCollapsed ? 'true' : 'false'}">
+                    <div class="course-group-body-inner">
+                        <div class="course-group-card-grid"></div>
+                    </div>
                 </div>
-                <div class="course-group-card-grid"></div>
             `;
             const groupGrid = section.querySelector('.course-group-card-grid');
+            const bodyInner = section.querySelector('.course-group-body-inner');
+            if (bodyInner && 'inert' in bodyInner) {
+                bodyInner.inert = isCollapsed;
+            }
             group.cards.forEach((card) => groupGrid.appendChild(card));
             elements.courseCardGrid.appendChild(section);
+            refreshCourseGroupHeight(section);
         });
+}
+
+function refreshCourseGroupHeight(section) {
+    const body = section?.querySelector('.course-group-body');
+    if (!body) return;
+    body.style.maxHeight = section.classList.contains('is-collapsed') ? '0px' : `${body.scrollHeight}px`;
+}
+
+function refreshCourseGroupHeights() {
+    elements.courseCardGrid?.querySelectorAll('.course-group-section').forEach((section) => {
+        refreshCourseGroupHeight(section);
+    });
+}
+
+function setCourseGroupCollapsed(section, header, nextCollapsed, { persist = true } = {}) {
+    const body = section?.querySelector('.course-group-body');
+    const bodyInner = section?.querySelector('.course-group-body-inner');
+    const collapseKey = header?.dataset.courseGroupCollapseKey || '';
+    if (!section || !header || !body || !collapseKey) return;
+
+    if (nextCollapsed) {
+        body.style.maxHeight = `${body.scrollHeight}px`;
+        void body.offsetHeight;
+        section.classList.add('is-collapsed');
+        body.style.maxHeight = '0px';
+    } else {
+        section.classList.remove('is-collapsed');
+        body.style.maxHeight = `${body.scrollHeight}px`;
+    }
+
+    header.setAttribute('aria-expanded', String(!nextCollapsed));
+    body.setAttribute('aria-hidden', String(nextCollapsed));
+    if (bodyInner && 'inert' in bodyInner) {
+        bodyInner.inert = nextCollapsed;
+    }
+
+    if (!persist) return;
+    if (nextCollapsed) {
+        collapsedCourseGroups.add(collapseKey);
+    } else {
+        collapsedCourseGroups.delete(collapseKey);
+    }
+    writeJsonStorage('manage:courses:collapsed-groups', Array.from(collapsedCourseGroups));
+}
+
+function toggleCourseGroup(header) {
+    const section = header?.closest('.course-group-section');
+    if (!section) return;
+    setCourseGroupCollapsed(section, header, !section.classList.contains('is-collapsed'));
 }
 
 function renderFilterEmptyState() {
@@ -569,6 +665,10 @@ function bindEvents() {
     elements.groupModeButtons.forEach((button) => {
         button.addEventListener('click', () => setGroupMode(button.dataset.courseGroupMode || 'none'));
     });
+    window.addEventListener('resize', () => {
+        window.cancelAnimationFrame(courseGroupResizeFrame);
+        courseGroupResizeFrame = window.requestAnimationFrame(refreshCourseGroupHeights);
+    });
     elements.totalHoursInput?.addEventListener('input', updateAiMeta);
     elements.aiSectionCountInput?.addEventListener('input', updateAiMeta);
 
@@ -624,6 +724,12 @@ function bindEvents() {
     });
 
     elements.courseCardGrid?.addEventListener('click', (event) => {
+        const groupToggle = event.target.closest('[data-action="toggle-course-group"]');
+        if (groupToggle) {
+            toggleCourseGroup(groupToggle);
+            return;
+        }
+
         const editButton = event.target.closest('[data-action="edit-course"]');
         if (editButton) {
             openEditModal(editButton.dataset.courseId);
