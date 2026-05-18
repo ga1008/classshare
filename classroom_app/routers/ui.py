@@ -53,6 +53,7 @@ from ..services.academic_service import (
     choose_default_semester_id,
     china_today,
     load_teacher_semester_rows,
+    parse_date_input,
     serialize_semester_row,
     serialize_textbook_row,
 )
@@ -1591,6 +1592,8 @@ async def get_manage_courses_page(request: Request, user: dict = Depends(get_cur
     """显示课程管理页面 (列表和新建)"""
     with get_db_connection() as conn:
         my_courses = _load_teacher_course_rows(conn, int(user["id"]))
+        semesters = load_teacher_semester_rows(conn, int(user["id"]))
+        _decorate_course_grouping_context(my_courses, semesters)
         textbooks = [
             {
                 "id": item["id"],
@@ -1623,6 +1626,7 @@ async def get_manage_courses_page(request: Request, user: dict = Depends(get_cur
                 "courses_json": my_courses,
                 "textbooks_json": textbooks,
                 "course_stats": course_stats,
+                "semester_calendar": build_semester_calendar_payload(semesters),
                 "department_options": collect_department_options(
                     (item.get("department") for item in my_courses),
                 ),
@@ -1890,6 +1894,65 @@ def _load_teacher_course_rows(conn, teacher_id: int):
         item["search_blob"] = f"{item.get('search_blob') or ''} {academic_search}".lower()
         result.append(item)
     return result
+
+
+def _decorate_course_grouping_context(courses: list[dict], semesters: list[dict]) -> None:
+    semester_windows: list[tuple[Any, Any, dict]] = []
+    for raw_semester in semesters:
+        try:
+            semester = serialize_semester_row(raw_semester)
+            start_date = parse_date_input(semester.get("start_date"))
+            end_date = parse_date_input(semester.get("end_date"))
+        except Exception:
+            continue
+        if not start_date or not end_date:
+            continue
+        semester_windows.append((start_date, end_date, semester))
+
+    semester_windows.sort(key=lambda item: (item[0], item[1], int(item[2].get("id") or 0)), reverse=True)
+
+    for course in courses:
+        department_label = str(course.get("department") or "").strip()
+        course["department_group_label"] = department_label or "未指定系别"
+        course["department_group_key"] = (
+            f"department:{department_label.casefold()}" if department_label else "department:__unset__"
+        )
+        course["department_group_order"] = 1 if not department_label else 0
+        course["department_group_meta"] = "课程尚未绑定系别" if not department_label else "绑定系别"
+
+        try:
+            created_date = parse_date_input(course.get("created_at"))
+        except Exception:
+            created_date = None
+        course["created_date_label"] = created_date.isoformat() if created_date else "创建时间未知"
+
+        matched_semester = None
+        if created_date:
+            for start_date, end_date, semester in semester_windows:
+                if start_date <= created_date <= end_date:
+                    matched_semester = (start_date, end_date, semester)
+                    break
+
+        if matched_semester:
+            start_date, _end_date, semester = matched_semester
+            semester_id = int(semester.get("id") or 0)
+            semester_label = str(semester.get("name") or "").strip() or "未命名学期"
+            course["created_semester_group_key"] = f"semester:{semester_id}" if semester_id else (
+                f"semester:{semester_label.casefold()}"
+            )
+            course["created_semester_group_label"] = semester_label
+            course["created_semester_group_meta"] = semester.get("display_range") or course["created_date_label"]
+            course["created_semester_group_order"] = -start_date.toordinal()
+        elif created_date:
+            course["created_semester_group_key"] = "semester:__unmatched__"
+            course["created_semester_group_label"] = "未匹配学期日历"
+            course["created_semester_group_meta"] = f"创建于 {course['created_date_label']}"
+            course["created_semester_group_order"] = 999_998
+        else:
+            course["created_semester_group_key"] = "semester:__unknown__"
+            course["created_semester_group_label"] = "创建时间未知"
+            course["created_semester_group_meta"] = "缺少创建日期"
+            course["created_semester_group_order"] = 999_999
 
 
 def _load_teacher_offering_rows(conn, teacher_id: int):

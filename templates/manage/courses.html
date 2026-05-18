@@ -291,6 +291,135 @@
         white-space: nowrap;
     }
 
+    .course-organization-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid rgba(15, 118, 110, 0.14);
+        background: rgba(240, 253, 250, 0.58);
+    }
+
+    .course-organization-label {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+    }
+
+    .course-organization-label span {
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+
+    .course-organization-label strong {
+        color: #0f766e;
+        font-size: 0.98rem;
+    }
+
+    .course-group-switch {
+        display: inline-flex;
+        gap: 4px;
+        padding: 4px;
+        border-radius: 10px;
+        border: 1px solid rgba(15, 118, 110, 0.14);
+        background: rgba(255, 255, 255, 0.84);
+    }
+
+    .course-group-mode-btn {
+        min-height: 36px;
+        padding: 0 13px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text-secondary);
+        font-weight: 800;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    .course-group-mode-btn:hover,
+    .course-group-mode-btn:focus-visible {
+        color: #0f766e;
+        outline: none;
+        background: rgba(20, 184, 166, 0.1);
+    }
+
+    .course-group-mode-btn.is-active {
+        color: #ffffff;
+        background: #0f766e;
+        box-shadow: 0 10px 22px -16px rgba(15, 118, 110, 0.8);
+    }
+
+    .course-card-grid.is-grouped {
+        grid-template-columns: 1fr;
+        gap: 18px;
+    }
+
+    .course-group-section {
+        display: grid;
+        gap: 12px;
+        padding-top: 16px;
+        border-top: 1px solid rgba(148, 163, 184, 0.2);
+    }
+
+    .course-group-section[hidden] {
+        display: none;
+    }
+
+    .course-group-header {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .course-group-heading {
+        display: grid;
+        gap: 3px;
+        min-width: 0;
+    }
+
+    .course-group-heading span,
+    .course-group-heading p {
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        line-height: 1.45;
+    }
+
+    .course-group-heading h4 {
+        margin: 0;
+        overflow-wrap: anywhere;
+        color: var(--text-primary);
+        font-size: 1.02rem;
+        line-height: 1.35;
+    }
+
+    .course-group-heading p {
+        margin: 0;
+    }
+
+    .course-group-count {
+        flex: 0 0 auto;
+        min-height: 30px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(15, 118, 110, 0.16);
+        background: rgba(240, 253, 250, 0.86);
+        color: #0f766e;
+        font-size: 0.82rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .course-group-card-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 16px;
+    }
+
     .course-modal-dialog {
         width: min(96vw, 1180px);
         max-width: min(96vw, 1180px);
@@ -560,6 +689,25 @@
             justify-content: center;
         }
 
+        .course-organization-bar {
+            align-items: stretch;
+            flex-direction: column;
+        }
+
+        .course-group-switch {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        .course-group-mode-btn {
+            flex: 1 0 auto;
+            min-height: 44px;
+        }
+
+        .course-group-card-grid {
+            grid-template-columns: 1fr;
+        }
+
         .course-card {
             padding: 16px;
         }
@@ -590,6 +738,7 @@
     @media (max-width: 460px) {
         .course-card-head,
         .course-card-alignment,
+        .course-group-header,
         .course-result-summary {
             align-items: flex-start;
             flex-direction: column;
@@ -687,7 +836,7 @@
         <div class="academic-card-header">
             <div>
                 <h3 class="academic-card-title">已创建课程</h3>
-                <p class="academic-card-subtitle">支持按课程名称、简介、课堂标题和内容进行搜索，并按状态快速筛选。</p>
+                <p class="academic-card-subtitle">支持按课程名称、简介、课堂标题和内容搜索，并按状态、系别和创建学期组织查看。</p>
             </div>
         </div>
         <div class="academic-card-body course-list-body">
@@ -715,6 +864,18 @@
                 </div>
             </div>
 
+            <div class="course-organization-bar">
+                <div class="course-organization-label">
+                    <span>分类方式</span>
+                    <strong id="courseGroupModeLabel">默认网格</strong>
+                </div>
+                <div class="course-group-switch" role="group" aria-label="课程分类方式">
+                    <button type="button" class="course-group-mode-btn is-active" data-course-group-mode="none" aria-pressed="true">默认</button>
+                    <button type="button" class="course-group-mode-btn" data-course-group-mode="department" aria-pressed="false">系别</button>
+                    <button type="button" class="course-group-mode-btn" data-course-group-mode="semester" aria-pressed="false">创建学期</button>
+                </div>
+            </div>
+
             <div class="course-result-summary" id="courseResultSummary">
                 <span>当前共归集 <strong>{{ my_courses|length }}</strong> 门课程模板。</span>
                 <span>建议优先完善“待完善”的课程，以便后续直接生成开课时间轴。</span>
@@ -728,6 +889,15 @@
                     data-filter-state="{{ 'active' if course.is_in_use else 'idle' }}"
                     data-coverage-state="{{ course.coverage_status }}"
                     data-search="{{ course.search_blob }}"
+                    data-department-group="{{ course.department_group_key }}"
+                    data-department-label="{{ course.department_group_label }}"
+                    data-department-meta="{{ course.department_group_meta }}"
+                    data-department-order="{{ course.department_group_order }}"
+                    data-semester-group="{{ course.created_semester_group_key }}"
+                    data-semester-label="{{ course.created_semester_group_label }}"
+                    data-semester-meta="{{ course.created_semester_group_meta }}"
+                    data-semester-order="{{ course.created_semester_group_order }}"
+                    data-created-at="{{ course.created_date_label }}"
                     tabindex="0"
                     aria-label="编辑课程 {{ course.name }}"
                 >
@@ -983,7 +1153,8 @@
     window.COURSE_PAGE_DATA = {
         courses: {{ courses_json | tojson }},
         textbooks: {{ textbooks_json | tojson }},
-        departments: {{ department_options | tojson }}
+        departments: {{ department_options | tojson }},
+        semesterCalendar: {{ (semester_calendar | default({})) | tojson }}
     };
 </script>
 {% endblock %}

@@ -39,8 +39,38 @@ const elements = {
     lessonTemplate: document.getElementById('courseLessonRowTemplate'),
     searchInput: document.getElementById('courseSearchInput'),
     filterSelect: document.getElementById('courseFilterSelect'),
+    groupModeButtons: Array.from(document.querySelectorAll('[data-course-group-mode]')),
+    groupModeLabel: document.getElementById('courseGroupModeLabel'),
     courseCardGrid: document.getElementById('courseCardGrid'),
     resultSummary: document.getElementById('courseResultSummary'),
+};
+
+let currentGroupMode = 'none';
+
+const groupModeConfig = {
+    none: {
+        label: '默认网格',
+    },
+    department: {
+        label: '按系别分类',
+        eyebrow: '系别',
+        keyAttr: 'departmentGroup',
+        labelAttr: 'departmentLabel',
+        metaAttr: 'departmentMeta',
+        orderAttr: 'departmentOrder',
+        fallbackKey: 'department:__unset__',
+        fallbackLabel: '未指定系别',
+    },
+    semester: {
+        label: '按创建学期分类',
+        eyebrow: '创建学期',
+        keyAttr: 'semesterGroup',
+        labelAttr: 'semesterLabel',
+        metaAttr: 'semesterMeta',
+        orderAttr: 'semesterOrder',
+        fallbackKey: 'semester:__unknown__',
+        fallbackLabel: '创建时间未知',
+    },
 };
 
 function getCourseCards() {
@@ -49,6 +79,16 @@ function getCourseCards() {
 
 function isCardActionTarget(target) {
     return Boolean(target?.closest?.('a, button, input, select, textarea, label, [data-action]'));
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+    }[char]));
 }
 
 function normalizeLearningMaterial(data = {}) {
@@ -225,11 +265,86 @@ function updateVisibleSummary() {
         pending: '待完善',
         idle: '未开课',
     };
+    const groupLabel = groupModeConfig[currentGroupMode]?.label || groupModeConfig.none.label;
 
     elements.resultSummary.innerHTML = `
         <span>当前展示 <strong>${visibleCount}</strong> / ${total} 门课程。</span>
-        <span>筛选条件：${filterLabelMap[filterValue] || '全部课程'}${keyword ? `，关键词“${keyword}”` : ''}</span>
+        <span>筛选条件：${filterLabelMap[filterValue] || '全部课程'}${keyword ? `，关键词“${escapeHtml(keyword)}”` : ''} · ${escapeHtml(groupLabel)}</span>
     `;
+}
+
+function resetCourseGrid(cards) {
+    if (!elements.courseCardGrid) return;
+    const sections = Array.from(elements.courseCardGrid.querySelectorAll('.course-group-section'));
+    cards.forEach((card) => elements.courseCardGrid.appendChild(card));
+    sections.forEach((section) => section.remove());
+    elements.courseCardGrid.classList.toggle('is-grouped', currentGroupMode !== 'none');
+}
+
+function renderCourseGroups() {
+    if (!elements.courseCardGrid) return;
+    const cards = getCourseCards();
+    document.getElementById('courseFilterEmptyState')?.remove();
+    if (!cards.length) {
+        elements.courseCardGrid.classList.remove('is-grouped');
+        return;
+    }
+
+    const config = groupModeConfig[currentGroupMode] || groupModeConfig.none;
+    resetCourseGrid(cards);
+
+    if (currentGroupMode === 'none') {
+        return;
+    }
+
+    const groups = new Map();
+    cards.forEach((card) => {
+        const key = card.dataset[config.keyAttr] || config.fallbackKey;
+        const label = card.dataset[config.labelAttr] || config.fallbackLabel;
+        const meta = card.dataset[config.metaAttr] || '';
+        const order = Number(card.dataset[config.orderAttr] || 0);
+        if (!groups.has(key)) {
+            groups.set(key, {
+                key,
+                label,
+                meta,
+                order,
+                cards: [],
+                visibleCount: 0,
+            });
+        }
+        const group = groups.get(key);
+        group.cards.push(card);
+        if (card.style.display !== 'none') {
+            group.visibleCount += 1;
+        }
+    });
+
+    Array.from(groups.values())
+        .sort((left, right) => (
+            left.order - right.order
+            || left.label.localeCompare(right.label, 'zh-Hans-CN')
+        ))
+        .forEach((group) => {
+            const section = document.createElement('section');
+            section.className = 'course-group-section';
+            section.dataset.courseGroupKey = group.key;
+            section.hidden = group.visibleCount === 0;
+            section.innerHTML = `
+                <div class="course-group-header">
+                    <div class="course-group-heading">
+                        <span>${escapeHtml(config.eyebrow)}</span>
+                        <h4>${escapeHtml(group.label)}</h4>
+                        ${group.meta ? `<p>${escapeHtml(group.meta)}</p>` : ''}
+                    </div>
+                    <strong class="course-group-count">${group.visibleCount} 门课程</strong>
+                </div>
+                <div class="course-group-card-grid"></div>
+            `;
+            const groupGrid = section.querySelector('.course-group-card-grid');
+            group.cards.forEach((card) => groupGrid.appendChild(card));
+            elements.courseCardGrid.appendChild(section);
+        });
 }
 
 function renderFilterEmptyState() {
@@ -278,6 +393,23 @@ function applyFilters() {
         card.style.display = matchesFilter && matchesKeyword ? '' : 'none';
     });
 
+    renderCourseGroups();
+    renderFilterEmptyState();
+    updateVisibleSummary();
+}
+
+function setGroupMode(mode) {
+    currentGroupMode = groupModeConfig[mode] ? mode : 'none';
+    const label = groupModeConfig[currentGroupMode]?.label || groupModeConfig.none.label;
+    elements.groupModeButtons.forEach((button) => {
+        const isActive = button.dataset.courseGroupMode === currentGroupMode;
+        button.classList.toggle('is-active', isActive);
+        button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+    if (elements.groupModeLabel) {
+        elements.groupModeLabel.textContent = label;
+    }
+    renderCourseGroups();
     renderFilterEmptyState();
     updateVisibleSummary();
 }
@@ -434,6 +566,9 @@ function bindEvents() {
     elements.aiGenerateBtn?.addEventListener('click', handleAiGenerateLessons);
     elements.searchInput?.addEventListener('input', applyFilters);
     elements.filterSelect?.addEventListener('change', applyFilters);
+    elements.groupModeButtons.forEach((button) => {
+        button.addEventListener('click', () => setGroupMode(button.dataset.courseGroupMode || 'none'));
+    });
     elements.totalHoursInput?.addEventListener('input', updateAiMeta);
     elements.aiSectionCountInput?.addEventListener('input', updateAiMeta);
 
