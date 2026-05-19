@@ -1,0 +1,671 @@
+{% extends "manage/layout.html" %}
+
+{% block extra_head %}
+<style>
+    .classroom-page-shell {
+        display: grid;
+        gap: 22px;
+    }
+
+    .classroom-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 18px;
+        align-items: end;
+        padding: 22px;
+        border: 1px solid rgba(15, 118, 110, 0.16);
+        border-radius: 8px;
+        background:
+            linear-gradient(135deg, rgba(240, 253, 250, 0.92), rgba(255, 255, 255, 0.96) 52%, rgba(255, 251, 235, 0.72));
+        box-shadow: 0 22px 42px -36px rgba(15, 23, 42, 0.5);
+    }
+
+    .classroom-hero h2 {
+        margin: 4px 0 8px;
+        color: var(--text-primary);
+        font-size: 1.6rem;
+    }
+
+    .classroom-hero p {
+        max-width: 760px;
+        margin: 0;
+        color: var(--text-secondary);
+        line-height: 1.7;
+    }
+
+    .classroom-hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    .classroom-stat-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .classroom-stat-card {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+        padding: 15px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 16px 32px -30px rgba(15, 23, 42, 0.48);
+    }
+
+    .classroom-stat-card span,
+    .classroom-stat-card small {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        font-weight: 800;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .classroom-stat-card strong {
+        color: var(--text-primary);
+        font-size: 1.42rem;
+        line-height: 1.1;
+    }
+
+    .classroom-stat-card.is-live {
+        border-color: rgba(14, 165, 233, 0.18);
+        background: rgba(240, 249, 255, 0.86);
+    }
+
+    .classroom-control-panel,
+    .classroom-workspace {
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow: 0 18px 40px -36px rgba(15, 23, 42, 0.46);
+    }
+
+    .classroom-control-panel {
+        display: grid;
+        gap: 14px;
+        padding: 15px;
+    }
+
+    .classroom-control-main {
+        display: grid;
+        grid-template-columns: minmax(260px, 1fr) 2fr auto;
+        gap: 12px;
+        align-items: end;
+    }
+
+    .classroom-filter-fields {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .classroom-search {
+        min-height: 44px;
+    }
+
+    .classroom-search svg {
+        width: 18px;
+        height: 18px;
+        flex: 0 0 auto;
+    }
+
+    .classroom-chip-row,
+    .classroom-week-row,
+    .classroom-section-row,
+    .classroom-weekday-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+    }
+
+    .classroom-chip,
+    .classroom-toggle-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 34px;
+        min-width: 38px;
+        padding: 0 10px;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.88);
+        color: var(--text-secondary);
+        font-size: 0.82rem;
+        font-weight: 800;
+        cursor: pointer;
+        transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+    }
+
+    .classroom-chip:hover,
+    .classroom-toggle-chip:hover,
+    .classroom-chip:focus-visible,
+    .classroom-toggle-chip:focus-visible {
+        transform: translateY(-1px);
+        border-color: rgba(15, 118, 110, 0.34);
+        color: #0f766e;
+        outline: none;
+    }
+
+    .classroom-chip.is-active,
+    .classroom-toggle-chip.is-active {
+        border-color: #0f766e;
+        background: #0f766e;
+        color: #ffffff;
+        box-shadow: 0 14px 28px -24px rgba(15, 118, 110, 0.7);
+    }
+
+    .classroom-workspace {
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) minmax(340px, 0.75fr);
+        overflow: hidden;
+    }
+
+    .classroom-list-panel,
+    .classroom-free-panel {
+        min-width: 0;
+        padding: 18px;
+    }
+
+    .classroom-free-panel {
+        border-left: 1px solid rgba(148, 163, 184, 0.16);
+        background: rgba(248, 250, 252, 0.56);
+    }
+
+    .classroom-section-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+        margin-bottom: 14px;
+    }
+
+    .classroom-section-head h3 {
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 1.05rem;
+    }
+
+    .classroom-section-head p {
+        margin: 4px 0 0;
+        color: var(--text-muted);
+        font-size: 0.88rem;
+    }
+
+    .classroom-place-list,
+    .classroom-free-results {
+        display: grid;
+        gap: 10px;
+    }
+
+    .classroom-place-card,
+    .classroom-free-card {
+        display: grid;
+        gap: 11px;
+        padding: 14px;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.95);
+        box-shadow: 0 14px 30px -30px rgba(15, 23, 42, 0.44);
+    }
+
+    .classroom-place-card.is-stale {
+        opacity: 0.72;
+        background: rgba(248, 250, 252, 0.86);
+    }
+
+    .classroom-place-main,
+    .classroom-free-main {
+        display: grid;
+        gap: 5px;
+        min-width: 0;
+    }
+
+    .classroom-place-title,
+    .classroom-free-title {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        min-width: 0;
+    }
+
+    .classroom-place-title h4,
+    .classroom-free-title h4 {
+        min-width: 0;
+        margin: 0;
+        overflow: hidden;
+        color: var(--text-primary);
+        font-size: 0.98rem;
+        line-height: 1.35;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .classroom-place-title code,
+    .classroom-free-title code {
+        flex: 0 0 auto;
+        padding: 3px 7px;
+        border-radius: 7px;
+        background: rgba(15, 118, 110, 0.08);
+        color: #0f766e;
+        font-family: inherit;
+        font-size: 0.78rem;
+        font-weight: 900;
+    }
+
+    .classroom-place-meta,
+    .classroom-free-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        color: var(--text-secondary);
+        font-size: 0.82rem;
+        line-height: 1.5;
+    }
+
+    .classroom-place-meta span,
+    .classroom-free-meta span {
+        max-width: 100%;
+        overflow-wrap: anywhere;
+    }
+
+    .classroom-place-flags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .classroom-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.12);
+        color: var(--text-secondary);
+        font-size: 0.74rem;
+        font-weight: 850;
+    }
+
+    .classroom-badge.is-ok {
+        background: rgba(16, 185, 129, 0.12);
+        color: #047857;
+    }
+
+    .classroom-badge.is-live {
+        background: rgba(14, 165, 233, 0.12);
+        color: #0369a1;
+    }
+
+    .classroom-badge.is-warn {
+        background: rgba(245, 158, 11, 0.14);
+        color: #92400e;
+    }
+
+    .classroom-free-form {
+        display: grid;
+        gap: 14px;
+    }
+
+    .classroom-free-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .classroom-free-grid .academic-filter-field.is-wide {
+        grid-column: 1 / -1;
+    }
+
+    .classroom-time-block {
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.74);
+    }
+
+    .classroom-time-block strong {
+        color: var(--text-primary);
+        font-size: 0.86rem;
+    }
+
+    .classroom-empty {
+        padding: 22px;
+        border: 1px dashed rgba(148, 163, 184, 0.34);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.68);
+        color: var(--text-secondary);
+        line-height: 1.7;
+    }
+
+    .classroom-empty strong {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--text-primary);
+    }
+
+    .classroom-result-panel {
+        border: 1px solid rgba(14, 165, 233, 0.16);
+        border-radius: 8px;
+        background: rgba(240, 249, 255, 0.55);
+        padding: 16px;
+    }
+
+    .classroom-result-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+
+    .classroom-result-head h3 {
+        margin: 0;
+        font-size: 1.02rem;
+    }
+
+    .classroom-result-head small {
+        color: var(--text-muted);
+        font-weight: 800;
+    }
+
+    .classroom-sync-status {
+        display: none;
+        padding: 12px 14px;
+        border: 1px solid rgba(15, 118, 110, 0.18);
+        border-radius: 8px;
+        background: rgba(240, 253, 250, 0.86);
+        color: #0f766e;
+        font-weight: 800;
+    }
+
+    .classroom-sync-status.is-visible {
+        display: block;
+    }
+
+    @media (max-width: 1120px) {
+        .classroom-hero,
+        .classroom-control-main,
+        .classroom-workspace {
+            grid-template-columns: 1fr;
+        }
+
+        .classroom-hero-actions {
+            justify-content: flex-start;
+        }
+
+        .classroom-stat-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .classroom-free-panel {
+            border-left: 0;
+            border-top: 1px solid rgba(148, 163, 184, 0.16);
+        }
+    }
+
+    @media (max-width: 760px) {
+        .classroom-filter-fields,
+        .classroom-free-grid,
+        .classroom-stat-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .classroom-hero,
+        .classroom-list-panel,
+        .classroom-free-panel,
+        .classroom-result-panel {
+            padding: 14px;
+        }
+
+        .classroom-hero-actions .btn,
+        .classroom-control-main .btn,
+        .classroom-free-form .btn {
+            width: 100%;
+            justify-content: center;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('同步场地', '教务系统', 'refresh', button_id='syncClassroomsTopBtn', variant='solid', tone='teal') }}
+{{ topbar_action('实时查空', '空闲教室', 'list', button_id='focusFreeRoomTopBtn', variant='solid', tone='slate') }}
+{{ topbar_action('教务设置', '账号校验', 'shield', href='/manage/system', variant='solid', tone='blue') }}
+{% endblock %}
+
+{% block content %}
+{% set stats = classroom_dashboard or {} %}
+{% set options = stats.options or {} %}
+<div class="academic-shell classroom-page-shell">
+    <section class="classroom-hero">
+        <div>
+            <div class="academic-eyebrow">Classroom Atlas</div>
+            <h2>教室与空闲场地工作台</h2>
+            <p>教学场地来自教务系统同步，空闲教室按当前学期、周次、星期和节次实时查询。</p>
+        </div>
+        <div class="classroom-hero-actions">
+            <button type="button" class="btn btn-primary" id="syncClassroomsBtn">从教务系统同步</button>
+            <button type="button" class="btn btn-outline" id="focusFreeRoomBtn">查询空闲教室</button>
+        </div>
+    </section>
+
+    <div class="classroom-sync-status" id="classroomSyncStatus" role="status" aria-live="polite"></div>
+
+    <section class="classroom-stat-grid" aria-label="教室管理概览">
+        <article class="classroom-stat-card">
+            <span>已同步场地</span>
+            <strong id="classroomStatActive">{{ stats.active_count or 0 }}</strong>
+            <small>总记录 {{ stats.total_count or 0 }}</small>
+        </article>
+        <article class="classroom-stat-card">
+            <span>可排课</span>
+            <strong id="classroomStatSchedulable">{{ stats.schedulable_count or 0 }}</strong>
+            <small>教务排课状态</small>
+        </article>
+        <article class="classroom-stat-card">
+            <span>可借用</span>
+            <strong id="classroomStatBorrowable">{{ stats.borrowable_count or 0 }}</strong>
+            <small>实时查询仍以教务为准</small>
+        </article>
+        <article class="classroom-stat-card">
+            <span>考试可用</span>
+            <strong id="classroomStatExam">{{ stats.exam_count or 0 }}</strong>
+            <small>考试排考字段</small>
+        </article>
+        <article class="classroom-stat-card is-live">
+            <span>上次同步</span>
+            <strong id="classroomStatSync">{{ (stats.last_synced_at or '')[:10] or '-' }}</strong>
+            <small id="classroomStatStale">{{ stats.stale_count or 0 }} 条待复核</small>
+        </article>
+    </section>
+
+    <section class="classroom-control-panel" aria-label="教学场地筛选">
+        <div class="classroom-control-main">
+            <label class="academic-search classroom-search" for="classroomSearchInput">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                <input id="classroomSearchInput" type="search" class="form-control" placeholder="搜索 B422、知新楼、实验室或校区">
+            </label>
+            <div class="classroom-filter-fields">
+                <label class="academic-filter-field" for="classroomCampusFilter">
+                    <span>校区</span>
+                    <select id="classroomCampusFilter" class="form-control">
+                        <option value="">全部校区</option>
+                        {% for item in options.campuses or [] %}
+                        {% if item.id %}<option value="{{ item.id }}">{{ item.name }}</option>{% endif %}
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="academic-filter-field" for="classroomBuildingFilter">
+                    <span>楼号</span>
+                    <select id="classroomBuildingFilter" class="form-control">
+                        {% for item in options.buildings or [] %}
+                        <option value="{{ item.id }}">{{ item.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="academic-filter-field" for="classroomTypeFilter">
+                    <span>类别</span>
+                    <select id="classroomTypeFilter" class="form-control">
+                        {% for item in options.room_types or [] %}
+                        <option value="{{ item.id }}">{{ item.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="academic-filter-field" for="classroomAvailabilityFilter">
+                    <span>状态</span>
+                    <select id="classroomAvailabilityFilter" class="form-control">
+                        <option value="">全部状态</option>
+                        <option value="schedulable">可排课</option>
+                        <option value="borrowable">可借用</option>
+                        <option value="exam">考试可用</option>
+                    </select>
+                </label>
+            </div>
+            <button type="button" class="btn btn-outline" id="classroomFilterResetBtn">清除筛选</button>
+        </div>
+        <div class="classroom-chip-row" id="classroomQuickTypeChips" aria-label="场地类别快捷筛选">
+            <button type="button" class="classroom-chip is-active" data-room-type="">全部</button>
+            {% for item in (options.room_types or [])[:8] %}
+            {% if item.id %}
+            <button type="button" class="classroom-chip" data-room-type="{{ item.id }}">{{ item.name }}</button>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="classroom-workspace">
+        <div class="classroom-list-panel">
+            <div class="classroom-section-head">
+                <div>
+                    <h3>教学场地</h3>
+                    <p><span id="classroomResultCount">{{ teaching_places | length }}</span> 个场地符合当前条件</p>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm" id="classroomReloadBtn">刷新列表</button>
+            </div>
+            <div class="classroom-place-list" id="classroomPlaceList"></div>
+            <div class="classroom-empty" id="classroomPlaceEmpty" hidden>
+                <strong>暂无匹配场地</strong>
+                调整关键词或筛选条件后再试。
+            </div>
+        </div>
+
+        <aside class="classroom-free-panel" id="freeRoomQueryPanel" aria-label="空闲教室实时查询">
+            <div class="classroom-section-head">
+                <div>
+                    <h3>空闲教室</h3>
+                    <p>查询时实时访问教务系统，不使用本地缓存。</p>
+                </div>
+                <span class="classroom-badge is-live">Live</span>
+            </div>
+            <form class="classroom-free-form" id="freeRoomForm">
+                <div class="classroom-free-grid">
+                    <label class="academic-filter-field is-wide" for="freeRoomSemesterSelect">
+                        <span>学期</span>
+                        <select id="freeRoomSemesterSelect" class="form-control">
+                            <option value="">自动识别当前学期</option>
+                            {% for semester in semester_options %}
+                            <option
+                                value="{{ semester.id }}"
+                                data-start-date="{{ semester.start_date or '' }}"
+                                data-week-count="{{ semester.week_count or 20 }}"
+                                {% if semester.id == default_semester_id %}selected{% endif %}
+                            >{{ semester.name or semester.display_range or ('学期 #' ~ semester.id) }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label class="academic-filter-field" for="freeRoomCampusSelect">
+                        <span>校区</span>
+                        <select id="freeRoomCampusSelect" class="form-control">
+                            {% for item in options.campuses or [] %}
+                            {% if item.id %}<option value="{{ item.id }}">{{ item.name }}</option>{% endif %}
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label class="academic-filter-field" for="freeRoomBuildingSelect">
+                        <span>楼号</span>
+                        <select id="freeRoomBuildingSelect" class="form-control">
+                            {% for item in options.buildings or [] %}
+                            <option value="{{ item.id }}">{{ item.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label class="academic-filter-field" for="freeRoomTypeSelect">
+                        <span>类别</span>
+                        <select id="freeRoomTypeSelect" class="form-control">
+                            {% for item in options.room_types or [] %}
+                            <option value="{{ item.id }}">{{ item.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label class="academic-filter-field" for="freeRoomNameInput">
+                        <span>教室</span>
+                        <input id="freeRoomNameInput" type="search" class="form-control" placeholder="可填 B422">
+                    </label>
+                </div>
+
+                <div class="classroom-time-block">
+                    <strong>周次</strong>
+                    <div class="classroom-week-row" id="freeRoomWeekRow"></div>
+                </div>
+                <div class="classroom-time-block">
+                    <strong>星期</strong>
+                    <div class="classroom-weekday-row" id="freeRoomWeekdayRow">
+                        <button type="button" class="classroom-toggle-chip is-active" data-weekday="1">周一</button>
+                        <button type="button" class="classroom-toggle-chip" data-weekday="2">周二</button>
+                        <button type="button" class="classroom-toggle-chip" data-weekday="3">周三</button>
+                        <button type="button" class="classroom-toggle-chip" data-weekday="4">周四</button>
+                        <button type="button" class="classroom-toggle-chip" data-weekday="5">周五</button>
+                        <button type="button" class="classroom-toggle-chip" data-weekday="6">周六</button>
+                        <button type="button" class="classroom-toggle-chip" data-weekday="7">周日</button>
+                    </div>
+                </div>
+                <div class="classroom-time-block">
+                    <strong>节次</strong>
+                    <div class="classroom-section-row" id="freeRoomSectionRow"></div>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="freeRoomSubmitBtn">查询空闲教室</button>
+            </form>
+        </aside>
+    </section>
+
+    <section class="classroom-result-panel" aria-label="空闲教室查询结果">
+        <div class="classroom-result-head">
+            <div>
+                <h3>实时查询结果</h3>
+                <small id="freeRoomResultSummary">尚未查询</small>
+            </div>
+            <span class="classroom-badge is-live" id="freeRoomResultTerm">教务实时</span>
+        </div>
+        <div class="classroom-free-results" id="freeRoomResultList"></div>
+        <div class="classroom-empty" id="freeRoomResultEmpty">
+            <strong>等待查询条件</strong>
+            选择周次、星期和节次后即可查看可用场地。
+        </div>
+    </section>
+</div>
+
+<script type="application/json" id="classrooms-page-data">
+{{ {
+    "places": teaching_places,
+    "dashboard": classroom_dashboard,
+    "semesters": semester_options,
+    "defaultSemesterId": default_semester_id
+} | tojson }}
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/manage_classrooms.js?v=academic-classrooms-20260519"></script>
+{% endblock %}

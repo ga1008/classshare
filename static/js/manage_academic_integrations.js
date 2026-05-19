@@ -116,6 +116,7 @@ function countLabel(key, value) {
         contact_conflicts: '联系方式冲突',
         stale_students: '待复核学生',
         invigilation_count: '监考安排',
+        place_count: '教学场地',
         event_created_count: '新增日历',
         event_updated_count: '更新日历',
         notification_count: '待办提醒',

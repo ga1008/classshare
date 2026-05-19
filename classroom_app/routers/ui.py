@@ -116,6 +116,10 @@ from ..services.academic_integration_service import (
     list_academic_system_profiles,
     list_teacher_academic_credentials,
 )
+from ..services.academic_classroom_sync_service import (
+    load_teacher_teaching_place_dashboard,
+    load_teacher_teaching_places,
+)
 
 router = APIRouter()
 
@@ -1582,6 +1586,35 @@ async def get_manage_student_detail_page(
             active_page="classes",
             extra={
                 "insight": insight,
+            },
+        ),
+    )
+
+
+@router.get("/manage/classrooms", response_class=HTMLResponse)
+async def get_manage_classrooms_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """教学场地与空闲教室查询页面。"""
+    with get_db_connection() as conn:
+        teaching_places = load_teacher_teaching_places(conn, int(user["id"]), limit=160)
+        classroom_dashboard = load_teacher_teaching_place_dashboard(conn, int(user["id"]))
+        semester_options = [
+            serialize_semester_row(row)
+            for row in load_teacher_semester_rows(conn, int(user["id"]))
+        ]
+
+    return templates.TemplateResponse(
+        request,
+        "manage/classrooms.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="教室管理",
+            active_page="classrooms",
+            extra={
+                "teaching_places": teaching_places,
+                "classroom_dashboard": classroom_dashboard,
+                "semester_options": semester_options,
+                "default_semester_id": choose_default_semester_id(semester_options),
             },
         ),
     )

@@ -1406,6 +1406,71 @@ def init_database():
 
             conn.execute(
                 '''
+                CREATE TABLE IF NOT EXISTS teacher_academic_teaching_places
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    teacher_id INTEGER NOT NULL,
+                    school_code TEXT NOT NULL DEFAULT 'gxufl',
+                    source TEXT NOT NULL DEFAULT 'gxufl_jwxt',
+                    place_key TEXT NOT NULL,
+                    place_id TEXT NOT NULL DEFAULT '',
+                    room_code TEXT NOT NULL DEFAULT '',
+                    room_name TEXT NOT NULL DEFAULT '',
+                    room_full_name TEXT NOT NULL DEFAULT '',
+                    campus_id TEXT NOT NULL DEFAULT '',
+                    campus_name TEXT NOT NULL DEFAULT '',
+                    building_id TEXT NOT NULL DEFAULT '',
+                    building_name TEXT NOT NULL DEFAULT '',
+                    floor_name TEXT NOT NULL DEFAULT '',
+                    room_type_id TEXT NOT NULL DEFAULT '',
+                    room_type_name TEXT NOT NULL DEFAULT '',
+                    room_subtype_id TEXT NOT NULL DEFAULT '',
+                    room_subtype_name TEXT NOT NULL DEFAULT '',
+                    organization_id TEXT NOT NULL DEFAULT '',
+                    organization_name TEXT NOT NULL DEFAULT '',
+                    manager_name TEXT NOT NULL DEFAULT '',
+                    usage_department TEXT NOT NULL DEFAULT '',
+                    usage_class TEXT NOT NULL DEFAULT '',
+                    borrow_type TEXT NOT NULL DEFAULT '',
+                    seat_count INTEGER NOT NULL DEFAULT 0,
+                    scheduling_seat_count INTEGER NOT NULL DEFAULT 0,
+                    exam_seat_count INTEGER NOT NULL DEFAULT 0,
+                    building_area TEXT NOT NULL DEFAULT '',
+                    is_schedulable INTEGER NOT NULL DEFAULT 0,
+                    is_borrowable INTEGER NOT NULL DEFAULT 0,
+                    is_exam_schedulable INTEGER NOT NULL DEFAULT 0,
+                    conflict_ignored INTEGER NOT NULL DEFAULT 0,
+                    status_text TEXT NOT NULL DEFAULT '',
+                    note TEXT NOT NULL DEFAULT '',
+                    raw_json TEXT NOT NULL DEFAULT '{}',
+                    source_url TEXT NOT NULL DEFAULT '',
+                    sync_status TEXT NOT NULL DEFAULT 'active',
+                    sync_batch_id TEXT NOT NULL DEFAULT '',
+                    synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                    UNIQUE (teacher_id, school_code, source, place_key)
+                )
+                '''
+            )
+            conn.execute(
+                '''
+                CREATE INDEX IF NOT EXISTS idx_teacher_academic_teaching_places_teacher
+                ON teacher_academic_teaching_places (teacher_id, school_code, sync_status)
+                '''
+            )
+            conn.execute(
+                '''
+                CREATE INDEX IF NOT EXISTS idx_teacher_academic_teaching_places_lookup
+                ON teacher_academic_teaching_places (
+                    teacher_id, campus_id, building_id, room_type_id, room_name
+                )
+                '''
+            )
+
+            conn.execute(
+                '''
                 CREATE TABLE IF NOT EXISTS teacher_calendar_events
                 (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

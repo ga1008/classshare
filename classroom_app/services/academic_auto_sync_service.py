@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable
 
 from .academic_course_sync_service import sync_current_teacher_courses_from_academic_system
+from .academic_classroom_sync_service import sync_teaching_places_from_academic_system
 from .academic_invigilation_sync_service import sync_current_teacher_invigilations_from_academic_system
 from .academic_roster_sync_service import sync_current_teacher_rosters_from_academic_system
 
@@ -59,6 +60,15 @@ def _compact_invigilation_counts(result: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def _compact_teaching_place_counts(result: dict[str, Any]) -> dict[str, int]:
+    return {
+        "place_count": _int_value(result, "place_count"),
+        "created_count": _int_value(result, "created_count"),
+        "updated_count": _int_value(result, "updated_count"),
+        "stale_count": _int_value(result, "stale_count"),
+    }
+
+
 def _stage_payload(
     *,
     key: str,
@@ -110,6 +120,7 @@ def _summarize_auto_sync(stages: list[dict[str, Any]]) -> tuple[str, str]:
         course_counts = next((item.get("counts") or {} for item in stages if item.get("key") == "courses"), {})
         roster_counts = next((item.get("counts") or {} for item in stages if item.get("key") == "rosters"), {})
         invigilation_counts = next((item.get("counts") or {} for item in stages if item.get("key") == "invigilations"), {})
+        place_counts = next((item.get("counts") or {} for item in stages if item.get("key") == "teaching_places"), {})
         return (
             "success",
             (
@@ -118,6 +129,7 @@ def _summarize_auto_sync(stages: list[dict[str, Any]]) -> tuple[str, str]:
                 f"{course_counts.get('occurrence_count', 0)} 次课表课次、"
                 f"{roster_counts.get('touched_class_count', 0)} 个班级、"
                 f"{roster_counts.get('roster_student_count', 0)} 条教学班名单关系、"
+                f"{place_counts.get('place_count', 0)} 个教学场地、"
                 f"{invigilation_counts.get('invigilation_count', 0)} 条监考安排。"
             ),
         )
@@ -160,6 +172,13 @@ async def sync_teacher_academic_data_after_credential_verified(teacher_id: int) 
             label="监考安排",
             runner=sync_current_teacher_invigilations_from_academic_system,
             count_builder=_compact_invigilation_counts,
+        ),
+        await _run_stage(
+            teacher_id=teacher_id,
+            key="teaching_places",
+            label="教学场地",
+            runner=sync_teaching_places_from_academic_system,
+            count_builder=_compact_teaching_place_counts,
         ),
     ]
     status, message = _summarize_auto_sync(stages)

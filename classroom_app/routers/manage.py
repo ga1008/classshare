@@ -106,6 +106,13 @@ from ..services.academic_calendar_sync_service import (
     sync_semester_calendar_background,
 )
 from ..services.academic_auto_sync_service import sync_teacher_academic_data_after_credential_verified
+from ..services.academic_classroom_sync_service import (
+    load_free_classroom_options_from_academic_system,
+    load_teacher_teaching_place_dashboard,
+    load_teacher_teaching_places,
+    query_free_classrooms_from_academic_system,
+    sync_teaching_places_from_academic_system,
+)
 from ..services.academic_course_sync_service import sync_current_teacher_courses_from_academic_system
 from ..services.academic_exam_roster_sync_service import (
     build_exam_roster_signature_workbook,
@@ -1030,6 +1037,87 @@ async def api_sync_current_classes_from_academic_system(
         raise HTTPException(400, result.get("message") or "请先配置教务系统账号。")
     if result.get("status") != "success":
         raise HTTPException(502, result.get("message") or "未能从教务系统同步班级和学生名单。")
+    return result
+
+
+@router.get("/classrooms/teaching-places", response_class=JSONResponse)
+async def api_list_academic_teaching_places(
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    try:
+        limit = int(request.query_params.get("limit") or 600)
+    except (TypeError, ValueError):
+        limit = 600
+    with get_db_connection() as conn:
+        places = load_teacher_teaching_places(
+            conn,
+            int(user["id"]),
+            search=str(request.query_params.get("q") or "").strip(),
+            campus_id=str(request.query_params.get("campus_id") or "").strip(),
+            building_id=str(request.query_params.get("building_id") or "").strip(),
+            room_type_id=str(request.query_params.get("room_type_id") or "").strip(),
+            availability=str(request.query_params.get("availability") or "").strip(),
+            include_stale=str(request.query_params.get("include_stale") or "").lower() in {"1", "true", "yes"},
+            limit=limit,
+        )
+        dashboard = load_teacher_teaching_place_dashboard(conn, int(user["id"]))
+    return {
+        "status": "success",
+        "items": places,
+        "count": len(places),
+        "dashboard": dashboard,
+    }
+
+
+@router.post("/classrooms/sync-academic", response_class=JSONResponse)
+async def api_sync_academic_teaching_places(user: dict = Depends(get_current_teacher)):
+    result = await sync_teaching_places_from_academic_system(int(user["id"]))
+    if result.get("status") == "missing_credential":
+        raise HTTPException(400, result.get("message") or "请先配置教务系统账号。")
+    if result.get("status") != "success":
+        raise HTTPException(502, result.get("message") or "未能从教务系统同步教学场地。")
+    return result
+
+
+@router.get("/classrooms/free-options", response_class=JSONResponse)
+async def api_load_free_classroom_options(
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    result = await load_free_classroom_options_from_academic_system(
+        int(user["id"]),
+        xnm=str(request.query_params.get("xnm") or "").strip(),
+        xqm=str(request.query_params.get("xqm") or "").strip(),
+        semester_id=str(request.query_params.get("semester_id") or "").strip(),
+        xqh_id=str(request.query_params.get("xqh_id") or "1").strip() or "1",
+    )
+    if result.get("status") == "missing_credential":
+        raise HTTPException(400, result.get("message") or "请先配置教务系统账号。")
+    if result.get("status") != "success":
+        raise HTTPException(502, result.get("message") or "未能读取教务系统教室选项。")
+    return result
+
+
+@router.post("/classrooms/free-query", response_class=JSONResponse)
+async def api_query_free_classrooms(
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    result = await query_free_classrooms_from_academic_system(int(user["id"]), payload)
+    status = result.get("status")
+    if status == "missing_credential":
+        raise HTTPException(400, result.get("message") or "请先配置教务系统账号。")
+    if status == "invalid":
+        raise HTTPException(400, result.get("message") or "请补全空闲教室查询条件。")
+    if status != "success":
+        raise HTTPException(502, result.get("message") or "未能实时查询教务系统空闲教室。")
     return result
 
 
