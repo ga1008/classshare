@@ -17,6 +17,7 @@ from openpyxl.utils import get_column_letter
 from ..config import ROSTER_DIR
 from ..database import get_db_connection
 from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
+from .academic_classroom_sync_service import load_teacher_teaching_place_by_key
 from .academic_integration_service import (
     load_teacher_academic_access_method,
     open_authenticated_academic_client,
@@ -34,7 +35,11 @@ ZF_EXAM_COURSE_LIST_PATH = "/cjlrgl/jscjlr_cxJscjlrIndex.html?doType=query&gnmkd
 ZF_EXAM_STUDENT_LIST_PATH = "/cjlrgl/jscjlr_cxZkcj.html"
 
 EXAM_COURSE_PAGE_SIZE = 200
-MAX_EXAM_ROSTER_STUDENTS = 80
+EXAM_ROSTER_TOTAL_ROWS = 47
+EXAM_ROSTER_TABLE_START_ROW = 8
+EXAM_ROSTER_FIRST_STUDENT_ROW = 9
+EXAM_ROSTER_STUDENT_ROWS_PER_SIDE = EXAM_ROSTER_TOTAL_ROWS - EXAM_ROSTER_FIRST_STUDENT_ROW + 1
+MAX_EXAM_ROSTER_STUDENTS = EXAM_ROSTER_STUDENT_ROWS_PER_SIDE * 2
 
 
 @dataclass
@@ -1159,6 +1164,13 @@ def build_exam_roster_signature_workbook(
     export_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload = export_payload or {}
+    selected_place: dict[str, Any] | None = None
+    selected_place_key = _normalize_space(
+        payload.get("exam_location_place_key") or payload.get("exam_place_key")
+    )
+    selected_place_id = _normalize_space(
+        payload.get("exam_location_place_id") or payload.get("exam_place_id")
+    )
     with get_db_connection() as conn:
         context = _load_offering_context(conn, int(teacher_id), int(class_offering_id))
         if not context:
@@ -1171,7 +1183,7 @@ def build_exam_roster_signature_workbook(
         if not students:
             raise ValueError("当前考试名单没有考生，暂不能导出签名表。")
         if len(students) > MAX_EXAM_ROSTER_STUDENTS:
-            raise ValueError("当前模板最多容纳 80 名考生，请拆分考场后再导出。")
+            raise ValueError(f"当前模板最多容纳 {MAX_EXAM_ROSTER_STUDENTS} 名考生，请拆分考场后再导出。")
         defaults = _default_export_fields(
             conn,
             teacher_id=int(teacher_id),
@@ -1179,11 +1191,24 @@ def build_exam_roster_signature_workbook(
             item=item_dict,
             students=students,
         )
+        if selected_place_key or selected_place_id:
+            selected_place = load_teacher_teaching_place_by_key(
+                conn,
+                int(teacher_id),
+                place_key=selected_place_key,
+                place_id=selected_place_id,
+            )
+            if selected_place is None:
+                raise ValueError("所选考试教室不在当前本地教学场地中，请重新同步场地或重新选择教室。")
 
     exam_datetime = _parse_export_datetime(payload.get("exam_datetime") or defaults.get("exam_datetime_local"))
     if exam_datetime is None:
         raise ValueError("请先确认考试时间。")
-    exam_location = _normalize_space(payload.get("exam_location") or defaults.get("exam_location"))
+    exam_location = _normalize_space(
+        (selected_place or {}).get("display_name")
+        or payload.get("exam_location")
+        or defaults.get("exam_location")
+    )
     if not exam_location:
         raise ValueError("请填写考试地点。")
     chief_invigilator = _normalize_space(payload.get("chief_invigilator") or defaults.get("chief_invigilator"))
@@ -1199,13 +1224,17 @@ def build_exam_roster_signature_workbook(
     ws = wb.active
     ws.title = "考试名单"
     ws.sheet_view.showGridLines = False
+    ws.page_margins.top = 0.4
+    ws.page_margins.bottom = 0.4
+    ws.page_margins.left = 0.5
+    ws.page_margins.right = 0.5
 
     widths = [12.18, 9.18, 4.45, 5.82, 10.18, 5.18, 12.18, 9.18, 4.45, 5.82, 10.18, 5.18]
     for index, width in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(index)].width = width
 
     heights = {1: 24.3, 2: 28.5, 7: 3.8}
-    for row_index in range(1, 49):
+    for row_index in range(1, EXAM_ROSTER_TOTAL_ROWS + 1):
         ws.row_dimensions[row_index].height = heights.get(row_index, 20 if 3 <= row_index <= 6 else 16.5)
 
     ws.merge_cells("A1:L1")
@@ -1223,11 +1252,13 @@ def build_exam_roster_signature_workbook(
     font_header = Font(name="宋体", size=10, bold=True)
     font_meta = Font(name="宋体", size=10)
     font_student = Font(name="宋体", size=9)
+    font_seat = Font(name="宋体", size=10)
     center = Alignment(horizontal="center", vertical="center", wrap_text=True)
     left = Alignment(horizontal="left", vertical="center", wrap_text=True)
     right = Alignment(horizontal="right", vertical="center", wrap_text=True)
     thin = Side(style="thin", color="000000")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    no_border = Border()
     header_fill = PatternFill(fill_type="solid", fgColor="EDEDED")
 
     ws["A1"] = "广西外国语学院考场学生名册"
@@ -1256,27 +1287,31 @@ def build_exam_roster_signature_workbook(
         cell = ws.cell(row=8, column=column_index, value=label)
         _apply_cell_style(cell, font=font_student, alignment=center, border=border, fill=header_fill)
 
-    for row_index in range(1, 7):
+    for row_index in range(1, 8):
         for column_index in range(1, 13):
             cell = ws.cell(row=row_index, column=column_index)
-            if row_index >= 3:
-                cell.border = border
+            cell.border = no_border
             if not cell.font or cell.font.name != "宋体":
                 cell.font = font_meta
             if not cell.alignment:
                 cell.alignment = center
 
-    for row_index in range(9, 49):
+    for row_index in range(EXAM_ROSTER_TABLE_START_ROW, EXAM_ROSTER_TOTAL_ROWS + 1):
         for column_index in range(1, 13):
             cell = ws.cell(row=row_index, column=column_index)
-            _apply_cell_style(cell, font=font_student, alignment=center, border=border)
+            cell_font = (
+                font_seat
+                if row_index >= EXAM_ROSTER_FIRST_STUDENT_ROW and column_index in {4, 10}
+                else font_student
+            )
+            _apply_cell_style(cell, font=cell_font, alignment=center, border=border)
 
     for index, student in enumerate(students):
-        if index < 40:
-            row_index = 9 + index
+        if index < EXAM_ROSTER_STUDENT_ROWS_PER_SIDE:
+            row_index = EXAM_ROSTER_FIRST_STUDENT_ROW + index
             base_col = 1
         else:
-            row_index = 9 + (index - 40)
+            row_index = EXAM_ROSTER_FIRST_STUDENT_ROW + (index - EXAM_ROSTER_STUDENT_ROWS_PER_SIDE)
             base_col = 7
         values = [
             student.get("student_number") or "",
@@ -1292,8 +1327,14 @@ def build_exam_roster_signature_workbook(
     output_dir = Path(ROSTER_DIR) / "exam_rosters"
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = china_now().strftime("%Y%m%d%H%M%S")
-    filename = f"{_safe_filename(course_name)}-{_safe_filename(admin_class_name)}-考试签名表-{timestamp}.xlsx"
-    output_path = output_dir / filename
+    filename_stem = (
+        f"4. 签到表-"
+        f"{_safe_filename(admin_class_name or context.get('class_name') or '班级')}-"
+        f"{_safe_filename(course_code or '课程编号')}-"
+        f"{_safe_filename(course_name or '课程名称')}"
+    )
+    filename = f"{filename_stem}.xlsx"
+    output_path = output_dir / f"{filename_stem}-{timestamp}.xlsx"
     wb.save(output_path)
     return {
         "path": output_path,

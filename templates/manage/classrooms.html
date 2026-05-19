@@ -198,6 +198,48 @@
         font-size: 0.88rem;
     }
 
+    .classroom-list-toolbar,
+    .classroom-pagination {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .classroom-page-size {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text-secondary);
+        font-size: 0.82rem;
+        font-weight: 800;
+    }
+
+    .classroom-page-size select {
+        width: auto;
+        min-width: 84px;
+        min-height: 36px;
+    }
+
+    .classroom-pagination-summary,
+    .classroom-page-indicator {
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        font-weight: 850;
+    }
+
+    .classroom-pagination {
+        margin: 14px 0 0;
+    }
+
+    .classroom-pagination-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+
     .classroom-place-list,
     .classroom-free-results {
         display: grid;
@@ -218,6 +260,12 @@
     .classroom-place-card.is-stale {
         opacity: 0.72;
         background: rgba(248, 250, 252, 0.86);
+    }
+
+    .classroom-place-card.is-free-result {
+        border-color: rgba(14, 165, 233, 0.34);
+        background: linear-gradient(135deg, rgba(240, 249, 255, 0.96), rgba(255, 255, 255, 0.96));
+        box-shadow: 0 18px 34px -28px rgba(14, 165, 233, 0.48);
     }
 
     .classroom-place-main,
@@ -358,6 +406,7 @@
         border-radius: 8px;
         background: rgba(240, 249, 255, 0.55);
         padding: 16px;
+        margin-top: 16px;
     }
 
     .classroom-result-head {
@@ -549,15 +598,34 @@
             <div class="classroom-section-head">
                 <div>
                     <h3>教学场地</h3>
-                    <p><span id="classroomResultCount">{{ teaching_places | length }}</span> 个场地符合当前条件</p>
+                    <p><span id="classroomResultCount">{{ teaching_place_pagination.total_count if teaching_place_pagination else (teaching_places | length) }}</span> 个场地符合当前条件</p>
                 </div>
                 <button type="button" class="btn btn-ghost btn-sm" id="classroomReloadBtn">刷新列表</button>
+            </div>
+            <div class="classroom-list-toolbar" aria-label="教学场地分页设置">
+                <span class="classroom-pagination-summary" id="classroomPaginationSummary">第 1 页</span>
+                <label class="classroom-page-size" for="classroomPageSizeSelect">
+                    <span>每页</span>
+                    <select id="classroomPageSizeSelect" class="form-control">
+                        <option value="10" selected>10 条</option>
+                        <option value="20">20 条</option>
+                        <option value="50">50 条</option>
+                        <option value="100">100 条</option>
+                    </select>
+                </label>
             </div>
             <div class="classroom-place-list" id="classroomPlaceList"></div>
             <div class="classroom-empty" id="classroomPlaceEmpty" hidden>
                 <strong>暂无匹配场地</strong>
                 调整关键词或筛选条件后再试。
             </div>
+            <nav class="classroom-pagination" aria-label="教学场地分页">
+                <span class="classroom-page-indicator" id="classroomPageIndicator">1 / 1</span>
+                <span class="classroom-pagination-actions">
+                    <button type="button" class="btn btn-ghost btn-sm" id="classroomPrevPageBtn">上一页</button>
+                    <button type="button" class="btn btn-ghost btn-sm" id="classroomNextPageBtn">下一页</button>
+                </span>
+            </nav>
         </div>
 
         <aside class="classroom-free-panel" id="freeRoomQueryPanel" aria-label="空闲教室实时查询">
@@ -637,28 +705,29 @@
 
                 <button type="submit" class="btn btn-primary" id="freeRoomSubmitBtn">查询空闲教室</button>
             </form>
-        </aside>
-    </section>
 
-    <section class="classroom-result-panel" aria-label="空闲教室查询结果">
-        <div class="classroom-result-head">
-            <div>
-                <h3>实时查询结果</h3>
-                <small id="freeRoomResultSummary">尚未查询</small>
-            </div>
-            <span class="classroom-badge is-live" id="freeRoomResultTerm">教务实时</span>
-        </div>
-        <div class="classroom-free-results" id="freeRoomResultList"></div>
-        <div class="classroom-empty" id="freeRoomResultEmpty">
-            <strong>等待查询条件</strong>
-            选择周次、星期和节次后即可查看可用场地。
-        </div>
+            <section class="classroom-result-panel" aria-label="空闲教室查询结果">
+                <div class="classroom-result-head">
+                    <div>
+                        <h3>实时查询结果</h3>
+                        <small id="freeRoomResultSummary">尚未查询</small>
+                    </div>
+                    <span class="classroom-badge is-live" id="freeRoomResultTerm">教务实时</span>
+                </div>
+                <div class="classroom-free-results" id="freeRoomResultList"></div>
+                <div class="classroom-empty" id="freeRoomResultEmpty">
+                    <strong>等待查询条件</strong>
+                    选择周次、星期和节次后即可查看可用场地。
+                </div>
+            </section>
+        </aside>
     </section>
 </div>
 
 <script type="application/json" id="classrooms-page-data">
 {{ {
     "places": teaching_places,
+    "pagination": teaching_place_pagination,
     "dashboard": classroom_dashboard,
     "semesters": semester_options,
     "defaultSemesterId": default_semester_id

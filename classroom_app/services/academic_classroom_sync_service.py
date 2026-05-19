@@ -99,6 +99,10 @@ def _normalize_space(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").replace("\u3000", " ")).strip()
 
 
+def _compact_search_text(value: Any) -> str:
+    return re.sub(r"\s+", "", _normalize_space(value))
+
+
 def _parse_int(value: Any) -> int:
     match = re.search(r"\d+", str(value or ""))
     if not match:
@@ -725,8 +729,7 @@ async def sync_teaching_places_from_academic_system(teacher_id: int) -> dict[str
     }
 
 
-def load_teacher_teaching_places(
-    conn: sqlite3.Connection,
+def _build_teacher_teaching_place_filters(
     teacher_id: int,
     *,
     search: str = "",
@@ -735,8 +738,7 @@ def load_teacher_teaching_places(
     room_type_id: str = "",
     availability: str = "",
     include_stale: bool = False,
-    limit: int = 600,
-) -> list[dict[str, Any]]:
+) -> tuple[list[str], list[Any]]:
     where = ["teacher_id = ?", "source = ?"]
     params: list[Any] = [int(teacher_id), ACADEMIC_CLASSROOM_SOURCE]
     if not include_stale:
@@ -757,33 +759,152 @@ def load_teacher_teaching_places(
     elif availability == "exam":
         where.append("is_exam_schedulable = 1")
     if search:
-        like = f"%{search}%"
+        normalized_search = _normalize_space(search)
+        compact_search = _compact_search_text(normalized_search)
+        fields = [
+            "room_code",
+            "room_name",
+            "room_full_name",
+            "campus_name",
+            "building_name",
+            "room_type_name",
+            "organization_name",
+        ]
+        direct_like = f"%{normalized_search}%"
+        compact_like = f"%{compact_search}%"
+        haystack = " || ' ' || ".join(f"COALESCE({field}, '')" for field in fields)
+        compact_haystack = (
+            "REPLACE(REPLACE(REPLACE(("
+            + haystack
+            + "), ' ', ''), CHAR(9), ''), '　', '')"
+        )
+        token_terms = [term for term in re.split(r"\s+", normalized_search) if term]
+        token_clause = ""
+        token_params: list[Any] = []
+        if len(token_terms) > 1:
+            token_clause = " OR (" + " AND ".join([f"({haystack}) LIKE ?" for _ in token_terms]) + ")"
+            token_params = [f"%{term}%" for term in token_terms]
         where.append(
-            """
+            f"""
             (
-                room_code LIKE ?
-                OR room_name LIKE ?
-                OR room_full_name LIKE ?
-                OR campus_name LIKE ?
-                OR building_name LIKE ?
-                OR room_type_name LIKE ?
-                OR organization_name LIKE ?
+                {' OR '.join(f'{field} LIKE ?' for field in fields)}
+                OR {compact_haystack} LIKE ?
+                {token_clause}
             )
             """
         )
-        params.extend([like] * 7)
+        params.extend([direct_like] * len(fields))
+        params.append(compact_like)
+        params.extend(token_params)
+    return where, params
+
+
+def count_teacher_teaching_places(
+    conn: sqlite3.Connection,
+    teacher_id: int,
+    *,
+    search: str = "",
+    campus_id: str = "",
+    building_id: str = "",
+    room_type_id: str = "",
+    availability: str = "",
+    include_stale: bool = False,
+) -> int:
+    where, params = _build_teacher_teaching_place_filters(
+        teacher_id,
+        search=search,
+        campus_id=campus_id,
+        building_id=building_id,
+        room_type_id=room_type_id,
+        availability=availability,
+        include_stale=include_stale,
+    )
+    row = conn.execute(
+        f"""
+        SELECT COUNT(*) AS count
+        FROM teacher_academic_teaching_places
+        WHERE {' AND '.join(where)}
+        """,
+        params,
+    ).fetchone()
+    return int(row["count"] or 0) if row else 0
+
+
+def load_teacher_teaching_places(
+    conn: sqlite3.Connection,
+    teacher_id: int,
+    *,
+    search: str = "",
+    campus_id: str = "",
+    building_id: str = "",
+    room_type_id: str = "",
+    availability: str = "",
+    include_stale: bool = False,
+    limit: int = 600,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    where, params = _build_teacher_teaching_place_filters(
+        teacher_id,
+        search=search,
+        campus_id=campus_id,
+        building_id=building_id,
+        room_type_id=room_type_id,
+        availability=availability,
+        include_stale=include_stale,
+    )
     params.append(max(1, min(int(limit or 600), 1200)))
+    params.append(max(0, int(offset or 0)))
     rows = conn.execute(
         f"""
         SELECT *
         FROM teacher_academic_teaching_places
         WHERE {' AND '.join(where)}
         ORDER BY campus_name, building_name, room_code, room_name
-        LIMIT ?
+        LIMIT ? OFFSET ?
         """,
         params,
     ).fetchall()
     return [_serialize_place_row(row) for row in rows]
+
+
+def load_teacher_teaching_place_by_key(
+    conn: sqlite3.Connection,
+    teacher_id: int,
+    *,
+    place_key: str = "",
+    place_id: str = "",
+    include_stale: bool = False,
+) -> dict[str, Any] | None:
+    normalized_place_key = _normalize_space(place_key)
+    normalized_place_id = _normalize_space(place_id)
+    if not (normalized_place_key or normalized_place_id):
+        return None
+
+    where = ["teacher_id = ?", "source = ?"]
+    params: list[Any] = [int(teacher_id), ACADEMIC_CLASSROOM_SOURCE]
+    if not include_stale:
+        where.append("sync_status = 'active'")
+
+    lookup_clauses: list[str] = []
+    if normalized_place_key:
+        lookup_clauses.append("place_key = ?")
+        params.append(normalized_place_key)
+    if normalized_place_id:
+        lookup_clauses.append("place_id = ?")
+        params.append(normalized_place_id)
+    where.append(f"({' OR '.join(lookup_clauses)})")
+
+    row = conn.execute(
+        f"""
+        SELECT *
+        FROM teacher_academic_teaching_places
+        WHERE {' AND '.join(where)}
+        ORDER BY sync_status = 'active' DESC, synced_at DESC, id DESC
+        LIMIT 1
+        """,
+        params,
+    ).fetchone()
+    return _serialize_place_row(row) if row else None
 
 
 def load_teacher_teaching_place_dashboard(conn: sqlite3.Connection, teacher_id: int) -> dict[str, Any]:

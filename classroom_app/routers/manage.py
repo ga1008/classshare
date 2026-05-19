@@ -107,6 +107,7 @@ from ..services.academic_calendar_sync_service import (
 )
 from ..services.academic_auto_sync_service import sync_teacher_academic_data_after_credential_verified
 from ..services.academic_classroom_sync_service import (
+    count_teacher_teaching_places,
     load_free_classroom_options_from_academic_system,
     load_teacher_teaching_place_dashboard,
     load_teacher_teaching_places,
@@ -1046,26 +1047,49 @@ async def api_list_academic_teaching_places(
     user: dict = Depends(get_current_teacher),
 ):
     try:
-        limit = int(request.query_params.get("limit") or 600)
+        page_size = int(request.query_params.get("page_size") or request.query_params.get("limit") or 10)
     except (TypeError, ValueError):
-        limit = 600
+        page_size = 10
+    try:
+        page = int(request.query_params.get("page") or 1)
+    except (TypeError, ValueError):
+        page = 1
+    page_size = max(1, min(page_size, 120))
+    page = max(1, page)
+    filters = {
+        "search": str(request.query_params.get("q") or "").strip(),
+        "campus_id": str(request.query_params.get("campus_id") or "").strip(),
+        "building_id": str(request.query_params.get("building_id") or "").strip(),
+        "room_type_id": str(request.query_params.get("room_type_id") or "").strip(),
+        "availability": str(request.query_params.get("availability") or "").strip(),
+        "include_stale": str(request.query_params.get("include_stale") or "").lower() in {"1", "true", "yes"},
+    }
     with get_db_connection() as conn:
+        total_count = count_teacher_teaching_places(conn, int(user["id"]), **filters)
+        total_page = max(1, (total_count + page_size - 1) // page_size)
+        page = min(page, total_page)
         places = load_teacher_teaching_places(
             conn,
             int(user["id"]),
-            search=str(request.query_params.get("q") or "").strip(),
-            campus_id=str(request.query_params.get("campus_id") or "").strip(),
-            building_id=str(request.query_params.get("building_id") or "").strip(),
-            room_type_id=str(request.query_params.get("room_type_id") or "").strip(),
-            availability=str(request.query_params.get("availability") or "").strip(),
-            include_stale=str(request.query_params.get("include_stale") or "").lower() in {"1", "true", "yes"},
-            limit=limit,
+            **filters,
+            limit=page_size,
+            offset=(page - 1) * page_size,
         )
         dashboard = load_teacher_teaching_place_dashboard(conn, int(user["id"]))
     return {
         "status": "success",
         "items": places,
         "count": len(places),
+        "total_count": total_count,
+        "page": page,
+        "page_size": page_size,
+        "total_page": total_page,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total_count": total_count,
+            "total_page": total_page,
+        },
         "dashboard": dashboard,
     }
 

@@ -145,6 +145,13 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
     if (!classOfferingId || !syncButton || !statusEl || !form) return;
 
     let latestStatus = null;
+    const placePicker = panel.querySelector('[data-exam-place-picker]');
+    const placeInput = panel.querySelector('[data-exam-place-input]');
+    const placeKeyInput = panel.querySelector('[data-exam-place-key]');
+    const placeIdInput = panel.querySelector('[data-exam-place-id]');
+    const placeResultsEl = panel.querySelector('[data-exam-place-results]');
+    let placeLookupTimer = null;
+    let placeLookupSeq = 0;
 
     const setBusy = (button, busy, text) => {
         if (!button) return;
@@ -159,12 +166,87 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
         form.classList.toggle('is-disabled', !enabled);
     };
 
+    const closePlaceResults = () => {
+        if (!placeResultsEl) return;
+        placeResultsEl.hidden = true;
+        placeResultsEl.innerHTML = '';
+    };
+
+    const clearPlaceSelection = () => {
+        if (placeKeyInput) placeKeyInput.value = '';
+        if (placeIdInput) placeIdInput.value = '';
+    };
+
+    const formatPlaceMeta = (place = {}) => [
+        place.campus_name,
+        place.building_name,
+        place.room_type_name,
+        place.exam_seat_count ? `考位 ${place.exam_seat_count}` : '',
+        place.seat_count ? `座位 ${place.seat_count}` : '',
+    ].filter(Boolean).join(' · ');
+
+    const renderPlaceResults = (items = [], message = '') => {
+        if (!placeResultsEl) return;
+        if (!items.length) {
+            placeResultsEl.innerHTML = `<div class="learning-exam-place-empty">${escapeHtml(message || '没有匹配的本地教学场地')}</div>`;
+            placeResultsEl.hidden = false;
+            return;
+        }
+        placeResultsEl.innerHTML = items.map((place) => `
+            <button type="button" class="learning-exam-place-option" data-place-key="${escapeHtml(place.place_key || '')}" data-place-id="${escapeHtml(place.place_id || '')}" data-place-label="${escapeHtml(place.display_name || '')}">
+                <strong>${escapeHtml(place.display_name || place.room_name || place.room_code || '')}</strong>
+                <span>${escapeHtml(formatPlaceMeta(place))}</span>
+            </button>
+        `).join('');
+        placeResultsEl.hidden = false;
+    };
+
+    const queryTeachingPlaces = async (query = '', seq = ++placeLookupSeq) => {
+        if (!placeResultsEl) return;
+        const params = new URLSearchParams({
+            q: query.trim(),
+            limit: '12',
+        });
+        placeResultsEl.innerHTML = '<div class="learning-exam-place-empty">正在查询本地教学场地...</div>';
+        placeResultsEl.hidden = false;
+        try {
+            const response = await fetch(`/api/manage/classrooms/teaching-places?${params.toString()}`, {
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json' },
+            });
+            if (!response.ok) throw new Error('本地教学场地查询失败');
+            const data = await response.json();
+            if (seq !== placeLookupSeq) return;
+            const items = Array.isArray(data.items) ? data.items : [];
+            renderPlaceResults(items, query.trim() ? '没有匹配的本地教学场地，可手动填写地点' : '本地暂未同步可用考试场地');
+        } catch (error) {
+            if (seq !== placeLookupSeq) return;
+            renderPlaceResults([], error.message || '本地教学场地查询失败，可手动填写地点');
+        }
+    };
+
+    const schedulePlaceLookup = (query = '', delay = 180) => {
+        if (!placeInput || !placeResultsEl) return;
+        const seq = ++placeLookupSeq;
+        window.clearTimeout(placeLookupTimer);
+        placeLookupTimer = window.setTimeout(() => queryTeachingPlaces(query, seq), delay);
+    };
+
+    const choosePlace = (button) => {
+        const label = button.dataset.placeLabel || button.textContent.trim();
+        if (placeInput) placeInput.value = label;
+        if (placeKeyInput) placeKeyInput.value = button.dataset.placeKey || '';
+        if (placeIdInput) placeIdInput.value = button.dataset.placeId || '';
+        closePlaceResults();
+    };
+
     const applyDefaults = (defaults = {}) => {
         if (form.elements.exam_datetime && defaults.exam_datetime_local) {
             form.elements.exam_datetime.value = String(defaults.exam_datetime_local).slice(0, 16);
         }
         if (form.elements.exam_location && defaults.exam_location) {
             form.elements.exam_location.value = defaults.exam_location;
+            clearPlaceSelection();
         }
         if (form.elements.chief_invigilator && defaults.chief_invigilator) {
             form.elements.chief_invigilator.value = defaults.chief_invigilator;
@@ -323,6 +405,31 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
         syncRoster(candidate.dataset.examCourseKey || '');
     });
 
+    if (placeInput && placeResultsEl) {
+        placeInput.addEventListener('focus', () => {
+            schedulePlaceLookup(placeInput.value || '', 0);
+        });
+        placeInput.addEventListener('input', () => {
+            clearPlaceSelection();
+            schedulePlaceLookup(placeInput.value || '');
+        });
+        placeInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') closePlaceResults();
+        });
+        placeResultsEl.addEventListener('mousedown', (event) => {
+            event.preventDefault();
+        });
+        placeResultsEl.addEventListener('click', (event) => {
+            const option = event.target.closest('[data-place-key], [data-place-id]');
+            if (!option) return;
+            choosePlace(option);
+        });
+        document.addEventListener('click', (event) => {
+            if (!placePicker || placePicker.contains(event.target)) return;
+            closePlaceResults();
+        });
+    }
+
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
         if (!latestStatus || latestStatus.status !== 'success') {
@@ -332,6 +439,8 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
         const payload = {
             exam_datetime: form.elements.exam_datetime?.value || '',
             exam_location: form.elements.exam_location?.value || '',
+            exam_location_place_key: form.elements.exam_location_place_key?.value || '',
+            exam_location_place_id: form.elements.exam_location_place_id?.value || '',
             chief_invigilator: form.elements.chief_invigilator?.value || '',
             assistant_invigilator: form.elements.assistant_invigilator?.value || '',
         };

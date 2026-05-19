@@ -12,11 +12,16 @@ function parseJsonScript(id, fallback) {
 }
 
 const boot = parseJsonScript('classrooms-page-data', {});
+const bootPagination = boot.pagination && typeof boot.pagination === 'object' ? boot.pagination : {};
 
 const state = {
     places: Array.isArray(boot.places) ? boot.places : [],
     dashboard: boot.dashboard && typeof boot.dashboard === 'object' ? boot.dashboard : {},
     semesters: Array.isArray(boot.semesters) ? boot.semesters : [],
+    listPage: Number(bootPagination.page || 1) || 1,
+    listPageSize: Number(bootPagination.page_size || bootPagination.pageSize || 10) || 10,
+    listTotal: Number(bootPagination.total_count || bootPagination.total || (Array.isArray(boot.places) ? boot.places.length : 0)) || 0,
+    listTotalPage: Number(bootPagination.total_page || bootPagination.totalPage || 1) || 1,
     selectedSections: new Set([2, 3]),
     selectedWeek: 1,
     selectedWeekday: 1,
@@ -45,6 +50,11 @@ const refs = {
     placeList: document.getElementById('classroomPlaceList'),
     placeEmpty: document.getElementById('classroomPlaceEmpty'),
     resultCount: document.getElementById('classroomResultCount'),
+    pageSizeSelect: document.getElementById('classroomPageSizeSelect'),
+    paginationSummary: document.getElementById('classroomPaginationSummary'),
+    pageIndicator: document.getElementById('classroomPageIndicator'),
+    prevPage: document.getElementById('classroomPrevPageBtn'),
+    nextPage: document.getElementById('classroomNextPageBtn'),
     statActive: document.getElementById('classroomStatActive'),
     statSchedulable: document.getElementById('classroomStatSchedulable'),
     statBorrowable: document.getElementById('classroomStatBorrowable'),
@@ -96,6 +106,18 @@ function debounce(fn, delay = 260) {
         window.clearTimeout(timer);
         timer = window.setTimeout(() => fn(...args), delay);
     };
+}
+
+function clampPageSize(value) {
+    const size = Number(value || 10) || 10;
+    return Math.max(1, Math.min(size, 120));
+}
+
+function applyPagination(pagination = {}) {
+    state.listPage = Math.max(1, Number(pagination.page || state.listPage || 1) || 1);
+    state.listPageSize = clampPageSize(pagination.page_size || pagination.pageSize || state.listPageSize);
+    state.listTotal = Math.max(0, Number(pagination.total_count || pagination.total || 0) || 0);
+    state.listTotalPage = Math.max(1, Number(pagination.total_page || pagination.totalPage || 1) || 1);
 }
 
 function optionHtml(item, fallbackName = '全部') {
@@ -202,7 +224,7 @@ function badge(text, tone = '') {
     return `<span class="classroom-badge${tone ? ` ${tone}` : ''}">${escapeHtml(text)}</span>`;
 }
 
-function renderPlaceCard(place) {
+function renderPlaceCard(place, options = {}) {
     const meta = [
         place.campus_name,
         place.building_name,
@@ -216,34 +238,46 @@ function renderPlaceCard(place) {
         place.is_exam_schedulable ? badge('考试可用', 'is-ok') : '',
         place.sync_status === 'stale' ? badge('待复核', 'is-warn') : '',
     ].filter(Boolean).join('');
+    const extraClass = options.extraClass ? ` ${options.extraClass}` : '';
+    const title = place.display_name || place.room_name || options.titleFallback || '未命名场地';
+    const extraFlags = options.extraFlags || '';
     return `
-        <article class="classroom-place-card${place.sync_status === 'stale' ? ' is-stale' : ''}">
+        <article class="classroom-place-card${place.sync_status === 'stale' ? ' is-stale' : ''}${extraClass}">
             <div class="classroom-place-main">
                 <div class="classroom-place-title">
-                    <h4 title="${escapeHtml(place.display_name || place.room_name || '')}">${escapeHtml(place.display_name || place.room_name || '未命名场地')}</h4>
+                    <h4 title="${escapeHtml(title)}">${escapeHtml(title)}</h4>
                     ${place.room_code ? `<code>${escapeHtml(place.room_code)}</code>` : ''}
                 </div>
                 <div class="classroom-place-meta">
                     ${meta.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}
                 </div>
             </div>
-            <div class="classroom-place-flags">${flags || badge('教务场地')}</div>
+            <div class="classroom-place-flags">${extraFlags}${flags || (extraFlags ? '' : badge('教务场地'))}</div>
         </article>
     `;
 }
 
 function renderPlaces() {
     if (!refs.placeList) return;
-    const query = normalize(refs.searchInput?.value);
-    const filtered = state.places.filter((place) => !query || placeSearchText(place).includes(query));
-    refs.placeList.innerHTML = filtered.map(renderPlaceCard).join('');
-    if (refs.resultCount) refs.resultCount.textContent = String(filtered.length);
-    if (refs.placeEmpty) refs.placeEmpty.hidden = filtered.length > 0;
+    const places = Array.isArray(state.places) ? state.places : [];
+    refs.placeList.innerHTML = places.map((place) => renderPlaceCard(place)).join('');
+    if (refs.resultCount) refs.resultCount.textContent = String(state.listTotal);
+    if (refs.placeEmpty) refs.placeEmpty.hidden = places.length > 0;
+    if (refs.paginationSummary) {
+        refs.paginationSummary.textContent = `第 ${state.listPage} / ${state.listTotalPage} 页 · 本页 ${places.length} 条 · 共 ${state.listTotal} 条`;
+    }
+    if (refs.pageIndicator) refs.pageIndicator.textContent = `${state.listPage} / ${state.listTotalPage}`;
+    if (refs.pageSizeSelect && String(refs.pageSizeSelect.value) !== String(state.listPageSize)) {
+        refs.pageSizeSelect.value = String(state.listPageSize);
+    }
+    if (refs.prevPage) refs.prevPage.disabled = state.listPage <= 1;
+    if (refs.nextPage) refs.nextPage.disabled = state.listPage >= state.listTotalPage;
 }
 
 function currentListParams() {
     const params = new URLSearchParams();
-    params.set('limit', '600');
+    params.set('page', String(state.listPage));
+    params.set('page_size', String(state.listPageSize));
     const q = String(refs.searchInput?.value || '').trim();
     const campus = refs.campusFilter?.value || '';
     const building = refs.buildingFilter?.value || '';
@@ -262,6 +296,7 @@ async function reloadPlaces({ silent = false } = {}) {
     try {
         const result = await apiFetch(`/api/manage/classrooms/teaching-places?${currentListParams().toString()}`);
         state.places = Array.isArray(result.items) ? result.items : [];
+        applyPagination(result.pagination || result);
         if (result.dashboard) updateDashboard(result.dashboard);
         renderPlaces();
     } catch (error) {
@@ -271,7 +306,26 @@ async function reloadPlaces({ silent = false } = {}) {
     }
 }
 
-const debouncedReloadPlaces = debounce(() => reloadPlaces({ silent: true }), 260);
+function reloadPlacesFromFirstPage({ silent = true } = {}) {
+    state.listPage = 1;
+    return reloadPlaces({ silent });
+}
+
+function setListPage(page) {
+    const nextPage = Math.max(1, Math.min(Number(page || 1) || 1, state.listTotalPage || 1));
+    if (nextPage === state.listPage) return;
+    state.listPage = nextPage;
+    reloadPlaces({ silent: true });
+}
+
+function setListPageSize(size) {
+    const nextSize = clampPageSize(size);
+    if (nextSize === state.listPageSize) return;
+    state.listPageSize = nextSize;
+    reloadPlacesFromFirstPage({ silent: true });
+}
+
+const debouncedReloadPlaces = debounce(() => reloadPlacesFromFirstPage({ silent: true }), 260);
 
 function setActiveRoomTypeChip(value) {
     refs.typeChips?.querySelectorAll('[data-room-type]').forEach((chip) => {
@@ -291,7 +345,7 @@ async function syncClassrooms() {
             refs.syncStatus.textContent = `${result.message || '教学场地同步完成。'} 新增 ${numberValue(result.created_count)}，更新 ${numberValue(result.updated_count)}，待复核 ${numberValue(result.stale_count)}。`;
         }
         showMessage(result.message || '教学场地同步完成。', 'success');
-        await reloadPlaces({ silent: true });
+        await reloadPlacesFromFirstPage({ silent: true });
         await loadFreeOptions({ silent: true });
     } catch (error) {
         if (refs.syncStatus) {
@@ -353,27 +407,14 @@ function freeQueryPayload() {
 }
 
 function renderFreeCard(place) {
-    const meta = [
-        place.campus_name,
-        place.building_name,
-        place.room_type_name,
-        place.seat_count ? `${place.seat_count} 座` : '',
-        place.organization_name,
-    ].filter(Boolean);
-    return `
-        <article class="classroom-free-card">
-            <div class="classroom-free-main">
-                <div class="classroom-free-title">
-                    <h4 title="${escapeHtml(place.display_name || place.room_name || '')}">${escapeHtml(place.display_name || place.room_name || '空闲场地')}</h4>
-                    ${place.room_code ? `<code>${escapeHtml(place.room_code)}</code>` : ''}
-                </div>
-                <div class="classroom-free-meta">
-                    ${meta.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}
-                </div>
-            </div>
-            <div class="classroom-place-flags">${badge('空闲', 'is-live')}${place.is_borrowable ? badge('可借用', 'is-ok') : ''}</div>
-        </article>
-    `;
+    return renderPlaceCard(
+        { ...place, sync_status: place.sync_status || '' },
+        {
+            extraClass: 'is-free-result',
+            titleFallback: '空闲场地',
+            extraFlags: badge('空闲', 'is-live'),
+        },
+    );
 }
 
 function describeFreeQuery(result) {
@@ -408,14 +449,15 @@ async function queryFreeRooms(event) {
         const items = Array.isArray(result.items) ? result.items : [];
         refs.freeResultList.innerHTML = items.map(renderFreeCard).join('');
         refs.freeResultEmpty.hidden = items.length > 0;
+        const visibleCount = numberValue(result.total_count || items.length);
         if (refs.freeResultSummary) {
-            refs.freeResultSummary.textContent = `${describeFreeQuery(result)}，共 ${numberValue(result.total_count)} 个可用场地`;
+            refs.freeResultSummary.textContent = `${describeFreeQuery(result)}，共 ${visibleCount} 个可用场地`;
         }
         if (refs.freeResultTerm) {
             refs.freeResultTerm.textContent = result.semester_name || '教务实时';
         }
         if (!items.length) {
-            refs.freeResultEmpty.innerHTML = '<strong>该时间段暂无空闲教室</strong>教务系统返回空结果，可调整校区、楼号、类别或节次。';
+            refs.freeResultEmpty.innerHTML = '<strong>选择的时间段没有可用教室！</strong>可以调整校区、楼号、类别、周次或节次后重新查询。';
         }
     } catch (error) {
         showMessage(error.message || '空闲教室实时查询失败。', 'error');
@@ -434,10 +476,13 @@ function bindEvents() {
     });
     refs.reloadButton?.addEventListener('click', () => reloadPlaces());
     refs.searchInput?.addEventListener('input', debouncedReloadPlaces);
+    refs.pageSizeSelect?.addEventListener('change', () => setListPageSize(refs.pageSizeSelect.value));
+    refs.prevPage?.addEventListener('click', () => setListPage(state.listPage - 1));
+    refs.nextPage?.addEventListener('click', () => setListPage(state.listPage + 1));
     [refs.campusFilter, refs.buildingFilter, refs.typeFilter, refs.availabilityFilter].forEach((select) => {
         select?.addEventListener('change', () => {
             if (select === refs.typeFilter) setActiveRoomTypeChip(select.value || '');
-            reloadPlaces({ silent: true });
+            reloadPlacesFromFirstPage({ silent: true });
         });
     });
     refs.resetButton?.addEventListener('click', () => {
@@ -447,14 +492,14 @@ function bindEvents() {
         if (refs.typeFilter) refs.typeFilter.value = '';
         if (refs.availabilityFilter) refs.availabilityFilter.value = '';
         setActiveRoomTypeChip('');
-        reloadPlaces({ silent: true });
+        reloadPlacesFromFirstPage({ silent: true });
     });
     refs.typeChips?.addEventListener('click', (event) => {
         const chip = event.target.closest('[data-room-type]');
         if (!chip) return;
         if (refs.typeFilter) refs.typeFilter.value = chip.dataset.roomType || '';
         setActiveRoomTypeChip(chip.dataset.roomType || '');
-        reloadPlaces({ silent: true });
+        reloadPlacesFromFirstPage({ silent: true });
     });
     refs.freeSemester?.addEventListener('change', () => {
         state.selectedWeek = defaultWeekForSemester(selectedSemester());
