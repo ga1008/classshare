@@ -16307,60 +16307,168 @@ body.has-chat-image-preview-open {
     gap: 12px;
     min-width: 0;
     padding: 14px;
-    border: 1px solid rgba(15, 118, 110, 0.18);
+    border: 1px solid rgba(15, 118, 110, 0.16);
     border-radius: 8px;
-    background: linear-gradient(135deg, rgba(240, 253, 250, 0.86), rgba(255, 255, 255, 0.9));
+    background: rgba(255, 255, 255, 0.74);
 }
 
-.classroom-page .learning-exam-roster-panel__head {
+.classroom-page .learning-exam-roster-panel__head,
+.classroom-page .learning-exam-roster-card__head,
+.classroom-page .learning-exam-roster-form-actions {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
-    gap: 14px;
+    gap: 12px;
     min-width: 0;
 }
 
-.classroom-page .learning-exam-roster-panel__head h3 {
+.classroom-page .learning-exam-roster-title {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.classroom-page .learning-exam-roster-title > span,
+.classroom-page .learning-exam-roster-card__head > span {
+    width: fit-content;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(16, 185, 129, 0.1);
+    color: #047857;
+    font-size: 0.68rem;
+    font-weight: 850;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.classroom-page .learning-exam-roster-title h3 {
     margin: 0;
     color: #0f172a;
-    font-size: 1rem;
+    font-size: 1.05rem;
     line-height: 1.25;
 }
 
-.classroom-page .learning-exam-roster-panel__head p {
-    margin: 4px 0 0;
+.classroom-page .learning-exam-roster-title p {
+    margin: 0;
     color: #64748b;
     font-size: 0.82rem;
     line-height: 1.5;
 }
 
+.classroom-page .learning-exam-roster-sync-btn {
+    flex: 0 0 auto;
+    min-height: 38px;
+    border-radius: 8px;
+}
+
+.classroom-page .learning-exam-roster-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+    gap: 12px;
+    min-width: 0;
+    align-items: stretch;
+}
+
+.classroom-page .learning-exam-roster-card {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(248, 250, 252, 0.78);
+}
+
+.classroom-page .learning-exam-roster-card__head strong {
+    min-width: 0;
+    color: #0f172a;
+    font-size: 0.9rem;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .classroom-page .learning-exam-roster-status {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+}
+
+.classroom-page .learning-exam-roster-empty-note {
+    margin: 0;
+    padding: 12px;
+    border: 1px dashed rgba(148, 163, 184, 0.32);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+    color: #64748b;
+    font-size: 0.84rem;
+    line-height: 1.55;
+}
+
+.classroom-page .learning-exam-roster-course {
     display: grid;
     gap: 4px;
     min-width: 0;
-    padding: 10px 12px;
+    padding: 12px;
+    border: 1px solid rgba(15, 118, 110, 0.14);
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.72);
-    color: #475569;
-    font-size: 0.84rem;
-    line-height: 1.45;
+    background: rgba(255, 255, 255, 0.82);
 }
 
-.classroom-page .learning-exam-roster-status strong,
-.classroom-page .learning-exam-roster-status span,
-.classroom-page .learning-exam-roster-status small {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+.classroom-page .learning-exam-roster-course span {
+    color: #0f766e;
+    font-size: 0.78rem;
+    font-weight: 850;
 }
 
-.classroom-page .learning-exam-roster-status strong {
+.classroom-page .learning-exam-roster-course strong {
     color: #0f172a;
-    font-size: 0.92rem;
+    font-size: 0.98rem;
+    line-height: 1.35;
 }
 
-.classroom-page .learning-exam-roster-status small {
+.classroom-page .learning-exam-roster-course small {
     color: #64748b;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.classroom-page .learning-exam-roster-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.classroom-page .learning-exam-roster-metrics span {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+    min-height: 58px;
+    padding: 9px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.78);
+}
+
+.classroom-page .learning-exam-roster-metrics b {
+    color: #0f172a;
+    font-size: 1.12rem;
+    line-height: 1.1;
+}
+
+.classroom-page .learning-exam-roster-metrics small {
+    color: #64748b;
+    font-size: 0.7rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.classroom-page .learning-exam-roster-metrics span.is-warning {
+    border-color: rgba(245, 158, 11, 0.28);
+    background: rgba(254, 243, 199, 0.5);
 }
 
 .classroom-page .learning-exam-roster-preview {
@@ -16369,8 +16477,23 @@ body.has-chat-image-preview-open {
     min-width: 0;
 }
 
-.classroom-page .learning-exam-roster-preview[hidden] {
+.classroom-page .learning-exam-roster-preview[hidden],
+.classroom-page .learning-exam-roster-candidates[hidden] {
     display: none;
+}
+
+.classroom-page .learning-exam-roster-preview__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: #64748b;
+    font-size: 0.75rem;
+    font-weight: 850;
+}
+
+.classroom-page .learning-exam-roster-preview__head strong {
+    color: #0f766e;
 }
 
 .classroom-page .learning-exam-roster-preview__students,
@@ -16382,63 +16505,70 @@ body.has-chat-image-preview-open {
 }
 
 .classroom-page .learning-exam-roster-preview__students span,
-.classroom-page .learning-exam-roster-preview__students em,
-.classroom-page .learning-exam-roster-preview__diff span {
-    display: inline-flex;
-    align-items: center;
-    min-height: 26px;
-    max-width: 100%;
-    padding: 0 8px;
-    border-radius: 999px;
+.classroom-page .learning-exam-roster-preview__students em {
+    display: inline-grid;
+    grid-template-columns: auto;
+    gap: 1px;
+    justify-content: start;
+    min-width: 0;
+    max-width: 132px;
+    min-height: 40px;
+    padding: 6px 8px;
+    border: 1px solid rgba(15, 118, 110, 0.12);
+    border-radius: 8px;
     background: rgba(255, 255, 255, 0.78);
-    color: #0f766e;
-    font-size: 0.72rem;
+    color: #0f172a;
     font-style: normal;
-    font-weight: 800;
+    overflow: hidden;
+}
+
+.classroom-page .learning-exam-roster-preview__students b,
+.classroom-page .learning-exam-roster-preview__students small {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.classroom-page .learning-exam-roster-preview__diff span {
-    border-radius: 8px;
-    background: rgba(254, 243, 199, 0.66);
-    color: #92400e;
+.classroom-page .learning-exam-roster-preview__students b {
+    font-size: 0.78rem;
+    line-height: 1.25;
 }
 
-.classroom-page .learning-exam-roster-form {
-    display: grid;
-    grid-template-columns: minmax(190px, 1.1fr) minmax(190px, 1.2fr) minmax(150px, 0.8fr) minmax(150px, 0.8fr) auto;
-    align-items: end;
-    gap: 10px;
-    min-width: 0;
-}
-
-.classroom-page .learning-exam-roster-form label {
-    display: grid;
-    gap: 5px;
-    min-width: 0;
+.classroom-page .learning-exam-roster-preview__students small,
+.classroom-page .learning-exam-roster-preview__students em {
     color: #64748b;
-    font-size: 0.75rem;
+    font-size: 0.68rem;
     font-weight: 800;
+    line-height: 1.2;
 }
 
-.classroom-page .learning-exam-roster-form .form-control {
-    min-width: 0;
-    min-height: 38px;
-    padding: 0 10px;
-    border-color: rgba(148, 163, 184, 0.26);
+.classroom-page .learning-exam-roster-preview__students em {
+    align-items: center;
+    color: #0f766e;
+}
+
+.classroom-page .learning-exam-roster-preview__diff span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    min-height: 30px;
+    padding: 5px 8px;
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.94);
-    font-size: 0.86rem;
+    background: rgba(254, 243, 199, 0.62);
+    color: #92400e;
+    font-size: 0.72rem;
+    font-weight: 750;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.classroom-page .learning-exam-roster-form.is-disabled {
-    opacity: 0.72;
-}
-
-.classroom-page .learning-exam-roster-candidates[hidden] {
-    display: none;
+.classroom-page .learning-exam-roster-preview__diff b {
+    flex: 0 0 auto;
+    color: #78350f;
 }
 
 .classroom-page .learning-exam-roster-candidates {
@@ -16493,6 +16623,55 @@ body.has-chat-image-preview-open {
 .classroom-page .learning-exam-roster-candidate small {
     color: #64748b;
     font-size: 0.76rem;
+}
+
+.classroom-page .learning-exam-roster-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.classroom-page .learning-exam-roster-field {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+    color: #64748b;
+    font-size: 0.74rem;
+    font-weight: 850;
+}
+
+.classroom-page .learning-exam-roster-field--wide {
+    grid-column: 1 / -1;
+}
+
+.classroom-page .learning-exam-roster-field .form-control {
+    width: 100%;
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 11px;
+    border-color: rgba(148, 163, 184, 0.24);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.94);
+    color: #0f172a;
+    font-size: 0.86rem;
+}
+
+.classroom-page .learning-exam-roster-field .form-control:focus {
+    border-color: rgba(15, 118, 110, 0.44);
+    box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.12);
+}
+
+.classroom-page .learning-exam-roster-form.is-disabled {
+    opacity: 0.78;
+}
+
+.classroom-page .learning-exam-roster-form-actions {
+    justify-content: flex-end;
+}
+
+.classroom-page .learning-exam-roster-form-actions .btn {
+    min-height: 40px;
+    border-radius: 8px;
 }
 
 .classroom-page .learning-roster-board {
@@ -16701,6 +16880,10 @@ body.has-chat-image-preview-open {
     .classroom-page .learning-progress-panel .learning-progress-grid {
         grid-template-columns: 1fr;
     }
+
+    .classroom-page .learning-exam-roster-layout {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 720px) {
@@ -16755,8 +16938,19 @@ body.has-chat-image-preview-open {
         flex-direction: column;
     }
 
-    .classroom-page .learning-exam-roster-form {
-        grid-template-columns: 1fr;
+    .classroom-page .learning-exam-roster-sync-btn,
+    .classroom-page .learning-exam-roster-form-actions .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .classroom-page .learning-exam-roster-metrics,
+    .classroom-page .learning-exam-roster-form-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .classroom-page .learning-exam-roster-form-actions {
+        justify-content: stretch;
     }
 
     .classroom-page .learning-roster-list {
@@ -16780,6 +16974,19 @@ body.has-chat-image-preview-open {
 
     .classroom-page .learning-roster-pill {
         max-width: min(78vw, 260px);
+    }
+}
+
+@media (max-width: 520px) {
+    .classroom-page .learning-exam-roster-metrics,
+    .classroom-page .learning-exam-roster-form-grid,
+    .classroom-page .learning-exam-roster-candidates__list {
+        grid-template-columns: 1fr;
+    }
+
+    .classroom-page .learning-exam-roster-preview__students span,
+    .classroom-page .learning-exam-roster-preview__students em {
+        max-width: 100%;
     }
 }
 

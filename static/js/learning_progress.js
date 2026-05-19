@@ -137,6 +137,7 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
     const syncButton = panel.querySelector('[data-exam-roster-sync]');
     const exportButton = panel.querySelector('[data-exam-roster-export]');
     const statusEl = panel.querySelector('[data-exam-roster-status]');
+    const statusTitleEl = panel.querySelector('[data-exam-roster-status-title]');
     const summaryEl = panel.querySelector('[data-exam-roster-summary]');
     const candidatesEl = panel.querySelector('[data-exam-roster-candidates]');
     const previewEl = panel.querySelector('[data-exam-roster-preview]');
@@ -173,20 +174,6 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
         }
     };
 
-    const alignmentText = (alignment = {}) => {
-        const parts = [
-            `教务名单 ${Number(alignment.exam_student_count || 0)} 人`,
-            `本地匹配 ${Number(alignment.matched_local_count || 0)} 人`,
-        ];
-        if (Number(alignment.missing_local_count || 0) > 0) {
-            parts.push(`本地缺少 ${alignment.missing_local_count} 人`);
-        }
-        if (Number(alignment.extra_local_count || 0) > 0) {
-            parts.push(`本地多出 ${alignment.extra_local_count} 人`);
-        }
-        return parts.join(' · ');
-    };
-
     const renderCandidates = (candidates = []) => {
         if (!candidatesEl) return;
         if (!candidates.length) {
@@ -220,18 +207,26 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
         const alignment = data.alignment || {};
         const missing = alignment.missing_local_students || [];
         const extra = alignment.extra_local_students || [];
+        const count = Number(data.student_count || 0);
         previewEl.hidden = false;
         previewEl.innerHTML = `
+            <div class="learning-exam-roster-preview__head">
+                <span>名单预览</span>
+                <strong>${count} 人</strong>
+            </div>
             <div class="learning-exam-roster-preview__students">
                 ${students.map((student) => `
-                    <span>${escapeHtml(student.student_number || '')} ${escapeHtml(student.student_name || '')}</span>
+                    <span title="${escapeHtml(`${student.student_number || ''} ${student.student_name || ''}`)}">
+                        <b>${escapeHtml(student.student_name || '')}</b>
+                        <small>${escapeHtml(student.student_number || '')}</small>
+                    </span>
                 `).join('')}
-                ${Number(data.student_count || 0) > students.length ? `<em>共 ${Number(data.student_count || 0)} 人</em>` : ''}
+                ${count > students.length ? `<em>还有 ${count - students.length} 人</em>` : ''}
             </div>
             ${(missing.length || extra.length) ? `
                 <div class="learning-exam-roster-preview__diff">
-                    ${missing.length ? `<span>本地缺少：${missing.map((item) => escapeHtml(item.student_name || item.student_number || '')).join('、')}</span>` : ''}
-                    ${extra.length ? `<span>本地多出：${extra.map((item) => escapeHtml(item.student_name || item.student_number || '')).join('、')}</span>` : ''}
+                    ${missing.length ? `<span><b>本地缺少</b>${missing.map((item) => escapeHtml(item.student_name || item.student_number || '')).join('、')}</span>` : ''}
+                    ${extra.length ? `<span><b>本地多出</b>${extra.map((item) => escapeHtml(item.student_name || item.student_number || '')).join('、')}</span>` : ''}
                 </div>
             ` : ''}
         `;
@@ -240,7 +235,8 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
     const renderStatus = (data) => {
         latestStatus = data;
         if (!data || data.status === 'empty') {
-            statusEl.textContent = data?.message || '尚未同步考试名单。';
+            if (statusTitleEl) statusTitleEl.textContent = '等待同步';
+            statusEl.innerHTML = `<p class="learning-exam-roster-empty-note">${escapeHtml(data?.message || '尚未同步考试名单。')}</p>`;
             if (summaryEl) summaryEl.textContent = '同步后会显示名单人数和本地班级差异。';
             renderCandidates([]);
             renderPreview(null);
@@ -249,14 +245,16 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
             return;
         }
         if (data.status === 'needs_confirmation') {
-            statusEl.textContent = data.message || '请选择要对齐的考试课程。';
+            if (statusTitleEl) statusTitleEl.textContent = '需要确认';
+            statusEl.innerHTML = `<p class="learning-exam-roster-empty-note">${escapeHtml(data.message || '请选择要对齐的考试课程。')}</p>`;
             renderCandidates(data.candidates || []);
             renderPreview(null);
             setExportEnabled(false);
             return;
         }
         if (data.status !== 'success') {
-            statusEl.textContent = data.message || '考试名单状态暂不可用。';
+            if (statusTitleEl) statusTitleEl.textContent = '暂不可用';
+            statusEl.innerHTML = `<p class="learning-exam-roster-empty-note">${escapeHtml(data.message || '考试名单状态暂不可用。')}</p>`;
             renderCandidates([]);
             renderPreview(null);
             setExportEnabled(false);
@@ -264,10 +262,19 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
         }
         const course = data.course || {};
         const alignment = data.alignment || {};
+        if (statusTitleEl) statusTitleEl.textContent = '已同步';
         statusEl.innerHTML = `
-            <strong>${escapeHtml(course.course_code || '')} ${escapeHtml(course.course_name || '')}</strong>
-            <span>${escapeHtml(course.teaching_class_name || course.class_composition || '')}</span>
-            <small>${escapeHtml(alignmentText(alignment))}</small>
+            <div class="learning-exam-roster-course">
+                <span>${escapeHtml(course.course_code || '')}</span>
+                <strong>${escapeHtml(course.course_name || '')}</strong>
+                <small>${escapeHtml(course.teaching_class_name || course.class_composition || '')}</small>
+            </div>
+            <div class="learning-exam-roster-metrics" aria-label="考试名单对齐统计">
+                <span><b>${Number(alignment.exam_student_count || data.student_count || 0)}</b><small>教务名单</small></span>
+                <span><b>${Number(alignment.matched_local_count || 0)}</b><small>本地匹配</small></span>
+                <span class="${Number(alignment.missing_local_count || 0) ? 'is-warning' : ''}"><b>${Number(alignment.missing_local_count || 0)}</b><small>本地缺少</small></span>
+                <span class="${Number(alignment.extra_local_count || 0) ? 'is-warning' : ''}"><b>${Number(alignment.extra_local_count || 0)}</b><small>本地多出</small></span>
+            </div>
         `;
         if (summaryEl) {
             summaryEl.textContent = data.synced_at ? `上次同步：${data.synced_at}` : '名单已同步，可确认考试信息后导出。';
