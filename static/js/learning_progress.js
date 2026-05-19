@@ -120,6 +120,256 @@ function initTeacherLearningRoster() {
     applyFilter();
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
+    const panel = document.querySelector('[data-exam-roster-panel]');
+    if (!panel || !config?.classOfferingId) return;
+
+    const classOfferingId = Number(panel.dataset.classOfferingId || config.classOfferingId);
+    const syncButton = panel.querySelector('[data-exam-roster-sync]');
+    const exportButton = panel.querySelector('[data-exam-roster-export]');
+    const statusEl = panel.querySelector('[data-exam-roster-status]');
+    const summaryEl = panel.querySelector('[data-exam-roster-summary]');
+    const candidatesEl = panel.querySelector('[data-exam-roster-candidates]');
+    const previewEl = panel.querySelector('[data-exam-roster-preview]');
+    const form = panel.querySelector('[data-exam-roster-export-form]');
+    if (!classOfferingId || !syncButton || !statusEl || !form) return;
+
+    let latestStatus = null;
+
+    const setBusy = (button, busy, text) => {
+        if (!button) return;
+        if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
+        button.disabled = busy;
+        button.classList.toggle('is-busy', busy);
+        button.textContent = busy ? text : button.dataset.originalText;
+    };
+
+    const setExportEnabled = (enabled) => {
+        if (exportButton) exportButton.disabled = !enabled;
+        form.classList.toggle('is-disabled', !enabled);
+    };
+
+    const applyDefaults = (defaults = {}) => {
+        if (form.elements.exam_datetime && defaults.exam_datetime_local) {
+            form.elements.exam_datetime.value = String(defaults.exam_datetime_local).slice(0, 16);
+        }
+        if (form.elements.exam_location && defaults.exam_location) {
+            form.elements.exam_location.value = defaults.exam_location;
+        }
+        if (form.elements.chief_invigilator && defaults.chief_invigilator) {
+            form.elements.chief_invigilator.value = defaults.chief_invigilator;
+        }
+        if (form.elements.assistant_invigilator && defaults.assistant_invigilator) {
+            form.elements.assistant_invigilator.value = defaults.assistant_invigilator;
+        }
+    };
+
+    const alignmentText = (alignment = {}) => {
+        const parts = [
+            `教务名单 ${Number(alignment.exam_student_count || 0)} 人`,
+            `本地匹配 ${Number(alignment.matched_local_count || 0)} 人`,
+        ];
+        if (Number(alignment.missing_local_count || 0) > 0) {
+            parts.push(`本地缺少 ${alignment.missing_local_count} 人`);
+        }
+        if (Number(alignment.extra_local_count || 0) > 0) {
+            parts.push(`本地多出 ${alignment.extra_local_count} 人`);
+        }
+        return parts.join(' · ');
+    };
+
+    const renderCandidates = (candidates = []) => {
+        if (!candidatesEl) return;
+        if (!candidates.length) {
+            candidatesEl.hidden = true;
+            candidatesEl.textContent = '';
+            return;
+        }
+        candidatesEl.hidden = false;
+        candidatesEl.innerHTML = `
+            <div class="learning-exam-roster-candidates__title">请选择本课堂对应的考试课程</div>
+            <div class="learning-exam-roster-candidates__list">
+                ${candidates.map((item) => `
+                    <button type="button" class="learning-exam-roster-candidate" data-exam-course-key="${escapeHtml(item.exam_course_key)}">
+                        <strong>${escapeHtml(item.course_code || '')} ${escapeHtml(item.course_name || '')}</strong>
+                        <span>${escapeHtml(item.teaching_class_name || '')} · ${escapeHtml(item.class_composition || '')}</span>
+                        <small>${Number(item.declared_student_count || 0)} 人 · 匹配 ${Number(item.score || 0)}</small>
+                    </button>
+                `).join('')}
+            </div>
+        `;
+    };
+
+    const renderPreview = (data) => {
+        if (!previewEl) return;
+        if (!data || data.status !== 'success') {
+            previewEl.hidden = true;
+            previewEl.textContent = '';
+            return;
+        }
+        const students = data.students_preview || [];
+        const alignment = data.alignment || {};
+        const missing = alignment.missing_local_students || [];
+        const extra = alignment.extra_local_students || [];
+        previewEl.hidden = false;
+        previewEl.innerHTML = `
+            <div class="learning-exam-roster-preview__students">
+                ${students.map((student) => `
+                    <span>${escapeHtml(student.student_number || '')} ${escapeHtml(student.student_name || '')}</span>
+                `).join('')}
+                ${Number(data.student_count || 0) > students.length ? `<em>共 ${Number(data.student_count || 0)} 人</em>` : ''}
+            </div>
+            ${(missing.length || extra.length) ? `
+                <div class="learning-exam-roster-preview__diff">
+                    ${missing.length ? `<span>本地缺少：${missing.map((item) => escapeHtml(item.student_name || item.student_number || '')).join('、')}</span>` : ''}
+                    ${extra.length ? `<span>本地多出：${extra.map((item) => escapeHtml(item.student_name || item.student_number || '')).join('、')}</span>` : ''}
+                </div>
+            ` : ''}
+        `;
+    };
+
+    const renderStatus = (data) => {
+        latestStatus = data;
+        if (!data || data.status === 'empty') {
+            statusEl.textContent = data?.message || '尚未同步考试名单。';
+            if (summaryEl) summaryEl.textContent = '同步后会显示名单人数和本地班级差异。';
+            renderCandidates([]);
+            renderPreview(null);
+            setExportEnabled(false);
+            applyDefaults(data?.default_export || {});
+            return;
+        }
+        if (data.status === 'needs_confirmation') {
+            statusEl.textContent = data.message || '请选择要对齐的考试课程。';
+            renderCandidates(data.candidates || []);
+            renderPreview(null);
+            setExportEnabled(false);
+            return;
+        }
+        if (data.status !== 'success') {
+            statusEl.textContent = data.message || '考试名单状态暂不可用。';
+            renderCandidates([]);
+            renderPreview(null);
+            setExportEnabled(false);
+            return;
+        }
+        const course = data.course || {};
+        const alignment = data.alignment || {};
+        statusEl.innerHTML = `
+            <strong>${escapeHtml(course.course_code || '')} ${escapeHtml(course.course_name || '')}</strong>
+            <span>${escapeHtml(course.teaching_class_name || course.class_composition || '')}</span>
+            <small>${escapeHtml(alignmentText(alignment))}</small>
+        `;
+        if (summaryEl) {
+            summaryEl.textContent = data.synced_at ? `上次同步：${data.synced_at}` : '名单已同步，可确认考试信息后导出。';
+        }
+        renderCandidates([]);
+        renderPreview(data);
+        applyDefaults(data.default_export || {});
+        setExportEnabled(Number(data.student_count || 0) > 0);
+    };
+
+    const loadStatus = async () => {
+        try {
+            const data = await apiFetch(`/api/manage/classrooms/${classOfferingId}/exam-roster`, { silent: true });
+            renderStatus(data);
+        } catch (error) {
+            statusEl.textContent = error.message || '读取考试名单状态失败。';
+            setExportEnabled(false);
+        }
+    };
+
+    const syncRoster = async (examCourseKey = '') => {
+        setBusy(syncButton, true, '正在同步...');
+        try {
+            const data = await apiFetch(`/api/manage/classrooms/${classOfferingId}/exam-roster/sync`, {
+                method: 'POST',
+                body: examCourseKey ? { exam_course_key: examCourseKey } : {},
+                silent: true,
+            });
+            renderStatus(data);
+            if (data.status === 'success') {
+                showToast(data.message || '考试名单已同步。', 'success');
+            } else if (data.status === 'needs_confirmation') {
+                showToast('请选择对应的教务系统考试课程。', 'info');
+            }
+        } catch (error) {
+            showToast(error.message || '同步考试名单失败。', 'error');
+        } finally {
+            setBusy(syncButton, false);
+        }
+    };
+
+    syncButton.addEventListener('click', () => syncRoster());
+    candidatesEl?.addEventListener('click', (event) => {
+        const candidate = event.target.closest('[data-exam-course-key]');
+        if (!candidate) return;
+        syncRoster(candidate.dataset.examCourseKey || '');
+    });
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!latestStatus || latestStatus.status !== 'success') {
+            showToast('请先同步并确认考试名单。', 'warning');
+            return;
+        }
+        const payload = {
+            exam_datetime: form.elements.exam_datetime?.value || '',
+            exam_location: form.elements.exam_location?.value || '',
+            chief_invigilator: form.elements.chief_invigilator?.value || '',
+            assistant_invigilator: form.elements.assistant_invigilator?.value || '',
+        };
+        setBusy(exportButton, true, '正在导出...');
+        try {
+            const response = await fetch(`/api/manage/classrooms/${classOfferingId}/exam-roster/export`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload),
+            });
+            if (!response.ok) {
+                const contentType = response.headers.get('content-type') || '';
+                const errorData = contentType.includes('application/json') ? await response.json() : await response.text();
+                const message = typeof errorData === 'object' ? errorData.detail : errorData;
+                throw new Error(message || '导出签名表失败。');
+            }
+            const blob = await response.blob();
+            const disposition = response.headers.get('content-disposition') || '';
+            const filenameMatch = disposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+            const filename = filenameMatch
+                ? decodeURIComponent(filenameMatch[1] || filenameMatch[2])
+                : '考试签名表.xlsx';
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+            showToast('考试签名表已生成。', 'success');
+        } catch (error) {
+            showToast(error.message || '导出签名表失败。', 'error');
+        } finally {
+            setBusy(exportButton, false);
+        }
+    });
+
+    loadStatus();
+}
+
 function initStudentInsightModal() {
     const modal = document.getElementById('student-insight-modal');
     const frame = modal?.querySelector('[data-student-insight-frame]');
@@ -459,6 +709,7 @@ function initLearningMountain(config) {
 export function initLearningProgress(config = window.APP_CONFIG || {}) {
     initLearningProgressModal();
     initTeacherLearningRoster();
+    initTeacherExamRoster(config);
     initStudentInsightModal();
     initStageExamButton(config);
     initLearningMountain(config);

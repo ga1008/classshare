@@ -107,6 +107,11 @@ from ..services.academic_calendar_sync_service import (
 )
 from ..services.academic_auto_sync_service import sync_teacher_academic_data_after_credential_verified
 from ..services.academic_course_sync_service import sync_current_teacher_courses_from_academic_system
+from ..services.academic_exam_roster_sync_service import (
+    build_exam_roster_signature_workbook,
+    load_classroom_exam_roster_status,
+    sync_classroom_exam_roster_from_academic_system,
+)
 from ..services.academic_invigilation_sync_service import sync_current_teacher_invigilations_from_academic_system
 from ..services.academic_roster_sync_service import sync_current_teacher_rosters_from_academic_system
 from ..storage_paths import resolve_migrated_file_path
@@ -1026,6 +1031,80 @@ async def api_sync_current_classes_from_academic_system(
     if result.get("status") != "success":
         raise HTTPException(502, result.get("message") or "未能从教务系统同步班级和学生名单。")
     return result
+
+
+@router.get("/classrooms/{class_offering_id}/exam-roster", response_class=JSONResponse)
+async def api_get_classroom_exam_roster(
+    class_offering_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        _ensure_teacher_owned_offering(conn, class_offering_id, int(user["id"]))
+    result = load_classroom_exam_roster_status(int(user["id"]), int(class_offering_id))
+    if result.get("status") == "not_found":
+        raise HTTPException(404, result.get("message") or "课堂不存在或无权访问。")
+    return result
+
+
+@router.post("/classrooms/{class_offering_id}/exam-roster/sync", response_class=JSONResponse)
+async def api_sync_classroom_exam_roster(
+    class_offering_id: int,
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        _ensure_teacher_owned_offering(conn, class_offering_id, int(user["id"]))
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    result = await sync_classroom_exam_roster_from_academic_system(
+        int(user["id"]),
+        int(class_offering_id),
+        exam_course_key=str(payload.get("exam_course_key") or "").strip(),
+    )
+    status = result.get("status")
+    if status == "missing_credential":
+        raise HTTPException(400, result.get("message") or "请先配置教务系统账号。")
+    if status in {"not_found", "no_semester"}:
+        raise HTTPException(400 if status == "no_semester" else 404, result.get("message") or "无法同步考试名单。")
+    if status == "needs_confirmation":
+        return result
+    if status != "success":
+        raise HTTPException(502, result.get("message") or "未能从教务系统同步考试名单。")
+    return result
+
+
+@router.post("/classrooms/{class_offering_id}/exam-roster/export")
+async def api_export_classroom_exam_roster(
+    class_offering_id: int,
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        _ensure_teacher_owned_offering(conn, class_offering_id, int(user["id"]))
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    try:
+        export_result = build_exam_roster_signature_workbook(
+            int(user["id"]),
+            int(class_offering_id),
+            export_payload=payload,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return FileResponse(
+        export_result["path"],
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=export_result["filename"],
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.post("/classes/{class_id}/students", response_class=JSONResponse)

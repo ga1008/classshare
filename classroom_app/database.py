@@ -1318,6 +1318,94 @@ def init_database():
 
             conn.execute(
                 '''
+                CREATE TABLE IF NOT EXISTS teacher_academic_exam_roster_items
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    teacher_id INTEGER NOT NULL,
+                    semester_id INTEGER,
+                    class_offering_id INTEGER,
+                    course_id INTEGER,
+                    class_id INTEGER,
+                    school_code TEXT NOT NULL DEFAULT 'gxufl',
+                    academic_year TEXT NOT NULL DEFAULT '',
+                    academic_year_name TEXT NOT NULL DEFAULT '',
+                    academic_term TEXT NOT NULL DEFAULT '',
+                    academic_term_name TEXT NOT NULL DEFAULT '',
+                    exam_course_key TEXT NOT NULL,
+                    course_code TEXT NOT NULL DEFAULT '',
+                    course_internal_id TEXT NOT NULL DEFAULT '',
+                    course_name TEXT NOT NULL DEFAULT '',
+                    teaching_class_id TEXT NOT NULL DEFAULT '',
+                    teaching_class_name TEXT NOT NULL DEFAULT '',
+                    class_composition TEXT NOT NULL DEFAULT '',
+                    teacher_name TEXT NOT NULL DEFAULT '',
+                    schedule_text TEXT NOT NULL DEFAULT '',
+                    exam_method TEXT NOT NULL DEFAULT '',
+                    grade_entry_status TEXT NOT NULL DEFAULT '',
+                    credits REAL,
+                    declared_student_count INTEGER NOT NULL DEFAULT 0,
+                    roster_student_count INTEGER NOT NULL DEFAULT 0,
+                    raw_json TEXT NOT NULL DEFAULT '{}',
+                    source_url TEXT NOT NULL DEFAULT '',
+                    sync_status TEXT NOT NULL DEFAULT 'active',
+                    synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                    FOREIGN KEY (semester_id) REFERENCES academic_semesters (id) ON DELETE SET NULL,
+                    FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL,
+                    FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE SET NULL,
+                    FOREIGN KEY (class_id) REFERENCES classes (id) ON DELETE SET NULL,
+                    UNIQUE (teacher_id, school_code, academic_year, academic_term, exam_course_key)
+                )
+                '''
+            )
+
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS teacher_academic_exam_roster_students
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    teacher_id INTEGER NOT NULL,
+                    semester_id INTEGER,
+                    exam_roster_item_id INTEGER NOT NULL,
+                    class_offering_id INTEGER,
+                    class_id INTEGER,
+                    student_id INTEGER,
+                    school_code TEXT NOT NULL DEFAULT 'gxufl',
+                    academic_year TEXT NOT NULL DEFAULT '',
+                    academic_term TEXT NOT NULL DEFAULT '',
+                    exam_course_key TEXT NOT NULL DEFAULT '',
+                    student_number TEXT NOT NULL DEFAULT '',
+                    student_name TEXT NOT NULL DEFAULT '',
+                    gender TEXT NOT NULL DEFAULT '',
+                    admin_class_code TEXT NOT NULL DEFAULT '',
+                    admin_class_name TEXT NOT NULL DEFAULT '',
+                    college TEXT NOT NULL DEFAULT '',
+                    grade TEXT NOT NULL DEFAULT '',
+                    major TEXT NOT NULL DEFAULT '',
+                    school_status TEXT NOT NULL DEFAULT '',
+                    selection_type TEXT NOT NULL DEFAULT '',
+                    seat_no INTEGER NOT NULL DEFAULT 0,
+                    row_order INTEGER NOT NULL DEFAULT 0,
+                    raw_json TEXT NOT NULL DEFAULT '{}',
+                    source_url TEXT NOT NULL DEFAULT '',
+                    synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                    FOREIGN KEY (semester_id) REFERENCES academic_semesters (id) ON DELETE SET NULL,
+                    FOREIGN KEY (exam_roster_item_id) REFERENCES teacher_academic_exam_roster_items (id) ON DELETE CASCADE,
+                    FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL,
+                    FOREIGN KEY (class_id) REFERENCES classes (id) ON DELETE SET NULL,
+                    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE SET NULL,
+                    UNIQUE (exam_roster_item_id, student_number)
+                )
+                '''
+            )
+
+            conn.execute(
+                '''
                 CREATE TABLE IF NOT EXISTS teacher_calendar_events
                 (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3794,6 +3882,22 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_teacher_academic_invigilation_items_term "
                 "ON teacher_academic_invigilation_items (teacher_id, academic_year, academic_term, sync_status)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_exam_roster_items_offering "
+                "ON teacher_academic_exam_roster_items (teacher_id, class_offering_id, synced_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_exam_roster_items_term "
+                "ON teacher_academic_exam_roster_items (teacher_id, academic_year, academic_term, sync_status)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_exam_roster_students_item "
+                "ON teacher_academic_exam_roster_students (exam_roster_item_id, row_order, id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_exam_roster_students_lookup "
+                "ON teacher_academic_exam_roster_students (teacher_id, class_offering_id, student_number)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_teacher_calendar_events_teacher_semester "

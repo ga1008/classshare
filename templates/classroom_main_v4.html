@@ -809,6 +809,37 @@
                     {% endfor %}
                 </div>
             </div>
+            <div class="learning-exam-roster-panel" data-exam-roster-panel data-class-offering-id="{{ classroom.id }}" aria-label="期末考试名单与签名表">
+                <div class="learning-exam-roster-panel__head">
+                    <div>
+                        <h3>期末考试名单</h3>
+                        <p data-exam-roster-summary>从教务系统对齐考生名单后，可导出线下签名表。</p>
+                    </div>
+                    <button type="button" class="btn btn-primary btn-sm" data-exam-roster-sync>同步考试名单</button>
+                </div>
+                <div class="learning-exam-roster-status" data-exam-roster-status>正在读取考试名单状态...</div>
+                <div class="learning-exam-roster-preview" data-exam-roster-preview hidden></div>
+                <div class="learning-exam-roster-candidates" data-exam-roster-candidates hidden></div>
+                <form class="learning-exam-roster-form" data-exam-roster-export-form>
+                    <label>
+                        <span>考试时间</span>
+                        <input type="datetime-local" name="exam_datetime" class="form-control" required>
+                    </label>
+                    <label>
+                        <span>考试地点</span>
+                        <input type="text" name="exam_location" class="form-control" placeholder="例如：知新楼 B318" required>
+                    </label>
+                    <label>
+                        <span>主监考</span>
+                        <input type="text" name="chief_invigilator" class="form-control">
+                    </label>
+                    <label>
+                        <span>辅监考</span>
+                        <input type="text" name="assistant_invigilator" class="form-control">
+                    </label>
+                    <button type="submit" class="btn btn-outline btn-sm" data-exam-roster-export disabled>导出签名表</button>
+                </form>
+            </div>
             {% set roster_students = lo.roster_students if lo.roster_students is defined and lo.roster_students else lo.students %}
             <div class="learning-roster-board" aria-label="班级成员与本课进度">
                 <div class="learning-roster-board__head">
@@ -1838,7 +1869,7 @@
     import * as materialsApp from '/static/js/classroom_materials.js?v=learning-progress-20260503';
     import * as examApp from '/static/js/app_exams.js';
     import { initClassroomPage } from '/static/js/classroom_page.js?v=classroom-topbar-20260516-3';
-    import { initLearningProgress } from '/static/js/learning_progress.js?v=class-members-support-20260515';
+    import { initLearningProgress } from '/static/js/learning_progress.js?v=exam-roster-20260519';
 
     window.UI = ui;
     window.fileApp = fileApp;
