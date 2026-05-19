@@ -699,39 +699,710 @@
         width: 1.2rem;
         height: 1.2rem;
     }
+
+    .exam-page-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        --exam-ink: #111827;
+        --exam-muted: #64748b;
+        --exam-line: rgba(148, 163, 184, 0.28);
+        --exam-rose: #be123c;
+        --exam-teal: #0f766e;
+        --exam-amber: #b45309;
+        --exam-panel: rgba(255, 255, 255, 0.92);
+    }
+
+    .exam-hero-panel,
+    .exam-control-panel,
+    .exam-board,
+    .exam-empty-shell {
+        background: var(--exam-panel);
+        border: 1px solid var(--exam-line);
+        box-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
+        backdrop-filter: blur(12px);
+    }
+
+    .exam-hero-panel {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 18px;
+        align-items: end;
+        padding: 22px;
+        border-radius: 24px;
+        overflow: hidden;
+    }
+
+    .exam-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--exam-teal);
+        font-size: 0.82rem;
+        font-weight: 700;
+        margin-bottom: 8px;
+    }
+
+    .exam-hero-title {
+        margin: 0;
+        color: var(--exam-ink);
+        font-size: clamp(1.35rem, 2vw, 1.85rem);
+        line-height: 1.25;
+        letter-spacing: 0;
+    }
+
+    .exam-hero-copy {
+        margin: 8px 0 0;
+        color: var(--exam-muted);
+        font-size: 0.95rem;
+        line-height: 1.7;
+        max-width: 760px;
+    }
+
+    .exam-hero-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .exam-stat-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .exam-stat-card {
+        border: 1px solid var(--exam-line);
+        border-radius: 18px;
+        padding: 14px 16px;
+        background: rgba(255, 255, 255, 0.82);
+        min-width: 0;
+    }
+
+    .exam-stat-label {
+        color: var(--exam-muted);
+        font-size: 0.78rem;
+        margin-bottom: 6px;
+    }
+
+    .exam-stat-value {
+        color: var(--exam-ink);
+        font-size: 1.4rem;
+        line-height: 1;
+        font-weight: 800;
+    }
+
+    .exam-stat-value.is-warm {
+        color: var(--exam-amber);
+    }
+
+    .exam-stat-value.is-danger {
+        color: #b91c1c;
+    }
+
+    .exam-control-panel {
+        border-radius: 22px;
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .exam-control-row {
+        display: grid;
+        gap: 12px;
+        align-items: end;
+    }
+
+    .exam-control-row.primary {
+        grid-template-columns: minmax(260px, 1.4fr) repeat(4, minmax(150px, 1fr));
+    }
+
+    .exam-control-row.secondary {
+        grid-template-columns: minmax(160px, 0.8fr) minmax(160px, 0.8fr) minmax(0, 1fr) auto auto;
+        align-items: center;
+    }
+
+    .exam-filter-field {
+        min-width: 0;
+    }
+
+    .exam-filter-field label,
+    .exam-quick-label {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--exam-muted);
+        font-size: 0.76rem;
+        font-weight: 700;
+    }
+
+    .exam-filter-select {
+        width: 100%;
+        min-height: 44px;
+        border: 1px solid var(--exam-line);
+        border-radius: 14px;
+        background: #fff;
+        color: var(--exam-ink);
+        padding: 0 38px 0 13px;
+        font-size: 0.9rem;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+    }
+
+    .exam-filter-select:focus,
+    .search-box input:focus {
+        outline: none;
+        border-color: rgba(15, 118, 110, 0.62);
+        box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
+    }
+
+    .exam-control-panel .search-box {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .exam-control-panel .search-box input {
+        min-height: 44px;
+        border-radius: 14px;
+        background: #fff;
+        border-color: var(--exam-line);
+        padding-left: 42px;
+        padding-right: 38px;
+    }
+
+    .exam-control-panel .filter-divider {
+        display: none;
+    }
+
+    .exam-control-panel .filter-chips {
+        min-width: 0;
+    }
+
+    .exam-control-panel .filter-chip,
+    .exam-control-panel .tag-dropdown-btn,
+    .exam-control-panel .clear-filters-btn {
+        min-height: 36px;
+        border-radius: 999px;
+        padding: 6px 12px;
+        background: #fff;
+    }
+
+    .exam-control-panel .filter-chip.active {
+        background: #0f766e;
+        border-color: #0f766e;
+        color: #fff;
+    }
+
+    .exam-control-panel .tag-dropdown-btn.has-selection {
+        background: #fdf2f8;
+        border-color: #f9a8d4;
+        color: var(--exam-rose);
+    }
+
+    .exam-active-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        min-height: 0;
+    }
+
+    .exam-active-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        padding: 5px 10px;
+        color: #475569;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        font-size: 0.78rem;
+    }
+
+    .exam-board {
+        border-radius: 24px;
+        padding: 18px;
+    }
+
+    .exam-board-head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 14px;
+    }
+
+    .exam-board-title {
+        margin: 0;
+        color: var(--exam-ink);
+        font-size: 1.04rem;
+        line-height: 1.3;
+        font-weight: 800;
+    }
+
+    .exam-board-summary {
+        margin: 4px 0 0;
+        color: var(--exam-muted);
+        font-size: 0.86rem;
+    }
+
+    .exams-grid {
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 14px;
+        align-items: stretch;
+    }
+
+    .exams-grid.is-grouped {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .exam-card {
+        min-width: 0;
+        border: 1px solid var(--exam-line);
+        border-radius: 18px;
+        cursor: default;
+        box-shadow: 0 14px 32px rgba(15, 23, 42, 0.06);
+        overflow: hidden;
+    }
+
+    .exam-card:hover {
+        box-shadow: 0 18px 38px rgba(15, 23, 42, 0.10);
+    }
+
+    .exam-card-body {
+        padding: 16px;
+        gap: 10px;
+    }
+
+    .exam-card-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 0;
+    }
+
+    .exam-date-stack {
+        text-align: right;
+        flex: 0 0 auto;
+        color: var(--exam-muted);
+        font-size: 0.75rem;
+        line-height: 1.45;
+    }
+
+    .exam-title {
+        margin: 0;
+        font-size: 1.05rem;
+        line-height: 1.35;
+    }
+
+    .exam-desc {
+        margin: 0;
+        -webkit-line-clamp: 3;
+        min-height: 3.9em;
+        flex: initial;
+    }
+
+    .exam-tags {
+        margin-bottom: 0;
+        min-height: 24px;
+    }
+
+    .exam-tag-pill {
+        background: #fdf2f8;
+        border-color: #fbcfe8;
+        color: var(--exam-rose);
+    }
+
+    .exam-tag-more {
+        background: #f8fafc;
+        color: #64748b;
+        border-color: #e2e8f0;
+    }
+
+    .exam-meta-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        padding-top: 10px;
+        margin-bottom: 0;
+    }
+
+    .meta-item {
+        min-width: 0;
+        border: 1px solid #edf2f7;
+        border-radius: 12px;
+        padding: 8px 10px;
+        background: #fbfdff;
+        color: #475569;
+        justify-content: space-between;
+    }
+
+    .meta-item strong {
+        color: var(--exam-ink);
+        font-size: 0.9rem;
+        white-space: nowrap;
+    }
+
+    .exam-actions {
+        margin-top: auto;
+        padding-top: 2px;
+    }
+
+    .exam-actions .btn {
+        min-height: 38px;
+        border-radius: 12px;
+    }
+
+    .exam-group-section {
+        border: 1px solid var(--exam-line);
+        border-radius: 18px;
+        background: rgba(248, 250, 252, 0.78);
+        overflow: hidden;
+    }
+
+    .exam-group-toggle {
+        width: 100%;
+        min-height: 56px;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto auto;
+        gap: 10px;
+        align-items: center;
+        border: 0;
+        background: transparent;
+        color: var(--exam-ink);
+        padding: 14px 16px;
+        cursor: pointer;
+        text-align: left;
+    }
+
+    .exam-group-toggle:hover {
+        background: rgba(255, 255, 255, 0.74);
+    }
+
+    .exam-group-caret {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--exam-teal);
+        background: #ecfeff;
+        transition: transform 0.2s ease;
+    }
+
+    .exam-group-section.is-collapsed .exam-group-caret {
+        transform: rotate(-90deg);
+    }
+
+    .exam-group-title {
+        font-weight: 800;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .exam-group-meta {
+        color: var(--exam-muted);
+        font-size: 0.8rem;
+        white-space: nowrap;
+    }
+
+    .exam-group-body {
+        overflow: hidden;
+        transition: max-height 0.24s ease, opacity 0.18s ease;
+    }
+
+    .exam-group-section.is-collapsed .exam-group-body {
+        opacity: 0;
+    }
+
+    .exam-group-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 14px;
+        padding: 0 14px 14px;
+    }
+
+    .no-results {
+        border-radius: 20px;
+        border: 1px dashed #cbd5e1;
+        background: #fff;
+    }
+
+    .modal-box {
+        width: min(760px, calc(100vw - 32px));
+        max-width: 760px;
+        border-radius: 22px;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+    }
+
+    .modal-header,
+    .modal-footer {
+        padding-left: 24px;
+        padding-right: 24px;
+    }
+
+    .modal-body {
+        padding: 20px 24px;
+    }
+
+    #offering-list {
+        max-height: 320px !important;
+        border-radius: 14px !important;
+    }
+
+    .offering-option {
+        border-radius: 14px;
+        background: #fff;
+    }
+
+    @media (max-width: 1180px) {
+        .exam-control-row.primary,
+        .exam-control-row.secondary {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .exam-control-row.primary .search-box,
+        .exam-control-row.secondary .filter-chips {
+            grid-column: 1 / -1;
+        }
+
+        .exam-stat-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 760px) {
+        .exam-hero-panel,
+        .exam-board-head {
+            grid-template-columns: 1fr;
+            display: grid;
+        }
+
+        .exam-hero-actions {
+            justify-content: stretch;
+        }
+
+        .exam-hero-actions .btn,
+        .exam-control-row.primary,
+        .exam-control-row.secondary,
+        .exam-stat-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .exam-control-row.primary .search-box,
+        .exam-control-row.secondary .filter-chips {
+            grid-column: auto;
+        }
+
+        .exam-control-panel,
+        .exam-board,
+        .exam-hero-panel {
+            border-radius: 18px;
+            padding: 14px;
+        }
+
+        .exam-control-panel .filter-chip,
+        .exam-control-panel .tag-dropdown-btn,
+        .exam-control-panel .clear-filters-btn {
+            min-height: 44px;
+        }
+
+        .exams-grid,
+        .exam-group-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .exam-group-toggle {
+            grid-template-columns: auto minmax(0, 1fr) auto;
+        }
+
+        .exam-group-meta {
+            display: none;
+        }
+
+        .modal-overlay.active {
+            align-items: flex-end;
+        }
+
+        .modal-box {
+            width: 100%;
+            max-height: 92vh;
+            border-radius: 22px 22px 0 0;
+        }
+    }
+
+    @media (max-width: 520px) {
+        .exam-page-shell {
+            gap: 14px;
+        }
+
+        .exam-card-body {
+            padding: 14px;
+        }
+
+        .exam-meta-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .exam-actions .btn {
+            flex: 1 1 44%;
+        }
+    }
 </style>
 
 {% if papers %}
-<!-- Filter Bar -->
-<div class="filter-bar">
-    <div class="search-box">
-        <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-        <input type="text" id="searchInput" placeholder="搜索试卷名称、描述或标签..." oninput="onSearchInput(this)">
-        <button class="search-clear" id="searchClear" onclick="clearSearch()" title="清除搜索">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        </button>
-    </div>
-    <div class="filter-divider"></div>
-    <div class="filter-chips" id="filterChips">
-        <!-- Dynamic filter chips injected by JS -->
-    </div>
-    <div class="tag-dropdown" id="tagDropdown">
-        <button class="tag-dropdown-btn" onclick="toggleTagDropdown(event)">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
-            标签筛选
-            <span class="tag-dropdown-count" id="tagDropdownCount" style="display:none;">0</span>
-        </button>
-        <div class="tag-dropdown-menu" id="tagDropdownMenu">
-            <!-- Dynamic tag options injected by JS -->
-        </div>
-    </div>
-    <button class="clear-filters-btn" id="clearFiltersBtn" onclick="clearAllFilters()">
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        清除筛选
-    </button>
-</div>
+{% set exam_stats = namespace(assigned=0, generating=0, failed=0, ready=0, question_total=0) %}
+{% for paper in papers %}
+    {% if paper.assigned_count|int > 0 %}{% set exam_stats.assigned = exam_stats.assigned + 1 %}{% endif %}
+    {% if paper.ai_gen_status in ('pending', 'running') %}{% set exam_stats.generating = exam_stats.generating + 1 %}{% endif %}
+    {% if paper.ai_gen_status == 'failed' %}{% set exam_stats.failed = exam_stats.failed + 1 %}{% endif %}
+    {% if paper.status in ('ready', 'published') and paper.ai_gen_status not in ('pending', 'running', 'failed') %}{% set exam_stats.ready = exam_stats.ready + 1 %}{% endif %}
+    {% set exam_stats.question_total = exam_stats.question_total + (paper.question_count|default(0)|int) %}
+{% endfor %}
 
-<div class="exams-grid" id="examsGrid">
+<div class="exam-page-shell">
+    <section class="exam-hero-panel" aria-label="试卷库概览">
+        <div>
+            <div class="exam-kicker">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>
+                试卷资产管理
+            </div>
+            <h2 class="exam-hero-title">按状态、题型、来源和标签快速整理试卷</h2>
+            <p class="exam-hero-copy">筛选用于缩小范围，排序用于确定处理优先级，归集用于把同类试卷折叠成清晰的工作区。</p>
+        </div>
+        <div class="exam-hero-actions">
+            <a href="/exam/new" class="btn btn-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                新建试卷
+            </a>
+        </div>
+    </section>
+
+    <section class="exam-stat-grid" aria-label="试卷统计">
+        <div class="exam-stat-card">
+            <div class="exam-stat-label">试卷总数</div>
+            <div class="exam-stat-value">{{ papers|length }}</div>
+        </div>
+        <div class="exam-stat-card">
+            <div class="exam-stat-label">可用于分配</div>
+            <div class="exam-stat-value">{{ exam_stats.ready }}</div>
+        </div>
+        <div class="exam-stat-card">
+            <div class="exam-stat-label">已分配试卷</div>
+            <div class="exam-stat-value">{{ exam_stats.assigned }}</div>
+        </div>
+        <div class="exam-stat-card">
+            <div class="exam-stat-label">生成中 / 失败</div>
+            <div class="exam-stat-value {% if exam_stats.failed %}is-danger{% elif exam_stats.generating %}is-warm{% endif %}">{{ exam_stats.generating }} / {{ exam_stats.failed }}</div>
+        </div>
+    </section>
+
+    <section class="exam-control-panel" aria-label="试卷筛选和排序">
+        <div class="exam-control-row primary">
+            <div class="search-box">
+                <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input type="text" id="searchInput" placeholder="搜索试卷名称、描述、标签、状态或题型..." oninput="onSearchInput(this)">
+                <button class="search-clear" id="searchClear" onclick="clearSearch()" title="清除搜索">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="exam-filter-field">
+                <label for="statusFilter">状态</label>
+                <select id="statusFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <option value="all">全部状态</option>
+                    <option value="ready">可用</option>
+                    <option value="draft">草稿</option>
+                    <option value="published">已发布</option>
+                    <option value="generating">AI 生成中</option>
+                    <option value="failed">生成失败</option>
+                </select>
+            </div>
+            <div class="exam-filter-field">
+                <label for="assignmentFilter">分配</label>
+                <select id="assignmentFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <option value="all">全部分配</option>
+                    <option value="unassigned">未分配</option>
+                    <option value="assigned">已分配</option>
+                </select>
+            </div>
+            <div class="exam-filter-field">
+                <label for="sourceFilter">来源</label>
+                <select id="sourceFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <option value="all">全部来源</option>
+                    <option value="manual">手动 / 导入</option>
+                    <option value="ai">AI 生成</option>
+                </select>
+            </div>
+            <div class="exam-filter-field">
+                <label for="structureFilter">结构</label>
+                <select id="structureFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <option value="all">全部结构</option>
+                    <option value="objective">客观题</option>
+                    <option value="subjective">主观题</option>
+                    <option value="mixed">混合题型</option>
+                    <option value="empty">未设置题目</option>
+                </select>
+            </div>
+        </div>
+        <div class="exam-control-row secondary">
+            <div class="exam-filter-field">
+                <label for="sortSelect">排序</label>
+                <select id="sortSelect" class="exam-filter-select" onchange="onSortChange()">
+                    <option value="updated-desc">最近更新</option>
+                    <option value="created-desc">最新创建</option>
+                    <option value="title-asc">名称 A-Z</option>
+                    <option value="assigned-desc">分配次数多</option>
+                    <option value="questions-desc">题量多</option>
+                    <option value="pages-desc">页数多</option>
+                </select>
+            </div>
+            <div class="exam-filter-field">
+                <label for="groupModeSelect">归集</label>
+                <select id="groupModeSelect" class="exam-filter-select" onchange="onGroupModeChange()">
+                    <option value="none">不归集</option>
+                    <option value="status">按状态</option>
+                    <option value="tag">按首个标签</option>
+                    <option value="structure">按题型结构</option>
+                    <option value="source">按来源</option>
+                </select>
+            </div>
+            <div>
+                <span class="exam-quick-label">快速题型</span>
+                <div class="filter-chips" id="filterChips">
+                    <!-- Dynamic filter chips injected by JS -->
+                </div>
+            </div>
+            <div class="tag-dropdown" id="tagDropdown">
+                <button class="tag-dropdown-btn" onclick="toggleTagDropdown(event)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+                    标签筛选
+                    <span class="tag-dropdown-count" id="tagDropdownCount" style="display:none;">0</span>
+                </button>
+                <div class="tag-dropdown-menu" id="tagDropdownMenu">
+                    <!-- Dynamic tag options injected by JS -->
+                </div>
+            </div>
+            <button class="clear-filters-btn" id="clearFiltersBtn" onclick="clearAllFilters()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                清除筛选
+            </button>
+        </div>
+        <div class="exam-active-pills" id="activeFilterPills"></div>
+    </section>
+
+    <section class="exam-board" aria-label="试卷列表">
+        <div class="exam-board-head">
+            <div>
+                <h3 class="exam-board-title">试卷列表</h3>
+                <p class="exam-board-summary" id="examResultSummary">正在整理试卷...</p>
+            </div>
+        </div>
+
+        <div class="exams-grid" id="examsGrid">
     {% for paper in papers %}
     {% set is_ai_active = paper.ai_gen_status in ('pending', 'running') %}
     {% set is_ai_done = paper.ai_gen_status == 'completed' %}
@@ -742,10 +1413,20 @@
     <div class="card exam-card {% if is_ai_active %}is-generating{% elif is_ai_done %}is-completed{% elif is_ai_failed %}is-failed{% endif %}"
          id="exam-card-{{ paper.id }}"
          data-paper-id="{{ paper.id }}"
+         data-status="{{ paper.status or '' }}"
+         data-source="{{ paper.source_type or 'manual' }}"
+         data-question-profile="{{ paper.question_profile or 'empty' }}"
+         data-question-count="{{ paper.question_count|default(0)|int }}"
+         data-page-count="{{ paper.page_count|default(0)|int }}"
+         data-total-points="{{ paper.total_points|default(0) }}"
+         data-assigned-count="{{ paper.assigned_count|int }}"
+         data-created-at="{{ paper.created_at or '' }}"
+         data-updated-at="{{ paper.updated_at or '' }}"
+         data-primary-tag="{{ tags[0] if tags else '' }}"
          data-ai-gen-status="{{ paper.ai_gen_status or '' }}"
          data-task-id="{{ paper.ai_gen_task_id or '' }}">
         <div class="card-body exam-card-body">
-            <div class="flex justify-between items-start mb-3">
+            <div class="exam-card-head">
                 {% if is_ai_active %}
                 <span class="badge badge-generating">
                     <span class="spinner" style="width: 10px; height: 10px; border-width: 2px; margin-right: 6px;"></span>
@@ -760,9 +1441,10 @@
                     {{ {'draft':'草稿','ready':'就绪', 'published':'已发布'}.get(paper.status, paper.status) }}
                 </span>
                 {% endif %}
-                <span class="text-xs text-muted" title="创建时间">
-                    {{ paper.created_at[:16] if paper.created_at else '未知' }}
-                </span>
+                <div class="exam-date-stack">
+                    <div title="更新时间">更 {{ paper.updated_at[:16] if paper.updated_at else '未知' }}</div>
+                    <div title="创建时间">建 {{ paper.created_at[:10] if paper.created_at else '未知' }}</div>
+                </div>
             </div>
 
             <h3 class="exam-title" title="{{ paper.title }}">{{ paper.title }}</h3>
@@ -805,18 +1487,23 @@
             <div class="exam-meta-grid">
                 <div class="meta-item" title="题目页数">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                    {% if is_ai_active %}
-                    生成中...
-                    {% elif paper.questions_json %}
-                    {% set qdata = paper.questions_json %}
-                    {{ (qdata.get('pages', []) if qdata is mapping else [])|length }} 页
-                    {% else %}
-                    0 页
-                    {% endif %}
+                    <span>页数</span>
+                    <strong>{% if is_ai_active %}生成中{% else %}{{ paper.page_count|default(0)|int }} 页{% endif %}</strong>
+                </div>
+                <div class="meta-item" title="题目数量">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+                    <span>题量</span>
+                    <strong>{{ paper.question_count|default(0)|int }} 题</strong>
+                </div>
+                <div class="meta-item" title="总分">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"></path><path d="M18 20V4"></path><path d="M6 20v-4"></path></svg>
+                    <span>总分</span>
+                    <strong>{{ paper.total_points|default(0) }}</strong>
                 </div>
                 <div class="meta-item" title="已分配班级数">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                    已分配 {{ paper.assigned_count }} 次
+                    <span>分配</span>
+                    <strong>{{ paper.assigned_count }} 次</strong>
                 </div>
             </div>
 
@@ -834,7 +1521,7 @@
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
                 {% elif is_ai_failed %}
-                <button class="btn btn-outline btn-sm" onclick="deletePaper('{{ paper.id }}', '{{ paper.title|e }}')" style="color: #dc2626;">
+                <button class="btn btn-outline btn-sm" onclick='deletePaper({{ paper.id|tojson }}, {{ paper.title|tojson }})' style="color: #dc2626;">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                     删除
                 </button>
@@ -847,14 +1534,14 @@
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                     编辑
                 </a>
-                <button class="btn btn-primary btn-sm" onclick="openAssignModal('{{ paper.id }}', '{{ paper.title|e }}')">
+                <button class="btn btn-primary btn-sm" onclick='openAssignModal({{ paper.id|tojson }}, {{ paper.title|tojson }})'>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                     分配
                 </button>
                 <button class="btn btn-ghost btn-sm" style="flex: 0 0 auto; padding: 0 8px; color: #6366f1;" onclick="openTagPopover('{{ paper.id }}', this)" title="管理标签">
                     <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
                 </button>
-                <button class="btn btn-ghost btn-sm text-danger" style="flex: 0 0 auto; padding: 0 8px;" onclick="deletePaper('{{ paper.id }}', '{{ paper.title|e }}')" title="删除试卷">
+                <button class="btn btn-ghost btn-sm text-danger" style="flex: 0 0 auto; padding: 0 8px;" onclick='deletePaper({{ paper.id|tojson }}, {{ paper.title|tojson }})' title="删除试卷">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 </button>
                 {% endif %}
@@ -862,15 +1549,17 @@
         </div>
     </div>
     {% endfor %}
-</div>
+        </div>
+    </section>
 
 <!-- No Results Message -->
-<div class="no-results card" id="noResults">
+    <div class="no-results card" id="noResults">
     <div class="card-body text-center" style="padding: var(--spacing-8) var(--spacing-6);">
         <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-muted mx-auto mb-3"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
         <h3 style="font-size: 1.05rem; font-weight: 600; color: var(--text-primary); margin-bottom: var(--spacing-2);">没有匹配的试卷</h3>
         <p class="text-muted" style="font-size: 0.875rem; margin-bottom: var(--spacing-4);">尝试调整搜索条件或筛选条件</p>
         <button class="btn btn-outline btn-sm" onclick="clearAllFilters()">清除所有筛选</button>
+    </div>
     </div>
 </div>
 
@@ -993,25 +1682,74 @@
             description: {{ (paper.description or '') | tojson }},
             tags: {{ (paper.tags_json or []) | tojson }},
             questionTypes: {{ (paper.question_types or []) | tojson }},
+            questionTypeCounts: {{ (paper.question_type_counts or {}) | tojson }},
             assignedCount: {{ paper.assigned_count | int }},
-            aiStatus: "{{ paper.ai_gen_status or '' }}"
+            aiStatus: "{{ paper.ai_gen_status or '' }}",
+            status: "{{ paper.status or '' }}",
+            sourceType: "{{ paper.source_type or 'manual' }}",
+            questionProfile: "{{ paper.question_profile or 'empty' }}",
+            pageCount: {{ paper.page_count | default(0) | int }},
+            questionCount: {{ paper.question_count | default(0) | int }},
+            totalPoints: {{ paper.total_points | default(0) }},
+            createdAt: "{{ paper.created_at or '' }}",
+            updatedAt: "{{ paper.updated_at or '' }}"
         }{% if not loop.last %},{% endif %}
         {% endfor %}
     ];
 
     // ===== Constants =====
     const QT_LABELS = {
-        'radio': '选择题',
+        'radio': '单选题',
         'checkbox': '多选题',
         'text': '填空题',
-        'textarea': '简答题',
+        'textarea': '简答题'
+    };
+    const STATUS_LABELS = {
+        draft: '草稿',
+        ready: '可用',
+        published: '已发布',
+        generating: 'AI 生成中',
+        failed: '生成失败'
+    };
+    const SOURCE_LABELS = {
+        manual: '手动 / 导入',
+        ai: 'AI 生成'
+    };
+    const PROFILE_LABELS = {
+        objective: '客观题',
+        subjective: '主观题',
+        mixed: '混合题型',
+        empty: '未设置题目'
+    };
+    const SORT_LABELS = {
+        'updated-desc': '最近更新',
+        'created-desc': '最新创建',
+        'title-asc': '名称 A-Z',
+        'assigned-desc': '分配次数多',
+        'questions-desc': '题量多',
+        'pages-desc': '页数多'
+    };
+    const GROUP_LABELS = {
+        none: '不归集',
+        status: '按状态',
+        tag: '按首个标签',
+        structure: '按题型结构',
+        source: '按来源'
     };
     const MAX_VISIBLE_TAGS = 3;
+    const COLLAPSED_GROUP_STORAGE_KEY = 'manage:exams:collapsed-groups:v1';
 
     // ===== Filter State =====
     let searchQuery = '';
     let activeFilters = new Set();
     let selectedFilterTags = new Set();
+    let statusFilter = 'all';
+    let assignmentFilter = 'all';
+    let sourceFilter = 'all';
+    let structureFilter = 'all';
+    let sortMode = 'updated-desc';
+    let groupMode = 'none';
+    let collapsedExamGroups = loadCollapsedExamGroups();
 
     // ===== Tag Popover State =====
     let currentTagPaperId = null;
@@ -1020,6 +1758,53 @@
     const allTags = [...new Set(papersData.flatMap(p => p.tags))].sort();
     const availableTypes = new Set();
     papersData.forEach(p => p.questionTypes.forEach(t => availableTypes.add(t)));
+    papersData.forEach(refreshPaperDerivedFields);
+
+    function loadCollapsedExamGroups() {
+        try {
+            return new Set(JSON.parse(localStorage.getItem(COLLAPSED_GROUP_STORAGE_KEY) || '[]'));
+        } catch (e) {
+            return new Set();
+        }
+    }
+
+    function saveCollapsedExamGroups() {
+        try {
+            localStorage.setItem(COLLAPSED_GROUP_STORAGE_KEY, JSON.stringify([...collapsedExamGroups]));
+        } catch (e) {
+            // Ignore storage errors in private browsing or restricted contexts.
+        }
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[ch]));
+    }
+
+    function refreshPaperDerivedFields(paper) {
+        paper.tags = Array.isArray(paper.tags) ? paper.tags : [];
+        paper.questionTypes = Array.isArray(paper.questionTypes) ? paper.questionTypes : [];
+        paper.primaryTag = paper.tags[0] || '';
+        paper.tagText = paper.tags.join(' ');
+        paper.statusKey = resolveStatusKey(paper);
+        paper.statusLabel = STATUS_LABELS[paper.statusKey] || paper.status || '未知状态';
+        paper.sourceLabel = SOURCE_LABELS[paper.sourceType] || '手动 / 导入';
+        paper.profileLabel = PROFILE_LABELS[paper.questionProfile] || '未设置题目';
+        paper.questionTypeText = paper.questionTypes.map(t => QT_LABELS[t] || t).join(' ');
+    }
+
+    function resolveStatusKey(paper) {
+        if (paper.aiStatus === 'pending' || paper.aiStatus === 'running') return 'generating';
+        if (paper.aiStatus === 'failed') return 'failed';
+        if (paper.status === 'published') return 'published';
+        if (paper.status === 'ready' || paper.aiStatus === 'completed') return 'ready';
+        return 'draft';
+    }
 
     // ===== Init: build filter chips =====
     function buildFilterChips() {
@@ -1027,13 +1812,11 @@
         if (!container) return;
 
         let html = '';
-        // "未分配" chip
         html += `<button class="filter-chip" data-filter="unassigned" onclick="toggleFilter('unassigned', this)">
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
             未分配
         </button>`;
 
-        // Question type chips (only for types that exist in papers)
         const typeOrder = ['radio', 'checkbox', 'text', 'textarea'];
         for (const qt of typeOrder) {
             if (availableTypes.has(qt)) {
@@ -1054,26 +1837,58 @@
             return;
         }
 
-        menu.innerHTML = allTags.map(tag =>
+        menu.innerHTML = allTags.map((tag, index) =>
             `<label class="tag-option">
-                <input type="checkbox" value="${tag}" onchange="toggleFilterTag('${tag.replace(/'/g, "\\'")}', this.checked)">
-                <span>${tag}</span>
+                <input type="checkbox" data-tag-index="${index}" ${selectedFilterTags.has(tag) ? 'checked' : ''}>
+                <span>${escapeHtml(tag)}</span>
             </label>`
         ).join('');
+        menu.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            cb.addEventListener('change', () => {
+                const tag = allTags[Number(cb.dataset.tagIndex)];
+                toggleFilterTag(tag, cb.checked);
+            });
+        });
     }
 
     // ===== Search =====
     function onSearchInput(el) {
         searchQuery = el.value.trim().toLowerCase();
-        document.getElementById('searchClear').style.display = searchQuery ? 'block' : 'none';
+        const clear = document.getElementById('searchClear');
+        if (clear) clear.style.display = searchQuery ? 'block' : 'none';
         applyFilters();
     }
 
-    function clearSearch() {
+    function clearSearch(shouldApply = true) {
         const input = document.getElementById('searchInput');
         if (input) input.value = '';
         searchQuery = '';
-        document.getElementById('searchClear').style.display = 'none';
+        const clear = document.getElementById('searchClear');
+        if (clear) clear.style.display = 'none';
+        if (shouldApply) applyFilters();
+    }
+
+    function readFilterControls() {
+        statusFilter = document.getElementById('statusFilter')?.value || 'all';
+        assignmentFilter = document.getElementById('assignmentFilter')?.value || 'all';
+        sourceFilter = document.getElementById('sourceFilter')?.value || 'all';
+        structureFilter = document.getElementById('structureFilter')?.value || 'all';
+        sortMode = document.getElementById('sortSelect')?.value || 'updated-desc';
+        groupMode = document.getElementById('groupModeSelect')?.value || 'none';
+    }
+
+    function onFilterControlChange() {
+        readFilterControls();
+        applyFilters();
+    }
+
+    function onSortChange() {
+        readFilterControls();
+        applyFilters();
+    }
+
+    function onGroupModeChange() {
+        readFilterControls();
         applyFilters();
     }
 
@@ -1093,7 +1908,7 @@
     function toggleTagDropdown(e) {
         e.stopPropagation();
         const menu = document.getElementById('tagDropdownMenu');
-        menu.classList.toggle('open');
+        if (menu) menu.classList.toggle('open');
     }
 
     function toggleFilterTag(tag, checked) {
@@ -1112,88 +1927,287 @@
         const btnEl = document.querySelector('.tag-dropdown-btn');
 
         if (count > 0) {
-            countEl.textContent = count;
-            countEl.style.display = 'inline-flex';
+            if (countEl) {
+                countEl.textContent = count;
+                countEl.style.display = 'inline-flex';
+            }
             if (btnEl) btnEl.classList.add('has-selection');
         } else {
-            countEl.style.display = 'none';
+            if (countEl) countEl.style.display = 'none';
             if (btnEl) btnEl.classList.remove('has-selection');
         }
     }
 
     // ===== Clear All Filters =====
     function clearAllFilters() {
-        // Clear search
-        clearSearch();
+        clearSearch(false);
 
-        // Clear filter chips
         activeFilters.clear();
         document.querySelectorAll('.filter-chip').forEach(chip => chip.classList.remove('active'));
 
-        // Clear tag filter
         selectedFilterTags.clear();
         document.querySelectorAll('#tagDropdownMenu input[type="checkbox"]').forEach(cb => cb.checked = false);
         updateTagDropdownUI();
 
+        ['statusFilter', 'assignmentFilter', 'sourceFilter', 'structureFilter'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = 'all';
+        });
+        readFilterControls();
         applyFilters();
     }
 
     // ===== Apply Filters =====
     function applyFilters() {
-        let visibleCount = 0;
+        readFilterControls();
         const grid = document.getElementById('examsGrid');
         if (!grid) return;
 
-        const cards = grid.querySelectorAll('.exam-card');
+        const visiblePapers = sortPapers(papersData.filter(matchesPaper));
+        renderExamCards(visiblePapers);
+        renderFilterSummary(visiblePapers.length);
+        renderActiveFilterPills();
 
-        papersData.forEach((paper, index) => {
-            const card = cards[index];
-            if (!card) return;
-
-            let visible = true;
-
-            // Search filter
-            if (searchQuery) {
-                const haystack = (paper.title + ' ' + paper.description + ' ' + paper.tags.join(' ')).toLowerCase();
-                if (!haystack.includes(searchQuery)) {
-                    visible = false;
-                }
-            }
-
-            // Filter chips (AND logic)
-            if (visible && activeFilters.size > 0) {
-                for (const filter of activeFilters) {
-                    if (filter === 'unassigned') {
-                        if (paper.assignedCount > 0) { visible = false; break; }
-                    } else {
-                        // Question type filter
-                        if (!paper.questionTypes.includes(filter)) { visible = false; break; }
-                    }
-                }
-            }
-
-            // Tag filter (OR logic - paper must have at least one of the selected tags)
-            if (visible && selectedFilterTags.size > 0) {
-                const hasMatchingTag = [...selectedFilterTags].some(tag => paper.tags.includes(tag));
-                if (!hasMatchingTag) visible = false;
-            }
-
-            card.style.display = visible ? '' : 'none';
-            if (visible) visibleCount++;
-        });
-
-        // Show/hide no results
         const noResults = document.getElementById('noResults');
         if (noResults) {
-            noResults.classList.toggle('visible', visibleCount === 0);
+            noResults.classList.toggle('visible', visiblePapers.length === 0);
         }
 
-        // Show/hide clear button
-        const hasActiveFilters = searchQuery || activeFilters.size > 0 || selectedFilterTags.size > 0;
         const clearBtn = document.getElementById('clearFiltersBtn');
         if (clearBtn) {
-            clearBtn.classList.toggle('visible', hasActiveFilters);
+            clearBtn.classList.toggle('visible', hasActiveFilterState());
         }
+    }
+
+    function matchesPaper(paper) {
+        if (searchQuery) {
+            const haystack = [
+                paper.title,
+                paper.description,
+                paper.tagText,
+                paper.statusLabel,
+                paper.sourceLabel,
+                paper.profileLabel,
+                paper.questionTypeText
+            ].join(' ').toLowerCase();
+            if (!haystack.includes(searchQuery)) return false;
+        }
+
+        if (statusFilter !== 'all' && paper.statusKey !== statusFilter) return false;
+        if (assignmentFilter === 'assigned' && paper.assignedCount <= 0) return false;
+        if (assignmentFilter === 'unassigned' && paper.assignedCount > 0) return false;
+        if (sourceFilter !== 'all' && paper.sourceType !== sourceFilter) return false;
+        if (structureFilter !== 'all' && paper.questionProfile !== structureFilter) return false;
+
+        for (const filter of activeFilters) {
+            if (filter === 'unassigned') {
+                if (paper.assignedCount > 0) return false;
+            } else if (!paper.questionTypes.includes(filter)) {
+                return false;
+            }
+        }
+
+        if (selectedFilterTags.size > 0) {
+            return [...selectedFilterTags].some(tag => paper.tags.includes(tag));
+        }
+        return true;
+    }
+
+    function sortPapers(papers) {
+        const sorted = [...papers];
+        const timeValue = value => {
+            const parsed = Date.parse(value || '');
+            return Number.isFinite(parsed) ? parsed : 0;
+        };
+        const compareTitle = (a, b) => a.title.localeCompare(b.title, 'zh-Hans-CN');
+        sorted.sort((a, b) => {
+            let result = 0;
+            if (sortMode === 'created-desc') {
+                result = timeValue(b.createdAt) - timeValue(a.createdAt);
+            } else if (sortMode === 'title-asc') {
+                result = compareTitle(a, b);
+            } else if (sortMode === 'assigned-desc') {
+                result = b.assignedCount - a.assignedCount;
+            } else if (sortMode === 'questions-desc') {
+                result = b.questionCount - a.questionCount;
+            } else if (sortMode === 'pages-desc') {
+                result = b.pageCount - a.pageCount;
+            } else {
+                result = timeValue(b.updatedAt) - timeValue(a.updatedAt);
+            }
+            return result || compareTitle(a, b);
+        });
+        return sorted;
+    }
+
+    function getCardForPaper(paperId) {
+        return document.getElementById(`exam-card-${paperId}`);
+    }
+
+    function getCardParking(grid) {
+        let parking = document.getElementById('examCardParking');
+        if (!parking) {
+            parking = document.createElement('div');
+            parking.id = 'examCardParking';
+            parking.hidden = true;
+            grid.appendChild(parking);
+        }
+        return parking;
+    }
+
+    function renderExamCards(visiblePapers) {
+        const grid = document.getElementById('examsGrid');
+        if (!grid) return;
+
+        const parking = getCardParking(grid);
+        grid.querySelectorAll('.exam-card').forEach(card => {
+            card.hidden = true;
+            parking.appendChild(card);
+        });
+        grid.querySelectorAll('.exam-group-section').forEach(section => section.remove());
+
+        grid.classList.toggle('is-grouped', groupMode !== 'none');
+        if (groupMode === 'none') {
+            visiblePapers.forEach(paper => {
+                const card = getCardForPaper(paper.id);
+                if (card) {
+                    card.hidden = false;
+                    grid.appendChild(card);
+                }
+            });
+            grid.appendChild(parking);
+            return;
+        }
+
+        const groups = buildExamGroups(visiblePapers);
+        groups.forEach(group => {
+            const section = document.createElement('section');
+            section.className = 'exam-group-section';
+            section.dataset.collapseKey = group.collapseKey;
+            const collapsed = collapsedExamGroups.has(group.collapseKey);
+            section.classList.toggle('is-collapsed', collapsed);
+            section.innerHTML = `
+                <button type="button" class="exam-group-toggle" aria-expanded="${collapsed ? 'false' : 'true'}" onclick="toggleExamGroup(this)">
+                    <span class="exam-group-caret">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+                    </span>
+                    <span class="exam-group-title">${escapeHtml(group.label)}</span>
+                    <span class="exam-group-meta">${group.items.length} 份试卷</span>
+                    <span class="exam-group-meta">${escapeHtml(group.meta)}</span>
+                </button>
+                <div class="exam-group-body" style="max-height:${collapsed ? '0px' : 'none'};">
+                    <div class="exam-group-grid"></div>
+                </div>
+            `;
+            const groupGrid = section.querySelector('.exam-group-grid');
+            group.items.forEach(paper => {
+                const card = getCardForPaper(paper.id);
+                if (card) {
+                    card.hidden = false;
+                    groupGrid.appendChild(card);
+                }
+            });
+            grid.appendChild(section);
+        });
+        grid.appendChild(parking);
+    }
+
+    function buildExamGroups(papers) {
+        const groupMap = new Map();
+        papers.forEach(paper => {
+            const group = getGroupInfo(paper);
+            if (!groupMap.has(group.key)) {
+                groupMap.set(group.key, {
+                    ...group,
+                    collapseKey: `${groupMode}:${group.key}`,
+                    items: []
+                });
+            }
+            groupMap.get(group.key).items.push(paper);
+        });
+        return [...groupMap.values()].sort((a, b) => (a.order - b.order) || a.label.localeCompare(b.label, 'zh-Hans-CN'));
+    }
+
+    function getGroupInfo(paper) {
+        if (groupMode === 'status') {
+            const order = { generating: 0, failed: 1, ready: 2, published: 3, draft: 4 };
+            return { key: paper.statusKey, label: paper.statusLabel, order: order[paper.statusKey] ?? 10, meta: paper.sourceLabel };
+        }
+        if (groupMode === 'tag') {
+            const tag = paper.primaryTag || '未标记';
+            return { key: paper.primaryTag || '__untagged', label: paper.primaryTag ? `# ${paper.primaryTag}` : '未标记', order: paper.primaryTag ? 0 : 99, meta: paper.profileLabel };
+        }
+        if (groupMode === 'structure') {
+            const order = { mixed: 0, objective: 1, subjective: 2, empty: 3 };
+            return { key: paper.questionProfile, label: paper.profileLabel, order: order[paper.questionProfile] ?? 10, meta: `${paper.questionCount} 题` };
+        }
+        if (groupMode === 'source') {
+            const order = { ai: 0, manual: 1 };
+            return { key: paper.sourceType, label: paper.sourceLabel, order: order[paper.sourceType] ?? 10, meta: paper.statusLabel };
+        }
+        return { key: 'all', label: '全部试卷', order: 0, meta: '' };
+    }
+
+    function toggleExamGroup(btn) {
+        const section = btn.closest('.exam-group-section');
+        const body = section?.querySelector('.exam-group-body');
+        if (!section || !body) return;
+
+        const willCollapse = !section.classList.contains('is-collapsed');
+        if (willCollapse) {
+            body.style.maxHeight = `${body.scrollHeight}px`;
+            requestAnimationFrame(() => {
+                section.classList.add('is-collapsed');
+                body.style.maxHeight = '0px';
+                btn.setAttribute('aria-expanded', 'false');
+            });
+            collapsedExamGroups.add(section.dataset.collapseKey);
+        } else {
+            section.classList.remove('is-collapsed');
+            body.style.maxHeight = `${body.scrollHeight}px`;
+            btn.setAttribute('aria-expanded', 'true');
+            setTimeout(() => {
+                if (!section.classList.contains('is-collapsed')) body.style.maxHeight = 'none';
+            }, 260);
+            collapsedExamGroups.delete(section.dataset.collapseKey);
+        }
+        saveCollapsedExamGroups();
+    }
+
+    function renderFilterSummary(visibleCount) {
+        const summary = document.getElementById('examResultSummary');
+        if (!summary) return;
+        const groupText = groupMode === 'none' ? '未归集' : GROUP_LABELS[groupMode];
+        summary.textContent = `当前显示 ${visibleCount} / ${papersData.length} 份试卷 · ${SORT_LABELS[sortMode] || '最近更新'} · ${groupText}`;
+    }
+
+    function renderActiveFilterPills() {
+        const container = document.getElementById('activeFilterPills');
+        if (!container) return;
+        const pills = [];
+        if (searchQuery) pills.push(`搜索：${searchQuery}`);
+        if (statusFilter !== 'all') pills.push(`状态：${STATUS_LABELS[statusFilter] || statusFilter}`);
+        if (assignmentFilter !== 'all') pills.push(`分配：${assignmentFilter === 'assigned' ? '已分配' : '未分配'}`);
+        if (sourceFilter !== 'all') pills.push(`来源：${SOURCE_LABELS[sourceFilter] || sourceFilter}`);
+        if (structureFilter !== 'all') pills.push(`结构：${PROFILE_LABELS[structureFilter] || structureFilter}`);
+        activeFilters.forEach(filter => pills.push(filter === 'unassigned' ? '快速：未分配' : `题型：${QT_LABELS[filter] || filter}`));
+        selectedFilterTags.forEach(tag => pills.push(`标签：${tag}`));
+        if (sortMode !== 'updated-desc') pills.push(`排序：${SORT_LABELS[sortMode] || sortMode}`);
+        if (groupMode !== 'none') pills.push(`归集：${GROUP_LABELS[groupMode] || groupMode}`);
+
+        container.innerHTML = pills.map(text => `<span class="exam-active-pill">${escapeHtml(text)}</span>`).join('');
+    }
+
+    function hasActiveFilterState() {
+        return Boolean(
+            searchQuery ||
+            activeFilters.size > 0 ||
+            selectedFilterTags.size > 0 ||
+            statusFilter !== 'all' ||
+            assignmentFilter !== 'all' ||
+            sourceFilter !== 'all' ||
+            structureFilter !== 'all'
+        );
     }
 
     // ===== Tag Popover =====
@@ -1245,7 +2259,7 @@
         } else {
             container.innerHTML = paper.tags.map((tag, i) =>
                 `<span class="tag-popover-tag">
-                    ${tag}
+                    ${escapeHtml(tag)}
                     <span class="tag-remove" onclick="removeTagFromPopover(${i})" title="删除标签">&times;</span>
                 </span>`
             ).join('');
@@ -1310,12 +2324,21 @@
 
             // Update local data
             const paper = papersData.find(p => p.id === paperId);
-            if (paper) paper.tags = tags;
+            if (paper) {
+                paper.tags = tags;
+                refreshPaperDerivedFields(paper);
+                const card = getCardForPaper(paperId);
+                if (card) {
+                    card.dataset.primaryTag = paper.primaryTag;
+                }
+            }
 
             // Rebuild allTags
             allTags.length = 0;
             allTags.push(...[...new Set(papersData.flatMap(p => p.tags))].sort());
+            selectedFilterTags = new Set([...selectedFilterTags].filter(tag => allTags.includes(tag)));
             buildTagDropdown();
+            updateTagDropdownUI();
 
             // Update card tag display
             updateCardTagDisplay(paperId, tags);
@@ -1355,10 +2378,10 @@
 
         let html = '';
         tags.slice(0, MAX_VISIBLE_TAGS).forEach(tag => {
-            html += `<span class="exam-tag-pill">${tag}</span>`;
+            html += `<span class="exam-tag-pill">${escapeHtml(tag)}</span>`;
         });
         if (tags.length > MAX_VISIBLE_TAGS) {
-            html += `<span class="exam-tag-pill exam-tag-more" title="${tags.slice(MAX_VISIBLE_TAGS).join(', ')}">+${tags.length - MAX_VISIBLE_TAGS}</span>`;
+            html += `<span class="exam-tag-pill exam-tag-more" title="${escapeHtml(tags.slice(MAX_VISIBLE_TAGS).join(', '))}">+${tags.length - MAX_VISIBLE_TAGS}</span>`;
         }
         tagsContainer.innerHTML = html;
     }
@@ -1768,6 +2791,8 @@
         // Build filter UI
         buildFilterChips();
         buildTagDropdown();
+        readFilterControls();
+        applyFilters();
 
         // AI polling
         startPolling();

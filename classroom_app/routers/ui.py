@@ -2990,6 +2990,63 @@ async def get_manage_system_password_resets_page(request: Request, user: dict = 
 @router.get("/manage/exams", response_class=HTMLResponse)
 async def manage_exams_page(request: Request, user: dict = Depends(get_current_teacher)):
     """试卷库管理页面"""
+    def _extract_exam_metrics(question_data: Any) -> dict[str, Any]:
+        pages = question_data.get("pages", []) if isinstance(question_data, dict) else []
+        if not isinstance(pages, list):
+            pages = []
+
+        type_counts: dict[str, int] = {}
+        question_count = 0
+        total_points = 0.0
+
+        for page in pages:
+            questions = page.get("questions", []) if isinstance(page, dict) else []
+            if not isinstance(questions, list):
+                continue
+            for question in questions:
+                if not isinstance(question, dict):
+                    continue
+                question_count += 1
+                qtype = str(question.get("type") or "").strip()
+                if qtype:
+                    type_counts[qtype] = type_counts.get(qtype, 0) + 1
+
+                point_value = question.get("points") if question.get("points") is not None else question.get("score")
+                if point_value is None:
+                    point_value = question.get("max_score")
+                if point_value is None and isinstance(question.get("grading"), dict):
+                    point_value = question["grading"].get("points")
+                try:
+                    total_points += float(point_value or 0)
+                except (TypeError, ValueError):
+                    pass
+
+        question_types = set(type_counts)
+        objective_types = {"radio", "checkbox"}
+        subjective_types = {"text", "textarea"}
+        if question_count == 0:
+            profile = "empty"
+        elif question_types and question_types <= objective_types:
+            profile = "objective"
+        elif question_types and question_types <= subjective_types:
+            profile = "subjective"
+        else:
+            profile = "mixed"
+
+        return {
+            "page_count": len(pages),
+            "question_count": question_count,
+            "total_points": round(total_points, 1),
+            "question_type_counts": type_counts,
+            "question_profile": profile,
+            "question_types": sorted(question_types),
+        }
+
+    def _resolve_exam_source(paper: dict[str, Any]) -> str:
+        if paper.get("ai_gen_task_id") or paper.get("ai_gen_status"):
+            return "ai"
+        return "manual"
+
     with get_db_connection() as conn:
         # 兼容旧版本：已完成但仍停留在 generating 的试卷应进入可用状态。
         conn.execute(
@@ -3034,15 +3091,9 @@ async def manage_exams_page(request: Request, user: dict = Depends(get_current_t
                     paper['tags_json'] = []
             else:
                 paper['tags_json'] = []
-            # 提取题型集合
-            question_types = set()
-            if paper.get('questions_json') and isinstance(paper['questions_json'], dict):
-                for page in paper['questions_json'].get('pages', []):
-                    for q in page.get('questions', []):
-                        qtype = q.get('type')
-                        if qtype:
-                            question_types.add(qtype)
-            paper['question_types'] = sorted(question_types)
+            metrics = _extract_exam_metrics(paper.get('questions_json'))
+            paper.update(metrics)
+            paper['source_type'] = _resolve_exam_source(paper)
             papers.append(paper)
 
     return templates.TemplateResponse(
