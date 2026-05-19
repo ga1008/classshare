@@ -76,6 +76,10 @@ const refs = {
     freeResultEmpty: document.getElementById('freeRoomResultEmpty'),
     freeResultSummary: document.getElementById('freeRoomResultSummary'),
     freeResultTerm: document.getElementById('freeRoomResultTerm'),
+    freeRecommendationPanel: document.getElementById('freeRoomRecommendationPanel'),
+    freeRecommendationList: document.getElementById('freeRoomRecommendationList'),
+    freeRecommendationReason: document.getElementById('freeRoomRecommendationReason'),
+    freeRecommendationCount: document.getElementById('freeRoomRecommendationCount'),
 };
 
 function normalize(value) {
@@ -417,6 +421,31 @@ function renderFreeCard(place) {
     );
 }
 
+function renderRecommendationCard(place) {
+    return renderPlaceCard(
+        { ...place, sync_status: place.sync_status || '' },
+        {
+            extraClass: 'is-recommendation-result',
+            titleFallback: '推荐场地',
+            extraFlags: badge('同类型推荐', 'is-ok'),
+        },
+    );
+}
+
+function renderFreeRecommendations(recommendations = {}) {
+    const items = Array.isArray(recommendations.items) ? recommendations.items : [];
+    if (refs.freeRecommendationPanel) refs.freeRecommendationPanel.hidden = items.length === 0;
+    if (refs.freeRecommendationList) {
+        refs.freeRecommendationList.innerHTML = items.map(renderRecommendationCard).join('');
+    }
+    if (refs.freeRecommendationReason) {
+        refs.freeRecommendationReason.textContent = recommendations.reason || '目标教室当前不可用，系统已为你查询同类型空闲场地。';
+    }
+    if (refs.freeRecommendationCount) {
+        refs.freeRecommendationCount.textContent = items.length ? `推荐 ${items.length} 间` : '暂无推荐';
+    }
+}
+
 function describeFreeQuery(result) {
     const term = result.semester_name || (result.term ? `${result.term.xnm}-${result.term.xqm}` : '');
     const sectionText = selectedSections().join('、');
@@ -447,17 +476,27 @@ async function queryFreeRooms(event) {
             body: freeQueryPayload(),
         });
         const items = Array.isArray(result.items) ? result.items : [];
+        const recommendations = result.recommendations && typeof result.recommendations === 'object'
+            ? result.recommendations
+            : {};
+        const recommendationItems = Array.isArray(recommendations.items) ? recommendations.items : [];
         refs.freeResultList.innerHTML = items.map(renderFreeCard).join('');
-        refs.freeResultEmpty.hidden = items.length > 0;
+        renderFreeRecommendations(recommendations);
+        refs.freeResultEmpty.hidden = items.length > 0 && recommendationItems.length === 0;
         const visibleCount = numberValue(result.total_count || items.length);
         if (refs.freeResultSummary) {
-            refs.freeResultSummary.textContent = `${describeFreeQuery(result)}，共 ${visibleCount} 个可用场地`;
+            const suffix = recommendationItems.length
+                ? `，目标教室不可用，推荐 ${recommendationItems.length} 间同类型空闲场地`
+                : `，共 ${visibleCount} 个可用场地`;
+            refs.freeResultSummary.textContent = `${describeFreeQuery(result)}${suffix}`;
         }
         if (refs.freeResultTerm) {
             refs.freeResultTerm.textContent = result.semester_name || '教务实时';
         }
         if (!items.length) {
-            refs.freeResultEmpty.innerHTML = '<strong>选择的时间段没有可用教室！</strong>可以调整校区、楼号、类别、周次或节次后重新查询。';
+            refs.freeResultEmpty.innerHTML = recommendationItems.length
+                ? '<strong>目标教室此时段不可用</strong>已为你查找同类型空闲场地，优先展示编号接近的教室。'
+                : '<strong>选择的时间段没有可用教室！</strong>可以调整校区、楼号、类别、周次或节次后重新查询。';
         }
     } catch (error) {
         showMessage(error.message || '空闲教室实时查询失败。', 'error');

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 import re
 import sqlite3
 import time
@@ -312,6 +313,142 @@ def _serialize_place_row(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
     item["conflict_ignored"] = bool(item["conflict_ignored"])
     item["display_name"] = item.get("room_full_name") or item.get("room_name") or item.get("room_code") or ""
     return item
+
+
+def _free_item_from_place(place: AcademicTeachingPlace) -> dict[str, Any]:
+    item = place.__dict__.copy()
+    item["available"] = True
+    item["raw_json"] = place.raw_json
+    item["display_name"] = place.room_full_name or place.room_name or place.room_code or ""
+    return item
+
+
+def _free_items_from_payload(payload: Any) -> tuple[list[dict[str, Any]], int, int]:
+    rows, total_count, total_page = _extract_items(payload)
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        place = _place_from_row(row)
+        if place:
+            items.append(_free_item_from_place(place))
+    return items, total_count, total_page
+
+
+def _find_unique_local_place_for_free_query(
+    conn: sqlite3.Connection,
+    teacher_id: int,
+    base_form: dict[str, Any],
+) -> dict[str, Any] | None:
+    place_id = _normalize_space(base_form.get("cd_id"))
+    if place_id:
+        return load_teacher_teaching_place_by_key(conn, teacher_id, place_id=place_id)
+
+    search = _normalize_space(base_form.get("cdmc"))
+    if not search:
+        return None
+    campus_id = _normalize_space(base_form.get("xqh_id"))
+    matches = load_teacher_teaching_places(
+        conn,
+        teacher_id,
+        search=search,
+        campus_id=campus_id,
+        limit=2,
+    )
+    return matches[0] if len(matches) == 1 else None
+
+
+def _value_from_place(item: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = _normalize_space(item.get(key))
+        if value:
+            return value
+    return ""
+
+
+def _room_code_key(item: dict[str, Any]) -> tuple[str, int] | None:
+    for key in ("display_name", "room_full_name", "room_name", "room_code"):
+        value = _normalize_space(item.get(key))
+        if not value:
+            continue
+        for match in re.finditer(r"([A-Za-z])?[-\s]?(\d{2,4})(?!\d)", value):
+            return ((match.group(1) or "").upper(), int(match.group(2)))
+    return None
+
+
+def _same_place(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_ids = {
+        _normalize_space(left.get("place_key")),
+        _normalize_space(left.get("place_id")),
+        _normalize_space(left.get("room_code")),
+    } - {""}
+    right_ids = {
+        _normalize_space(right.get("place_key")),
+        _normalize_space(right.get("place_id")),
+        _normalize_space(right.get("room_code")),
+    } - {""}
+    if left_ids & right_ids:
+        return True
+    left_key = _room_code_key(left)
+    right_key = _room_code_key(right)
+    return bool(left_key and right_key and left_key == right_key)
+
+
+def _rank_recommended_place(candidate: dict[str, Any], target: dict[str, Any]) -> tuple[Any, ...]:
+    target_key = _room_code_key(target)
+    candidate_key = _room_code_key(candidate)
+    same_building = (
+        _value_from_place(candidate, "building_id", "building_name")
+        and _value_from_place(candidate, "building_id", "building_name")
+        == _value_from_place(target, "building_id", "building_name")
+    )
+    if target_key and candidate_key:
+        target_prefix, target_number = target_key
+        candidate_prefix, candidate_number = candidate_key
+        return (
+            0 if candidate_prefix == target_prefix else 1,
+            0 if same_building else 1,
+            abs(candidate_number - target_number),
+            candidate_number,
+            _value_from_place(candidate, "display_name", "room_name", "room_code"),
+        )
+    return (
+        2,
+        0 if same_building else 1,
+        _value_from_place(candidate, "display_name", "room_name", "room_code"),
+    )
+
+
+def _build_free_room_recommendation_form(base_form: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
+    form = dict(base_form)
+    form["cdmc"] = ""
+    form["cd_id"] = ""
+    form["lh"] = ""
+    form["cdejlb_id"] = ""
+    form["xqh_id"] = _value_from_place(target, "campus_id") or form.get("xqh_id") or "1"
+    form["cdlb_id"] = _value_from_place(target, "room_type_id") or form.get("cdlb_id") or "05"
+    return form
+
+
+def _prepare_free_room_recommendations(
+    *,
+    payload: Any,
+    target: dict[str, Any],
+    limit: int = 5,
+) -> dict[str, Any]:
+    items, total_count, total_page = _free_items_from_payload(payload)
+    candidates = [item for item in items if not _same_place(item, target)]
+    candidates.sort(key=lambda item: _rank_recommended_place(item, target))
+    recommendations = candidates[: max(0, min(int(limit or 5), 5))]
+    target_name = _value_from_place(target, "display_name", "room_full_name", "room_name", "room_code")
+    room_type = _value_from_place(target, "room_type_name") or "同类型场地"
+    return {
+        "triggered": True,
+        "target": target,
+        "items": recommendations,
+        "total_count": total_count,
+        "total_page": total_page,
+        "limit": 5,
+        "reason": f"{target_name or '目标教室'} 当前时段不可用，已按 {room_type} 查询空闲场地，并优先推荐编号接近的教室。",
+    }
 
 
 def _load_current_semester(conn: sqlite3.Connection, teacher_id: int) -> dict[str, Any] | None:
@@ -1057,8 +1194,14 @@ async def query_free_classrooms_from_academic_system(
         return {"status": "invalid", "message": "请选择节次。"}
     page = max(1, _parse_int(filters.get("page")) or 1)
     page_size = max(1, min(_parse_int(filters.get("page_size")) or FREE_ROOM_PAGE_SIZE, 200))
+    with get_db_connection() as conn:
+        recommendation_target = _find_unique_local_place_for_free_query(conn, int(teacher_id), base_form)
     profile = None
-    payload = None
+    items: list[dict[str, Any]] = []
+    total_count = 0
+    total_page = 0
+    recommendations: dict[str, Any] = {"triggered": False, "items": []}
+    source_summary: list[dict[str, Any]] = []
     last_session_error: AcademicSessionRedirectError | None = None
     for attempt in range(2):
         try:
@@ -1073,6 +1216,60 @@ async def query_free_classrooms_from_academic_system(
                     _jqgrid_form(page=page, show_count=page_size, extra=base_form),
                     referer_path=ZF_FREE_ROOM_INDEX_PATH,
                 )
+                items, total_count, total_page = _free_items_from_payload(payload)
+                source_summary.append(
+                    {
+                        "endpoint": str(profile.base_url).rstrip("/") + ZF_FREE_ROOM_QUERY_PATH,
+                        "method": "POST",
+                        "readonly": True,
+                        "contract": "ZFSoft jqGrid free-room query",
+                        "purpose": "direct_free_room_query",
+                    }
+                )
+                if not items and total_count <= 0 and recommendation_target:
+                    recommendation_form = _build_free_room_recommendation_form(base_form, recommendation_target)
+                    try:
+                        await asyncio.sleep(random.uniform(0.28, 0.72))
+                        recommendation_payload = await _fetch_json(
+                            client,
+                            ZF_FREE_ROOM_QUERY_PATH,
+                            _jqgrid_form(page=1, show_count=200, extra=recommendation_form),
+                            referer_path=ZF_FREE_ROOM_INDEX_PATH,
+                        )
+                        recommendations = _prepare_free_room_recommendations(
+                            payload=recommendation_payload,
+                            target=recommendation_target,
+                            limit=5,
+                        )
+                        source_summary.append(
+                            {
+                                "endpoint": str(profile.base_url).rstrip("/") + ZF_FREE_ROOM_QUERY_PATH,
+                                "method": "POST",
+                                "readonly": True,
+                                "contract": "ZFSoft jqGrid free-room query",
+                                "purpose": "same_type_recommendation_query",
+                                "serial": True,
+                                "limit": 5,
+                            }
+                        )
+                    except (AcademicSessionRedirectError, httpx.HTTPError) as exc:
+                        target_name = _value_from_place(
+                            recommendation_target,
+                            "display_name",
+                            "room_full_name",
+                            "room_name",
+                            "room_code",
+                        )
+                        recommendations = {
+                            "triggered": True,
+                            "target": recommendation_target,
+                            "items": [],
+                            "total_count": 0,
+                            "total_page": 0,
+                            "limit": 5,
+                            "reason": f"{target_name or '目标教室'} 当前时段不可用，但同类型推荐查询暂时失败。",
+                            "error": str(exc)[:160],
+                        }
             break
         except AcademicSessionRedirectError as exc:
             last_session_error = exc
@@ -1104,19 +1301,11 @@ async def query_free_classrooms_from_academic_system(
                 "semester_id": semester.get("id") if semester else None,
                 "semester_name": str(semester.get("name") or "") if semester else "",
             }
-    rows, total_count, total_page = _extract_items(payload)
-    items = []
-    for row in rows:
-        place = _place_from_row(row)
-        if place:
-            item = place.__dict__.copy()
-            item["available"] = True
-            item["raw_json"] = place.raw_json
-            items.append(item)
     return {
         "status": "success",
         "message": f"实时查询到 {total_count} 个空闲场地。",
         "items": items,
+        "recommendations": recommendations,
         "total_count": total_count,
         "total_page": total_page,
         "page": page,
@@ -1133,12 +1322,5 @@ async def query_free_classrooms_from_academic_system(
             "weekday": base_form["xqj"],
             "section_bitmap": base_form["jcd"],
         },
-        "source_summary": [
-            {
-                "endpoint": str(profile.base_url).rstrip("/") + ZF_FREE_ROOM_QUERY_PATH,
-                "method": "POST",
-                "readonly": True,
-                "contract": "ZFSoft jqGrid free-room query",
-            }
-        ],
+        "source_summary": source_summary,
     }
