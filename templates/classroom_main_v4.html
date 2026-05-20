@@ -1306,6 +1306,7 @@
                         <div class="discussion-room-status">
                             <span class="status-indicator" id="ws-status" title="连接中"></span>
                             <span id="ws-status-text">连接中</span>
+                            <span class="discussion-room-online-count" id="ws-online-count" aria-live="polite" hidden>0 人在线</span>
                         </div>
                     </div>
                     <div class="discussion-room-tabs" role="tablist" aria-label="课堂消息模式">
@@ -1430,7 +1431,7 @@
             <div class="discussion-room-body classroom-private-body discussion-panel" id="classroom-private-body" role="tabpanel" aria-labelledby="discussion-tab-private" hidden aria-hidden="true">
                 <div class="classroom-private-shell">
                     <div class="classroom-private-contact-bar" id="classroom-private-contact-bar">
-                        <label class="chat-composer-sr-only" for="classroom-private-contact-input">输入姓名或学号选择一对一同学</label>
+                        <label class="chat-composer-sr-only" for="classroom-private-contact-input">输入姓名或学号选择一对一联系人</label>
                         <div class="classroom-private-contact-picker" id="classroom-private-contact-picker">
                             <div class="classroom-private-contact-combobox">
                                 <input
@@ -1442,25 +1443,25 @@
                                     aria-autocomplete="list"
                                     aria-expanded="false"
                                     aria-controls="classroom-private-contact-list"
-                                    placeholder="输入姓名或学号搜索本班同学"
+                                    placeholder="输入姓名或学号搜索同学或老师"
                                 >
-                                <button type="button" class="classroom-private-contact-toggle" id="classroom-private-contact-toggle" title="展开同学列表" aria-label="展开同学列表">
+                                <button type="button" class="classroom-private-contact-toggle" id="classroom-private-contact-toggle" title="展开联系人列表" aria-label="展开联系人列表">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
                                 </button>
                             </div>
                             <div class="classroom-private-contact-list" id="classroom-private-contact-list" role="listbox" hidden></div>
                         </div>
                         <select id="classroom-private-contact-select" class="classroom-private-contact-select" hidden aria-hidden="true" tabindex="-1">
-                            <option value="">正在加载本班同学...</option>
+                            <option value="">正在加载联系人...</option>
                         </select>
-                        <span class="classroom-private-status" id="classroom-private-status" aria-live="polite">切换到一对一后选择同学</span>
+                        <span class="classroom-private-status" id="classroom-private-status" aria-live="polite">切换到一对一后选择联系人</span>
                     </div>
                     <div class="classroom-private-conversation" id="classroom-private-conversation">
                         <div class="chat-empty-state">
                             <div class="chat-empty-icon">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/><path d="M8 10h8"/><path d="M8 14h5"/></svg>
                             </div>
-                            <strong>选择同学开始一对一</strong>
+                            <strong>选择联系人开始一对一</strong>
                             <p>这里的内容只会进入你和对方的一对一会话，不会出现在研讨室里。</p>
                         </div>
                     </div>
@@ -1472,7 +1473,7 @@
                     <div class="chat-composer-shell classroom-private-composer-shell" id="classroom-private-dropzone">
                         <label class="chat-composer-sr-only" for="classroom-private-input">课堂一对一输入</label>
                         <div class="classroom-private-attachment-preview" id="classroom-private-attachment-preview" hidden></div>
-                        <textarea id="classroom-private-input" class="form-control chat-composer-input classroom-private-input" autocomplete="off" rows="3" placeholder="选择同学后发送一对一消息，可粘贴或拖入图片/文件"></textarea>
+                        <textarea id="classroom-private-input" class="form-control chat-composer-input classroom-private-input" autocomplete="off" rows="3" placeholder="选择同学或老师后发送一对一消息，可粘贴或拖入图片/文件"></textarea>
                         <div class="chat-composer-actions classroom-private-actions" aria-label="一对一工具">
                             <button type="button" class="btn btn-ghost chat-composer-tool-btn classroom-private-image-btn" id="classroom-private-image-btn" title="添加图片" aria-label="添加图片">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2.4"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-4.6-4.6a1 1 0 0 0-1.4 0L6 19"></path></svg>
@@ -1547,6 +1548,16 @@
                     <label class="form-label" for="assignment-allowed-file-types">允许附件类型</label>
                     <input type="text" id="assignment-allowed-file-types" class="form-control" placeholder="例如：.pdf,.docx,image/*">
                     <p class="form-hint">支持扩展名或 MIME 类型，多个值用逗号分隔；留空表示不限制，学生上传文件夹时也会按此规则过滤子文件。</p>
+                </div>
+
+                <div class="form-group">
+                    <label class="late-policy-toggle-row" for="assignment-send-email-notification">
+                        <input type="checkbox" id="assignment-send-email-notification">
+                        <span>
+                            <strong>发布时发送邮件通知</strong>
+                            <span class="block text-xs text-muted mt-1">默认只创建站内通知；勾选后才进入邮件队列，并按账号限速分批发送。</span>
+                        </span>
+                    </label>
                 </div>
 
                 <div class="form-group">
@@ -1636,6 +1647,15 @@
                     <strong>当前课堂：</strong> {{ classroom.course_name }} / {{ classroom.class_name }}
                 </div>
                 <div id="exam-assign-feedback" class="inline-feedback hidden" role="status" aria-live="polite"></div>
+                <div class="form-group">
+                    <label class="late-policy-toggle-row" for="exam-send-email-notification">
+                        <input type="checkbox" id="exam-send-email-notification">
+                        <span>
+                            <strong>发布时发送邮件通知</strong>
+                            <span class="block text-xs text-muted mt-1">默认只创建站内通知；勾选后才进入邮件队列，并按账号限速分批发送。</span>
+                        </span>
+                    </label>
+                </div>
                 <div class="form-group">
                     <label class="form-label" for="exam-allowed-file-types">接收附件类型</label>
                     <input type="text" id="exam-allowed-file-types" class="form-control" placeholder="例如：.zip,.py,.pdf">
@@ -1952,6 +1972,7 @@
             historyLoadButtonId: 'chat-history-load-btn',
             statusIndicatorId: 'ws-status',
             statusTextId: 'ws-status-text',
+            onlineCountId: 'ws-online-count',
             discussionRoomId: 'discussion-room',
             workspaceContentId: 'workspace-content',
             currentUser: window.APP_CONFIG.userInfo

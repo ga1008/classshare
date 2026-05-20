@@ -2379,6 +2379,28 @@ def init_database():
                          )
                          ''')
 
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS student_feedback_review_notes
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             student_id INTEGER NOT NULL,
+                             submission_id INTEGER NOT NULL,
+                             question_key TEXT NOT NULL,
+                             status TEXT NOT NULL DEFAULT 'open',
+                             reflection TEXT NOT NULL DEFAULT '',
+                             next_action TEXT NOT NULL DEFAULT '',
+                             pinned INTEGER NOT NULL DEFAULT 0,
+                             reviewed_at TEXT,
+                             mastered_at TEXT,
+                             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             metadata_json TEXT NOT NULL DEFAULT '{}',
+                             FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                             FOREIGN KEY (submission_id) REFERENCES submissions (id) ON DELETE CASCADE,
+                             UNIQUE (student_id, submission_id, question_key)
+                         )
+                         ''')
+
             # 10. 聊天记录 (关联到班级课堂)
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS chat_logs
@@ -4065,6 +4087,14 @@ def init_database():
                 "ON submission_draft_files (draft_id, question_id)"
             )
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_feedback_review_student_status "
+                "ON student_feedback_review_notes (student_id, status, pinned, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_feedback_review_submission_question "
+                "ON student_feedback_review_notes (submission_id, question_key)"
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_materials_root_path ON course_materials (root_id, material_path)"
             )
             conn.execute(
@@ -4185,6 +4215,26 @@ def init_database():
                     UNIQUE (class_offering_id, student_id, stage_key)
                 )
             ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS student_learning_path_item_states (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    student_id INTEGER NOT NULL,
+                    class_offering_id INTEGER,
+                    item_key TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    pinned INTEGER NOT NULL DEFAULT 0,
+                    reflection TEXT DEFAULT '',
+                    next_action TEXT DEFAULT '',
+                    completed_at TEXT,
+                    snoozed_until TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    metadata_json TEXT DEFAULT '{}',
+                    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                    FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                    UNIQUE (student_id, item_key)
+                )
+            ''')
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_learning_material_progress_student "
                 "ON learning_material_progress (class_offering_id, student_id, completed, updated_at DESC)"
@@ -4204,6 +4254,14 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_learning_certificates_student "
                 "ON learning_certificates (class_offering_id, student_id, tier DESC, issued_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_student_learning_path_state_lookup "
+                "ON student_learning_path_item_states (student_id, status, pinned, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_student_learning_path_state_course "
+                "ON student_learning_path_item_states (class_offering_id, student_id, status)"
             )
 
             # ── 16. 博客中心 ──

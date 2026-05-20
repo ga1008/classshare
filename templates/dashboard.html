@@ -36,7 +36,6 @@
     </span>
 </a>
 {% endif %}
-{{ super() }}
 {% endblock %}
 
 {% block main_content %}
@@ -49,6 +48,104 @@
     data-recent-activity-days="{{ dashboard_recent_activity_days|default(14) }}"
     data-dashboard-role="{{ user_info.role }}"
 >
+    {% set student_cockpit = dashboard_student_cockpit|default(None) %}
+    {% if user_info.role == 'student' and student_cockpit %}
+    <section class="student-cockpit dashboard-reveal" aria-labelledby="student-cockpit-title">
+        <div class="student-cockpit__head">
+            <div>
+                <span class="student-cockpit__eyebrow">Daily cockpit</span>
+                <h2 id="student-cockpit-title">{{ student_cockpit.title }}</h2>
+                <p>{{ student_cockpit.subtitle }}</p>
+            </div>
+            <a href="{{ student_cockpit.path.href }}" class="student-cockpit__head-link">
+                {{ student_cockpit.path.label }}
+                <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </a>
+        </div>
+
+        <div class="student-cockpit__layout">
+            <a href="{{ student_cockpit.primary.href }}" class="student-cockpit__primary student-cockpit__primary--{{ student_cockpit.primary.tone }}">
+                <span class="student-cockpit__primary-kicker">{{ student_cockpit.primary.eyebrow }}</span>
+                <strong>{{ student_cockpit.primary.title }}</strong>
+                <p>{{ student_cockpit.primary.description }}</p>
+                <div class="student-cockpit__today-feedback" data-cockpit-completion="{{ student_cockpit.today.completion_percent }}">
+                    <span>{{ student_cockpit.today.label }}</span>
+                    <strong>{{ student_cockpit.today.title }}</strong>
+                    <small>{{ student_cockpit.today.description }}</small>
+                    <div class="student-cockpit__today-meter" aria-label="今日计划完成度 {{ student_cockpit.today.completion_percent }}%">
+                        <span style="--cockpit-progress: {{ student_cockpit.today.completion_percent }}%;"></span>
+                    </div>
+                </div>
+                <span class="student-cockpit__primary-meta">{{ student_cockpit.primary.meta }}</span>
+            </a>
+
+            <div class="student-cockpit__stats" aria-label="今日学习概览">
+                {% for stat in student_cockpit.stats %}
+                <div class="student-cockpit-stat student-cockpit-stat--{{ stat.tone }}">
+                    <span>{{ stat.label }}</span>
+                    <strong>{{ stat.value }}</strong>
+                    <small>{{ stat.hint }}</small>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div class="student-cockpit__steps">
+                <div class="student-cockpit__section-title">
+                    <span>下一步</span>
+                    <strong>按优先级推进</strong>
+                </div>
+                {% if student_cockpit.next_steps %}
+                <div class="student-cockpit-step-list">
+                    {% for item in student_cockpit.next_steps %}
+                    <a href="{{ item.href }}" class="student-cockpit-step student-cockpit-step--{{ item.tone }}">
+                        <span class="student-cockpit-step__tag">{{ item.label }}</span>
+                        <strong>{{ item.title }}</strong>
+                        <small>{{ item.description }}</small>
+                        {% if item.due_label %}
+                        <em>{{ item.due_label }}</em>
+                        {% endif %}
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <a href="{{ student_cockpit.empty.href }}" class="student-cockpit-empty">
+                    <strong>{{ student_cockpit.empty.title }}</strong>
+                    <small>{{ student_cockpit.empty.description }}</small>
+                </a>
+                {% endif %}
+            </div>
+
+            <div class="student-cockpit__pulse">
+                <div class="student-cockpit__section-title">
+                    <span>课程脉搏</span>
+                    <strong>看看哪里该加速</strong>
+                </div>
+                {% if student_cockpit.course_pulse %}
+                <div class="student-cockpit-pulse-list">
+                    {% for course in student_cockpit.course_pulse %}
+                    <a href="{{ course.href }}" class="student-cockpit-pulse student-cockpit-pulse--{{ course.tone }}">
+                        <div class="student-cockpit-pulse__copy">
+                            <strong>{{ course.course_name }}</strong>
+                            <span>{{ course.class_name }} · {{ course.level_name }}</span>
+                        </div>
+                        <div class="student-cockpit-pulse__meter" aria-label="修为进度 {{ course.progress_percent }}%">
+                            <span style="--cockpit-progress: {{ course.progress_percent }}%;"></span>
+                        </div>
+                        <small>{{ course.note }}</small>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <a href="{{ student_cockpit.empty.href }}" class="student-cockpit-empty">
+                    <strong>{{ student_cockpit.empty.title }}</strong>
+                    <small>{{ student_cockpit.empty.description }}</small>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
     <section class="dashboard-hero dashboard-reveal" aria-label="首页总览">
         <div class="dashboard-hero__content">
             <div class="dashboard-hero__topline">

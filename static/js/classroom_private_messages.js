@@ -121,7 +121,7 @@ export class ClassroomPrivateMessages {
             const selected = this.contactSelect.selectedOptions[0];
             if (!selected?.dataset.identity) {
                 this.currentContact = null;
-                this.renderConversationEmpty('请选择同学', '打开一个本班同学后即可发送一对一消息。');
+                this.renderConversationEmpty('请选择联系人', '打开一位同学或老师后即可发送一对一消息。');
                 this.updateControls();
                 return;
             }
@@ -298,7 +298,7 @@ export class ClassroomPrivateMessages {
 
     async loadContacts({ silent = false, keepConversation = false } = {}) {
         if (!silent) {
-            this.setStatus('正在同步本班同学...');
+            this.setStatus('正在同步一对一联系人...');
         }
         try {
             const response = await apiFetch(`/api/classrooms/${this.classOfferingId}/private/contacts`, { silent: true });
@@ -311,8 +311,8 @@ export class ClassroomPrivateMessages {
             this.renderContacts();
             if (!this.contacts.length) {
                 this.currentContact = null;
-                this.renderConversationEmpty('暂无可一对一联系的同学', '本课堂没有可选的本班同学。');
-                this.setStatus('没有可选同学');
+                this.renderConversationEmpty('暂无可一对一联系的对象', '本课堂没有可选的一对一联系人。');
+                this.setStatus('没有可选联系人');
                 this.updateControls();
                 return;
             }
@@ -332,7 +332,7 @@ export class ClassroomPrivateMessages {
         this.contactSelect.innerHTML = this.contacts.length
             ? this.contacts.map((contact) => {
                 const unread = Number(contact.unread_count || 0);
-                const label = `${contact.display_name || '同学'}${unread ? `（${unread}）` : ''}`;
+                const label = `${contact.display_name || '联系人'}${unread ? `（${unread}）` : ''}`;
                 return `
                     <option
                         value="${escapeHtml(contactKey(contact))}"
@@ -342,7 +342,7 @@ export class ClassroomPrivateMessages {
                     >${escapeHtml(label)}</option>
                 `;
             }).join('')
-            : '<option value="">暂无本班同学</option>';
+            : '<option value="">暂无联系人</option>';
         this.contactSelect.value = selectedKey || '';
         if (this.currentContact?.identity) {
             this.contactInput.value = this.currentContact.display_name || '';
@@ -371,7 +371,7 @@ export class ClassroomPrivateMessages {
         if (!this.filteredContacts.length) {
             this.contactList.innerHTML = `
                 <div class="classroom-private-contact-empty" role="option" aria-disabled="true">
-                    没有匹配的同学
+                    没有匹配的联系人
                 </div>
             `;
             this.contactList.hidden = !this.isContactListOpen;
@@ -396,10 +396,10 @@ export class ClassroomPrivateMessages {
                     data-contact-key="${escapeHtml(key)}"
                 >
                     <span class="classroom-private-contact-option-main">
-                        <strong>${escapeHtml(contact.display_name || '同学')}</strong>
+                        <strong>${escapeHtml(contact.display_name || '联系人')}</strong>
                         ${unread ? `<em>${unread}</em>` : ''}
                     </span>
-                    <small>${escapeHtml(contact.subtitle || '本班同学')}</small>
+                    <small>${escapeHtml(contact.subtitle || '课堂联系人')}</small>
                 </button>
             `;
         }).join('');
@@ -517,11 +517,11 @@ export class ClassroomPrivateMessages {
         const messages = Array.isArray(this.conversation?.messages) ? this.conversation.messages : [];
         this.attachmentPreviewItems.clear();
         if (!this.currentContact) {
-            this.renderConversationEmpty('选择同学开始一对一', '这里的内容只会进入你和对方的一对一会话。');
+            this.renderConversationEmpty('选择联系人开始一对一', '这里的内容只会进入你和对方的一对一会话。');
             return;
         }
         if (!messages.length) {
-            this.renderConversationEmpty(`还没有和 ${this.currentContact.display_name || '这位同学'} 的一对一消息`, '可以发送文字、图片或文件，附件在点击发送前只保留在本机预览。');
+            this.renderConversationEmpty(`还没有和 ${this.currentContact.display_name || '这位联系人'} 的一对一消息`, '可以发送文字、图片或文件，附件在点击发送前只保留在本机预览。');
             return;
         }
         this.conversationEl.innerHTML = `
@@ -627,7 +627,7 @@ export class ClassroomPrivateMessages {
             return;
         }
         if (!this.currentContact?.can_send) {
-            showToast('请先选择可发送一对一消息的同学', 'warning');
+            showToast('请先选择可发送一对一消息的联系人', 'warning');
             return;
         }
         const remainingSlots = this.attachmentLimit - this.pendingAttachments.length;
@@ -716,7 +716,7 @@ export class ClassroomPrivateMessages {
             return;
         }
         if (!this.currentContact?.identity) {
-            showToast('请先选择一对一同学', 'warning');
+            showToast('请先选择一对一联系人', 'warning');
             return;
         }
         const content = this.input.value.trim();
@@ -788,7 +788,7 @@ export class ClassroomPrivateMessages {
         if (this.input) {
             this.input.placeholder = this.currentContact?.display_name
                 ? `发送给 ${this.currentContact.display_name}，可粘贴或拖入图片/文件`
-                : '选择同学后发送一对一消息，可粘贴或拖入图片/文件';
+                : '选择同学或老师后发送一对一消息，可粘贴或拖入图片/文件';
         }
     }
 

@@ -23,6 +23,7 @@ from .learning_progress_service import (
     serialize_student_learning_progress,
 )
 from .todo_service import build_classroom_todo_overview
+from .feedback_review_service import build_feedback_review_summary
 
 RECENT_ACTIVITY_DAYS = 14
 DEFAULT_TIMELINE_HOUR = "08:00"
@@ -329,6 +330,8 @@ def _attach_dashboard_todos_to_semester_calendar(
     semester_calendar: dict[str, Any],
     offerings: list[dict[str, Any]],
     user: dict[str, Any],
+    *,
+    preloaded_todo_overviews: dict[int, dict[str, Any]] | None = None,
 ) -> None:
     semesters = [
         item
@@ -394,14 +397,16 @@ def _attach_dashboard_todos_to_semester_calendar(
         ):
             bucket["todo_create_options"].append(option)
 
-        try:
-            overview = build_classroom_todo_overview(
-                conn,
-                class_offering_id=class_offering_id,
-                user=user,
-            )
-        except Exception:
-            continue
+        overview = (preloaded_todo_overviews or {}).get(class_offering_id)
+        if overview is None:
+            try:
+                overview = build_classroom_todo_overview(
+                    conn,
+                    class_offering_id=class_offering_id,
+                    user=user,
+                )
+            except Exception:
+                continue
 
         bucket["items"].extend(
             _enrich_dashboard_todo(item, offering)
@@ -1160,7 +1165,601 @@ def _build_teacher_dashboard_context(
         },
         "class_offerings": enriched_offerings,
         "dashboard_semester_calendar": semester_calendar,
+        "dashboard_student_cockpit": None,
         "student_security_summary": None,
+    }
+
+
+def _format_dashboard_metric_value(value: Any, *, suffix: str = "") -> str:
+    try:
+        number = float(value or 0)
+    except (TypeError, ValueError):
+        return f"0{suffix}"
+    if number.is_integer():
+        return f"{int(number)}{suffix}"
+    return f"{number:.1f}{suffix}"
+
+
+def _clamp_dashboard_percent(value: Any) -> int:
+    try:
+        percent = float(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(100, int(round(percent))))
+
+
+def _student_material_progress_percent(item: dict[str, Any]) -> int:
+    if int(item.get("completed") or 0):
+        return 100
+    try:
+        scroll_percent = float(item.get("max_scroll_ratio") or 0) * 100
+    except (TypeError, ValueError):
+        scroll_percent = 0
+    active_percent = int(item.get("active_seconds") or 0) / 180 * 100
+    total_percent = int(item.get("accumulated_seconds") or 0) / 300 * 100
+    return _clamp_dashboard_percent(max(scroll_percent, active_percent, total_percent))
+
+
+def _student_material_viewer_href(item: dict[str, Any]) -> str:
+    material_id = _dashboard_int(item.get("material_id"))
+    class_offering_id = _dashboard_int(item.get("class_offering_id"))
+    session_id = _dashboard_int(item.get("session_id"))
+    if not material_id:
+        return "/dashboard"
+    query = []
+    if class_offering_id:
+        query.append(f"class_offering_id={class_offering_id}")
+    if session_id:
+        query.append(f"session_id={session_id}")
+    suffix = f"?{'&'.join(query)}" if query else ""
+    return f"/materials/view/{material_id}{suffix}"
+
+
+def _load_student_continue_material(
+    conn: sqlite3.Connection,
+    *,
+    student_id: int,
+    offering_ids: list[int],
+) -> dict[str, Any] | None:
+    if not offering_ids:
+        return None
+    placeholders = ",".join("?" for _ in offering_ids)
+    rows = conn.execute(
+        f"""
+        WITH assigned_materials AS (
+            SELECT o.id AS class_offering_id,
+                   c.name AS course_name,
+                   cl.name AS class_name,
+                   m.id AS material_id,
+                   m.name AS material_name,
+                   s.id AS session_id,
+                   COALESCE(s.order_index, 0) AS order_index,
+                   1 AS source_rank
+            FROM class_offerings o
+            JOIN courses c ON c.id = o.course_id
+            JOIN classes cl ON cl.id = o.class_id
+            JOIN class_offering_sessions s ON s.class_offering_id = o.id
+            JOIN course_materials m ON m.id = s.learning_material_id
+            WHERE o.id IN ({placeholders})
+              AND m.node_type = 'file'
+            UNION ALL
+            SELECT o.id AS class_offering_id,
+                   c.name AS course_name,
+                   cl.name AS class_name,
+                   m.id AS material_id,
+                   m.name AS material_name,
+                   NULL AS session_id,
+                   90000 AS order_index,
+                   2 AS source_rank
+            FROM class_offerings o
+            JOIN courses c ON c.id = o.course_id
+            JOIN classes cl ON cl.id = o.class_id
+            JOIN course_material_assignments cma ON cma.class_offering_id = o.id
+            JOIN course_materials m ON m.id = cma.material_id
+            WHERE o.id IN ({placeholders})
+              AND m.node_type = 'file'
+            UNION ALL
+            SELECT o.id AS class_offering_id,
+                   c.name AS course_name,
+                   cl.name AS class_name,
+                   m.id AS material_id,
+                   m.name AS material_name,
+                   NULL AS session_id,
+                   99999 AS order_index,
+                   3 AS source_rank
+            FROM class_offerings o
+            JOIN courses c ON c.id = o.course_id
+            JOIN classes cl ON cl.id = o.class_id
+            JOIN course_materials m ON m.id = o.home_learning_material_id
+            WHERE o.id IN ({placeholders})
+              AND m.node_type = 'file'
+        )
+        SELECT assigned_materials.*,
+               lmp.completed,
+               lmp.max_scroll_ratio,
+               lmp.active_seconds,
+               lmp.accumulated_seconds,
+               lmp.last_viewed_at,
+               lmp.updated_at
+        FROM assigned_materials
+        LEFT JOIN learning_material_progress lmp
+               ON lmp.class_offering_id = assigned_materials.class_offering_id
+              AND lmp.material_id = assigned_materials.material_id
+              AND lmp.student_id = ?
+        WHERE COALESCE(lmp.completed, 0) = 0
+        ORDER BY
+            CASE WHEN lmp.last_viewed_at IS NOT NULL AND lmp.last_viewed_at != '' THEN 0 ELSE 1 END,
+            COALESCE(lmp.last_viewed_at, lmp.updated_at, '') DESC,
+            assigned_materials.source_rank ASC,
+            assigned_materials.order_index ASC,
+            assigned_materials.material_name COLLATE NOCASE
+        LIMIT 1
+        """,
+        (*offering_ids, *offering_ids, *offering_ids, int(student_id)),
+    ).fetchall()
+    if not rows:
+        return None
+    item = dict(rows[0])
+    item["progress_percent"] = _student_material_progress_percent(item)
+    item["href"] = _student_material_viewer_href(item)
+    return item
+
+
+def _load_student_dashboard_todo_overviews(
+    conn: sqlite3.Connection,
+    offerings: list[dict[str, Any]],
+    user: dict[str, Any],
+) -> tuple[dict[int, dict[str, Any]], list[dict[str, Any]]]:
+    overviews: dict[int, dict[str, Any]] = {}
+    items: list[dict[str, Any]] = []
+    for offering in offerings:
+        class_offering_id = _dashboard_int(offering.get("id"))
+        if not class_offering_id:
+            continue
+        try:
+            overview = build_classroom_todo_overview(
+                conn,
+                class_offering_id=class_offering_id,
+                user=user,
+            )
+        except Exception:
+            continue
+        overviews[class_offering_id] = overview
+        items.extend(
+            _enrich_dashboard_todo(item, offering)
+            for item in overview.get("items", [])
+            if isinstance(item, dict)
+        )
+    items.sort(key=_dashboard_todo_sort_key)
+    return overviews, items
+
+
+def _student_cockpit_step_kind(item: dict[str, Any]) -> str:
+    explicit_kind = str(item.get("kind") or "").strip()
+    if explicit_kind in {"exam", "assignment", "stage", "lesson", "manual", "material", "review", "message", "learning"}:
+        return explicit_kind
+    source_type = str(item.get("source_type") or "").strip()
+    if source_type == "stage_exam":
+        return "stage"
+    if source_type == "lesson":
+        return "lesson"
+    if source_type == "manual":
+        return "manual"
+    if source_type == "material":
+        return "material"
+    if source_type == "review":
+        return "review"
+    if bool((item.get("metadata") or {}).get("is_exam")):
+        return "exam"
+    text = f"{item.get('title') or ''} {item.get('description') or ''} {item.get('subtitle') or ''} {item.get('href') or item.get('link_url') or ''}"
+    if "考试" in text or "exam" in text:
+        return "exam"
+    if "作业" in text or "/assignment/" in text:
+        return "assignment"
+    if "消息" in text or "提醒" in text or "message-center" in text:
+        return "message"
+    return "learning"
+
+
+def _student_cockpit_action_label(kind: str, tone: str) -> str:
+    if kind == "exam":
+        return "进入考试"
+    if kind == "assignment":
+        return "开始处理"
+    if kind == "stage":
+        return "挑战试炼"
+    if kind == "material":
+        return "继续阅读"
+    if kind == "review":
+        return "去复盘"
+    if kind == "message":
+        return "查看消息"
+    if kind == "lesson":
+        return "进入课堂"
+    if tone in {"danger", "warning"}:
+        return "马上处理"
+    return "继续学习"
+
+
+def _student_cockpit_plan_label(kind: str) -> str:
+    return {
+        "exam": "考试",
+        "assignment": "作业",
+        "stage": "破境",
+        "lesson": "上课",
+        "manual": "待办",
+        "material": "阅读",
+        "review": "复盘",
+        "message": "消息",
+    }.get(kind, "学习")
+
+
+def _student_cockpit_todo_plan_item(item: dict[str, Any], *, now: datetime) -> dict[str, Any] | None:
+    is_completed = bool(item.get("is_completed"))
+    due_at = _dashboard_parse_datetime(item.get("due_at") or item.get("effective_end_at"))
+    start_at = _dashboard_parse_datetime(item.get("start_at") or item.get("effective_start_at"))
+    due_date = due_at.date() if due_at else None
+    start_date = start_at.date() if start_at else None
+    today = now.date()
+    kind = _student_cockpit_step_kind(item)
+    if is_completed and due_date != today and start_date != today:
+        return None
+
+    if not is_completed and kind == "lesson" and (start_date == today or due_date == today):
+        priority = 2
+        tone = "primary"
+        label = "今天上课"
+    elif not is_completed and due_at and due_at < now:
+        priority = 0
+        tone = "danger"
+        label = "已超时"
+    elif not is_completed and due_date == today:
+        priority = 1
+        tone = "warning" if kind in {"assignment", "exam"} else "primary"
+        label = "今天截止" if kind in {"assignment", "exam", "manual"} else "今天"
+    elif not is_completed and start_date == today:
+        priority = 2
+        tone = "primary"
+        label = "今天开始"
+    elif not is_completed and kind == "stage":
+        priority = 3
+        tone = "success"
+        label = "个人试炼"
+    elif not is_completed and due_at and due_at <= now + timedelta(days=7):
+        priority = 4
+        tone = "warning"
+        label = "本周截止"
+    elif is_completed:
+        priority = 8
+        tone = "success"
+        label = "已完成"
+    else:
+        return None
+
+    href = str(item.get("link_url") or item.get("href") or "").strip()
+    if not href and _dashboard_int(item.get("class_offering_id")):
+        href = f"/classroom/{_dashboard_int(item.get('class_offering_id'))}#timeline-panel"
+    due_label = str(item.get("relative_due_label") or item.get("deadline_label") or "").strip()
+    course_name = str(item.get("course_name") or "").strip()
+    class_name = str(item.get("class_name") or "").strip()
+    context = " · ".join(part for part in [course_name, class_name] if part)
+    return {
+        "kind": kind,
+        "label": label,
+        "title": str(item.get("title") or "待处理事项"),
+        "description": context or str(item.get("subtitle") or "进入后查看完整内容。"),
+        "href": href or "/dashboard#dashboard-semester",
+        "tone": tone,
+        "due_label": due_label,
+        "priority": priority,
+        "is_completed": is_completed,
+    }
+
+
+def _student_cockpit_material_plan_item(item: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not item:
+        return None
+    progress_percent = _clamp_dashboard_percent(item.get("progress_percent"))
+    return {
+        "kind": "material",
+        "label": "继续阅读" if progress_percent > 0 else "开始阅读",
+        "title": str(item.get("material_name") or "继续学习材料"),
+        "description": " · ".join(
+            part
+            for part in [str(item.get("course_name") or ""), f"已读 {progress_percent}%"]
+            if part
+        ),
+        "href": str(item.get("href") or _student_material_viewer_href(item)),
+        "tone": "primary",
+        "due_label": "上次进度" if progress_percent > 0 else "推荐起点",
+        "priority": 5 if progress_percent > 0 else 6,
+        "is_completed": False,
+    }
+
+
+def _student_cockpit_message_plan_item(unread_total: int) -> dict[str, Any] | None:
+    if unread_total <= 0:
+        return None
+    return {
+        "kind": "message",
+        "label": "未读提醒",
+        "title": f"有 {unread_total} 条消息需要查看",
+        "description": "通知、私信和教师提醒都在消息中心。",
+        "href": "/message-center",
+        "tone": "primary",
+        "due_label": "消息中心",
+        "priority": 7,
+        "is_completed": False,
+    }
+
+
+def _student_cockpit_review_plan_item(review_summary: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not review_summary:
+        return None
+    open_count = _dashboard_int(review_summary.get("open_count"))
+    if open_count <= 0:
+        return None
+    high_count = _dashboard_int(review_summary.get("high_count"))
+    return {
+        "kind": "review",
+        "label": "反馈复盘",
+        "title": f"复盘 {open_count} 个反馈点",
+        "description": str(
+            review_summary.get("description")
+            or "把最近批改里的扣分点转成自己的检查动作。"
+        ),
+        "href": str(review_summary.get("href") or "/feedback-review"),
+        "tone": "danger" if high_count else "warning",
+        "due_label": "优先错题" if high_count else "错题本",
+        "priority": 6,
+        "is_completed": False,
+    }
+
+
+def _build_student_today_plan(
+    *,
+    todo_items: list[dict[str, Any]],
+    continue_material: dict[str, Any] | None,
+    review_summary: dict[str, Any] | None,
+    unread_total: int,
+) -> dict[str, Any]:
+    now = china_now().replace(tzinfo=None)
+    plan_items = [
+        item
+        for item in (
+            _student_cockpit_todo_plan_item(todo, now=now)
+            for todo in todo_items
+        )
+        if item
+    ]
+    material_item = _student_cockpit_material_plan_item(continue_material)
+    if material_item:
+        plan_items.append(material_item)
+    review_item = _student_cockpit_review_plan_item(review_summary)
+    if review_item:
+        plan_items.append(review_item)
+    message_item = _student_cockpit_message_plan_item(unread_total)
+    if message_item:
+        plan_items.append(message_item)
+
+    plan_items.sort(
+        key=lambda item: (
+            1 if item.get("is_completed") else 0,
+            int(item["priority"]) if item.get("priority") is not None else 99,
+            str(item.get("title") or ""),
+        )
+    )
+    total_count = len(plan_items)
+    completed_count = sum(1 for item in plan_items if item.get("is_completed"))
+    open_count = max(0, total_count - completed_count)
+    overdue_count = sum(1 for item in plan_items if item.get("label") == "已超时")
+    due_soon_count = sum(
+        1
+        for item in plan_items
+        if item.get("label") in {"今天截止", "本周截止", "已超时"}
+        and not item.get("is_completed")
+    )
+    completion_percent = 100 if total_count == 0 else _clamp_dashboard_percent(completed_count / total_count * 100)
+    if total_count == 0:
+        title = "今天没有硬性任务"
+        description = "适合翻一段材料、看看讨论，或者提前处理下一周的任务。"
+        label = "轻松日"
+    elif open_count == 0:
+        title = "今天已经收尾"
+        description = "当前计划项都已处理，可以进入课堂复盘或预习下一节。"
+        label = "已完成"
+    elif overdue_count:
+        title = f"先补 {overdue_count} 项超时任务"
+        description = "把最紧急的事项先清掉，再回到材料和讨论。"
+        label = "需要处理"
+    else:
+        title = f"今天还有 {open_count} 项可推进"
+        description = "按下面的优先级走，先截止任务，再继续材料和消息。"
+        label = "进行中"
+    return {
+        "items": plan_items,
+        "actionable_items": [item for item in plan_items if not item.get("is_completed")],
+        "total_count": total_count,
+        "completed_count": completed_count,
+        "open_count": open_count,
+        "overdue_count": overdue_count,
+        "due_soon_count": due_soon_count,
+        "completion_percent": completion_percent,
+        "label": label,
+        "title": title,
+        "description": description,
+    }
+
+
+def _build_student_cockpit(
+    *,
+    offerings: list[dict[str, Any]],
+    priority_items: list[dict[str, Any]],
+    cultivation_profile: dict[str, Any],
+    todo_items: list[dict[str, Any]],
+    continue_material: dict[str, Any] | None,
+    review_summary: dict[str, Any] | None,
+    pending_total: int,
+    submitted_total: int,
+    unread_total: int,
+) -> dict[str, Any]:
+    best_course = cultivation_profile.get("best_course") or {}
+    highest_level = cultivation_profile.get("highest_level") or {}
+    today_plan = _build_student_today_plan(
+        todo_items=todo_items,
+        continue_material=continue_material,
+        review_summary=review_summary,
+        unread_total=unread_total,
+    )
+    primary_source = (
+        today_plan["actionable_items"][0]
+        if today_plan["actionable_items"]
+        else (priority_items[0] if priority_items else None)
+    )
+    primary_kind = _student_cockpit_step_kind(primary_source or {})
+    primary_tone = str((primary_source or {}).get("tone") or "neutral")
+    fallback_href = (
+        f"/classroom/{best_course['class_offering_id']}"
+        if best_course.get("class_offering_id")
+        else (f"/classroom/{offerings[0]['id']}" if offerings else "/message-center")
+    )
+    primary = {
+        "eyebrow": "先做这件事" if today_plan["open_count"] else "保持节奏",
+        "title": str((primary_source or {}).get("title") or "回到课堂继续学习"),
+        "description": str(
+            (primary_source or {}).get("description")
+            or (best_course.get("rank_notice") or "从最近的课堂进入，补齐资料、作业与讨论。")
+        ),
+        "href": str((primary_source or {}).get("href") or (primary_source or {}).get("link_url") or fallback_href),
+        "label": _student_cockpit_action_label(primary_kind, primary_tone),
+        "tone": primary_tone,
+        "meta": str((primary_source or {}).get("due_label") or "系统已按截止、进度和提醒排序"),
+        "kind": primary_kind,
+    }
+
+    stats = [
+        {
+            "label": "今日计划",
+            "value": str(today_plan["total_count"]),
+            "hint": f"待推进 {today_plan['open_count']}",
+            "tone": "danger" if today_plan["overdue_count"] else ("warning" if today_plan["open_count"] else "success"),
+        },
+        {
+            "label": "已完成",
+            "value": str(today_plan["completed_count"]),
+            "hint": f"完成度 {today_plan['completion_percent']}%",
+            "tone": "success" if today_plan["completed_count"] else "neutral",
+        },
+        {
+            "label": "临近截止",
+            "value": str(today_plan["due_soon_count"]),
+            "hint": "含超时与本周",
+            "tone": "warning" if today_plan["due_soon_count"] else "success",
+        },
+        {
+            "label": "修为进度",
+            "value": _format_dashboard_metric_value(cultivation_profile.get("progress_percent"), suffix="%"),
+            "hint": str(highest_level.get("short_name") or highest_level.get("level_name") or "未入道"),
+            "tone": "primary",
+        },
+        {
+            "label": "未读提醒",
+            "value": str(unread_total),
+            "hint": f"已提交 {submitted_total}",
+            "tone": "warning" if unread_total else "neutral",
+        },
+    ]
+
+    next_steps: list[dict[str, Any]] = []
+    seen_hrefs: set[str] = set()
+    for item in today_plan["actionable_items"][:4]:
+        href = str(item.get("href") or "")
+        if not href or href in seen_hrefs:
+            continue
+        seen_hrefs.add(href)
+        next_steps.append({
+            "kind": str(item.get("kind") or "learning"),
+            "label": str(item.get("label") or _student_cockpit_plan_label(str(item.get("kind") or ""))),
+            "title": str(item.get("title") or "待处理事项"),
+            "description": str(item.get("description") or "进入后查看完整内容。"),
+            "href": href,
+            "tone": str(item.get("tone") or "neutral"),
+            "due_label": str(item.get("due_label") or ""),
+        })
+
+    if best_course.get("class_offering_id"):
+        best_href = f"/classroom/{best_course['class_offering_id']}"
+        if best_href not in seen_hrefs and len(next_steps) < 3:
+            next_steps.append({
+                "kind": "learning",
+                "label": "修为推进",
+                "title": str(best_course.get("course_name") or "继续学习"),
+                "description": str(best_course.get("rank_notice") or "进入当前进度最高的课堂，保持学习连续性。"),
+                "href": best_href,
+                "tone": "success",
+                "due_label": str(best_course.get("next_stage_name") or "学习进度"),
+            })
+
+    sorted_offerings = sorted(
+        offerings,
+        key=lambda item: (
+            0 if int(item.get("pending_count") or 0) > 0 else 1,
+            0 if item.get("has_recent_activity") else 1,
+            -int(item.get("pending_count") or 0),
+            -float((item.get("cultivation") or {}).get("score") or 0),
+            str(item.get("course_name") or ""),
+        ),
+    )
+    course_pulse = []
+    for item in sorted_offerings[:4]:
+        cultivation = item.get("cultivation") or {}
+        pending_count = int(item.get("pending_count") or 0)
+        grading_count = int(item.get("grading_count") or 0)
+        resource_total = int(item.get("resource_total") or 0)
+        progress_percent = _clamp_dashboard_percent(cultivation.get("progress_percent"))
+        if pending_count > 0:
+            note = f"{pending_count} 项待完成"
+            tone = "danger"
+        elif grading_count > 0:
+            note = f"{grading_count} 项批改中"
+            tone = "warning"
+        elif resource_total > 0:
+            note = f"{resource_total} 个资料资源"
+            tone = "primary"
+        else:
+            note = "进入课堂查看动态"
+            tone = "neutral"
+        course_pulse.append({
+            "course_name": str(item.get("course_name") or "课堂"),
+            "class_name": str(item.get("class_name") or ""),
+            "href": f"/classroom/{item['id']}",
+            "progress_percent": progress_percent,
+            "level_name": str(cultivation.get("short_name") or cultivation.get("level_name") or "未入道"),
+            "note": note,
+            "tone": tone,
+        })
+
+    empty_state = {
+        "title": "今天先建立一个学习起点",
+        "description": "加入课堂后，这里会自动把作业、考试、提醒与修为进度汇总成每日行动卡。",
+        "href": "/message-center",
+        "label": "查看消息",
+    }
+
+    return {
+        "title": "今日学习驾驶舱",
+        "subtitle": "把截止任务、继续阅读、提醒和课堂进度压缩成一张今日行动图。",
+        "path": {
+            "href": "/learning-path",
+            "label": "查看学习路径",
+        },
+        "today": today_plan,
+        "primary": primary,
+        "stats": stats,
+        "next_steps": next_steps,
+        "course_pulse": course_pulse,
+        "continue_learning": continue_material,
+        "empty": empty_state,
     }
 
 
@@ -1352,7 +1951,34 @@ def _build_student_dashboard_context(
             "tone": "neutral",
         })
 
-    first_pending_href = priority_items[0]["href"] if priority_items else (f"/classroom/{offerings[0]['id']}" if offerings else "/message-center")
+    todo_overviews, dashboard_todo_items = _load_student_dashboard_todo_overviews(
+        conn,
+        enriched_offerings,
+        user,
+    )
+    continue_material = _load_student_continue_material(
+        conn,
+        student_id=student_id,
+        offering_ids=offering_ids,
+    )
+    feedback_review_summary = build_feedback_review_summary(conn, student_id)
+    student_cockpit = _build_student_cockpit(
+        offerings=enriched_offerings,
+        priority_items=priority_items,
+        cultivation_profile=cultivation_profile,
+        todo_items=dashboard_todo_items,
+        continue_material=continue_material,
+        review_summary=feedback_review_summary,
+        pending_total=pending_total,
+        submitted_total=submitted_total,
+        unread_total=unread_total,
+    )
+
+    first_pending_href = str(
+        (student_cockpit.get("primary") or {}).get("href")
+        or (priority_items[0]["href"] if priority_items else "")
+        or (f"/classroom/{offerings[0]['id']}" if offerings else "/message-center")
+    )
 
     total_logins = int(student_security_summary.get("total_logins") or 0) if student_security_summary else 0
     spotlight = {
@@ -1429,6 +2055,7 @@ def _build_student_dashboard_context(
         semester_calendar,
         offerings,
         user,
+        preloaded_todo_overviews=todo_overviews,
     )
 
     return {
@@ -1484,6 +2111,8 @@ def _build_student_dashboard_context(
         },
         "class_offerings": enriched_offerings,
         "dashboard_semester_calendar": semester_calendar,
+        "dashboard_student_cockpit": student_cockpit,
+        "dashboard_feedback_review_summary": feedback_review_summary,
         "student_security_summary": student_security_summary,
         "cultivation_profile": cultivation_profile,
     }

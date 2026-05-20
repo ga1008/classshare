@@ -7,7 +7,9 @@ import hmac
 import html
 import imaplib
 import json
+import math
 import os
+import re
 import smtplib
 import socket
 import ssl
@@ -74,6 +76,12 @@ EMAIL_STATUS_QUEUED = "queued"
 EMAIL_STATUS_SENT = "sent"
 EMAIL_STATUS_FAILED = "failed"
 SECRET_TOKEN_PREFIX = "v1:"
+EMAIL_ADDRESS_RE = re.compile(
+    r"^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@"
+    r"[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?"
+    r"(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$",
+    re.IGNORECASE,
+)
 
 EMAIL_PROVIDER_QQ = "qq"
 EMAIL_PROVIDER_163 = "netease_163"
@@ -218,9 +226,36 @@ def _normalize_text(value: Any, *, limit: int = 255) -> str:
 
 def _normalize_email(value: Any, *, required: bool = False) -> str:
     normalized = _normalize_text(value, limit=180).lower()
+    normalized = (
+        normalized.replace("＠", "@")
+        .replace("。", ".")
+        .replace("．", ".")
+        .replace("｡", ".")
+        .replace("；", ";")
+        .replace("，", ",")
+    )
+    if normalized.startswith("mailto:"):
+        normalized = normalized[7:]
+    candidates = [
+        item.strip(" <>\"'")
+        for item in re.split(r"[\s,;]+", normalized)
+        if item.strip(" <>\"'")
+    ]
+    if len(candidates) > 1:
+        normalized = next((item for item in candidates if "@" in item), candidates[0])
+    else:
+        normalized = normalized.strip(" <>\"'")
+    if "@" in normalized:
+        local_part, domain_part = normalized.split("@", 1)
+        if local_part == "qq":
+            first_domain_label = domain_part.split(".", 1)[0]
+            if first_domain_label.isdigit() and 5 <= len(first_domain_label) <= 12:
+                normalized = f"{first_domain_label}@qq.com"
+        elif domain_part == "qq" and local_part.isdigit() and 5 <= len(local_part) <= 12:
+            normalized = f"{local_part}@qq.com"
     if required and not normalized:
         raise ValueError("邮箱地址不能为空。")
-    if normalized and ("@" not in normalized or "." not in normalized.rsplit("@", 1)[-1]):
+    if normalized and not EMAIL_ADDRESS_RE.match(normalized):
         raise ValueError("请输入有效的邮箱地址。")
     return normalized
 
@@ -756,7 +791,10 @@ def _load_recipient_email(conn, *, role: str, user_pk: int) -> Optional[dict[str
     ).fetchone()
     if not row:
         return None
-    email = _normalize_email(row["email"])
+    try:
+        email = _normalize_email(row["email"])
+    except ValueError:
+        return None
     if not email:
         return None
     return {"email": email, "name": str(row["name"] or "")}
@@ -934,6 +972,10 @@ def _build_email_content(payload: dict[str, Any], recipient_name: str, *, notifi
 
 
 def queue_notification_email_if_applicable(conn, *, notification_id: int, payload: dict[str, Any]) -> bool:
+    if payload.get("email_notification_allowed") is False:
+        _mark_notification_email_status(conn, int(notification_id), EMAIL_STATUS_NOT_REQUIRED)
+        return False
+
     category = str(payload.get("category") or "").strip().lower()
     severity = str(payload.get("severity") or notification_severity_for_category(category)).strip().lower()
     if not notification_email_required(category, severity):
@@ -1065,6 +1107,26 @@ def _rate_limit_delay_seconds(conn, config) -> int:
     ).fetchone()[0] or 0)
     if day_count >= daily_limit:
         return 60 * 60
+    last_sent = conn.execute(
+        """
+        SELECT sent_at
+        FROM email_outbox
+        WHERE config_id = ? AND status = 'sent' AND sent_at IS NOT NULL AND sent_at != ''
+        ORDER BY sent_at DESC, id DESC
+        LIMIT 1
+        """,
+        (config_id,),
+    ).fetchone()
+    if last_sent:
+        try:
+            last_sent_dt = datetime.fromisoformat(str(last_sent["sent_at"]).replace(" ", "T"))
+        except (TypeError, ValueError):
+            last_sent_dt = None
+        if last_sent_dt is not None:
+            min_interval_seconds = max(1, int(math.ceil(60 / per_minute)))
+            elapsed_seconds = (now_dt - last_sent_dt).total_seconds()
+            if elapsed_seconds < min_interval_seconds:
+                return max(1, int(math.ceil(min_interval_seconds - elapsed_seconds)))
     return 0
 
 

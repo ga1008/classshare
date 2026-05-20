@@ -68,6 +68,7 @@ export class ClassroomChat {
         this.sendButton = this.chatForm?.querySelector('.chat-send-btn') || null;
         this.statusIndicator = document.getElementById(options.statusIndicatorId);
         this.statusText = document.getElementById(options.statusTextId);
+        this.onlineCountEl = document.getElementById(options.onlineCountId);
         this.displayNameEl = document.getElementById(options.displayNameId);
         this.aliasMetaEl = document.getElementById(options.aliasMetaId);
         this.discussionMoodHeadlineEl = document.getElementById(options.discussionMoodHeadlineId);
@@ -297,7 +298,23 @@ export class ClassroomChat {
         if (this.statusIndicator) {
             this.statusIndicator.title = text || (isOnline ? '连接正常' : '连接异常');
         }
+        if (!isOnline) {
+            this.updateOnlineCount(null);
+        }
         this.refreshAliasSwitchUi();
+    }
+
+    updateOnlineCount(participants) {
+        if (!this.onlineCountEl) {
+            return;
+        }
+        if (!Array.isArray(participants)) {
+            this.onlineCountEl.hidden = true;
+            this.onlineCountEl.textContent = '';
+            return;
+        }
+        this.onlineCountEl.hidden = false;
+        this.onlineCountEl.textContent = `${participants.length} 人在线`;
     }
 
     toggleComposerExpanded() {
@@ -673,6 +690,11 @@ export class ClassroomChat {
 
             if (data.type === 'user_display_name') {
                 this.updateDisplayName(data);
+                return;
+            }
+
+            if (data.type === 'user_list') {
+                this.updateOnlineCount(data.data);
                 return;
             }
 

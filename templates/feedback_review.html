@@ -1,0 +1,196 @@
+{% extends "base_navbar.html" %}
+
+{% block title %}{{ review_context.title }} - 课堂平台{% endblock %}
+
+{% block body_class %}page-wrapper feedback-review-page role-student{% endblock %}
+
+{% block navbar_actions %}
+<a href="/dashboard" class="app-topbar-action app-topbar-action--solid">
+    <span class="app-topbar-action__icon" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3h7v7H3z"></path>
+            <path d="M14 3h7v7h-7z"></path>
+            <path d="M14 14h7v7h-7z"></path>
+            <path d="M3 14h7v7H3z"></path>
+        </svg>
+    </span>
+    <span class="app-topbar-action__text">
+        <strong>学习首页</strong>
+        <small>返回驾驶舱</small>
+    </span>
+</a>
+<a href="/feedback-review" class="app-topbar-action app-topbar-action--primary" aria-current="page">
+    <span class="app-topbar-action__icon" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20h9"></path>
+            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+            <path d="m15 5 3 3"></path>
+        </svg>
+    </span>
+    <span class="app-topbar-action__text">
+        <strong>错题本</strong>
+        <small>反馈复盘</small>
+    </span>
+</a>
+{% endblock %}
+
+{% block main_content %}
+<section
+    class="review-workbench"
+    data-review-root
+    data-active-status="{{ review_context.active_status }}"
+    data-active-course="{{ review_context.active_course_id }}"
+>
+    <header class="review-hero">
+        <div class="review-hero__copy">
+            <span class="review-eyebrow">Feedback Review</span>
+            <h1>{{ review_context.title }}</h1>
+            <p>{{ review_context.subtitle }}</p>
+        </div>
+        <div class="review-progress-card" aria-label="复盘进度">
+            <span>掌握进度</span>
+            <strong>{{ review_context.progress.percent }}%</strong>
+            <div class="review-progress-meter">
+                <span style="--review-progress: {{ review_context.progress.percent }}%;"></span>
+            </div>
+            <small>{{ review_context.progress.mastered }} 已掌握 / {{ review_context.progress.total }} 总反馈点</small>
+        </div>
+    </header>
+
+    <section class="review-stats" aria-label="复盘概览">
+        {% for stat in review_context.stats %}
+        <article class="review-stat review-stat--{{ stat.tone }}">
+            <span>{{ stat.label }}</span>
+            <strong>{{ stat.value }}</strong>
+            <small>{{ stat.hint }}</small>
+        </article>
+        {% endfor %}
+    </section>
+
+    <section class="review-toolbar" aria-label="复盘筛选">
+        <div class="review-filter-tabs" role="tablist" aria-label="状态筛选">
+            {% for item in review_context.filters %}
+            <a
+                href="/feedback-review?status={{ item.value }}"
+                class="review-filter{% if item.value == review_context.active_status %} is-active{% endif %}"
+                data-review-filter="{{ item.value }}"
+                role="tab"
+                aria-selected="{{ 'true' if item.value == review_context.active_status else 'false' }}"
+            >
+                <span>{{ item.label }}</span>
+                <strong>{{ item.count }}</strong>
+            </a>
+            {% endfor %}
+        </div>
+        <label class="review-search">
+            <span>搜索</span>
+            <input type="search" value="{{ review_context.keyword }}" placeholder="课程、任务、扣分点、反思">
+        </label>
+        <label class="review-course-filter">
+            <span>课程</span>
+            <select>
+                <option value="0">全部课程</option>
+                {% for option in review_context.course_options %}
+                <option value="{{ option.course_id }}" {% if option.course_id == review_context.active_course_id %}selected{% endif %}>
+                    {{ option.label }}（{{ option.count }}）
+                </option>
+                {% endfor %}
+            </select>
+        </label>
+    </section>
+
+    <div class="review-visible-count" aria-live="polite">
+        当前显示 <strong data-review-visible-count>{{ review_context.visible_count }}</strong> 条复盘卡
+    </div>
+
+    {% if review_context['items'] %}
+    <section class="review-card-list" aria-label="复盘卡列表">
+        {% for item in review_context['items'] %}
+        <article
+            class="review-card review-card--{{ item.status }} review-card--{{ item.severity }}"
+            data-review-card
+            data-status="{{ item.status }}"
+            data-course-id="{{ item.course_id }}"
+            data-submission-id="{{ item.submission_id }}"
+            data-question-key="{{ item.question_key }}"
+            data-search-text="{{ (item.assignment_title ~ ' ' ~ item.course_name ~ ' ' ~ item.class_name ~ ' ' ~ item.title ~ ' ' ~ item.deduction_points ~ ' ' ~ item.evaluation ~ ' ' ~ item.suggestion ~ ' ' ~ item.reflection ~ ' ' ~ item.next_action)|lower|e }}"
+        >
+            <div class="review-card__main">
+                <div class="review-card__topline">
+                    <span class="review-chip review-chip--{{ item.severity }}">{{ item.severity_label }}</span>
+                    <span class="review-chip review-chip--status" data-review-status-label>{{ item.status_label }}</span>
+                    {% if item.score_text %}
+                    <span class="review-chip">{{ item.score_text }} 分</span>
+                    {% endif %}
+                    {% if item.pinned %}
+                    <span class="review-chip review-chip--pin" data-review-pin-label>已置顶</span>
+                    {% else %}
+                    <span class="review-chip review-chip--pin" data-review-pin-label hidden>已置顶</span>
+                    {% endif %}
+                </div>
+                <h2>{{ item.title }}</h2>
+                <p class="review-card__meta">{{ item.course_name }}{% if item.class_name %} · {{ item.class_name }}{% endif %} · {{ item.assignment_title }}</p>
+                <div class="review-feedback-grid">
+                    <div>
+                        <span>扣分点</span>
+                        <strong>{{ item.deduction_points }}</strong>
+                    </div>
+                    <div>
+                        <span>改进动作</span>
+                        <strong>{{ item.suggestion }}</strong>
+                    </div>
+                    {% if item.evaluation %}
+                    <div>
+                        <span>评价</span>
+                        <strong>{{ item.evaluation }}</strong>
+                    </div>
+                    {% endif %}
+                    {% if item.answer_preview %}
+                    <div>
+                        <span>我的原答案</span>
+                        <strong>{{ item.answer_preview }}</strong>
+                    </div>
+                    {% endif %}
+                </div>
+                {% if item.feedback_excerpt %}
+                <details class="review-feedback-raw">
+                    <summary>查看原始反馈片段</summary>
+                    <p>{{ item.feedback_excerpt }}</p>
+                </details>
+                {% endif %}
+            </div>
+            <div class="review-card__side">
+                <label>
+                    <span>我的反思</span>
+                    <textarea rows="4" data-review-reflection placeholder="用自己的话写清楚：我错在哪里？">{{ item.reflection }}</textarea>
+                </label>
+                <label>
+                    <span>下次检查动作</span>
+                    <textarea rows="3" data-review-next-action placeholder="例如：提交前先核对截图标注、命令输出、单位。">{{ item.next_action }}</textarea>
+                </label>
+                <div class="review-card__actions">
+                    <button type="button" class="review-action review-action--ghost" data-review-pin="{{ '0' if item.pinned else '1' }}">
+                        {{ '取消置顶' if item.pinned else '置顶' }}
+                    </button>
+                    <button type="button" class="review-action" data-review-save data-next-status="reviewing">保存复盘</button>
+                    <button type="button" class="review-action review-action--primary" data-review-save data-next-status="mastered">已掌握</button>
+                </div>
+                <a href="{{ item.source_url }}" class="review-source-link">{{ item.source_label }}</a>
+            </div>
+        </article>
+        {% endfor %}
+    </section>
+    {% else %}
+    <section class="review-empty">
+        <strong>暂时没有需要复盘的反馈点</strong>
+        <p>等作业或考试批改后，这里会自动把扣分点和改进建议整理成复盘卡。已经掌握的内容也可以从筛选里切回来查看。</p>
+        <a href="/dashboard" class="review-action review-action--primary">回到学习驾驶舱</a>
+    </section>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script type="module" src="{{ asset_url('js/feedback_review.js') }}"></script>
+{% endblock %}

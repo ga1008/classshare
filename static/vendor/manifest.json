@@ -21,7 +21,7 @@
   },
   "tailwind_app": {
     "path": "css/tailwind-app.css",
-    "version": "classroom-topbar-20260516-2",
+    "version": "topbar-groups-20260520",
     "type": "style"
   }
 }

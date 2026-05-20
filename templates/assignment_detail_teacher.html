@@ -113,6 +113,39 @@
         top: calc(100% + 6px);
         right: 0;
     }
+    .assignment-email-notice {
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr);
+        gap: 8px;
+        align-items: start;
+        min-width: 230px;
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+        color: var(--text-secondary);
+        cursor: pointer;
+    }
+    .assignment-email-notice input {
+        width: 16px;
+        height: 16px;
+        margin-top: 2px;
+        accent-color: var(--primary-color);
+    }
+    .assignment-email-notice span {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+    }
+    .assignment-email-notice strong {
+        color: var(--text-primary);
+        font-size: 0.82rem;
+        line-height: 1.3;
+    }
+    .assignment-email-notice small {
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        line-height: 1.4;
+        white-space: normal;
+    }
     .assignment-topbar-utilities {
         flex: 0 1 auto;
     }
@@ -959,6 +992,13 @@
                     </span>
                 </button>
                 <div class="dropdown-menu" id="status-dropdown" role="menu">
+                    <label class="assignment-email-notice" for="status-email-notify">
+                        <input type="checkbox" id="status-email-notify">
+                        <span>
+                            <strong>发布时发送邮件通知</strong>
+                            <small>默认只创建站内通知；勾选后才进入邮件队列分批发送。</small>
+                        </span>
+                    </label>
                     <button class="dropdown-item" onclick="changeStatus('new')" role="menuitem"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg> 草稿</button>
                     <button class="dropdown-item" onclick="changeStatus('published')" role="menuitem"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg> 进行中 (发布给学生)</button>
                     <button class="dropdown-item" onclick="changeStatus('closed')" role="menuitem"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg> 已截止</button>
@@ -3078,6 +3118,7 @@
                     duration_minutes: currentDurationMinutes,
                     starts_at: currentStartsAt,
                     auto_close: currentAutoClose,
+                    send_email_notification: newStatus === 'published' && document.getElementById('status-email-notify')?.checked === true,
                     ...currentLatePolicy,
                 })
             });

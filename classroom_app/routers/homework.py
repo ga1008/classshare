@@ -99,6 +99,26 @@ _ai_grading_submit_semaphore = asyncio.Semaphore(10)
 PERSONAL_STAGE_TEACHER_HIDDEN_MESSAGE = "学生个人试炼属于学生资产，不在教师作业与考试中展示；请查看班级修行统计。"
 
 
+def _truthy_request_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on", "checked"}
+
+
+def _wants_assignment_email_notification(data: dict[str, Any]) -> bool:
+    for key in (
+        "send_email_notification",
+        "send_email_notifications",
+        "notify_students_by_email",
+        "email_notification_enabled",
+    ):
+        if key in data:
+            return _truthy_request_flag(data.get(key))
+    return False
+
+
 def _build_assignment_storage_dir(course_id: int, assignment_id: int | str):
     return HOMEWORK_SUBMISSIONS_DIR / str(course_id) / str(assignment_id)
 
@@ -1239,7 +1259,11 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
         new_id = cursor.lastrowid
         if schedule_fields["status"] == "published":
             try:
-                create_assignment_published_notifications(conn, new_id)
+                create_assignment_published_notifications(
+                    conn,
+                    new_id,
+                    send_email_notification=_wants_assignment_email_notification(data),
+                )
             except Exception as exc:
                 print(f"[MESSAGE_CENTER] assignment publish notify failed: {exc}")
         conn.commit()
@@ -1329,7 +1353,11 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
         )
         if previous_status != 'published' and schedule_fields["status"] == 'published':
             try:
-                create_assignment_published_notifications(conn, assignment_id)
+                create_assignment_published_notifications(
+                    conn,
+                    assignment_id,
+                    send_email_notification=_wants_assignment_email_notification(data),
+                )
             except Exception as exc:
                 print(f"[MESSAGE_CENTER] assignment publish notify failed: {exc}")
         conn.commit()
@@ -3312,7 +3340,11 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
         new_assignment_id = cursor.lastrowid
         if schedule_fields["status"] == "published":
             try:
-                create_assignment_published_notifications(conn, new_assignment_id)
+                create_assignment_published_notifications(
+                    conn,
+                    new_assignment_id,
+                    send_email_notification=_wants_assignment_email_notification(data),
+                )
             except Exception as exc:
                 print(f"[MESSAGE_CENTER] exam assignment publish notify failed: {exc}")
 

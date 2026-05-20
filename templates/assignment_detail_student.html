@@ -535,6 +535,7 @@
                             <div class="grade-result-score">
                                 <div class="score-display">{{ submission.score or 0 }}<span class="text-lg text-muted font-normal ml-1">/ 100</span></div>
                                 <span class="text-sm text-muted">批改结果已返回</span>
+                                <a href="/feedback-review?status=active" class="btn btn-outline btn-sm">进入错题本复盘</a>
                                 {% if submission.is_late_submission %}
                                 <div class="late-score-summary">
                                     <span>补交提交，系统已按教师规则扣分。</span>

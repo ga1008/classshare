@@ -116,6 +116,45 @@
     import { showToast } from '/static/js/ui.js';
     window.showToast = showToast;
 </script>
+<script>
+    (() => {
+        const topbarMenus = Array.from(document.querySelectorAll('.app-topbar-menu'));
+        if (!topbarMenus.length) {
+            return;
+        }
+
+        topbarMenus.forEach((menu) => {
+            menu.addEventListener('toggle', () => {
+                if (!menu.open) {
+                    return;
+                }
+                topbarMenus.forEach((otherMenu) => {
+                    if (otherMenu !== menu) {
+                        otherMenu.open = false;
+                    }
+                });
+            });
+        });
+
+        document.addEventListener('click', (event) => {
+            if (event.target.closest('.app-topbar-menu')) {
+                return;
+            }
+            topbarMenus.forEach((menu) => {
+                menu.open = false;
+            });
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') {
+                return;
+            }
+            topbarMenus.forEach((menu) => {
+                menu.open = false;
+            });
+        });
+    })();
+</script>
 {% if user_info.role == 'student' %}
 <script type="module" src="/static/js/student_security.js"></script>
 {% endif %}

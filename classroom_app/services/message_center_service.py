@@ -1311,6 +1311,17 @@ def list_classroom_private_message_contacts(conn, user: dict, class_offering_id:
     ).fetchall()
     blocked_map = _load_blocked_identity_map(conn, current_identity)
     contact_by_key: dict[str, dict[str, Any]] = {}
+
+    if current_role == "student":
+        teacher_contact = _load_scoped_teacher_contact(
+            conn,
+            int(offering["teacher_id"]),
+            int(offering["id"]),
+        )
+        if teacher_contact is not None and teacher_contact["identity"] != current_identity:
+            teacher_contact["subtitle"] = f"{teacher_contact['subtitle']} · 任课教师"
+            contact_by_key[teacher_contact["contact_key"]] = teacher_contact
+
     for row in students:
         identity = build_user_identity("student", row["id"])
         if identity == current_identity:
@@ -1376,6 +1387,7 @@ def list_classroom_private_message_contacts(conn, user: dict, class_offering_id:
 
     contacts = list(contact_by_key.values())
     contacts.sort(key=lambda item: str(item.get("display_name") or ""))
+    contacts.sort(key=lambda item: 0 if item.get("role") == "teacher" else 1)
     contacts.sort(key=lambda item: str(item.get("last_message_at") or ""), reverse=True)
     contacts.sort(key=lambda item: 0 if item.get("last_message_at") else 1)
     contacts.sort(key=lambda item: 0 if int(item.get("unread_count") or 0) > 0 else 1)
@@ -3297,7 +3309,12 @@ def get_message_center_bootstrap(
     return payload
 
 
-def create_assignment_published_notifications(conn, assignment_id: int | str) -> int:
+def create_assignment_published_notifications(
+    conn,
+    assignment_id: int | str,
+    *,
+    send_email_notification: bool = False,
+) -> int:
     assignment = conn.execute(
         """
         SELECT a.id, a.title, a.requirements_md, a.class_offering_id, a.course_id,
@@ -3374,9 +3391,15 @@ def create_assignment_published_notifications(conn, assignment_id: int | str) ->
             metadata={
                 "assignment_id": assignment["id"],
                 "course_id": assignment["course_id"],
+                "send_email_notification": bool(send_email_notification),
             },
         )
-        inserted_count += 1 if _insert_notification_if_allowed(conn, payload) else 0
+        payload["email_notification_allowed"] = bool(send_email_notification)
+        inserted_count += 1 if _insert_notification_if_allowed(
+            conn,
+            payload,
+            allow_duplicates=bool(send_email_notification),
+        ) else 0
     return inserted_count
 
 

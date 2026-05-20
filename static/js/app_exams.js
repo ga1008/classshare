@@ -9,6 +9,17 @@ function getTrimmedInputValue(elementId) {
     return element ? element.value.trim() : '';
 }
 
+function isChecked(elementId) {
+    return document.getElementById(elementId)?.checked === true;
+}
+
+function resetEmailNotificationChoice(prefix) {
+    const checkbox = document.getElementById(`${prefix}-send-email-notification`);
+    if (checkbox) {
+        checkbox.checked = false;
+    }
+}
+
 function getExamAssignFeedbackEl() {
     return document.getElementById('exam-assign-feedback');
 }
@@ -282,6 +293,7 @@ export async function loadExamPapers() {
         stageEl.value = '';
     }
     resetScheduleFields('exam');
+    resetEmailNotificationChoice('exam');
 
     setExamAssignFeedback(null, '');
     container.innerHTML = '<div class="text-center p-4"><div class="spinner"></div></div>';
@@ -372,6 +384,7 @@ export async function confirmExamAssign() {
                 class_offering_id: config.classOfferingId,
                 allowed_file_types: getTrimmedInputValue('exam-allowed-file-types'),
                 learning_stage_key: getTrimmedInputValue('exam-learning-stage-key'),
+                send_email_notification: isChecked('exam-send-email-notification'),
                 ...scheduleResult.payload,
             },
             silent: true
@@ -431,6 +444,7 @@ export async function saveAssignment() {
         class_offering_id: config.classOfferingId,
         allowed_file_types: getTrimmedInputValue('assignment-allowed-file-types'),
         learning_stage_key: getTrimmedInputValue('assignment-learning-stage-key'),
+        send_email_notification: isChecked('assignment-send-email-notification'),
         ...scheduleResult.payload,
     };
 
@@ -512,6 +526,7 @@ export function editAssignment(
     if (latePointsEl) latePointsEl.value = latePolicy?.late_penalty_points ?? '0';
     if (lateMinScoreEl) lateMinScoreEl.value = latePolicy?.late_penalty_min_score ?? '0';
     if (lateScoreCapEl) lateScoreCapEl.value = latePolicy?.late_score_cap ?? '';
+    resetEmailNotificationChoice('assignment');
     syncScheduleFields('assignment');
 
     setExamAssignFeedback(null, '');
