@@ -13,6 +13,7 @@ from .learning_progress_service import (
     safe_float,
     safe_int,
 )
+from .portfolio_service import build_teacher_portfolio_snapshot
 from .student_support_service import (
     load_shared_student_teacher_note,
     load_student_teacher_names,
@@ -437,6 +438,11 @@ def build_teacher_student_insight(conn, teacher_id: int, student_id: int) -> dic
     if raw_support_profile:
         support_profile["source_course_name"] = raw_support_profile.get("course_name") or ""
         support_profile["source_teacher_name"] = raw_support_profile.get("teacher_name") or ""
+    portfolio = build_teacher_portfolio_snapshot(
+        conn,
+        int(student_id),
+        class_offering_ids=[int(item["class_offering_id"]) for item in offerings],
+    )
     teacher_note = load_shared_student_teacher_note(conn, int(student_id))
     related_teacher_names = load_student_teacher_names(conn, int(student_id))
     best_course = courses[0] if courses else None
@@ -458,6 +464,7 @@ def build_teacher_student_insight(conn, teacher_id: int, student_id: int) -> dic
         "task_summary": task_summary,
         "activity_summary": activity_summary,
         "support_profile": support_profile,
+        "portfolio": portfolio,
         "teacher_note": teacher_note,
         "related_teacher_names": related_teacher_names,
         "radar": radar,

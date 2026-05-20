@@ -10,9 +10,10 @@ from .message_center_service import (
     build_user_identity,
 )
 from .learning_progress_service import build_student_global_cultivation_profile
+from .portfolio_service import build_student_portfolio_context
 from .student_auth_service import build_student_security_summary
 
-PROFILE_SECTIONS = ("overview", "settings", "security", "notifications", "private", "email")
+PROFILE_SECTIONS = ("overview", "portfolio", "settings", "security", "notifications", "private", "email")
 
 EDITABLE_PROFILE_FIELDS = (
     "nickname",
@@ -253,6 +254,8 @@ def build_profile_nav(conn, user: dict, active_section: str) -> list[dict[str, A
         ("notifications", "通知中心", "通知"),
         ("private", "私信", "私信"),
     ]
+    if role == "student":
+        nav_items.insert(1, ("portfolio", "成长档案", "作品"))
     if role == "teacher":
         nav_items.insert(3, ("email", "邮箱通知", "发信"))
 
@@ -670,12 +673,18 @@ def build_profile_page_context(conn, user: dict, section: Any) -> dict[str, Any]
     profile = get_user_profile(conn, user)
     if active_section == "email" and profile["role"] != "teacher":
         active_section = "settings"
+    if active_section == "portfolio" and profile["role"] != "student":
+        active_section = "overview"
     overview = build_profile_overview(conn, profile, user)
+    portfolio_context = None
+    if profile["role"] == "student" and active_section == "portfolio":
+        portfolio_context = build_student_portfolio_context(conn, int(profile["id"]), include_candidates=True)
     nav_items = build_profile_nav(conn, user, active_section)
     return {
         "active_section": active_section,
         "profile": profile,
         "overview": overview,
+        "portfolio": portfolio_context,
         "nav_items": nav_items,
         "notification_unread_count": next((item.get("badge") or 0 for item in nav_items if item["section"] == "notifications"), 0),
         "private_unread_count": next((item.get("badge") or 0 for item in nav_items if item["section"] == "private"), 0),

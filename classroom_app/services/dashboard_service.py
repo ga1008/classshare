@@ -2015,6 +2015,13 @@ def _build_student_dashboard_context(
         },
         {
             "mode": "link",
+            "label": "成长档案",
+            "description": "整理作品、证书与复盘证据",
+            "href": "/profile?section=portfolio",
+            "badge": None,
+        },
+        {
+            "mode": "link",
             "label": ui_copy["action_message_label"],
             "description": ui_copy["action_message_description"],
             "href": "/message-center",

@@ -765,6 +765,94 @@ function initEmailConfigPanel() {
     });
 }
 
+function readPortfolioPayload(form) {
+    const data = Object.fromEntries(new FormData(form).entries());
+    data.featured = Boolean(form.querySelector('[name="featured"]')?.checked);
+    data.ability_tags = Array.from(form.querySelectorAll('[name="ability_tags"]:checked'))
+        .map((item) => item.value)
+        .filter(Boolean);
+    return data;
+}
+
+function reloadAfterPortfolioChange(message) {
+    if (message) {
+        showToast(message, 'success');
+    }
+    window.setTimeout(() => window.location.reload(), 420);
+}
+
+function initPortfolioPanel() {
+    const portfolioRoot = document.querySelector('.profile-portfolio-layout');
+    if (!portfolioRoot) {
+        return;
+    }
+
+    portfolioRoot.addEventListener('click', async (event) => {
+        const addButton = event.target.closest('[data-portfolio-add]');
+        if (addButton) {
+            const sourceType = addButton.dataset.sourceType || '';
+            const sourceId = addButton.dataset.sourceId || '';
+            setButtonBusy(addButton, true, '加入中');
+            try {
+                const response = await apiFetch('/api/profile/portfolio/items', {
+                    method: 'POST',
+                    body: {
+                        source_type: sourceType,
+                        source_id: sourceId,
+                    },
+                });
+                reloadAfterPortfolioChange(response.message || '作品已收入成长档案');
+            } catch (error) {
+                showToast(error.message || '加入成长档案失败', 'error');
+                setButtonBusy(addButton, false);
+            }
+            return;
+        }
+
+        const removeButton = event.target.closest('[data-portfolio-remove]');
+        if (!removeButton) {
+            return;
+        }
+        const form = removeButton.closest('[data-portfolio-item-form]');
+        const itemId = Number(form?.dataset.itemId || 0);
+        if (!itemId || !window.confirm('确定把这件作品移出成长档案吗？原作业、博客或证书不会被删除。')) {
+            return;
+        }
+        setButtonBusy(removeButton, true, '移出中');
+        try {
+            const response = await apiFetch(`/api/profile/portfolio/items/${itemId}`, {
+                method: 'DELETE',
+            });
+            reloadAfterPortfolioChange(response.message || '作品已移出成长档案');
+        } catch (error) {
+            showToast(error.message || '移出作品失败', 'error');
+            setButtonBusy(removeButton, false);
+        }
+    });
+
+    portfolioRoot.querySelectorAll('[data-portfolio-item-form]').forEach((form) => {
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const itemId = Number(form.dataset.itemId || 0);
+            if (!itemId) {
+                return;
+            }
+            const submitButton = form.querySelector('button[type="submit"]');
+            setButtonBusy(submitButton, true, '保存中');
+            try {
+                const response = await apiFetch(`/api/profile/portfolio/items/${itemId}`, {
+                    method: 'PUT',
+                    body: readPortfolioPayload(form),
+                });
+                reloadAfterPortfolioChange(response.message || '成长档案已更新');
+            } catch (error) {
+                showToast(error.message || '保存作品失败', 'error');
+                setButtonBusy(submitButton, false);
+            }
+        });
+    });
+}
+
 function initActiveNavScroll() {
     const active = document.querySelector('.profile-nav__link.is-active');
     if (active && typeof active.scrollIntoView === 'function') {
@@ -780,4 +868,5 @@ if (root) {
     initMoodEditor();
     initPasswordForm();
     initEmailConfigPanel();
+    initPortfolioPanel();
 }

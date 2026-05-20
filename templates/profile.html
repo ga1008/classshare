@@ -13,6 +13,7 @@
 {% set security_summary = overview.security_summary if overview.security_summary is defined else none %}
 {% set cultivation = overview.cultivation if overview.cultivation is defined else none %}
 {% set hero_stats = overview.hero_stats if overview.hero_stats is defined else overview.metric_cards[:4] %}
+{% set portfolio_ctx = portfolio if portfolio is defined and portfolio else none %}
 
 <section class="profile-shell" data-profile-root data-active-section="{{ active_section }}" data-profile-role="{{ profile.role }}">
     <section class="profile-hero profile-reveal">
@@ -47,6 +48,7 @@
             </div>
             <div class="profile-hero__actions">
                 <a class="btn btn-primary" href="/profile?section={{ 'settings' if active_section == 'overview' else 'overview' }}">{{ '完善资料' if active_section == 'overview' else '回到总览' }}</a>
+                {% if profile.role == 'student' and active_section != 'portfolio' %}<a class="btn btn-outline" href="/profile?section=portfolio">成长档案</a>{% endif %}
                 {% if active_section != 'notifications' %}<a class="btn btn-outline" href="/profile?section=notifications">通知</a>{% endif %}
                 {% if active_section != 'private' %}<a class="btn btn-outline" href="/profile?section=private">私信</a>{% endif %}
             </div>
@@ -126,6 +128,7 @@
                 </div>
                 <div class="profile-quick-links">
                     <a href="/dashboard"><strong>返回首页</strong><span>课堂总入口</span></a>
+                    {% if profile.role == 'student' %}<a href="/profile?section=portfolio"><strong>成长档案</strong><span>作品、证书、复盘与时间线</span></a>{% endif %}
                     <a href="/profile?section=settings"><strong>编辑资料</strong><span>头像、昵称、联系方式</span></a>
                     <a href="/profile?section=security"><strong>账号安全</strong><span>密码与登录状态</span></a>
                 </div>
@@ -270,6 +273,195 @@
                     {% endif %}
                 </aside>
             </section>
+            {% elif active_section == 'portfolio' and portfolio_ctx %}
+            <section class="profile-band profile-section-head profile-reveal">
+                <div>
+                    <span class="profile-eyebrow">Portfolio</span>
+                    <h2>{{ portfolio_ctx.title }}</h2>
+                    <p>{{ portfolio_ctx.subtitle }} 下一步：{{ portfolio_ctx.next_action }}</p>
+                </div>
+                <div class="profile-section-head__actions">
+                    <a class="btn btn-outline" href="/feedback-review">整理复盘</a>
+                    <a class="btn btn-outline" href="/learning-path">学习路径</a>
+                </div>
+            </section>
+
+            <section class="profile-portfolio-stats">
+                {% for stat in portfolio_ctx['stats'] %}
+                <article class="profile-portfolio-stat profile-reveal">
+                    <span>{{ stat.label }}</span>
+                    <strong>{{ stat.value }}</strong>
+                    <p>{{ stat.hint }}</p>
+                </article>
+                {% endfor %}
+            </section>
+
+            <section class="profile-portfolio-layout">
+                <div class="profile-portfolio-main">
+                    <section class="profile-band profile-portfolio-featured profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <span class="profile-eyebrow">Featured</span>
+                                <h3>精选作品</h3>
+                            </div>
+                        </div>
+                        <div class="profile-portfolio-featured-grid">
+                            {% for item in portfolio_ctx['featured_items'] %}
+                            <a class="profile-portfolio-feature-card" href="{{ item.href }}">
+                                <span>{{ item.artifact_label }}</span>
+                                <strong>{{ item.title }}</strong>
+                                <p>{{ item.summary }}</p>
+                                <small>{{ item.course_name or item.visibility_label }}{% if item.score_label %} · {{ item.score_label }}{% endif %}</small>
+                            </a>
+                            {% else %}
+                            <div class="profile-portfolio-empty">
+                                <strong>还没有精选作品</strong>
+                                <p>从下方候选成果收入第一件作品，再写一句复盘，成长档案就会开始成形。</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </section>
+
+                    <section class="profile-band profile-portfolio-collection profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <span class="profile-eyebrow">Collection</span>
+                                <h3>作品管理</h3>
+                            </div>
+                            <span class="profile-portfolio-count">{{ portfolio_ctx['items']|length }} 件</span>
+                        </div>
+                        <div class="profile-portfolio-item-list">
+                            {% for item in portfolio_ctx['items'] %}
+                            <article class="profile-portfolio-item" data-portfolio-item="{{ item.id }}">
+                                <form class="profile-portfolio-form" data-portfolio-item-form data-item-id="{{ item.id }}">
+                                    <div class="profile-portfolio-item__top">
+                                        <div>
+                                            <span class="profile-portfolio-type">{{ item.artifact_label }}</span>
+                                            {% if item.teacher_recommended %}<span class="profile-portfolio-type profile-portfolio-type--teacher">教师推荐</span>{% endif %}
+                                            {% if item.featured %}<span class="profile-portfolio-type profile-portfolio-type--featured">精选</span>{% endif %}
+                                        </div>
+                                        <a href="{{ item.href }}" class="profile-portfolio-source">查看来源</a>
+                                    </div>
+                                    <div class="profile-form-grid">
+                                        <div class="form-group">
+                                            <label class="form-label" for="portfolio-title-{{ item.id }}">作品标题</label>
+                                            <input id="portfolio-title-{{ item.id }}" name="title" class="form-control" value="{{ item.title }}" maxlength="180">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="portfolio-visibility-{{ item.id }}">可见范围</label>
+                                            <select id="portfolio-visibility-{{ item.id }}" name="visibility" class="form-control">
+                                                {% for option in portfolio_ctx['visibility_options'] %}
+                                                <option value="{{ option.value }}" {% if option.value == item.visibility %}selected{% endif %}>{{ option.label }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                        <div class="form-group profile-form-grid__wide">
+                                            <label class="form-label" for="portfolio-summary-{{ item.id }}">作品摘要</label>
+                                            <textarea id="portfolio-summary-{{ item.id }}" name="summary" class="form-control" rows="3" maxlength="900">{{ item.summary }}</textarea>
+                                        </div>
+                                        <div class="form-group profile-form-grid__wide">
+                                            <label class="form-label" for="portfolio-reflection-{{ item.id }}">我的复盘</label>
+                                            <textarea id="portfolio-reflection-{{ item.id }}" name="reflection" class="form-control" rows="4" maxlength="1600" placeholder="这件作品证明了我在哪些方面有进步？下一次我会怎么做得更好？">{{ item.student_reflection }}</textarea>
+                                        </div>
+                                        <div class="form-group profile-form-grid__wide">
+                                            <label class="form-label">能力标签</label>
+                                            <div class="profile-portfolio-tag-grid">
+                                                {% for tag in portfolio_ctx['ability_options'] %}
+                                                <label><input type="checkbox" name="ability_tags" value="{{ tag }}" {% if tag in item.ability_tags %}checked{% endif %}>{{ tag }}</label>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                        <div class="form-group profile-form-grid__wide">
+                                            <label class="form-label" for="portfolio-evidence-{{ item.id }}">证据说明</label>
+                                            <textarea id="portfolio-evidence-{{ item.id }}" name="evidence_notes" class="form-control" rows="2" maxlength="700" placeholder="例如：完成了实验截图、解释了关键步骤、修正了老师指出的问题。">{{ item.evidence_notes }}</textarea>
+                                        </div>
+                                    </div>
+                                    <div class="profile-portfolio-actions">
+                                        <label class="profile-portfolio-check"><input type="checkbox" name="featured" {% if item.featured %}checked{% endif %}>设为精选</label>
+                                        <button type="submit" class="btn btn-primary">保存作品</button>
+                                        <button type="button" class="btn btn-ghost" data-portfolio-remove>移出档案</button>
+                                    </div>
+                                </form>
+                            </article>
+                            {% else %}
+                            <div class="profile-portfolio-empty">
+                                <strong>作品集还没有内容</strong>
+                                <p>下方会根据证书、作业、博客自动给出候选成果，先选一件最能代表当前阶段的作品。</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </section>
+                </div>
+
+                <aside class="profile-portfolio-rail">
+                    <section class="profile-band profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <span class="profile-eyebrow">Candidates</span>
+                                <h3>可入档成果</h3>
+                            </div>
+                        </div>
+                        <div class="profile-portfolio-candidate-list">
+                            {% for item in portfolio_ctx['candidates'] %}
+                            <article class="profile-portfolio-candidate">
+                                <span>{{ item.artifact_label }} · {{ item.recommended_reason }}</span>
+                                <strong>{{ item.title }}</strong>
+                                <p>{{ item.course_name }}{% if item.score_label %} · {{ item.score_label }}{% endif %}</p>
+                                <button type="button" class="btn btn-outline btn-sm" data-portfolio-add data-source-type="{{ item.source_type }}" data-source-id="{{ item.source_id }}">加入档案</button>
+                            </article>
+                            {% else %}
+                            <div class="profile-portfolio-empty profile-portfolio-empty--compact">
+                                <strong>暂无新的候选成果</strong>
+                                <p>完成批改、获得证书或发布学习文章后，这里会自动出现。</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </section>
+
+                    <section class="profile-band profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <span class="profile-eyebrow">Abilities</span>
+                                <h3>能力证据</h3>
+                            </div>
+                        </div>
+                        <div class="profile-portfolio-ability-list">
+                            {% for item in portfolio_ctx['abilities'] %}
+                            <div class="profile-portfolio-ability">
+                                <div><strong>{{ item.label }}</strong><span>{{ item.value }}</span></div>
+                                <p>{{ item.evidence }}</p>
+                                <div class="profile-portfolio-ability-bar"><span style="width: {{ item.percent }}%"></span></div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </section>
+
+                    <section class="profile-band profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <span class="profile-eyebrow">Timeline</span>
+                                <h3>成长时间线</h3>
+                            </div>
+                        </div>
+                        <div class="profile-portfolio-timeline">
+                            {% for event in portfolio_ctx['timeline'] %}
+                            <a class="profile-portfolio-event is-{{ event.importance }}" href="{{ event.href }}">
+                                <span>{{ event.label }}</span>
+                                <strong>{{ event.title }}</strong>
+                                <p>{{ event.description }}</p>
+                                <time>{{ event.occurred_at | datetime_format }}</time>
+                            </a>
+                            {% else %}
+                            <div class="profile-portfolio-empty profile-portfolio-empty--compact">
+                                <strong>时间线正在等待第一条记录</strong>
+                                <p>提交任务、完成复盘或获得证书后会自动沉淀。</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </section>
+                </aside>
+            </section>
+
             {% elif active_section == 'settings' %}
             <section class="profile-band profile-section-head profile-reveal">
                 <div>

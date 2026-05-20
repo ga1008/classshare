@@ -4235,6 +4235,65 @@ def init_database():
                     UNIQUE (student_id, item_key)
                 )
             ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS student_portfolio_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    student_id INTEGER NOT NULL,
+                    class_offering_id INTEGER,
+                    course_id INTEGER,
+                    source_type TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    summary TEXT NOT NULL DEFAULT '',
+                    artifact_type TEXT NOT NULL DEFAULT 'homework',
+                    cover_file_hash TEXT NOT NULL DEFAULT '',
+                    visibility TEXT NOT NULL DEFAULT 'private',
+                    featured INTEGER NOT NULL DEFAULT 0,
+                    teacher_recommended INTEGER NOT NULL DEFAULT 0,
+                    teacher_recommended_by INTEGER,
+                    teacher_recommended_at TEXT,
+                    sort_order INTEGER NOT NULL DEFAULT 100,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    metadata_json TEXT DEFAULT '{}',
+                    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                    FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL,
+                    FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE SET NULL,
+                    FOREIGN KEY (teacher_recommended_by) REFERENCES teachers (id) ON DELETE SET NULL,
+                    UNIQUE (student_id, source_type, source_id)
+                )
+            ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS student_portfolio_reflections (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    portfolio_item_id INTEGER NOT NULL,
+                    student_id INTEGER NOT NULL,
+                    reflection_text TEXT NOT NULL DEFAULT '',
+                    ability_tags_json TEXT NOT NULL DEFAULT '[]',
+                    evidence_notes TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (portfolio_item_id) REFERENCES student_portfolio_items (id) ON DELETE CASCADE,
+                    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                    UNIQUE (portfolio_item_id)
+                )
+            ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS student_growth_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    student_id INTEGER NOT NULL,
+                    class_offering_id INTEGER,
+                    event_type TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    source_id TEXT NOT NULL DEFAULT '',
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    occurred_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    importance TEXT NOT NULL DEFAULT 'normal',
+                    metadata_json TEXT DEFAULT '{}',
+                    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                    FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL
+                )
+            ''')
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_learning_material_progress_student "
                 "ON learning_material_progress (class_offering_id, student_id, completed, updated_at DESC)"
@@ -4262,6 +4321,26 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_student_learning_path_state_course "
                 "ON student_learning_path_item_states (class_offering_id, student_id, status)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_student_portfolio_items_student "
+                "ON student_portfolio_items (student_id, featured DESC, sort_order ASC, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_student_portfolio_items_source "
+                "ON student_portfolio_items (source_type, source_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_student_portfolio_items_course "
+                "ON student_portfolio_items (class_offering_id, student_id, visibility)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_student_growth_events_student "
+                "ON student_growth_events (student_id, occurred_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_student_growth_events_source "
+                "ON student_growth_events (source_type, source_id, student_id)"
             )
 
             # ── 16. 博客中心 ──

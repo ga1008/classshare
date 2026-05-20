@@ -30257,6 +30257,325 @@ body.has-class-academic-sync-modal {
     color: color-mix(in srgb, var(--course-a) 72%, #0f172a 28%);
 }
 
+.profile-portfolio-stats {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.8rem;
+}
+
+.profile-portfolio-stat {
+    min-width: 0;
+    min-height: 112px;
+    padding: 0.9rem;
+    border: 1px solid var(--profile-card-border);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.82);
+    box-shadow: var(--profile-shadow);
+}
+
+.profile-portfolio-stat span,
+.profile-portfolio-count,
+.profile-portfolio-type,
+.profile-portfolio-candidate span,
+.profile-portfolio-feature-card span,
+.profile-portfolio-event span {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.profile-portfolio-stat strong {
+    display: block;
+    margin-top: 0.42rem;
+    color: var(--text-primary);
+    font-size: 1.7rem;
+    line-height: 1;
+}
+
+.profile-portfolio-stat p,
+.profile-portfolio-empty p,
+.profile-portfolio-feature-card p,
+.profile-portfolio-candidate p,
+.profile-portfolio-ability p,
+.profile-portfolio-event p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.58;
+    overflow-wrap: anywhere;
+}
+
+.profile-portfolio-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 1rem;
+    align-items: start;
+}
+
+.profile-portfolio-main,
+.profile-portfolio-rail,
+.profile-portfolio-featured,
+.profile-portfolio-collection,
+.profile-portfolio-item-list,
+.profile-portfolio-candidate-list,
+.profile-portfolio-ability-list,
+.profile-portfolio-timeline,
+.profile-portfolio-form {
+    display: grid;
+    gap: 1rem;
+    min-width: 0;
+}
+
+.profile-portfolio-featured-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.8rem;
+}
+
+.profile-portfolio-feature-card,
+.profile-portfolio-candidate,
+.profile-portfolio-item,
+.profile-portfolio-event,
+.profile-portfolio-empty {
+    min-width: 0;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 16px;
+    background: rgba(248, 250, 252, 0.78);
+}
+
+.profile-portfolio-feature-card {
+    display: grid;
+    gap: 0.55rem;
+    min-height: 176px;
+    padding: 0.95rem;
+    color: inherit;
+    text-decoration: none;
+    transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.profile-portfolio-feature-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--profile-accent);
+    background: #fff;
+    box-shadow: 0 24px 44px -34px rgba(15, 23, 42, 0.58);
+    text-decoration: none;
+}
+
+.profile-portfolio-feature-card strong,
+.profile-portfolio-candidate strong,
+.profile-portfolio-event strong,
+.profile-portfolio-empty strong {
+    color: var(--text-primary);
+    line-height: 1.36;
+    overflow-wrap: anywhere;
+}
+
+.profile-portfolio-feature-card small {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 750;
+}
+
+.profile-portfolio-item {
+    padding: 1rem;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(248, 250, 252, 0.74)),
+        linear-gradient(120deg, var(--profile-accent-soft), transparent 58%);
+}
+
+.profile-portfolio-item__top,
+.profile-portfolio-actions,
+.profile-portfolio-check,
+.profile-portfolio-source {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.profile-portfolio-item__top {
+    justify-content: space-between;
+}
+
+.profile-portfolio-item__top > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    min-width: 0;
+}
+
+.profile-portfolio-type {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 0 0.55rem;
+    border-radius: 999px;
+    background: rgba(241, 245, 249, 0.9);
+    color: var(--text-secondary);
+}
+
+.profile-portfolio-type--featured {
+    background: rgba(238, 242, 255, 0.9);
+    color: var(--primary-color);
+}
+
+.profile-portfolio-type--teacher {
+    background: rgba(236, 253, 245, 0.9);
+    color: #047857;
+}
+
+.profile-portfolio-source {
+    flex: 0 0 auto;
+    min-height: 32px;
+    padding: 0 0.65rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--profile-accent);
+    font-size: 0.8rem;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.profile-portfolio-source:hover {
+    color: var(--profile-accent);
+    text-decoration: none;
+}
+
+.profile-portfolio-form textarea.form-control {
+    min-height: 92px;
+    resize: vertical;
+}
+
+.profile-portfolio-tag-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+.profile-portfolio-tag-grid label,
+.profile-portfolio-check {
+    min-width: 0;
+    min-height: 38px;
+    padding: 0.45rem 0.62rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+    font-weight: 750;
+}
+
+.profile-portfolio-tag-grid label {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.profile-portfolio-actions {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+.profile-portfolio-check {
+    margin-right: auto;
+}
+
+.profile-portfolio-candidate {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.85rem;
+}
+
+.profile-portfolio-candidate .btn {
+    justify-self: start;
+}
+
+.profile-portfolio-ability {
+    display: grid;
+    gap: 0.42rem;
+    padding: 0.75rem;
+    border-radius: 14px;
+    background: rgba(248, 250, 252, 0.78);
+    border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.profile-portfolio-ability > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.profile-portfolio-ability strong {
+    color: var(--text-primary);
+}
+
+.profile-portfolio-ability span {
+    color: var(--profile-accent);
+    font-weight: 900;
+}
+
+.profile-portfolio-ability-bar {
+    height: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.2);
+}
+
+.profile-portfolio-ability-bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--profile-accent), #14b8a6);
+}
+
+.profile-portfolio-event {
+    position: relative;
+    display: grid;
+    gap: 0.36rem;
+    padding: 0.8rem 0.85rem 0.8rem 1rem;
+    color: inherit;
+    text-decoration: none;
+}
+
+.profile-portfolio-event::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.8rem;
+    bottom: 0.8rem;
+    width: 4px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.5);
+}
+
+.profile-portfolio-event.is-highlight::before,
+.profile-portfolio-event.is-milestone::before {
+    background: var(--profile-accent);
+}
+
+.profile-portfolio-event:hover {
+    border-color: var(--profile-accent);
+    background: #fff;
+    color: inherit;
+    text-decoration: none;
+}
+
+.profile-portfolio-event time {
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    font-weight: 750;
+}
+
+.profile-portfolio-empty {
+    display: grid;
+    gap: 0.45rem;
+    padding: 1rem;
+    border-style: dashed;
+}
+
+.profile-portfolio-empty--compact {
+    padding: 0.85rem;
+}
+
 .profile-overview-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 320px;
@@ -30766,8 +31085,14 @@ body.has-class-academic-sync-modal {
     .profile-overview-grid,
     .profile-settings-grid,
     .profile-security-grid,
-    .profile-email-grid {
+    .profile-email-grid,
+    .profile-portfolio-layout {
         grid-template-columns: 1fr;
+    }
+
+    .profile-portfolio-stats,
+    .profile-portfolio-featured-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
     .profile-sidebar {
@@ -30789,8 +31114,17 @@ body.has-class-academic-sync-modal {
     .profile-chart-grid,
     .profile-form-grid,
     .profile-cultivation-grid,
-    .profile-email-grid {
+    .profile-email-grid,
+    .profile-portfolio-featured-grid {
         grid-template-columns: 1fr;
+    }
+
+    .profile-portfolio-stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .profile-portfolio-tag-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .profile-hero__identity,
@@ -30923,7 +31257,9 @@ body.has-class-academic-sync-modal {
     .profile-summary-row,
     .profile-hero__actions,
     .profile-section-head__actions,
-    .profile-email-reminder {
+    .profile-email-reminder,
+    .profile-portfolio-actions,
+    .profile-portfolio-item__top {
         flex-direction: column;
         align-items: flex-start;
     }
@@ -30931,9 +31267,22 @@ body.has-class-academic-sync-modal {
     .profile-hero__actions .btn,
     .profile-section-head__actions .btn,
     .profile-email-reminder .btn,
-    .profile-email-actions .btn {
+    .profile-email-actions .btn,
+    .profile-portfolio-actions .btn,
+    .profile-portfolio-candidate .btn {
         width: 100%;
         justify-content: center;
+    }
+
+    .profile-portfolio-check,
+    .profile-portfolio-source {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .profile-portfolio-tag-grid,
+    .profile-portfolio-stats {
+        grid-template-columns: 1fr;
     }
 
     .profile-summary-row strong {

@@ -21,6 +21,12 @@ from ..services.profile_service import (
     update_profile_avatar,
     update_profile_mood,
 )
+from ..services.portfolio_service import (
+    add_portfolio_item,
+    build_student_portfolio_context,
+    remove_portfolio_item,
+    update_portfolio_item,
+)
 from ..services.email_notification_service import (
     create_teacher_email_config,
     delete_teacher_email_config,
@@ -32,6 +38,15 @@ from ..services.student_auth_service import get_student_auth_record_by_pk, valid
 from ..services.teacher_account_service import TEACHER_PASSWORD_HINT, validate_teacher_password
 
 router = APIRouter()
+
+
+def _ensure_student_user(user: dict) -> int:
+    if str(user.get("role") or "").strip().lower() != "student":
+        raise HTTPException(status_code=403, detail="成长档案目前仅面向学生本人开放。")
+    try:
+        return int(user["id"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=403, detail="当前学生身份无效。") from exc
 
 
 def _build_avatar_text(profile: dict[str, Any]) -> str:
@@ -118,6 +133,7 @@ async def profile_page(
 
     with get_db_connection() as conn:
         profile_context = build_profile_page_context(conn, user, active_section)
+        active_section = profile_context["active_section"]
 
     return templates.TemplateResponse(
         request,
@@ -129,6 +145,7 @@ async def profile_page(
             "profile_context": profile_context,
             "profile": profile_context["profile"],
             "overview": profile_context["overview"],
+            "portfolio": profile_context.get("portfolio"),
             "nav_items": profile_context["nav_items"],
             "active_section": active_section,
             "initial_tab": initial_tab,
@@ -145,6 +162,86 @@ def api_profile_bootstrap(section: str = "overview", user: dict = Depends(get_cu
             "status": "success",
             **build_profile_page_context(conn, user, section),
         }
+
+
+@router.get("/api/profile/portfolio", response_class=JSONResponse)
+def api_profile_portfolio(user: dict = Depends(get_current_user)):
+    student_id = _ensure_student_user(user)
+    with get_db_connection() as conn:
+        return {
+            "status": "success",
+            "portfolio": build_student_portfolio_context(conn, student_id, include_candidates=True),
+        }
+
+
+@router.post("/api/profile/portfolio/items", response_class=JSONResponse)
+async def api_add_profile_portfolio_item(request: Request, user: dict = Depends(get_current_user)):
+    student_id = _ensure_student_user(user)
+    data = await request.json()
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="作品数据格式不正确。")
+    with get_db_connection() as conn:
+        try:
+            result = add_portfolio_item(
+                conn,
+                student_id,
+                source_type=str(data.get("source_type") or ""),
+                source_id=data.get("source_id"),
+                featured=bool(data.get("featured")),
+            )
+            portfolio = build_student_portfolio_context(conn, student_id, include_candidates=True)
+            conn.commit()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "status": "success",
+        "message": "作品已收入成长档案。",
+        **result,
+        "portfolio": portfolio,
+    }
+
+
+@router.put("/api/profile/portfolio/items/{item_id}", response_class=JSONResponse)
+async def api_update_profile_portfolio_item(
+    item_id: int,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    student_id = _ensure_student_user(user)
+    data = await request.json()
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="作品数据格式不正确。")
+    with get_db_connection() as conn:
+        try:
+            result = update_portfolio_item(conn, student_id, item_id, data)
+            portfolio = build_student_portfolio_context(conn, student_id, include_candidates=True)
+            conn.commit()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "status": "success",
+        "message": "成长档案已更新。",
+        **result,
+        "portfolio": portfolio,
+    }
+
+
+@router.delete("/api/profile/portfolio/items/{item_id}", response_class=JSONResponse)
+def api_remove_profile_portfolio_item(item_id: int, user: dict = Depends(get_current_user)):
+    student_id = _ensure_student_user(user)
+    with get_db_connection() as conn:
+        try:
+            removed_count = remove_portfolio_item(conn, student_id, item_id)
+            portfolio = build_student_portfolio_context(conn, student_id, include_candidates=True)
+            conn.commit()
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "status": "success",
+        "message": "作品已移出成长档案。",
+        "removed_count": removed_count,
+        "portfolio": portfolio,
+    }
 
 
 @router.get("/api/profile/email-configs", response_class=JSONResponse)

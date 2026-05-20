@@ -8,6 +8,7 @@
 {% set support_profile = insight.support_profile %}
 {% set teacher_note = insight.teacher_note %}
 {% set related_teacher_names = insight.related_teacher_names %}
+{% set portfolio = insight.portfolio %}
 
 {% block extra_head %}
 {% endblock %}
@@ -127,6 +128,35 @@
                 </div>
             </form>
         </article>
+    </section>
+
+    <section class="student-insight-band">
+        <div class="student-insight-band__head">
+            <div>
+                <h3>成长档案</h3>
+                <p>只展示学生主动设置为班级可见或教师可见的作品证据，私有复盘不会进入教师洞察。</p>
+            </div>
+            <span class="student-sect-badge">{{ portfolio['summary'].visible_count }} / {{ portfolio['summary'].item_count }} 可见</span>
+        </div>
+        {% if portfolio['items'] %}
+        <div class="student-task-list">
+            {% for item in portfolio['items'] %}
+            <a class="student-task-row" href="{{ item.href }}">
+                <span>{{ item.title }}</span>
+                <small>
+                    {{ item.artifact_label }} · {{ item.visibility_label }}
+                    {% if item.course_name %} · {{ item.course_name }}{% endif %}
+                    {% if item.ability_tags %} · {{ item.ability_tags[:3] | join('、') }}{% endif %}
+                </small>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="academic-empty">
+            <strong>暂无学生主动开放的成长档案</strong>
+            学生可以在个人中心把作业、证书、博客和复盘整理入档，并自主决定是否对教师可见。
+        </div>
+        {% endif %}
     </section>
 
     <section class="student-insight-grid">
