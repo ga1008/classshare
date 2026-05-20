@@ -30257,22 +30257,95 @@ body.has-class-academic-sync-modal {
     color: color-mix(in srgb, var(--course-a) 72%, #0f172a 28%);
 }
 
-.profile-portfolio-stats {
+.profile-portfolio-dashboard {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 0.8rem;
-}
-
-.profile-portfolio-stat {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+    gap: 1rem;
+    align-items: stretch;
     min-width: 0;
-    min-height: 112px;
-    padding: 0.9rem;
-    border: 1px solid var(--profile-card-border);
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.82);
-    box-shadow: var(--profile-shadow);
+    padding: 1.15rem;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 16px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.86)),
+        linear-gradient(120deg, rgba(79, 70, 229, 0.08), transparent 52%),
+        linear-gradient(310deg, rgba(20, 184, 166, 0.08), transparent 54%);
+    box-shadow: 0 18px 48px -38px rgba(15, 23, 42, 0.52);
 }
 
+.profile-portfolio-dashboard__copy,
+.profile-portfolio-next,
+.profile-portfolio-primary,
+.profile-portfolio-side,
+.profile-portfolio-item-list,
+.profile-portfolio-ability-list,
+.profile-portfolio-timeline,
+.profile-portfolio-form {
+    display: grid;
+    gap: 1rem;
+    min-width: 0;
+}
+
+.profile-portfolio-dashboard__copy {
+    align-content: center;
+}
+
+.profile-portfolio-dashboard h2 {
+    margin: 0;
+    font-size: 1.95rem;
+    line-height: 1.15;
+    font-weight: 850;
+    letter-spacing: 0;
+}
+
+.profile-portfolio-dashboard p {
+    max-width: 64ch;
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.72;
+}
+
+.profile-portfolio-flow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.15rem;
+}
+
+.profile-portfolio-flow span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 0 0.75rem;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 850;
+}
+
+.profile-portfolio-flow span.is-current {
+    border-color: rgba(79, 70, 229, 0.28);
+    background: rgba(238, 242, 255, 0.9);
+    color: var(--primary-color);
+}
+
+.profile-portfolio-flow span.is-done {
+    border-color: rgba(20, 184, 166, 0.24);
+    background: rgba(240, 253, 250, 0.9);
+    color: #0f766e;
+}
+
+.profile-portfolio-next {
+    align-content: center;
+    padding: 1rem;
+    border: 1px solid rgba(79, 70, 229, 0.14);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.82);
+}
+
+.profile-portfolio-next > span,
 .profile-portfolio-stat span,
 .profile-portfolio-count,
 .profile-portfolio-type,
@@ -30284,12 +30357,41 @@ body.has-class-academic-sync-modal {
     font-weight: 800;
 }
 
+.profile-portfolio-next strong {
+    color: var(--text-primary);
+    font-size: 1.08rem;
+    line-height: 1.4;
+}
+
+.profile-portfolio-next div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+
+.profile-portfolio-stat-strip {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.65rem;
+}
+
+.profile-portfolio-stat {
+    min-width: 0;
+    min-height: 88px;
+    padding: 0.78rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: 0 12px 30px -28px rgba(15, 23, 42, 0.5);
+}
+
 .profile-portfolio-stat strong {
     display: block;
-    margin-top: 0.42rem;
+    margin-bottom: 0.32rem;
     color: var(--text-primary);
-    font-size: 1.7rem;
+    font-size: 1.42rem;
     line-height: 1;
+    font-weight: 900;
 }
 
 .profile-portfolio-stat p,
@@ -30297,38 +30399,107 @@ body.has-class-academic-sync-modal {
 .profile-portfolio-feature-card p,
 .profile-portfolio-candidate p,
 .profile-portfolio-ability p,
-.profile-portfolio-event p {
+.profile-portfolio-event p,
+.profile-portfolio-panel .profile-band__head p {
     margin: 0;
     color: var(--text-secondary);
     line-height: 1.58;
     overflow-wrap: anywhere;
 }
 
-.profile-portfolio-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 360px;
-    gap: 1rem;
-    align-items: start;
+.profile-portfolio-stat p {
+    margin-top: 0.14rem;
+    font-size: 0.82rem;
+    color: var(--text-muted);
 }
 
-.profile-portfolio-main,
-.profile-portfolio-rail,
-.profile-portfolio-featured,
-.profile-portfolio-collection,
-.profile-portfolio-item-list,
-.profile-portfolio-candidate-list,
-.profile-portfolio-ability-list,
-.profile-portfolio-timeline,
-.profile-portfolio-form {
-    display: grid;
-    gap: 1rem;
+.profile-portfolio-switcher {
+    position: sticky;
+    top: 86px;
+    z-index: 5;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
     min-width: 0;
+    padding: 0.45rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: 0 12px 32px -30px rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(18px);
+}
+
+#portfolio-candidates,
+#portfolio-collection,
+#portfolio-abilities,
+#portfolio-timeline {
+    scroll-margin-top: 126px;
+}
+
+.profile-portfolio-switcher a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.38rem;
+    min-height: 38px;
+    padding: 0 0.78rem;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.86rem;
+    font-weight: 850;
+    text-decoration: none;
+}
+
+.profile-portfolio-switcher a:hover,
+.profile-portfolio-switcher a:focus-visible,
+.profile-portfolio-switcher a.is-active {
+    border-color: rgba(79, 70, 229, 0.2);
+    background: rgba(238, 242, 255, 0.82);
+    color: var(--primary-color);
+}
+
+.profile-portfolio-switcher span {
+    color: var(--profile-accent);
+    font-weight: 900;
+}
+
+.profile-portfolio-workbench {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+    gap: 1rem;
+    align-items: start;
+    min-width: 0;
+}
+
+.profile-portfolio-side {
+    position: sticky;
+    top: 92px;
+}
+
+.profile-portfolio-panel {
+    border-radius: 14px;
+}
+
+.profile-portfolio-panel .profile-band__head {
+    align-items: flex-start;
+}
+
+.profile-portfolio-panel .profile-band__head h3 {
+    margin-bottom: 0.22rem;
+}
+
+.profile-portfolio-candidate-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
 }
 
 .profile-portfolio-featured-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.8rem;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
 }
 
 .profile-portfolio-feature-card,
@@ -30338,25 +30509,25 @@ body.has-class-academic-sync-modal {
 .profile-portfolio-empty {
     min-width: 0;
     border: 1px solid rgba(148, 163, 184, 0.18);
-    border-radius: 16px;
+    border-radius: 10px;
     background: rgba(248, 250, 252, 0.78);
 }
 
 .profile-portfolio-feature-card {
     display: grid;
-    gap: 0.55rem;
-    min-height: 176px;
-    padding: 0.95rem;
+    gap: 0.5rem;
+    min-height: 0;
+    padding: 0.85rem;
     color: inherit;
     text-decoration: none;
     transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .profile-portfolio-feature-card:hover {
-    transform: translateY(-2px);
-    border-color: var(--profile-accent);
+    transform: translateY(-1px);
+    border-color: rgba(79, 70, 229, 0.28);
     background: #fff;
-    box-shadow: 0 24px 44px -34px rgba(15, 23, 42, 0.58);
+    box-shadow: 0 18px 34px -30px rgba(15, 23, 42, 0.5);
     text-decoration: none;
 }
 
@@ -30375,11 +30546,32 @@ body.has-class-academic-sync-modal {
     font-weight: 750;
 }
 
+.profile-portfolio-candidate {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.8rem;
+    align-items: center;
+    min-height: 112px;
+    padding: 0.9rem;
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.profile-portfolio-candidate__body {
+    display: grid;
+    gap: 0.34rem;
+    min-width: 0;
+}
+
+.profile-portfolio-candidate .btn {
+    align-self: center;
+    white-space: nowrap;
+}
+
 .profile-portfolio-item {
     padding: 1rem;
     background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(248, 250, 252, 0.74)),
-        linear-gradient(120deg, var(--profile-accent-soft), transparent 58%);
+        linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(248, 250, 252, 0.78)),
+        linear-gradient(120deg, rgba(79, 70, 229, 0.07), transparent 58%);
 }
 
 .profile-portfolio-item__top,
@@ -30478,21 +30670,11 @@ body.has-class-academic-sync-modal {
     margin-right: auto;
 }
 
-.profile-portfolio-candidate {
-    display: grid;
-    gap: 0.5rem;
-    padding: 0.85rem;
-}
-
-.profile-portfolio-candidate .btn {
-    justify-self: start;
-}
-
 .profile-portfolio-ability {
     display: grid;
     gap: 0.42rem;
     padding: 0.75rem;
-    border-radius: 14px;
+    border-radius: 10px;
     background: rgba(248, 250, 252, 0.78);
     border: 1px solid rgba(148, 163, 184, 0.15);
 }
@@ -30574,6 +30756,14 @@ body.has-class-academic-sync-modal {
 
 .profile-portfolio-empty--compact {
     padding: 0.85rem;
+}
+
+.profile-portfolio-empty--hero {
+    align-content: center;
+    min-height: 126px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(248, 250, 252, 0.8)),
+        linear-gradient(120deg, rgba(20, 184, 166, 0.08), transparent 56%);
 }
 
 .profile-overview-grid {
@@ -31086,13 +31276,17 @@ body.has-class-academic-sync-modal {
     .profile-settings-grid,
     .profile-security-grid,
     .profile-email-grid,
-    .profile-portfolio-layout {
+    .profile-portfolio-dashboard,
+    .profile-portfolio-workbench {
         grid-template-columns: 1fr;
     }
 
-    .profile-portfolio-stats,
-    .profile-portfolio-featured-grid {
+    .profile-portfolio-stat-strip {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .profile-portfolio-side {
+        position: static;
     }
 
     .profile-sidebar {
@@ -31115,11 +31309,11 @@ body.has-class-academic-sync-modal {
     .profile-form-grid,
     .profile-cultivation-grid,
     .profile-email-grid,
-    .profile-portfolio-featured-grid {
+    .profile-portfolio-candidate-grid {
         grid-template-columns: 1fr;
     }
 
-    .profile-portfolio-stats {
+    .profile-portfolio-stat-strip {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
@@ -31259,7 +31453,8 @@ body.has-class-academic-sync-modal {
     .profile-section-head__actions,
     .profile-email-reminder,
     .profile-portfolio-actions,
-    .profile-portfolio-item__top {
+    .profile-portfolio-item__top,
+    .profile-portfolio-next div {
         flex-direction: column;
         align-items: flex-start;
     }
@@ -31269,9 +31464,34 @@ body.has-class-academic-sync-modal {
     .profile-email-reminder .btn,
     .profile-email-actions .btn,
     .profile-portfolio-actions .btn,
-    .profile-portfolio-candidate .btn {
+    .profile-portfolio-candidate .btn,
+    .profile-portfolio-next .btn {
         width: 100%;
         justify-content: center;
+    }
+
+    .profile-portfolio-dashboard {
+        padding: 1rem;
+        border-radius: 14px;
+    }
+
+    .profile-portfolio-dashboard h2 {
+        font-size: 1.55rem;
+    }
+
+    .profile-portfolio-switcher {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        padding-bottom: 0.55rem;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .profile-portfolio-switcher a {
+        flex: 0 0 auto;
+    }
+
+    .profile-portfolio-candidate {
+        grid-template-columns: 1fr;
     }
 
     .profile-portfolio-check,
@@ -31280,9 +31500,12 @@ body.has-class-academic-sync-modal {
         justify-content: center;
     }
 
-    .profile-portfolio-tag-grid,
-    .profile-portfolio-stats {
+    .profile-portfolio-tag-grid {
         grid-template-columns: 1fr;
+    }
+
+    .profile-portfolio-stat-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .profile-summary-row strong {

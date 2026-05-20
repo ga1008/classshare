@@ -274,59 +274,79 @@
                 </aside>
             </section>
             {% elif active_section == 'portfolio' and portfolio_ctx %}
-            <section class="profile-band profile-section-head profile-reveal">
-                <div>
-                    <span class="profile-eyebrow">Portfolio</span>
+            {% set portfolio_summary = portfolio_ctx['summary'] %}
+            <section class="profile-portfolio-dashboard profile-reveal">
+                <div class="profile-portfolio-dashboard__copy">
                     <h2>{{ portfolio_ctx.title }}</h2>
-                    <p>{{ portfolio_ctx.subtitle }} 下一步：{{ portfolio_ctx.next_action }}</p>
+                    <p>{{ portfolio_ctx.subtitle }}</p>
+                    <div class="profile-portfolio-flow" aria-label="成长档案整理流程">
+                        <span class="{{ 'is-done' if portfolio_summary.item_count else 'is-current' }}">选择成果</span>
+                        <span class="{{ 'is-done' if portfolio_summary.reflection_count else ('is-current' if portfolio_summary.item_count else '') }}">写复盘</span>
+                        <span class="{{ 'is-done' if portfolio_summary.featured_count else ('is-current' if portfolio_summary.reflection_count else '') }}">设精选</span>
+                    </div>
                 </div>
-                <div class="profile-section-head__actions">
-                    <a class="btn btn-outline" href="/feedback-review">整理复盘</a>
-                    <a class="btn btn-outline" href="/learning-path">学习路径</a>
-                </div>
+                <aside class="profile-portfolio-next">
+                    <span>下一步</span>
+                    <strong>{{ portfolio_ctx.next_action }}</strong>
+                    <div>
+                        <a class="btn btn-primary" href="#portfolio-candidates">去整理</a>
+                        <a class="btn btn-outline" href="/learning-path">学习路径</a>
+                    </div>
+                </aside>
             </section>
 
-            <section class="profile-portfolio-stats">
+            <section class="profile-portfolio-stat-strip" aria-label="成长档案统计">
                 {% for stat in portfolio_ctx['stats'] %}
                 <article class="profile-portfolio-stat profile-reveal">
-                    <span>{{ stat.label }}</span>
                     <strong>{{ stat.value }}</strong>
+                    <span>{{ stat.label }}</span>
                     <p>{{ stat.hint }}</p>
                 </article>
                 {% endfor %}
             </section>
 
-            <section class="profile-portfolio-layout">
-                <div class="profile-portfolio-main">
-                    <section class="profile-band profile-portfolio-featured profile-reveal">
+            <nav class="profile-portfolio-switcher" aria-label="成长档案区块导航">
+                <a class="profile-portfolio-switcher__item" href="#portfolio-candidates">可入档成果 <span>{{ portfolio_summary.candidate_count }}</span></a>
+                <a class="profile-portfolio-switcher__item" href="#portfolio-collection">作品管理 <span>{{ portfolio_summary.item_count }}</span></a>
+                <a class="profile-portfolio-switcher__item" href="#portfolio-abilities">能力证据</a>
+                <a class="profile-portfolio-switcher__item" href="#portfolio-timeline">成长时间线</a>
+            </nav>
+
+            <section class="profile-portfolio-workbench" data-portfolio-workbench>
+                <div class="profile-portfolio-primary">
+                    <section id="portfolio-candidates" class="profile-band profile-portfolio-panel profile-reveal">
                         <div class="profile-band__head">
                             <div>
-                                <span class="profile-eyebrow">Featured</span>
-                                <h3>精选作品</h3>
+                                <h3>可入档成果</h3>
+                                <p>系统会从证书、作业、考试和学习文章里挑出值得沉淀的成果。</p>
                             </div>
+                            <span class="profile-portfolio-count">{{ portfolio_ctx['candidates']|length }} 项</span>
                         </div>
-                        <div class="profile-portfolio-featured-grid">
-                            {% for item in portfolio_ctx['featured_items'] %}
-                            <a class="profile-portfolio-feature-card" href="{{ item.href }}">
-                                <span>{{ item.artifact_label }}</span>
-                                <strong>{{ item.title }}</strong>
-                                <p>{{ item.summary }}</p>
-                                <small>{{ item.course_name or item.visibility_label }}{% if item.score_label %} · {{ item.score_label }}{% endif %}</small>
-                            </a>
+                        <div class="profile-portfolio-candidate-grid">
+                            {% for item in portfolio_ctx['candidates'] %}
+                            <article class="profile-portfolio-candidate">
+                                <div class="profile-portfolio-candidate__body">
+                                    <span>{{ item.artifact_label }} · {{ item.recommended_reason }}</span>
+                                    <strong>{{ item.title }}</strong>
+                                    <p>{{ item.course_name }}{% if item.score_label %} · {{ item.score_label }}{% endif %}</p>
+                                </div>
+                                <button type="button" class="btn btn-outline btn-sm" data-portfolio-add data-source-type="{{ item.source_type }}" data-source-id="{{ item.source_id }}">加入档案</button>
+                            </article>
                             {% else %}
                             <div class="profile-portfolio-empty">
-                                <strong>还没有精选作品</strong>
-                                <p>从下方候选成果收入第一件作品，再写一句复盘，成长档案就会开始成形。</p>
+                                <strong>暂无新的候选成果</strong>
+                                <p>完成批改、获得证书或发布学习文章后，这里会自动出现。</p>
+                                <a class="btn btn-outline btn-sm" href="/feedback-review">先整理错题复盘</a>
                             </div>
                             {% endfor %}
                         </div>
                     </section>
 
-                    <section class="profile-band profile-portfolio-collection profile-reveal">
+                    <section id="portfolio-collection" class="profile-band profile-portfolio-panel profile-reveal">
                         <div class="profile-band__head">
                             <div>
-                                <span class="profile-eyebrow">Collection</span>
                                 <h3>作品管理</h3>
+                                <p>给入档作品补充摘要、复盘、能力标签，并决定是否开放给教师或班级。</p>
                             </div>
                             <span class="profile-portfolio-count">{{ portfolio_ctx['items']|length }} 件</span>
                         </div>
@@ -384,45 +404,45 @@
                                 </form>
                             </article>
                             {% else %}
-                            <div class="profile-portfolio-empty">
+                            <div class="profile-portfolio-empty profile-portfolio-empty--hero">
                                 <strong>作品集还没有内容</strong>
-                                <p>下方会根据证书、作业、博客自动给出候选成果，先选一件最能代表当前阶段的作品。</p>
+                                <p>先从上方候选成果中选择一件最能代表当前阶段的作品，再补一句复盘。</p>
                             </div>
                             {% endfor %}
                         </div>
                     </section>
                 </div>
 
-                <aside class="profile-portfolio-rail">
-                    <section class="profile-band profile-reveal">
+                <aside class="profile-portfolio-side">
+                    <section id="portfolio-featured" class="profile-band profile-portfolio-panel profile-reveal">
                         <div class="profile-band__head">
                             <div>
-                                <span class="profile-eyebrow">Candidates</span>
-                                <h3>可入档成果</h3>
+                                <h3>精选作品</h3>
+                                <p>个人主页优先展示的代表作。</p>
                             </div>
                         </div>
-                        <div class="profile-portfolio-candidate-list">
-                            {% for item in portfolio_ctx['candidates'] %}
-                            <article class="profile-portfolio-candidate">
-                                <span>{{ item.artifact_label }} · {{ item.recommended_reason }}</span>
+                        <div class="profile-portfolio-featured-grid">
+                            {% for item in portfolio_ctx['featured_items'] %}
+                            <a class="profile-portfolio-feature-card" href="{{ item.href }}">
+                                <span>{{ item.artifact_label }}</span>
                                 <strong>{{ item.title }}</strong>
-                                <p>{{ item.course_name }}{% if item.score_label %} · {{ item.score_label }}{% endif %}</p>
-                                <button type="button" class="btn btn-outline btn-sm" data-portfolio-add data-source-type="{{ item.source_type }}" data-source-id="{{ item.source_id }}">加入档案</button>
-                            </article>
+                                <p>{{ item.summary }}</p>
+                                <small>{{ item.course_name or item.visibility_label }}{% if item.score_label %} · {{ item.score_label }}{% endif %}</small>
+                            </a>
                             {% else %}
                             <div class="profile-portfolio-empty profile-portfolio-empty--compact">
-                                <strong>暂无新的候选成果</strong>
-                                <p>完成批改、获得证书或发布学习文章后，这里会自动出现。</p>
+                                <strong>还没有精选作品</strong>
+                                <p>加入第一件作品并设为精选后，这里会变成你的代表作橱窗。</p>
                             </div>
                             {% endfor %}
                         </div>
                     </section>
 
-                    <section class="profile-band profile-reveal">
+                    <section id="portfolio-abilities" class="profile-band profile-portfolio-panel profile-reveal">
                         <div class="profile-band__head">
                             <div>
-                                <span class="profile-eyebrow">Abilities</span>
                                 <h3>能力证据</h3>
+                                <p>根据证书、得分和复盘标签自动汇总。</p>
                             </div>
                         </div>
                         <div class="profile-portfolio-ability-list">
@@ -436,11 +456,11 @@
                         </div>
                     </section>
 
-                    <section class="profile-band profile-reveal">
+                    <section id="portfolio-timeline" class="profile-band profile-portfolio-panel profile-reveal">
                         <div class="profile-band__head">
                             <div>
-                                <span class="profile-eyebrow">Timeline</span>
                                 <h3>成长时间线</h3>
+                                <p>关键提交、证书和档案更新会沉淀在这里。</p>
                             </div>
                         </div>
                         <div class="profile-portfolio-timeline">

@@ -774,15 +774,67 @@ function readPortfolioPayload(form) {
     return data;
 }
 
-function reloadAfterPortfolioChange(message) {
+function reloadAfterPortfolioChange(message, targetHash = '') {
     if (message) {
         showToast(message, 'success');
     }
-    window.setTimeout(() => window.location.reload(), 420);
+    const hash = targetHash || window.location.hash || '#portfolio-collection';
+    window.setTimeout(() => {
+        if (hash) {
+            window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hash}`);
+        }
+        window.location.reload();
+    }, 360);
+}
+
+function initPortfolioSwitcher() {
+    const switcher = document.querySelector('.profile-portfolio-switcher');
+    if (!switcher) {
+        return;
+    }
+    const links = Array.from(switcher.querySelectorAll('a[href^="#portfolio-"]'));
+    const sections = links
+        .map((link) => document.querySelector(link.getAttribute('href')))
+        .filter(Boolean);
+
+    const setActive = (hash) => {
+        links.forEach((link) => {
+            link.classList.toggle('is-active', link.getAttribute('href') === hash);
+        });
+    };
+
+    switcher.addEventListener('click', (event) => {
+        const link = event.target.closest('a[href^="#portfolio-"]');
+        if (!link) {
+            return;
+        }
+        const target = document.querySelector(link.getAttribute('href'));
+        if (!target) {
+            return;
+        }
+        event.preventDefault();
+        setActive(link.getAttribute('href'));
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${link.getAttribute('href')}`);
+    });
+
+    if ('IntersectionObserver' in window && sections.length) {
+        const observer = new IntersectionObserver((entries) => {
+            const visible = entries
+                .filter((entry) => entry.isIntersecting)
+                .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+            if (visible?.target?.id) {
+                setActive(`#${visible.target.id}`);
+            }
+        }, { rootMargin: '-130px 0px -55% 0px', threshold: [0.12, 0.28, 0.45] });
+        sections.forEach((section) => observer.observe(section));
+    }
+
+    setActive(window.location.hash || '#portfolio-candidates');
 }
 
 function initPortfolioPanel() {
-    const portfolioRoot = document.querySelector('.profile-portfolio-layout');
+    const portfolioRoot = document.querySelector('[data-portfolio-workbench]');
     if (!portfolioRoot) {
         return;
     }
@@ -801,7 +853,7 @@ function initPortfolioPanel() {
                         source_id: sourceId,
                     },
                 });
-                reloadAfterPortfolioChange(response.message || '作品已收入成长档案');
+                reloadAfterPortfolioChange(response.message || '作品已收入成长档案', '#portfolio-collection');
             } catch (error) {
                 showToast(error.message || '加入成长档案失败', 'error');
                 setButtonBusy(addButton, false);
@@ -823,7 +875,7 @@ function initPortfolioPanel() {
             const response = await apiFetch(`/api/profile/portfolio/items/${itemId}`, {
                 method: 'DELETE',
             });
-            reloadAfterPortfolioChange(response.message || '作品已移出成长档案');
+            reloadAfterPortfolioChange(response.message || '作品已移出成长档案', '#portfolio-candidates');
         } catch (error) {
             showToast(error.message || '移出作品失败', 'error');
             setButtonBusy(removeButton, false);
@@ -844,7 +896,7 @@ function initPortfolioPanel() {
                     method: 'PUT',
                     body: readPortfolioPayload(form),
                 });
-                reloadAfterPortfolioChange(response.message || '成长档案已更新');
+                reloadAfterPortfolioChange(response.message || '成长档案已更新', '#portfolio-collection');
             } catch (error) {
                 showToast(error.message || '保存作品失败', 'error');
                 setButtonBusy(submitButton, false);
@@ -868,5 +920,6 @@ if (root) {
     initMoodEditor();
     initPasswordForm();
     initEmailConfigPanel();
+    initPortfolioSwitcher();
     initPortfolioPanel();
 }
