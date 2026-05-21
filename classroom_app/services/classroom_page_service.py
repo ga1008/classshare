@@ -50,6 +50,7 @@ def build_classroom_page_context(
         "nav": [
             {"target": "timeline-panel", "label": "进度区", "note": "课程时间轴"},
             {"target": "assignment-panel", "label": "任务区", "note": "作业与考试"},
+            {"target": "collaboration-panel", "label": "协作区", "note": "小组与互评"},
             {"target": "materials-panel", "label": "材料区", "note": "课程文档"},
             {"target": "resources-panel", "label": "资源区", "note": "共享文件"},
             {"target": "discussion-room", "label": "讨论区", "note": "实时互动"},

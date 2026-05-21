@@ -15,13 +15,18 @@
     "version": "1.0.0",
     "type": "script"
   },
+  "collaboration": {
+    "path": "js/collaboration.js",
+    "version": "collaboration-workbench-20260521",
+    "type": "script"
+  },
   "mermaid": {
     "path": "vendor/mermaid.min.js",
     "type": "script"
   },
   "tailwind_app": {
     "path": "css/tailwind-app.css",
-    "version": "portfolio-workbench-20260520",
+    "version": "collaboration-workbench-20260521",
     "type": "style"
   }
 }

@@ -275,6 +275,10 @@
                         {{ app_topbar_icon('folder-up') }}
                         <span><strong>资源区</strong><small>共享文件与附件</small></span>
                     </a>
+                    <a href="#collaboration-panel" class="classroom-topbar-menu__item" data-workspace-nav role="menuitem">
+                        {{ app_topbar_icon('users') }}
+                        <span><strong>协作区</strong><small>小组、文件、提交与互评</small></span>
+                    </a>
                     <button type="button" class="classroom-topbar-menu__item" data-course-popover-target="stats" data-popover-title="统计信息" data-popover-kicker="课堂概览" aria-haspopup="dialog" aria-controls="course-info-popover" aria-expanded="false" role="menuitem">
                         {{ app_topbar_icon('gauge') }}
                         <span><strong>课堂概览</strong><small>人数、任务与进度</small></span>
@@ -611,6 +615,8 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/><path d="M4 20h16"/></svg>
                         {% elif item.target == 'assignment-panel' %}
                         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2.5" width="8" height="4" rx="1.2"/><path d="M16 4.5h2a2 2 0 0 1 2 2V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6.5a2 2 0 0 1 2-2h2"/><path d="M8 12h8"/><path d="M8 16h5"/></svg>
+                        {% elif item.target == 'collaboration-panel' %}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M2 21v-2a4 4 0 0 1 3-3.87"/><path d="M8 3.13a4 4 0 0 0 0 7.75"/></svg>
                         {% elif item.target == 'materials-panel' %}
                         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H12v18H6.5A2.5 2.5 0 0 1 4 18.5z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H12v18h5.5a2.5 2.5 0 0 0 2.5-2.5z"/></svg>
                         {% elif item.target == 'resources-panel' %}
@@ -1131,6 +1137,30 @@
                     <p class="text-muted">{{ sections.assignment.empty_description }}</p>
                 </div>
                 {% endif %}
+            </div>
+        </section>
+
+        <section class="workspace-panel collaboration-panel" id="collaboration-panel" data-workspace-section data-collaboration-root data-class-offering-id="{{ classroom.id }}" aria-live="polite">
+            <div class="section-header collaboration-panel__header">
+                <div class="section-heading">
+                    <span class="section-eyebrow">Team Studio</span>
+                    <h2 class="section-title">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M2 21v-2a4 4 0 0 1 3-3.87"/><path d="M8 3.13a4 4 0 0 0 0 7.75"/></svg>
+                        小组协作
+                    </h2>
+                    <p class="section-subtitle">围绕任务组队、沉淀组内文件、由组长提交成果，并完成同伴互评。</p>
+                </div>
+                <div class="header-actions collaboration-actions">
+                    <button type="button" class="btn btn-outline btn-sm" data-collab-refresh>刷新</button>
+                    <button type="button" class="btn btn-primary btn-sm" data-collab-create-open>{% if user_info.role == 'teacher' %}创建小组{% else %}发起小组{% endif %}</button>
+                </div>
+            </div>
+            <div class="collaboration-shell">
+                <div class="collaboration-loading" data-collab-loading>
+                    <span class="collaboration-loading__dot"></span>
+                    正在整理协作区...
+                </div>
+                <div class="collaboration-content" data-collab-content hidden></div>
             </div>
         </section>
 
@@ -1912,6 +1942,7 @@
     import * as examApp from '/static/js/app_exams.js';
     import { initClassroomPage } from '/static/js/classroom_page.js?v=classroom-topbar-20260516-3';
     import { initLearningProgress } from '/static/js/learning_progress.js?v=exam-roster-place-picker-20260519';
+    import { initCollaborationPanel } from '{{ asset_url("collaboration") }}';
 
     window.UI = ui;
     window.fileApp = fileApp;
@@ -1927,6 +1958,7 @@
         }
         initClassroomPage();
         initLearningProgress(window.APP_CONFIG);
+        initCollaborationPanel(window.APP_CONFIG);
 
         document.addEventListener('click', (event) => {
             const assignmentEntry = event.target.closest('a[href^="/assignment/"], [data-assignment-link]');

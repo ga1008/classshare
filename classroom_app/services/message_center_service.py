@@ -54,6 +54,7 @@ MESSAGE_CATEGORY_BLOG_HOT = "blog_hot"
 MESSAGE_CATEGORY_APP_FEEDBACK = "app_feedback"
 MESSAGE_CATEGORY_PASSWORD_RESET = "password_reset_request"
 MESSAGE_CATEGORY_TODO = "todo"
+MESSAGE_CATEGORY_COLLABORATION = "collaboration"
 
 AI_ASSISTANT_ROLE = "assistant"
 AI_ASSISTANT_LABEL = "AI助教"
@@ -122,6 +123,7 @@ ALL_NOTIFICATION_CATEGORIES = (
     MESSAGE_CATEGORY_APP_FEEDBACK,
     MESSAGE_CATEGORY_PASSWORD_RESET,
     MESSAGE_CATEGORY_TODO,
+    MESSAGE_CATEGORY_COLLABORATION,
 )
 
 VISIBLE_NOTIFICATION_CATEGORIES = {
@@ -135,6 +137,7 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_BLOG_COMMENT,
         MESSAGE_CATEGORY_BLOG_HOT,
         MESSAGE_CATEGORY_TODO,
+        MESSAGE_CATEGORY_COLLABORATION,
     ),
     "teacher": (
         "all",
@@ -148,6 +151,7 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_APP_FEEDBACK,
         MESSAGE_CATEGORY_PASSWORD_RESET,
         MESSAGE_CATEGORY_TODO,
+        MESSAGE_CATEGORY_COLLABORATION,
     ),
 }
 
@@ -165,6 +169,7 @@ CATEGORY_LABELS = {
     MESSAGE_CATEGORY_APP_FEEDBACK: "问题反馈",
     MESSAGE_CATEGORY_PASSWORD_RESET: "找回申请",
     MESSAGE_CATEGORY_TODO: "待办提醒",
+    MESSAGE_CATEGORY_COLLABORATION: "小组协作",
 }
 
 APP_FEEDBACK_TYPE_LABELS = {
@@ -3685,6 +3690,42 @@ def create_todo_notification(
         class_offering_id=_safe_int(class_offering_id),
         ref_type=MESSAGE_CATEGORY_TODO,
         ref_id=ref_id or f"todo:{recipient_role}:{recipient_user_pk}:{timestamp}",
+        metadata=metadata or {},
+        created_at=timestamp,
+    )
+    return 1 if _insert_notification_if_allowed(conn, payload, allow_duplicates=allow_duplicates) else 0
+
+
+def create_collaboration_notification(
+    conn,
+    *,
+    recipient_role: str,
+    recipient_user_pk: int,
+    title: str,
+    body_preview: str = "",
+    link_url: str = "",
+    class_offering_id: Optional[int] = None,
+    ref_id: str = "",
+    actor_role: str = "",
+    actor_user_pk: Optional[int] = None,
+    actor_display_name: str = "",
+    metadata: Optional[dict[str, Any]] = None,
+    allow_duplicates: bool = False,
+) -> int:
+    timestamp = _now_iso()
+    payload = _build_notification_payload(
+        recipient_role=str(recipient_role or "").strip().lower(),
+        recipient_user_pk=int(recipient_user_pk),
+        category=MESSAGE_CATEGORY_COLLABORATION,
+        title=_truncate_text(title, 80),
+        body_preview=_truncate_text(body_preview, 140),
+        actor_role=str(actor_role or "").strip().lower(),
+        actor_user_pk=actor_user_pk,
+        actor_display_name=str(actor_display_name or "").strip(),
+        link_url=link_url,
+        class_offering_id=_safe_int(class_offering_id),
+        ref_type=MESSAGE_CATEGORY_COLLABORATION,
+        ref_id=ref_id or f"collaboration:{recipient_role}:{recipient_user_pk}:{timestamp}",
         metadata=metadata or {},
         created_at=timestamp,
     )

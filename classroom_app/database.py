@@ -2403,6 +2403,125 @@ def init_database():
 
             # 10. 聊天记录 (关联到班级课堂)
             conn.execute('''
+                         CREATE TABLE IF NOT EXISTS study_groups
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             class_offering_id INTEGER NOT NULL,
+                             assignment_id TEXT,
+                             name TEXT NOT NULL,
+                             description TEXT NOT NULL DEFAULT '',
+                             status TEXT NOT NULL DEFAULT 'active',
+                             join_policy TEXT NOT NULL DEFAULT 'open',
+                             max_members INTEGER NOT NULL DEFAULT 6,
+                             leader_student_id INTEGER,
+                             created_by_role TEXT NOT NULL,
+                             created_by_user_pk INTEGER NOT NULL,
+                             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             archived_at TEXT,
+                             metadata_json TEXT NOT NULL DEFAULT '{}',
+                             FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                             FOREIGN KEY (assignment_id) REFERENCES assignments (id) ON DELETE SET NULL,
+                             FOREIGN KEY (leader_student_id) REFERENCES students (id) ON DELETE SET NULL
+                         )
+                         ''')
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS study_group_members
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             group_id INTEGER NOT NULL,
+                             student_id INTEGER NOT NULL,
+                             member_role TEXT NOT NULL DEFAULT 'member',
+                             status TEXT NOT NULL DEFAULT 'active',
+                             contribution_summary TEXT NOT NULL DEFAULT '',
+                             contribution_score REAL,
+                             joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             left_at TEXT,
+                             added_by_role TEXT NOT NULL DEFAULT '',
+                             added_by_user_pk INTEGER,
+                             metadata_json TEXT NOT NULL DEFAULT '{}',
+                             FOREIGN KEY (group_id) REFERENCES study_groups (id) ON DELETE CASCADE,
+                             FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                             UNIQUE (group_id, student_id)
+                         )
+                         ''')
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS study_group_files
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             group_id INTEGER NOT NULL,
+                             uploaded_by_role TEXT NOT NULL,
+                             uploaded_by_user_pk INTEGER NOT NULL,
+                             uploaded_by_name TEXT NOT NULL DEFAULT '',
+                             file_hash TEXT NOT NULL,
+                             original_filename TEXT NOT NULL,
+                             mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+                             file_size INTEGER NOT NULL DEFAULT 0,
+                             description TEXT NOT NULL DEFAULT '',
+                             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             metadata_json TEXT NOT NULL DEFAULT '{}',
+                             FOREIGN KEY (group_id) REFERENCES study_groups (id) ON DELETE CASCADE
+                         )
+                         ''')
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS group_submissions
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             group_id INTEGER NOT NULL,
+                             assignment_id TEXT,
+                             submitted_by_role TEXT NOT NULL,
+                             submitted_by_user_pk INTEGER NOT NULL,
+                             title TEXT NOT NULL DEFAULT '',
+                             summary_md TEXT NOT NULL DEFAULT '',
+                             final_file_id INTEGER,
+                             blog_post_id INTEGER,
+                             status TEXT NOT NULL DEFAULT 'submitted',
+                             submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             teacher_feedback_md TEXT NOT NULL DEFAULT '',
+                             metadata_json TEXT NOT NULL DEFAULT '{}',
+                             FOREIGN KEY (group_id) REFERENCES study_groups (id) ON DELETE CASCADE,
+                             FOREIGN KEY (assignment_id) REFERENCES assignments (id) ON DELETE SET NULL,
+                             FOREIGN KEY (final_file_id) REFERENCES study_group_files (id) ON DELETE SET NULL,
+                             UNIQUE (group_id, assignment_id)
+                         )
+                         ''')
+            try:
+                conn.execute("ALTER TABLE group_submissions ADD COLUMN blog_post_id INTEGER")
+            except sqlite3.OperationalError:
+                pass
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS peer_reviews
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             class_offering_id INTEGER NOT NULL,
+                             group_id INTEGER NOT NULL,
+                             assignment_id TEXT,
+                             reviewer_student_id INTEGER NOT NULL,
+                             reviewee_student_id INTEGER NOT NULL,
+                             responsibility_score INTEGER NOT NULL DEFAULT 0,
+                             collaboration_score INTEGER NOT NULL DEFAULT 0,
+                             quality_score INTEGER NOT NULL DEFAULT 0,
+                             comment TEXT NOT NULL DEFAULT '',
+                             share_with_reviewee INTEGER NOT NULL DEFAULT 0,
+                             status TEXT NOT NULL DEFAULT 'submitted',
+                             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             metadata_json TEXT NOT NULL DEFAULT '{}',
+                             FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                             FOREIGN KEY (group_id) REFERENCES study_groups (id) ON DELETE CASCADE,
+                             FOREIGN KEY (assignment_id) REFERENCES assignments (id) ON DELETE SET NULL,
+                             FOREIGN KEY (reviewer_student_id) REFERENCES students (id) ON DELETE CASCADE,
+                             FOREIGN KEY (reviewee_student_id) REFERENCES students (id) ON DELETE CASCADE,
+                             UNIQUE (group_id, assignment_id, reviewer_student_id, reviewee_student_id)
+                         )
+                         ''')
+
+            conn.execute('''
                          CREATE TABLE IF NOT EXISTS chat_logs
                          (
                              id
@@ -3295,7 +3414,7 @@ def init_database():
                 """
                 UPDATE message_center_notifications
                 SET severity = CASE
-                    WHEN category IN ('assignment', 'discussion_mention', 'submission', 'grading_result', 'learning_progress') THEN 'important'
+                    WHEN category IN ('assignment', 'discussion_mention', 'submission', 'grading_result', 'learning_progress', 'collaboration') THEN 'important'
                     WHEN category IN ('ai_feedback', 'app_feedback', 'password_reset_request') THEN 'system'
                     ELSE 'normal'
                 END
@@ -4093,6 +4212,42 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_feedback_review_submission_question "
                 "ON student_feedback_review_notes (submission_id, question_key)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_study_groups_offering_status "
+                "ON study_groups (class_offering_id, status, updated_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_study_groups_assignment "
+                "ON study_groups (assignment_id, class_offering_id, status)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_study_group_members_student "
+                "ON study_group_members (student_id, status, group_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_study_group_members_group "
+                "ON study_group_members (group_id, status, member_role, student_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_study_group_files_group "
+                "ON study_group_files (group_id, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_group_submissions_group_assignment "
+                "ON group_submissions (group_id, assignment_id, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_group_submissions_blog_post "
+                "ON group_submissions (blog_post_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_peer_reviews_group_reviewer "
+                "ON peer_reviews (group_id, reviewer_student_id, assignment_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_peer_reviews_reviewee "
+                "ON peer_reviews (reviewee_student_id, class_offering_id, updated_at DESC)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_materials_root_path ON course_materials (root_id, material_path)"
