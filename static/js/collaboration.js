@@ -2,6 +2,12 @@ import { apiFetch } from './api.js';
 import { showToast, escapeHtml, formatSize, formatDate } from './ui.js';
 
 const SCORE_OPTIONS = [5, 4, 3, 2, 1];
+const DETAIL_TABS = [
+    { key: 'members', label: '成员' },
+    { key: 'files', label: '文件' },
+    { key: 'submission', label: '成果' },
+    { key: 'reviews', label: '互评' },
+];
 
 function normalizeId(value) {
     const text = String(value ?? '').trim();
@@ -46,6 +52,19 @@ function statusLabel(group) {
     if (group.join_policy === 'open') return '开放加入';
     if (group.join_policy === 'teacher_assigned') return '教师分配';
     return '锁定';
+}
+
+function normalizeDetailTab(value) {
+    const key = normalizeId(value);
+    return DETAIL_TABS.some((item) => item.key === key) ? key : 'members';
+}
+
+function detailTabCount(group, key) {
+    if (key === 'members') return group.member_count || 0;
+    if (key === 'files') return group.file_count || 0;
+    if (key === 'submission') return group.submission_count || 0;
+    if (key === 'reviews') return (group.peer_reviews || []).length;
+    return 0;
 }
 
 function renderStats(snapshot) {
@@ -380,7 +399,33 @@ function renderCreateForm(snapshot, open) {
     `;
 }
 
-function renderDetail(snapshot, group) {
+function renderDetailTabs(group, activeTab) {
+    return `
+        <div class="collaboration-detail-tabs" role="tablist" aria-label="小组工作区">
+            ${DETAIL_TABS.map((tab) => `
+                <button
+                    type="button"
+                    class="collaboration-detail-tab${activeTab === tab.key ? ' is-active' : ''}"
+                    data-collab-detail-tab="${tab.key}"
+                    role="tab"
+                    aria-selected="${activeTab === tab.key ? 'true' : 'false'}"
+                >
+                    <span>${tab.label}</span>
+                    <strong>${detailTabCount(group, tab.key)}</strong>
+                </button>
+            `).join('')}
+        </div>
+    `;
+}
+
+function renderDetailPanel(snapshot, group, activeTab) {
+    if (activeTab === 'files') return renderFiles(group);
+    if (activeTab === 'submission') return renderSubmissions(snapshot, group);
+    if (activeTab === 'reviews') return renderPeerReviews(snapshot, group);
+    return renderMembers(snapshot, group);
+}
+
+function renderDetail(snapshot, group, activeTab = 'members') {
     if (!group) {
         return `
             <aside class="collaboration-detail">
@@ -391,6 +436,7 @@ function renderDetail(snapshot, group) {
             </aside>
         `;
     }
+    const normalizedTab = normalizeDetailTab(activeTab);
     return `
         <aside class="collaboration-detail">
             <div class="collaboration-detail-hero">
@@ -398,10 +444,16 @@ function renderDetail(snapshot, group) {
                 <strong>${escapeHtml(group.name)}</strong>
                 <p>${escapeHtml(group.assignment_title || '未绑定具体任务')}</p>
             </div>
-            ${renderMembers(snapshot, group)}
-            ${renderFiles(group)}
-            ${renderSubmissions(snapshot, group)}
-            ${renderPeerReviews(snapshot, group)}
+            <div class="collaboration-detail-summary" aria-label="小组概览">
+                <div><span>成员</span><strong>${group.member_count || 0}/${group.max_members || 0}</strong></div>
+                <div><span>文件</span><strong>${group.file_count || 0}</strong></div>
+                <div><span>成果</span><strong>${group.submission_count || 0}</strong></div>
+                <div><span>互评</span><strong>${(group.peer_reviews || []).length}</strong></div>
+            </div>
+            ${renderDetailTabs(group, normalizedTab)}
+            <div class="collaboration-detail-panel" role="tabpanel">
+                ${renderDetailPanel(snapshot, group, normalizedTab)}
+            </div>
         </aside>
     `;
 }
@@ -440,7 +492,7 @@ function render(root, state) {
             <div class="collaboration-main">
                 ${renderGroupList(state.snapshot, selectedGroup)}
             </div>
-            ${renderDetail(state.snapshot, selectedGroup)}
+            ${renderDetail(state.snapshot, selectedGroup, state.detailTab)}
         </div>
     `;
 }
@@ -480,6 +532,7 @@ async function handleCreate(root, state, form) {
     });
     state.createOpen = false;
     applySnapshot(state, response);
+    state.detailTab = 'members';
     showToast(response.message || '小组已创建', 'success');
     render(root, state);
 }
@@ -509,6 +562,7 @@ async function handleAddMember(root, state, form, groupId) {
         body: { student_id: Number(values.student_id) },
     });
     applySnapshot(state, response);
+    state.detailTab = 'members';
     showToast(response.message || '成员已加入', 'success');
     render(root, state);
 }
@@ -526,6 +580,7 @@ async function handleUpload(root, state, form, groupId) {
         body: data,
     });
     applySnapshot(state, response);
+    state.detailTab = 'files';
     showToast(response.message || '文件已上传', 'success');
     render(root, state);
 }
@@ -537,6 +592,7 @@ async function handleSubmission(root, state, form, groupId) {
         body: payload,
     });
     applySnapshot(state, response);
+    state.detailTab = 'submission';
     showToast(response.message || '成果已保存', 'success');
     render(root, state);
 }
@@ -552,6 +608,7 @@ async function handlePeerReview(root, state, form, groupId) {
         body: payload,
     });
     applySnapshot(state, response);
+    state.detailTab = 'reviews';
     showToast(response.message || '互评已保存', 'success');
     render(root, state);
 }
@@ -562,6 +619,7 @@ async function handleBlogDraft(root, state, groupId, submissionId) {
         body: { submission_id: Number(submissionId || 0) },
     });
     applySnapshot(state, response);
+    state.detailTab = 'submission';
     showToast(response.message || '博客草稿已生成', 'success');
     render(root, state);
 }
@@ -580,8 +638,15 @@ function bindEvents(root, state) {
             } else if (target.matches('[data-collab-create-close]')) {
                 state.createOpen = false;
                 render(root, state);
+            } else if (target.dataset.collabDetailTab) {
+                state.detailTab = normalizeDetailTab(target.dataset.collabDetailTab);
+                render(root, state);
             } else if (target.dataset.collabSelectGroup) {
-                state.selectedGroupId = target.dataset.collabSelectGroup;
+                const nextGroupId = target.dataset.collabSelectGroup;
+                if (nextGroupId !== state.selectedGroupId) {
+                    state.detailTab = 'members';
+                }
+                state.selectedGroupId = nextGroupId;
                 render(root, state);
             } else if (target.dataset.collabJoin) {
                 await postAction(root, state, `/api/collaboration/groups/${target.dataset.collabJoin}/join`, '已加入小组');
@@ -633,6 +698,7 @@ export function initCollaborationPanel() {
     const state = {
         snapshot: null,
         selectedGroupId: '',
+        detailTab: 'members',
         createOpen: false,
     };
     bindEvents(root, state);

@@ -32679,7 +32679,7 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 
 .classroom-page .collaboration-workbench {
     display: grid;
-    grid-template-columns: minmax(0, 0.95fr) minmax(360px, 1.05fr);
+    grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.1fr);
     gap: 16px;
     align-items: start;
 }
@@ -32687,6 +32687,7 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 .classroom-page .collaboration-main,
 .classroom-page .collaboration-detail,
 .classroom-page .collaboration-group-list,
+.classroom-page .collaboration-detail-panel,
 .classroom-page .collaboration-detail-card,
 .classroom-page .collaboration-submission-list,
 .classroom-page .collaboration-review-list {
@@ -32847,6 +32848,106 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     color: #0f766e;
     font-size: 0.74rem;
     font-weight: 900;
+}
+
+.classroom-page .collaboration-detail-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.classroom-page .collaboration-detail-summary > div {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.76);
+}
+
+.classroom-page .collaboration-detail-summary span {
+    color: #64748b;
+    font-size: 0.76rem;
+    font-weight: 850;
+}
+
+.classroom-page .collaboration-detail-summary strong {
+    color: #0f172a;
+    font-size: 1rem;
+    font-weight: 900;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+
+.classroom-page .collaboration-detail-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    padding: 6px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(248, 250, 252, 0.72);
+}
+
+.classroom-page .collaboration-detail-tab {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+    min-height: 42px;
+    min-width: 0;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: #475569;
+    font-size: 0.86rem;
+    font-weight: 900;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+.classroom-page .collaboration-detail-tab span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.classroom-page .collaboration-detail-tab strong {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: rgba(226, 232, 240, 0.78);
+    color: #334155;
+    font-size: 0.76rem;
+    line-height: 1;
+}
+
+.classroom-page .collaboration-detail-tab:hover,
+.classroom-page .collaboration-detail-tab:focus-visible {
+    transform: translateY(-1px);
+    border-color: rgba(99, 102, 241, 0.2);
+    color: #3730a3;
+    outline: none;
+}
+
+.classroom-page .collaboration-detail-tab.is-active {
+    border-color: rgba(99, 102, 241, 0.28);
+    background: rgba(255, 255, 255, 0.96);
+    color: #4338ca;
+    box-shadow: 0 12px 28px -24px rgba(79, 70, 229, 0.55);
+}
+
+.classroom-page .collaboration-detail-tab.is-active strong {
+    background: rgba(238, 242, 255, 0.95);
+    color: #4f46e5;
 }
 
 .classroom-page .collaboration-detail-card,
@@ -33163,6 +33264,11 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     }
 
     .classroom-page .collaboration-stat-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .classroom-page .collaboration-detail-summary,
+    .classroom-page .collaboration-detail-tabs {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
