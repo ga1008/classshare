@@ -16,6 +16,16 @@ const RESULT_VISIBILITY = [
 
 const DEFAULT_OPTIONS = ['我理解了', '还需要例子', '节奏偏快', '希望现场演示'];
 
+const FEATURE_TABS = [
+    { key: 'all', label: '总览', note: '全部互动' },
+    { key: 'poll', label: '投票', note: '快速判断' },
+    { key: 'quiz', label: '随堂测', note: '理解检查' },
+    { key: 'qna', label: '提问', note: '匿名入口' },
+    { key: 'signals', label: '状态', note: '举手求助' },
+];
+
+const ACTIVITY_TAB_KEYS = new Set(['poll', 'quiz', 'qna']);
+
 function normalizeId(value) {
     const text = String(value ?? '').trim();
     return text || '';
@@ -27,11 +37,87 @@ function safePercent(value) {
     return Math.max(0, Math.min(100, number));
 }
 
-function selectedActivity(snapshot, selectedId) {
+function activitiesForTab(snapshot, activeTab = 'all') {
     const activities = [...(snapshot?.active_activities || []), ...(snapshot?.recent_activities || [])];
+    if (ACTIVITY_TAB_KEYS.has(activeTab)) {
+        return activities.filter((item) => item.kind === activeTab);
+    }
+    return activities;
+}
+
+function selectedActivity(snapshot, selectedId, activeTab = 'all') {
+    if (activeTab === 'signals') return null;
+    const activities = activitiesForTab(snapshot, activeTab);
     if (!activities.length) return null;
     const exact = activities.find((item) => String(item.id) === String(selectedId));
     return exact || activities[0];
+}
+
+function activityCounts(snapshot) {
+    const activities = [...(snapshot?.active_activities || []), ...(snapshot?.recent_activities || [])];
+    return activities.reduce((acc, item) => {
+        const kind = item.kind || 'unknown';
+        acc[kind] = acc[kind] || { total: 0, active: 0, responses: 0, openQuestions: 0 };
+        acc[kind].total += 1;
+        if (item.status === 'active') acc[kind].active += 1;
+        acc[kind].responses += Number(item.response_count || 0);
+        acc[kind].openQuestions += Number(item.open_question_count || 0);
+        return acc;
+    }, {});
+}
+
+function renderFeatureTabs(snapshot, state) {
+    const summary = snapshot.summary || {};
+    const counts = activityCounts(snapshot);
+    const activeTab = state.activeTab || 'all';
+    const tabMeta = FEATURE_TABS.map((tab) => {
+        if (tab.key === 'all') {
+            return {
+                ...tab,
+                count: summary.active_activity_count || 0,
+                hot: Boolean(summary.active_activity_count || summary.active_signal_count || summary.open_question_count),
+                detail: `${summary.response_count || 0} 次回应`,
+            };
+        }
+        if (tab.key === 'signals') {
+            return {
+                ...tab,
+                count: summary.active_signal_count || 0,
+                hot: Boolean(summary.active_signal_count),
+                detail: summary.active_signal_count ? '需要关注' : '状态稳定',
+            };
+        }
+        const kindCount = counts[tab.key] || { total: 0, active: 0, responses: 0, openQuestions: 0 };
+        const detail = tab.key === 'qna'
+            ? `${kindCount.openQuestions || 0} 个待回应`
+            : `${kindCount.responses || 0} 次回应`;
+        return {
+            ...tab,
+            count: kindCount.active || kindCount.total || 0,
+            hot: Boolean(kindCount.active || (tab.key === 'qna' && kindCount.openQuestions)),
+            detail,
+        };
+    });
+    return `
+        <div class="interaction-feature-tabs" role="tablist" aria-label="课堂互动功能">
+            ${tabMeta.map((tab) => `
+                <button type="button"
+                        class="interaction-feature-tab${activeTab === tab.key ? ' is-active' : ''}${tab.hot ? ' has-content' : ''}"
+                        data-interaction-tab="${tab.key}"
+                        role="tab"
+                        aria-selected="${activeTab === tab.key ? 'true' : 'false'}">
+                    <span class="interaction-feature-tab__main">
+                        <strong>${escapeHtml(tab.label)}</strong>
+                        <small>${escapeHtml(tab.note)}</small>
+                    </span>
+                    <span class="interaction-feature-tab__meta">
+                        <em>${Number(tab.count || 0)}</em>
+                        <small>${escapeHtml(tab.detail)}</small>
+                    </span>
+                </button>
+            `).join('')}
+        </div>
+    `;
 }
 
 function signalTone(key) {
@@ -159,14 +245,62 @@ function renderOptionEditorRow(value, index, kind) {
     `;
 }
 
-function renderActivityList(snapshot, currentActivity) {
-    const active = snapshot.active_activities || [];
-    const recent = snapshot.recent_activities || [];
+function tabEmptyCopy(snapshot, activeTab) {
+    if (activeTab === 'poll') {
+        return snapshot.role === 'teacher'
+            ? ['还没有课堂投票', '可以用投票快速确认学生选择、偏好或理解程度。']
+            : ['还没有可参与的投票', '老师发起投票后，会在这里出现。'];
+    }
+    if (activeTab === 'quiz') {
+        return snapshot.role === 'teacher'
+            ? ['还没有随堂测', '可以发起一道轻量检查题，马上看到全班理解情况。']
+            : ['还没有随堂测', '老师发起后，你可以在这里提交答案。'];
+    }
+    if (activeTab === 'qna') {
+        return snapshot.role === 'teacher'
+            ? ['还没有提问入口', '开启匿名提问后，学生可以低压力提交课堂疑问。']
+            : ['还没有提问入口', '老师开启匿名提问后，你可以在这里写下问题。'];
+    }
+    return snapshot.role === 'teacher'
+        ? ['课堂互动还没有开始', '可以先发起一个投票、随堂测或匿名提问入口。']
+        : ['课堂互动还没有开始', '教师发起后，这里会出现可参与的互动。'];
+}
+
+function renderSignalFocusCard(snapshot) {
+    const summary = snapshot.summary || {};
+    const signalCounts = summary.signal_counts || {};
+    const items = [
+        ['举手', signalCounts.hand || 0],
+        ['求助', signalCounts.help || 0],
+        ['跟不上', signalCounts.slow || 0],
+        ['已完成', signalCounts.done || 0],
+    ];
+    return `
+        <section class="interaction-detail-card interaction-signal-focus">
+            <span class="interaction-kicker">Signal Focus</span>
+            <strong>${snapshot.role === 'teacher' ? '现场节奏雷达' : '让老师知道你的课堂状态'}</strong>
+            <p>${snapshot.role === 'teacher' ? '状态选项卡会优先呈现需要处理的举手、求助和节奏反馈。处理后，学生端会同步清除当前状态。' : '状态只对老师可见。你可以快速举手、求助、提示节奏太快，或告诉老师已经完成。'}</p>
+            <div class="interaction-signal-mini-grid">
+                ${items.map(([label, value]) => `
+                    <span class="${Number(value) ? 'has-content' : ''}">
+                        <strong>${value}</strong>
+                        <small>${label}</small>
+                    </span>
+                `).join('')}
+            </div>
+        </section>
+    `;
+}
+
+function renderActivityList(snapshot, currentActivity, activeTab = 'all') {
+    const active = (snapshot.active_activities || []).filter((item) => activeTab === 'all' || item.kind === activeTab);
+    const recent = (snapshot.recent_activities || []).filter((item) => activeTab === 'all' || item.kind === activeTab);
     if (!active.length && !recent.length) {
+        const [title, note] = tabEmptyCopy(snapshot, activeTab);
         return `
             <div class="interaction-empty">
-                <strong>课堂互动还没有开始</strong>
-                <p>${snapshot.role === 'teacher' ? '可以先发起一个投票、随堂测或匿名提问入口。' : '教师发起后，这里会出现可参与的互动。'}</p>
+                <strong>${title}</strong>
+                <p>${note}</p>
             </div>
         `;
     }
@@ -353,18 +487,34 @@ function renderSignals(snapshot) {
 }
 
 function renderSnapshot(snapshot, state) {
-    const currentActivity = selectedActivity(snapshot, state.selectedActivityId);
+    const activeTab = state.activeTab || 'all';
+    const currentActivity = selectedActivity(snapshot, state.selectedActivityId, activeTab);
     if (currentActivity) {
         state.selectedActivityId = currentActivity.id;
     }
+    if (activeTab === 'signals') {
+        return `
+            ${renderStats(snapshot)}
+            ${renderFeatureTabs(snapshot, state)}
+            <div class="interaction-workbench is-signal-tab">
+                <div class="interaction-main">
+                    ${renderSignals(snapshot)}
+                </div>
+                <div class="interaction-detail">
+                    ${renderSignalFocusCard(snapshot)}
+                </div>
+            </div>
+        `;
+    }
     return `
         ${renderStats(snapshot)}
+        ${renderFeatureTabs(snapshot, state)}
         <div class="interaction-workbench">
             <div class="interaction-main">
                 ${renderCreateToggle(snapshot, state)}
                 ${snapshot.can_create && state.createOpen ? renderCreatePanel(state) : ''}
                 <section class="interaction-list-card">
-                    ${renderActivityList(snapshot, currentActivity)}
+                    ${renderActivityList(snapshot, currentActivity, activeTab)}
                 </section>
             </div>
             <div class="interaction-detail">
@@ -390,6 +540,12 @@ function showPanelError(root, message) {
         </div>
     `;
     content.hidden = false;
+}
+
+function keepActiveFeatureTabVisible(root) {
+    const activeTab = root.querySelector('.interaction-feature-tab.is-active');
+    if (!activeTab) return;
+    activeTab.scrollIntoView({ block: 'nearest', inline: 'center' });
 }
 
 function collectCreatePayload(form) {
@@ -432,6 +588,7 @@ export function initClassroomInteractions(config = {}) {
     const state = {
         snapshot: null,
         selectedActivityId: null,
+        activeTab: 'all',
         createOpen: false,
         createKind: 'poll',
         createOptions: DEFAULT_OPTIONS,
@@ -445,6 +602,7 @@ export function initClassroomInteractions(config = {}) {
         if (!content || !state.snapshot) return;
         content.innerHTML = renderSnapshot(state.snapshot, state);
         content.hidden = false;
+        window.requestAnimationFrame(() => keepActiveFeatureTabVisible(root));
     };
 
     const refresh = async ({ silent = false } = {}) => {
@@ -487,7 +645,21 @@ export function initClassroomInteractions(config = {}) {
             return;
         }
 
+        const featureTab = target.dataset.interactionTab;
+        if (featureTab) {
+            state.activeTab = featureTab;
+            if (ACTIVITY_TAB_KEYS.has(featureTab)) {
+                const nextActivity = selectedActivity(state.snapshot, state.selectedActivityId, featureTab);
+                state.selectedActivityId = nextActivity?.id || null;
+            }
+            render();
+            return;
+        }
+
         if (target.matches('[data-interaction-create-open]')) {
+            if (ACTIVITY_TAB_KEYS.has(state.activeTab)) {
+                state.createKind = state.activeTab;
+            }
             state.createOpen = true;
             render();
             return;
@@ -600,6 +772,7 @@ export function initClassroomInteractions(config = {}) {
             });
             state.snapshot = snapshotFromResponse(data);
             state.createOpen = false;
+            state.activeTab = data.activity?.kind || state.activeTab;
             state.selectedActivityId = data.activity?.id || state.selectedActivityId;
             render();
             showToast(data.message || '课堂互动已发起', 'success');

@@ -229,6 +229,13 @@
                     <small>{% if user_info.role == 'teacher' %}布置与批改{% else %}提交与查看{% endif %}</small>
                 </span>
             </a>
+            <a href="#interaction-panel" class="app-topbar-action app-topbar-action--tone-teal classroom-topbar-section-link" data-workspace-nav title="跳转到互动区" aria-label="跳转到互动区">
+                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('gauge') }}</span>
+                <span class="app-topbar-action__text">
+                    <strong>互动</strong>
+                    <small>投票与求助</small>
+                </span>
+            </a>
             <a href="#materials-panel" class="app-topbar-action app-topbar-action--tone-blue classroom-topbar-section-link" data-workspace-nav title="跳转到材料区" aria-label="跳转到材料区">
                 <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('book') }}</span>
                 <span class="app-topbar-action__text">
@@ -278,10 +285,6 @@
                     <a href="#collaboration-panel" class="classroom-topbar-menu__item" data-workspace-nav role="menuitem">
                         {{ app_topbar_icon('users') }}
                         <span><strong>协作区</strong><small>小组、文件、提交与互评</small></span>
-                    </a>
-                    <a href="#interaction-panel" class="classroom-topbar-menu__item" data-workspace-nav role="menuitem">
-                        {{ app_topbar_icon('gauge') }}
-                        <span><strong>互动区</strong><small>投票、随堂测与举手求助</small></span>
                     </a>
                     <button type="button" class="classroom-topbar-menu__item" data-course-popover-target="stats" data-popover-title="统计信息" data-popover-kicker="课堂概览" aria-haspopup="dialog" aria-controls="course-info-popover" aria-expanded="false" role="menuitem">
                         {{ app_topbar_icon('gauge') }}
@@ -947,6 +950,7 @@
         </div>
         {% endif %}
 
+        <div class="workspace-flow workspace-flow--priority" aria-label="课堂任务主线">
         <section class="workspace-panel assignment-panel" id="assignment-panel" data-workspace-section>
             <div class="section-header">
                 <div class="section-heading">
@@ -1145,7 +1149,9 @@
                 {% endif %}
             </div>
         </section>
+        </div>
 
+        <div class="workspace-flow workspace-flow--engagement" aria-label="课堂互动与协作">
         <section class="workspace-panel interaction-panel" id="interaction-panel" data-workspace-section data-interaction-root data-class-offering-id="{{ classroom.id }}" aria-live="polite">
             <div class="section-header interaction-panel__header">
                 <div class="section-heading">
@@ -1195,7 +1201,9 @@
                 <div class="collaboration-content" data-collab-content hidden></div>
             </div>
         </section>
+        </div>
 
+        <div class="workspace-flow workspace-flow--library" aria-label="课堂资料与共享资源">
         <section class="workspace-panel" id="materials-panel" data-workspace-section>
             <div class="section-header">
                 <div class="section-heading">
@@ -1294,6 +1302,7 @@
                 </div>
             </div>
         </section>
+        </div>
     </div>
 
     <div id="shared-file-modal" class="modal-backdrop" style="display:none;">
