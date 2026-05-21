@@ -646,6 +646,13 @@ export class ClassroomChat {
                 return;
             }
 
+            if (data.type === 'classroom_interaction_changed') {
+                window.dispatchEvent(new CustomEvent('classroom:interaction-ws', {
+                    detail: data,
+                }));
+                return;
+            }
+
             if (data.type === 'discussion_ai_stream_start') {
                 this.handleDiscussionAiStreamStart(data);
                 return;

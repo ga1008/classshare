@@ -2522,6 +2522,106 @@ def init_database():
                          ''')
 
             conn.execute('''
+                         CREATE TABLE IF NOT EXISTS classroom_live_activities
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             class_offering_id INTEGER NOT NULL,
+                             kind TEXT NOT NULL,
+                             title TEXT NOT NULL DEFAULT '',
+                             prompt TEXT NOT NULL DEFAULT '',
+                             status TEXT NOT NULL DEFAULT 'active',
+                             allow_anonymous INTEGER NOT NULL DEFAULT 1,
+                             show_results TEXT NOT NULL DEFAULT 'after_submit',
+                             created_by_teacher_id INTEGER NOT NULL,
+                             created_by_name TEXT NOT NULL DEFAULT '',
+                             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             started_at TEXT,
+                             closed_at TEXT,
+                             settings_json TEXT NOT NULL DEFAULT '{}',
+                             FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                             FOREIGN KEY (created_by_teacher_id) REFERENCES teachers (id) ON DELETE CASCADE
+                         )
+                         ''')
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS classroom_live_options
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             activity_id INTEGER NOT NULL,
+                             option_key TEXT NOT NULL DEFAULT '',
+                             label TEXT NOT NULL,
+                             is_correct INTEGER NOT NULL DEFAULT 0,
+                             sort_order INTEGER NOT NULL DEFAULT 0,
+                             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (activity_id) REFERENCES classroom_live_activities (id) ON DELETE CASCADE
+                         )
+                         ''')
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS classroom_live_responses
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             activity_id INTEGER NOT NULL,
+                             student_id INTEGER NOT NULL,
+                             option_id INTEGER,
+                             response_text TEXT NOT NULL DEFAULT '',
+                             is_anonymous INTEGER NOT NULL DEFAULT 0,
+                             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             metadata_json TEXT NOT NULL DEFAULT '{}',
+                             FOREIGN KEY (activity_id) REFERENCES classroom_live_activities (id) ON DELETE CASCADE,
+                             FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                             FOREIGN KEY (option_id) REFERENCES classroom_live_options (id) ON DELETE SET NULL,
+                             UNIQUE (activity_id, student_id)
+                         )
+                         ''')
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS classroom_live_questions
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             activity_id INTEGER NOT NULL,
+                             class_offering_id INTEGER NOT NULL,
+                             student_id INTEGER NOT NULL,
+                             display_name TEXT NOT NULL DEFAULT '',
+                             question_text TEXT NOT NULL,
+                             is_anonymous INTEGER NOT NULL DEFAULT 1,
+                             status TEXT NOT NULL DEFAULT 'open',
+                             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             addressed_at TEXT,
+                             addressed_by_teacher_id INTEGER,
+                             metadata_json TEXT NOT NULL DEFAULT '{}',
+                             FOREIGN KEY (activity_id) REFERENCES classroom_live_activities (id) ON DELETE CASCADE,
+                             FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                             FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                             FOREIGN KEY (addressed_by_teacher_id) REFERENCES teachers (id) ON DELETE SET NULL
+                         )
+                         ''')
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS classroom_live_help_signals
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             class_offering_id INTEGER NOT NULL,
+                             student_id INTEGER NOT NULL,
+                             display_name TEXT NOT NULL DEFAULT '',
+                             signal_type TEXT NOT NULL,
+                             status TEXT NOT NULL DEFAULT 'active',
+                             message TEXT NOT NULL DEFAULT '',
+                             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                             resolved_at TEXT,
+                             resolved_by_teacher_id INTEGER,
+                             metadata_json TEXT NOT NULL DEFAULT '{}',
+                             FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                             FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                             FOREIGN KEY (resolved_by_teacher_id) REFERENCES teachers (id) ON DELETE SET NULL
+                         )
+                         ''')
+
+            conn.execute('''
                          CREATE TABLE IF NOT EXISTS chat_logs
                          (
                              id
@@ -4248,6 +4348,38 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_peer_reviews_reviewee "
                 "ON peer_reviews (reviewee_student_id, class_offering_id, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classroom_live_activities_lookup "
+                "ON classroom_live_activities (class_offering_id, status, updated_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classroom_live_options_activity "
+                "ON classroom_live_options (activity_id, sort_order, id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classroom_live_responses_activity "
+                "ON classroom_live_responses (activity_id, option_id, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classroom_live_responses_student "
+                "ON classroom_live_responses (student_id, activity_id, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classroom_live_questions_activity "
+                "ON classroom_live_questions (activity_id, status, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classroom_live_questions_offering "
+                "ON classroom_live_questions (class_offering_id, status, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classroom_live_signals_active "
+                "ON classroom_live_help_signals (class_offering_id, status, updated_at ASC, id ASC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classroom_live_signals_student "
+                "ON classroom_live_help_signals (class_offering_id, student_id, status, id DESC)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_materials_root_path ON course_materials (root_id, material_path)"
