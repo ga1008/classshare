@@ -133,8 +133,15 @@
         </div>
     </div>
 </div>
+{% if user_info.role == 'teacher' %}
+{% include "partials/ai_workspace_widget.html" %}
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script type="module" src="{{ asset_url('js/material_viewer.js') }}"></script>
+{% if user_info.role == 'teacher' %}
+<script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
+<script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>
+{% endif %}
 {% endblock %}

@@ -3065,6 +3065,123 @@ def init_database():
                 "ON ai_psychology_profiles (session_id, round_index DESC)"
             )
 
+            # 13.55 教师 Agent 任务中心：全平台单队列，任务详情仅所有者可见
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS agent_tasks
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             task_uuid TEXT NOT NULL UNIQUE,
+                             teacher_id INTEGER NOT NULL,
+                             teacher_name TEXT NOT NULL DEFAULT '',
+                             task_type TEXT NOT NULL,
+                             title TEXT NOT NULL,
+                             public_summary TEXT NOT NULL DEFAULT '',
+                             private_instruction TEXT NOT NULL,
+                             context_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                             status TEXT NOT NULL DEFAULT 'queued',
+                             priority INTEGER NOT NULL DEFAULT 0,
+                             runtime_provider TEXT NOT NULL DEFAULT 'deepseek-tui',
+                             runtime_task_id TEXT,
+                             runtime_thread_id TEXT,
+                             runtime_turn_id TEXT,
+                             runtime_status TEXT,
+                             result_summary TEXT,
+                             result_detail_json TEXT NOT NULL DEFAULT '{}',
+                             error_message TEXT NOT NULL DEFAULT '',
+                             worker_id TEXT,
+                             cancel_requested_at TEXT,
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             started_at TEXT,
+                             completed_at TEXT,
+                             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE
+                         )
+                         ''')
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS agent_task_events
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             task_id INTEGER NOT NULL,
+                             event_type TEXT NOT NULL DEFAULT 'status',
+                             message TEXT NOT NULL DEFAULT '',
+                             detail_json TEXT NOT NULL DEFAULT '{}',
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (task_id) REFERENCES agent_tasks (id) ON DELETE CASCADE
+                         )
+                         ''')
+            for statement in (
+                "CREATE INDEX IF NOT EXISTS idx_agent_tasks_status_created "
+                "ON agent_tasks (status, priority DESC, created_at ASC, id ASC)",
+                "CREATE INDEX IF NOT EXISTS idx_agent_tasks_teacher_created "
+                "ON agent_tasks (teacher_id, created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_agent_tasks_runtime "
+                "ON agent_tasks (runtime_task_id)",
+                "CREATE INDEX IF NOT EXISTS idx_agent_task_events_task_time "
+                "ON agent_task_events (task_id, created_at ASC, id ASC)",
+            ):
+                conn.execute(statement)
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS agent_runtime_api_keys
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             provider TEXT NOT NULL DEFAULT 'deepseek',
+                             key_label TEXT NOT NULL,
+                             key_fingerprint TEXT NOT NULL UNIQUE,
+                             key_encrypted TEXT NOT NULL,
+                             key_suffix TEXT NOT NULL DEFAULT '',
+                             base_url TEXT NOT NULL DEFAULT 'https://api.deepseek.com',
+                             model TEXT NOT NULL DEFAULT 'deepseek-v4-pro',
+                             enabled INTEGER NOT NULL DEFAULT 1,
+                             is_active INTEGER NOT NULL DEFAULT 0,
+                             created_by_teacher_id INTEGER,
+                             last_test_status TEXT NOT NULL DEFAULT 'unchecked',
+                             last_test_message TEXT NOT NULL DEFAULT '',
+                             last_test_usage_json TEXT NOT NULL DEFAULT '{}',
+                             last_test_at TEXT,
+                             last_used_at TEXT,
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (created_by_teacher_id) REFERENCES teachers (id) ON DELETE SET NULL
+                         )
+                         ''')
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS agent_runtime_key_checks
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             key_id INTEGER NOT NULL,
+                             status TEXT NOT NULL,
+                             message TEXT NOT NULL DEFAULT '',
+                             response_ms INTEGER NOT NULL DEFAULT 0,
+                             usage_json TEXT NOT NULL DEFAULT '{}',
+                             checked_by_teacher_id INTEGER,
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (key_id) REFERENCES agent_runtime_api_keys (id) ON DELETE CASCADE,
+                             FOREIGN KEY (checked_by_teacher_id) REFERENCES teachers (id) ON DELETE SET NULL
+                         )
+                         ''')
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS agent_runtime_usage_snapshots
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             source TEXT NOT NULL DEFAULT 'deepseek-tui',
+                             runtime_url TEXT NOT NULL DEFAULT '',
+                             usage_json TEXT NOT NULL DEFAULT '{}',
+                             fetched_by_teacher_id INTEGER,
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             FOREIGN KEY (fetched_by_teacher_id) REFERENCES teachers (id) ON DELETE SET NULL
+                         )
+                         ''')
+            for statement in (
+                "CREATE INDEX IF NOT EXISTS idx_agent_runtime_api_keys_active "
+                "ON agent_runtime_api_keys (provider, enabled, is_active, updated_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_agent_runtime_key_checks_key_time "
+                "ON agent_runtime_key_checks (key_id, created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_agent_runtime_usage_snapshots_time "
+                "ON agent_runtime_usage_snapshots (created_at DESC)",
+            ):
+                conn.execute(statement)
+
             # 13.6 课堂研讨室行为记录
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS classroom_behavior_events

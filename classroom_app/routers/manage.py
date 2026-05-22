@@ -67,6 +67,14 @@ from ..services.blog_news_crawler_service import (
     load_blog_news_crawler_dashboard,
     update_blog_news_crawler_config,
 )
+from ..services.agent_key_service import (
+    build_agent_key_dashboard,
+    create_agent_api_key,
+    delete_agent_api_key,
+    fetch_agent_runtime_usage,
+    set_active_agent_api_key,
+    test_saved_agent_api_key,
+)
 from ..services.roster_handler import parse_excel_to_students
 from ..services.student_auth_service import build_student_security_summary, list_student_login_history
 from ..services.student_lifecycle_service import (
@@ -3114,6 +3122,85 @@ async def api_update_super_admin_teacher(
 def _require_current_super_admin(conn, user: dict, detail: str = "只有当前超管教师可以执行该系统操作。") -> None:
     if not is_super_admin_teacher(conn, user["id"]):
         raise HTTPException(status_code=403, detail=detail)
+
+
+@router.get("/system/agent-keys/status", response_class=JSONResponse)
+async def api_get_agent_key_dashboard(user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        dashboard = build_agent_key_dashboard(conn)
+    return {"status": "success", "dashboard": dashboard}
+
+
+@router.post("/system/agent-keys", response_class=JSONResponse)
+async def api_create_agent_key(request: Request, user: dict = Depends(get_current_teacher)):
+    payload = await _parse_json_request(request)
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            result = await create_agent_api_key(conn, payload, teacher_id=int(user["id"]))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+
+    status_value = "success" if result.get("saved") else "warning"
+    return {
+        "status": status_value,
+        "message": result.get("message") or ("Agent API Key 已保存。" if result.get("saved") else "Agent API Key 测试失败，未保存。"),
+        **result,
+    }
+
+
+@router.post("/system/agent-keys/{key_id}/test", response_class=JSONResponse)
+async def api_test_agent_key(key_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            result = await test_saved_agent_api_key(conn, key_id, teacher_id=int(user["id"]))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+
+    test_status = (result.get("test_result") or {}).get("status")
+    return {
+        "status": "success" if test_status == "valid" else "warning",
+        "message": result.get("message") or "测试完成。",
+        **result,
+    }
+
+
+@router.post("/system/agent-keys/{key_id}/activate", response_class=JSONResponse)
+async def api_activate_agent_key(key_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            result = set_active_agent_api_key(conn, key_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", **result}
+
+
+@router.delete("/system/agent-keys/{key_id}", response_class=JSONResponse)
+async def api_delete_agent_key(key_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            result = delete_agent_api_key(conn, key_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", **result}
+
+
+@router.post("/system/agent-keys/usage/refresh", response_class=JSONResponse)
+async def api_refresh_agent_runtime_usage(user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        usage = await fetch_agent_runtime_usage(conn, teacher_id=int(user["id"]))
+        conn.commit()
+        dashboard = build_agent_key_dashboard(conn)
+    return {"status": usage.get("status") or "success", "usage": usage, "dashboard": dashboard}
 
 
 @router.post("/system/teachers", response_class=JSONResponse)

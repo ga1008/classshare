@@ -1531,12 +1531,15 @@
     </div>
 </div>
 
+{% include "partials/ai_workspace_widget.html" %}
 {% include "partials/markdown_assets.html" %}
 <script src="{{ asset_url('js/echarts.min.js') }}"></script>
 {% endblock %}
 
 {% block scripts %}
 <script type="module" src="/static/js/feedback.js"></script>
+<script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
+<script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>
 <script type="module">
     import { showToast, openModal, closeModal, renderMarkdown, escapeHtml } from '{{ asset_url("js/ui.js") }}';
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';

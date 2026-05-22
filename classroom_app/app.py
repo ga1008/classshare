@@ -44,7 +44,7 @@ from .time_utils import app_timezone_name, local_iso
 from .database import get_db_connection
 
 # 导入所有 V4.0 路由
-from .routers import ui, files, homework, ai, materials, emoji, behavior, message_center, profile, learning, review, learning_path, collaboration, classroom_interactions
+from .routers import ui, files, homework, ai, materials, emoji, behavior, message_center, profile, learning, review, learning_path, collaboration, classroom_interactions, agent_tasks
 from .routers import manage as manage_router  # 避免命名冲突
 from .routers import session as session_router
 from .routers import blog, feedback
@@ -346,6 +346,7 @@ app.include_router(ui.router)
 app.include_router(files.router)
 app.include_router(homework.router)
 app.include_router(ai.router)
+app.include_router(agent_tasks.router)
 app.include_router(materials.router)
 app.include_router(emoji.router)
 app.include_router(behavior.router)

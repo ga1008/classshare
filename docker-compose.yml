@@ -108,6 +108,37 @@ services:
       BLOG_NEWS_CRAWLER_POLL_SECONDS: "60"
       AI_ASSISTANT_URL: http://ai:8001
 
+  deepseek-runtime:
+    image: ghcr.io/hmbown/deepseek-tui:${DEEPSEEK_TUI_TAG:-latest}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ./docker.env
+    environment:
+      <<: *lanshare-timezone
+    command: ["serve", "--http", "--host", "0.0.0.0", "--port", "7878", "--workers", "1"]
+    volumes:
+      - ./data/agent_tasks/deepseek_home:/home/deepseek/.deepseek
+      - ./data/agent_tasks:/workspace
+    expose:
+      - "7878"
+    networks:
+      - lanshare
+
+  agent-worker:
+    <<: *lanshare-service
+    command: ["agent-worker"]
+    depends_on:
+      app:
+        condition: service_healthy
+      deepseek-runtime:
+        condition: service_started
+    environment:
+      <<: *lanshare-timezone
+      AGENT_TASK_RUNTIME_URL: http://deepseek-runtime:7878
+      AGENT_TASK_RUNTIME_WORKSPACE_PREFIX: /workspace/tasks
+      AGENT_TASK_WORKER_ID: agent-worker-compose
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped

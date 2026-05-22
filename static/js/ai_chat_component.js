@@ -25,10 +25,22 @@ function notifyAIChat(message, type = 'info') {
     }
 }
 
+function renderAIChatMarkdown(content, fallback = '') {
+    if (typeof window.safeMarkedParse === 'function') {
+        return window.safeMarkedParse(content, fallback);
+    }
+    const holder = document.createElement('div');
+    holder.textContent = String(content || fallback || '');
+    return holder.innerHTML.replace(/\n/g, '<br>');
+}
+
 class AIChatComponent {
     constructor(options) {
         this.classOfferingId = options.classOfferingId;
         this.contextPromptExtra = String(options.contextPromptExtra || '').trim();
+        this.getContextPromptExtra = typeof options.getContextPromptExtra === 'function'
+            ? options.getContextPromptExtra
+            : null;
         if (!this.classOfferingId) {
             console.error("AIChatComponent: classOfferingId is required.");
         }
@@ -259,7 +271,9 @@ class AIChatComponent {
             this.resetWindowLayout();
         }
         this.modal.style.display = 'block';
+        this.modal.setAttribute('aria-hidden', 'false');
         this.fab.style.display = 'none';
+        window.dispatchEvent(new CustomEvent('ai-workspace:opened'));
         window.behaviorTracker?.markAiChatOpen(true);
         if (!this.currentSessionUUID) {
             this.loadOrCreateSession();
@@ -268,6 +282,7 @@ class AIChatComponent {
     }
     closeChat() {
         this.modal.style.display = 'none';
+        this.modal.setAttribute('aria-hidden', 'true');
         this.fab.style.display = 'block';
         window.behaviorTracker?.markAiChatOpen(false);
     }
@@ -531,7 +546,7 @@ class AIChatComponent {
         if (shouldShowAnswer) {
             const answerSection = document.createElement('div');
             answerSection.className = 'final-answer';
-            answerSection.innerHTML = safeMarkedParse(content, '');
+            answerSection.innerHTML = renderAIChatMarkdown(content, '');
             if (showStreamingCursor) {
                 answerSection.innerHTML += '<span class="streaming-cursor"></span>';
             }
@@ -835,8 +850,11 @@ class AIChatComponent {
         formData.append('session_uuid', this.currentSessionUUID);
         formData.append('class_offering_id', this.classOfferingId);
         formData.append('deep_thinking', this.isDeepThinking); // 新增参数
-        if (this.contextPromptExtra) {
-            formData.append('context_prompt_extra', this.contextPromptExtra);
+        const liveContextPromptExtra = this.getContextPromptExtra
+            ? String(this.getContextPromptExtra() || '').trim()
+            : this.contextPromptExtra;
+        if (liveContextPromptExtra) {
+            formData.append('context_prompt_extra', liveContextPromptExtra.slice(0, 12000));
         }
         this.pendingFiles.forEach(file => {
             formData.append('files', file);

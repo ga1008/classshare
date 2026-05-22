@@ -85,6 +85,7 @@ from ..services.message_center_service import (
     is_super_admin_teacher,
 )
 from ..services.blog_news_crawler_service import load_blog_news_crawler_dashboard
+from ..services.agent_key_service import build_agent_key_dashboard
 from ..services.session_material_generation_service import attach_generation_tasks
 from ..services.student_insight_service import build_teacher_student_insight
 from ..services.student_auth_service import (
@@ -2913,6 +2914,28 @@ async def get_manage_system_diagnostics_page(request: Request, user: dict = Depe
             user,
             page_title="压测与诊断",
             active_page="system_diagnostics",
+        ),
+    )
+
+
+@router.get("/manage/system/agent-keys", response_class=HTMLResponse)
+async def get_manage_system_agent_keys_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """Agent runtime API key management page."""
+    with get_db_connection() as conn:
+        _ensure_manage_super_admin(conn, user)
+        dashboard = build_agent_key_dashboard(conn)
+
+    return templates.TemplateResponse(
+        request,
+        "manage/system/agent_keys.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="Agent Key 管理",
+            active_page="system_agent_keys",
+            extra={
+                "agent_key_dashboard": dashboard,
+            },
         ),
     )
 

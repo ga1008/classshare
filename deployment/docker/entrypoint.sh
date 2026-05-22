@@ -31,6 +31,10 @@ case "$service" in
     shift || true
     exec python -u ai_blog_crawler_worker.py "$@"
     ;;
+  agent-worker)
+    shift || true
+    exec python -u agent_task_worker.py "$@"
+    ;;
   *)
     exec "$@"
     ;;

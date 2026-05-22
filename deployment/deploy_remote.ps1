@@ -371,11 +371,86 @@ if [ -f "$remote_path/deployment/docker/entrypoint.sh" ]; then
   chmod +x "$remote_path/deployment/docker/entrypoint.sh"
 fi
 
+echo "Preparing Agent runtime data directories"
+mkdir -p "$remote_path/data/agent_tasks/deepseek_home"
+chown -R 1000:1000 "$remote_path/data/agent_tasks/deepseek_home"
+chmod -R u+rwX,go+rX "$remote_path/data/agent_tasks/deepseek_home"
+
+docker_env="$remote_path/docker.env"
+if [ -f "$docker_env" ]; then
+  echo "Ensuring Agent runtime environment defaults"
+  get_env_value() {
+    local key="$1"
+    sed -n "s/^${key}=//p" "$docker_env" | tail -n 1
+  }
+  upsert_env_value() {
+    local key="$1"
+    local value="$2"
+    if grep -q "^${key}=" "$docker_env"; then
+      python - "$docker_env" "$key" "$value" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+key = sys.argv[2]
+value = sys.argv[3]
+lines = path.read_text(encoding="utf-8").splitlines()
+updated = False
+out = []
+for line in lines:
+    if line.startswith(f"{key}="):
+        if not updated:
+            out.append(f"{key}={value}")
+            updated = True
+        continue
+    out.append(line)
+if not updated:
+    out.append(f"{key}={value}")
+path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
+PY
+    else
+      printf '\n%s=%s\n' "$key" "$value" >> "$docker_env"
+    fi
+  }
+  ensure_env_value() {
+    local key="$1"
+    local value="$2"
+    local current
+    current="$(get_env_value "$key")"
+    if [ -z "$current" ]; then
+      upsert_env_value "$key" "$value"
+    fi
+  }
+
+  runtime_token="$(get_env_value AGENT_TASK_RUNTIME_TOKEN)"
+  if [ -z "$runtime_token" ] || [ "$runtime_token" = "replace-with-agent-runtime-token" ]; then
+    runtime_token="dst_$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+    upsert_env_value AGENT_TASK_RUNTIME_TOKEN "$runtime_token"
+  fi
+  deepseek_runtime_token="$(get_env_value DEEPSEEK_RUNTIME_TOKEN)"
+  if [ -z "$deepseek_runtime_token" ] || [ "$deepseek_runtime_token" = "replace-with-agent-runtime-token" ]; then
+    upsert_env_value DEEPSEEK_RUNTIME_TOKEN "$runtime_token"
+  fi
+  ensure_env_value AGENT_TASKS_ENABLED true
+  ensure_env_value AGENT_TASK_RUNTIME_URL http://deepseek-runtime:7878
+  ensure_env_value AGENT_TASK_RUNTIME_MODEL deepseek-v4-pro
+  ensure_env_value AGENT_TASK_RUNTIME_WORKSPACE_PREFIX /workspace/tasks
+  ensure_env_value AGENT_TASK_WORKER_ID agent-worker-compose
+  ensure_env_value AGENT_TASK_WORKER_POLL_SECONDS 5
+  ensure_env_value AGENT_TASK_RUNTIME_POLL_SECONDS 5
+  ensure_env_value AGENT_TASK_MAX_RUNTIME_SECONDS 1800
+  ensure_env_value AGENT_TASK_DEEPSEEK_AUTO_APPROVE false
+  ensure_env_value AGENT_TASK_ALLOW_RUNTIME_SHELL false
+  ensure_env_value DEEPSEEK_TUI_TAG latest
+fi
+
 echo "Checking Docker Compose configuration"
 docker compose config --quiet
 
 echo "Rebuilding and starting Docker Compose in the background"
 docker compose up -d --build
+echo "Restarting nginx to refresh upstream service addresses"
+docker compose restart nginx
 docker compose ps
 
 if [ "$skip_health_check" != "True" ]; then

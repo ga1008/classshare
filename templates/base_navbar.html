@@ -109,6 +109,9 @@
 <main class="main-content container">
     {% block main_content %}{% endblock %}
 </main>
+{% if user_info.role == 'teacher' %}
+{% include "partials/ai_workspace_widget.html" %}
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
@@ -159,4 +162,7 @@
 <script type="module" src="/static/js/student_security.js"></script>
 {% endif %}
 <script type="module" src="/static/js/feedback.js"></script>
+{% if user_info.role == 'teacher' %}
+<script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>
+{% endif %}
 {% endblock %}
