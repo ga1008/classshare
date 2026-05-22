@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from typing import Any
 
@@ -13,6 +14,7 @@ from .agent_task_service import (
     TASK_STATUS_COMPLETED,
     TASK_STATUS_FAILED,
     append_task_event,
+    agent_workflow_catalog,
     finish_agent_task,
     utcnow_iso,
 )
@@ -66,12 +68,699 @@ def _target_from_context(task: dict[str, Any]) -> dict[str, Any]:
     return target if isinstance(target, dict) else {}
 
 
+def _server_context_from_task(task: dict[str, Any]) -> dict[str, Any]:
+    context = _load_json(task.get("context_snapshot_json"))
+    server_context = context.get("server_context") or {}
+    return server_context if isinstance(server_context, dict) else {}
+
+
+def _public_context_label(server_context: dict[str, Any]) -> str:
+    classroom = server_context.get("classroom") or {}
+    assignment = server_context.get("assignment") or {}
+    material = server_context.get("material") or {}
+    classroom = classroom if isinstance(classroom, dict) else {}
+    assignment = assignment if isinstance(assignment, dict) else {}
+    material = material if isinstance(material, dict) else {}
+    parts = [
+        classroom.get("course_name"),
+        classroom.get("class_name"),
+        assignment.get("title"),
+        material.get("name"),
+    ]
+    return " / ".join(_safe_text(item, max_chars=80) for item in parts if _safe_text(item, max_chars=80))
+
+
+def _finish_platform_business_task(
+    task_id: int,
+    *,
+    platform_action: str,
+    result_summary: str,
+    detail: dict[str, Any],
+    event_message: str = "",
+    status: str = TASK_STATUS_COMPLETED,
+    error_message: str = "",
+) -> None:
+    detail = {
+        "platform_action": platform_action,
+        "workflow_catalog": agent_workflow_catalog(),
+        **(detail or {}),
+    }
+    with get_db_connection() as conn:
+        _set_agent_runtime_state(
+            conn,
+            task_id,
+            provider="lanshare-business-agent",
+            runtime_status="completed" if status == TASK_STATUS_COMPLETED else "failed",
+        )
+        append_task_event(
+            conn,
+            task_id,
+            "platform_business_result" if status == TASK_STATUS_COMPLETED else "platform_business_failed",
+            event_message or result_summary,
+            detail,
+            commit=False,
+        )
+        finish_agent_task(
+            conn,
+            task_id,
+            status=status,
+            result_summary=result_summary,
+            result_detail=detail,
+            error_message=error_message,
+        )
+
+
+def _owned_classroom_snapshot(conn, *, teacher_id: int, class_offering_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT co.id,
+               co.class_id,
+               co.course_id,
+               co.semester,
+               co.schedule_info,
+               co.first_class_date,
+               c.name AS course_name,
+               c.description AS course_description,
+               cl.name AS class_name,
+               cl.description AS class_description,
+               t.name AS teacher_name
+        FROM class_offerings co
+        JOIN courses c ON c.id = co.course_id
+        JOIN classes cl ON cl.id = co.class_id
+        LEFT JOIN teachers t ON t.id = co.teacher_id
+        WHERE co.id = ? AND co.teacher_id = ?
+        LIMIT 1
+        """,
+        (int(class_offering_id), int(teacher_id)),
+    ).fetchone()
+    if not row:
+        return None
+    classroom = dict(row)
+    sessions = [
+        dict(item)
+        for item in conn.execute(
+            """
+            SELECT s.id,
+                   s.order_index,
+                   s.title,
+                   s.content,
+                   s.session_date,
+                   s.learning_material_id,
+                   m.name AS learning_material_name,
+                   m.material_path AS learning_material_path,
+                   m.preview_type AS learning_material_preview_type
+            FROM class_offering_sessions s
+            LEFT JOIN course_materials m ON m.id = s.learning_material_id
+            WHERE s.class_offering_id = ?
+            ORDER BY s.order_index ASC
+            LIMIT 120
+            """,
+            (int(class_offering_id),),
+        ).fetchall()
+    ]
+    materials = [
+        dict(item)
+        for item in conn.execute(
+            """
+            SELECT m.id,
+                   m.name,
+                   m.material_path,
+                   m.node_type,
+                   m.preview_type,
+                   m.ai_parse_status,
+                   m.ai_parse_result_json,
+                   a.created_at AS assigned_at
+            FROM course_material_assignments a
+            JOIN course_materials m ON m.id = a.material_id
+            WHERE a.class_offering_id = ?
+              AND m.teacher_id = ?
+            ORDER BY a.created_at DESC, a.id DESC
+            LIMIT 80
+            """,
+            (int(class_offering_id), int(teacher_id)),
+        ).fetchall()
+    ]
+    assignments = [
+        dict(item)
+        for item in conn.execute(
+            """
+            SELECT a.id,
+                   a.title,
+                   a.status,
+                   a.grading_mode,
+                   a.due_at,
+                   a.exam_paper_id,
+                   COUNT(s.id) AS submission_count,
+                   COUNT(CASE WHEN s.score IS NOT NULL THEN 1 END) AS scored_count,
+                   ROUND(AVG(CASE WHEN s.score IS NOT NULL THEN CAST(s.score AS REAL) END), 1) AS avg_score
+            FROM assignments a
+            LEFT JOIN submissions s ON s.assignment_id = a.id
+            WHERE a.class_offering_id = ?
+            GROUP BY a.id
+            ORDER BY a.created_at DESC, a.id DESC
+            LIMIT 20
+            """,
+            (int(class_offering_id),),
+        ).fetchall()
+    ]
+    classroom["sessions"] = sessions
+    classroom["materials"] = materials
+    classroom["assignments"] = assignments
+    return classroom
+
+
+def _class_offering_id_from_task(task: dict[str, Any]) -> int:
+    server_context = _server_context_from_task(task)
+    classroom = server_context.get("classroom") or {}
+    assignment = server_context.get("assignment") or {}
+    target = server_context.get("lesson_document_target") or {}
+    candidates = (
+        classroom.get("id") if isinstance(classroom, dict) else None,
+        assignment.get("class_offering_id") if isinstance(assignment, dict) else None,
+        target.get("class_offering_id") if isinstance(target, dict) else None,
+    )
+    for value in candidates:
+        try:
+            parsed = int(value or 0)
+        except (TypeError, ValueError):
+            parsed = 0
+        if parsed > 0:
+            return parsed
+    return 0
+
+
+def _markdown_bullets(items: list[str]) -> str:
+    return "\n".join(f"- {item}" for item in items if _safe_text(item))
+
+
+def _context_required_result(task: dict[str, Any], *, action: str, label: str) -> None:
+    server_context = _server_context_from_task(task)
+    context_label = _public_context_label(server_context)
+    _finish_platform_business_task(
+        int(task["id"]),
+        platform_action=action,
+        status=TASK_STATUS_FAILED,
+        result_summary=f"{label}需要先限定到一个教师拥有的课堂。",
+        error_message="请从课堂页、学习文档页、材料页或作业页打开任务中心，或在任务要求里明确课堂范围后重试。",
+        detail={
+            "display_title": label,
+            "context_label": context_label,
+            "next_actions": [
+                "进入目标课堂后重新提交任务。",
+                "如果是在首页发起，请先打开具体课堂卡片，再让 Agent 接管。",
+            ],
+        },
+    )
+
+
+def _selected_session_label(server_context: dict[str, Any]) -> str:
+    target = server_context.get("lesson_document_target") or {}
+    selected = server_context.get("selected_session") or {}
+    item = target if isinstance(target, dict) and target else selected if isinstance(selected, dict) else {}
+    if not item:
+        return ""
+    order = item.get("order_index") or ""
+    title = item.get("title") or ""
+    return f"第 {order} 次课 {title}".strip()
+
+
+def _material_summary(item: dict[str, Any]) -> str:
+    parsed = _load_json(item.get("ai_parse_result_json"))
+    summary = parsed.get("summary") if isinstance(parsed, dict) else ""
+    return _safe_text(summary, max_chars=220)
+
+
+def _score_threshold(instruction: str) -> float | None:
+    patterns = (
+        r"(?:低于|小于|少于|不足|<)\s*([0-9]+(?:\.[0-9]+)?)\s*分?",
+        r"([0-9]+(?:\.[0-9]+)?)\s*分\s*(?:以下|以内)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, instruction)
+        if match:
+            try:
+                return float(match.group(1))
+            except ValueError:
+                return None
+    return None
+
+
+def _plain_summary(markdown: str, *, max_chars: int = 180) -> str:
+    text = re.sub(r"[*_`#>\-|]+", " ", _safe_text(markdown))
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "..."
+
+
+def _create_teacher_blog_draft(conn, *, teacher_id: int, title: str, content_md: str, tags: list[str]) -> dict[str, Any]:
+    teacher = conn.execute(
+        """
+        SELECT id, name, nickname, avatar_file_hash, avatar_mime_type
+        FROM teachers
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(teacher_id),),
+    ).fetchone()
+    if not teacher:
+        raise HTTPException(404, "教师账户不存在，无法创建博客草稿。")
+    display_name = _safe_text(teacher["name"] or teacher["nickname"], max_chars=80) or f"教师{teacher_id}"
+    now = utcnow_iso()
+    cursor = conn.execute(
+        """
+        INSERT INTO blog_posts (
+            author_identity, author_role, author_user_pk, author_display_name, author_display_mode,
+            author_avatar_hash, author_avatar_mime, title, content_md, summary, status, visibility,
+            visible_user_identities_json, allow_comments, system_tags_json, tags_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            f"teacher:{int(teacher_id)}",
+            "teacher",
+            int(teacher_id),
+            display_name,
+            "real_name",
+            _safe_text(teacher["avatar_file_hash"], max_chars=160),
+            _safe_text(teacher["avatar_mime_type"], max_chars=120),
+            _safe_text(title, max_chars=120),
+            _safe_text(content_md, max_chars=60000),
+            _plain_summary(content_md),
+            "draft",
+            "public",
+            "[]",
+            1,
+            json.dumps([], ensure_ascii=False),
+            json.dumps([_safe_text(item, max_chars=24) for item in tags if _safe_text(item, max_chars=24)][:8], ensure_ascii=False),
+            now,
+            now,
+        ),
+    )
+    return {"id": int(cursor.lastrowid), "status": "draft", "created_at": now}
+
+
 def _generation_task_row(conn, generation_task_id: int) -> dict[str, Any] | None:
     row = conn.execute(
         "SELECT * FROM session_material_generation_tasks WHERE id = ? LIMIT 1",
         (int(generation_task_id),),
     ).fetchone()
     return dict(row) if row else None
+
+
+def _execute_course_material_digest_task(task: dict[str, Any]) -> None:
+    task_id = int(task["id"])
+    teacher_id = int(task["teacher_id"])
+    instruction = _safe_text(task.get("private_instruction"), max_chars=4000)
+    class_offering_id = _class_offering_id_from_task(task)
+    if not class_offering_id:
+        _context_required_result(task, action="course_material_digest", label="课程材料整理")
+        return
+
+    with get_db_connection() as conn:
+        snapshot = _owned_classroom_snapshot(conn, teacher_id=teacher_id, class_offering_id=class_offering_id)
+    if not snapshot:
+        _context_required_result(task, action="course_material_digest", label="课程材料整理")
+        return
+
+    sessions = snapshot["sessions"]
+    materials = snapshot["materials"]
+    assignments = snapshot["assignments"]
+    bound_sessions = [item for item in sessions if item.get("learning_material_id")]
+    missing_sessions = [item for item in sessions if not item.get("learning_material_id")][:8]
+    markdown_materials = [item for item in materials if str(item.get("preview_type") or "") == "markdown"]
+    parsed_materials = [item for item in materials if str(item.get("ai_parse_status") or "") == "completed"]
+    recent_material_items = [
+        {
+            "title": item.get("name") or item.get("material_path") or "未命名材料",
+            "meta": f"{item.get('preview_type') or item.get('node_type') or 'material'} · {item.get('material_path') or ''}",
+            "note": _material_summary(item),
+        }
+        for item in materials[:10]
+    ]
+    markdown = f"""## 课程材料盘点
+
+- 课堂：{_safe_text(snapshot.get("course_name"))} / {_safe_text(snapshot.get("class_name"))}
+- 已分配材料：{len(materials)} 个，其中 Markdown/学习文档类 {len(markdown_materials)} 个，已完成 AI 解析 {len(parsed_materials)} 个。
+- 课时进度：共 {len(sessions)} 次课，已有 {len(bound_sessions)} 次课绑定学习文档。
+- 最近作业/考试：{len(assignments)} 个，最近一个是「{_safe_text((assignments[0] if assignments else {}).get("title")) or "暂无"}」。
+
+## 建议优先处理
+
+{_markdown_bullets([
+        f"为第 {item.get('order_index')} 次课《{item.get('title') or '未命名课时'}》补齐学习文档"
+        for item in missing_sessions[:5]
+    ]) or "- 暂未发现缺失学习文档的课时。"}
+
+## Agent 安全边界
+
+- 本次只读取当前教师拥有的课堂、课时、材料与作业摘要。
+- 不会重命名、删除或移动任何材料；如需生成学习文档，请切换到“生成学习文档”任务类型。
+""".strip()
+    detail = {
+        "display_title": "课程材料整理报告",
+        "context_label": f"{snapshot.get('course_name') or ''} / {snapshot.get('class_name') or ''}",
+        "metrics": [
+            {"label": "课堂材料", "value": len(materials)},
+            {"label": "Markdown 材料", "value": len(markdown_materials)},
+            {"label": "已绑定文档课时", "value": f"{len(bound_sessions)}/{len(sessions)}"},
+            {"label": "近期作业", "value": len(assignments)},
+        ],
+        "markdown": markdown,
+        "items": recent_material_items,
+        "next_actions": [
+            "若要自动生成并绑定下一节学习文档，改用“生成学习文档”。",
+            "若要出下次课作业，改用“生成作业/考试草案”，Agent 会基于本报告生成结构化草稿。",
+        ],
+        "instruction": instruction,
+    }
+    _finish_platform_business_task(
+        task_id,
+        platform_action="course_material_digest",
+        result_summary="已完成当前课堂的材料盘点，并输出缺口与下一步建议。",
+        detail=detail,
+        event_message="已读取课堂材料、课时学习文档和近期作业，生成材料整理报告。",
+    )
+
+
+def _execute_assignment_blueprint_task(task: dict[str, Any]) -> None:
+    task_id = int(task["id"])
+    teacher_id = int(task["teacher_id"])
+    instruction = _safe_text(task.get("private_instruction"), max_chars=4000)
+    server_context = _server_context_from_task(task)
+    class_offering_id = _class_offering_id_from_task(task)
+    if not class_offering_id:
+        _context_required_result(task, action="assignment_blueprint", label="作业/考试草案")
+        return
+
+    with get_db_connection() as conn:
+        snapshot = _owned_classroom_snapshot(conn, teacher_id=teacher_id, class_offering_id=class_offering_id)
+    if not snapshot:
+        _context_required_result(task, action="assignment_blueprint", label="作业/考试草案")
+        return
+
+    selected_session = _selected_session_label(server_context) or "当前课堂最近课时"
+    material_names = [
+        _safe_text(item.get("name") or item.get("material_path"), max_chars=80)
+        for item in snapshot["materials"][:6]
+    ]
+    title = _safe_text(task.get("title"), max_chars=90) or f"{snapshot.get('course_name') or '课程'}课堂任务草案"
+    requirements_md = f"""# {title}
+
+## 适用范围
+
+- 课堂：{snapshot.get('course_name') or ''} / {snapshot.get('class_name') or ''}
+- 参考课时：{selected_session}
+- 参考材料：{", ".join(material_names) if material_names else "当前课堂已绑定材料"}
+
+## 任务要求
+
+1. 阅读并整理本次课堂相关材料，提炼关键概念、操作步骤或案例结论。
+2. 完成一份结构化作答，包含“知识理解”“应用分析”“反思改进”三个部分。
+3. 若任务包含代码、截图或文档附件，请在提交中说明文件用途与关键结论。
+
+## 教师补充要求
+
+{instruction}
+""".strip()
+    rubric_md = """| 评分维度 | 分值 | 评价要点 |
+| --- | ---: | --- |
+| 知识理解 | 30 | 能准确解释课堂核心概念，术语使用清晰 |
+| 材料应用 | 30 | 能结合课堂材料、案例或模板完成分析 |
+| 完成质量 | 25 | 结构完整，过程可追踪，结论明确 |
+| 表达与规范 | 15 | 格式规范，命名清楚，按时提交 |
+""".strip()
+    detail = {
+        "display_title": "作业/考试草案",
+        "context_label": f"{snapshot.get('course_name') or ''} / {snapshot.get('class_name') or ''}",
+        "metrics": [
+            {"label": "参考材料", "value": len(snapshot["materials"])},
+            {"label": "参考课时", "value": selected_session},
+            {"label": "建议评分", "value": "100 分"},
+        ],
+        "markdown": f"{requirements_md}\n\n## 评分标准\n\n{rubric_md}",
+        "draft": {
+            "title": title,
+            "requirements_md": requirements_md,
+            "rubric_md": rubric_md,
+            "grading_mode": "manual",
+            "status": "new",
+            "allowed_file_types": [],
+        },
+        "next_actions": [
+            "复制草案到作业或考试编辑器后再发布。",
+            "正式发布、截止时间、邮件通知必须由教师在平台界面确认。",
+        ],
+        "safety": [
+            "Agent 未创建正式作业，未向学生发布。",
+            "Agent 未修改学生提交、成绩或课堂配置。",
+        ],
+    }
+    _finish_platform_business_task(
+        task_id,
+        platform_action="assignment_blueprint",
+        result_summary="已生成作业/考试草案和评分标准，等待教师确认后发布。",
+        detail=detail,
+        event_message="已基于当前课堂、课时和材料生成作业/考试草案。",
+    )
+
+
+def _execute_blog_draft_task(task: dict[str, Any]) -> None:
+    task_id = int(task["id"])
+    teacher_id = int(task["teacher_id"])
+    instruction = _safe_text(task.get("private_instruction"), max_chars=4000)
+    server_context = _server_context_from_task(task)
+    class_offering_id = _class_offering_id_from_task(task)
+    if not class_offering_id:
+        _context_required_result(task, action="blog_draft", label="课堂博客草稿")
+        return
+
+    with get_db_connection() as conn:
+        snapshot = _owned_classroom_snapshot(conn, teacher_id=teacher_id, class_offering_id=class_offering_id)
+        if not snapshot:
+            _context_required_result(task, action="blog_draft", label="课堂博客草稿")
+            return
+        selected_session = _selected_session_label(server_context) or "近期课堂"
+        title = _safe_text(task.get("title"), max_chars=90) or f"{snapshot.get('course_name') or '课堂'}教学札记"
+        material_names = [
+            _safe_text(item.get("name") or item.get("material_path"), max_chars=80)
+            for item in snapshot["materials"][:5]
+        ]
+        content_md = f"""# {title}
+
+今天的课堂围绕 **{snapshot.get('course_name') or '本课程'}** 展开，重点关联 {selected_session}。
+
+## 课堂脉络
+
+- 面向班级：{snapshot.get('class_name') or '当前班级'}
+- 参考材料：{", ".join(material_names) if material_names else "课堂已绑定材料"}
+- 教师补充主题：{instruction}
+
+## 值得记录的学习重点
+
+1. 先用一个具体问题引出本次主题，让学生知道“为什么要学”。
+2. 再把材料中的关键概念拆成可观察、可练习的小任务。
+3. 最后用课堂作业或讨论收束，帮助学生把知识转成作品或结论。
+
+## 下一步
+
+- 将本文作为草稿审阅，补充课堂中的真实案例、学生常见问题和优秀作品链接。
+- 确认无学生隐私信息后再公开发布。
+""".strip()
+        post = _create_teacher_blog_draft(
+            conn,
+            teacher_id=teacher_id,
+            title=title,
+            content_md=content_md,
+            tags=[_safe_text(snapshot.get("course_name"), max_chars=24) or "课堂记录", "Agent草稿"],
+        )
+        conn.commit()
+
+    post_id = int(post.get("id") or 0)
+    detail = {
+        "display_title": "课堂博客草稿",
+        "context_label": f"{snapshot.get('course_name') or ''} / {snapshot.get('class_name') or ''}",
+        "metrics": [
+            {"label": "草稿 ID", "value": post_id},
+            {"label": "状态", "value": "草稿"},
+            {"label": "可见性", "value": "公开草稿，未发布"},
+        ],
+        "markdown": content_md,
+        "created_post": {
+            "id": post_id,
+            "status": post.get("status") or "draft",
+            "url": f"/blog?post_id={post_id}" if post_id else "",
+        },
+        "links": [
+            {"label": "打开博客草稿", "url": f"/blog?post_id={post_id}"} if post_id else {},
+        ],
+        "next_actions": [
+            "打开博客草稿，补充真实课堂细节后再发布。",
+            "发布前检查是否包含学生隐私、成绩或未授权作品。",
+        ],
+        "safety": [
+            "Agent 只创建教师本人的博客草稿，没有自动发布。",
+            "草稿内容不包含学生个人成绩或隐私名单。",
+        ],
+    }
+    _finish_platform_business_task(
+        task_id,
+        platform_action="blog_draft",
+        result_summary=f"已创建课堂博客草稿 #{post_id}，等待教师审阅后发布。",
+        detail=detail,
+        event_message=f"已创建博客草稿 #{post_id}，未公开发布。",
+    )
+
+
+def _assignment_for_notification(conn, *, teacher_id: int, server_context: dict[str, Any], class_offering_id: int) -> dict[str, Any] | None:
+    assignment_context = server_context.get("assignment") or {}
+    assignment_id = 0
+    if isinstance(assignment_context, dict):
+        try:
+            assignment_id = int(assignment_context.get("id") or 0)
+        except (TypeError, ValueError):
+            assignment_id = 0
+    params: list[Any] = [int(teacher_id)]
+    where = "co.teacher_id = ?"
+    if assignment_id:
+        where += " AND a.id = ?"
+        params.append(assignment_id)
+    elif class_offering_id:
+        where += " AND a.class_offering_id = ?"
+        params.append(int(class_offering_id))
+    else:
+        return None
+    row = conn.execute(
+        f"""
+        SELECT a.id,
+               a.title,
+               a.class_offering_id,
+               co.class_id,
+               c.name AS course_name,
+               cl.name AS class_name
+        FROM assignments a
+        JOIN class_offerings co ON co.id = a.class_offering_id
+        JOIN courses c ON c.id = a.course_id
+        JOIN classes cl ON cl.id = co.class_id
+        WHERE {where}
+        ORDER BY a.created_at DESC, a.id DESC
+        LIMIT 1
+        """,
+        params,
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _execute_student_notification_task(task: dict[str, Any]) -> None:
+    task_id = int(task["id"])
+    teacher_id = int(task["teacher_id"])
+    instruction = _safe_text(task.get("private_instruction"), max_chars=4000)
+    server_context = _server_context_from_task(task)
+    class_offering_id = _class_offering_id_from_task(task)
+    threshold = _score_threshold(instruction)
+
+    with get_db_connection() as conn:
+        assignment = _assignment_for_notification(
+            conn,
+            teacher_id=teacher_id,
+            server_context=server_context,
+            class_offering_id=class_offering_id,
+        )
+        if not assignment:
+            _context_required_result(task, action="student_notification", label="学生通知草稿")
+            return
+        if threshold is None:
+            threshold = 60.0
+        recipients = [
+            dict(item)
+            for item in conn.execute(
+                """
+                SELECT st.id,
+                       st.name,
+                       st.student_id_number,
+                       st.email,
+                       s.score,
+                       s.status
+                FROM submissions s
+                JOIN students st ON st.id = s.student_pk_id
+                JOIN assignments a ON a.id = s.assignment_id
+                JOIN class_offerings co ON co.id = a.class_offering_id
+                WHERE a.id = ?
+                  AND co.teacher_id = ?
+                  AND s.score IS NOT NULL
+                  AND CAST(s.score AS REAL) < ?
+                ORDER BY CAST(s.score AS REAL) ASC, st.name ASC
+                LIMIT 200
+                """,
+                (int(assignment["id"]), int(teacher_id), float(threshold)),
+            ).fetchall()
+        ]
+
+    preview_items = [
+        {
+            "title": item.get("name") or item.get("student_id_number") or "学生",
+            "meta": f"{item.get('student_id_number') or ''} · {item.get('score')} 分",
+            "note": item.get("email") or "未记录邮箱",
+        }
+        for item in recipients[:30]
+    ]
+    message_draft = f"""同学你好：
+
+我看到你在《{assignment.get('title') or '本次作业/考试'}》中的成绩暂低于 {threshold:g} 分。请先不要着急，建议你按下面步骤复盘：
+
+1. 对照评分标准查看主要失分点。
+2. 回到课堂材料中复习相关概念和示例。
+3. 如果有不理解的地方，请带着具体问题来找我，我会帮你一起拆解。
+
+这条提醒的目的不是批评，而是帮你尽快把薄弱点补起来。"""
+    markdown = f"""## 通知名单预览
+
+- 课堂：{assignment.get('course_name') or ''} / {assignment.get('class_name') or ''}
+- 作业/考试：{assignment.get('title') or ''}
+- 筛选条件：分数低于 {threshold:g} 分
+- 命中人数：{len(recipients)}
+
+## 通知草稿
+
+{message_draft}
+
+## 安全边界
+
+- Agent 只生成名单预览和文案草稿，没有发送消息。
+- 教师确认名单和措辞后，再到消息中心或作业页执行发送。
+""".strip()
+    detail = {
+        "display_title": "学生通知草稿",
+        "context_label": f"{assignment.get('course_name') or ''} / {assignment.get('class_name') or ''}",
+        "metrics": [
+            {"label": "筛选阈值", "value": f"< {threshold:g} 分"},
+            {"label": "命中学生", "value": len(recipients)},
+            {"label": "目标作业", "value": assignment.get("title") or ""},
+        ],
+        "markdown": markdown,
+        "items": preview_items,
+        "draft": {
+            "assignment_id": int(assignment["id"]),
+            "threshold": threshold,
+            "recipient_count": len(recipients),
+            "recipient_ids": [int(item["id"]) for item in recipients],
+            "message": message_draft,
+        },
+        "next_actions": [
+            "检查名单是否符合预期，必要时调整分数阈值后重试。",
+            "确认后在消息中心或作业详情页发送，避免误触达。",
+        ],
+        "safety": [
+            "Agent 未发送任何通知或邮件。",
+            "仅任务发起教师可查看名单详情。",
+        ],
+    }
+    _finish_platform_business_task(
+        task_id,
+        platform_action="student_notification",
+        result_summary=f"已生成 {len(recipients)} 名学生的通知名单预览和文案草稿，尚未发送。",
+        detail=detail,
+        event_message=f"已按低于 {threshold:g} 分筛选学生并生成通知草稿，未发送。",
+    )
 
 
 async def _wait_generation_task(generation_task_id: int) -> dict[str, Any] | None:
@@ -284,21 +973,49 @@ async def _execute_lesson_document_task(task: dict[str, Any]) -> None:
 
 
 async def try_execute_platform_agent_task(task: dict[str, Any]) -> bool:
-    if str(task.get("task_type") or "") != "lesson_document":
+    task_type = str(task.get("task_type") or "")
+    if task_type not in {
+        "lesson_document",
+        "course_material_digest",
+        "assignment_blueprint",
+        "blog_draft",
+        "student_notification",
+    }:
         return False
     task_id = int(task["id"])
+    platform_action = {
+        "lesson_document": "lesson_document_generation",
+        "course_material_digest": "course_material_digest",
+        "assignment_blueprint": "assignment_blueprint",
+        "blog_draft": "blog_draft",
+        "student_notification": "student_notification",
+    }.get(task_type, task_type)
     try:
-        await _execute_lesson_document_task(task)
+        if task_type == "lesson_document":
+            await _execute_lesson_document_task(task)
+        elif task_type == "course_material_digest":
+            _execute_course_material_digest_task(task)
+        elif task_type == "assignment_blueprint":
+            _execute_assignment_blueprint_task(task)
+        elif task_type == "blog_draft":
+            _execute_blog_draft_task(task)
+        elif task_type == "student_notification":
+            _execute_student_notification_task(task)
     except Exception as exc:
         error_message = exc.detail if isinstance(exc, HTTPException) else str(exc)
         with get_db_connection() as conn:
-            _set_agent_runtime_state(conn, task_id, runtime_status="failed")
+            _set_agent_runtime_state(
+                conn,
+                task_id,
+                provider="lanshare-session-material" if task_type == "lesson_document" else "lanshare-business-agent",
+                runtime_status="failed",
+            )
             finish_agent_task(
                 conn,
                 task_id,
                 status=TASK_STATUS_FAILED,
-                result_summary="学习文档业务执行失败。",
+                result_summary="平台业务执行失败。",
                 error_message=_safe_text(error_message, max_chars=1200) or "未知错误",
-                result_detail={"platform_action": "lesson_document_generation"},
+                result_detail={"platform_action": platform_action},
             )
     return True

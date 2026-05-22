@@ -9,6 +9,7 @@ from ..config import AGENT_TASK_RUNTIME_URL, AGENT_TASKS_ENABLED
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher
 from ..services.agent_task_service import (
+    agent_workflow_catalog,
     cancel_agent_task,
     create_agent_task,
     get_agent_task,
@@ -36,6 +37,7 @@ def bootstrap_agent_task_center(user: dict = Depends(get_current_teacher)):
         "enabled": bool(AGENT_TASKS_ENABLED),
         "runtime_configured": bool(AGENT_TASK_RUNTIME_URL),
         "task_types": task_type_options(),
+        "workflow_catalog": agent_workflow_catalog(),
         **queue,
     }
 

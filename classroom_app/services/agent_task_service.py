@@ -65,6 +65,78 @@ TASK_TYPE_DEFINITIONS: dict[str, dict[str, str]] = {
     },
 }
 
+AGENT_TEACHER_WORKFLOWS: tuple[dict[str, Any], ...] = (
+    {
+        "key": "classroom_preparation",
+        "name": "课前备课与课堂准备",
+        "steps": [
+            "确认授课课堂、课时、教学主题和既有材料",
+            "读取前序学习文档、课堂材料、时间轴内容和作业反馈",
+            "生成本次或下一次课的导学文档、板书提纲、作业草案",
+            "由教师确认后发布或绑定到课堂",
+        ],
+        "agent_capability": "可安全读取课堂上下文，可自动生成并绑定学习文档；作业与发布动作默认只生成草案。",
+        "guardrail": "仅操作当前教师拥有的课堂、课时和材料，不修改核心源码、数据库结构或其他教师数据。",
+    },
+    {
+        "key": "material_operations",
+        "name": "课程材料整理与复用",
+        "steps": [
+            "盘点课程材料、课时绑定文档和材料解析摘要",
+            "识别缺失的学习文档、重复材料和可复用素材",
+            "输出材料清单、下一步建议和可生成内容",
+        ],
+        "agent_capability": "可完整接管盘点与报告；材料重命名、删除、跨目录移动等破坏性动作暂不自动执行。",
+        "guardrail": "默认只读材料库，除学习文档生成服务外不直接改动材料文件。",
+    },
+    {
+        "key": "assignment_exam_workflow",
+        "name": "作业/考试设计与发布",
+        "steps": [
+            "理解课堂目标、前序材料、目标课时和评分方式",
+            "生成题目要求、评分标准、提交格式和发布检查清单",
+            "教师审阅后在作业或考试编辑器中发布给学生",
+            "发布后跟踪提交、批改和低分学生支持",
+        ],
+        "agent_capability": "可生成结构化作业/考试草案；不会自动发布、改分或创建正式考试。",
+        "guardrail": "任何影响学生可见状态的动作必须由教师在平台界面确认。",
+    },
+    {
+        "key": "student_support",
+        "name": "学生通知与学情支持",
+        "steps": [
+            "限定课堂、作业/考试和筛选条件",
+            "读取成绩、提交状态、逾期状态等必要数据",
+            "生成学生名单预览、通知文案和后续跟进建议",
+            "教师确认后再发送通知或私信",
+        ],
+        "agent_capability": "可生成名单和通知草稿；不会直接给学生群发消息。",
+        "guardrail": "学生详情仅任务发起教师可见，其他教师只看到队列公开状态。",
+    },
+    {
+        "key": "blog_and_reflection",
+        "name": "课堂博客与教学反思",
+        "steps": [
+            "读取当前课堂、材料、课时和教师输入主题",
+            "生成课堂博客草稿、摘要、标签和发布建议",
+            "可创建教师私有草稿，等待教师审阅后发布",
+        ],
+        "agent_capability": "可安全创建博客草稿；不会自动公开发布。",
+        "guardrail": "只以当前教师身份创建草稿，不代学生发言，不公开敏感学生信息。",
+    },
+    {
+        "key": "operations_admin",
+        "name": "教学运营与管理中心",
+        "steps": [
+            "读取管理中心当前页面的筛选条件和统计上下文",
+            "生成检查清单、数据核对建议和下一步操作",
+            "需要管理员权限的配置由管理员在管理中心确认",
+        ],
+        "agent_capability": "可辅助分析与生成建议；不会改动系统配置、部署或密钥。",
+        "guardrail": "任务中心教师端不能越过管理员边界，学生端无任务中心入口和接口权限。",
+    },
+)
+
 _CORE_CODE_DENY_PATTERNS = (
     r"\bgit\s+(commit|push|pull|reset|checkout|merge|rebase|clean|rm)\b",
     r"\bdocker\s+(compose|run|exec|build|rm|rmi|stop|restart)\b",
@@ -274,6 +346,10 @@ def task_type_options() -> list[dict[str, str]]:
     ]
 
 
+def agent_workflow_catalog() -> list[dict[str, Any]]:
+    return [dict(item) for item in AGENT_TEACHER_WORKFLOWS]
+
+
 def _teacher_display_name(user: dict[str, Any]) -> str:
     return _clean_text(user.get("name") or user.get("nickname") or f"教师{user.get('id') or ''}", max_chars=80)
 
@@ -475,7 +551,8 @@ def build_teacher_page_context(
                     selected_session = _session_payload(item)
                     break
             lesson_document_target = None
-            if task_type == "lesson_document":
+            target_useful_task_types = {"lesson_document", "course_material_digest", "assignment_blueprint", "blog_draft"}
+            if task_type in target_useful_task_types or _instruction_requests_next_session(instruction):
                 lesson_document_target = _resolve_lesson_document_target(
                     sessions,
                     selected_session_id=selected_session_id,
@@ -1023,6 +1100,10 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
     task_type = str(task.get("task_type") or "general_teaching_task")
     definition = TASK_TYPE_DEFINITIONS.get(task_type, TASK_TYPE_DEFINITIONS["general_teaching_task"])
     instruction = _clean_text(task.get("private_instruction"), max_chars=MAX_INSTRUCTION_CHARS)
+    workflow_lines = "\n".join(
+        f"- {item['name']}：{item['agent_capability']} 安全边界：{item['guardrail']}"
+        for item in AGENT_TEACHER_WORKFLOWS
+    )
     return f"""
 你是 LanShare 内置的教师任务中心 Agent，当前任务类型是：{definition["label"]}。
 
@@ -1032,6 +1113,9 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
 3. 你所在 workspace 是隔离任务目录：{runtime_workspace}。只能在此目录内阅读上下文、整理产物。
 4. 涉及发布博客、发送通知、创建作业/考试等平台状态变更时，先输出结构化草案和执行建议，不要假装已经修改平台数据。
 5. 输出必须面向教师，清楚列出：任务理解、已使用的上下文、执行结果/草案、需要教师确认的动作、风险提醒。
+
+你能安全接管的教师业务流程边界：
+{workflow_lines}
 
 教师任务：
 {instruction}

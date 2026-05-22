@@ -328,8 +328,11 @@ function safeLocalHref(value) {
 }
 
 function renderPlatformResult(detail = {}) {
-    if (detail.platform_action !== 'lesson_document_generation') {
+    if (!detail.platform_action) {
         return '';
+    }
+    if (detail.platform_action !== 'lesson_document_generation') {
+        return renderBusinessResult(detail);
     }
     const viewerUrl = safeLocalHref(detail.generated_material_viewer_url);
     const path = detail.generated_material_path || '';
@@ -349,8 +352,75 @@ function renderPlatformResult(detail = {}) {
     `;
 }
 
+function renderDetailList(items = []) {
+    const normalized = Array.isArray(items) ? items.filter(Boolean).slice(0, 30) : [];
+    if (!normalized.length) {
+        return '';
+    }
+    return `
+        <div class="ai-task-business-list">
+            ${normalized.map((item) => {
+                if (typeof item === 'string') {
+                    return `<div class="ai-task-business-item"><strong>${escapeHtml(item)}</strong></div>`;
+                }
+                const href = safeLocalHref(item.url || item.href || '');
+                return `
+                    <div class="ai-task-business-item">
+                        <strong>${href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${escapeHtml(item.title || item.label || '查看')}</a>` : escapeHtml(item.title || item.label || '条目')}</strong>
+                        ${item.meta ? `<span>${escapeHtml(item.meta)}</span>` : ''}
+                        ${item.note ? `<small>${escapeHtml(item.note)}</small>` : ''}
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function renderBusinessResult(detail = {}) {
+    const metrics = Array.isArray(detail.metrics) ? detail.metrics.slice(0, 8) : [];
+    const markdown = String(detail.markdown || detail.summary || '').trim();
+    const links = Array.isArray(detail.links) ? detail.links.filter(Boolean).slice(0, 4) : [];
+    const nextActions = Array.isArray(detail.next_actions) ? detail.next_actions.slice(0, 8) : [];
+    const safety = Array.isArray(detail.safety) ? detail.safety.slice(0, 6) : [];
+    return `
+        <div class="ai-task-detail__block is-business-result">
+            <h4>${escapeHtml(detail.display_title || '业务产物')}</h4>
+            ${detail.context_label ? `<p class="ai-task-business-context">${escapeHtml(detail.context_label)}</p>` : ''}
+            ${metrics.length ? `
+                <dl class="ai-task-result-grid">
+                    ${metrics.map((item) => `
+                        <div><dt>${escapeHtml(item.label || '')}</dt><dd>${escapeHtml(item.value ?? '-')}</dd></div>
+                    `).join('')}
+                </dl>
+            ` : ''}
+            ${markdown ? `<div class="ai-task-business-markdown">${escapeHtml(markdown)}</div>` : ''}
+            ${renderDetailList(detail.items || [])}
+            ${nextActions.length ? `
+                <div class="ai-task-runtime-section">
+                    <strong>教师下一步</strong>
+                    <ul>${nextActions.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+                </div>
+            ` : ''}
+            ${safety.length ? `
+                <div class="ai-task-runtime-section">
+                    <strong>安全边界</strong>
+                    <ul>${safety.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+                </div>
+            ` : ''}
+            ${links.length ? `
+                <div class="ai-task-result-actions">
+                    ${links.map((item) => {
+                        const href = safeLocalHref(item.url || item.href || '');
+                        return href ? `<a class="btn btn-outline btn-sm ai-task-result-link" href="${escapeHtml(href)}" target="_blank" rel="noopener">${escapeHtml(item.label || '打开')}</a>` : '';
+                    }).join('')}
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
 function renderRuntimeDetail(detail = {}) {
-    if (detail.platform_action === 'lesson_document_generation') {
+    if (detail.platform_action) {
         return renderPlatformResult(detail);
     }
     const textOutputs = Array.isArray(detail.text_outputs) ? detail.text_outputs.slice(0, 4) : [];

@@ -6643,9 +6643,67 @@ body.has-cultivation-login-reveal {
     margin-top: 10px;
 }
 
+.ai-task-result-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.ai-task-business-context {
+    margin-bottom: 10px !important;
+    color: var(--text-muted) !important;
+    font-size: 0.78rem !important;
+}
+
+.ai-task-business-markdown {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--text-primary);
+    font-size: 0.84rem;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.ai-task-business-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.ai-task-business-item {
+    display: grid;
+    gap: 3px;
+    padding: 9px 10px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.74);
+}
+
+.ai-task-business-item strong {
+    min-width: 0;
+    color: #0f172a;
+    font-size: 0.84rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.ai-task-business-item span,
+.ai-task-business-item small {
+    color: var(--text-muted);
+    font-size: 0.74rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
 .ai-task-runtime-section {
     display: grid;
     gap: 7px;
+    margin-top: 12px;
 }
 
 .ai-task-runtime-section + .ai-task-runtime-section {
