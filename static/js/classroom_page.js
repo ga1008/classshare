@@ -363,6 +363,23 @@ function initTeachingTimelineLegacy() {
             ? Boolean(session?.home_learning_material_id && session?.home_learning_material_viewer_url)
             : Boolean(session?.learning_material_id && session?.learning_material_viewer_url)
     );
+    const publishSelectedSessionContext = (session) => {
+        if (!session || isHomeEntry(session)) {
+            window.LANSHARE_SELECTED_CLASSROOM_SESSION = null;
+            return;
+        }
+        window.LANSHARE_SELECTED_CLASSROOM_SESSION = {
+            id: session.id || null,
+            orderIndex: session.order_index || null,
+            title: session.detail_title || session.title || '',
+            content: session.detail_content || session.detail_summary || session.content || '',
+            sessionDate: session.session_date || '',
+            sectionCount: session.section_count || session.slot_section_count || 1,
+            learningMaterialId: session.learning_material_id || null,
+            learningMaterialName: session.learning_material_name || '',
+            learningMaterialPath: session.learning_material_path || '',
+        };
+    };
     const scheduleProjectionSync = () => {};
 
     const updateSessionButtonMaterialState = (session) => {
@@ -559,6 +576,7 @@ function initTeachingTimelineLegacy() {
 
         const previousOrder = selectedOrder;
         selectedOrder = key;
+        publishSelectedSessionContext(session);
         syncSelectedState(key);
         if (detailKicker) detailKicker.textContent = session.session_number_label || '';
         if (detailTitle) detailTitle.textContent = session.detail_title || session.title || '';
@@ -939,6 +957,23 @@ function initTeachingTimeline() {
             ? Boolean(session?.home_learning_material_id && session?.home_learning_material_viewer_url)
             : Boolean(session?.learning_material_id && session?.learning_material_viewer_url)
     );
+    const publishSelectedSessionContext = (session) => {
+        if (!session || isHomeEntry(session)) {
+            window.LANSHARE_SELECTED_CLASSROOM_SESSION = null;
+            return;
+        }
+        window.LANSHARE_SELECTED_CLASSROOM_SESSION = {
+            id: session.id || null,
+            orderIndex: session.order_index || null,
+            title: session.detail_title || session.title || '',
+            content: session.detail_content || session.detail_summary || session.content || '',
+            sessionDate: session.session_date || '',
+            sectionCount: session.section_count || session.slot_section_count || 1,
+            learningMaterialId: session.learning_material_id || null,
+            learningMaterialName: session.learning_material_name || '',
+            learningMaterialPath: session.learning_material_path || '',
+        };
+    };
     const getMaxScrollLeft = () => Math.max(0, scrollEl.scrollWidth - scrollEl.clientWidth);
     const clampScrollLeft = (value) => Math.max(0, Math.min(getMaxScrollLeft(), Number(value) || 0));
     const setTimelineScrollLeft = (value) => {
@@ -1271,6 +1306,7 @@ function initTeachingTimeline() {
 
         const previousOrder = selectedOrder;
         selectedOrder = key;
+        publishSelectedSessionContext(session);
         syncSelectedState(key);
         if (detailKicker) detailKicker.textContent = session.session_number_label || '';
         if (detailTitle) detailTitle.textContent = session.detail_title || session.title || '';

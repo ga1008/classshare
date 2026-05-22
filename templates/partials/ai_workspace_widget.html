@@ -107,31 +107,34 @@
                 <div class="ai-task-center__metric"><span>运行</span><strong data-agent-count="running">0</strong></div>
                 <div class="ai-task-center__metric"><span>排队</span><strong data-agent-count="queued">0</strong></div>
                 <div class="ai-task-center__metric"><span>完成</span><strong data-agent-count="completed">0</strong></div>
+                <div class="ai-task-center__metric"><span>失败</span><strong data-agent-count="failed">0</strong></div>
             </div>
-            <form class="ai-task-form" id="agent-task-form">
-                <div class="ai-task-form__row">
-                    <label for="agent-task-type">任务类型</label>
-                    <select id="agent-task-type" name="task_type"></select>
-                </div>
-                <div class="ai-task-form__row">
-                    <label for="agent-task-title">任务标题</label>
-                    <input id="agent-task-title" name="title" maxlength="120" placeholder="给这次任务起个短标题">
-                </div>
-                <div class="ai-task-form__row">
-                    <label for="agent-task-instruction">任务要求</label>
-                    <textarea id="agent-task-instruction" name="instruction" maxlength="4000" rows="4" placeholder="描述要完成的教学业务任务，例如整理本课堂材料并生成下次课导学文档。"></textarea>
-                </div>
-                <div class="ai-task-context">
-                    <span>页面背景</span>
-                    <strong id="agent-task-context-title">当前页面</strong>
-                </div>
-                <div class="ai-task-form__actions">
-                    <span id="agent-task-form-status" role="status"></span>
-                    <button type="submit" class="btn btn-primary">加入全平台队列</button>
-                </div>
-            </form>
             <div class="ai-task-board">
-                <div class="ai-task-list" id="agent-task-list" aria-live="polite"></div>
+                <div class="ai-task-board__rail">
+                    <form class="ai-task-form" id="agent-task-form">
+                        <div class="ai-task-form__row">
+                            <label for="agent-task-type">任务类型</label>
+                            <select id="agent-task-type" name="task_type"></select>
+                        </div>
+                        <div class="ai-task-form__row">
+                            <label for="agent-task-title">任务标题</label>
+                            <input id="agent-task-title" name="title" maxlength="120" placeholder="给这次任务起个短标题">
+                        </div>
+                        <div class="ai-task-form__row">
+                            <label for="agent-task-instruction">任务要求</label>
+                            <textarea id="agent-task-instruction" name="instruction" maxlength="4000" rows="4" placeholder="描述要完成的教学业务任务，例如整理本课堂材料并生成下次课导学文档。"></textarea>
+                        </div>
+                        <div class="ai-task-context">
+                            <span>页面背景</span>
+                            <strong id="agent-task-context-title">当前页面</strong>
+                        </div>
+                        <div class="ai-task-form__actions">
+                            <span id="agent-task-form-status" role="status"></span>
+                            <button type="submit" class="btn btn-primary">加入全平台队列</button>
+                        </div>
+                    </form>
+                    <div class="ai-task-list" id="agent-task-list" aria-live="polite"></div>
+                </div>
                 <article class="ai-task-detail" id="agent-task-detail">
                     <div class="ai-task-detail__empty">选择一个任务查看状态。自己的任务会显示详情和执行记录。</div>
                 </article>

@@ -56,11 +56,30 @@ function activeNavText() {
     return active ? clampText(active.textContent, 80) : '';
 }
 
+function collectSelectedSessionContext() {
+    const session = window.LANSHARE_SELECTED_CLASSROOM_SESSION || null;
+    if (!session || typeof session !== 'object') {
+        return {};
+    }
+    return {
+        id: session.id || null,
+        orderIndex: session.orderIndex || session.order_index || null,
+        title: clampText(session.title || '', 160),
+        content: clampText(session.content || '', 1800),
+        sessionDate: session.sessionDate || session.session_date || '',
+        sectionCount: session.sectionCount || session.section_count || 1,
+        learningMaterialId: session.learningMaterialId || session.learning_material_id || null,
+        learningMaterialName: session.learningMaterialName || session.learning_material_name || '',
+        learningMaterialPath: session.learningMaterialPath || session.learning_material_path || '',
+    };
+}
+
 function collectClassroomContext() {
     const appConfig = window.APP_CONFIG || {};
     if (!Object.keys(appConfig).length) {
         return {};
     }
+    const selectedSession = collectSelectedSessionContext();
     return {
         classOfferingId: appConfig.classOfferingId || CONFIG.classOfferingId || null,
         courseId: appConfig.courseId || null,
@@ -70,6 +89,7 @@ function collectClassroomContext() {
         currentSection: activeNavText(),
         teachingPlan: clampText(appConfig.teachingPlan || appConfig.classroom?.teaching_plan || '', 1200),
         learningProgress: appConfig.learningProgress?.summary || appConfig.learningOverview || null,
+        selectedSession: Object.keys(selectedSession).length ? selectedSession : null,
     };
 }
 
@@ -84,6 +104,7 @@ function collectMaterialContext() {
         materialName: materialContext.materialName || material.name || '',
         materialPath: material.material_path || '',
         classOfferingId: materialContext.classOfferingId || CONFIG.classOfferingId || null,
+        sessionId: materialContext.sessionId || null,
         headings: $all('#viewer-toc button, #viewer-content h1, #viewer-content h2, #viewer-content h3')
             .map((item) => clampText(item.textContent, 90))
             .filter(Boolean)
@@ -153,6 +174,8 @@ function collectPageContext() {
         classOfferingId: CONFIG.classOfferingId || null,
         assignmentId: CONFIG.assignmentId || null,
         materialId: CONFIG.materialId || null,
+        sessionId: collectSelectedSessionContext().id || window.MATERIAL_VIEWER_CONTEXT?.sessionId || null,
+        sessionOrderIndex: collectSelectedSessionContext().orderIndex || null,
         classroomContext: collectClassroomContext(),
         materialContext: collectMaterialContext(),
         assignmentContext: collectAssignmentContext(),
@@ -183,6 +206,13 @@ function formatContextForPrompt(context = collectPageContext()) {
     }
     if (context.classroomContext?.courseName || context.classroomContext?.className) {
         lines.push(`课堂：${context.classroomContext.courseName || ''} ${context.classroomContext.className || ''}`.trim());
+    }
+    if (context.classroomContext?.selectedSession?.title) {
+        const selected = context.classroomContext.selectedSession;
+        lines.push(`当前课时：第 ${selected.orderIndex || ''} 次课 ${selected.title}`.trim());
+        if (selected.learningMaterialName) {
+            lines.push(`当前课时文档：${selected.learningMaterialName} ${selected.learningMaterialPath || ''}`.trim());
+        }
     }
     if (context.materialContext?.materialName) {
         lines.push(`材料：${context.materialContext.materialName} ${context.materialContext.materialPath || ''}`.trim());
@@ -268,6 +298,106 @@ function statusClass(status) {
     return `is-${String(status || 'queued').replace(/[^a-z0-9_-]/gi, '')}`;
 }
 
+function terminalTone(status) {
+    if (status === 'completed') return 'is-result';
+    if (status === 'failed') return 'is-error';
+    if (status === 'canceled') return 'is-warning';
+    return '';
+}
+
+function terminalTitle(status) {
+    if (status === 'completed') return '最终结论：成功';
+    if (status === 'failed') return '最终结论：失败';
+    if (status === 'canceled') return '最终结论：已取消';
+    return '当前状态';
+}
+
+function resultSummaryText(task) {
+    if (task.result_summary) return task.result_summary;
+    if (task.error_message) return task.error_message;
+    if (task.status === 'completed') return '任务已结束，但运行时没有返回明确的业务结论。建议查看下方执行记录，确认是否产生了可用内容。';
+    if (task.status === 'failed') return '任务失败，但未返回具体错误。建议稍后重试，或把任务要求描述得更具体。';
+    return task.status_label || task.status || '处理中';
+}
+
+function safeLocalHref(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (text.startsWith('/')) return text;
+    return '';
+}
+
+function renderPlatformResult(detail = {}) {
+    if (detail.platform_action !== 'lesson_document_generation') {
+        return '';
+    }
+    const viewerUrl = safeLocalHref(detail.generated_material_viewer_url);
+    const path = detail.generated_material_path || '';
+    const order = detail.session_order_index || detail.target?.order_index || '';
+    const title = detail.session_title || detail.target?.title || '';
+    const generationTask = detail.generation_task || {};
+    return `
+        <div class="ai-task-detail__block is-business-result">
+            <h4>业务产物</h4>
+            <dl class="ai-task-result-grid">
+                <div><dt>目标课时</dt><dd>第 ${escapeHtml(order)} 次课 ${escapeHtml(title)}</dd></div>
+                <div><dt>生成文档</dt><dd>${escapeHtml(path || '未返回路径')}</dd></div>
+                <div><dt>生成任务</dt><dd>#${escapeHtml(generationTask.id || '-')} · ${escapeHtml(generationTask.status_label || generationTask.status || '-')}</dd></div>
+            </dl>
+            ${viewerUrl ? `<a class="btn btn-outline btn-sm ai-task-result-link" href="${escapeHtml(viewerUrl)}" target="_blank" rel="noopener">打开生成文档</a>` : ''}
+        </div>
+    `;
+}
+
+function renderRuntimeDetail(detail = {}) {
+    if (detail.platform_action === 'lesson_document_generation') {
+        return renderPlatformResult(detail);
+    }
+    const textOutputs = Array.isArray(detail.text_outputs) ? detail.text_outputs.slice(0, 4) : [];
+    const artifacts = Array.isArray(detail.artifacts) ? detail.artifacts.slice(0, 6) : [];
+    const toolCalls = Array.isArray(detail.tool_calls) ? detail.tool_calls.slice(-6) : [];
+    if (!textOutputs.length && !artifacts.length && !toolCalls.length) {
+        return '';
+    }
+    return `
+        <div class="ai-task-detail__block is-runtime-detail">
+            <h4>运行时细节</h4>
+            ${textOutputs.length ? `
+                <div class="ai-task-runtime-section">
+                    <strong>关键输出</strong>
+                    ${textOutputs.map((item) => `<p>${escapeHtml(item.text || item)}</p>`).join('')}
+                </div>
+            ` : ''}
+            ${artifacts.length ? `
+                <div class="ai-task-runtime-section">
+                    <strong>产物</strong>
+                    <ul>${artifacts.map((item) => `<li>${escapeHtml(item.path || item.name || item.id || JSON.stringify(item))}</li>`).join('')}</ul>
+                </div>
+            ` : ''}
+            ${toolCalls.length ? `
+                <div class="ai-task-runtime-section">
+                    <strong>工具调用</strong>
+                    <ul>${toolCalls.map((item) => `<li>${escapeHtml(item.name || item.tool || item.type || JSON.stringify(item).slice(0, 160))}</li>`).join('')}</ul>
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+function renderEventDetail(event) {
+    const detail = event.detail || {};
+    if (detail.generated_material_path) {
+        return `<small>生成文档：${escapeHtml(detail.generated_material_path)}</small>`;
+    }
+    if (detail.error) {
+        return `<small>原因：${escapeHtml(detail.error)}</small>`;
+    }
+    if (detail.generation_task_id) {
+        return `<small>生成任务 #${escapeHtml(detail.generation_task_id)}</small>`;
+    }
+    return '';
+}
+
 function renderTaskList(tasks = []) {
     const list = $('#agent-task-list');
     if (!list) {
@@ -308,26 +438,29 @@ function renderTaskDetail(task) {
     const cancelButton = task.is_owner && task.is_active
         ? `<button type="button" class="btn btn-outline btn-sm" data-agent-cancel="${escapeHtml(task.id)}">取消任务</button>`
         : '';
+    const detailPayload = task.result_detail || {};
     const ownerBody = task.is_owner ? `
         <div class="ai-task-detail__block">
             <h4>任务要求</h4>
             <p>${escapeHtml(task.private_instruction || '无')}</p>
         </div>
-        ${task.result_summary ? `
-        <div class="ai-task-detail__block is-result">
-            <h4>执行结果</h4>
-            <p>${escapeHtml(task.result_summary)}</p>
+        ${task.is_terminal ? `
+        <div class="ai-task-detail__block ${terminalTone(task.status)}">
+            <h4>${terminalTitle(task.status)}</h4>
+            <p>${escapeHtml(resultSummaryText(task))}</p>
         </div>` : ''}
         ${task.error_message ? `
         <div class="ai-task-detail__block is-error">
             <h4>异常信息</h4>
             <p>${escapeHtml(task.error_message)}</p>
         </div>` : ''}
+        ${renderRuntimeDetail(detailPayload)}
         <div class="ai-task-events">
             ${(task.events || []).map((event) => `
                 <div class="ai-task-event">
                     <span>${escapeHtml(event.created_at || '')}</span>
                     <strong>${escapeHtml(event.message || event.event_type || '')}</strong>
+                    ${renderEventDetail(event)}
                 </div>
             `).join('') || '<div class="ai-task-detail__empty">暂无执行记录。</div>'}
         </div>
@@ -355,9 +488,24 @@ function renderTaskDetail(task) {
     `;
 }
 
+function focusTaskDetailIfCompact() {
+    const detail = $('#agent-task-detail');
+    if (!detail || !window.matchMedia('(max-width: 840px)').matches) {
+        return;
+    }
+    const scroller = detail.closest('.ai-task-center');
+    if (scroller) {
+        const detailTop = detail.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 8;
+        scroller.scrollTo({ top: Math.max(0, detailTop), behavior: 'auto' });
+        return;
+    }
+    detail.scrollIntoView({ block: 'start', inline: 'nearest' });
+}
+
 async function loadTaskDetail(taskId) {
     const data = await apiJson(`/api/agent-tasks/${taskId}`);
     renderTaskDetail(data.task);
+    focusTaskDetailIfCompact();
 }
 
 async function refreshTasks({ silent = false } = {}) {
@@ -442,7 +590,7 @@ function switchTab(tabName) {
         panel.hidden = !active;
         panel.classList.toggle('is-active', active);
     });
-    document.body.dataset.aiWorkspaceTab = tabName;
+    document.body.dataset.aiWorkspaceActiveTab = tabName;
     try {
         window.localStorage.setItem('lanshare.aiWorkspace.tab', tabName);
     } catch {
@@ -525,6 +673,7 @@ function bindTaskCenter() {
             $('#agent-task-instruction').value = '';
             $('#agent-task-title').value = '';
             renderTaskDetail(data.task);
+            focusTaskDetailIfCompact();
             await refreshTasks({ silent: true });
             notify('任务已加入全平台队列', 'success');
             if (status) {

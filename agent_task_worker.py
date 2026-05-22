@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import os
 import socket
 import sys
@@ -31,12 +32,9 @@ def _runtime_terminal_status(status: str) -> bool:
 
 
 def _runtime_result_summary(runtime_task: dict[str, Any]) -> str:
-    for key in ("result_summary", "summary", "error"):
-        value = str(runtime_task.get(key) or "").strip()
-        if value:
-            return value
-    status = str(runtime_task.get("status") or "").strip()
-    return f"DeepSeek-TUI task ended with status: {status or 'unknown'}"
+    from classroom_app.services.agent_task_service import runtime_result_summary
+
+    return runtime_result_summary(runtime_task)
 
 
 def _cancel_requested(conn, task_id: int) -> bool:
@@ -105,6 +103,11 @@ def _process_task(task: dict[str, Any]) -> None:
     from classroom_app.services.agent_key_service import sync_active_agent_runtime_config
 
     task_id = int(task["id"])
+    from classroom_app.services.agent_platform_actions import try_execute_platform_agent_task
+
+    if asyncio.run(try_execute_platform_agent_task(task)):
+        return
+
     if not AGENT_TASK_RUNTIME_URL:
         with get_db_connection() as conn:
             finish_agent_task(

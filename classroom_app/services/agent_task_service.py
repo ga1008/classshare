@@ -41,7 +41,7 @@ TASK_TYPE_DEFINITIONS: dict[str, dict[str, str]] = {
     "lesson_document": {
         "label": "生成学习文档",
         "verb": "生成",
-        "placeholder": "结合当前课程材料，生成下一次课的学习文档。",
+        "placeholder": "选中课堂时间轴中的目标课时，或写明第几次课；系统会读取前序学习文档并生成/绑定新文档。",
     },
     "assignment_blueprint": {
         "label": "生成作业/考试草案",
@@ -77,6 +77,22 @@ _CORE_CODE_DENY_PATTERNS = (
 MAX_INSTRUCTION_CHARS = 4000
 MAX_CONTEXT_TEXT_CHARS = 16000
 MAX_RESULT_DETAIL_CHARS = 40000
+MAX_RUNTIME_TEXT_OUTPUTS = 12
+
+_CHINESE_DIGITS = {
+    "零": 0,
+    "〇": 0,
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
 
 
 def utcnow_iso() -> str:
@@ -109,6 +125,130 @@ def _summarize_text(text: str, *, limit: int = 96) -> str:
     if len(normalized) <= limit:
         return normalized
     return normalized[:limit].rstrip() + "..."
+
+
+def _parse_chinese_number(token: str) -> int | None:
+    raw = _clean_text(token, max_chars=16)
+    if not raw:
+        return None
+    if raw.isdigit():
+        value = int(raw)
+        return value if value > 0 else None
+    if raw in _CHINESE_DIGITS:
+        return _CHINESE_DIGITS[raw]
+    if "十" in raw:
+        left, _, right = raw.partition("十")
+        tens = _CHINESE_DIGITS.get(left, 1 if not left else 0)
+        ones = _CHINESE_DIGITS.get(right, 0 if not right else -1)
+        value = tens * 10 + ones
+        return value if value > 0 else None
+    return None
+
+
+def _parse_requested_session_order(instruction: str) -> int | None:
+    normalized = _clean_text(instruction)
+    patterns = (
+        r"第\s*([0-9一二两三四五六七八九十〇零]{1,8})\s*(?:次课|节课|课|讲)",
+        r"([0-9]{1,3})\s*(?:次课|节课|课|讲)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, normalized)
+        if match:
+            value = _parse_chinese_number(match.group(1))
+            if value:
+                return value
+    return None
+
+
+def _instruction_requests_next_session(instruction: str) -> bool:
+    normalized = _clean_text(instruction)
+    return bool(re.search(r"(下一|下次|下节|下一节|下一次|下一个)\s*(?:课|课时|课堂|学习文档|文档)?", normalized))
+
+
+def _session_payload(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": int(row.get("id") or 0),
+        "order_index": int(row.get("order_index") or 0),
+        "title": row.get("title") or "",
+        "content_excerpt": _summarize_text(row.get("content") or "", limit=900),
+        "section_count": int(row.get("section_count") or 0) or 1,
+        "session_date": row.get("session_date") or "",
+        "learning_material_id": int(row.get("learning_material_id") or 0) or None,
+        "learning_material_name": row.get("learning_material_name") or "",
+        "learning_material_path": row.get("learning_material_path") or "",
+        "has_learning_material": bool(row.get("learning_material_id")),
+    }
+
+
+def _resolve_lesson_document_target(
+    sessions: list[dict[str, Any]],
+    *,
+    selected_session_id: int | None,
+    selected_order_index: int | None,
+    instruction: str,
+) -> dict[str, Any] | None:
+    lesson_sessions = [
+        _session_payload(item)
+        for item in sorted(sessions, key=lambda row: int(row.get("order_index") or 0))
+        if int(item.get("order_index") or 0) > 0
+    ]
+    if not lesson_sessions:
+        return None
+
+    by_id = {int(item["id"]): item for item in lesson_sessions if item.get("id")}
+    by_order = {int(item["order_index"]): item for item in lesson_sessions if item.get("order_index")}
+    selected = by_id.get(int(selected_session_id or 0)) or by_order.get(int(selected_order_index or 0))
+    explicit_order = _parse_requested_session_order(instruction)
+    requests_next = _instruction_requests_next_session(instruction)
+
+    reason = "first_unbound_session"
+    target: dict[str, Any] | None = None
+    if explicit_order and explicit_order in by_order:
+        target = by_order[explicit_order]
+        reason = "explicit_order"
+    elif requests_next and selected:
+        target = next(
+            (item for item in lesson_sessions if int(item["order_index"]) > int(selected["order_index"])),
+            None,
+        )
+        reason = "next_after_selected"
+    elif selected:
+        target = selected
+        reason = "selected_session"
+    elif requests_next:
+        last_bound_order = max(
+            [int(item["order_index"]) for item in lesson_sessions if item.get("learning_material_id")] or [0],
+        )
+        target = next(
+            (item for item in lesson_sessions if int(item["order_index"]) > last_bound_order),
+            None,
+        )
+        reason = "next_after_last_bound"
+
+    if not target:
+        target = next((item for item in lesson_sessions if not item.get("learning_material_id")), None)
+        reason = "first_unbound_session"
+    if not target:
+        target = lesson_sessions[-1]
+        reason = "last_session_fallback"
+
+    previous_sessions = [
+        item
+        for item in lesson_sessions
+        if int(item["order_index"]) < int(target["order_index"]) and item.get("learning_material_id")
+    ]
+    next_session = next(
+        (item for item in lesson_sessions if int(item["order_index"]) > int(target["order_index"])),
+        None,
+    )
+    return {
+        **target,
+        "reason": reason,
+        "selected_session": selected,
+        "previous_bound_sessions": previous_sessions[-8:],
+        "previous_bound_count": len(previous_sessions),
+        "next_session": next_session,
+    }
 
 
 def validate_business_task(instruction: str) -> None:
@@ -170,7 +310,14 @@ def _resolve_optional_int(value: Any) -> int | None:
     return parsed if parsed > 0 else None
 
 
-def build_teacher_page_context(conn, teacher_id: int, page_context: dict[str, Any]) -> dict[str, Any]:
+def build_teacher_page_context(
+    conn,
+    teacher_id: int,
+    page_context: dict[str, Any],
+    *,
+    task_type: str = "",
+    instruction: str = "",
+) -> dict[str, Any]:
     """Enrich client page hints with server-verified teaching context."""
     context = _normalize_context_payload(page_context)
     context.setdefault("server_context", {})
@@ -186,6 +333,23 @@ def build_teacher_page_context(conn, teacher_id: int, page_context: dict[str, An
         context.get("materialId")
         or context.get("material_id")
         or (context.get("materialContext") or {}).get("materialId")
+    )
+    selected_session_hint = (
+        (context.get("classroomContext") or {}).get("selectedSession")
+        or (context.get("materialContext") or {})
+        or {}
+    )
+    selected_session_id = _resolve_optional_int(
+        context.get("sessionId")
+        or context.get("session_id")
+        or selected_session_hint.get("id")
+        or selected_session_hint.get("sessionId")
+    )
+    selected_order_index = _resolve_optional_int(
+        context.get("sessionOrderIndex")
+        or context.get("session_order_index")
+        or selected_session_hint.get("orderIndex")
+        or selected_session_hint.get("order_index")
     )
 
     if assignment_id:
@@ -280,6 +444,46 @@ def build_teacher_page_context(conn, teacher_id: int, page_context: dict[str, An
                 """,
                 (class_offering_id,),
             ).fetchall()
+            sessions = [
+                dict(item)
+                for item in conn.execute(
+                    """
+                    SELECT s.id,
+                           s.order_index,
+                           s.title,
+                           s.content,
+                           s.section_count,
+                           s.session_date,
+                           s.learning_material_id,
+                           lm.name AS learning_material_name,
+                           lm.material_path AS learning_material_path
+                    FROM class_offering_sessions s
+                    LEFT JOIN course_materials lm ON lm.id = s.learning_material_id
+                    WHERE s.class_offering_id = ?
+                    ORDER BY s.order_index ASC
+                    LIMIT 120
+                    """,
+                    (class_offering_id,),
+                ).fetchall()
+            ]
+            selected_session = None
+            for item in sessions:
+                if selected_session_id and int(item.get("id") or 0) == selected_session_id:
+                    selected_session = _session_payload(item)
+                    break
+                if selected_order_index and int(item.get("order_index") or 0) == selected_order_index:
+                    selected_session = _session_payload(item)
+                    break
+            lesson_document_target = None
+            if task_type == "lesson_document":
+                lesson_document_target = _resolve_lesson_document_target(
+                    sessions,
+                    selected_session_id=selected_session_id,
+                    selected_order_index=selected_order_index,
+                    instruction=instruction,
+                )
+                if lesson_document_target:
+                    lesson_document_target["class_offering_id"] = int(class_offering_id)
             server_context["classroom"] = {
                 "id": int(row["id"]),
                 "course_name": row["course_name"],
@@ -289,7 +493,13 @@ def build_teacher_page_context(conn, teacher_id: int, page_context: dict[str, An
                 "schedule_info": _summarize_text(row["schedule_info"] or "", limit=500),
                 "recent_assignments": [dict(item) for item in assignments],
                 "recent_materials": [dict(item) for item in materials],
+                "session_count": len(sessions),
+                "sessions_overview": [_session_payload(item) for item in sessions[:24]],
             }
+            if selected_session:
+                server_context["selected_session"] = selected_session
+            if lesson_document_target:
+                server_context["lesson_document_target"] = lesson_document_target
 
     context["server_context"] = server_context
     return context
@@ -304,7 +514,13 @@ def create_agent_task(conn, user: dict[str, Any], payload: dict[str, Any]) -> di
     instruction = _clean_text(payload.get("instruction"), max_chars=MAX_INSTRUCTION_CHARS)
     validate_business_task(instruction)
 
-    context_snapshot = build_teacher_page_context(conn, teacher_id, payload.get("page_context") or {})
+    context_snapshot = build_teacher_page_context(
+        conn,
+        teacher_id,
+        payload.get("page_context") or {},
+        task_type=task_type,
+        instruction=instruction,
+    )
     title = _clean_text(payload.get("title"), max_chars=120)
     if not title:
         title = _summarize_text(instruction, limit=36) or TASK_TYPE_DEFINITIONS[task_type]["label"]
@@ -639,6 +855,89 @@ def update_task_runtime_snapshot(conn, task_id: int, runtime_task: dict[str, Any
     conn.commit()
 
 
+def _extract_runtime_text_outputs(runtime_task: dict[str, Any]) -> list[dict[str, str]]:
+    outputs: list[dict[str, str]] = []
+    seen: set[str] = set()
+    preferred_keys = {
+        "result",
+        "result_summary",
+        "summary",
+        "output",
+        "response",
+        "response_text",
+        "final",
+        "final_answer",
+        "assistant_message",
+        "last_message",
+        "message",
+        "error",
+    }
+
+    def add(path: str, value: Any) -> None:
+        text = _clean_text(value, max_chars=6000)
+        if not text or text in seen:
+            return
+        seen.add(text)
+        outputs.append({"path": path, "text": text})
+
+    def visit(value: Any, path: str, depth: int) -> None:
+        if len(outputs) >= MAX_RUNTIME_TEXT_OUTPUTS or depth > 5:
+            return
+        if isinstance(value, str):
+            key = path.rsplit(".", 1)[-1].lower()
+            if key in preferred_keys or len(value.strip()) >= 40:
+                add(path, value)
+            return
+        if isinstance(value, dict):
+            ordered_items = sorted(
+                value.items(),
+                key=lambda item: 0 if str(item[0]).lower() in preferred_keys else 1,
+            )
+            for key, child in ordered_items:
+                safe_key = _clean_text(key, max_chars=48) or "item"
+                visit(child, f"{path}.{safe_key}" if path else safe_key, depth + 1)
+                if len(outputs) >= MAX_RUNTIME_TEXT_OUTPUTS:
+                    break
+            return
+        if isinstance(value, list):
+            start_index = max(0, len(value) - 16)
+            for index, child in enumerate(value[start_index:], start=start_index):
+                visit(child, f"{path}[{index}]", depth + 1)
+                if len(outputs) >= MAX_RUNTIME_TEXT_OUTPUTS:
+                    break
+
+    visit(runtime_task, "", 0)
+    return outputs
+
+
+def runtime_result_summary(runtime_task: dict[str, Any]) -> str:
+    for key in ("result_summary", "summary", "final_answer", "output", "response_text", "error"):
+        value = _clean_text(runtime_task.get(key), max_chars=1800)
+        if value:
+            return value
+    outputs = _extract_runtime_text_outputs(runtime_task)
+    if outputs:
+        return _summarize_text(outputs[0]["text"], limit=480)
+    status = _clean_text(runtime_task.get("status"), max_chars=40) or "unknown"
+    if status == "completed":
+        return "DeepSeek-TUI 已标记任务完成，但没有返回明确的业务结论或产物。请查看执行记录；如果没有生成结果，需要调整任务要求后重试。"
+    if status == "failed":
+        return "DeepSeek-TUI 已标记任务失败，但没有返回具体错误。请查看运行时状态或稍后重试。"
+    return f"DeepSeek-TUI 任务结束，运行时状态：{status}。"
+
+
+def _final_event_message(status: str, *, result_summary: str, error_message: str) -> str:
+    if status == TASK_STATUS_COMPLETED:
+        summary = _summarize_text(result_summary, limit=180)
+        return f"任务成功完成：{summary}" if summary else "任务成功完成，但未返回可展示的详细结论。"
+    if status == TASK_STATUS_FAILED:
+        reason = _summarize_text(error_message or result_summary, limit=180)
+        return f"任务失败：{reason}" if reason else "任务失败，未返回具体原因。"
+    if status == TASK_STATUS_CANCELED:
+        return "任务已取消。"
+    return TASK_STATUS_LABELS.get(status, "任务结束")
+
+
 def finish_agent_task(
     conn,
     task_id: int,
@@ -671,8 +970,12 @@ def finish_agent_task(
         conn,
         task_id,
         safe_status,
-        TASK_STATUS_LABELS.get(safe_status, "任务结束"),
-        {"error": error_message} if error_message else {},
+        _final_event_message(safe_status, result_summary=result_summary, error_message=error_message),
+        {
+            "status": safe_status,
+            "summary": _clean_text(result_summary, max_chars=1200),
+            "error": _clean_text(error_message, max_chars=1200),
+        },
         commit=False,
     )
     conn.commit()
@@ -747,11 +1050,14 @@ def compact_runtime_detail(runtime_task: dict[str, Any]) -> dict[str, Any]:
         "thread_id": runtime_task.get("thread_id"),
         "turn_id": runtime_task.get("turn_id"),
         "result_summary": runtime_task.get("result_summary"),
+        "summary": runtime_task.get("summary"),
         "error": runtime_task.get("error"),
         "duration_ms": runtime_task.get("duration_ms"),
+        "text_outputs": _extract_runtime_text_outputs(runtime_task),
         "timeline": runtime_task.get("timeline") or [],
         "tool_calls": runtime_task.get("tool_calls") or [],
         "artifacts": runtime_task.get("artifacts") or [],
+        "raw_keys": sorted(str(key) for key in runtime_task.keys()),
     }
     encoded = json.dumps(detail, ensure_ascii=False)
     if len(encoded) > MAX_RESULT_DETAIL_CHARS:
