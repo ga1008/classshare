@@ -162,6 +162,24 @@ function renderStats(snapshot) {
     `;
 }
 
+function dispatchActivitySidebarCounts(snapshot) {
+    const summary = snapshot?.summary || {};
+    const activeActivities = Number(summary.active_activity_count || 0);
+    const activeSignals = Number(summary.active_signal_count || 0);
+    const openQuestions = Number(summary.open_question_count || 0);
+    const count = Math.max(0, activeActivities + activeSignals + openQuestions);
+    const notes = [];
+    if (activeActivities) notes.push(`${activeActivities} 个进行中`);
+    if (activeSignals) notes.push(`${activeSignals} 个信号`);
+    if (openQuestions) notes.push(`${openQuestions} 个问题`);
+    window.dispatchEvent(new CustomEvent('classroom:activity-counts', {
+        detail: {
+            counts: { interaction: count },
+            notes: { interaction: notes.length ? notes.join(' / ') : '暂无待处理' },
+        },
+    }));
+}
+
 function renderCreateToggle(snapshot, state) {
     if (!snapshot.can_create) return '';
     if (state.createOpen) return '';
@@ -602,6 +620,7 @@ export function initClassroomInteractions(config = {}) {
         if (!content || !state.snapshot) return;
         content.innerHTML = renderSnapshot(state.snapshot, state);
         content.hidden = false;
+        dispatchActivitySidebarCounts(state.snapshot);
         window.requestAnimationFrame(() => keepActiveFeatureTabVisible(root));
     };
 

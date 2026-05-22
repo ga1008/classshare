@@ -35,6 +35,15 @@ function refs() {
     };
 }
 
+function dispatchResourceCount() {
+    window.dispatchEvent(new CustomEvent('classroom:activity-counts', {
+        detail: {
+            counts: { resources: state.files.length },
+            notes: { resources: state.files.length ? `${state.files.length} 项共享` : '暂无共享资源' },
+        },
+    }));
+}
+
 function isTeacherView() {
     return config?.userInfo?.role === 'teacher';
 }
@@ -200,6 +209,7 @@ function buildFileCard(file) {
 function renderFiles() {
     const { list } = refs();
     if (!list) return;
+    dispatchResourceCount();
 
     if (!state.files.length) {
         list.innerHTML = `

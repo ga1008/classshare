@@ -96,6 +96,25 @@ function renderStats(snapshot) {
     `;
 }
 
+function dispatchActivitySidebarCounts(snapshot) {
+    const summary = snapshot?.summary || {};
+    const role = snapshot?.role;
+    const groupCount = role === 'teacher'
+        ? Number(summary.group_count || 0)
+        : Number(summary.my_group_count || 0);
+    const pendingPeerReviewCount = Number(summary.pending_peer_review_count || 0);
+    const count = Math.max(0, groupCount + pendingPeerReviewCount);
+    const notes = [];
+    if (groupCount) notes.push(`${groupCount} 个小组`);
+    if (pendingPeerReviewCount) notes.push(`${pendingPeerReviewCount} 个待互评`);
+    window.dispatchEvent(new CustomEvent('classroom:activity-counts', {
+        detail: {
+            counts: { collaboration: count },
+            notes: { collaboration: notes.length ? notes.join(' / ') : '暂无协作待办' },
+        },
+    }));
+}
+
 function renderGroupCard(group, selectedGroup) {
     const isSelected = selectedGroup && String(selectedGroup.id) === String(group.id);
     const title = group.assignment_title || '自主学习小组';
@@ -485,6 +504,7 @@ function render(root, state) {
     const selectedGroup = selectGroup(state.snapshot, state.selectedGroupId);
     state.selectedGroupId = selectedGroup ? String(selectedGroup.id) : '';
     content.hidden = false;
+    dispatchActivitySidebarCounts(state.snapshot);
     content.innerHTML = `
         ${renderStats(state.snapshot)}
         ${renderCreateForm(state.snapshot, state.createOpen)}

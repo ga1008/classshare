@@ -50,11 +50,8 @@ def build_classroom_page_context(
         "nav": [
             {"target": "timeline-panel", "label": "进度区", "note": "课程时间轴"},
             {"target": "assignment-panel", "label": "任务区", "note": "作业与考试"},
-            {"target": "interaction-panel", "label": "互动区", "note": "投票与求助"},
-            {"target": "collaboration-panel", "label": "协作区", "note": "小组与互评"},
             {"target": "materials-panel", "label": "材料区", "note": "课程文档"},
-            {"target": "resources-panel", "label": "资源区", "note": "共享文件"},
-            {"target": "discussion-room", "label": "讨论区", "note": "实时互动"},
+            {"target": "classroom-activity-sidebar", "label": "活动栏", "note": "互动与讨论"},
         ],
     }
 
@@ -102,6 +99,14 @@ def build_classroom_page_context(
             if role == "teacher"
             else ["课堂共享", "即下即用", f"共 {resource_count} 项资源"]
         ),
+        "activity_sidebar": {
+            "initial_counts": {
+                "interaction": 0,
+                "discussion": 0,
+                "collaboration": 0,
+                "resources": resource_count,
+            }
+        },
         "discussion": discussion,
     }
 

@@ -229,13 +229,6 @@
                     <small>{% if user_info.role == 'teacher' %}布置与批改{% else %}提交与查看{% endif %}</small>
                 </span>
             </a>
-            <a href="#interaction-panel" class="app-topbar-action app-topbar-action--tone-teal classroom-topbar-section-link" data-workspace-nav title="跳转到互动区" aria-label="跳转到互动区">
-                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('gauge') }}</span>
-                <span class="app-topbar-action__text">
-                    <strong>互动</strong>
-                    <small>投票与求助</small>
-                </span>
-            </a>
             <a href="#materials-panel" class="app-topbar-action app-topbar-action--tone-blue classroom-topbar-section-link" data-workspace-nav title="跳转到材料区" aria-label="跳转到材料区">
                 <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('book') }}</span>
                 <span class="app-topbar-action__text">
@@ -243,12 +236,13 @@
                     <small>课程文档</small>
                 </span>
             </a>
-            <a href="#discussion-room" class="app-topbar-action app-topbar-action--tone-cyan classroom-topbar-section-link" data-workspace-nav title="跳转到讨论区" aria-label="跳转到讨论区">
+            <a href="#classroom-activity-sidebar" class="app-topbar-action app-topbar-action--tone-cyan classroom-topbar-section-link classroom-topbar-activity" data-workspace-nav title="打开课堂活动栏" aria-label="打开课堂活动栏">
                 <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('message') }}</span>
                 <span class="app-topbar-action__text">
-                    <strong>讨论</strong>
-                    <small>研讨与私信</small>
+                    <strong>活动</strong>
+                    <small>互动讨论</small>
                 </span>
+                <span class="app-topbar-action__count classroom-topbar-activity-count" data-classroom-activity-total>0</span>
             </a>
             {% if has_learning_entry %}
             <button type="button" class="app-topbar-action app-topbar-action--tone-teal classroom-topbar-section-link classroom-topbar-learning" data-learning-modal-open title="{% if user_info.role == 'teacher' %}查看班级成员{% else %}查看修为{% endif %}" aria-label="{% if user_info.role == 'teacher' %}查看班级成员{% else %}查看修为{% endif %}" aria-haspopup="dialog" aria-controls="learning-progress-modal">
@@ -258,14 +252,6 @@
                     <small>{% if user_info.role == 'teacher' %}进度与关注{% else %}进度与道印{% endif %}</small>
                 </span>
             </button>
-            {% else %}
-            <a href="#resources-panel" class="app-topbar-action app-topbar-action--tone-teal classroom-topbar-section-link" data-workspace-nav title="跳转到资源区" aria-label="跳转到资源区">
-                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('folder-up') }}</span>
-                <span class="app-topbar-action__text">
-                    <strong>资源</strong>
-                    <small>共享文件</small>
-                </span>
-            </a>
             {% endif %}
             {% if has_learning_entry %}
             <details class="classroom-topbar-menu classroom-topbar-section-menu">
@@ -278,14 +264,14 @@
                 </summary>
                 <div class="classroom-topbar-menu__panel" role="menu" aria-label="更多课堂入口">
                     <div class="classroom-topbar-menu__label">课堂入口</div>
-                    <a href="#resources-panel" class="classroom-topbar-menu__item" data-workspace-nav role="menuitem">
+                    <button type="button" class="classroom-topbar-menu__item" data-classroom-activity-open="resources" role="menuitem">
                         {{ app_topbar_icon('folder-up') }}
                         <span><strong>资源区</strong><small>共享文件与附件</small></span>
-                    </a>
-                    <a href="#collaboration-panel" class="classroom-topbar-menu__item" data-workspace-nav role="menuitem">
+                    </button>
+                    <button type="button" class="classroom-topbar-menu__item" data-classroom-activity-open="collaboration" role="menuitem">
                         {{ app_topbar_icon('users') }}
                         <span><strong>协作区</strong><small>小组、文件、提交与互评</small></span>
-                    </a>
+                    </button>
                     <button type="button" class="classroom-topbar-menu__item" data-course-popover-target="stats" data-popover-title="统计信息" data-popover-kicker="课堂概览" aria-haspopup="dialog" aria-controls="course-info-popover" aria-expanded="false" role="menuitem">
                         {{ app_topbar_icon('gauge') }}
                         <span><strong>课堂概览</strong><small>人数、任务与进度</small></span>
@@ -1151,59 +1137,7 @@
         </section>
         </div>
 
-        <div class="workspace-flow workspace-flow--engagement" aria-label="课堂互动与协作">
-        <section class="workspace-panel interaction-panel" id="interaction-panel" data-workspace-section data-interaction-root data-class-offering-id="{{ classroom.id }}" aria-live="polite">
-            <div class="section-header interaction-panel__header">
-                <div class="section-heading">
-                    <span class="section-eyebrow">Live Pulse</span>
-                    <h2 class="section-title">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M8 17V9"/><path d="M12 19V7"/><path d="M16 15v-4"/><path d="M20 17V9"/></svg>
-                        课堂互动
-                    </h2>
-                    <p class="section-subtitle">{% if user_info.role == 'teacher' %}发起投票、随堂测和匿名提问，实时观察学生举手与求助状态。{% else %}参与投票与随堂测，匿名提问，或向老师发出举手/求助状态。{% endif %}</p>
-                </div>
-                <div class="header-actions interaction-actions">
-                    <button type="button" class="btn btn-ghost btn-sm" data-interaction-refresh>刷新</button>
-                    {% if user_info.role == 'teacher' %}
-                    <button type="button" class="btn btn-primary btn-sm" data-interaction-create-open>新建互动</button>
-                    {% endif %}
-                </div>
-            </div>
-            <div class="interaction-shell">
-                <div class="interaction-loading" data-interaction-loading>
-                    <span class="interaction-loading__dot"></span>
-                    正在同步课堂互动...
-                </div>
-                <div class="interaction-content" data-interaction-content hidden></div>
-            </div>
-        </section>
-
-        <section class="workspace-panel collaboration-panel" id="collaboration-panel" data-workspace-section data-collaboration-root data-class-offering-id="{{ classroom.id }}" aria-live="polite">
-            <div class="section-header collaboration-panel__header">
-                <div class="section-heading">
-                    <span class="section-eyebrow">Team Studio</span>
-                    <h2 class="section-title">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M2 21v-2a4 4 0 0 1 3-3.87"/><path d="M8 3.13a4 4 0 0 0 0 7.75"/></svg>
-                        小组协作
-                    </h2>
-                    <p class="section-subtitle">围绕任务组队、沉淀组内文件、由组长提交成果，并完成同伴互评。</p>
-                </div>
-                <div class="header-actions collaboration-actions">
-                    <button type="button" class="btn btn-outline btn-sm" data-collab-refresh>刷新</button>
-                    <button type="button" class="btn btn-primary btn-sm" data-collab-create-open>{% if user_info.role == 'teacher' %}创建小组{% else %}发起小组{% endif %}</button>
-                </div>
-            </div>
-            <div class="collaboration-shell">
-                <div class="collaboration-loading" data-collab-loading>
-                    <span class="collaboration-loading__dot"></span>
-                    正在整理协作区...
-                </div>
-                <div class="collaboration-content" data-collab-content hidden></div>
-            </div>
-        </section>
-        </div>
-
-        <div class="workspace-flow workspace-flow--library" aria-label="课堂资料与共享资源">
+        <div class="workspace-flow workspace-flow--library" aria-label="课堂课程材料">
         <section class="workspace-panel" id="materials-panel" data-workspace-section>
             <div class="section-header">
                 <div class="section-heading">
@@ -1255,53 +1189,6 @@
             </div>
         </section>
 
-        <section class="workspace-panel resource-panel" id="resources-panel" data-workspace-section>
-            <div class="section-header">
-                <div class="section-heading">
-                    <span class="section-eyebrow">{{ sections.resources.eyebrow }}</span>
-                    <h2 class="section-title">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                        {{ sections.resources.title }}
-                    </h2>
-                    <p class="section-subtitle">{{ sections.resources.subtitle }}</p>
-                </div>
-                <div class="header-actions">
-                    <button type="button" class="btn btn-ghost btn-sm" onclick="window.fileApp.refreshFiles()">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                        刷新
-                    </button>
-                </div>
-            </div>
-            <div class="section-chip-row">
-                {% for tag in classroom_page.resource_tags %}
-                <span class="section-chip">{{ tag }}</span>
-                {% endfor %}
-            </div>
-
-            {% if user_info.role == 'teacher' %}
-            <div class="upload-dropzone upload-dropzone-rich mb-lg" id="uploadZone">
-                <input type="file" id="fileInput" class="hidden" multiple>
-                <div class="upload-dropzone-content">
-                    <div class="upload-illustration">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                    </div>
-                    <div class="upload-copy">
-                        <h4>拖拽文件到此处，或直接点击选择文件</h4>
-                        <p class="text-muted text-sm">适合分享软件安装包、实验资料、课堂课件与示例源码。</p>
-                    </div>
-                    <button type="button" class="btn btn-primary" onclick="document.getElementById('fileInput').click()">选择文件</button>
-                </div>
-            </div>
-            <div id="uploadProgressArea" class="upload-progress-stack mb-lg hidden"></div>
-            {% endif %}
-
-            <div id="file-list-container" class="space-y-sm">
-                <div class="empty-state">
-                    <div class="spinner"></div>
-                    <p class="text-muted mt-2">正在加载课堂资源...</p>
-                </div>
-            </div>
-        </section>
         </div>
     </div>
 
@@ -1368,7 +1255,86 @@
         </div>
     </div>
 
-    <aside class="workspace-sidebar">
+    {% set activity_counts = classroom_page.activity_sidebar.initial_counts %}
+    <aside class="workspace-sidebar classroom-activity-sidebar" id="classroom-activity-sidebar" data-workspace-section data-classroom-activity-shell aria-label="课堂活动侧边栏">
+        <div class="classroom-activity-dock">
+            <header class="classroom-activity-header">
+                <div>
+                    <span class="section-eyebrow">Class Pulse</span>
+                    <h2>课堂活动</h2>
+                    <p>互动、研讨、协作与共享资源都收纳在这里，主区域只保留上课最需要的任务和材料。</p>
+                </div>
+                <span class="classroom-activity-total" aria-label="当前活动数量">
+                    <strong data-classroom-activity-total>0</strong>
+                    <small>动态</small>
+                </span>
+            </header>
+
+            <div class="classroom-activity-tabs" role="tablist" aria-label="课堂活动入口">
+                <button type="button" class="classroom-activity-tab is-active" id="classroom-activity-tab-interaction" data-classroom-activity-tab="interaction" data-classroom-activity-target="interaction-panel" role="tab" aria-selected="true" aria-controls="classroom-activity-panel-interaction">
+                    <span class="classroom-activity-tab__icon" aria-hidden="true">{{ app_topbar_icon('gauge') }}</span>
+                    <span class="classroom-activity-tab__copy">
+                        <strong>互动</strong>
+                        <small data-classroom-activity-note="interaction">投票/求助</small>
+                    </span>
+                    <em data-classroom-activity-count="interaction">{{ activity_counts.interaction }}</em>
+                </button>
+                <button type="button" class="classroom-activity-tab" id="classroom-activity-tab-discussion" data-classroom-activity-tab="discussion" data-classroom-activity-target="discussion-room" role="tab" aria-selected="false" aria-controls="classroom-activity-panel-discussion">
+                    <span class="classroom-activity-tab__icon" aria-hidden="true">{{ app_topbar_icon('message') }}</span>
+                    <span class="classroom-activity-tab__copy">
+                        <strong>研讨</strong>
+                        <small data-classroom-activity-note="discussion">研讨/私信</small>
+                    </span>
+                    <em data-classroom-activity-count="discussion">{{ activity_counts.discussion }}</em>
+                </button>
+                <button type="button" class="classroom-activity-tab" id="classroom-activity-tab-collaboration" data-classroom-activity-tab="collaboration" data-classroom-activity-target="collaboration-panel" role="tab" aria-selected="false" aria-controls="classroom-activity-panel-collaboration">
+                    <span class="classroom-activity-tab__icon" aria-hidden="true">{{ app_topbar_icon('users') }}</span>
+                    <span class="classroom-activity-tab__copy">
+                        <strong>协作</strong>
+                        <small data-classroom-activity-note="collaboration">小组/互评</small>
+                    </span>
+                    <em data-classroom-activity-count="collaboration">{{ activity_counts.collaboration }}</em>
+                </button>
+                <button type="button" class="classroom-activity-tab" id="classroom-activity-tab-resources" data-classroom-activity-tab="resources" data-classroom-activity-target="resources-panel" role="tab" aria-selected="false" aria-controls="classroom-activity-panel-resources">
+                    <span class="classroom-activity-tab__icon" aria-hidden="true">{{ app_topbar_icon('folder-up') }}</span>
+                    <span class="classroom-activity-tab__copy">
+                        <strong>资源</strong>
+                        <small data-classroom-activity-note="resources">共享文件</small>
+                    </span>
+                    <em data-classroom-activity-count="resources">{{ activity_counts.resources }}</em>
+                </button>
+            </div>
+
+            <div class="classroom-activity-panels">
+                <div class="classroom-activity-panel is-active" id="classroom-activity-panel-interaction" data-classroom-activity-panel="interaction" role="tabpanel" aria-labelledby="classroom-activity-tab-interaction">
+                    <section class="workspace-panel interaction-panel" id="interaction-panel" data-workspace-section data-interaction-root data-class-offering-id="{{ classroom.id }}" aria-live="polite">
+                        <div class="section-header interaction-panel__header">
+                            <div class="section-heading">
+                                <span class="section-eyebrow">Live Pulse</span>
+                                <h2 class="section-title">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M8 17V9"/><path d="M12 19V7"/><path d="M16 15v-4"/><path d="M20 17V9"/></svg>
+                                    课堂互动
+                                </h2>
+                                <p class="section-subtitle">{% if user_info.role == 'teacher' %}发起投票、随堂测和匿名提问，实时观察学生举手与求助状态。{% else %}参与投票与随堂测，匿名提问，或向老师发出举手/求助状态。{% endif %}</p>
+                            </div>
+                            <div class="header-actions interaction-actions">
+                                <button type="button" class="btn btn-ghost btn-sm" data-interaction-refresh>刷新</button>
+                                {% if user_info.role == 'teacher' %}
+                                <button type="button" class="btn btn-primary btn-sm" data-interaction-create-open>新建互动</button>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="interaction-shell">
+                            <div class="interaction-loading" data-interaction-loading>
+                                <span class="interaction-loading__dot"></span>
+                                正在同步课堂互动...
+                            </div>
+                            <div class="interaction-content" data-interaction-content hidden></div>
+                        </div>
+                    </section>
+                </div>
+
+                <div class="classroom-activity-panel" id="classroom-activity-panel-discussion" data-classroom-activity-panel="discussion" role="tabpanel" aria-labelledby="classroom-activity-tab-discussion" hidden>
         <section class="discussion-room is-broadcast-mode" id="discussion-room" data-workspace-section>
             <div class="discussion-room-header">
                 <div class="discussion-room-summary-card">
@@ -1562,6 +1528,85 @@
                 </form>
             </div>
         </section>
+                </div>
+
+                <div class="classroom-activity-panel" id="classroom-activity-panel-collaboration" data-classroom-activity-panel="collaboration" role="tabpanel" aria-labelledby="classroom-activity-tab-collaboration" hidden>
+                    <section class="workspace-panel collaboration-panel" id="collaboration-panel" data-workspace-section data-collaboration-root data-class-offering-id="{{ classroom.id }}" aria-live="polite">
+                        <div class="section-header collaboration-panel__header">
+                            <div class="section-heading">
+                                <span class="section-eyebrow">Team Studio</span>
+                                <h2 class="section-title">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M2 21v-2a4 4 0 0 1 3-3.87"/><path d="M8 3.13a4 4 0 0 0 0 7.75"/></svg>
+                                    小组协作
+                                </h2>
+                                <p class="section-subtitle">围绕任务组队、沉淀组内文件、由组长提交成果，并完成同伴互评。</p>
+                            </div>
+                            <div class="header-actions collaboration-actions">
+                                <button type="button" class="btn btn-outline btn-sm" data-collab-refresh>刷新</button>
+                                <button type="button" class="btn btn-primary btn-sm" data-collab-create-open>{% if user_info.role == 'teacher' %}创建小组{% else %}发起小组{% endif %}</button>
+                            </div>
+                        </div>
+                        <div class="collaboration-shell">
+                            <div class="collaboration-loading" data-collab-loading>
+                                <span class="collaboration-loading__dot"></span>
+                                正在整理协作区...
+                            </div>
+                            <div class="collaboration-content" data-collab-content hidden></div>
+                        </div>
+                    </section>
+                </div>
+
+                <div class="classroom-activity-panel" id="classroom-activity-panel-resources" data-classroom-activity-panel="resources" role="tabpanel" aria-labelledby="classroom-activity-tab-resources" hidden>
+                    <section class="workspace-panel resource-panel" id="resources-panel" data-workspace-section>
+                        <div class="section-header">
+                            <div class="section-heading">
+                                <span class="section-eyebrow">{{ sections.resources.eyebrow }}</span>
+                                <h2 class="section-title">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                                    {{ sections.resources.title }}
+                                </h2>
+                                <p class="section-subtitle">{{ sections.resources.subtitle }}</p>
+                            </div>
+                            <div class="header-actions">
+                                <button type="button" class="btn btn-ghost btn-sm" onclick="window.fileApp.refreshFiles()">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                                    刷新
+                                </button>
+                            </div>
+                        </div>
+                        <div class="section-chip-row">
+                            {% for tag in classroom_page.resource_tags %}
+                            <span class="section-chip">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+
+                        {% if user_info.role == 'teacher' %}
+                        <div class="upload-dropzone upload-dropzone-rich mb-lg" id="uploadZone">
+                            <input type="file" id="fileInput" class="hidden" multiple>
+                            <div class="upload-dropzone-content">
+                                <div class="upload-illustration">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                </div>
+                                <div class="upload-copy">
+                                    <h4>拖拽文件到此处，或直接点击选择文件</h4>
+                                    <p class="text-muted text-sm">适合分享软件安装包、实验资料、课堂课件与示例源码。</p>
+                                </div>
+                                <button type="button" class="btn btn-primary" onclick="document.getElementById('fileInput').click()">选择文件</button>
+                            </div>
+                        </div>
+                        <div id="uploadProgressArea" class="upload-progress-stack mb-lg hidden"></div>
+                        {% endif %}
+
+                        <div id="file-list-container" class="space-y-sm">
+                            <div class="empty-state">
+                                <div class="spinner"></div>
+                                <p class="text-muted mt-2">正在加载课堂资源...</p>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
     </aside>
     </div>
 </main>

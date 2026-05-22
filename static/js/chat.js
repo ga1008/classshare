@@ -305,6 +305,13 @@ export class ClassroomChat {
     }
 
     updateOnlineCount(participants) {
+        const onlineCount = Array.isArray(participants) ? participants.length : 0;
+        window.dispatchEvent(new CustomEvent('classroom:activity-counts', {
+            detail: {
+                counts: { discussion: onlineCount },
+                notes: { discussion: onlineCount ? `${onlineCount} 人在线` : '等待连接' },
+            },
+        }));
         if (!this.onlineCountEl) {
             return;
         }
@@ -396,6 +403,11 @@ export class ClassroomChat {
         };
 
         if (window.innerWidth <= DISCUSSION_ROOM_DESKTOP_BREAKPOINT) {
+            resetLayout();
+            return;
+        }
+
+        if (this.discussionRoom.offsetParent === null) {
             resetLayout();
             return;
         }

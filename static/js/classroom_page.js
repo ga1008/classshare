@@ -2262,10 +2262,144 @@ function initClassroomTopbarMenus() {
     });
 }
 
+function initClassroomActivitySidebar() {
+    const shell = document.querySelector('[data-classroom-activity-shell]');
+    if (!shell) return;
+
+    const tabs = Array.from(shell.querySelectorAll('[data-classroom-activity-tab]'));
+    const panels = new Map(
+        Array.from(shell.querySelectorAll('[data-classroom-activity-panel]'))
+            .map((panel) => [panel.dataset.classroomActivityPanel, panel]),
+    );
+    const tabByKey = new Map(tabs.map((tab) => [tab.dataset.classroomActivityTab, tab]));
+    const sectionToKey = new Map(
+        tabs.map((tab) => [tab.dataset.classroomActivityTarget, tab.dataset.classroomActivityTab]),
+    );
+    const liveCountKeys = new Set(['interaction', 'discussion', 'collaboration']);
+    const counts = new Map();
+
+    const toCount = (value) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || numeric < 0) return 0;
+        return Math.round(numeric);
+    };
+
+    const countEls = Array.from(shell.querySelectorAll('[data-classroom-activity-count]'));
+    countEls.forEach((element) => {
+        counts.set(element.dataset.classroomActivityCount, toCount(element.textContent));
+    });
+
+    const setTotal = () => {
+        const liveTotal = Array.from(liveCountKeys).reduce((total, key) => total + toCount(counts.get(key)), 0);
+        document.querySelectorAll('[data-classroom-activity-total]').forEach((element) => {
+            element.textContent = String(liveTotal);
+            element.toggleAttribute('data-empty', liveTotal === 0);
+        });
+    };
+
+    const setCount = (key, value, note = '') => {
+        if (!key) return;
+        const nextCount = toCount(value);
+        counts.set(key, nextCount);
+        document.querySelectorAll(`[data-classroom-activity-count="${key}"]`).forEach((element) => {
+            element.textContent = String(nextCount);
+            element.toggleAttribute('data-empty', nextCount === 0);
+        });
+        if (note) {
+            document.querySelectorAll(`[data-classroom-activity-note="${key}"]`).forEach((element) => {
+                element.textContent = note;
+            });
+        }
+        setTotal();
+    };
+
+    const resolveKeyFromHash = (hashText) => {
+        const targetId = String(hashText || '').replace(/^#/, '').trim();
+        if (!targetId) return '';
+        if (panels.has(targetId)) return targetId;
+        return sectionToKey.get(targetId) || '';
+    };
+
+    const openActivity = (key, options = {}) => {
+        const normalizedKey = panels.has(key) ? key : 'interaction';
+        tabs.forEach((tab) => {
+            const isActive = tab.dataset.classroomActivityTab === normalizedKey;
+            tab.classList.toggle('is-active', isActive);
+            tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        });
+        panels.forEach((panel, panelKey) => {
+            const isActive = panelKey === normalizedKey;
+            panel.hidden = !isActive;
+            panel.classList.toggle('is-active', isActive);
+        });
+
+        const activeTab = tabByKey.get(normalizedKey);
+        const targetId = activeTab?.dataset.classroomActivityTarget || '';
+        if (options.updateHash !== false && targetId && window.history?.replaceState) {
+            window.history.replaceState(null, '', `#${targetId}`);
+        }
+
+        if (options.scroll) {
+            shell.scrollIntoView({
+                block: 'start',
+                behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+            });
+        }
+
+        window.requestAnimationFrame(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
+    };
+
+    tabs.forEach((tab) => {
+        tab.addEventListener('click', () => {
+            openActivity(tab.dataset.classroomActivityTab, {
+                updateHash: true,
+                scroll: window.innerWidth <= 1180,
+            });
+        });
+    });
+
+    document.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-classroom-activity-open]');
+        if (!trigger) return;
+        openActivity(trigger.dataset.classroomActivityOpen, {
+            updateHash: true,
+            scroll: true,
+        });
+    });
+
+    window.addEventListener('hashchange', () => {
+        const key = resolveKeyFromHash(window.location.hash);
+        if (key) {
+            openActivity(key, { updateHash: false, scroll: true });
+        }
+    });
+
+    window.addEventListener('classroom:activity-counts', (event) => {
+        const detail = event.detail || {};
+        const nextCounts = detail.counts && typeof detail.counts === 'object' ? detail.counts : detail;
+        ['interaction', 'discussion', 'collaboration', 'resources'].forEach((key) => {
+            if (Object.prototype.hasOwnProperty.call(nextCounts, key)) {
+                setCount(key, nextCounts[key], detail.notes?.[key] || detail[`${key}Note`] || '');
+            }
+        });
+    });
+
+    const initialKey = resolveKeyFromHash(window.location.hash);
+    if (initialKey) {
+        openActivity(initialKey, { updateHash: false, scroll: false });
+    } else {
+        openActivity('interaction', { updateHash: false, scroll: false });
+    }
+    setTotal();
+}
+
 export function initClassroomPage() {
     initCoursePopover();
     initClassroomTopbarMenus();
     initWorkspaceNav();
+    initClassroomActivitySidebar();
     initTeachingTimeline();
     initAssignmentClocks();
     personalizeClassroomCopy();

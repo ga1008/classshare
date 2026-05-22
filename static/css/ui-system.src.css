@@ -34439,3 +34439,452 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
         grid-template-columns: 1fr;
     }
 }
+
+/* Classroom activity sidebar refresh */
+.classroom-page {
+    --classroom-activity-width: clamp(360px, 28vw, 430px);
+    --classroom-activity-top: 84px;
+}
+
+.classroom-page .workspace-columns {
+    grid-template-columns: minmax(0, 1fr) minmax(340px, var(--classroom-activity-width));
+}
+
+.classroom-page .workspace-flow--library {
+    grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.classroom-page .workspace-flow--library #materials-panel {
+    width: 100%;
+}
+
+.classroom-page .classroom-topbar-activity {
+    position: relative;
+}
+
+.classroom-page .classroom-topbar-activity-count {
+    position: absolute;
+    top: 0.42rem;
+    right: 0.44rem;
+    min-width: 1.35rem;
+    height: 1.35rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.36rem;
+    border-radius: 999px;
+    background: #0f172a;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 820;
+    line-height: 1;
+    box-shadow: 0 8px 20px -14px rgba(15, 23, 42, 0.68);
+}
+
+.classroom-page .classroom-topbar-activity-count[data-empty] {
+    background: rgba(100, 116, 139, 0.42);
+}
+
+.classroom-page .classroom-activity-sidebar {
+    position: sticky;
+    top: var(--classroom-activity-top);
+    display: block;
+    min-width: 0;
+    align-self: start;
+    z-index: 4;
+}
+
+.classroom-page .classroom-activity-sidebar.is-sticky-active {
+    top: var(--classroom-activity-top);
+    height: auto;
+}
+
+.classroom-page .classroom-activity-dock {
+    display: grid;
+    gap: 0.78rem;
+    min-width: 0;
+    max-height: calc(100vh - var(--classroom-activity-top) - 18px);
+}
+
+.classroom-page .classroom-activity-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.9rem;
+    padding: 0.95rem 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 16px 36px -32px rgba(15, 23, 42, 0.36);
+}
+
+.classroom-page .classroom-activity-header h2 {
+    margin: 0.08rem 0 0.22rem;
+    color: var(--text-primary);
+    font-size: 1.04rem;
+    line-height: 1.2;
+    letter-spacing: 0;
+}
+
+.classroom-page .classroom-activity-header p {
+    max-width: 26rem;
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.83rem;
+    line-height: 1.5;
+}
+
+.classroom-page .classroom-activity-total {
+    flex: 0 0 auto;
+    min-width: 3.25rem;
+    display: grid;
+    justify-items: center;
+    gap: 0.08rem;
+    padding: 0.54rem 0.62rem;
+    border: 1px solid rgba(14, 165, 233, 0.2);
+    border-radius: 8px;
+    background: rgba(240, 249, 255, 0.78);
+    color: #0369a1;
+}
+
+.classroom-page.role-teacher .classroom-activity-total {
+    border-color: rgba(20, 184, 166, 0.22);
+    background: rgba(240, 253, 250, 0.82);
+    color: #0f766e;
+}
+
+.classroom-page .classroom-activity-total strong {
+    font-size: 1.24rem;
+    line-height: 1;
+}
+
+.classroom-page .classroom-activity-total small {
+    color: currentColor;
+    font-size: 0.72rem;
+    opacity: 0.72;
+}
+
+.classroom-page .classroom-activity-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
+}
+
+.classroom-page .classroom-activity-tab {
+    min-width: 0;
+    min-height: 4.4rem;
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.52rem;
+    padding: 0.66rem 0.72rem;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--text-secondary);
+    cursor: pointer;
+    text-align: left;
+    box-shadow: 0 12px 28px -28px rgba(15, 23, 42, 0.36);
+    transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, color 160ms ease;
+}
+
+.classroom-page .classroom-activity-tab:hover,
+.classroom-page .classroom-activity-tab:focus-visible {
+    transform: translateY(-1px);
+    border-color: rgba(var(--app-topbar-accent-rgb), 0.26);
+    background: rgba(255, 255, 255, 0.98);
+    color: var(--app-topbar-accent);
+    outline: none;
+    box-shadow: 0 16px 32px -28px rgba(var(--app-topbar-accent-rgb), 0.42);
+}
+
+.classroom-page .classroom-activity-tab.is-active {
+    border-color: rgba(var(--app-topbar-accent-rgb), 0.32);
+    background: rgba(var(--app-topbar-accent-rgb), 0.08);
+    color: var(--app-topbar-accent);
+    box-shadow: 0 18px 36px -30px rgba(var(--app-topbar-accent-rgb), 0.5);
+}
+
+.classroom-page .classroom-activity-tab__icon {
+    width: 2rem;
+    height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: rgba(241, 245, 249, 0.9);
+    color: currentColor;
+}
+
+.classroom-page .classroom-activity-tab.is-active .classroom-activity-tab__icon {
+    background: rgba(var(--app-topbar-accent-rgb), 0.13);
+}
+
+.classroom-page .classroom-activity-tab__icon svg {
+    width: 1.04rem;
+    height: 1.04rem;
+}
+
+.classroom-page .classroom-activity-tab__copy {
+    min-width: 0;
+    display: grid;
+    gap: 0.12rem;
+}
+
+.classroom-page .classroom-activity-tab__copy strong {
+    overflow: hidden;
+    color: var(--text-primary);
+    font-size: 0.92rem;
+    font-weight: 820;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.classroom-page .classroom-activity-tab__copy small {
+    overflow: hidden;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.classroom-page .classroom-activity-tab em {
+    min-width: 1.7rem;
+    height: 1.7rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.38rem;
+    border-radius: 999px;
+    background: #0f172a;
+    color: #fff;
+    font-size: 0.78rem;
+    font-style: normal;
+    font-weight: 820;
+    line-height: 1;
+}
+
+.classroom-page .classroom-activity-tab em[data-empty] {
+    background: rgba(100, 116, 139, 0.34);
+    color: #475569;
+}
+
+.classroom-page .classroom-activity-panels,
+.classroom-page .classroom-activity-panel {
+    min-width: 0;
+    min-height: 0;
+}
+
+.classroom-page .classroom-activity-panel[hidden] {
+    display: none !important;
+}
+
+.classroom-page .classroom-activity-panel.is-active {
+    display: block;
+    max-height: calc(100vh - var(--classroom-activity-top) - 202px);
+    min-height: 0;
+    overflow: auto;
+    padding-right: 0.18rem;
+    scrollbar-width: thin;
+}
+
+.classroom-page .classroom-activity-panel > .workspace-panel,
+.classroom-page .classroom-activity-panel > .discussion-room {
+    width: 100%;
+    min-width: 0;
+    border-radius: 8px;
+    box-shadow: none;
+}
+
+.classroom-page .classroom-activity-panel > .workspace-panel {
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.94);
+}
+
+.classroom-page .classroom-activity-panel .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.72rem;
+    margin-bottom: 0.9rem;
+}
+
+.classroom-page .classroom-activity-panel .section-heading {
+    width: 100%;
+    min-width: 0;
+}
+
+.classroom-page .classroom-activity-panel .section-title {
+    max-width: 100%;
+    font-size: 1.05rem;
+    word-break: keep-all;
+}
+
+.classroom-page .classroom-activity-panel .section-subtitle {
+    font-size: 0.83rem;
+}
+
+.classroom-page .classroom-activity-panel .header-actions {
+    width: 100%;
+    justify-content: flex-start;
+}
+
+.classroom-page .classroom-activity-panel .interaction-stat-grid,
+.classroom-page .classroom-activity-panel .collaboration-stat-grid,
+.classroom-page .classroom-activity-panel .collaboration-detail-summary,
+.classroom-page .classroom-activity-panel .collaboration-detail-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.classroom-page .classroom-activity-panel .interaction-workbench,
+.classroom-page .classroom-activity-panel .interaction-workbench.is-signal-tab,
+.classroom-page .classroom-activity-panel .collaboration-workbench {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.classroom-page .classroom-activity-panel .interaction-feature-tabs {
+    display: flex;
+    gap: 0.56rem;
+    overflow-x: auto;
+    padding: 0.4rem;
+    scrollbar-width: none;
+}
+
+.classroom-page .classroom-activity-panel .interaction-feature-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.classroom-page .classroom-activity-panel .interaction-feature-tab {
+    min-width: 8.4rem;
+}
+
+.classroom-page .classroom-activity-panel .resource-panel .upload-dropzone-rich {
+    padding: 0.82rem;
+}
+
+.classroom-page .classroom-activity-panel .resource-panel .upload-dropzone-content {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+}
+
+.classroom-page .classroom-activity-panel .resource-file-card {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.classroom-page .classroom-activity-panel .resource-file-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+}
+
+.classroom-page .classroom-activity-panel .discussion-room {
+    min-height: min(650px, calc(100vh - var(--classroom-activity-top) - 210px));
+    background: rgba(255, 255, 255, 0.96);
+}
+
+.classroom-page .classroom-activity-panel .discussion-room.is-sticky-active {
+    height: auto;
+}
+
+.classroom-page .classroom-activity-panel .discussion-room.is-sticky-active .discussion-room-composer {
+    position: relative;
+    bottom: auto;
+}
+
+.classroom-page .classroom-activity-panel .discussion-room-header {
+    padding: 0.95rem;
+}
+
+.classroom-page .classroom-activity-panel .discussion-room-summary-card {
+    gap: 0.74rem;
+}
+
+.classroom-page .classroom-activity-panel .discussion-room-summary-top,
+.classroom-page .classroom-activity-panel .discussion-room-summary-meta {
+    align-items: flex-start;
+    flex-direction: column;
+}
+
+.classroom-page .classroom-activity-panel .discussion-room-status,
+.classroom-page .classroom-activity-panel .discussion-room-alias-card {
+    width: 100%;
+}
+
+.classroom-page .classroom-activity-panel .discussion-room-body {
+    min-height: 210px;
+    padding: 0.78rem;
+}
+
+.classroom-page .classroom-activity-panel .discussion-room-composer {
+    padding: 0.78rem;
+}
+
+@media (max-width: 1180px) {
+    .classroom-page .workspace-columns {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .classroom-page #workspace-content,
+    .classroom-page .classroom-activity-sidebar {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .classroom-page .classroom-activity-sidebar {
+        position: static;
+        top: auto;
+    }
+
+    .classroom-page .classroom-activity-dock,
+    .classroom-page .classroom-activity-panel.is-active {
+        max-height: none;
+    }
+
+    .classroom-page .classroom-activity-panel .discussion-room {
+        min-height: 560px;
+    }
+}
+
+@media (max-width: 720px) {
+    .classroom-page .classroom-activity-header {
+        flex-direction: column;
+    }
+
+    .classroom-page .classroom-activity-total {
+        width: 100%;
+        grid-template-columns: auto auto;
+        justify-content: center;
+    }
+
+    .classroom-page .classroom-activity-tabs {
+        gap: 0.46rem;
+    }
+
+    .classroom-page .classroom-activity-tab {
+        grid-template-columns: 1.8rem minmax(0, 1fr) auto;
+        min-height: 4rem;
+        padding: 0.58rem;
+    }
+
+    .classroom-page .classroom-activity-tab__copy small {
+        white-space: normal;
+    }
+
+    .classroom-page .classroom-activity-panel > .workspace-panel {
+        padding: 0.86rem;
+    }
+
+    .classroom-page .classroom-activity-panel .interaction-stat-grid,
+    .classroom-page .classroom-activity-panel .collaboration-stat-grid,
+    .classroom-page .classroom-activity-panel .collaboration-detail-summary,
+    .classroom-page .classroom-activity-panel .collaboration-detail-tabs {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 430px) {
+    .classroom-page .classroom-activity-tabs {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
