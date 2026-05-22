@@ -202,7 +202,6 @@ function renderCreatePanel(state) {
         <section class="interaction-create-panel">
             <div class="interaction-create-head">
                 <div>
-                    <span class="interaction-kicker">Live Control</span>
                     <strong>新建课堂互动</strong>
                 </div>
                 <button type="button" class="interaction-icon-btn" data-interaction-create-close aria-label="关闭新建面板">×</button>
@@ -295,7 +294,6 @@ function renderSignalFocusCard(snapshot) {
     ];
     return `
         <section class="interaction-detail-card interaction-signal-focus">
-            <span class="interaction-kicker">Signal Focus</span>
             <strong>${snapshot.role === 'teacher' ? '现场节奏雷达' : '让老师知道你的课堂状态'}</strong>
             <p>${snapshot.role === 'teacher' ? '状态选项卡会优先呈现需要处理的举手、求助和节奏反馈。处理后，学生端会同步清除当前状态。' : '状态只对老师可见。你可以快速举手、求助、提示节奏太快，或告诉老师已经完成。'}</p>
             <div class="interaction-signal-mini-grid">
@@ -352,7 +350,6 @@ function renderActivityDetail(snapshot, activity) {
     if (!activity) {
         return `
             <section class="interaction-detail-card">
-                <span class="interaction-kicker">Live Room</span>
                 <strong>等待课堂互动</strong>
                 <p>当前没有可查看的互动。</p>
             </section>
@@ -362,7 +359,6 @@ function renderActivityDetail(snapshot, activity) {
         <section class="interaction-detail-card" data-interaction-activity="${activity.id}">
             <div class="interaction-detail-head">
                 <div>
-                    <span class="interaction-kicker">${escapeHtml(activity.kind_label)} · ${activity.status === 'active' ? '进行中' : '已结束'}</span>
                     <strong>${escapeHtml(activity.title)}</strong>
                     <p>${escapeHtml(activity.prompt)}</p>
                 </div>
@@ -460,7 +456,6 @@ function renderSignals(snapshot) {
         return `
             <section class="interaction-side-card">
                 <div class="interaction-side-head">
-                    <span class="interaction-kicker">Signal</span>
                     <strong>我的课堂状态</strong>
                 </div>
                 <div class="interaction-signal-grid">
@@ -485,7 +480,6 @@ function renderSignals(snapshot) {
     return `
         <section class="interaction-side-card">
             <div class="interaction-side-head">
-                <span class="interaction-kicker">Signal</span>
                 <strong>现场状态</strong>
             </div>
             <div class="interaction-signal-queue">

@@ -34492,6 +34492,7 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     min-width: 0;
     align-self: start;
     z-index: 4;
+    scroll-margin-top: 112px;
 }
 
 .classroom-page .classroom-activity-sidebar.is-sticky-active {
@@ -34501,27 +34502,29 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 
 .classroom-page .classroom-activity-dock {
     display: grid;
-    gap: 0.78rem;
+    gap: 0.58rem;
     min-width: 0;
     max-height: calc(100vh - var(--classroom-activity-top) - 18px);
 }
 
 .classroom-page .classroom-activity-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 0.9rem;
-    padding: 0.95rem 1rem;
+    display: grid;
+    gap: 0.62rem;
+    padding: 0.78rem 0.86rem;
     border: 1px solid rgba(148, 163, 184, 0.2);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.94);
     box-shadow: 0 16px 36px -32px rgba(15, 23, 42, 0.36);
 }
 
+.classroom-page .classroom-activity-heading {
+    min-width: 0;
+}
+
 .classroom-page .classroom-activity-header h2 {
-    margin: 0.08rem 0 0.22rem;
+    margin: 0;
     color: var(--text-primary);
-    font-size: 1.04rem;
+    font-size: 1.08rem;
     line-height: 1.2;
     letter-spacing: 0;
 }
@@ -34566,18 +34569,18 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 
 .classroom-page .classroom-activity-tabs {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.55rem;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.4rem;
 }
 
 .classroom-page .classroom-activity-tab {
     min-width: 0;
-    min-height: 4.4rem;
+    min-height: 2.9rem;
     display: grid;
-    grid-template-columns: 2rem minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    gap: 0.52rem;
-    padding: 0.66rem 0.72rem;
+    gap: 0.34rem;
+    padding: 0.45rem 0.48rem;
     border: 1px solid rgba(148, 163, 184, 0.22);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.9);
@@ -34606,9 +34609,9 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 }
 
 .classroom-page .classroom-activity-tab__icon {
-    width: 2rem;
-    height: 2rem;
-    display: inline-flex;
+    width: 1.55rem;
+    height: 1.55rem;
+    display: none;
     align-items: center;
     justify-content: center;
     border-radius: 8px;
@@ -34621,8 +34624,8 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 }
 
 .classroom-page .classroom-activity-tab__icon svg {
-    width: 1.04rem;
-    height: 1.04rem;
+    width: 0.9rem;
+    height: 0.9rem;
 }
 
 .classroom-page .classroom-activity-tab__copy {
@@ -34634,7 +34637,7 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 .classroom-page .classroom-activity-tab__copy strong {
     overflow: hidden;
     color: var(--text-primary);
-    font-size: 0.92rem;
+    font-size: 0.84rem;
     font-weight: 820;
     line-height: 1.15;
     text-overflow: ellipsis;
@@ -34651,8 +34654,8 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 }
 
 .classroom-page .classroom-activity-tab em {
-    min-width: 1.7rem;
-    height: 1.7rem;
+    min-width: 1.45rem;
+    height: 1.45rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -34660,7 +34663,7 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     border-radius: 999px;
     background: #0f172a;
     color: #fff;
-    font-size: 0.78rem;
+    font-size: 0.73rem;
     font-style: normal;
     font-weight: 820;
     line-height: 1;
@@ -34683,7 +34686,7 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 
 .classroom-page .classroom-activity-panel.is-active {
     display: block;
-    max-height: calc(100vh - var(--classroom-activity-top) - 202px);
+    max-height: calc(100vh - var(--classroom-activity-top) - 124px);
     min-height: 0;
     overflow: auto;
     padding-right: 0.18rem;
@@ -34706,8 +34709,8 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 .classroom-page .classroom-activity-panel .section-header {
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.72rem;
-    margin-bottom: 0.9rem;
+    gap: 0.6rem;
+    margin-bottom: 0.7rem;
 }
 
 .classroom-page .classroom-activity-panel .section-heading {
@@ -34847,28 +34850,23 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 }
 
 @media (max-width: 720px) {
-    .classroom-page .classroom-activity-header {
-        flex-direction: column;
-    }
-
-    .classroom-page .classroom-activity-total {
-        width: 100%;
-        grid-template-columns: auto auto;
-        justify-content: center;
+    .classroom-page .classroom-activity-sidebar {
+        scroll-margin-top: 190px;
     }
 
     .classroom-page .classroom-activity-tabs {
-        gap: 0.46rem;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.34rem;
     }
 
     .classroom-page .classroom-activity-tab {
-        grid-template-columns: 1.8rem minmax(0, 1fr) auto;
-        min-height: 4rem;
-        padding: 0.58rem;
+        grid-template-columns: minmax(0, 1fr) auto;
+        min-height: 2.7rem;
+        padding: 0.42rem 0.44rem;
     }
 
-    .classroom-page .classroom-activity-tab__copy small {
-        white-space: normal;
+    .classroom-page .classroom-activity-tab__copy strong {
+        font-size: 0.8rem;
     }
 
     .classroom-page .classroom-activity-panel > .workspace-panel {
@@ -34885,6 +34883,17 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 
 @media (max-width: 430px) {
     .classroom-page .classroom-activity-tabs {
-        grid-template-columns: minmax(0, 1fr);
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .classroom-page .classroom-activity-tab {
+        gap: 0.24rem;
+        padding-inline: 0.36rem;
+    }
+
+    .classroom-page .classroom-activity-tab em {
+        min-width: 1.35rem;
+        height: 1.35rem;
+        padding: 0 0.28rem;
     }
 }
