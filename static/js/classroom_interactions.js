@@ -134,34 +134,6 @@ function visibilityOptions(selected, kind) {
     `).join('');
 }
 
-function renderStats(snapshot) {
-    const summary = snapshot.summary || {};
-    const signalCounts = summary.signal_counts || {};
-    const signalText = [
-        signalCounts.hand ? `举手 ${signalCounts.hand}` : '',
-        signalCounts.help ? `求助 ${signalCounts.help}` : '',
-        signalCounts.slow ? `跟不上 ${signalCounts.slow}` : '',
-        signalCounts.done ? `已完成 ${signalCounts.done}` : '',
-    ].filter(Boolean).join(' · ') || '现场状态稳定';
-    const items = [
-        ['活跃互动', summary.active_activity_count || 0, '正在进行'],
-        ['未处理提问', summary.open_question_count || 0, '课堂疑问'],
-        ['现场信号', summary.active_signal_count || 0, signalText],
-        ['累计回应', summary.response_count || 0, '投票与测验'],
-    ];
-    return `
-        <div class="interaction-stat-grid">
-            ${items.map(([label, value, note]) => `
-                <article class="interaction-stat-card">
-                    <span>${label}</span>
-                    <strong>${value}</strong>
-                    <small>${escapeHtml(note)}</small>
-                </article>
-            `).join('')}
-        </div>
-    `;
-}
-
 function dispatchActivitySidebarCounts(snapshot) {
     const summary = snapshot?.summary || {};
     const activeActivities = Number(summary.active_activity_count || 0);
@@ -506,7 +478,6 @@ function renderSnapshot(snapshot, state) {
     }
     if (activeTab === 'signals') {
         return `
-            ${renderStats(snapshot)}
             ${renderFeatureTabs(snapshot, state)}
             <div class="interaction-workbench is-signal-tab">
                 <div class="interaction-main">
@@ -519,7 +490,6 @@ function renderSnapshot(snapshot, state) {
         `;
     }
     return `
-        ${renderStats(snapshot)}
         ${renderFeatureTabs(snapshot, state)}
         <div class="interaction-workbench">
             <div class="interaction-main">

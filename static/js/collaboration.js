@@ -67,35 +67,6 @@ function detailTabCount(group, key) {
     return 0;
 }
 
-function renderStats(snapshot) {
-    const summary = snapshot.summary || {};
-    const role = snapshot.role;
-    const items = role === 'teacher'
-        ? [
-            ['活跃小组', summary.group_count || 0, '课堂协作空间'],
-            ['成果提交', summary.submission_count || 0, '组长归档记录'],
-            ['组内文件', summary.file_count || 0, '可追溯材料'],
-            ['互评待看', summary.pending_peer_review_count || 0, '学生互评进展'],
-        ]
-        : [
-            ['我的小组', summary.my_group_count || 0, '当前参与'],
-            ['待互评', summary.pending_peer_review_count || 0, '需要补完'],
-            ['组内文件', summary.file_count || 0, '资料沉淀'],
-            ['成果提交', summary.submission_count || 0, '小组归档'],
-        ];
-    return `
-        <div class="collaboration-stat-grid">
-            ${items.map(([label, value, note]) => `
-                <article class="collaboration-stat-card">
-                    <span>${label}</span>
-                    <strong>${value}</strong>
-                    <small>${note}</small>
-                </article>
-            `).join('')}
-        </div>
-    `;
-}
-
 function dispatchActivitySidebarCounts(snapshot) {
     const summary = snapshot?.summary || {};
     const role = snapshot?.role;
@@ -506,7 +477,6 @@ function render(root, state) {
     content.hidden = false;
     dispatchActivitySidebarCounts(state.snapshot);
     content.innerHTML = `
-        ${renderStats(state.snapshot)}
         ${renderCreateForm(state.snapshot, state.createOpen)}
         <div class="collaboration-workbench">
             <div class="collaboration-main">

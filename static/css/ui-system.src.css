@@ -33182,12 +33182,6 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     50% { box-shadow: 0 0 0 7px rgba(15, 118, 110, 0); }
 }
 
-.classroom-page .interaction-stat-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.72rem;
-}
-
 .classroom-page .interaction-feature-tabs {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -33294,7 +33288,6 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     color: #0f766e;
 }
 
-.classroom-page .interaction-stat-card,
 .classroom-page .interaction-launch-strip,
 .classroom-page .interaction-create-panel,
 .classroom-page .interaction-list-card,
@@ -33307,14 +33300,6 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     box-shadow: 0 18px 36px -34px rgba(15, 23, 42, 0.42);
 }
 
-.classroom-page .interaction-stat-card {
-    display: grid;
-    gap: 0.22rem;
-    padding: 0.88rem 0.95rem;
-}
-
-.classroom-page .interaction-stat-card span,
-.classroom-page .interaction-stat-card small,
 .classroom-page .interaction-muted,
 .classroom-page .interaction-launch-strip span,
 .classroom-page .interaction-activity-group__head span,
@@ -33322,18 +33307,6 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 .classroom-page .interaction-question-card span,
 .classroom-page .interaction-signal-row span {
     color: var(--text-muted);
-}
-
-.classroom-page .interaction-stat-card strong {
-    color: #0f172a;
-    font-size: 1.42rem;
-    line-height: 1.05;
-}
-
-.classroom-page .interaction-stat-card span,
-.classroom-page .interaction-stat-card small {
-    font-size: 0.78rem;
-    font-weight: 700;
 }
 
 .classroom-page .interaction-workbench {
@@ -33870,10 +33843,6 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
         grid-template-columns: 1fr;
     }
 
-    .classroom-page .interaction-stat-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
     .classroom-page .interaction-feature-tabs {
         display: flex;
         gap: 0.6rem;
@@ -33996,13 +33965,6 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     display: none;
 }
 
-.classroom-page .collaboration-stat-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 10px;
-}
-
-.classroom-page .collaboration-stat-card,
 .classroom-page .collaboration-group-card,
 .classroom-page .collaboration-detail-card,
 .classroom-page .collaboration-create-panel,
@@ -34013,31 +33975,11 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     box-shadow: 0 18px 36px -32px rgba(15, 23, 42, 0.28);
 }
 
-.classroom-page .collaboration-stat-card {
-    display: grid;
-    gap: 5px;
-    padding: 14px;
-}
-
-.classroom-page .collaboration-stat-card span,
 .classroom-page .collaboration-detail-card__head span,
 .classroom-page .collaboration-group-list__head span,
 .classroom-page .collaboration-muted {
     color: #64748b;
     font-size: 0.84rem;
-    line-height: 1.45;
-}
-
-.classroom-page .collaboration-stat-card strong {
-    color: #0f172a;
-    font-size: 1.55rem;
-    line-height: 1;
-    font-weight: 900;
-}
-
-.classroom-page .collaboration-stat-card small {
-    color: #475569;
-    font-size: 0.78rem;
     line-height: 1.45;
 }
 
@@ -34627,10 +34569,6 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
         width: 100%;
     }
 
-    .classroom-page .collaboration-stat-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
     .classroom-page .collaboration-detail-summary,
     .classroom-page .collaboration-detail-tabs {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -34655,10 +34593,6 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 }
 
 @media (max-width: 430px) {
-    .classroom-page .collaboration-stat-grid {
-        grid-template-columns: 1fr;
-    }
-
     .classroom-page .collaboration-detail-hero,
     .classroom-page .collaboration-detail-card,
     .classroom-page .collaboration-create-panel,
@@ -34876,8 +34810,6 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
         grid-template-columns: 1fr;
     }
 
-    .classroom-page .workspace-flow--engagement .interaction-stat-grid,
-    .classroom-page .workspace-flow--engagement .collaboration-stat-grid,
     .classroom-page .workspace-flow--engagement .collaboration-detail-summary,
     .classroom-page .workspace-flow--engagement .collaboration-detail-tabs {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -35283,8 +35215,6 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     justify-content: flex-start;
 }
 
-.classroom-page .classroom-activity-panel .interaction-stat-grid,
-.classroom-page .classroom-activity-panel .collaboration-stat-grid,
 .classroom-page .classroom-activity-panel .collaboration-detail-summary,
 .classroom-page .classroom-activity-panel .collaboration-detail-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -35423,8 +35353,6 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
         padding: 0.86rem;
     }
 
-    .classroom-page .classroom-activity-panel .interaction-stat-grid,
-    .classroom-page .classroom-activity-panel .collaboration-stat-grid,
     .classroom-page .classroom-activity-panel .collaboration-detail-summary,
     .classroom-page .classroom-activity-panel .collaboration-detail-tabs {
         grid-template-columns: minmax(0, 1fr);
