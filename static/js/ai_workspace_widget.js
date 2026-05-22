@@ -6,6 +6,7 @@ let taskBootstrapLoaded = false;
 let taskPollTimer = null;
 let selectedTaskId = null;
 let lastTaskPayload = { tasks: [], counts: {} };
+let workflowCatalog = [];
 
 function $(selector, root = document) {
     return root.querySelector(selector);
@@ -254,6 +255,32 @@ function refreshContextPreview() {
         context.page?.title,
     ].filter(Boolean);
     title.textContent = clampText(pieces[0] || '当前页面', 90);
+}
+
+function workflowHintForTaskType(taskType) {
+    const map = {
+        course_material_digest: ['material_operations'],
+        lesson_document: ['lesson_document_generation'],
+        assignment_blueprint: ['assignment_exam_workflow'],
+        blog_draft: ['blog_and_reflection'],
+        student_notification: ['student_support', 'submission_grading_feedback'],
+        general_teaching_task: ['classroom_preparation', 'submission_grading_feedback'],
+    };
+    const keys = map[taskType] || [];
+    const matched = workflowCatalog.find((item) => keys.includes(item.key)) || workflowCatalog[0];
+    if (!matched) {
+        return '';
+    }
+    return `${matched.agent_capability || ''} ${matched.guardrail ? `安全边界：${matched.guardrail}` : ''}`.trim();
+}
+
+function updateTaskTypeHint() {
+    const select = $('#agent-task-type');
+    const hint = $('#agent-task-type-hint');
+    if (!select || !hint) {
+        return;
+    }
+    hint.textContent = workflowHintForTaskType(select.value);
 }
 
 async function apiJson(url, options = {}) {
@@ -608,6 +635,7 @@ async function loadBootstrap() {
     }
     const data = await apiJson('/api/agent-tasks/bootstrap');
     taskBootstrapLoaded = true;
+    workflowCatalog = Array.isArray(data.workflow_catalog) ? data.workflow_catalog : [];
     const select = $('#agent-task-type');
     if (select) {
         select.innerHTML = (data.task_types || []).map((item) => (
@@ -619,6 +647,7 @@ async function loadBootstrap() {
             if (textarea && option?.dataset.placeholder) {
                 textarea.placeholder = option.dataset.placeholder;
             }
+            updateTaskTypeHint();
         };
         select.addEventListener('change', updatePlaceholder);
         updatePlaceholder();

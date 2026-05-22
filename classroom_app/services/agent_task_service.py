@@ -67,6 +67,18 @@ TASK_TYPE_DEFINITIONS: dict[str, dict[str, str]] = {
 
 AGENT_TEACHER_WORKFLOWS: tuple[dict[str, Any], ...] = (
     {
+        "key": "course_roster_setup",
+        "name": "课程、班级与名单准备",
+        "steps": [
+            "创建或同步课程、班级、教学班和学生名单",
+            "核对学号、邮箱、班级归属和任课教师权限",
+            "确认课堂时间表、教材和教学计划",
+            "进入具体课堂后开展备课、发布任务和学习支持",
+        ],
+        "agent_capability": "可读取当前页面和管理中心摘要，生成核对清单；不会自动导入、删除或批量改学生名单。",
+        "guardrail": "名单、课程归属、教务同步和管理员配置必须由具备权限的教师或管理员在原页面确认。",
+    },
+    {
         "key": "classroom_preparation",
         "name": "课前备课与课堂准备",
         "steps": [
@@ -90,6 +102,18 @@ AGENT_TEACHER_WORKFLOWS: tuple[dict[str, Any], ...] = (
         "guardrail": "默认只读材料库，除学习文档生成服务外不直接改动材料文件。",
     },
     {
+        "key": "lesson_document_generation",
+        "name": "学习文档生成与绑定",
+        "steps": [
+            "定位当前课堂和目标课时",
+            "读取目标课时之前已绑定的学习文档",
+            "生成新的 Markdown 学习文档并写入材料库",
+            "把生成文档绑定到目标课时，供教师复核后给学生使用",
+        ],
+        "agent_capability": "可在白名单动作内自动生成、保存并绑定目标课时学习文档。",
+        "guardrail": "只写当前教师材料库和当前课堂目标课时，不改历史文档、不改课程结构、不触碰源码。",
+    },
+    {
         "key": "assignment_exam_workflow",
         "name": "作业/考试设计与发布",
         "steps": [
@@ -102,6 +126,18 @@ AGENT_TEACHER_WORKFLOWS: tuple[dict[str, Any], ...] = (
         "guardrail": "任何影响学生可见状态的动作必须由教师在平台界面确认。",
     },
     {
+        "key": "submission_grading_feedback",
+        "name": "提交、批改与反馈复盘",
+        "steps": [
+            "读取作业/考试提交状态、成绩分布和批改摘要",
+            "识别未交、低分、逾期、需要重交或需要人工复核的学生",
+            "生成反馈建议、通知草稿、复盘清单和下一次课补救建议",
+            "教师确认后执行批改、退回、通知或线下沟通",
+        ],
+        "agent_capability": "可生成分析报告、名单预览和通知草稿；不会自动改分、删除提交或批量退回。",
+        "guardrail": "学生成绩和提交详情只对任务发起教师可见；所有影响学生记录的动作需要教师确认。",
+    },
+    {
         "key": "student_support",
         "name": "学生通知与学情支持",
         "steps": [
@@ -112,6 +148,28 @@ AGENT_TEACHER_WORKFLOWS: tuple[dict[str, Any], ...] = (
         ],
         "agent_capability": "可生成名单和通知草稿；不会直接给学生群发消息。",
         "guardrail": "学生详情仅任务发起教师可见，其他教师只看到队列公开状态。",
+    },
+    {
+        "key": "learning_progress",
+        "name": "学习进度、阶段考试与证书",
+        "steps": [
+            "读取学习阶段、阶段考试、证书和课堂完成状态",
+            "识别学生卡点、可解锁任务和需要补充材料的阶段",
+            "生成阶段复盘、个性化练习建议和教师干预清单",
+        ],
+        "agent_capability": "可辅助分析和生成建议；不会自动发证、创建正式阶段考试或改学习进度。",
+        "guardrail": "阶段考试、证书和学习记录属于高影响数据，必须走平台既有确认流程。",
+    },
+    {
+        "key": "discussion_collaboration",
+        "name": "讨论、协作与课堂互动",
+        "steps": [
+            "读取当前课堂讨论、协作任务、资源上传和互动信号摘要",
+            "整理学生问题、优秀观点、常见误区和下一步互动设计",
+            "生成课堂讨论总结、协作反馈或活动脚本",
+        ],
+        "agent_capability": "可生成总结和活动草案；不会代替学生发言、删除互动内容或公开私人消息。",
+        "guardrail": "互动内容默认只作为教师视角辅助，不跨课堂泄露学生表达。",
     },
     {
         "key": "blog_and_reflection",
@@ -515,10 +573,11 @@ def build_teacher_page_context(
                 FROM course_material_assignments a
                 JOIN course_materials m ON m.id = a.material_id
                 WHERE a.class_offering_id = ?
+                  AND m.teacher_id = ?
                 ORDER BY a.created_at DESC, a.id DESC
                 LIMIT 8
                 """,
-                (class_offering_id,),
+                (class_offering_id, teacher_id),
             ).fetchall()
             sessions = [
                 dict(item)
@@ -673,6 +732,33 @@ def _queue_positions(rows: list[dict[str, Any]]) -> dict[int, int]:
     return {int(item["id"]): index + 1 for index, item in enumerate(queued)}
 
 
+def _queue_position_for_task(conn, item: dict[str, Any]) -> int:
+    if str(item.get("status") or "") != TASK_STATUS_QUEUED:
+        return 0
+    priority = int(item.get("priority") or 0)
+    created_at = str(item.get("created_at") or "")
+    task_id = int(item.get("id") or 0)
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS ahead
+        FROM agent_tasks
+        WHERE status = ?
+          AND (
+            priority > ?
+            OR (
+              priority = ?
+              AND (
+                created_at < ?
+                OR (created_at = ? AND id < ?)
+              )
+            )
+          )
+        """,
+        (TASK_STATUS_QUEUED, priority, priority, created_at, created_at, task_id),
+    ).fetchone()
+    return int(row["ahead"] if row else 0) + 1
+
+
 def _elapsed_seconds(item: dict[str, Any]) -> int:
     started_at = item.get("started_at")
     completed_at = item.get("completed_at")
@@ -802,8 +888,7 @@ def get_agent_task(conn, task_id: int, *, teacher_id: int) -> dict[str, Any]:
         ).fetchall()
     ]
     item = dict(row)
-    queue_positions = _queue_positions([item])
-    item["queue_position"] = queue_positions.get(int(item["id"]), 0)
+    item["queue_position"] = _queue_position_for_task(conn, item)
     serialized = serialize_agent_task(item, viewer_teacher_id=int(teacher_id), events=events)
     if not serialized["is_owner"]:
         return serialized

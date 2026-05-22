@@ -6372,6 +6372,21 @@ body.has-cultivation-login-reveal {
     resize: vertical;
 }
 
+.ai-task-type-hint {
+    min-height: 0;
+    padding: 8px 10px;
+    border: 1px solid rgba(15, 118, 110, 0.14);
+    border-radius: 9px;
+    background: rgba(240, 253, 250, 0.72);
+    color: #475569;
+    font-size: 0.76rem;
+    line-height: 1.45;
+}
+
+.ai-task-type-hint:empty {
+    display: none;
+}
+
 .ai-task-context {
     display: flex;
     align-items: center;

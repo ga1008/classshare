@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from ..config import AGENT_TASK_MAX_RUNTIME_SECONDS, AGENT_TASK_RUNTIME_POLL_SECONDS
+from ..config import AGENT_TASK_MAX_RUNTIME_SECONDS, AGENT_TASK_RUNTIME_POLL_SECONDS, HOMEWORK_SUBMISSIONS_DIR
 from ..database import get_db_connection
 from .agent_task_service import (
     TASK_STATUS_COMPLETED,
@@ -359,6 +359,55 @@ def _create_teacher_blog_draft(conn, *, teacher_id: int, title: str, content_md:
     return {"id": int(cursor.lastrowid), "status": "draft", "created_at": now}
 
 
+def _instruction_is_exam_like(text: str) -> bool:
+    return bool(re.search(r"(考试|试卷|测验|随堂测|quiz|exam)", _safe_text(text), flags=re.IGNORECASE))
+
+
+def _create_assignment_draft(
+    conn,
+    *,
+    course_id: int,
+    class_offering_id: int,
+    title: str,
+    requirements_md: str,
+    rubric_md: str,
+) -> dict[str, Any]:
+    now = utcnow_iso()
+    cursor = conn.execute(
+        """
+        INSERT INTO assignments (
+            course_id,
+            title,
+            status,
+            requirements_md,
+            rubric_md,
+            grading_mode,
+            class_offering_id,
+            created_at,
+            allowed_file_types_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(course_id),
+            _safe_text(title, max_chars=120) or "Agent 作业草稿",
+            "new",
+            requirements_md,
+            rubric_md,
+            "manual",
+            int(class_offering_id),
+            now,
+            "[]",
+        ),
+    )
+    assignment_id = int(cursor.lastrowid)
+    try:
+        (HOMEWORK_SUBMISSIONS_DIR / str(course_id) / str(assignment_id)).mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # The assignment itself is the source of truth; submission storage can still be created lazily later.
+        pass
+    return {"id": assignment_id, "status": "new", "created_at": now, "url": f"/assignment/{assignment_id}"}
+
+
 def _generation_task_row(conn, generation_task_id: int) -> dict[str, Any] | None:
     row = conn.execute(
         "SELECT * FROM session_material_generation_tasks WHERE id = ? LIMIT 1",
@@ -489,6 +538,21 @@ def _execute_assignment_blueprint_task(task: dict[str, Any]) -> None:
 | 完成质量 | 25 | 结构完整，过程可追踪，结论明确 |
 | 表达与规范 | 15 | 格式规范，命名清楚，按时提交 |
 """.strip()
+    exam_like = _instruction_is_exam_like(f"{title}\n{instruction}")
+    created_assignment: dict[str, Any] | None = None
+    if not exam_like:
+        with get_db_connection() as conn:
+            owned = _owned_classroom_snapshot(conn, teacher_id=teacher_id, class_offering_id=class_offering_id)
+            if owned:
+                created_assignment = _create_assignment_draft(
+                    conn,
+                    course_id=int(owned["course_id"]),
+                    class_offering_id=int(class_offering_id),
+                    title=title,
+                    requirements_md=requirements_md,
+                    rubric_md=rubric_md,
+                )
+                conn.commit()
     detail = {
         "display_title": "作业/考试草案",
         "context_label": f"{snapshot.get('course_name') or ''} / {snapshot.get('class_name') or ''}",
@@ -496,6 +560,7 @@ def _execute_assignment_blueprint_task(task: dict[str, Any]) -> None:
             {"label": "参考材料", "value": len(snapshot["materials"])},
             {"label": "参考课时", "value": selected_session},
             {"label": "建议评分", "value": "100 分"},
+            {"label": "平台草稿", "value": f"#{created_assignment['id']}" if created_assignment else "需在考试编辑器确认"},
         ],
         "markdown": f"{requirements_md}\n\n## 评分标准\n\n{rubric_md}",
         "draft": {
@@ -506,21 +571,35 @@ def _execute_assignment_blueprint_task(task: dict[str, Any]) -> None:
             "status": "new",
             "allowed_file_types": [],
         },
+        "created_assignment": created_assignment or {},
+        "links": [
+            {"label": "打开作业草稿", "url": created_assignment["url"]}
+            if created_assignment
+            else {"label": "打开考试管理", "url": "/manage/exams"}
+        ],
         "next_actions": [
-            "复制草案到作业或考试编辑器后再发布。",
+            "打开平台草稿继续补充截止时间、附件要求和发布范围。" if created_assignment else "复制草案到考试编辑器，生成正式试卷后再发布。",
             "正式发布、截止时间、邮件通知必须由教师在平台界面确认。",
         ],
         "safety": [
-            "Agent 未创建正式作业，未向学生发布。",
+            "Agent 只创建教师可见的草稿，未向学生发布。" if created_assignment else "Agent 未创建正式考试，未向学生发布。",
             "Agent 未修改学生提交、成绩或课堂配置。",
         ],
     }
     _finish_platform_business_task(
         task_id,
         platform_action="assignment_blueprint",
-        result_summary="已生成作业/考试草案和评分标准，等待教师确认后发布。",
+        result_summary=(
+            f"已生成作业草案并创建平台草稿 #{created_assignment['id']}，等待教师确认后发布。"
+            if created_assignment
+            else "已生成考试草案和评分标准，等待教师在考试编辑器确认后发布。"
+        ),
         detail=detail,
-        event_message="已基于当前课堂、课时和材料生成作业/考试草案。",
+        event_message=(
+            f"已基于当前课堂、课时和材料创建作业草稿 #{created_assignment['id']}。"
+            if created_assignment
+            else "已基于当前课堂、课时和材料生成考试草案，未创建正式考试。"
+        ),
     )
 
 
@@ -763,6 +842,78 @@ def _execute_student_notification_task(task: dict[str, Any]) -> None:
     )
 
 
+def _execute_general_teaching_task(task: dict[str, Any]) -> None:
+    task_id = int(task["id"])
+    instruction = _safe_text(task.get("private_instruction"), max_chars=4000)
+    server_context = _server_context_from_task(task)
+    context_label = _public_context_label(server_context) or "当前页面"
+    workflow_items = agent_workflow_catalog()
+    recommended = []
+    normalized = instruction.lower()
+    keyword_map = (
+        ("lesson_document", ("学习文档", "导学", "下一节课", "下次课", "lesson", "document")),
+        ("assignment_exam_workflow", ("作业", "考试", "试卷", "测验", "题目", "assignment", "exam", "quiz")),
+        ("student_support", ("通知", "低分", "未交", "提醒", "学生", "message", "notify")),
+        ("material_operations", ("材料", "课件", "文档", "资料", "material")),
+        ("blog_and_reflection", ("博客", "札记", "反思", "blog")),
+        ("submission_grading_feedback", ("批改", "成绩", "提交", "反馈", "grading", "score")),
+    )
+    workflow_by_key = {item.get("key"): item for item in workflow_items}
+    for key, keywords in keyword_map:
+        if any(keyword.lower() in normalized for keyword in keywords):
+            item = workflow_by_key.get(key)
+            if item:
+                recommended.append(item)
+    if not recommended:
+        recommended = workflow_items[:4]
+
+    recommended_actions = []
+    for item in recommended[:4]:
+        steps = item.get("steps") or []
+        recommended_actions.append(
+            {
+                "title": item.get("name") or item.get("key") or "教学流程",
+                "meta": item.get("agent_capability") or "",
+                "note": " → ".join(_safe_text(step, max_chars=60) for step in steps[:3]),
+            }
+        )
+
+    markdown = f"""## 任务理解
+
+{instruction}
+
+## 推荐接管方式
+
+{_markdown_bullets([f"{item.get('name')}：{item.get('agent_capability')}" for item in recommended[:4]])}
+
+## 安全执行原则
+
+- 如果任务涉及发布、发送、改分、删除、批量导入、同步教务或管理员配置，Agent 只生成草案和检查清单。
+- 如果任务涉及学习文档生成，请改用“生成学习文档”，平台会走可审计的白名单动作。
+- 如果任务涉及低分提醒，请改用“拟定学生通知”，平台会生成名单预览和通知草稿但不会直接发送。
+""".strip()
+    _finish_platform_business_task(
+        task_id,
+        platform_action="teaching_workflow_plan",
+        result_summary="已完成教学事务预检，给出可安全接管的流程与下一步建议。",
+        detail={
+            "display_title": "教学事务预检",
+            "context_label": context_label,
+            "markdown": markdown,
+            "items": recommended_actions,
+            "next_actions": [
+                "按推荐任务类型重新提交，可获得更具体的结构化产物。",
+                "涉及学生可见或高影响数据的操作，请在原业务页面最终确认。",
+            ],
+            "safety": [
+                "本次未修改任何平台业务数据。",
+                "本次未调用外部运行时执行开放式操作。",
+            ],
+        },
+        event_message="已完成通用教学事务的安全预检，未修改业务数据。",
+    )
+
+
 async def _wait_generation_task(generation_task_id: int) -> dict[str, Any] | None:
     started_at = time.monotonic()
     while True:
@@ -980,6 +1131,7 @@ async def try_execute_platform_agent_task(task: dict[str, Any]) -> bool:
         "assignment_blueprint",
         "blog_draft",
         "student_notification",
+        "general_teaching_task",
     }:
         return False
     task_id = int(task["id"])
@@ -989,6 +1141,7 @@ async def try_execute_platform_agent_task(task: dict[str, Any]) -> bool:
         "assignment_blueprint": "assignment_blueprint",
         "blog_draft": "blog_draft",
         "student_notification": "student_notification",
+        "general_teaching_task": "teaching_workflow_plan",
     }.get(task_type, task_type)
     try:
         if task_type == "lesson_document":
@@ -1001,6 +1154,8 @@ async def try_execute_platform_agent_task(task: dict[str, Any]) -> bool:
             _execute_blog_draft_task(task)
         elif task_type == "student_notification":
             _execute_student_notification_task(task)
+        elif task_type == "general_teaching_task":
+            _execute_general_teaching_task(task)
     except Exception as exc:
         error_message = exc.detail if isinstance(exc, HTTPException) else str(exc)
         with get_db_connection() as conn:
