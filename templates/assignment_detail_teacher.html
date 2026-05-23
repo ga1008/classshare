@@ -4,6 +4,7 @@
 {% block title %}作业管理 - {{ assignment.title }} | 课堂平台{% endblock %}
 
 {% block css %}
+<link rel="stylesheet" href="{{ asset_url('css/exam_paper_preview.css') }}">
 <style>
     /* Header */
     .assignment-header {
@@ -853,6 +854,13 @@
         color: var(--text-primary);
         font-size: 0.92rem;
     }
+    .rubric-hidden-panel__actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
     .rubric-open-btn {
         flex: 0 0 auto;
         display: inline-flex;
@@ -871,6 +879,10 @@
         .rubric-hidden-panel {
             align-items: stretch;
             flex-direction: column;
+        }
+        .rubric-hidden-panel__actions {
+            width: 100%;
+            justify-content: stretch;
         }
         .rubric-open-btn {
             width: 100%;
@@ -1466,29 +1478,33 @@
             <div class="req-section">
                 <div class="req-section-heading">
                     <h3>作业要求</h3>
-                    {% if assignment.rubric_md %}
-                    <button type="button" class="btn btn-outline btn-sm rubric-open-btn" onclick="openRubricModal()">
-                        {{ app_topbar_icon('shield') }}
-                        查看评分细则
-                    </button>
-                    {% endif %}
                 </div>
                 <div class="md-content" id="assignment-requirements">
                     <div class="spinner mx-auto"></div>
                 </div>
             </div>
 
-            {% if assignment.rubric_md %}
+            {% if assignment.rubric_md or exam_questions %}
             <div class="req-section">
                 <div class="rubric-hidden-panel">
                     <div class="rubric-hidden-panel__copy">
-                        <strong>评分细则已收起</strong>
-                        <span>避免教师批改时被大段标准抢占视线，需要核对标准时再打开浮窗查看。</span>
+                        <strong>试卷与评分资料已收起</strong>
+                        <span>批改主视图保持聚焦，需要核对原始试卷或评分标准时再打开浮窗查看。</span>
                     </div>
-                    <button type="button" class="btn btn-primary btn-sm rubric-open-btn" onclick="openRubricModal()">
-                        {{ app_topbar_icon('shield') }}
-                        查看评分细则
-                    </button>
+                    <div class="rubric-hidden-panel__actions">
+                        {% if exam_questions %}
+                        <button type="button" class="btn btn-outline btn-sm rubric-open-btn" onclick="openExamPaperModal()">
+                            {{ app_topbar_icon('book') }}
+                            查看原始试卷
+                        </button>
+                        {% endif %}
+                        {% if assignment.rubric_md %}
+                        <button type="button" class="btn btn-primary btn-sm rubric-open-btn" onclick="openRubricModal()">
+                            {{ app_topbar_icon('shield') }}
+                            查看评分细则
+                        </button>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
             {% endif %}
@@ -1634,6 +1650,23 @@
                 <div class="md-content" id="assignment-rubric-modal-content">
                     <div class="spinner mx-auto"></div>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if exam_questions %}
+<!-- 原始试卷浮窗 -->
+<div class="modal-backdrop exam-paper-preview-backdrop" id="exam-paper-modal" role="dialog" aria-modal="true" aria-labelledby="exam-paper-modal-title" style="display:none;">
+    <div class="exam-paper-preview-dialog" role="document">
+        <div class="exam-paper-preview-dialog__header">
+            <h3 class="exam-paper-preview-dialog__title" id="exam-paper-modal-title">原始试卷</h3>
+            <button class="exam-paper-preview-dialog__close" type="button" onclick="closeExamPaperModal()" aria-label="关闭原始试卷">&times;</button>
+        </div>
+        <div class="exam-paper-preview-dialog__body">
+            <div id="assignment-exam-paper-preview">
+                <div class="spinner mx-auto"></div>
             </div>
         </div>
     </div>
@@ -1909,6 +1942,7 @@
 <script type="module">
     import { showToast, openModal, closeModal, renderMarkdown, escapeHtml } from '{{ asset_url("js/ui.js") }}';
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
+    import { renderExamPaperPreview } from '{{ asset_url("js/exam_paper_preview.js") }}';
 
     window.openEditModal = () => openModal('edit-modal');
     window.closeEditModal = () => closeModal('edit-modal');
@@ -1916,6 +1950,11 @@
     window.closeDeleteModal = () => closeModal('delete-modal');
     window.openRubricModal = () => openModal('rubric-modal');
     window.closeRubricModal = () => closeModal('rubric-modal');
+    window.openExamPaperModal = () => {
+        renderAssignmentExamPaperPreview();
+        openModal('exam-paper-modal');
+    };
+    window.closeExamPaperModal = () => closeModal('exam-paper-modal');
     window.closeWithdrawModal = () => closeModal('withdraw-submissions-modal');
     window.closeOfflineSubmitModal = () => {
         closeModal('offline-submit-modal');
@@ -1940,6 +1979,7 @@
         late_score_cap: {{ assignment.late_score_cap | tojson }},
     };
     const OFFLINE_EXAM_QUESTIONS = {{ exam_questions | tojson if exam_questions else 'null' }};
+    const EXAM_PAPER_PREVIEW_META = {{ exam_paper_preview | tojson if exam_paper_preview else '{}' }};
     const MAX_UPLOAD_MB = {{ max_upload_mb }};
     const MAX_UPLOAD_BYTES = {{ max_total_mb }} * 1024 * 1024;
     const MAX_PER_FILE_BYTES = {{ max_per_file_mb }} * 1024 * 1024;
@@ -1955,6 +1995,20 @@
     let offlineQuestionUploadManagers = new Map();
     let offlineRenderedQuestions = [];
     let offlineTargetStudent = null;
+    let assignmentExamPaperPreviewRendered = false;
+
+    function renderAssignmentExamPaperPreview() {
+        if (assignmentExamPaperPreviewRendered || !OFFLINE_EXAM_QUESTIONS) return;
+        const target = document.getElementById('assignment-exam-paper-preview');
+        if (!target) return;
+        renderExamPaperPreview(target, {
+            paper: OFFLINE_EXAM_QUESTIONS,
+            title: EXAM_PAPER_PREVIEW_META.title || {{ assignment.title | tojson }},
+            description: EXAM_PAPER_PREVIEW_META.description || '',
+            badgeText: '学生视角原始试卷',
+        });
+        assignmentExamPaperPreviewRendered = true;
+    }
 
     document.addEventListener('DOMContentLoaded', () => {
         renderMarkdown('assignment-requirements', {{ assignment.requirements_md | tojson }});
@@ -2001,6 +2055,9 @@
                 document.getElementById('status-btn')?.setAttribute('aria-expanded', 'false');
                 if (document.getElementById('rubric-modal')?.style.display === 'flex') {
                     closeModal('rubric-modal');
+                }
+                if (document.getElementById('exam-paper-modal')?.style.display === 'flex') {
+                    closeModal('exam-paper-modal');
                 }
             }
         });

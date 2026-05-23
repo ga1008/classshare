@@ -7,6 +7,7 @@
 
     <!-- Core modern CSS system -->
     {% include "partials/ui_system_assets.html" %}
+    <link rel="stylesheet" href="{{ asset_url('css/exam_paper_preview.css') }}">
 
     <style>
         :root {
@@ -1260,11 +1261,26 @@
         </div>
     </div>
 
+    <div class="exam-paper-preview-backdrop" id="paper-preview-modal" role="dialog" aria-modal="true" aria-labelledby="paper-preview-modal-title" style="display:none;">
+        <div class="exam-paper-preview-dialog" role="document">
+            <div class="exam-paper-preview-dialog__header">
+                <h3 class="exam-paper-preview-dialog__title" id="paper-preview-modal-title">试卷预览</h3>
+                <button class="exam-paper-preview-dialog__close" type="button" onclick="closePaperPreviewModal()" aria-label="关闭试卷预览">&times;</button>
+            </div>
+            <div class="exam-paper-preview-dialog__body">
+                <div id="paper-preview-body">
+                    <div class="spinner mx-auto"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {% include "partials/markdown_assets.html" %}
     <script type="module" src="/static/js/auth.js"></script>
     <script type="module">
         import { showToast } from '/static/js/ui.js';
         import { renderMarkdownHtml } from '/static/js/grading_feedback.js?v=20260517';
+        import { renderExamPaperPreview } from '{{ asset_url("js/exam_paper_preview.js") }}';
 
         // Expose to window for inline onclick handlers
         window.showToast = showToast;
@@ -2142,77 +2158,50 @@
             await persistExam();
         }
 
+        function setPaperPreviewModalOpen(isOpen) {
+            const modal = document.getElementById('paper-preview-modal');
+            if (!modal) return;
+            if (isOpen) {
+                modal.style.display = 'flex';
+                requestAnimationFrame(() => modal.classList.add('is-open'));
+                return;
+            }
+            modal.classList.remove('is-open');
+            setTimeout(() => {
+                if (!modal.classList.contains('is-open')) modal.style.display = 'none';
+            }, 180);
+        }
+
+        window.closePaperPreviewModal = function() {
+            setPaperPreviewModalOpen(false);
+        };
+
         window.previewExam = function() {
             const title = document.getElementById('exam-title').value || '试卷预览';
             const desc = document.getElementById('exam-desc').value || '';
-            let allQuestions = [];
-            examData.pages.forEach(page => {
-                (page.questions || []).forEach(q => allQuestions.push({...q, pageName: page.name}));
+            const target = document.getElementById('paper-preview-body');
+            const modalTitle = document.getElementById('paper-preview-modal-title');
+            if (!target) return;
+            if (modalTitle) modalTitle.textContent = title;
+            renderExamPaperPreview(target, {
+                paper: examData,
+                title,
+                description: desc,
+                badgeText: '学生视角试卷预览',
             });
-
-            let questionsHtml = '';
-            allQuestions.forEach((q, i) => {
-                questionsHtml += `<div class="preview-question-card">`;
-                questionsHtml += `<div class="preview-question-title">`;
-                questionsHtml += `<span class="preview-question-index">${i+1}</span>`;
-                questionsHtml += `<div class="preview-question-copy">${renderEditorMarkdown(q.text, '(未填写题目)')}</div></div>`;
-
-                if (q.type === 'radio' && q.options) {
-                    q.options.forEach(opt => {
-                        questionsHtml += `<label class="preview-option">`;
-                        questionsHtml += `<input type="radio" disabled> ${renderEditorMarkdown(opt, '(空)')}</label>`;
-                    });
-                } else if (q.type === 'checkbox' && q.options) {
-                    q.options.forEach(opt => {
-                        questionsHtml += `<label class="preview-option">`;
-                        questionsHtml += `<input type="checkbox" disabled> ${renderEditorMarkdown(opt, '(空)')}</label>`;
-                    });
-                } else if (q.type === 'text') {
-                    questionsHtml += `<input class="preview-input" type="text" disabled placeholder="${escapeHtml(q.placeholder || '请输入答案')}">`;
-                } else {
-                    questionsHtml += `<textarea class="preview-input" disabled rows="5" placeholder="${escapeHtml(q.placeholder || '请在此作答...')}"></textarea>`;
-                }
-                questionsHtml += `</div>`;
-            });
-
-            const previewHtml = `<!DOCTYPE html>
-<html lang="zh-CN" data-theme="lanshare"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>${escapeHtml(title)} - 预览</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{min-height:100vh;background:radial-gradient(circle at 12% -4%,rgba(79,70,229,.12),transparent 30%),radial-gradient(circle at 94% 2%,rgba(8,145,178,.1),transparent 28%),linear-gradient(180deg,#f8fbff 0%,#edf2fb 46%,#f8fafc 100%);font-family:'Segoe UI','Microsoft YaHei UI','Microsoft YaHei','PingFang SC','Hiragino Sans GB','Noto Sans CJK SC',-apple-system,BlinkMacSystemFont,sans-serif;color:#0f172a;padding:40px 20px;}
-.exam-container{max-width:800px;margin:0 auto;}
-.exam-header{position:relative;overflow:hidden;background:rgba(255,255,255,.92);border:1px solid rgba(148,163,184,.26);border-radius:22px;padding:32px;box-shadow:0 18px 40px -24px rgba(15,23,42,.5),0 8px 22px -16px rgba(15,23,42,.3);margin-bottom:24px;border-top:6px solid #4F46E5;backdrop-filter:blur(16px);}
-.exam-header::before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,rgba(79,70,229,.08),transparent 42%),linear-gradient(300deg,rgba(8,145,178,.08),transparent 46%);pointer-events:none;}
-.exam-header>*{position:relative;}
-.exam-header h1{font-size:1.75rem;font-weight:700;margin-bottom:12px;}
-.exam-desc{font-size:0.95rem;color:#475569;line-height:1.6;}
-.preview-badge{display:inline-flex;align-items:center;background:rgba(255,251,235,.9);color:#b45309;padding:7px 14px;border-radius:999px;font-size:0.85rem;font-weight:700;margin-bottom:24px;border:1px solid #fde68a;box-shadow:0 8px 24px -18px rgba(15,23,42,.45);}
-.preview-question-card{background:rgba(255,255,255,.92);border-radius:18px;padding:24px;box-shadow:0 8px 24px -18px rgba(15,23,42,.45),0 3px 10px -8px rgba(15,23,42,.28);border:1px solid rgba(148,163,184,.26);margin-bottom:20px;backdrop-filter:blur(12px);}
-.preview-question-title{font-weight:650;font-size:1.05rem;margin-bottom:16px;display:flex;align-items:flex-start;gap:12px;color:#0f172a;line-height:1.55;}
-.preview-question-index{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:2rem;background:#eef2ff;color:#4f46e5;padding:5px 10px;border-radius:999px;font-size:.8rem;font-weight:800;border:1px solid #c7d2fe;line-height:1.2;margin-top:.08rem;}
-.preview-question-copy{min-width:0;flex:1 1 auto;}
-.preview-question-copy>:first-child{margin-top:0;}
-.preview-question-copy>:last-child{margin-bottom:0;}
-.preview-option{display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:12px 14px;border:1px solid rgba(148,163,184,.28);border-radius:12px;font-size:.95rem;color:#334155;background:rgba(248,250,252,.72);}
-.preview-option input{width:16px;height:16px;accent-color:#4f46e5;}
-.preview-input{width:100%;padding:12px 16px;border:1px solid rgba(148,163,184,.32);border-radius:12px;font-size:.95rem;background:#f8fafc;color:#334155;resize:vertical;}
-.preview-empty{background:rgba(255,255,255,.92);border:1px dashed rgba(148,163,184,.4);border-radius:16px;padding:40px;text-align:center;color:#64748b;}
-footer{text-align:center;padding:30px;font-size:0.85rem;color:#64748b;}
-</style></head><body>
-<div class="exam-container">
-<div class="preview-badge">👀 教师全屏预览模式 (共 ${allQuestions.length} 题)</div>
-<div class="exam-header"><h1>${escapeHtml(title)}</h1>${desc ? '<div class="exam-desc">' + escapeHtml(desc).replace(/\n/g, '<br>') + '</div>' : ''}</div>
-<div class="page-content">
-${questionsHtml || '<div class="preview-empty">暂无题目</div>'}
-</div>
-<footer>这仅是教师端题目渲染预览，非学生真实考试环境交互界面</footer>
-</div></body></html>`;
-
-            const blob = new Blob([previewHtml], {type: 'text/html'});
-            const url = URL.createObjectURL(blob);
-            window.open(url, '_blank');
+            setPaperPreviewModalOpen(true);
         }
+
+        document.getElementById('paper-preview-modal')?.addEventListener('click', (event) => {
+            if (event.target === event.currentTarget) setPaperPreviewModalOpen(false);
+        });
+
+        document.addEventListener('keydown', (event) => {
+            const modal = document.getElementById('paper-preview-modal');
+            if (event.key === 'Escape' && modal?.classList.contains('is-open')) {
+                setPaperPreviewModalOpen(false);
+            }
+        });
 
         // Utility
         function escapeHtml(s) {

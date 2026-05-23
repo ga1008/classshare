@@ -1295,12 +1295,17 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
             if not access_row:
                 raise HTTPException(403, "无权查看该作业")
             exam_questions = None
+            exam_paper_preview = None
             if assignment.get("exam_paper_id"):
                 paper_row = conn.execute(
-                    "SELECT questions_json FROM exam_papers WHERE id = ?",
+                    "SELECT title, description, questions_json FROM exam_papers WHERE id = ?",
                     (assignment["exam_paper_id"],),
                 ).fetchone()
                 if paper_row:
+                    exam_paper_preview = {
+                        "title": paper_row["title"],
+                        "description": paper_row["description"] or "",
+                    }
                     try:
                         exam_questions = json.loads(paper_row["questions_json"] or "{}")
                     except json.JSONDecodeError:
@@ -1326,6 +1331,7 @@ async def assignment_detail_page(request: Request, assignment_id: str, user: dic
                 "assignment": assignment,
                 "assignment_back_url": assignment_back_url,
                 "exam_questions": exam_questions,
+                "exam_paper_preview": exam_paper_preview,
                 "learning_stage_options": get_learning_stage_options(),
                 "max_upload_mb": MAX_UPLOAD_SIZE_MB,
                 "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
