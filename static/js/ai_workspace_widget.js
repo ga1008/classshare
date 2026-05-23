@@ -1246,11 +1246,20 @@ function initFallbackShell() {
         modal.style.display = 'none';
         modal.setAttribute('aria-hidden', 'true');
         fab.style.display = 'flex';
+        container.classList.remove('fullscreen');
+        document.body.classList.remove('ai-chat-fullscreen-active');
     };
     fab.addEventListener('click', open);
     $('#ai-chat-btn-close')?.addEventListener('click', close);
     $('#ai-chat-btn-fullscreen')?.addEventListener('click', () => {
-        container.classList.toggle('fullscreen');
+        const button = $('#ai-chat-btn-fullscreen');
+        const isFullscreen = container.classList.toggle('fullscreen');
+        document.body.classList.toggle('ai-chat-fullscreen-active', isFullscreen);
+        if (button) {
+            button.title = isFullscreen ? '退出全屏' : '全屏';
+            button.setAttribute('aria-label', button.title);
+            button.setAttribute('aria-pressed', isFullscreen ? 'true' : 'false');
+        }
     });
     if (!CONFIG.classOfferingId) {
         $('#ai-chat-textarea')?.setAttribute('placeholder', CONFIG.taskCenterEnabled ? '描述要让 Agent 执行的教学业务任务...' : '当前页面未绑定具体课堂。');

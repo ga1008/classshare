@@ -285,17 +285,20 @@ class AIChatComponent {
         this.modal.style.display = 'none';
         this.modal.setAttribute('aria-hidden', 'true');
         this.fab.style.display = 'block';
+        if (this.modalContainer.classList.contains('fullscreen')) {
+            this.setFullscreenState(false, { restoreLayout: false });
+        }
         window.behaviorTracker?.markAiChatOpen(false);
     }
-    toggleFullscreen() {
-        const willEnterFullscreen = !this.modalContainer.classList.contains('fullscreen');
-        if (willEnterFullscreen) {
-            this.lastWindowRect = this.getCurrentWindowRect();
-        }
-        const isFullscreen = this.modalContainer.classList.toggle('fullscreen');
+    setFullscreenState(isFullscreen, { restoreLayout = true } = {}) {
         if (isFullscreen) {
+            this.lastWindowRect = this.getCurrentWindowRect();
+            this.modalContainer.classList.add('fullscreen');
             this.fullscreenBtn.innerHTML = this.iconMinimize;
             this.fullscreenBtn.title = '退出全屏';
+            this.fullscreenBtn.setAttribute('aria-label', '退出全屏');
+            this.fullscreenBtn.setAttribute('aria-pressed', 'true');
+            document.body.classList.add('ai-chat-fullscreen-active');
             this.modalContainer.style.width = '';
             this.modalContainer.style.height = '';
             this.modalContainer.style.top = '';
@@ -303,10 +306,20 @@ class AIChatComponent {
             this.modalContainer.style.left = '';
             this.modalContainer.style.right = '';
         } else {
+            this.modalContainer.classList.remove('fullscreen');
             this.fullscreenBtn.innerHTML = this.iconMaximize;
             this.fullscreenBtn.title = '全屏';
-            this.restoreWindowLayout();
+            this.fullscreenBtn.setAttribute('aria-label', '全屏');
+            this.fullscreenBtn.setAttribute('aria-pressed', 'false');
+            document.body.classList.remove('ai-chat-fullscreen-active');
+            if (restoreLayout) {
+                this.restoreWindowLayout();
+            }
         }
+    }
+    toggleFullscreen() {
+        const willEnterFullscreen = !this.modalContainer.classList.contains('fullscreen');
+        this.setFullscreenState(willEnterFullscreen);
     }
 
     // ==========================================================

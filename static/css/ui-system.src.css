@@ -5275,7 +5275,12 @@ body.has-cultivation-login-reveal {
     left: 0;
     width: 100%;
     height: 100%;
-    z-index: 1001;
+    z-index: 5200;
+    isolation: isolate;
+}
+
+body.ai-chat-fullscreen-active {
+    overflow: hidden;
 }
 
 /* Chat Window Container */
@@ -5303,23 +5308,22 @@ body.has-cultivation-login-reveal {
    Fullscreen Mode
    ======================== */
 .ai-chat-container.fullscreen {
-    width: 100vw;
-    height: 100vh;
-    max-width: 100vw;
-    max-height: 100vh;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    inset: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    width: auto;
+    height: auto;
+    min-width: 0;
+    min-height: 0;
+    max-width: none;
+    max-height: none;
     border-radius: 0;
     animation: none;
     background: var(--bg-color);
 }
 
 .ai-chat-container.fullscreen .ai-chat-header {
-    max-width: 900px;
+    max-width: 980px;
     margin: 0 auto;
-    width: 100%;
+    width: min(980px, calc(100% - 32px));
     background: transparent;
     border-bottom: none;
     padding: 16px 0;
@@ -5327,8 +5331,8 @@ body.has-cultivation-login-reveal {
 
 .ai-chat-container.fullscreen .ai-chat-messages {
     flex: 1;
-    max-width: 900px;
-    width: 100%;
+    max-width: 980px;
+    width: min(980px, calc(100% - 32px));
     margin: 0 auto;
     background: transparent;
     padding: 16px 0;
@@ -5353,8 +5357,8 @@ body.has-cultivation-login-reveal {
 }
 
 .ai-chat-container.fullscreen .ai-chat-input-area {
-    max-width: 900px;
-    width: 100%;
+    max-width: 980px;
+    width: min(980px, calc(100% - 32px));
     margin: 0 auto;
     background: transparent;
     border-top: none;
@@ -5785,7 +5789,8 @@ body.has-cultivation-login-reveal {
     margin-left: 4px;
 }
 .ai-chat-container.fullscreen .message-actions {
-    max-width: 900px;
+    max-width: 980px;
+    width: min(980px, calc(100% - 32px));
     margin: 8px auto 0 auto;
     padding: 0;
 }
@@ -6085,11 +6090,11 @@ body.has-cultivation-login-reveal {
     }
 
     .ai-chat-container.fullscreen {
-        inset: 0;
-        width: 100vw;
-        height: 100vh;
-        max-width: 100vw;
-        max-height: 100vh;
+        inset: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        width: auto;
+        height: auto;
+        max-width: none;
+        max-height: none;
         border-radius: 0;
     }
 
