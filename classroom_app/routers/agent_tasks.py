@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from ..config import AGENT_TASK_RUNTIME_URL, AGENT_TASKS_ENABLED
@@ -12,8 +12,10 @@ from ..services.agent_task_service import (
     agent_workflow_catalog,
     cancel_agent_task,
     create_agent_task,
+    generate_agent_task_title,
     get_agent_task,
     list_agent_tasks,
+    set_agent_task_composer,
     task_type_options,
 )
 
@@ -54,7 +56,11 @@ def api_list_agent_tasks(
 
 
 @router.post("", response_class=JSONResponse)
-async def api_create_agent_task(request: Request, user: dict = Depends(get_current_teacher)):
+async def api_create_agent_task(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_teacher),
+):
     if not AGENT_TASKS_ENABLED:
         raise HTTPException(status_code=503, detail="任务中心暂未启用。")
     data = await request.json()
@@ -63,7 +69,23 @@ async def api_create_agent_task(request: Request, user: dict = Depends(get_curre
     with get_db_connection() as conn:
         task = create_agent_task(conn, user, data)
         conn.commit()
+    background_tasks.add_task(generate_agent_task_title, int(task["id"]))
     return {"status": "success", "task": task}
+
+
+@router.post("/composer", response_class=JSONResponse)
+async def api_set_agent_task_composer(request: Request, user: dict = Depends(get_current_teacher)):
+    data = await request.json()
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="请求格式错误。")
+    with get_db_connection() as conn:
+        queue_state = set_agent_task_composer(
+            conn,
+            user,
+            active=bool(data.get("active")),
+            page_context=data.get("page_context") if isinstance(data.get("page_context"), dict) else {},
+        )
+    return {"status": "success", "queue_state": queue_state}
 
 
 @router.get("/{task_id}", response_class=JSONResponse)

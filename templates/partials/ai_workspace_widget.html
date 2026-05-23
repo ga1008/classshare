@@ -37,7 +37,8 @@
         </svg>
     </span>
     {% if ai_widget_is_teacher %}
-    <span class="ai-workspace-fab__badge" aria-hidden="true">Agent</span>
+    <span class="ai-workspace-fab__light is-green" id="ai-agent-fab-light" title="可以执行新任务" aria-hidden="true"></span>
+    <span class="ai-workspace-fab__badge" id="ai-agent-fab-queue-badge" title="当前排队数量">0</span>
     {% endif %}
 </button>
 
@@ -60,16 +61,16 @@
                 <div>
                     <h3>AI 助手</h3>
                     {% if ai_widget_is_teacher %}
-                    <small>懂当前页面的教学工作台</small>
+                    <small id="ai-workspace-subtitle">懂当前页面的教学工作台</small>
                     {% else %}
                     <small>围绕本课堂答疑</small>
                     {% endif %}
                 </div>
             </div>
             {% if ai_widget_is_teacher %}
-            <div class="ai-workspace-tabs" role="tablist" aria-label="AI 工作区">
-                <button type="button" class="ai-workspace-tab is-active" data-ai-workspace-tab="chat" role="tab" aria-selected="true">聊天助手</button>
-                <button type="button" class="ai-workspace-tab" data-ai-workspace-tab="tasks" role="tab" aria-selected="false">任务中心</button>
+            <div class="ai-agent-queue-indicator" aria-label="Agent 队列状态">
+                <span id="ai-agent-traffic-light" class="ai-agent-traffic-light is-green" title="可以执行新任务" aria-hidden="true"></span>
+                <span class="ai-agent-queue-tag" title="当前排队数量"><span id="ai-agent-queue-count">0</span></span>
             </div>
             {% endif %}
             <div class="header-buttons">
@@ -91,6 +92,10 @@
                     <input type="file" id="ai-chat-file-input" accept="image/*,.txt,.md,.py,.js,.ts,.tsx,.jsx,.html,.htm,.css,.json,.xml,.yaml,.yml,.toml,.c,.cpp,.h,.hpp,.java,.kt,.rs,.go,.rb,.php,.sh,.bat,.sql,.csv,.svg,.vue,.log,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.pdf" multiple style="display: none;">
                     <div class="left-buttons">
                         <button id="ai-deep-think-btn" class="chat-btn deep-think" type="button" title="深度思考" aria-label="深度思考"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l4 4-1.5 1.5-4-4v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3"/><path d="m9 9 1.88 1.88"/><path d="M9 13.5V15l1.88-1.88"/></svg></button>
+                        {% if ai_widget_is_teacher %}
+                        <button id="ai-agent-mode-toggle" class="chat-btn agent-mode" type="button" title="切换为 Agent 任务" aria-label="Agent 任务模式" aria-pressed="false"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.05" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"></path><path d="M12 18v4"></path><path d="m4.93 4.93 2.83 2.83"></path><path d="m16.24 16.24 2.83 2.83"></path><path d="M2 12h4"></path><path d="M18 12h4"></path><path d="m4.93 19.07 2.83-2.83"></path><path d="m16.24 7.76 2.83-2.83"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+                        <button id="ai-agent-history-toggle" class="chat-btn agent-history" type="button" title="Agent 队列与历史" aria-label="Agent 队列与历史" aria-expanded="false"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.05" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 3v6h6"></path><path d="M12 7v5l3 2"></path></svg></button>
+                        {% endif %}
                     </div>
                     <textarea id="ai-chat-textarea" placeholder="把当前页面作为上下文提问..." rows="1"></textarea>
                     <div class="right-buttons">
@@ -102,45 +107,16 @@
         </section>
 
         {% if ai_widget_is_teacher %}
-        <section class="ai-workspace-panel ai-task-center" data-ai-workspace-panel="tasks" role="tabpanel" hidden>
-            <div class="ai-task-center__summary">
-                <div class="ai-task-center__metric"><span>运行</span><strong data-agent-count="running">0</strong></div>
-                <div class="ai-task-center__metric"><span>排队</span><strong data-agent-count="queued">0</strong></div>
-                <div class="ai-task-center__metric"><span>完成</span><strong data-agent-count="completed">0</strong></div>
-                <div class="ai-task-center__metric"><span>失败</span><strong data-agent-count="failed">0</strong></div>
-            </div>
-            <div class="ai-task-board">
-                <div class="ai-task-board__rail">
-                    <form class="ai-task-form" id="agent-task-form">
-                        <div class="ai-task-form__row">
-                            <label for="agent-task-type">任务类型</label>
-                            <select id="agent-task-type" name="task_type"></select>
-                            <div class="ai-task-type-hint" id="agent-task-type-hint" aria-live="polite"></div>
-                        </div>
-                        <div class="ai-task-form__row">
-                            <label for="agent-task-title">任务标题</label>
-                            <input id="agent-task-title" name="title" maxlength="120" placeholder="给这次任务起个短标题">
-                        </div>
-                        <div class="ai-task-form__row">
-                            <label for="agent-task-instruction">任务要求</label>
-                            <textarea id="agent-task-instruction" name="instruction" maxlength="4000" rows="4" placeholder="描述要完成的教学业务任务，例如整理本课堂材料并生成下次课导学文档。"></textarea>
-                        </div>
-                        <div class="ai-task-context">
-                            <span>页面背景</span>
-                            <strong id="agent-task-context-title">当前页面</strong>
-                        </div>
-                        <div class="ai-task-form__actions">
-                            <span id="agent-task-form-status" role="status"></span>
-                            <button type="submit" class="btn btn-primary">加入全平台队列</button>
-                        </div>
-                    </form>
-                    <div class="ai-task-list" id="agent-task-list" aria-live="polite"></div>
+        <aside id="ai-agent-history-drawer" class="ai-agent-history-drawer" hidden aria-label="Agent 队列与历史">
+            <header>
+                <div>
+                    <strong>Agent 队列</strong>
+                    <small id="ai-agent-context-title">当前页面</small>
                 </div>
-                <article class="ai-task-detail" id="agent-task-detail">
-                    <div class="ai-task-detail__empty">选择一个任务查看状态。自己的任务会显示详情和执行记录。</div>
-                </article>
-            </div>
-        </section>
+                <button id="ai-agent-history-close" class="chat-btn" type="button" title="收起" aria-label="收起 Agent 历史"><svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.05" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
+            </header>
+            <div class="ai-task-list" id="agent-task-list" aria-live="polite"></div>
+        </aside>
         {% endif %}
 
         <div class="resizer resizer-top"></div><div class="resizer resizer-right"></div><div class="resizer resizer-bottom"></div><div class="resizer resizer-left"></div>

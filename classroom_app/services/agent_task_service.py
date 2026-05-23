@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -208,6 +208,7 @@ MAX_INSTRUCTION_CHARS = 4000
 MAX_CONTEXT_TEXT_CHARS = 16000
 MAX_RESULT_DETAIL_CHARS = 40000
 MAX_RUNTIME_TEXT_OUTPUTS = 12
+COMPOSER_TTL_SECONDS = 35
 
 _CHINESE_DIGITS = {
     "零": 0,
@@ -255,6 +256,64 @@ def _summarize_text(text: str, *, limit: int = 96) -> str:
     if len(normalized) <= limit:
         return normalized
     return normalized[:limit].rstrip() + "..."
+
+
+def _compact_title_text(text: str, *, limit: int = 24) -> str:
+    normalized = _clean_text(text, max_chars=160)
+    normalized = re.sub(r"^[#*\-_\s\"'`“”‘’]+", "", normalized)
+    normalized = re.sub(r"^(任务标题|标题|题目)\s*[:：]\s*", "", normalized, flags=re.IGNORECASE)
+    normalized = re.split(r"[\n\r。！？!?；;]", normalized, maxsplit=1)[0]
+    normalized = re.sub(r"\s+", "", normalized).strip("：:，,、.。")
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[:limit].rstrip("：:，,、.。")
+
+
+def _recent_agent_task_titles(conn, *, exclude_task_id: int = 0, limit: int = 60) -> list[str]:
+    rows = conn.execute(
+        """
+        SELECT title
+        FROM agent_tasks
+        WHERE id <> ?
+          AND COALESCE(title, '') <> ''
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+        """,
+        (int(exclude_task_id or 0), max(1, min(int(limit or 60), 120))),
+    ).fetchall()
+    return [_clean_text(row["title"], max_chars=80) for row in rows if _clean_text(row["title"], max_chars=80)]
+
+
+def _ensure_unique_task_title(title: str, existing_titles: list[str]) -> str:
+    base = _compact_title_text(title, limit=18) or "教学任务"
+    existing = {str(item).strip() for item in existing_titles if str(item or "").strip()}
+    if base not in existing:
+        return base
+    for index in range(2, 100):
+        candidate = f"{base}{index}"
+        if candidate not in existing:
+            return candidate
+    return f"{base}{uuid.uuid4().hex[:4]}"
+
+
+def _fallback_agent_task_title(instruction: str, task_type: str, existing_titles: list[str] | None = None) -> str:
+    label = TASK_TYPE_DEFINITIONS.get(task_type, TASK_TYPE_DEFINITIONS["general_teaching_task"])["label"]
+    stem = _compact_title_text(instruction, limit=18)
+    lesson_match = re.search(r"第\s*([0-9一二两三四五六七八九十]{1,6})\s*(?:次课|节课|课|节)", instruction)
+    if task_type == "lesson_document" and lesson_match:
+        stem = f"第{lesson_match.group(1)}课"
+    elif task_type == "assignment_blueprint" and re.search(r"(考试|试卷|测验)", instruction):
+        stem = "考试草案"
+    elif task_type == "student_notification" and re.search(r"(低分|未交|逾期)", instruction):
+        stem = "学生通知"
+    if not stem:
+        stem = label
+    title = stem if label in stem else f"{label}-{stem}"
+    return _ensure_unique_task_title(title, existing_titles or [])
+
+
+def _public_summary_for_task(task_type: str) -> str:
+    return TASK_TYPE_DEFINITIONS.get(task_type, TASK_TYPE_DEFINITIONS["general_teaching_task"])["label"]
 
 
 def _parse_chinese_number(token: str) -> int | None:
@@ -657,10 +716,9 @@ def create_agent_task(conn, user: dict[str, Any], payload: dict[str, Any]) -> di
         task_type=task_type,
         instruction=instruction,
     )
-    title = _clean_text(payload.get("title"), max_chars=120)
-    if not title:
-        title = _summarize_text(instruction, limit=36) or TASK_TYPE_DEFINITIONS[task_type]["label"]
-    public_summary = f"{TASK_TYPE_DEFINITIONS[task_type]['label']}：{_summarize_text(title, limit=64)}"
+    existing_titles = _recent_agent_task_titles(conn)
+    title = _fallback_agent_task_title(instruction, task_type, existing_titles)
+    public_summary = _public_summary_for_task(task_type)
 
     now = utcnow_iso()
     cursor = conn.execute(
@@ -720,6 +778,187 @@ def append_task_event(
         ),
     )
     if commit:
+        conn.commit()
+
+
+def _page_label_from_context(page_context: dict[str, Any] | None) -> str:
+    context = _normalize_context_payload(page_context or {})
+    pieces = [
+        ((context.get("materialContext") or {}).get("materialName") or ""),
+        ((context.get("assignmentContext") or {}).get("title") or ""),
+        ((context.get("classroomContext") or {}).get("courseName") or ""),
+        ((context.get("manageContext") or {}).get("pageTitle") or ""),
+        ((context.get("page") or {}).get("title") or ""),
+    ]
+    return _summarize_text(next((str(item) for item in pieces if str(item or "").strip()), "当前页面"), limit=48)
+
+
+def _purge_stale_composers(conn) -> None:
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=COMPOSER_TTL_SECONDS)).isoformat()
+    conn.execute("DELETE FROM agent_task_composers WHERE updated_at < ?", (cutoff,))
+
+
+def set_agent_task_composer(
+    conn,
+    user: dict[str, Any],
+    *,
+    active: bool,
+    page_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    teacher_id = int(user["id"])
+    _purge_stale_composers(conn)
+    if not active:
+        conn.execute("DELETE FROM agent_task_composers WHERE teacher_id = ?", (teacher_id,))
+        conn.commit()
+        return get_agent_queue_state(conn, viewer_teacher_id=teacher_id)
+
+    now = utcnow_iso()
+    conn.execute(
+        """
+        INSERT INTO agent_task_composers (teacher_id, teacher_name, page_label, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(teacher_id) DO UPDATE SET
+            teacher_name = excluded.teacher_name,
+            page_label = excluded.page_label,
+            updated_at = excluded.updated_at
+        """,
+        (teacher_id, _teacher_display_name(user), _page_label_from_context(page_context), now),
+    )
+    conn.commit()
+    return get_agent_queue_state(conn, viewer_teacher_id=teacher_id)
+
+
+def get_agent_queue_state(conn, *, viewer_teacher_id: int) -> dict[str, Any]:
+    _purge_stale_composers(conn)
+    queued_count = int(
+        conn.execute("SELECT COUNT(*) FROM agent_tasks WHERE status = ?", (TASK_STATUS_QUEUED,)).fetchone()[0]
+    )
+    running = conn.execute(
+        """
+        SELECT id, teacher_id, teacher_name, task_type, public_summary, started_at
+        FROM agent_tasks
+        WHERE status = ?
+        ORDER BY started_at ASC, id ASC
+        LIMIT 1
+        """,
+        (TASK_STATUS_RUNNING,),
+    ).fetchone()
+    composer = conn.execute(
+        """
+        SELECT teacher_id, teacher_name, page_label, updated_at
+        FROM agent_task_composers
+        WHERE teacher_id <> ?
+        ORDER BY updated_at DESC
+        LIMIT 1
+        """,
+        (int(viewer_teacher_id),),
+    ).fetchone()
+
+    running_payload: dict[str, Any] | None = None
+    if running:
+        running_payload = {
+            "task_id": int(running["id"]),
+            "teacher_id": int(running["teacher_id"] or 0),
+            "teacher_name": running["teacher_name"] or "某位老师",
+            "task_type_label": _public_summary_for_task(running["task_type"] or "general_teaching_task"),
+            "public_summary": running["public_summary"] or _public_summary_for_task(running["task_type"] or "general_teaching_task"),
+            "started_at": running["started_at"] or "",
+        }
+
+    composer_payload: dict[str, Any] | None = None
+    if composer:
+        composer_payload = {
+            "teacher_id": int(composer["teacher_id"] or 0),
+            "teacher_name": composer["teacher_name"] or "某位老师",
+            "page_label": composer["page_label"] or "当前页面",
+            "updated_at": composer["updated_at"] or "",
+        }
+
+    return {
+        "queued_count": queued_count,
+        "is_running": bool(running_payload),
+        "is_composing": bool(composer_payload) and not running_payload,
+        "running": running_payload,
+        "composer": composer_payload,
+    }
+
+
+async def generate_agent_task_title(task_id: int) -> None:
+    from ..core import ai_client
+    from ..database import get_db_connection
+
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id, task_type, title, private_instruction
+            FROM agent_tasks
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (int(task_id),),
+        ).fetchone()
+        if not row:
+            return
+        task_type = row["task_type"] or "general_teaching_task"
+        instruction = _clean_text(row["private_instruction"], max_chars=MAX_INSTRUCTION_CHARS)
+        existing_titles = _recent_agent_task_titles(conn, exclude_task_id=int(task_id), limit=80)
+
+    fallback_title = _fallback_agent_task_title(instruction, task_type, existing_titles)
+    generated_title = ""
+    label = TASK_TYPE_DEFINITIONS.get(task_type, TASK_TYPE_DEFINITIONS["general_teaching_task"])["label"]
+    title_prompt = (
+        "请为一个教师 Agent 任务生成一个不超过 14 个汉字的短标题。\n"
+        "要求：只返回标题本身；不要包含学生姓名、学号、邮箱、具体分数或隐私细节；"
+        "避免和已有标题重复；标题要像任务名，不要写完整句子。\n\n"
+        f"任务类型：{label}\n"
+        f"已有标题：{json.dumps(existing_titles[:60], ensure_ascii=False)}\n"
+        f"任务内容：{instruction[:1600]}"
+    )
+    try:
+        response = await ai_client.post(
+            "/api/ai/chat",
+            json={
+                "system_prompt": "你是 LanShare 教学平台的任务标题生成器，输出必须简短、安全、无隐私。",
+                "messages": [],
+                "new_message": title_prompt,
+                "model_capability": "standard",
+                "task_type": "fast_text_response",
+                "web_search_enabled": False,
+            },
+            timeout=18.0,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("status") == "success":
+            generated_title = _compact_title_text(payload.get("response_text") or payload.get("text") or "", limit=18)
+    except Exception as exc:
+        print(f"[AGENT_TASK] title generation fallback for task {task_id}: {exc}")
+
+    title = _ensure_unique_task_title(generated_title or fallback_title, existing_titles)
+    public_summary = _public_summary_for_task(task_type)
+    with get_db_connection() as conn:
+        current = conn.execute("SELECT title FROM agent_tasks WHERE id = ? LIMIT 1", (int(task_id),)).fetchone()
+        if not current:
+            return
+        if _clean_text(current["title"], max_chars=80) == title:
+            return
+        now = utcnow_iso()
+        conn.execute(
+            """
+            UPDATE agent_tasks
+            SET title = ?, public_summary = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (title, public_summary, now, int(task_id)),
+        )
+        append_task_event(
+            conn,
+            int(task_id),
+            "title_ready",
+            "任务短标题已生成。",
+            {"title": title, "source": "ai" if generated_title else "fallback"},
+            commit=False,
+        )
         conn.commit()
 
 
@@ -873,6 +1112,7 @@ def list_agent_tasks(conn, *, viewer_teacher_id: int, limit: int = 30) -> dict[s
             for row in rows
         ],
         "counts": counts,
+        "queue_state": get_agent_queue_state(conn, viewer_teacher_id=viewer_teacher_id),
     }
 
 

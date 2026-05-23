@@ -1,12 +1,23 @@
 const CONFIG = window.AI_WORKSPACE_WIDGET_CONFIG || {};
-const TASK_REFRESH_MS = 6000;
+const TASK_REFRESH_MS = 5000;
+const COMPOSER_HEARTBEAT_MS = 10000;
 
 let chatComponent = null;
 let taskBootstrapLoaded = false;
+let taskBootstrapPromise = null;
+let runtimeWarningShown = false;
 let taskPollTimer = null;
 let selectedTaskId = null;
-let lastTaskPayload = { tasks: [], counts: {} };
+let composerHeartbeatTimer = null;
+let composerTouchTimer = null;
+let lastComposerTouchAt = 0;
+let composerActive = false;
+let agentMode = false;
+let agentSubmitting = false;
+let lastTaskPayload = { tasks: [], counts: {}, queue_state: {} };
 let workflowCatalog = [];
+let taskTypesCatalog = [];
+const agentTaskMessages = new Map();
 
 function $(selector, root = document) {
     return root.querySelector(selector);
@@ -242,10 +253,6 @@ function formatContextForPrompt(context = collectPageContext()) {
 }
 
 function refreshContextPreview() {
-    const title = $('#agent-task-context-title');
-    if (!title) {
-        return;
-    }
     const context = collectPageContext();
     const pieces = [
         context.materialContext?.materialName,
@@ -254,33 +261,68 @@ function refreshContextPreview() {
         context.manageContext?.pageTitle,
         context.page?.title,
     ].filter(Boolean);
-    title.textContent = clampText(pieces[0] || '当前页面', 90);
-}
-
-function workflowHintForTaskType(taskType) {
-    const map = {
-        course_material_digest: ['material_operations'],
-        lesson_document: ['lesson_document_generation'],
-        assignment_blueprint: ['assignment_exam_workflow'],
-        blog_draft: ['blog_and_reflection'],
-        student_notification: ['student_support', 'submission_grading_feedback'],
-        general_teaching_task: ['classroom_preparation', 'submission_grading_feedback'],
-    };
-    const keys = map[taskType] || [];
-    const matched = workflowCatalog.find((item) => keys.includes(item.key)) || workflowCatalog[0];
-    if (!matched) {
-        return '';
+    const label = clampText(pieces[0] || '当前页面', 90);
+    ['#ai-agent-context-title', '#agent-task-context-title'].forEach((selector) => {
+        const node = $(selector);
+        if (node) {
+            node.textContent = label;
+        }
+    });
+    const subtitle = $('#ai-workspace-subtitle');
+    if (subtitle) {
+        subtitle.textContent = agentMode ? `Agent 任务 · ${label}` : `懂当前页面 · ${label}`;
     }
-    return `${matched.agent_capability || ''} ${matched.guardrail ? `安全边界：${matched.guardrail}` : ''}`.trim();
 }
 
-function updateTaskTypeHint() {
-    const select = $('#agent-task-type');
-    const hint = $('#agent-task-type-hint');
-    if (!select || !hint) {
+function topbarBottomOffset() {
+    const candidates = [
+        '.app-topbar',
+        'header.navbar',
+        '.main-topbar',
+        '.teacher-topbar',
+        '.global-topbar',
+    ];
+    for (const selector of candidates) {
+        const node = $(selector);
+        if (!node) {
+            continue;
+        }
+        const rect = node.getBoundingClientRect();
+        if (rect.width > 200 && rect.height > 20 && rect.bottom > 0 && rect.bottom < window.innerHeight * 0.35) {
+            return Math.ceil(rect.bottom);
+        }
+    }
+    return 0;
+}
+
+function ensureWorkspaceWindowVisible() {
+    const container = $('.ai-workspace-container');
+    if (!container || container.classList.contains('fullscreen')) {
         return;
     }
-    hint.textContent = workflowHintForTaskType(select.value);
+    const isCompactViewport = window.innerWidth <= 768;
+    const margin = isCompactViewport ? 10 : 16;
+    const minTop = Math.max(margin, topbarBottomOffset() + 8);
+    const maxHeight = Math.max(360, window.innerHeight - minTop - margin);
+    const rect = container.getBoundingClientRect();
+    const availableWidth = Math.max(260, window.innerWidth - margin * 2);
+    const width = isCompactViewport ? availableWidth : Math.min(rect.width || 720, Math.max(300, availableWidth));
+    const height = Math.min(rect.height || 620, maxHeight);
+    const currentTop = Number.isFinite(rect.top) ? rect.top : minTop;
+    const shouldSnapNearTop = currentTop < minTop || currentTop > minTop + 80;
+    const top = shouldSnapNearTop
+        ? minTop
+        : Math.min(Math.max(currentTop, minTop), Math.max(minTop, window.innerHeight - height - margin));
+    const left = isCompactViewport ? margin : Math.min(Math.max(rect.left, margin), Math.max(margin, window.innerWidth - width - margin));
+    container.style.width = `${Math.round(width)}px`;
+    container.style.height = `${Math.round(height)}px`;
+    container.style.top = `${Math.round(top)}px`;
+    container.style.left = `${Math.round(left)}px`;
+    container.style.right = 'auto';
+    container.style.bottom = 'auto';
+    if (chatComponent?.getCurrentWindowRect) {
+        chatComponent.lastWindowRect = chatComponent.getCurrentWindowRect();
+    }
 }
 
 async function apiJson(url, options = {}) {
@@ -303,11 +345,99 @@ async function apiJson(url, options = {}) {
     return data;
 }
 
-function setCounts(counts = {}) {
-    $all('[data-agent-count]').forEach((node) => {
-        const key = node.dataset.agentCount;
-        node.textContent = String(counts[key] ?? 0);
+function setQueueState(queueState = {}, counts = {}) {
+    const queued = Number(queueState.queued_count ?? counts.queued ?? 0);
+    ['#ai-agent-queue-count', '#ai-agent-fab-queue-badge'].forEach((selector) => {
+        const node = $(selector);
+        if (node) {
+            node.textContent = String(queued);
+            node.toggleAttribute('data-empty', queued <= 0);
+        }
     });
+
+    const state = queueState.is_running ? 'red' : (queueState.is_composing ? 'yellow' : 'green');
+    let tooltip = '可以执行新任务';
+    if (state === 'red') {
+        const running = queueState.running || {};
+        tooltip = `${running.teacher_name || '某位老师'}的${running.public_summary || running.task_type_label || 'Agent 任务'}正在运行`;
+    } else if (state === 'yellow') {
+        const composer = queueState.composer || {};
+        tooltip = `${composer.teacher_name || '某位老师'}正在编写新任务`;
+    }
+    ['#ai-agent-traffic-light', '#ai-agent-fab-light'].forEach((selector) => {
+        const node = $(selector);
+        if (!node) {
+            return;
+        }
+        node.classList.remove('is-green', 'is-yellow', 'is-red');
+        node.classList.add(`is-${state}`);
+        node.title = tooltip;
+    });
+}
+
+function inferAgentTaskType(instruction, context = collectPageContext()) {
+    const text = `${instruction || ''} ${context.page?.title || ''} ${context.page?.activeArea || ''}`.toLowerCase();
+    if (/学习文档|导学|下一节课|下次课|第\s*\d+\s*(课|次)|lesson|document/.test(text)) {
+        return 'lesson_document';
+    }
+    if (/作业|考试|试卷|题目|出题|课堂作业|测验|exam|quiz|assignment/.test(text)) {
+        return 'assignment_blueprint';
+    }
+    if (/博客|博文|blog|反思|发布文章/.test(text)) {
+        return 'blog_draft';
+    }
+    if (/通知|提醒|低分|未交|学生|私信|message|notice/.test(text)) {
+        return 'student_notification';
+    }
+    if (/(材料|课件|资料|教材|素材|文件|material|resource)/.test(text) && /(整理|收集|归档|汇总|重命名|移动|删除|material|resource)/.test(text)) {
+        return 'course_material_digest';
+    }
+    return 'general_teaching_task';
+}
+
+function currentChatSurface() {
+    const messagesBox = chatComponent?.messagesBox || $('#ai-chat-messages-box');
+    return {
+        messagesBox,
+        textarea: chatComponent?.textarea || $('#ai-chat-textarea'),
+        sendBtn: chatComponent?.sendBtn || $('#ai-chat-btn-send'),
+        attachBtn: chatComponent?.attachBtn || $('#ai-chat-btn-attach'),
+        deepThinkBtn: chatComponent?.deepThinkBtn || $('#ai-deep-think-btn'),
+        scrollToBottom: () => {
+            if (chatComponent?.scrollToBottom) {
+                chatComponent.scrollToBottom();
+            } else if (messagesBox) {
+                messagesBox.scrollTop = messagesBox.scrollHeight;
+            }
+        },
+        renderMessage: (role, content, attachments = []) => {
+            if (chatComponent?.renderMessage) {
+                chatComponent.renderMessage(role, content, attachments);
+                return;
+            }
+            if (!messagesBox) {
+                return;
+            }
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `ai-chat-message ${role}`;
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble';
+            const p = document.createElement('p');
+            p.textContent = content || '';
+            bubble.appendChild(p);
+            msgDiv.appendChild(bubble);
+            messagesBox.appendChild(msgDiv);
+            messagesBox.scrollTop = messagesBox.scrollHeight;
+        },
+    };
+}
+
+function resetTextareaHeight(textarea) {
+    if (!textarea) {
+        return;
+    }
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.value ? `${textarea.scrollHeight}px` : 'auto';
 }
 
 function formatElapsed(seconds) {
@@ -521,14 +651,9 @@ function renderTaskList(tasks = []) {
     }).join('');
 }
 
-function renderTaskDetail(task) {
-    const detail = $('#agent-task-detail');
-    if (!detail) {
-        return;
-    }
+function buildAgentTaskDetailHtml(task) {
     if (!task) {
-        detail.innerHTML = '<div class="ai-task-detail__empty">选择一个任务查看状态。自己的任务会显示详情和执行记录。</div>';
-        return;
+        return '<div class="ai-task-detail__empty">选择一个任务查看状态。自己的任务会显示详情和执行记录。</div>';
     }
     const runtime = task.runtime_status ? `<span>运行时：${escapeHtml(task.runtime_status)}</span>` : '';
     const elapsed = task.elapsed_seconds ? `<span>已运行：${formatElapsed(task.elapsed_seconds)}</span>` : '';
@@ -567,10 +692,13 @@ function renderTaskDetail(task) {
             <p>这是其他老师的任务。这里只显示公开队列状态，不展示任务细节、上下文或结果。</p>
         </div>
     `;
-    detail.innerHTML = `
+    return `
         <header class="ai-task-detail__header">
             <div>
-                <span class="ai-task-status ${statusClass(task.status)}">${escapeHtml(task.status_label || task.status)}</span>
+                <div class="ai-agent-card__label-row">
+                    <span class="ai-agent-card__badge">Agent</span>
+                    <span class="ai-task-status ${statusClass(task.status)}">${escapeHtml(task.status_label || task.status)}</span>
+                </div>
                 <h3>${escapeHtml(task.title || task.public_summary || '教学任务')}</h3>
                 <div class="ai-task-detail__meta">
                     <span>${escapeHtml(task.teacher_name || '')}</span>
@@ -585,24 +713,60 @@ function renderTaskDetail(task) {
     `;
 }
 
+function renderTaskDetail(task) {
+    return renderAgentTaskMessage(task);
+}
+
+function getAgentTaskMessageNode(taskId) {
+    const id = Number(taskId || 0);
+    if (!id) {
+        return null;
+    }
+    const surface = currentChatSurface();
+    if (!surface.messagesBox) {
+        return null;
+    }
+    const existing = agentTaskMessages.get(id);
+    if (existing?.isConnected) {
+        return existing;
+    }
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'ai-chat-message assistant agent-task-message';
+    msgDiv.dataset.agentTaskMessageId = String(id);
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    msgDiv.appendChild(bubble);
+    surface.messagesBox.appendChild(msgDiv);
+    agentTaskMessages.set(id, msgDiv);
+    return msgDiv;
+}
+
+function renderAgentTaskMessage(task) {
+    if (!task?.id) {
+        return;
+    }
+    const msgDiv = getAgentTaskMessageNode(task.id);
+    if (!msgDiv) {
+        return;
+    }
+    const bubble = msgDiv.querySelector('.bubble') || document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.innerHTML = `<article class="ai-agent-task-card">${buildAgentTaskDetailHtml(task)}</article>`;
+    if (!bubble.parentNode) {
+        msgDiv.appendChild(bubble);
+    }
+    currentChatSurface().scrollToBottom();
+}
+
 function focusTaskDetailIfCompact() {
-    const detail = $('#agent-task-detail');
-    if (!detail || !window.matchMedia('(max-width: 840px)').matches) {
-        return;
-    }
-    const scroller = detail.closest('.ai-task-center');
-    if (scroller) {
-        const detailTop = detail.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 8;
-        scroller.scrollTo({ top: Math.max(0, detailTop), behavior: 'auto' });
-        return;
-    }
-    detail.scrollIntoView({ block: 'start', inline: 'nearest' });
+    currentChatSurface().scrollToBottom();
 }
 
 async function loadTaskDetail(taskId) {
     const data = await apiJson(`/api/agent-tasks/${taskId}`);
     renderTaskDetail(data.task);
     focusTaskDetailIfCompact();
+    return data.task;
 }
 
 async function refreshTasks({ silent = false } = {}) {
@@ -612,7 +776,7 @@ async function refreshTasks({ silent = false } = {}) {
     try {
         const data = await apiJson('/api/agent-tasks');
         lastTaskPayload = data;
-        setCounts(data.counts || {});
+        setQueueState(data.queue_state || {}, data.counts || {});
         renderTaskList(data.tasks || []);
         if (selectedTaskId) {
             const selected = (data.tasks || []).find((task) => Number(task.id) === Number(selectedTaskId));
@@ -621,6 +785,11 @@ async function refreshTasks({ silent = false } = {}) {
             } else {
                 renderTaskDetail(selected || null);
             }
+        }
+        const activeOwnTask = (data.tasks || []).find((task) => task.is_owner && task.is_active);
+        if (!selectedTaskId && activeOwnTask) {
+            selectedTaskId = activeOwnTask.id;
+            await loadTaskDetail(activeOwnTask.id);
         }
     } catch (error) {
         if (!silent) {
@@ -633,32 +802,25 @@ async function loadBootstrap() {
     if (!CONFIG.taskCenterEnabled || taskBootstrapLoaded) {
         return;
     }
-    const data = await apiJson('/api/agent-tasks/bootstrap');
-    taskBootstrapLoaded = true;
-    workflowCatalog = Array.isArray(data.workflow_catalog) ? data.workflow_catalog : [];
-    const select = $('#agent-task-type');
-    if (select) {
-        select.innerHTML = (data.task_types || []).map((item) => (
-            `<option value="${escapeHtml(item.value)}" data-placeholder="${escapeHtml(item.placeholder || '')}">${escapeHtml(item.label || item.value)}</option>`
-        )).join('');
-        const updatePlaceholder = () => {
-            const option = select.options[select.selectedIndex];
-            const textarea = $('#agent-task-instruction');
-            if (textarea && option?.dataset.placeholder) {
-                textarea.placeholder = option.dataset.placeholder;
-            }
-            updateTaskTypeHint();
-        };
-        select.addEventListener('change', updatePlaceholder);
-        updatePlaceholder();
+    if (taskBootstrapPromise) {
+        return taskBootstrapPromise;
     }
-    setCounts(data.counts || {});
-    renderTaskList(data.tasks || []);
-    if (!data.runtime_configured) {
-        const status = $('#agent-task-form-status');
-        if (status) {
-            status.textContent = '运行时未配置，任务会等待独立 Agent 服务启动。';
+    taskBootstrapPromise = (async () => {
+        const data = await apiJson('/api/agent-tasks/bootstrap');
+        taskBootstrapLoaded = true;
+        workflowCatalog = Array.isArray(data.workflow_catalog) ? data.workflow_catalog : [];
+        taskTypesCatalog = Array.isArray(data.task_types) ? data.task_types : [];
+        setQueueState(data.queue_state || {}, data.counts || {});
+        renderTaskList(data.tasks || []);
+        if (!data.runtime_configured && !runtimeWarningShown) {
+            runtimeWarningShown = true;
+            notify('Agent 运行时未配置，任务会先进入队列等待独立服务。', 'warning');
         }
+    })();
+    try {
+        await taskBootstrapPromise;
+    } finally {
+        taskBootstrapPromise = null;
     }
 }
 
@@ -668,39 +830,178 @@ function startTaskPolling() {
     }
     taskPollTimer = window.setInterval(() => {
         const modal = $('#ai-chat-modal');
-        const taskPanelVisible = !$('[data-ai-workspace-panel="tasks"]')?.hidden;
-        if (modal?.style.display === 'block' && taskPanelVisible) {
+        if (modal?.style.display === 'block') {
             refreshTasks({ silent: true });
         }
     }, TASK_REFRESH_MS);
 }
 
-function switchTab(tabName) {
-    if (!CONFIG.taskCenterEnabled && tabName === 'tasks') {
+function setAgentHistoryOpen(open) {
+    const drawer = $('#ai-agent-history-drawer');
+    const toggle = $('#ai-agent-history-toggle');
+    if (!drawer) {
         return;
     }
-    $all('[data-ai-workspace-tab]').forEach((tab) => {
-        const active = tab.dataset.aiWorkspaceTab === tabName;
-        tab.classList.toggle('is-active', active);
-        tab.setAttribute('aria-selected', active ? 'true' : 'false');
-    });
-    $all('[data-ai-workspace-panel]').forEach((panel) => {
-        const active = panel.dataset.aiWorkspacePanel === tabName;
-        panel.hidden = !active;
-        panel.classList.toggle('is-active', active);
-    });
-    document.body.dataset.aiWorkspaceActiveTab = tabName;
-    try {
-        window.localStorage.setItem('lanshare.aiWorkspace.tab', tabName);
-    } catch {
-        // Ignore storage restrictions.
+    drawer.hidden = !open;
+    drawer.classList.toggle('is-open', open);
+    toggle?.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+        refreshTasks({ silent: true });
     }
-    if (tabName === 'tasks') {
-        refreshContextPreview();
-        loadBootstrap()
-            .then(() => refreshTasks({ silent: true }))
-            .catch((error) => notify(error.message || '任务中心加载失败', 'error'));
+}
+
+function setAgentMode(enabled, { persist = true } = {}) {
+    if (!CONFIG.taskCenterEnabled) {
+        return;
+    }
+    agentMode = Boolean(enabled);
+    const surface = currentChatSurface();
+    const container = $('.ai-workspace-container');
+    const toggle = $('#ai-agent-mode-toggle');
+    container?.classList.toggle('is-agent-mode', agentMode);
+    document.body.dataset.aiAgentMode = agentMode ? 'agent' : 'chat';
+    toggle?.classList.toggle('is-active', agentMode);
+    toggle?.setAttribute('aria-pressed', agentMode ? 'true' : 'false');
+    if (toggle) {
+        toggle.title = agentMode ? '切换为普通 AI 对话' : '切换为 Agent 任务';
+    }
+    if (surface.textarea) {
+        surface.textarea.placeholder = agentMode
+            ? '描述要让 Agent 执行的教学业务任务...'
+            : '把当前页面作为上下文提问...';
+    }
+    if (surface.attachBtn) {
+        surface.attachBtn.disabled = agentMode || !CONFIG.classOfferingId;
+    }
+    if (surface.deepThinkBtn) {
+        surface.deepThinkBtn.disabled = agentMode || !CONFIG.classOfferingId;
+    }
+    if (surface.sendBtn) {
+        surface.sendBtn.disabled = agentMode ? false : (!CONFIG.classOfferingId || Boolean(chatComponent?.isLoading));
+        surface.sendBtn.title = agentMode ? '加入 Agent 队列' : '发送';
+        surface.sendBtn.setAttribute('aria-label', agentMode ? '加入 Agent 队列' : '发送');
+    }
+    refreshContextPreview();
+    if (persist) {
+        try {
+            window.localStorage.setItem('lanshare.aiWorkspace.agentMode', agentMode ? '1' : '0');
+        } catch {
+            // Ignore storage restrictions.
+        }
+    }
+    if (agentMode) {
+        loadBootstrap().then(() => refreshTasks({ silent: true })).catch((error) => notify(error.message || 'Agent 加载失败', 'error'));
         startTaskPolling();
+    } else {
+        updateComposerPresence(false).catch(() => {});
+    }
+}
+
+async function updateComposerPresence(active) {
+    if (!CONFIG.taskCenterEnabled) {
+        return;
+    }
+    if (!active && !composerActive) {
+        return;
+    }
+    composerActive = Boolean(active);
+    try {
+        const data = await apiJson('/api/agent-tasks/composer', {
+            method: 'POST',
+            body: JSON.stringify({
+                active: composerActive,
+                page_context: composerActive ? collectPageContext() : {},
+            }),
+        });
+        setQueueState(data.queue_state || {});
+    } catch {
+        // Presence is advisory; do not interrupt typing.
+    }
+}
+
+function scheduleComposerHeartbeat() {
+    if (composerHeartbeatTimer) {
+        window.clearInterval(composerHeartbeatTimer);
+    }
+    composerHeartbeatTimer = window.setInterval(() => {
+        if (agentMode && document.activeElement === $('#ai-chat-textarea')) {
+            updateComposerPresence(true).catch(() => {});
+        }
+    }, COMPOSER_HEARTBEAT_MS);
+}
+
+function touchComposerPresence() {
+    if (!agentMode) {
+        return;
+    }
+    const now = Date.now();
+    if (now - lastComposerTouchAt > 3000) {
+        lastComposerTouchAt = now;
+        updateComposerPresence(true).catch(() => {});
+        return;
+    }
+    if (composerTouchTimer) {
+        window.clearTimeout(composerTouchTimer);
+    }
+    composerTouchTimer = window.setTimeout(() => {
+        lastComposerTouchAt = Date.now();
+        updateComposerPresence(true).catch(() => {});
+    }, 900);
+}
+
+async function submitAgentTaskFromChat() {
+    if (!CONFIG.taskCenterEnabled || agentSubmitting) {
+        return;
+    }
+    const surface = currentChatSurface();
+    const textarea = surface.textarea;
+    const instruction = textarea?.value.trim() || '';
+    if (instruction.length < 6) {
+        notify('请补充更明确的任务内容。', 'warning');
+        return;
+    }
+    agentSubmitting = true;
+    if (surface.sendBtn) {
+        surface.sendBtn.disabled = true;
+    }
+    const context = collectPageContext();
+    const taskType = inferAgentTaskType(instruction, context);
+    surface.renderMessage('user', instruction);
+    if (chatComponent?.pendingFiles?.length) {
+        chatComponent.clearPendingFiles?.();
+        notify('Agent 任务暂不携带聊天附件，已使用当前页面背景和文字要求提交。', 'info');
+    }
+    if (textarea) {
+        textarea.value = '';
+        resetTextareaHeight(textarea);
+    }
+    await updateComposerPresence(false);
+    try {
+        const payload = {
+            task_type: taskType,
+            instruction,
+            page_context: context,
+            chat_session_uuid: chatComponent?.currentSessionUUID || '',
+        };
+        const data = await apiJson('/api/agent-tasks', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        });
+        selectedTaskId = data.task?.id || null;
+        if (data.task) {
+            renderAgentTaskMessage(data.task);
+        }
+        await refreshTasks({ silent: true });
+        notify('Agent 任务已加入全平台队列。', 'success');
+    } catch (error) {
+        surface.renderMessage('assistant', `Agent 任务提交失败：${error.message || '未知错误'}`);
+        notify(error.message || 'Agent 任务提交失败', 'error');
+    } finally {
+        agentSubmitting = false;
+        if (surface.sendBtn) {
+            surface.sendBtn.disabled = false;
+        }
+        textarea?.focus();
     }
 }
 
@@ -708,9 +1009,12 @@ function bindTaskCenter() {
     if (!CONFIG.taskCenterEnabled) {
         return;
     }
-    $all('[data-ai-workspace-tab]').forEach((tab) => {
-        tab.addEventListener('click', () => switchTab(tab.dataset.aiWorkspaceTab));
+    $('#ai-agent-mode-toggle')?.addEventListener('click', () => setAgentMode(!agentMode));
+    $('#ai-agent-history-toggle')?.addEventListener('click', () => {
+        const drawer = $('#ai-agent-history-drawer');
+        setAgentHistoryOpen(!drawer || drawer.hidden);
     });
+    $('#ai-agent-history-close')?.addEventListener('click', () => setAgentHistoryOpen(false));
     $('#agent-task-list')?.addEventListener('click', async (event) => {
         const button = event.target.closest('[data-agent-task-id]');
         if (!button) {
@@ -724,7 +1028,7 @@ function bindTaskCenter() {
             notify(error.message || '任务详情加载失败', 'error');
         }
     });
-    $('#agent-task-detail')?.addEventListener('click', async (event) => {
+    $('#ai-chat-messages-box')?.addEventListener('click', async (event) => {
         const button = event.target.closest('[data-agent-cancel]');
         if (!button) {
             return;
@@ -741,54 +1045,64 @@ function bindTaskCenter() {
             button.disabled = false;
         }
     });
-    $('#agent-task-form')?.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const form = event.currentTarget;
-        const submit = form.querySelector('button[type="submit"]');
-        const status = $('#agent-task-form-status');
-        const instruction = $('#agent-task-instruction')?.value.trim() || '';
-        if (instruction.length < 6) {
-            notify('请补充更明确的任务要求', 'warning');
+    const sendButton = $('#ai-chat-btn-send');
+    const textarea = $('#ai-chat-textarea');
+    sendButton?.addEventListener('click', (event) => {
+        if (!agentMode) {
             return;
         }
-        if (submit) {
-            submit.disabled = true;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        submitAgentTaskFromChat();
+    }, true);
+    textarea?.addEventListener('keypress', (event) => {
+        if (!agentMode || event.key !== 'Enter' || event.shiftKey) {
+            return;
         }
-        if (status) {
-            status.textContent = '正在加入队列...';
-        }
-        try {
-            const payload = {
-                task_type: $('#agent-task-type')?.value || 'general_teaching_task',
-                title: $('#agent-task-title')?.value.trim() || '',
-                instruction,
-                page_context: collectPageContext(),
-            };
-            const data = await apiJson('/api/agent-tasks', {
-                method: 'POST',
-                body: JSON.stringify(payload),
-            });
-            selectedTaskId = data.task?.id || null;
-            $('#agent-task-instruction').value = '';
-            $('#agent-task-title').value = '';
-            renderTaskDetail(data.task);
-            focusTaskDetailIfCompact();
-            await refreshTasks({ silent: true });
-            notify('任务已加入全平台队列', 'success');
-            if (status) {
-                status.textContent = '已进入队列';
-            }
-        } catch (error) {
-            if (status) {
-                status.textContent = error.message || '提交失败';
-            }
-            notify(error.message || '任务提交失败', 'error');
-        } finally {
-            if (submit) {
-                submit.disabled = false;
-            }
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        submitAgentTaskFromChat();
+    }, true);
+    textarea?.addEventListener('focus', () => {
+        if (agentMode) {
+            touchComposerPresence();
         }
     });
+    textarea?.addEventListener('blur', () => {
+        updateComposerPresence(false).catch(() => {});
+    });
+    textarea?.addEventListener('input', () => {
+        if (agentMode) {
+            touchComposerPresence();
+        }
+    });
+    window.addEventListener('beforeunload', () => {
+        if (!composerActive) {
+            return;
+        }
+        navigator.sendBeacon?.('/api/agent-tasks/composer', new Blob([JSON.stringify({ active: false })], { type: 'application/json' }));
+    });
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            updateComposerPresence(false).catch(() => {});
+        }
+    });
+    scheduleComposerHeartbeat();
+    let preferredAgentMode = !CONFIG.classOfferingId;
+    try {
+        const saved = window.localStorage.getItem('lanshare.aiWorkspace.agentMode');
+        if (saved === '1') preferredAgentMode = true;
+        if (saved === '0') preferredAgentMode = false;
+    } catch {
+        // Ignore storage restrictions.
+    }
+    setAgentMode(preferredAgentMode, { persist: false });
+    if (!preferredAgentMode) {
+        loadBootstrap().then(() => refreshTasks({ silent: true })).catch((error) => notify(error.message || 'Agent 加载失败', 'error'));
+    }
+    startTaskPolling();
 }
 
 function initChatComponent() {
@@ -821,6 +1135,7 @@ function initFallbackShell() {
         modal.style.display = 'block';
         modal.setAttribute('aria-hidden', 'false');
         fab.style.display = 'none';
+        window.setTimeout(ensureWorkspaceWindowVisible, 0);
     };
     const close = () => {
         modal.style.display = 'none';
@@ -833,11 +1148,11 @@ function initFallbackShell() {
         container.classList.toggle('fullscreen');
     });
     if (!CONFIG.classOfferingId) {
-        $('#ai-chat-textarea')?.setAttribute('placeholder', '当前页面未绑定具体课堂，可切换到任务中心提交教学任务。');
+        $('#ai-chat-textarea')?.setAttribute('placeholder', CONFIG.taskCenterEnabled ? '描述要让 Agent 执行的教学业务任务...' : '当前页面未绑定具体课堂。');
         ['#ai-chat-btn-send', '#ai-chat-btn-attach', '#ai-deep-think-btn'].forEach((selector) => {
             const button = $(selector);
             if (button) {
-                button.disabled = true;
+                button.disabled = !(CONFIG.taskCenterEnabled && selector === '#ai-chat-btn-send');
             }
         });
     }
@@ -846,9 +1161,11 @@ function initFallbackShell() {
 function initOpenContextHooks() {
     $('#ai-chat-fab')?.addEventListener('click', () => {
         refreshContextPreview();
+        window.setTimeout(ensureWorkspaceWindowVisible, 0);
         window.dispatchEvent(new CustomEvent('ai-workspace:opened', { detail: collectPageContext() }));
     }, { capture: true });
     window.addEventListener('ai-workspace:opened', refreshContextPreview);
+    window.addEventListener('ai-workspace:opened', () => window.setTimeout(ensureWorkspaceWindowVisible, 0));
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -862,14 +1179,4 @@ document.addEventListener('DOMContentLoaded', () => {
     initOpenContextHooks();
     bindTaskCenter();
     refreshContextPreview();
-
-    if (CONFIG.taskCenterEnabled) {
-        let preferredTab = CONFIG.classOfferingId ? 'chat' : 'tasks';
-        try {
-            preferredTab = window.localStorage.getItem('lanshare.aiWorkspace.tab') || preferredTab;
-        } catch {
-            // Ignore storage restrictions.
-        }
-        switchTab(preferredTab === 'tasks' ? 'tasks' : 'chat');
-    }
 });

@@ -3109,6 +3109,16 @@ def init_database():
                              FOREIGN KEY (task_id) REFERENCES agent_tasks (id) ON DELETE CASCADE
                          )
                          ''')
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS agent_task_composers
+                         (
+                             teacher_id INTEGER PRIMARY KEY,
+                             teacher_name TEXT NOT NULL DEFAULT '',
+                             page_label TEXT NOT NULL DEFAULT '',
+                             updated_at TEXT NOT NULL,
+                             FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE
+                         )
+                         ''')
             for statement in (
                 "CREATE INDEX IF NOT EXISTS idx_agent_tasks_status_created "
                 "ON agent_tasks (status, priority DESC, created_at ASC, id ASC)",
@@ -3118,6 +3128,8 @@ def init_database():
                 "ON agent_tasks (runtime_task_id)",
                 "CREATE INDEX IF NOT EXISTS idx_agent_task_events_task_time "
                 "ON agent_task_events (task_id, created_at ASC, id ASC)",
+                "CREATE INDEX IF NOT EXISTS idx_agent_task_composers_updated "
+                "ON agent_task_composers (updated_at DESC)",
             ):
                 conn.execute(statement)
 
