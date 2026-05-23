@@ -292,6 +292,7 @@ def _write_runtime_config(item: dict[str, Any], secret: str) -> dict[str, Any]:
             f"base_url = {_toml_string(base_url)}",
             f"default_text_model = {_toml_string(model)}",
             f"reasoning_effort = {_toml_string('max')}",
+            "show_thinking = true",
             f'cost_currency = "usd"',
             "allow_shell = false",
             "",

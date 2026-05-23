@@ -6205,8 +6205,12 @@ body.has-cultivation-login-reveal {
 }
 
 .ai-workspace-container {
-    width: min(720px, calc(100vw - 48px));
-    height: min(720px, calc(100vh - 48px));
+    width: clamp(560px, 52vw, 860px);
+    height: clamp(560px, 76vh, 760px);
+    min-width: min(360px, calc(100vw - 24px));
+    min-height: min(440px, calc(100vh - 24px));
+    max-width: calc(100vw - 48px);
+    max-height: calc(100vh - 48px);
     border-radius: 18px;
     background: rgba(255, 255, 255, 0.98);
 }
@@ -6787,15 +6791,45 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     line-height: 1;
 }
 
-.ai-chat-input-area .chat-btn.agent-mode,
-.ai-chat-input-area .chat-btn.agent-history {
+.ai-chat-input-area .chat-btn.deep-think,
+.ai-chat-input-area .chat-btn.agent-mode {
+    border: 1px solid rgba(15, 118, 110, 0.16);
+    background: #f8fafc;
+    color: #0f766e;
+    box-shadow: 0 10px 20px -18px rgba(15, 23, 42, 0.45);
+}
+
+.ai-chat-input-area .chat-btn.deep-think:hover:not(:disabled),
+.ai-chat-input-area .chat-btn.agent-mode:hover:not(:disabled) {
+    background: #ecfeff;
+    color: #0e7490;
+    border-color: rgba(14, 116, 144, 0.24);
+}
+
+.ai-chat-input-area #ai-deep-think-btn.active,
+.ai-chat-input-area .chat-btn.agent-mode.is-active {
+    border-color: rgba(15, 118, 110, 0.42);
+    background: linear-gradient(135deg, #0f766e, #0891b2);
+    color: #ffffff;
+    box-shadow: 0 16px 26px -18px rgba(8, 145, 178, 0.82);
+}
+
+.ai-workspace-header .chat-btn.agent-history {
+    border: 1px solid rgba(15, 118, 110, 0.14);
+    background: rgba(240, 253, 250, 0.92);
     color: #0f766e;
 }
 
-.ai-chat-input-area .chat-btn.agent-mode.is-active {
-    background: #0f766e;
+.ai-workspace-header .chat-btn.agent-history:hover {
+    border-color: rgba(15, 118, 110, 0.28);
+    background: #ccfbf1;
+    color: #115e59;
+}
+
+.ai-chat-input-area .chat-btn.send:not(:disabled) {
+    background: linear-gradient(135deg, #4f46e5, #0ea5e9);
     color: #ffffff;
-    box-shadow: 0 12px 22px -18px rgba(15, 118, 110, 0.72);
+    box-shadow: 0 18px 28px -20px rgba(79, 70, 229, 0.72);
 }
 
 .ai-workspace-container.is-agent-mode .ai-chat-input-area {
@@ -6833,7 +6867,37 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     border-bottom: 1px solid rgba(148, 163, 184, 0.16);
 }
 
-.ai-agent-history-drawer header div {
+.ai-agent-history-drawer__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+}
+
+.ai-agent-history-drawer__actions .chat-btn {
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 10px;
+    background: #ffffff;
+    color: #475569;
+    box-shadow: 0 8px 16px -16px rgba(15, 23, 42, 0.35);
+}
+
+.ai-agent-history-drawer__actions .chat-btn:hover {
+    transform: translateY(-1px);
+    border-color: rgba(15, 118, 110, 0.24);
+    background: #f8fafc;
+    color: #0f766e;
+}
+
+.ai-agent-history-drawer__actions .agent-history-clear:hover {
+    border-color: rgba(220, 38, 38, 0.28);
+    background: #fff1f2;
+    color: #dc2626;
+}
+
+.ai-agent-history-drawer header > div:first-child {
     min-width: 0;
     display: grid;
     gap: 3px;
@@ -6863,6 +6927,49 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     background: transparent;
 }
 
+.ai-task-item-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
+}
+
+.ai-task-item-row + .ai-task-item-row {
+    margin-top: 8px;
+}
+
+.ai-task-item-row .ai-task-item {
+    min-width: 0;
+    width: 100%;
+}
+
+.ai-task-item__delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 10px;
+    background: #ffffff;
+    color: #64748b;
+    cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.ai-task-item__delete:hover:not(:disabled) {
+    transform: translateY(-1px);
+    border-color: rgba(220, 38, 38, 0.28);
+    background: #fff1f2;
+    color: #dc2626;
+}
+
+.ai-task-item__delete:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}
+
 .ai-chat-message.agent-task-message .bubble {
     width: min(100%, 580px);
     max-width: 100%;
@@ -6880,6 +6987,18 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
 .ai-agent-task-card .ai-task-detail__header {
     padding: 13px;
     background: linear-gradient(180deg, rgba(240, 253, 250, 0.8), rgba(255, 255, 255, 0.94));
+}
+
+.ai-task-detail__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+.ai-task-delete-btn {
+    border-color: rgba(220, 38, 38, 0.22);
+    color: #b91c1c;
 }
 
 .ai-agent-task-card .ai-task-detail__block,

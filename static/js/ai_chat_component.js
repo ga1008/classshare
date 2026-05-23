@@ -8,10 +8,10 @@
  * - safeMarkedParse() (来自 tools.js)
  * - showMessage() (来自 classroom_main_v4.html 或 tools.js)
  */
-const AI_CHAT_DEFAULT_WIDTH = 420;
-const AI_CHAT_DEFAULT_HEIGHT = 620;
-const AI_CHAT_MIN_WIDTH = 320;
-const AI_CHAT_MIN_HEIGHT = 380;
+const AI_CHAT_DEFAULT_WIDTH = 720;
+const AI_CHAT_DEFAULT_HEIGHT = 680;
+const AI_CHAT_MIN_WIDTH = 360;
+const AI_CHAT_MIN_HEIGHT = 440;
 const AI_CHAT_DESKTOP_MARGIN = 24;
 const AI_CHAT_MOBILE_MARGIN = 12;
 const AI_CHAT_MOBILE_BREAKPOINT = 768;
@@ -37,11 +37,12 @@ function renderAIChatMarkdown(content, fallback = '') {
 class AIChatComponent {
     constructor(options) {
         this.classOfferingId = options.classOfferingId;
+        this.contextOnly = Boolean(options.contextOnly || !options.classOfferingId);
         this.contextPromptExtra = String(options.contextPromptExtra || '').trim();
         this.getContextPromptExtra = typeof options.getContextPromptExtra === 'function'
             ? options.getContextPromptExtra
             : null;
-        if (!this.classOfferingId) {
+        if (!this.classOfferingId && !this.contextOnly) {
             console.error("AIChatComponent: classOfferingId is required.");
         }
 
@@ -157,10 +158,10 @@ class AIChatComponent {
         const maxHeight = Math.max(320, window.innerHeight - margin * 2);
         const widthTarget = window.innerWidth <= AI_CHAT_MOBILE_BREAKPOINT
             ? maxWidth
-            : Math.min(AI_CHAT_DEFAULT_WIDTH, maxWidth);
+            : Math.min(Math.max(560, Math.round(window.innerWidth * 0.52)), AI_CHAT_DEFAULT_WIDTH, maxWidth);
         const heightTarget = window.innerWidth <= AI_CHAT_MOBILE_BREAKPOINT
-            ? Math.min(Math.max(480, Math.round(window.innerHeight * 0.78)), maxHeight)
-            : Math.min(AI_CHAT_DEFAULT_HEIGHT, maxHeight);
+            ? Math.min(Math.max(500, Math.round(window.innerHeight * 0.82)), maxHeight)
+            : Math.min(Math.max(560, Math.round(window.innerHeight * 0.76)), AI_CHAT_DEFAULT_HEIGHT, maxHeight);
 
         return {
             width: Math.max(Math.min(widthTarget, maxWidth), Math.min(AI_CHAT_MIN_WIDTH, maxWidth)),
@@ -409,10 +410,19 @@ class AIChatComponent {
         this.textarea.addEventListener('input', () => {
             this.textarea.style.height = 'auto';
             this.textarea.style.height = (this.textarea.scrollHeight) + 'px';
+            this.updateSendButtonState();
         });
 
         // 新增: 深度思考按钮点击事件
         this.deepThinkBtn.addEventListener('click', this.toggleDeepThinking.bind(this));
+        this.updateSendButtonState();
+    }
+
+    updateSendButtonState() {
+        if (!this.sendBtn) return;
+        const hasContent = Boolean(this.textarea?.value.trim()) || this.pendingFiles.length > 0;
+        const missingSession = !this.contextOnly && !this.currentSessionUUID;
+        this.sendBtn.disabled = this.isLoading || missingSession || !hasContent;
     }
 
     /**
@@ -735,6 +745,11 @@ class AIChatComponent {
 
     // (loadOrCreateSession, loadSession, startNewSession 保持不变)
     async loadOrCreateSession() {
+        if (this.contextOnly) {
+            this.currentSessionUUID = 'context-only';
+            this.updateSendButtonState();
+            return;
+        }
         try {
             const data = window.apiFetch
                 ? await window.apiFetch(`/api/ai/chat/sessions/${this.classOfferingId}`, { silent: true })
@@ -750,8 +765,10 @@ class AIChatComponent {
         }
     }
     async loadSession(uuid) {
+        if (this.contextOnly) return;
         if (!uuid) return;
         this.currentSessionUUID = uuid;
+        this.updateSendButtonState();
         this.messagesBox.innerHTML = '';
         try {
             const response = await fetch(`/api/ai/chat/history/${uuid}`);
@@ -800,6 +817,13 @@ class AIChatComponent {
         }
     }
     async startNewSession() {
+        if (this.contextOnly) {
+            this.currentSessionUUID = 'context-only';
+            this.messagesBox.innerHTML = '';
+            this.renderMessage('system', '已开始新的页面上下文对话。');
+            this.updateSendButtonState();
+            return;
+        }
         try {
             const response = await fetch(`/api/ai/chat/session/new/${this.classOfferingId}`, { method: 'POST' });
             const data = await response.json();
@@ -810,6 +834,7 @@ class AIChatComponent {
             this.currentSessionUUID = data.session.session_uuid;
             this.messagesBox.innerHTML = '';
             this.renderMessage('system', '已开始新对话。');
+            this.updateSendButtonState();
         } catch (err) {
             notifyAIChat(`创建新会话失败: ${err.message}`, 'error');
         }
@@ -823,13 +848,13 @@ class AIChatComponent {
         const message = this.textarea.value.trim();
         if (!message && this.pendingFiles.length === 0) return;
         if (this.isLoading) return;
-        if (!this.currentSessionUUID) {
+        if (!this.contextOnly && !this.currentSessionUUID) {
             notifyAIChat('请先开始一个新会话。', 'error');
             return;
         }
 
         this.isLoading = true;
-        this.sendBtn.disabled = true;
+        this.updateSendButtonState();
         window.behaviorTracker?.log('ai_send_attempt', '尝试发送 AI 消息', {
             message_length: message.length,
             image_count: this.pendingFiles.length,
@@ -847,8 +872,10 @@ class AIChatComponent {
         // 2. 准备 FormData (无变化)
         const formData = new FormData();
         formData.append('message', message);
-        formData.append('session_uuid', this.currentSessionUUID);
-        formData.append('class_offering_id', this.classOfferingId);
+        if (!this.contextOnly) {
+            formData.append('session_uuid', this.currentSessionUUID);
+            formData.append('class_offering_id', this.classOfferingId);
+        }
         formData.append('deep_thinking', this.isDeepThinking); // 新增参数
         const liveContextPromptExtra = this.getContextPromptExtra
             ? String(this.getContextPromptExtra() || '').trim()
@@ -883,9 +910,10 @@ class AIChatComponent {
 
         try {
             // 5. 发送 API (无变化)
-            const response = await fetch('/api/ai/chat', {
+            const response = await fetch(this.contextOnly ? '/api/ai/workspace-chat' : '/api/ai/chat', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                credentials: 'same-origin'
             });
 
             if (!response.ok) {
@@ -968,7 +996,7 @@ class AIChatComponent {
             this.finalizeStreamMessage(aiMsgDiv, streamState);
         } finally {
             this.isLoading = false;
-            this.sendBtn.disabled = false;
+            this.updateSendButtonState();
             this.textarea.focus();
         }
     }
@@ -1201,6 +1229,7 @@ class AIChatComponent {
             }, 'ai_chat');
         }
         this.fileInput.value = '';
+        this.updateSendButtonState();
     }
     renderPreviews() {
         this.previewsBox.innerHTML = '';
@@ -1242,6 +1271,7 @@ class AIChatComponent {
     clearPendingFiles() {
         this.pendingFiles = [];
         this.renderPreviews();
+        this.updateSendButtonState();
     }
 
 

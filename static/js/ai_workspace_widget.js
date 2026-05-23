@@ -306,8 +306,13 @@ function ensureWorkspaceWindowVisible() {
     const maxHeight = Math.max(360, window.innerHeight - minTop - margin);
     const rect = container.getBoundingClientRect();
     const availableWidth = Math.max(260, window.innerWidth - margin * 2);
-    const width = isCompactViewport ? availableWidth : Math.min(rect.width || 720, Math.max(300, availableWidth));
-    const height = Math.min(rect.height || 620, maxHeight);
+    const preferredWidth = Math.min(Math.max(Math.round(window.innerWidth * 0.52), 560), 860, availableWidth);
+    const preferredHeight = Math.min(Math.max(Math.round(window.innerHeight * 0.76), 560), 760, maxHeight);
+    const hasManualRect = Boolean(chatComponent?.lastWindowRect);
+    const width = isCompactViewport
+        ? availableWidth
+        : Math.min(hasManualRect ? (rect.width || preferredWidth) : preferredWidth, Math.max(300, availableWidth));
+    const height = Math.min(hasManualRect ? (rect.height || preferredHeight) : preferredHeight, maxHeight);
     const currentTop = Number.isFinite(rect.top) ? rect.top : minTop;
     const shouldSnapNearTop = currentTop < minTop || currentTop > minTop + 80;
     const top = shouldSnapNearTop
@@ -320,9 +325,6 @@ function ensureWorkspaceWindowVisible() {
     container.style.left = `${Math.round(left)}px`;
     container.style.right = 'auto';
     container.style.bottom = 'auto';
-    if (chatComponent?.getCurrentWindowRect) {
-        chatComponent.lastWindowRect = chatComponent.getCurrentWindowRect();
-    }
 }
 
 async function apiJson(url, options = {}) {
@@ -449,6 +451,18 @@ function formatElapsed(seconds) {
         return `${hours}小时${minutes % 60}分`;
     }
     return `${minutes}分${rest}秒`;
+}
+
+function formatDateTime(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T');
+    const date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) {
+        return raw.replace('T', ' ').replace(/\.\d+(\+\d{2}:\d{2}|Z)?$/, '').replace(/\+\d{2}:\d{2}$/, '');
+    }
+    const pad = (num) => String(num).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function statusClass(status) {
@@ -639,14 +653,20 @@ function renderTaskList(tasks = []) {
         const runningText = task.status === 'running' ? ` · 已运行 ${formatElapsed(task.elapsed_seconds)}` : '';
         const queueText = task.status === 'queued' && task.queue_position ? ` · 队列第 ${task.queue_position}` : '';
         const isSelected = Number(task.id) === Number(selectedTaskId);
+        const deleteButton = task.is_owner && task.is_terminal
+            ? `<button type="button" class="ai-task-item__delete" data-agent-delete="${escapeHtml(task.id)}" title="删除这条历史" aria-label="删除这条历史"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M5 6l1 15h12l1-15"></path></svg></button>`
+            : '';
         return `
-            <button type="button" class="ai-task-item ${statusClass(task.status)} ${isSelected ? 'is-selected' : ''}" data-agent-task-id="${escapeHtml(task.id)}">
-                <span class="ai-task-item__order">${index + 1}</span>
-                <span class="ai-task-item__body">
-                    <strong>${escapeHtml(task.title || task.public_summary || '教学任务')}</strong>
-                    <small>${ownerLabel} · ${escapeHtml(task.status_label || task.status)}${runningText}${queueText}</small>
-                </span>
-            </button>
+            <div class="ai-task-item-row ${isSelected ? 'is-selected' : ''}">
+                <button type="button" class="ai-task-item ${statusClass(task.status)} ${isSelected ? 'is-selected' : ''}" data-agent-task-id="${escapeHtml(task.id)}">
+                    <span class="ai-task-item__order">${index + 1}</span>
+                    <span class="ai-task-item__body">
+                        <strong>${escapeHtml(task.title || task.public_summary || '教学任务')}</strong>
+                        <small>${ownerLabel} · ${escapeHtml(task.status_label || task.status)}${runningText}${queueText}</small>
+                    </span>
+                </button>
+                ${deleteButton}
+            </div>
         `;
     }).join('');
 }
@@ -659,6 +679,9 @@ function buildAgentTaskDetailHtml(task) {
     const elapsed = task.elapsed_seconds ? `<span>已运行：${formatElapsed(task.elapsed_seconds)}</span>` : '';
     const cancelButton = task.is_owner && task.is_active
         ? `<button type="button" class="btn btn-outline btn-sm" data-agent-cancel="${escapeHtml(task.id)}">取消任务</button>`
+        : '';
+    const deleteButton = task.is_owner && task.is_terminal
+        ? `<button type="button" class="btn btn-outline btn-sm ai-task-delete-btn" data-agent-delete="${escapeHtml(task.id)}">删除记录</button>`
         : '';
     const detailPayload = task.result_detail || {};
     const ownerBody = task.is_owner ? `
@@ -680,7 +703,7 @@ function buildAgentTaskDetailHtml(task) {
         <div class="ai-task-events">
             ${(task.events || []).map((event) => `
                 <div class="ai-task-event">
-                    <span>${escapeHtml(event.created_at || '')}</span>
+                    <span>${escapeHtml(formatDateTime(event.created_at))}</span>
                     <strong>${escapeHtml(event.message || event.event_type || '')}</strong>
                     ${renderEventDetail(event)}
                 </div>
@@ -707,7 +730,7 @@ function buildAgentTaskDetailHtml(task) {
                     ${runtime}
                 </div>
             </div>
-            ${cancelButton}
+            <div class="ai-task-detail__actions">${cancelButton}${deleteButton}</div>
         </header>
         ${ownerBody}
     `;
@@ -767,6 +790,49 @@ async function loadTaskDetail(taskId) {
     renderTaskDetail(data.task);
     focusTaskDetailIfCompact();
     return data.task;
+}
+
+function removeAgentTaskMessage(taskId) {
+    const id = Number(taskId || 0);
+    const node = agentTaskMessages.get(id);
+    if (node?.isConnected) {
+        node.remove();
+    }
+    agentTaskMessages.delete(id);
+}
+
+async function deleteAgentTask(taskId) {
+    const id = Number(taskId || 0);
+    if (!id) {
+        return;
+    }
+    if (!window.confirm('确定从历史记录中删除这条 Agent 任务吗？')) {
+        return;
+    }
+    const data = await apiJson(`/api/agent-tasks/${id}`, { method: 'DELETE' });
+    removeAgentTaskMessage(id);
+    if (Number(selectedTaskId) === id) {
+        selectedTaskId = null;
+    }
+    lastTaskPayload = data;
+    setQueueState(data.queue_state || {}, data.counts || {});
+    renderTaskList(data.tasks || []);
+    notify('任务历史已删除。', 'success');
+}
+
+async function clearAgentTaskHistory() {
+    if (!window.confirm('确定删除你所有已结束的 Agent 任务历史吗？正在排队或执行中的任务不会删除。')) {
+        return;
+    }
+    const data = await apiJson('/api/agent-tasks/history', { method: 'DELETE' });
+    (data.task_ids || []).forEach(removeAgentTaskMessage);
+    if ((data.task_ids || []).some((id) => Number(id) === Number(selectedTaskId))) {
+        selectedTaskId = null;
+    }
+    lastTaskPayload = data;
+    setQueueState(data.queue_state || {}, data.counts || {});
+    renderTaskList(data.tasks || []);
+    notify(data.deleted_count ? `已删除 ${data.deleted_count} 条任务历史。` : '没有可删除的已结束任务。', 'success');
 }
 
 async function refreshTasks({ silent = false } = {}) {
@@ -874,10 +940,16 @@ function setAgentMode(enabled, { persist = true } = {}) {
         surface.attachBtn.disabled = agentMode || !CONFIG.classOfferingId;
     }
     if (surface.deepThinkBtn) {
-        surface.deepThinkBtn.disabled = agentMode || !CONFIG.classOfferingId;
+        surface.deepThinkBtn.disabled = false;
     }
     if (surface.sendBtn) {
-        surface.sendBtn.disabled = agentMode ? false : (!CONFIG.classOfferingId || Boolean(chatComponent?.isLoading));
+        if (agentMode) {
+            surface.sendBtn.disabled = Boolean(agentSubmitting);
+        } else if (chatComponent?.updateSendButtonState) {
+            chatComponent.updateSendButtonState();
+        } else {
+            surface.sendBtn.disabled = !surface.textarea?.value.trim();
+        }
         surface.sendBtn.title = agentMode ? '加入 Agent 队列' : '发送';
         surface.sendBtn.setAttribute('aria-label', agentMode ? '加入 Agent 队列' : '发送');
     }
@@ -982,6 +1054,7 @@ async function submitAgentTaskFromChat() {
             instruction,
             page_context: context,
             chat_session_uuid: chatComponent?.currentSessionUUID || '',
+            deep_thinking: Boolean(chatComponent?.isDeepThinking),
         };
         const data = await apiJson('/api/agent-tasks', {
             method: 'POST',
@@ -1015,7 +1088,26 @@ function bindTaskCenter() {
         setAgentHistoryOpen(!drawer || drawer.hidden);
     });
     $('#ai-agent-history-close')?.addEventListener('click', () => setAgentHistoryOpen(false));
+    $('#ai-agent-history-clear')?.addEventListener('click', async () => {
+        try {
+            await clearAgentTaskHistory();
+        } catch (error) {
+            notify(error.message || '删除任务历史失败', 'error');
+        }
+    });
     $('#agent-task-list')?.addEventListener('click', async (event) => {
+        const deleteButton = event.target.closest('[data-agent-delete]');
+        if (deleteButton) {
+            deleteButton.disabled = true;
+            try {
+                await deleteAgentTask(deleteButton.dataset.agentDelete);
+            } catch (error) {
+                notify(error.message || '删除任务历史失败', 'error');
+            } finally {
+                deleteButton.disabled = false;
+            }
+            return;
+        }
         const button = event.target.closest('[data-agent-task-id]');
         if (!button) {
             return;
@@ -1029,6 +1121,18 @@ function bindTaskCenter() {
         }
     });
     $('#ai-chat-messages-box')?.addEventListener('click', async (event) => {
+        const deleteButton = event.target.closest('[data-agent-delete]');
+        if (deleteButton) {
+            deleteButton.disabled = true;
+            try {
+                await deleteAgentTask(deleteButton.dataset.agentDelete);
+            } catch (error) {
+                notify(error.message || '删除任务历史失败', 'error');
+            } finally {
+                deleteButton.disabled = false;
+            }
+            return;
+        }
         const button = event.target.closest('[data-agent-cancel]');
         if (!button) {
             return;
@@ -1106,12 +1210,13 @@ function bindTaskCenter() {
 }
 
 function initChatComponent() {
-    if (!CONFIG.classOfferingId || typeof window.AIChatComponent !== 'function') {
+    if (typeof window.AIChatComponent !== 'function') {
         return false;
     }
     try {
         chatComponent = new window.AIChatComponent({
             classOfferingId: CONFIG.classOfferingId,
+            contextOnly: !CONFIG.classOfferingId,
             getContextPromptExtra: () => formatContextForPrompt(collectPageContext()),
         });
         chatComponent.init();

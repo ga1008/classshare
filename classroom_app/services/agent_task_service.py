@@ -716,6 +716,9 @@ def create_agent_task(conn, user: dict[str, Any], payload: dict[str, Any]) -> di
         task_type=task_type,
         instruction=instruction,
     )
+    context_snapshot["agent_options"] = {
+        "deep_thinking": bool(payload.get("deep_thinking")),
+    }
     existing_titles = _recent_agent_task_titles(conn)
     title = _fallback_agent_task_title(instruction, task_type, existing_titles)
     public_summary = _public_summary_for_task(task_type)
@@ -1135,6 +1138,43 @@ def get_agent_task(conn, task_id: int, *, teacher_id: int) -> dict[str, Any]:
     return serialized
 
 
+def delete_agent_task(conn, task_id: int, *, teacher_id: int) -> dict[str, Any]:
+    row = conn.execute("SELECT * FROM agent_tasks WHERE id = ? LIMIT 1", (int(task_id),)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="任务不存在。")
+    if int(row["teacher_id"] or 0) != int(teacher_id):
+        raise HTTPException(status_code=403, detail="只能删除自己的任务历史。")
+    status = str(row["status"] or "")
+    if status in ACTIVE_TASK_STATUSES:
+        raise HTTPException(status_code=400, detail="任务仍在排队或执行中，请先取消或等待结束后再删除。")
+
+    conn.execute("DELETE FROM agent_task_events WHERE task_id = ?", (int(task_id),))
+    conn.execute("DELETE FROM agent_tasks WHERE id = ? AND teacher_id = ?", (int(task_id), int(teacher_id)))
+    conn.commit()
+    return {"deleted": True, "task_id": int(task_id)}
+
+
+def delete_agent_task_history(conn, *, teacher_id: int) -> dict[str, Any]:
+    rows = conn.execute(
+        """
+        SELECT id
+        FROM agent_tasks
+        WHERE teacher_id = ?
+          AND status IN (?, ?, ?)
+        """,
+        (int(teacher_id), TASK_STATUS_COMPLETED, TASK_STATUS_FAILED, TASK_STATUS_CANCELED),
+    ).fetchall()
+    task_ids = [int(row["id"]) for row in rows]
+    if not task_ids:
+        return {"deleted_count": 0, "task_ids": []}
+
+    placeholders = ",".join("?" for _ in task_ids)
+    conn.execute(f"DELETE FROM agent_task_events WHERE task_id IN ({placeholders})", task_ids)
+    conn.execute(f"DELETE FROM agent_tasks WHERE id IN ({placeholders}) AND teacher_id = ?", [*task_ids, int(teacher_id)])
+    conn.commit()
+    return {"deleted_count": len(task_ids), "task_ids": task_ids}
+
+
 def cancel_agent_task(conn, task_id: int, *, teacher_id: int) -> dict[str, Any]:
     row = conn.execute("SELECT * FROM agent_tasks WHERE id = ? LIMIT 1", (int(task_id),)).fetchone()
     if not row:
@@ -1425,6 +1465,12 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
     task_type = str(task.get("task_type") or "general_teaching_task")
     definition = TASK_TYPE_DEFINITIONS.get(task_type, TASK_TYPE_DEFINITIONS["general_teaching_task"])
     instruction = _clean_text(task.get("private_instruction"), max_chars=MAX_INSTRUCTION_CHARS)
+    agent_options = context.get("agent_options") if isinstance(context.get("agent_options"), dict) else {}
+    thinking_line = (
+        "本任务已开启深度思考：请使用更充分的推理、验证和风险检查，最后只向教师展示清晰结论。"
+        if agent_options.get("deep_thinking")
+        else "本任务未强制开启深度思考：优先保持执行简洁，但仍需做必要的安全检查。"
+    )
     workflow_lines = "\n".join(
         f"- {item['name']}：{item['agent_capability']} 安全边界：{item['guardrail']}"
         for item in AGENT_TEACHER_WORKFLOWS
@@ -1438,6 +1484,7 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
 3. 你所在 workspace 是隔离任务目录：{runtime_workspace}。只能在此目录内阅读上下文、整理产物。
 4. 涉及发布博客、发送通知、创建作业/考试等平台状态变更时，先输出结构化草案和执行建议，不要假装已经修改平台数据。
 5. 输出必须面向教师，清楚列出：任务理解、已使用的上下文、执行结果/草案、需要教师确认的动作、风险提醒。
+6. {thinking_line}
 
 你能安全接管的教师业务流程边界：
 {workflow_lines}

@@ -12,6 +12,8 @@ from ..services.agent_task_service import (
     agent_workflow_catalog,
     cancel_agent_task,
     create_agent_task,
+    delete_agent_task,
+    delete_agent_task_history,
     generate_agent_task_title,
     get_agent_task,
     list_agent_tasks,
@@ -88,12 +90,30 @@ async def api_set_agent_task_composer(request: Request, user: dict = Depends(get
     return {"status": "success", "queue_state": queue_state}
 
 
+@router.delete("/history", response_class=JSONResponse)
+def api_delete_agent_task_history(user: dict = Depends(get_current_teacher)):
+    teacher_id = _teacher_id(user)
+    with get_db_connection() as conn:
+        result = delete_agent_task_history(conn, teacher_id=teacher_id)
+        queue = list_agent_tasks(conn, viewer_teacher_id=teacher_id, limit=30)
+    return {"status": "success", **result, **queue}
+
+
 @router.get("/{task_id}", response_class=JSONResponse)
 def api_get_agent_task(task_id: int, user: dict = Depends(get_current_teacher)):
     teacher_id = _teacher_id(user)
     with get_db_connection() as conn:
         task = get_agent_task(conn, task_id, teacher_id=teacher_id)
     return {"status": "success", "task": task}
+
+
+@router.delete("/{task_id}", response_class=JSONResponse)
+def api_delete_agent_task(task_id: int, user: dict = Depends(get_current_teacher)):
+    teacher_id = _teacher_id(user)
+    with get_db_connection() as conn:
+        result = delete_agent_task(conn, task_id, teacher_id=teacher_id)
+        queue = list_agent_tasks(conn, viewer_teacher_id=teacher_id, limit=30)
+    return {"status": "success", **result, **queue}
 
 
 @router.post("/{task_id}/cancel", response_class=JSONResponse)

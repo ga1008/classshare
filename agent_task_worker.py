@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import json
 import os
 import socket
 import sys
@@ -68,7 +69,15 @@ def _enqueue_runtime_task(client: httpx.Client, task: dict[str, Any], runtime_wo
         "trust_mode": False,
         "auto_approve": AGENT_TASK_DEEPSEEK_AUTO_APPROVE,
     }
-    if AGENT_TASK_RUNTIME_MODEL:
+    deep_thinking = False
+    try:
+        context = json.loads(str(task.get("context_snapshot_json") or "{}"))
+        deep_thinking = bool((context.get("agent_options") or {}).get("deep_thinking"))
+    except (TypeError, json.JSONDecodeError):
+        deep_thinking = False
+    if deep_thinking:
+        payload["model"] = "auto"
+    elif AGENT_TASK_RUNTIME_MODEL:
         payload["model"] = AGENT_TASK_RUNTIME_MODEL
     response = client.post("/v1/tasks", json=payload)
     response.raise_for_status()

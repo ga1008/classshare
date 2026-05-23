@@ -163,6 +163,7 @@
 {% endif %}
 <script type="module" src="/static/js/feedback.js"></script>
 {% if user_info.role == 'teacher' %}
+<script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
 <script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>
 {% endif %}
 {% endblock %}
