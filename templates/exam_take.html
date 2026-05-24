@@ -3342,7 +3342,10 @@
                     <div class="result-icon">🎉</div>
                     <h3>考试已批改</h3>
                     <div class="result-score">${SUBMISSION_SCORE || 0} <span style="font-size:1.2rem;color:var(--text-muted);">分</span></div>
-                    <a href="/feedback-review?status=active" class="btn btn-outline btn-sm" style="margin-top:0.75rem;">进入错题本复盘</a>
+                    <div class="flex items-center justify-center gap-2 flex-wrap" style="margin-top:0.75rem;">
+                        <a href="/feedback-review?status=active" class="btn btn-outline btn-sm">进入错题本复盘</a>
+                        <a href="/api/assignments/${ASSIGNMENT_ID}/export-review-docx" class="btn btn-primary btn-sm">导出复习 Word</a>
+                    </div>
                     ${SUBMISSION_FEEDBACK_MD ? `
                         <div class="result-feedback-overview">
                             <div class="result-feedback-overview__title">总览评语</div>

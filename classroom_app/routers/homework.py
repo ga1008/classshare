@@ -72,6 +72,10 @@ from ..services.submission_assets import (
     summarize_allowed_file_types,
 )
 from ..services.submission_file_alignment import resolve_submission_file_path
+from ..services.submission_export_docx_service import (
+    DOCX_MEDIA_TYPE,
+    build_student_submission_export_docx,
+)
 from ..services.ai_grading_attachments import (
     build_attachment_type_summary,
     ensure_ai_grading_attachments_supported,
@@ -2417,6 +2421,31 @@ async def export_grades_for_class(assignment_id: str, class_offering_id: int, us
     final_df.to_excel(export_path, index=False)
     return FileResponse(export_path, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                         filename=export_filename)
+
+
+@router.get("/assignments/{assignment_id}/export-review-docx")
+async def export_student_assignment_review_docx(
+    assignment_id: str,
+    user: dict = Depends(get_current_student),
+):
+    """导出学生本人已批改作业/考试的打印复习 Word。"""
+    with get_db_connection() as conn:
+        export = build_student_submission_export_docx(
+            conn,
+            assignment_id=assignment_id,
+            student_pk_id=int(user["id"]),
+        )
+        conn.commit()
+
+    encoded_filename = quote(export.filename)
+    return StreamingResponse(
+        io.BytesIO(export.content),
+        media_type=DOCX_MEDIA_TYPE,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 # --- 学生作业 API ---
