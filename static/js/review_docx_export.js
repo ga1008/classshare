@@ -38,7 +38,7 @@ async function readErrorMessage(response) {
     }
 }
 
-function setButtonBusy(button, busy) {
+function setButtonBusy(button, busy, message = '正在准备...') {
     if (!button) return;
     if (busy) {
         if (!button.dataset.originalHtml) {
@@ -48,7 +48,7 @@ function setButtonBusy(button, busy) {
         button.setAttribute('aria-disabled', 'true');
         button.style.pointerEvents = 'none';
         if ('disabled' in button) button.disabled = true;
-        button.innerHTML = '<span class="spinner spinner-sm" style="display:inline-block;vertical-align:-0.15em;margin-right:0.35rem;"></span><span>正在准备...</span>';
+        button.innerHTML = `<span class="spinner spinner-sm" style="display:inline-block;vertical-align:-0.15em;margin-right:0.35rem;"></span><span>${message}</span>`;
         return;
     }
     button.removeAttribute('aria-busy');
@@ -113,19 +113,20 @@ export function initReviewDocxExportButtons(options = {}) {
             if (!url || button.getAttribute('aria-busy') === 'true') return;
 
             const suggestedName = normalizeDocxFilename(button.dataset.suggestedFilename || '复习导出.docx');
-            setButtonBusy(button, true);
+            setButtonBusy(button, true, '正在准备...');
             try {
                 let saveHandle = null;
                 if (window.isSecureContext && typeof window.showSaveFilePicker === 'function') {
+                    setButtonBusy(button, true, '选择保存位置...');
                     notify('请选择保存位置，随后会开始准备 Word 文档。', 'info');
                     saveHandle = await chooseSaveHandle(suggestedName);
                     if (saveHandle?.cancelled) {
                         notify('已取消导出。', 'info');
                         return;
                     }
-                } else {
-                    notify('正在准备 Word 文档，请稍候...', 'info');
                 }
+                setButtonBusy(button, true, '正在生成文档...');
+                notify('正在准备 Word 文档，请稍候...', 'info');
 
                 const response = await fetch(url, {
                     method: 'GET',

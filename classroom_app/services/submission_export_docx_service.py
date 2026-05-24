@@ -22,7 +22,8 @@ from .submission_file_alignment import resolve_submission_file_path
 
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 BODY_FONT = "Microsoft YaHei"
-MONO_FONT = "Consolas"
+LATIN_FONT = "Times New Roman"
+MONO_FONT = LATIN_FONT
 QUESTION_MAX_IMAGE_WIDTH_IN = 5.35
 QUESTION_MAX_IMAGE_HEIGHT_IN = 3.35
 
@@ -43,6 +44,7 @@ class ExportQuestion:
     section_name: str
     number: int
     question_id: str
+    title: str
     question_type: str
     text: str
     options: list[str] = field(default_factory=list)
@@ -88,7 +90,7 @@ def build_student_submission_export_docx(
     document.save(buffer)
     student_name = str(context["student"].get("student_name") or "学生").strip()
     student_number = str(context["student"].get("student_id_number") or "无学号").strip()
-    assignment_title = str(context["assignment"].get("assignment_title") or "作业考试").strip()
+    assignment_title = _clean_export_text(context["assignment"].get("assignment_title") or "作业考试")
     filename = _safe_filename(f"{assignment_title}_{student_name}_{student_number}_复习导出.docx")
     return StudentSubmissionExport(content=buffer.getvalue(), filename=filename)
 
@@ -213,13 +215,13 @@ def _build_export_pages(context: dict[str, dict[str, Any]], answer_items: list[d
                     continue
                 question = _export_question_from_exam_item(
                     raw_question,
-                    section_name=str(page.get("name") or page.get("title") or f"第{page_index}部分"),
+                    section_name=_clean_export_text(page.get("name") or page.get("title") or f"第{page_index}部分"),
                     number=question_number,
                 )
                 questions.append(question)
                 question_number += 1
             if questions:
-                pages.append({"name": str(page.get("name") or page.get("title") or f"第{page_index}部分"), "questions": questions})
+                pages.append({"name": _clean_export_text(page.get("name") or page.get("title") or f"第{page_index}部分"), "questions": questions})
 
     if pages:
         return pages
@@ -227,14 +229,15 @@ def _build_export_pages(context: dict[str, dict[str, Any]], answer_items: list[d
     questions = []
     if answer_items:
         for item in answer_items:
-            label = str(item.get("question") or item.get("question_id") or item.get("title") or f"第 {question_number} 题").strip()
+            label = _clean_export_text(item.get("question") or item.get("title") or f"第 {question_number} 题")
             questions.append(
                 ExportQuestion(
                     section_name="作业答题",
                     number=question_number,
                     question_id=str(item.get("question_id") or question_number),
+                    title="",
                     question_type=str(item.get("type") or "assignment"),
-                    text=label,
+                    text=_strip_question_number_prefix(label, question_number),
                     correct_answer=assignment.get("rubric_md") or "教师未配置独立标准答案，请结合评分标准与批改评语复习。",
                 )
             )
@@ -245,8 +248,9 @@ def _build_export_pages(context: dict[str, dict[str, Any]], answer_items: list[d
                 section_name="作业答题",
                 number=1,
                 question_id="assignment",
+                title="",
                 question_type="assignment",
-                text=assignment.get("requirements_md") or assignment.get("assignment_title") or "作业要求",
+                text=_clean_export_text(assignment.get("requirements_md") or assignment.get("assignment_title") or "作业要求"),
                 correct_answer=assignment.get("rubric_md") or "教师未配置独立标准答案，请结合评分标准与批改评语复习。",
             )
         )
@@ -255,6 +259,11 @@ def _build_export_pages(context: dict[str, dict[str, Any]], answer_items: list[d
 
 def _export_question_from_exam_item(raw: dict[str, Any], *, section_name: str, number: int) -> ExportQuestion:
     question_id = str(raw.get("id") or raw.get("question_id") or number).strip()
+    raw_title = _first_clean_text(raw.get("title"), raw.get("name"), raw.get("label"))
+    title = "" if _is_platform_question_label(raw_title) else raw_title
+    text = _first_clean_text(raw.get("text"), raw.get("question"), raw.get("stem"), raw.get("prompt"), raw.get("content"), raw.get("description"), title)
+    if title and _normalize_title(title) == _normalize_title(text):
+        title = ""
     correct = (
         raw.get("answer")
         if "answer" in raw
@@ -264,14 +273,15 @@ def _export_question_from_exam_item(raw: dict[str, Any], *, section_name: str, n
         section_name=section_name,
         number=number,
         question_id=question_id,
+        title=title,
         question_type=str(raw.get("type") or raw.get("question_type") or ""),
-        text=str(raw.get("text") or raw.get("question") or raw.get("title") or raw.get("stem") or "").strip(),
-        options=[str(option) for option in (raw.get("options") or raw.get("choices") or []) if str(option).strip()],
+        text=_strip_question_number_prefix(text, number),
+        options=[_clean_export_text(option) for option in (raw.get("options") or raw.get("choices") or []) if _clean_export_text(option)],
         points=raw.get("points"),
         correct_answer=correct,
-        explanation=str(raw.get("explanation") or raw.get("analysis") or "").strip(),
-        grading_guidance=str(raw.get("grading_guidance") or raw.get("guidance") or raw.get("score_points") or "").strip(),
-        deduction_points=str(raw.get("deduction_points") or raw.get("deductions") or "").strip(),
+        explanation=_clean_export_text(raw.get("explanation") or raw.get("analysis") or ""),
+        grading_guidance=_clean_export_text(raw.get("grading_guidance") or raw.get("guidance") or raw.get("score_points") or ""),
+        deduction_points=_clean_export_text(raw.get("deduction_points") or raw.get("deductions") or ""),
     )
 
 
@@ -310,12 +320,13 @@ def _setup_document(document: Document, context: dict[str, dict[str, Any]]) -> N
     section.footer_distance = Cm(0.85)
 
     styles = document.styles
+    _set_document_default_fonts(document)
     for style_name in ("Normal", "Body Text"):
         if style_name in styles:
             style = styles[style_name]
-            style.font.name = BODY_FONT
+            style.font.name = LATIN_FONT
             style.font.size = Pt(10.5)
-            _set_style_east_asia_font(style, BODY_FONT)
+            _set_style_fonts(style)
     for style_name, size, color in (
         ("Title", 18, "1F2937"),
         ("Heading 1", 14, "1F2937"),
@@ -324,10 +335,10 @@ def _setup_document(document: Document, context: dict[str, dict[str, Any]]) -> N
     ):
         if style_name in styles:
             style = styles[style_name]
-            style.font.name = BODY_FONT
+            style.font.name = LATIN_FONT
             style.font.size = Pt(size)
             style.font.color.rgb = RGBColor.from_string(color)
-            _set_style_east_asia_font(style, BODY_FONT)
+            _set_style_fonts(style)
 
     student = context["student"]
     watermark = f"{student.get('student_name') or '学生'}  {student.get('student_id_number') or '无学号'}"
@@ -340,7 +351,7 @@ def _write_title_block(document: Document, context: dict[str, dict[str, Any]]) -
     assignment = context["assignment"]
     student = context["student"]
     submission = context["submission"]
-    title = str(assignment.get("paper_title") or assignment.get("assignment_title") or "作业考试复习导出").strip()
+    title = _clean_export_text(assignment.get("paper_title") or assignment.get("assignment_title") or "作业考试复习导出")
 
     title_para = document.add_paragraph(style="Title")
     title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -396,9 +407,9 @@ def _write_overview(document: Document, context: dict[str, dict[str, Any]], page
 
     summary_lines = []
     if assignment.get("paper_description"):
-        summary_lines.append(str(assignment.get("paper_description") or "").strip())
+        summary_lines.append(_clean_export_text(assignment.get("paper_description") or ""))
     if assignment.get("requirements_md") and not assignment.get("exam_paper_id"):
-        summary_lines.append("作业要求：\n" + str(assignment.get("requirements_md") or "").strip())
+        summary_lines.append("作业要求：\n" + _clean_export_text(assignment.get("requirements_md") or ""))
     if submission.get("feedback_md"):
         overview = _extract_feedback_overview(str(submission.get("feedback_md") or ""))
         if overview:
@@ -444,28 +455,35 @@ def _write_question(
     heading = document.add_paragraph(style="Heading 2")
     heading.paragraph_format.space_before = Pt(9)
     heading.paragraph_format.space_after = Pt(4)
-    label = f"{question.number}. {question.question_id}"
+    label = _question_heading_label(question)
     if question.points not in (None, ""):
         label += f"（{question.points} 分）"
     heading_run = heading.add_run(label)
     _set_run_font(heading_run, size=12, bold=True, color="111827")
 
-    _add_markdown_blocks(document, question.text or "(题干为空)", font_size=10.5)
+    _add_markdown_blocks(document, _strip_question_number_prefix(question.text, question.number) or "(题干为空)", font_size=10.5)
     if question.options:
         for option in question.options:
             paragraph = document.add_paragraph(style="List Bullet")
-            _add_runs_with_inline_formatting(paragraph, option, size=10)
+            _add_runs_with_inline_formatting(paragraph, option, size=10.5)
 
-    _add_label(document, "学生回答", "2563EB")
-    if student_answer:
-        _add_markdown_blocks(document, student_answer, font_size=10)
-    else:
-        _add_empty_text(document, "(未作答)")
+    _add_answer_panel(
+        document,
+        "学生回答",
+        student_answer or "(未作答)",
+        label_color="2563EB",
+        fill="EFF6FF",
+    )
     if attachments:
         _write_question_attachments(document, attachments)
 
-    _add_label(document, "参考答案", "047857")
-    _add_markdown_blocks(document, correct_answer or "暂未配置标准答案，请结合教师讲解与批改评语复习。", font_size=10.5)
+    _add_answer_panel(
+        document,
+        "参考答案",
+        correct_answer or "暂未配置标准答案，请结合教师讲解与批改评语复习。",
+        label_color="047857",
+        fill="ECFDF5",
+    )
 
     guidance_parts = []
     if question.explanation:
@@ -475,13 +493,27 @@ def _write_question(
     if question.deduction_points:
         guidance_parts.append("易扣分点：" + question.deduction_points)
     if guidance_parts:
-        _add_label(document, "订正提示", "64748B")
-        _add_markdown_blocks(document, "\n\n".join(guidance_parts), font_size=9.5, color="475569")
+        _add_answer_panel(
+            document,
+            "订正提示",
+            "\n\n".join(guidance_parts),
+            label_color="64748B",
+            fill="F8FAFC",
+            font_size=10,
+            body_color="475569",
+        )
 
     feedback = feedback_by_question.get(_feedback_key(question.question_id)) or feedback_by_question.get(str(question.number))
     if feedback:
-        _add_label(document, "本题批改反馈", "B45309")
-        _add_markdown_blocks(document, feedback, font_size=9.5, color="6B4E16")
+        _add_answer_panel(
+            document,
+            "本题批改反馈",
+            feedback,
+            label_color="B45309",
+            fill="FFF7ED",
+            font_size=10,
+            body_color="6B4E16",
+        )
 
     _add_divider(document)
 
@@ -601,14 +633,81 @@ def _correct_answer_text(question: ExportQuestion) -> str:
     return ""
 
 
+def _first_clean_text(*values: Any) -> str:
+    for value in values:
+        text = _clean_export_text(value)
+        if text:
+            return text
+    return ""
+
+
+def _clean_export_text(value: Any) -> str:
+    text = str(value or "").replace("\u00a0", " ")
+    if not text:
+        return ""
+    citation_patterns = (
+        r"[ \t]*\[\s*cite\s*[:：]\s*[^\]]+\]",
+        r"[ \t]*【\s*cite\s*[:：]\s*[^】]+】",
+        r"[ \t]*[（(]\s*cite\s*[:：]\s*[^）)]+[）)]",
+        r"[ \t]*\{\s*cite\s*[:：]\s*[^}]+}",
+    )
+    for pattern in citation_patterns:
+        text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+    text = re.sub(r"[ \t]+([。！？；：，、,.!?;:])", r"\1", text)
+    text = re.sub(r"([（(【\[])[ \t]+", r"\1", text)
+    text = re.sub(r"[ \t]+([）)】\]])", r"\1", text)
+    return text.strip()
+
+
+def _strip_question_number_prefix(text: Any, number: int | None = None) -> str:
+    cleaned = _clean_export_text(text)
+    if not cleaned:
+        return ""
+    if number is not None:
+        patterns = (
+            rf"^\s*第\s*{number}\s*题\s*[:：.、)）]?\s*",
+            rf"^\s*{number}\s*[\.\)、)]\s*",
+        )
+        for pattern in patterns:
+            cleaned = re.sub(pattern, "", cleaned, count=1)
+    return re.sub(r"^\s*(?:第\s*\d+\s*题\s*[:：.、)）]?|\d+\s*[\.\)、)]\s*)", "", cleaned, count=1).strip()
+
+
+def _normalize_title(value: Any) -> str:
+    text = _strip_question_number_prefix(value)
+    text = re.sub(r"\s+", "", text).lower()
+    return text
+
+
+def _is_platform_question_label(value: Any) -> bool:
+    text = _clean_export_text(value)
+    if not text:
+        return True
+    lower = text.lower()
+    if re.fullmatch(r"\d+", lower):
+        return True
+    return bool(
+        re.fullmatch(r"[a-z]+[a-z0-9-]*_p\d+_q\d+[a-z0-9_-]*", lower)
+        or re.fullmatch(r"(?:q|question|item|题目)[_-]?\d+", lower)
+        or re.fullmatch(r"(?:exp|exam|paper|page|part|stage)[a-z0-9_-]*", lower)
+    )
+
+
+def _question_heading_label(question: ExportQuestion) -> str:
+    title = _strip_question_number_prefix(question.title, question.number)
+    if title and not _is_platform_question_label(title):
+        return f"{question.number}. {title}"
+    return f"第 {question.number} 题"
+
+
 def _value_to_markdown(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, list):
         return "\n".join(f"- {_value_to_markdown(item)}" for item in value if _value_to_markdown(item).strip())
     if isinstance(value, dict):
-        return json.dumps(value, ensure_ascii=False, indent=2)
-    return str(value or "").strip()
+        return _clean_export_text(json.dumps(value, ensure_ascii=False, indent=2))
+    return _clean_export_text(value)
 
 
 def _add_markdown_blocks(
@@ -618,7 +717,10 @@ def _add_markdown_blocks(
     font_size: float = 10.5,
     color: str = "111827",
 ) -> None:
-    lines = str(text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    cleaned_text = _clean_export_text(text)
+    if not cleaned_text:
+        return
+    lines = cleaned_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     index = 0
     paragraph_buffer: list[str] = []
 
@@ -717,7 +819,7 @@ def _add_runs_with_inline_formatting(
         token = match.group(0)
         if token.startswith("`"):
             run = paragraph.add_run(token[1:-1])
-            _set_run_font(run, size=size - 0.5, color="7C2D12", bold=bold, italic=italic, font_name=MONO_FONT)
+            _set_run_font(run, size=size, color="7C2D12", bold=bold, italic=italic, font_name=MONO_FONT)
         elif token.startswith("**"):
             run = paragraph.add_run(token[2:-2])
             _set_run_font(run, size=size, color=color, bold=True, italic=italic)
@@ -779,6 +881,40 @@ def _add_markdown_table(container: Any, table_lines: list[str], *, font_size: fl
     container.add_paragraph()
 
 
+def _add_answer_panel(
+    document: Document,
+    label: str,
+    text: str,
+    *,
+    label_color: str,
+    fill: str,
+    font_size: float = 10.5,
+    body_color: str = "111827",
+) -> None:
+    table = document.add_table(rows=1, cols=1)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = True
+    _set_table_borders(table, color="D7DEE8")
+    cell = table.cell(0, 0)
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    _shade_cell(cell, fill)
+    _set_cell_margins(cell, top=90, start=120, bottom=100, end=120)
+
+    label_paragraph = cell.paragraphs[0]
+    label_paragraph.paragraph_format.space_after = Pt(2)
+    label_run = label_paragraph.add_run(label)
+    _set_run_font(label_run, size=font_size, bold=True, color=label_color)
+
+    body = _clean_export_text(text)
+    if body:
+        _add_markdown_blocks(cell, body, font_size=font_size, color=body_color)
+    else:
+        _add_empty_text(cell, "(未作答)")
+
+    spacer = document.add_paragraph()
+    spacer.paragraph_format.space_after = Pt(3)
+
+
 def _add_label(document: Document, label: str, color: str) -> None:
     paragraph = document.add_paragraph()
     paragraph.paragraph_format.space_before = Pt(5)
@@ -816,8 +952,18 @@ def _set_run_font(
     italic: bool | None = None,
     font_name: str = BODY_FONT,
 ) -> None:
-    run.font.name = font_name
-    run._element.rPr.rFonts.set(qn("w:eastAsia"), BODY_FONT if font_name == BODY_FONT else font_name)
+    latin_font = LATIN_FONT if font_name in {BODY_FONT, MONO_FONT, LATIN_FONT} else font_name
+    east_asia_font = BODY_FONT if font_name in {BODY_FONT, MONO_FONT, LATIN_FONT} else font_name
+    run.font.name = latin_font
+    r_pr = run._element.get_or_add_rPr()
+    r_fonts = r_pr.rFonts
+    if r_fonts is None:
+        r_fonts = OxmlElement("w:rFonts")
+        r_pr.append(r_fonts)
+    r_fonts.set(qn("w:ascii"), latin_font)
+    r_fonts.set(qn("w:hAnsi"), latin_font)
+    r_fonts.set(qn("w:cs"), latin_font)
+    r_fonts.set(qn("w:eastAsia"), east_asia_font)
     if size is not None:
         run.font.size = Pt(size)
     if color:
@@ -828,13 +974,40 @@ def _set_run_font(
         run.italic = italic
 
 
-def _set_style_east_asia_font(style, font_name: str) -> None:
+def _set_style_fonts(style) -> None:
     r_pr = style._element.get_or_add_rPr()
     r_fonts = r_pr.rFonts
     if r_fonts is None:
         r_fonts = OxmlElement("w:rFonts")
         r_pr.append(r_fonts)
-    r_fonts.set(qn("w:eastAsia"), font_name)
+    r_fonts.set(qn("w:ascii"), LATIN_FONT)
+    r_fonts.set(qn("w:hAnsi"), LATIN_FONT)
+    r_fonts.set(qn("w:cs"), LATIN_FONT)
+    r_fonts.set(qn("w:eastAsia"), BODY_FONT)
+
+
+def _set_document_default_fonts(document: Document) -> None:
+    styles_element = document.styles.element
+    doc_defaults = styles_element.find(qn("w:docDefaults"))
+    if doc_defaults is None:
+        doc_defaults = OxmlElement("w:docDefaults")
+        styles_element.insert(0, doc_defaults)
+    r_pr_default = doc_defaults.find(qn("w:rPrDefault"))
+    if r_pr_default is None:
+        r_pr_default = OxmlElement("w:rPrDefault")
+        doc_defaults.append(r_pr_default)
+    r_pr = r_pr_default.find(qn("w:rPr"))
+    if r_pr is None:
+        r_pr = OxmlElement("w:rPr")
+        r_pr_default.append(r_pr)
+    r_fonts = r_pr.find(qn("w:rFonts"))
+    if r_fonts is None:
+        r_fonts = OxmlElement("w:rFonts")
+        r_pr.append(r_fonts)
+    r_fonts.set(qn("w:ascii"), LATIN_FONT)
+    r_fonts.set(qn("w:hAnsi"), LATIN_FONT)
+    r_fonts.set(qn("w:cs"), LATIN_FONT)
+    r_fonts.set(qn("w:eastAsia"), BODY_FONT)
 
 
 def _shade_paragraph(paragraph, fill: str) -> None:
@@ -851,21 +1024,36 @@ def _shade_cell(cell, fill: str) -> None:
     tc_pr.append(shading)
 
 
-def _set_table_borders(table, *, fill: str | None = None) -> None:
+def _set_table_borders(table, *, fill: str | None = None, color: str = "CBD5E1", size: str = "4") -> None:
     tbl_pr = table._tbl.tblPr
     borders = OxmlElement("w:tblBorders")
     for border_name in ("top", "left", "bottom", "right", "insideH", "insideV"):
         border = OxmlElement(f"w:{border_name}")
         border.set(qn("w:val"), "single")
-        border.set(qn("w:sz"), "4")
+        border.set(qn("w:sz"), size)
         border.set(qn("w:space"), "0")
-        border.set(qn("w:color"), "CBD5E1")
+        border.set(qn("w:color"), color)
         borders.append(border)
     tbl_pr.append(borders)
     if fill:
         shading = OxmlElement("w:shd")
         shading.set(qn("w:fill"), fill)
         tbl_pr.append(shading)
+
+
+def _set_cell_margins(cell, *, top: int = 80, start: int = 100, bottom: int = 80, end: int = 100) -> None:
+    tc_pr = cell._tc.get_or_add_tcPr()
+    tc_mar = tc_pr.find(qn("w:tcMar"))
+    if tc_mar is None:
+        tc_mar = OxmlElement("w:tcMar")
+        tc_pr.append(tc_mar)
+    for name, value in (("top", top), ("start", start), ("bottom", bottom), ("end", end)):
+        node = tc_mar.find(qn(f"w:{name}"))
+        if node is None:
+            node = OxmlElement(f"w:{name}")
+            tc_mar.append(node)
+        node.set(qn("w:w"), str(value))
+        node.set(qn("w:type"), "dxa")
 
 
 def _mark_header_row_repeat(table) -> None:
@@ -950,7 +1138,7 @@ def _fit_image_width(path: Path) -> float:
 
 
 def _extract_feedback_overview(feedback_md: str) -> str:
-    text = str(feedback_md or "").strip()
+    text = _clean_export_text(feedback_md)
     if not text:
         return ""
     match = re.search(r"^\s*##\s*逐题反馈\s*$", text, flags=re.MULTILINE)
@@ -960,7 +1148,7 @@ def _extract_feedback_overview(feedback_md: str) -> str:
 
 
 def _extract_question_feedback(feedback_md: Any) -> dict[str, str]:
-    text = str(feedback_md or "").replace("\r\n", "\n").replace("\r", "\n")
+    text = _clean_export_text(feedback_md).replace("\r\n", "\n").replace("\r", "\n")
     if not text.strip():
         return {}
     matches = list(re.finditer(r"^\s*###\s*(?:第\s*)?(.+?)(?:\s*题)?\s*$", text, flags=re.MULTILINE))
@@ -969,7 +1157,7 @@ def _extract_question_feedback(feedback_md: Any) -> dict[str, str]:
         key = _feedback_key(match.group(1))
         start = match.end()
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        body = text[start:end].strip()
+        body = _clean_export_text(text[start:end])
         if key and body:
             result[key] = body
             result[str(index + 1)] = body
@@ -977,7 +1165,7 @@ def _extract_question_feedback(feedback_md: Any) -> dict[str, str]:
 
 
 def _feedback_key(value: Any) -> str:
-    text = str(value or "").strip().lower()
+    text = _clean_export_text(value).lower()
     text = re.sub(r"^(第\s*)", "", text)
     text = re.sub(r"(题|question|q)$", "", text).strip()
     return re.sub(r"\s+", "", text)
