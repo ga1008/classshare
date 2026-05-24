@@ -27,6 +27,7 @@ REPO_STATUS_INVALID = "invalid"
 DEFAULT_REMOTE_NAME = "origin"
 DEFAULT_COMMIT_MESSAGE = "update by LS"
 GIT_COMMAND_TIMEOUT_SECONDS = 180
+LEARNING_README_NAME = "readme.md"
 
 _repo_locks: dict[int, asyncio.Lock] = {}
 _repo_locks_guard = asyncio.Lock()
@@ -696,7 +697,67 @@ def _scan_workspace_entries(workspace_dir: Path) -> list[dict]:
     return entries
 
 
-def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[dict, list[str]]:
+def _is_changed_readme_candidate(entry: dict) -> bool:
+    relative_path = str(entry.get("relative_path") or "").replace("\\", "/").strip("/")
+    if not relative_path:
+        return False
+    if ".git" in PurePosixPath(relative_path).parts:
+        return False
+    if str(entry.get("node_type") or "") != "file":
+        return False
+    if str(entry.get("preview_type") or "") != "markdown":
+        return False
+    if str(entry.get("status") or "") not in {"inserted", "updated"}:
+        return False
+    return PurePosixPath(relative_path).name.lower() == LEARNING_README_NAME
+
+
+def _serialize_changed_entry(
+    *,
+    status: str,
+    relative_path: str,
+    material_path: str,
+    row_id: int | None,
+    node_type: str,
+    name: str,
+    preview_type: str = "",
+) -> dict:
+    return {
+        "status": status,
+        "relative_path": str(relative_path or "").replace("\\", "/").strip("/"),
+        "material_path": str(material_path or "").replace("\\", "/").strip("/"),
+        "material_id": int(row_id or 0),
+        "id": int(row_id or 0),
+        "node_type": node_type,
+        "name": name,
+        "preview_type": preview_type,
+    }
+
+
+def _collect_readme_auto_bind_candidates(changed_entries: list[dict]) -> list[dict]:
+    candidates: list[dict] = []
+    seen_ids: set[int] = set()
+    for entry in changed_entries:
+        if not _is_changed_readme_candidate(entry):
+            continue
+        material_id = _safe_int(entry.get("material_id") or entry.get("id"))
+        if material_id <= 0 or material_id in seen_ids:
+            continue
+        seen_ids.add(material_id)
+        candidates.append(
+            {
+                "id": material_id,
+                "material_id": material_id,
+                "name": str(entry.get("name") or LEARNING_README_NAME),
+                "relative_path": str(entry.get("relative_path") or ""),
+                "material_path": str(entry.get("material_path") or ""),
+                "change_status": str(entry.get("status") or ""),
+            }
+        )
+    return candidates
+
+
+def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[dict, list[str], list[dict]]:
     existing_rows = _fetch_subtree_rows(conn, root_row)
     existing_map = {
         _get_repo_root_relative_path(root_row["material_path"], row["material_path"]): row
@@ -713,6 +774,7 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[
         "deleted": 0,
         "unchanged": 0,
     }
+    changed_entries: list[dict] = []
 
     deleted_paths = [
         path
@@ -725,6 +787,17 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[
             deleted_file_hashes.add(str(row["file_hash"]))
         conn.execute("DELETE FROM course_materials WHERE id = ?", (row["id"],))
         summary["deleted"] += 1
+        changed_entries.append(
+            _serialize_changed_entry(
+                status="deleted",
+                relative_path=relative_path,
+                material_path=row["material_path"],
+                row_id=row["id"],
+                node_type=row["node_type"],
+                name=row["name"],
+                preview_type=str(row.get("preview_type") or ""),
+            )
+        )
 
     path_to_id = {"": int(root_row["id"])}
     root_prefix = str(root_row["material_path"])
@@ -743,6 +816,17 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[
                 deleted_file_hashes.add(str(existing_row["file_hash"]))
             conn.execute("DELETE FROM course_materials WHERE id = ?", (existing_row["id"],))
             summary["deleted"] += 1
+            changed_entries.append(
+                _serialize_changed_entry(
+                    status="deleted",
+                    relative_path=relative_path,
+                    material_path=existing_row["material_path"],
+                    row_id=existing_row["id"],
+                    node_type=existing_row["node_type"],
+                    name=existing_row["name"],
+                    preview_type=str(existing_row.get("preview_type") or ""),
+                )
+            )
             existing_row = None
 
         if entry["node_type"] == "folder":
@@ -763,6 +847,17 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[
                         (parent_id, material_path, folder_name, now, existing_row["id"]),
                     )
                     summary["updated"] += 1
+                    changed_entries.append(
+                        _serialize_changed_entry(
+                            status="updated",
+                            relative_path=relative_path,
+                            material_path=material_path,
+                            row_id=existing_row["id"],
+                            node_type="folder",
+                            name=folder_name,
+                            preview_type="folder",
+                        )
+                    )
                 else:
                     summary["unchanged"] += 1
                 continue
@@ -789,6 +884,17 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[
             )
             path_to_id[relative_path] = int(cursor.lastrowid)
             summary["inserted"] += 1
+            changed_entries.append(
+                _serialize_changed_entry(
+                    status="inserted",
+                    relative_path=relative_path,
+                    material_path=material_path,
+                    row_id=int(cursor.lastrowid),
+                    node_type="folder",
+                    name=folder_name,
+                    preview_type="folder",
+                )
+            )
             continue
 
         file_path = workspace_dir / PurePosixPath(relative_path)
@@ -836,6 +942,17 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[
                     ),
                 )
                 summary["updated"] += 1
+                changed_entries.append(
+                    _serialize_changed_entry(
+                        status="updated",
+                        relative_path=relative_path,
+                        material_path=material_path,
+                        row_id=existing_row["id"],
+                        node_type="file",
+                        name=file_path.name,
+                        preview_type=profile["preview_type"],
+                    )
+                )
             else:
                 summary["unchanged"] += 1
             continue
@@ -867,6 +984,17 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[
         )
         path_to_id[relative_path] = int(cursor.lastrowid)
         summary["inserted"] += 1
+        changed_entries.append(
+            _serialize_changed_entry(
+                status="inserted",
+                relative_path=relative_path,
+                material_path=material_path,
+                row_id=int(cursor.lastrowid),
+                node_type="file",
+                name=file_path.name,
+                preview_type=profile["preview_type"],
+            )
+        )
 
     if any(summary[key] > 0 for key in ("inserted", "updated", "deleted")):
         conn.execute(
@@ -877,7 +1005,7 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[
     removable_hashes = [
         file_hash for file_hash in deleted_file_hashes if file_hash and _count_global_file_references(conn, file_hash) <= 0
     ]
-    return summary, removable_hashes
+    return summary, removable_hashes, changed_entries
 
 
 def _build_combined_output(execution_log: list[dict]) -> str:
@@ -1144,6 +1272,7 @@ async def execute_material_repository_action(
                 message = "Git 命令执行完成" if execution_log[-1]["returncode"] == 0 else "Git 命令执行失败"
 
             removable_hashes: list[str] = []
+            readme_candidates: list[dict] = []
             with conn_factory() as conn:
                 latest_root_row = conn.execute(
                     "SELECT * FROM course_materials WHERE id = ? AND teacher_id = ?",
@@ -1151,7 +1280,16 @@ async def execute_material_repository_action(
                 ).fetchone()
                 if not latest_root_row:
                     raise HTTPException(404, "仓库材料不存在")
-                sync_summary, removable_hashes = _sync_workspace_to_repository(conn, dict(latest_root_row), workspace_dir)
+                sync_summary, removable_hashes, changed_entries = _sync_workspace_to_repository(
+                    conn,
+                    dict(latest_root_row),
+                    workspace_dir,
+                )
+                readme_candidates = (
+                    _collect_readme_auto_bind_candidates(changed_entries)
+                    if normalized_action == "update"
+                    else []
+                )
                 refreshed_row = refresh_root_git_metadata(conn, material_id, latest_root_row)
 
                 if credential:
@@ -1178,6 +1316,7 @@ async def execute_material_repository_action(
                 "combined_output": combined_output,
                 "repository": updated_repository,
                 "sync_summary": sync_summary,
+                "readme_candidates": readme_candidates,
                 "credential_saved": bool(credential),
                 "credential_supported": auth_state["credential_supported"],
             }
@@ -1190,6 +1329,7 @@ async def execute_material_repository_action(
                 "combined_output": combined_output,
                 "repository": updated_repository,
                 "sync_summary": sync_summary,
+                "readme_candidates": readme_candidates,
                 "credential_saved": bool(credential),
                 "credential_supported": auth_state["credential_supported"],
             }
@@ -1201,6 +1341,7 @@ async def execute_material_repository_action(
             "combined_output": combined_output,
             "repository": updated_repository,
             "sync_summary": sync_summary,
+            "readme_candidates": readme_candidates,
             "credential_saved": bool(credential),
             "credential_supported": auth_state["credential_supported"],
         }

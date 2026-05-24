@@ -8,6 +8,7 @@ import zipfile
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 import aiofiles
 import httpx
@@ -66,6 +67,7 @@ router = APIRouter()
 
 class MaterialAssignRequest(BaseModel):
     class_offering_ids: list[int] = []
+    candidate_material_ids: list[int] = []
 
 
 class MaterialBatchDownloadRequest(BaseModel):
@@ -88,6 +90,11 @@ class MaterialRepositoryCredentialRequest(BaseModel):
     auth_mode: str = "password"
 
 
+class MaterialRepositoryAutoBindRequest(BaseModel):
+    candidate_material_ids: list[int] = []
+    class_offering_ids: list[int] = []
+
+
 class ClassroomLearningMaterialUpdateRequest(BaseModel):
     learning_material_id: int | None = None
 
@@ -104,6 +111,7 @@ MATERIAL_LIBRARY_SORT_LABELS = {
 MATERIAL_LIBRARY_DEFAULT_SORT_BY = "name"
 MATERIAL_LIBRARY_DEFAULT_SORT_ORDER = "asc"
 MATERIAL_LIBRARY_ALLOWED_SORT_ORDERS = {"asc", "desc"}
+README_SNIPPET_LINE_LIMIT = 10
 
 
 def _row_value(row, key: str, default=None):
@@ -216,7 +224,13 @@ def _strip_code_fence(raw_text: str) -> str:
     return text
 
 
-async def _call_ai_chat(system_prompt: str, new_message: str, capability: str = "thinking") -> str:
+async def _call_ai_chat(
+    system_prompt: str,
+    new_message: str,
+    capability: str = "thinking",
+    *,
+    response_format: str = "text",
+):
     payload = {
         "system_prompt": system_prompt,
         "messages": [],
@@ -225,11 +239,16 @@ async def _call_ai_chat(system_prompt: str, new_message: str, capability: str = 
         "model_capability": capability,
         "task_type": "deep_text_reasoning" if capability == "thinking" else "fast_text_response",
         "web_search_enabled": False,
+        "response_format": response_format,
     }
     try:
         response = await ai_client.post("/api/ai/chat", json=payload, timeout=180.0)
         response.raise_for_status()
         data = response.json()
+        if response_format == "json":
+            if data.get("response_json") is not None:
+                return data.get("response_json")
+            return _parse_ai_json(str(data.get("response_text") or ""))
         return str(data.get("response_text") or "").strip()
     except httpx.ConnectError:
         raise HTTPException(503, "AI 助手服务未运行，请先启动 ai_assistant.py。")
@@ -478,10 +497,17 @@ def _infer_home_material_row(file_rows: list[dict], root_material_path: str | No
         lower_name = name.lower()
         lower_path = path_value.lower()
         path_parts = _material_path_parts(path_value)
+        relative_parts = path_parts[len(root_parts):] if path_parts[: len(root_parts)] == root_parts else path_parts
+        relative_parent_parts = relative_parts[:-1]
         relative_depth = max(1, len(path_parts) - len(root_parts))
         stem = lower_name.rsplit(".", 1)[0]
+        numeric_lesson_dir_match = any(
+            re.search(r"^(?:0*\d{1,3})(?:[\s_.-]|$)", part)
+            for part in relative_parent_parts
+        )
         lesson_path_match = (
             any(marker in lower_path for marker in lesson_markers)
+            or numeric_lesson_dir_match
             or re.search(r"(?:^|/)(?:lesson|chapter|lecture|unit|l)[\s_-]*0*\d+(?:[/_.-]|$)", lower_path)
             or re.search(r"第\s*\d+\s*(?:课|次课|讲)", path_value)
         )
@@ -529,6 +555,15 @@ def _collect_ai_home_assignments(
         value = parsed_result.get(key)
         if isinstance(value, list):
             raw_items.extend(item for item in value if isinstance(item, dict))
+
+    assignments = parsed_result.get("assignments")
+    if isinstance(assignments, list):
+        for item in assignments:
+            if not isinstance(item, dict):
+                continue
+            target_type = str(item.get("target_type") or item.get("target") or "").strip().lower()
+            if target_type in {"home", "homepage", "index", "intro", "introduction"}:
+                raw_items.append(item)
 
     for key in ("home_material", "homepage_material", "home_assignment"):
         value = parsed_result.get(key)
@@ -683,6 +718,437 @@ def _resolve_allowed_scope_rows(conn, material_row, user: dict) -> list[dict]:
         if any(is_descendant_path(row_dict["material_path"], allowed_path) for allowed_path in allowed_paths):
             result.append(row_dict)
     return result
+
+
+def _normalize_positive_id_list(values: list[int] | tuple[int, ...] | None) -> list[int]:
+    seen: set[int] = set()
+    result: list[int] = []
+    for value in values or []:
+        normalized = _coerce_positive_int(value)
+        if normalized <= 0 or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
+def _is_readme_material_row(row: dict) -> bool:
+    return (
+        str(row.get("node_type") or "") == "file"
+        and str(row.get("preview_type") or "") == "markdown"
+        and str(row.get("name") or "").strip().lower() == "readme.md"
+        and not is_git_internal_material_path(row.get("material_path"))
+    )
+
+
+def _relative_material_path(root_path: str | None, material_path: str | None) -> str:
+    root_parts = [part for part in str(root_path or "").replace("\\", "/").split("/") if part and part != "."]
+    material_parts = [part for part in str(material_path or "").replace("\\", "/").split("/") if part and part != "."]
+    if material_parts[: len(root_parts)] == root_parts:
+        return "/".join(material_parts[len(root_parts):]) or "."
+    return "/".join(material_parts) or "."
+
+
+def _build_directory_tree_text(rows: list[dict], root_path: str | None) -> str:
+    visible_rows = [row for row in rows if not is_git_internal_material_path(row.get("material_path"))]
+    if not visible_rows:
+        return "(空目录)"
+
+    lines: list[str] = []
+    for row in sorted(
+        visible_rows,
+        key=lambda item: (str(item.get("material_path") or "").count("/"), str(item.get("material_path") or "")),
+    ):
+        relative_path = _relative_material_path(root_path, row.get("material_path"))
+        if relative_path == ".":
+            lines.append(f"- [root] {row.get('name') or root_path or 'materials'}")
+            continue
+        marker = "dir" if row.get("node_type") == "folder" else "file"
+        material_id = _coerce_positive_int(row.get("id"))
+        id_text = f" id={material_id}" if material_id > 0 and marker == "file" else ""
+        lines.append(f"- [{marker}{id_text}] {relative_path}")
+    return "\n".join(lines)
+
+
+def _load_readme_snippet(row: dict, *, line_limit: int = README_SNIPPET_LINE_LIMIT) -> str:
+    if not row.get("file_hash"):
+        return ""
+    try:
+        file_path = _load_material_storage_path(row)
+        content, _encoding = _decode_text_bytes(file_path.read_bytes())
+    except Exception:
+        return ""
+    lines = content.splitlines()[: max(1, min(line_limit, README_SNIPPET_LINE_LIMIT))]
+    return "\n".join(lines).strip()
+
+
+def _build_readme_snippets_text(readme_rows: list[dict]) -> str:
+    if not readme_rows:
+        return "(没有 README.md 文档)"
+
+    blocks: list[str] = []
+    for row in sorted(readme_rows, key=lambda item: str(item.get("material_path") or "")):
+        snippet = _load_readme_snippet(row)
+        blocks.append(
+            "\n".join(
+                [
+                    f"- ID={row.get('id')}, path=\"{row.get('material_path')}\"",
+                    "  前 10 行：",
+                    "```markdown",
+                    snippet or "(空文档或无法读取)",
+                    "```",
+                ]
+            )
+        )
+    return "\n\n".join(blocks)
+
+
+def _load_assigned_offering_ids_for_material_scope(conn, material_row: dict, teacher_id: int) -> list[int]:
+    rows = conn.execute(
+        """
+        SELECT DISTINCT a.class_offering_id, m.material_path
+        FROM course_material_assignments a
+        JOIN course_materials m ON m.id = a.material_id
+        JOIN class_offerings o ON o.id = a.class_offering_id
+        WHERE m.root_id = ?
+          AND o.teacher_id = ?
+        ORDER BY a.class_offering_id
+        """,
+        (material_row["root_id"], teacher_id),
+    ).fetchall()
+    result: list[int] = []
+    seen: set[int] = set()
+    for row in rows:
+        if is_git_internal_material_path(row["material_path"]):
+            continue
+        offering_id = int(row["class_offering_id"])
+        if offering_id in seen:
+            continue
+        seen.add(offering_id)
+        result.append(offering_id)
+    return result
+
+
+def _load_teacher_offering_map(conn, teacher_id: int, desired_ids: list[int]) -> dict[int, dict]:
+    if not desired_ids:
+        return {}
+    placeholders = ",".join("?" for _ in desired_ids)
+    rows = conn.execute(
+        f"""
+        SELECT o.id, o.semester, c.name AS class_name, co.name AS course_name
+        FROM class_offerings o
+        JOIN classes c ON c.id = o.class_id
+        JOIN courses co ON co.id = o.course_id
+        WHERE o.teacher_id = ?
+          AND o.id IN ({placeholders})
+        ORDER BY co.name, c.name
+        """,
+        [teacher_id] + desired_ids,
+    ).fetchall()
+    return {int(row["id"]): dict(row) for row in rows}
+
+
+def _normalize_ai_confidence(value: Any) -> str:
+    normalized = str(value or "medium").strip().lower()
+    return normalized if normalized in {"high", "medium", "low"} else "medium"
+
+
+def _expand_ai_lesson_targets(
+    item: dict,
+    *,
+    desired_ids: list[int],
+    session_id_map: dict[int, dict],
+    session_by_offering_order: dict[tuple[int, int], dict],
+) -> list[tuple[int, int, dict]]:
+    session_id = _coerce_positive_int(item.get("session_id"))
+    order_index = _coerce_positive_int(
+        item.get("order_index")
+        or item.get("lesson_order")
+        or item.get("lesson_index")
+        or item.get("lesson_number")
+        or item.get("class_session_order")
+    )
+
+    if order_index > 0:
+        result: list[tuple[int, int, dict]] = []
+        for target_offering_id in desired_ids:
+            session_info = session_by_offering_order.get((target_offering_id, order_index))
+            if not session_info:
+                continue
+            result.append((target_offering_id, int(session_info["id"]), session_info))
+        return result
+
+    if session_id in session_id_map:
+        session_info = session_id_map[session_id]
+        return [(int(session_info["class_offering_id"]), session_id, session_info)]
+
+    return []
+
+
+async def _run_ai_material_session_assignment(
+    *,
+    material_id: int,
+    desired_ids: list[int],
+    candidate_material_ids: list[int] | None,
+    user: dict,
+    auto_discover_classrooms: bool = False,
+) -> dict:
+    desired_ids = _normalize_positive_id_list(desired_ids)
+    candidate_ids = _normalize_positive_id_list(candidate_material_ids)
+
+    with get_db_connection() as conn:
+        material = ensure_teacher_material_owner(conn, material_id, user["id"])
+
+        if auto_discover_classrooms and not desired_ids:
+            desired_ids = _load_assigned_offering_ids_for_material_scope(conn, dict(material), int(user["id"]))
+        if not desired_ids:
+            raise HTTPException(400, "请先把仓库或材料分配到至少一个课堂，再执行自动绑定。")
+
+        offering_map = _load_teacher_offering_map(conn, int(user["id"]), desired_ids)
+        invalid_ids = set(desired_ids) - set(offering_map)
+        if invalid_ids:
+            raise HTTPException(403, "包含无权分配的课堂")
+
+        subtree_rows = [dict(row) for row in _collect_subtree_rows(conn, material, include_internal=False)]
+        if candidate_ids:
+            candidate_set = set(candidate_ids)
+            file_rows = [row for row in subtree_rows if int(row.get("id") or 0) in candidate_set and _is_readme_material_row(row)]
+        else:
+            file_rows = [row for row in subtree_rows if _is_readme_material_row(row)]
+        if not file_rows:
+            raise HTTPException(400, "没有可自动绑定的 README.md 文档。")
+
+        readme_rows = [row for row in subtree_rows if _is_readme_material_row(row)]
+        fallback_home_row = _infer_home_material_row(file_rows, material["material_path"])
+
+        all_sessions_by_offering: dict[int, list[dict]] = {}
+        for offering_id in desired_ids:
+            sessions = conn.execute(
+                """
+                SELECT s.id, s.order_index, s.title, s.content, s.session_date, s.learning_material_id
+                FROM class_offering_sessions s
+                WHERE s.class_offering_id = ?
+                ORDER BY s.order_index
+                """,
+                (offering_id,),
+            ).fetchall()
+            all_sessions_by_offering[offering_id] = [dict(s) for s in sessions]
+
+    file_list_text = "\n".join(
+        f"  - ID={row['id']}, path=\"{row['material_path']}\""
+        for row in file_rows
+    )
+    directory_tree_text = _build_directory_tree_text(subtree_rows, material["material_path"])
+    readme_snippets_text = _build_readme_snippets_text(readme_rows)
+
+    sessions_context_parts: list[str] = []
+    for offering_id in desired_ids:
+        sessions = all_sessions_by_offering.get(offering_id, [])
+        if not sessions:
+            continue
+        offering = offering_map.get(offering_id, {})
+        sessions_text = "\n".join(
+            (
+                f"    - 第 {s['order_index']} 次课 | session_id={s['id']} | "
+                f"title=\"{s['title'] or ''}\" | date=\"{s.get('session_date') or ''}\" | "
+                f"content=\"{str(s.get('content') or '').replace(chr(10), ' ')[:220]}\""
+            )
+            for s in sessions
+        )
+        sessions_context_parts.append(
+            "\n".join(
+                [
+                    f"  课堂 ID={offering_id} | 课程=\"{offering.get('course_name') or ''}\" | 班级=\"{offering.get('class_name') or ''}\" | 共 {len(sessions)} 次课",
+                    sessions_text,
+                ]
+            )
+        )
+    sessions_context_text = "\n".join(sessions_context_parts)
+
+    if not sessions_context_text:
+        raise HTTPException(400, "所选课堂暂无课次安排，请先配置课堂的课次拆分。")
+
+    system_prompt = (
+        "你是教学材料自动绑定助手。你的任务是根据完整目录结构、README.md 前 10 行内容、课堂课次顺序与标题，"
+        "判断每个候选 README.md 是课程首页还是第几次课的学习文档，并返回严格 JSON。\n\n"
+        "绑定规则：\n"
+        "1. 根目录或课程总目录下的 README.md 通常是首页，首页用于课程目录、简介、导航，不绑定到第 1 次课。\n"
+        "2. lesson01、L01、01、第一课、第1次课等目录内的 README.md 才属于对应课次。\n"
+        "3. 若候选 README 属于第 N 次课，请绑定到每个目标课堂的第 N 次课；如果某个课堂没有第 N 次课则跳过。\n"
+        "4. 一个课堂最多一个首页文档；一个课次最多一个学习文档。\n"
+        "5. 只为【候选 README】中的 material_id 输出绑定，不要绑定非候选文档。\n\n"
+        "输出 JSON 对象：\n"
+        "{\n"
+        "  \"assignments\": [\n"
+        "    {\"class_offering_id\": 1, \"order_index\": 2, \"session_id\": 10, \"material_id\": 99, \"material_path\": \"...\", \"confidence\": \"high|medium|low\"}\n"
+        "  ],\n"
+        "  \"home_assignments\": [\n"
+        "    {\"class_offering_id\": 1, \"material_id\": 88, \"material_path\": \"...\", \"confidence\": \"high|medium|low\"}\n"
+        "  ]\n"
+        "}\n"
+        "只输出 JSON，不输出 Markdown。"
+    )
+
+    user_message = (
+        "请识别并绑定这次 Git 更新发现的 README.md。\n\n"
+        f"【候选 README】\n{file_list_text}\n\n"
+        f"【完整目录结构】\n{directory_tree_text}\n\n"
+        f"【README 前 10 行内容】\n{readme_snippets_text}\n\n"
+        f"【目标课堂与课次】\n{sessions_context_text}\n\n"
+        "请返回绑定结果 JSON。"
+    )
+
+    parsed_result = await _call_ai_chat(system_prompt, user_message, capability="thinking", response_format="json")
+    if not isinstance(parsed_result, dict):
+        raise HTTPException(500, "AI 未返回有效的 JSON 对象，请稍后重试或手动绑定。")
+
+    assignments_raw = parsed_result.get("assignments", [])
+    if not isinstance(assignments_raw, list):
+        raise HTTPException(500, "AI 未返回有效的课次匹配结果，请重试或手动绑定。")
+
+    file_id_map = {int(row["id"]): row for row in file_rows}
+    home_assignments_by_offering = _collect_ai_home_assignments(
+        parsed_result,
+        desired_offering_ids=desired_ids,
+        file_id_map=file_id_map,
+        fallback_home_row=fallback_home_row,
+    )
+    session_id_map: dict[int, dict] = {}
+    session_by_offering_order: dict[tuple[int, int], dict] = {}
+    for offering_id, sessions in all_sessions_by_offering.items():
+        for session in sessions:
+            session_info = {**session, "class_offering_id": offering_id}
+            session_id_map[int(session["id"])] = session_info
+            session_by_offering_order[(offering_id, int(session["order_index"] or 0))] = session_info
+
+    valid_assignments: list[dict] = []
+    valid_home_assignments: list[dict] = []
+    skipped_assignments: list[dict] = []
+    bound_material_keys: set[tuple[int, int]] = set()
+    bound_session_ids: set[int] = set()
+    now = datetime.now().isoformat()
+
+    with get_db_connection() as conn:
+        for offering_id, home_item in home_assignments_by_offering.items():
+            mat_id = int(home_item.get("material_id") or 0)
+            if offering_id not in desired_ids or mat_id not in file_id_map:
+                skipped_assignments.append({"target_type": "home", "material_id": mat_id, "reason": "目标课堂或文档无效"})
+                continue
+            conn.execute(
+                """
+                UPDATE class_offerings
+                SET home_learning_material_id = ?
+                WHERE id = ? AND teacher_id = ?
+                """,
+                (mat_id, offering_id, user["id"]),
+            )
+            sync_classroom_learning_material_assignments(
+                conn,
+                class_offering_id=offering_id,
+                teacher_id=int(user["id"]),
+                material_ids=[mat_id],
+            )
+            bound_material_keys.add((offering_id, mat_id))
+            valid_home_assignments.append({
+                "target_type": "home",
+                "class_offering_id": offering_id,
+                "class_name": offering_map.get(offering_id, {}).get("class_name", ""),
+                "course_name": offering_map.get(offering_id, {}).get("course_name", ""),
+                "session_id": None,
+                "session_title": "目录与简介",
+                "order_index": 0,
+                "material_id": mat_id,
+                "material_path": file_id_map[mat_id]["material_path"],
+                "confidence": _normalize_ai_confidence(home_item.get("confidence")),
+                "source": home_item.get("source", "ai"),
+            })
+
+        for item in assignments_raw:
+            if not isinstance(item, dict):
+                continue
+            target_type = str(item.get("target_type") or item.get("target") or "").strip().lower()
+            if target_type in {"home", "homepage", "index", "intro", "introduction"}:
+                continue
+
+            mat_id = _coerce_positive_int(item.get("material_id") or item.get("id"))
+            if mat_id not in file_id_map:
+                skipped_assignments.append({"target_type": "lesson", "material_id": mat_id, "reason": "文档不在候选 README 范围内"})
+                continue
+
+            targets = _expand_ai_lesson_targets(
+                item,
+                desired_ids=desired_ids,
+                session_id_map=session_id_map,
+                session_by_offering_order=session_by_offering_order,
+            )
+            if not targets:
+                skipped_assignments.append({"target_type": "lesson", "material_id": mat_id, "reason": "未找到对应课次"})
+                continue
+
+            for offering_id, session_id, session_info in targets:
+                if session_id in bound_session_ids:
+                    skipped_assignments.append({"target_type": "lesson", "material_id": mat_id, "reason": "同一课次已有候选文档绑定"})
+                    continue
+                if (offering_id, mat_id) in bound_material_keys:
+                    skipped_assignments.append({"target_type": "lesson", "material_id": mat_id, "reason": "该文档已作为首页绑定"})
+                    continue
+
+                bound_session_ids.add(session_id)
+                bound_material_keys.add((offering_id, mat_id))
+
+                conn.execute(
+                    """
+                    UPDATE class_offering_sessions
+                    SET learning_material_id = ?,
+                        updated_at = ?
+                    WHERE id = ? AND class_offering_id = ?
+                    """,
+                    (mat_id, now, session_id, offering_id),
+                )
+
+                sync_classroom_learning_material_assignments(
+                    conn,
+                    class_offering_id=offering_id,
+                    teacher_id=int(user["id"]),
+                    material_ids=[mat_id],
+                )
+
+                valid_assignments.append({
+                    "target_type": "lesson",
+                    "class_offering_id": offering_id,
+                    "class_name": offering_map.get(offering_id, {}).get("class_name", ""),
+                    "course_name": offering_map.get(offering_id, {}).get("course_name", ""),
+                    "session_id": session_id,
+                    "session_title": session_info.get("title", ""),
+                    "order_index": session_info.get("order_index", 0),
+                    "material_id": mat_id,
+                    "material_path": file_id_map[mat_id]["material_path"],
+                    "confidence": _normalize_ai_confidence(item.get("confidence")),
+                })
+
+        conn.commit()
+
+    total_bound = len(valid_home_assignments) + len(valid_assignments)
+    message = (
+        f"AI 自动绑定完成：{len(valid_home_assignments)} 个首页文档、{len(valid_assignments)} 个课次文档。"
+        if total_bound
+        else "AI 没有找到可安全绑定的 README，请查看结果后手动绑定。"
+    )
+    if skipped_assignments:
+        message += f" 已跳过 {len(skipped_assignments)} 项无法匹配的候选。"
+
+    return {
+        "status": "success",
+        "message": message,
+        "target_classroom_count": len(desired_ids),
+        "candidate_count": len(file_rows),
+        "total_assignments": len(valid_assignments),
+        "total_home_assignments": len(valid_home_assignments),
+        "assignments": valid_home_assignments + valid_assignments,
+        "lesson_assignments": valid_assignments,
+        "home_assignments": valid_home_assignments,
+        "skipped_assignments": skipped_assignments,
+    }
 
 
 def _slice_breadcrumbs_from_anchor(breadcrumbs: list[dict], anchor_id: int | None) -> list[dict]:
@@ -885,6 +1351,21 @@ async def save_material_repository_credentials(
         "message": "仓库凭据已保存",
         "credential": credential,
     }
+
+
+@router.post("/api/materials/{material_id}/repository/auto-bind-readmes", response_class=JSONResponse)
+async def auto_bind_repository_readmes(
+    material_id: int,
+    payload: MaterialRepositoryAutoBindRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    return await _run_ai_material_session_assignment(
+        material_id=material_id,
+        desired_ids=payload.class_offering_ids,
+        candidate_material_ids=payload.candidate_material_ids,
+        user=user,
+        auto_discover_classrooms=True,
+    )
 
 
 @router.post("/api/materials/upload", response_class=JSONResponse)

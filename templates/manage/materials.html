@@ -280,6 +280,21 @@
                     </div>
                     <pre class="materials-repo-output" id="materials-repository-output">暂无输出</pre>
                 </div>
+
+                <div class="materials-section materials-repo-autobind" id="materials-repository-autobind-panel" hidden>
+                    <div class="materials-section-header">
+                        <h3>README 自动绑定建议</h3>
+                        <span class="text-muted text-sm" id="materials-repository-autobind-summary"></span>
+                    </div>
+                    <div class="text-muted text-sm materials-repo-autobind-copy">
+                        检测到本次更新包含新的或已更新的 README.md。确认后会把完整目录结构、所有 README 前 10 行和课堂课次信息交给 AI 识别，再自动绑定到课程首页或对应“第几次课”的学习文档按钮。
+                    </div>
+                    <div class="materials-repo-autobind-list" id="materials-repository-autobind-list"></div>
+                    <div class="materials-repo-autobind-actions">
+                        <button type="button" class="btn btn-primary" id="materials-repository-autobind-run-btn">AI 识别并绑定</button>
+                        <button type="button" class="btn btn-ghost" id="materials-repository-autobind-dismiss-btn">稍后处理</button>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-ghost" data-dismiss="modal">关闭</button>
