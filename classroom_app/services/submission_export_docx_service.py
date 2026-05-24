@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from fastapi import HTTPException
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from docx import Document
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -331,6 +331,7 @@ def _setup_document(document: Document, context: dict[str, dict[str, Any]]) -> N
 
     student = context["student"]
     watermark = f"{student.get('student_name') or '学生'}  {student.get('student_id_number') or '无学号'}"
+    _set_word_compatibility_mode(document)
     _add_watermark(section, watermark)
     _add_page_footer(section)
 
@@ -880,59 +881,24 @@ def _add_watermark(section, text: str) -> None:
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
     paragraph.paragraph_format.space_before = Pt(0)
     paragraph.paragraph_format.space_after = Pt(0)
-    watermark_bytes = _build_watermark_png(text)
-    if watermark_bytes:
-        run = paragraph.add_run()
-        run.add_picture(io.BytesIO(watermark_bytes), width=Cm(17.2))
-        return
     run = paragraph.add_run(text)
-    _set_run_font(run, size=16, color="D1D5DB")
+    _set_run_font(run, size=8, color="E5E7EB")
 
 
-def _build_watermark_png(text: str) -> bytes | None:
-    try:
-        canvas_width, canvas_height = 1600, 2200
-        canvas = Image.new("RGBA", (canvas_width, canvas_height), (255, 255, 255, 0))
-        text_layer = Image.new("RGBA", (canvas_width, 420), (255, 255, 255, 0))
-        draw = ImageDraw.Draw(text_layer)
-        font = _load_watermark_font(72)
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        draw.text(
-            ((canvas_width - text_width) / 2, (420 - text_height) / 2),
-            text,
-            font=font,
-            fill=(100, 116, 139, 26),
-        )
-        rotated = text_layer.rotate(315, expand=True, resample=Image.Resampling.BICUBIC)
-        canvas.alpha_composite(
-            rotated,
-            ((canvas_width - rotated.width) // 2, (canvas_height - rotated.height) // 2),
-        )
-        output = io.BytesIO()
-        canvas.save(output, format="PNG")
-        return output.getvalue()
-    except Exception:
-        return None
-
-
-def _load_watermark_font(size: int):
-    candidates = [
-        Path("C:/Windows/Fonts/msyh.ttc"),
-        Path("C:/Windows/Fonts/simhei.ttf"),
-        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
-        Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
-        Path("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"),
-        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
-    ]
-    for path in candidates:
-        if path.exists():
-            try:
-                return ImageFont.truetype(str(path), size)
-            except Exception:
-                continue
-    return ImageFont.load_default()
+def _set_word_compatibility_mode(document: Document) -> None:
+    settings = document.settings.element
+    compat = settings.find(qn("w:compat"))
+    if compat is None:
+        compat = OxmlElement("w:compat")
+        settings.append(compat)
+    for existing in list(compat.findall(qn("w:compatSetting"))):
+        if existing.get(qn("w:name")) == "compatibilityMode":
+            compat.remove(existing)
+    mode = OxmlElement("w:compatSetting")
+    mode.set(qn("w:name"), "compatibilityMode")
+    mode.set(qn("w:uri"), "http://schemas.microsoft.com/office/word")
+    mode.set(qn("w:val"), "15")
+    compat.append(mode)
 
 
 def _add_page_footer(section) -> None:
