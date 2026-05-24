@@ -4161,6 +4161,135 @@ def init_database():
                         )
                          ''')
 
+            conn.execute('''
+                        CREATE TABLE IF NOT EXISTS teacher_smart_classroom_credentials
+                        (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            teacher_id INTEGER NOT NULL,
+                            platform_code TEXT NOT NULL,
+                            platform_name TEXT NOT NULL,
+                            adapter_key TEXT NOT NULL,
+                            auth_method TEXT NOT NULL DEFAULT 'password_token',
+                            base_url TEXT NOT NULL,
+                            api_base_url TEXT NOT NULL,
+                            login_url TEXT NOT NULL,
+                            username TEXT NOT NULL,
+                            password_encrypted TEXT NOT NULL,
+                            display_name TEXT DEFAULT '',
+                            enabled INTEGER NOT NULL DEFAULT 1,
+                            last_status TEXT NOT NULL DEFAULT 'unchecked',
+                            last_status_at TEXT,
+                            last_error TEXT DEFAULT '',
+                            last_verified_at TEXT,
+                            access_method_json TEXT NOT NULL DEFAULT '{}',
+                            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                            UNIQUE (teacher_id, platform_code, auth_method)
+                        )
+                         ''')
+
+            conn.execute('''
+                        CREATE TABLE IF NOT EXISTS smart_classroom_schedule_items
+                        (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            teacher_id INTEGER NOT NULL,
+                            class_offering_id INTEGER,
+                            platform_code TEXT NOT NULL,
+                            remote_schedule_id TEXT NOT NULL,
+                            remote_course_id TEXT DEFAULT '',
+                            remote_course_name TEXT DEFAULT '',
+                            remote_teaching_class_id TEXT DEFAULT '',
+                            remote_teaching_class_name TEXT DEFAULT '',
+                            academic_year TEXT DEFAULT '',
+                            academic_term TEXT DEFAULT '',
+                            weeks_text TEXT DEFAULT '',
+                            sections_text TEXT DEFAULT '',
+                            weekday INTEGER,
+                            classroom_name TEXT DEFAULT '',
+                            student_count INTEGER NOT NULL DEFAULT 0,
+                            match_status TEXT NOT NULL DEFAULT 'unmatched',
+                            match_message TEXT DEFAULT '',
+                            metadata_json TEXT NOT NULL DEFAULT '{}',
+                            synced_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                            FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL,
+                            UNIQUE (teacher_id, platform_code, remote_schedule_id)
+                        )
+                         ''')
+
+            conn.execute('''
+                        CREATE TABLE IF NOT EXISTS smart_classroom_checkin_sessions
+                        (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            teacher_id INTEGER NOT NULL,
+                            class_offering_id INTEGER,
+                            session_id INTEGER,
+                            schedule_item_id INTEGER,
+                            platform_code TEXT NOT NULL,
+                            remote_checkin_id TEXT NOT NULL,
+                            remote_schedule_id TEXT DEFAULT '',
+                            course_code TEXT DEFAULT '',
+                            course_name TEXT DEFAULT '',
+                            teaching_class_name TEXT DEFAULT '',
+                            academic_year TEXT DEFAULT '',
+                            academic_term TEXT DEFAULT '',
+                            week_index INTEGER NOT NULL DEFAULT 0,
+                            weekday INTEGER,
+                            section_index INTEGER,
+                            checkin_time TEXT DEFAULT '',
+                            stop_time TEXT DEFAULT '',
+                            method TEXT DEFAULT '',
+                            checked_rate TEXT DEFAULT '',
+                            checked_count INTEGER NOT NULL DEFAULT 0,
+                            unchecked_count INTEGER NOT NULL DEFAULT 0,
+                            sick_leave_count INTEGER NOT NULL DEFAULT 0,
+                            personal_leave_count INTEGER NOT NULL DEFAULT 0,
+                            late_or_early_count INTEGER NOT NULL DEFAULT 0,
+                            total_count INTEGER NOT NULL DEFAULT 0,
+                            match_status TEXT NOT NULL DEFAULT 'unmatched',
+                            match_message TEXT DEFAULT '',
+                            metadata_json TEXT NOT NULL DEFAULT '{}',
+                            synced_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                            FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL,
+                            FOREIGN KEY (session_id) REFERENCES class_offering_sessions (id) ON DELETE SET NULL,
+                            FOREIGN KEY (schedule_item_id) REFERENCES smart_classroom_schedule_items (id) ON DELETE SET NULL,
+                            UNIQUE (teacher_id, platform_code, remote_checkin_id)
+                        )
+                         ''')
+
+            conn.execute('''
+                        CREATE TABLE IF NOT EXISTS smart_classroom_checkin_students
+                        (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            checkin_session_id INTEGER NOT NULL,
+                            teacher_id INTEGER NOT NULL,
+                            class_offering_id INTEGER,
+                            session_id INTEGER,
+                            student_id INTEGER,
+                            student_number TEXT NOT NULL,
+                            student_name TEXT NOT NULL,
+                            status TEXT NOT NULL,
+                            status_label TEXT NOT NULL,
+                            local_match_status TEXT NOT NULL DEFAULT 'unmatched',
+                            metadata_json TEXT NOT NULL DEFAULT '{}',
+                            synced_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (checkin_session_id) REFERENCES smart_classroom_checkin_sessions (id) ON DELETE CASCADE,
+                            FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                            FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL,
+                            FOREIGN KEY (session_id) REFERENCES class_offering_sessions (id) ON DELETE SET NULL,
+                            FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE SET NULL,
+                            UNIQUE (checkin_session_id, student_number)
+                        )
+                         ''')
+
             try:
                 conn.execute("ALTER TABLE course_materials ADD COLUMN git_repo_status TEXT NOT NULL DEFAULT 'unscanned'")
             except sqlite3.OperationalError:
@@ -4205,6 +4334,26 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_academic_semesters_teacher_period "
                 "ON academic_semesters (teacher_id, start_date DESC, end_date DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_smart_credentials_teacher "
+                "ON teacher_smart_classroom_credentials (teacher_id, enabled, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_smart_schedule_teacher_offering "
+                "ON smart_classroom_schedule_items (teacher_id, class_offering_id, synced_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_smart_checkin_session_lookup "
+                "ON smart_classroom_checkin_sessions (teacher_id, class_offering_id, session_id, synced_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_smart_checkin_remote_schedule "
+                "ON smart_classroom_checkin_sessions (teacher_id, remote_schedule_id, checkin_time DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_smart_checkin_students_lookup "
+                "ON smart_classroom_checkin_students (checkin_session_id, status, student_number)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_academic_semester_calendar_days_lookup "

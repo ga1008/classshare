@@ -1,0 +1,377 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}智慧课堂对接{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('教务对接', '课程与名单', 'database', href='/manage/system/academic-integrations', variant='outline', tone='slate') }}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    .smart-classroom-shell {
+        display: grid;
+        gap: var(--spacing-lg);
+    }
+
+    .smart-classroom-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+        gap: var(--spacing-lg);
+        align-items: stretch;
+    }
+
+    .smart-classroom-card {
+        min-width: 0;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: var(--radius-lg);
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .smart-classroom-intro {
+        padding: var(--spacing-xl);
+        display: flex;
+        gap: var(--spacing-lg);
+        align-items: flex-start;
+    }
+
+    .smart-classroom-mark {
+        width: 58px;
+        height: 58px;
+        border-radius: 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #be123c;
+        background: rgba(244, 63, 94, 0.1);
+        flex: 0 0 auto;
+    }
+
+    .smart-classroom-kicker {
+        margin: 0 0 8px;
+        color: #be123c;
+        font-size: 0.75rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .smart-classroom-intro h2,
+    .smart-classroom-card h3 {
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 1.16rem;
+        font-weight: 800;
+        letter-spacing: 0;
+    }
+
+    .smart-classroom-intro p,
+    .smart-classroom-card p,
+    .smart-classroom-help {
+        margin: var(--spacing-sm) 0 0;
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        line-height: 1.7;
+    }
+
+    .smart-classroom-chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: var(--spacing-lg);
+    }
+
+    .smart-classroom-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: var(--radius-full);
+        background: rgba(15, 118, 110, 0.08);
+        color: #0f766e;
+        font-size: 0.78rem;
+        font-weight: 800;
+    }
+
+    .smart-classroom-profile {
+        padding: var(--spacing-lg);
+        display: grid;
+        align-content: start;
+        gap: var(--spacing-sm);
+    }
+
+    .smart-classroom-profile-meta {
+        display: grid;
+        gap: 8px;
+        margin-top: var(--spacing-sm);
+    }
+
+    .smart-classroom-profile-meta div {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        color: var(--text-muted);
+        font-size: 0.82rem;
+    }
+
+    .smart-classroom-profile-meta strong {
+        color: var(--text-primary);
+        text-align: right;
+        word-break: break-word;
+    }
+
+    .smart-classroom-grid {
+        display: grid;
+        grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+        gap: var(--spacing-lg);
+        align-items: start;
+    }
+
+    .smart-classroom-panel {
+        padding: var(--spacing-lg);
+    }
+
+    .smart-classroom-panel form {
+        display: grid;
+        gap: var(--spacing-md);
+        margin-top: var(--spacing-md);
+    }
+
+    .smart-classroom-panel .form-group {
+        margin-bottom: 0;
+    }
+
+    .smart-classroom-panel-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-md);
+    }
+
+    .smart-classroom-list {
+        display: grid;
+        gap: var(--spacing-md);
+    }
+
+    .smart-classroom-empty {
+        padding: var(--spacing-xl);
+        text-align: center;
+        color: var(--text-muted);
+        border: 1px dashed rgba(148, 163, 184, 0.36);
+        border-radius: var(--radius-lg);
+        background: rgba(248, 250, 252, 0.74);
+    }
+
+    .smart-classroom-credential {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: var(--spacing-md);
+        align-items: start;
+        padding: var(--spacing-lg);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: var(--radius-lg);
+        background: rgba(248, 250, 252, 0.72);
+    }
+
+    .smart-classroom-credential h4 {
+        margin: 8px 0 0;
+        color: var(--text-primary);
+        font-size: 1rem;
+        font-weight: 800;
+    }
+
+    .smart-classroom-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 9px;
+        border-radius: var(--radius-full);
+        background: rgba(148, 163, 184, 0.13);
+        color: #475569;
+        font-size: 0.76rem;
+        font-weight: 800;
+    }
+
+    .smart-classroom-badge.is-verified {
+        background: rgba(16, 185, 129, 0.12);
+        color: #047857;
+    }
+
+    .smart-classroom-badge.is-failed {
+        background: rgba(244, 63, 94, 0.12);
+        color: #be123c;
+    }
+
+    .smart-classroom-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+        color: var(--text-muted);
+        font-size: 0.82rem;
+    }
+
+    .smart-classroom-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        justify-content: flex-end;
+    }
+
+    .smart-classroom-sync-panel {
+        display: grid;
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-md);
+        padding: var(--spacing-md);
+        border: 1px solid rgba(244, 63, 94, 0.18);
+        border-radius: var(--radius-lg);
+        background: rgba(255, 241, 242, 0.68);
+    }
+
+    .smart-classroom-sync-panel[hidden] {
+        display: none;
+    }
+
+    .smart-classroom-stage-list {
+        display: grid;
+        gap: 8px;
+    }
+
+    .smart-classroom-stage {
+        padding: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: var(--radius-md);
+        background: rgba(255, 255, 255, 0.9);
+    }
+
+    .smart-classroom-stage strong,
+    .smart-classroom-stage small {
+        display: block;
+    }
+
+    .smart-classroom-stage strong {
+        color: var(--text-primary);
+        font-size: 0.9rem;
+    }
+
+    .smart-classroom-stage small {
+        margin-top: 4px;
+        color: var(--text-muted);
+        line-height: 1.5;
+    }
+
+    .smart-classroom-counts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+    }
+
+    .smart-classroom-counts span {
+        padding: 4px 8px;
+        border-radius: var(--radius-full);
+        background: rgba(15, 118, 110, 0.08);
+        color: #0f766e;
+        font-size: 0.76rem;
+        font-weight: 800;
+    }
+
+    @media (max-width: 960px) {
+        .smart-classroom-hero,
+        .smart-classroom-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .smart-classroom-credential {
+            grid-template-columns: 1fr;
+        }
+
+        .smart-classroom-actions {
+            justify-content: flex-start;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="smart-classroom-shell">
+    <div class="smart-classroom-hero">
+        <article class="smart-classroom-card smart-classroom-intro">
+            <div class="smart-classroom-mark" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"></path><path d="M8 17V9"></path><path d="M12 19V7"></path><path d="M16 15v-4"></path><path d="M20 17V9"></path></svg>
+            </div>
+            <div>
+                <p class="smart-classroom-kicker">SMART CLASSROOM</p>
+                <h2>广外智慧课堂对接</h2>
+                <p>保存账号前会先登录校验。校验通过后，系统会顺序同步教师可见的授课班点名记录，并按课程编号、教学班、学期和课次日期对齐到本平台课堂。</p>
+                <div class="smart-classroom-chip-row">
+                    <span class="smart-classroom-chip">点名记录</span>
+                    <span class="smart-classroom-chip">课次对齐</span>
+                    <span class="smart-classroom-chip">顺序同步</span>
+                    <span class="smart-classroom-chip">不写入智慧课堂</span>
+                </div>
+            </div>
+        </article>
+
+        <aside class="smart-classroom-card smart-classroom-profile">
+            <h3>当前适配器</h3>
+            <p id="smart-profile-note">正在读取平台对接方式。</p>
+            <div class="smart-classroom-profile-meta">
+                <div><span>平台</span><strong id="smart-profile-platform">-</strong></div>
+                <div><span>登录入口</span><strong id="smart-profile-login">-</strong></div>
+                <div><span>认证方式</span><strong id="smart-profile-method">-</strong></div>
+            </div>
+        </aside>
+    </div>
+
+    <section class="smart-classroom-grid">
+        <div class="smart-classroom-card smart-classroom-panel">
+            <h3>保存账号</h3>
+            <p class="smart-classroom-help">密码不会在页面回显；更新密码时重新填写并保存即可覆盖旧凭据。</p>
+            <form id="smart-classroom-credential-form" autocomplete="off">
+                <div class="form-group">
+                    <label class="form-label" for="smart-platform-code">平台</label>
+                    <select class="form-control" id="smart-platform-code" name="platform_code" required>
+                        {% for profile in smart_classroom_profiles %}
+                        <option value="{{ profile.platform_code }}">{{ profile.platform_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="smart-username">智慧课堂账号</label>
+                    <input class="form-control" type="text" id="smart-username" name="username" autocomplete="username" placeholder="请输入工号或统一账号" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="smart-password">智慧课堂密码</label>
+                    <input class="form-control" type="password" id="smart-password" name="password" autocomplete="current-password" placeholder="保存前会先连接智慧课堂校验" required>
+                </div>
+                <button type="submit" class="btn btn-primary" id="smart-save-btn">验证并保存</button>
+            </form>
+            <div class="smart-classroom-sync-panel" id="smart-auto-sync-panel" hidden>
+                <h3 id="smart-auto-sync-title">智慧课堂自动同步</h3>
+                <p id="smart-auto-sync-message"></p>
+                <div class="smart-classroom-stage-list" id="smart-auto-sync-stages"></div>
+            </div>
+        </div>
+
+        <div class="smart-classroom-card smart-classroom-panel">
+            <div class="smart-classroom-panel-head">
+                <div>
+                    <h3>已保存的对接</h3>
+                    <p class="smart-classroom-help">这里仅显示账号和校验状态。手动同步会重新登录智慧课堂，只读取点名记录和签到名单。</p>
+                </div>
+                <button type="button" class="btn btn-outline btn-sm" id="smart-refresh-btn">刷新</button>
+            </div>
+            <div class="smart-classroom-list" id="smart-credential-list"></div>
+        </div>
+    </section>
+</section>
+
+<script type="application/json" id="smart-profiles-data">{{ smart_classroom_profiles | tojson }}</script>
+<script type="application/json" id="smart-credentials-data">{{ smart_classroom_credentials | tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/manage_smart_classroom_integrations.js"></script>
+{% endblock %}

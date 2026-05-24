@@ -130,6 +130,19 @@ from ..services.academic_exam_roster_sync_service import (
 )
 from ..services.academic_invigilation_sync_service import sync_current_teacher_invigilations_from_academic_system
 from ..services.academic_roster_sync_service import sync_current_teacher_rosters_from_academic_system
+from ..services.smart_classroom_checkin_sync_service import (
+    sync_teacher_smart_classroom_checkins,
+    sync_teacher_smart_classroom_data_after_credential_verified,
+)
+from ..services.smart_classroom_integration_service import (
+    build_saved_smart_classroom_verification_payload,
+    delete_teacher_smart_classroom_credential,
+    get_teacher_smart_classroom_credential,
+    list_teacher_smart_classroom_credentials,
+    save_verified_smart_classroom_credential,
+    update_smart_classroom_credential_verification_status,
+    verify_smart_classroom_credential,
+)
 from ..storage_paths import resolve_migrated_file_path
 from ..time_utils import local_iso
 
@@ -3051,6 +3064,139 @@ async def api_delete_academic_credential(credential_id: int, user: dict = Depend
     return {
         "status": "success",
         "message": "教务系统对接已删除。",
+        "removed_count": removed_count,
+        "credentials": credentials,
+    }
+
+
+@router.get("/system/smart-classroom-credentials", response_class=JSONResponse)
+async def api_list_smart_classroom_credentials(user: dict = Depends(get_current_teacher)):
+    """List the current teacher's saved Smart Classroom access methods."""
+    with get_db_connection() as conn:
+        credentials = list_teacher_smart_classroom_credentials(conn, int(user["id"]))
+    return {"status": "success", "credentials": credentials}
+
+
+@router.post("/system/smart-classroom-sync", response_class=JSONResponse)
+async def api_sync_smart_classroom_data(user: dict = Depends(get_current_teacher)):
+    """Manually sync Smart Classroom check-in records."""
+    result = await sync_teacher_smart_classroom_checkins(int(user["id"]))
+    return {
+        "status": result.get("status") or "unknown",
+        "message": result.get("message") or "智慧课堂点名同步已完成。",
+        "result": result,
+        "auto_sync": {
+            "status": result.get("status") or "unknown",
+            "message": result.get("message") or "",
+            "stages": [
+                {
+                    "key": "checkins",
+                    "label": "点名记录",
+                    "status": result.get("status") or "unknown",
+                    "message": result.get("message") or "",
+                    "counts": result.get("counts") or {},
+                    "warnings": result.get("warnings") or [],
+                }
+            ],
+        },
+    }
+
+
+@router.post("/system/smart-classroom-credentials", response_class=JSONResponse)
+async def api_save_smart_classroom_credential(request: Request, user: dict = Depends(get_current_teacher)):
+    """Verify and save a Smart Classroom credential for later sync jobs."""
+    payload = await _parse_json_request(request)
+
+    try:
+        verification = await verify_smart_classroom_credential(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not verification.get("ok"):
+        raise HTTPException(status_code=400, detail=verification.get("message") or "智慧课堂账号校验失败。")
+
+    with get_db_connection() as conn:
+        try:
+            credential = save_verified_smart_classroom_credential(conn, int(user["id"]), payload, verification)
+            credentials = list_teacher_smart_classroom_credentials(conn, int(user["id"]))
+            conn.commit()
+        except ValueError as exc:
+            conn.rollback()
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    auto_sync = await sync_teacher_smart_classroom_data_after_credential_verified(int(user["id"]))
+
+    return {
+        "status": "success",
+        "message": auto_sync.get("message") or "智慧课堂账号已验证并保存。",
+        "verification": verification,
+        "credential": credential,
+        "credentials": credentials,
+        "auto_sync": auto_sync,
+    }
+
+
+@router.post("/system/smart-classroom-credentials/{credential_id}/verify", response_class=JSONResponse)
+async def api_verify_smart_classroom_credential(credential_id: int, user: dict = Depends(get_current_teacher)):
+    """Re-verify a saved Smart Classroom credential."""
+    with get_db_connection() as conn:
+        try:
+            row = get_teacher_smart_classroom_credential(conn, int(user["id"]), credential_id)
+            payload = build_saved_smart_classroom_verification_payload(row)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        verification = await verify_smart_classroom_credential(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    with get_db_connection() as conn:
+        try:
+            credential = update_smart_classroom_credential_verification_status(
+                conn,
+                int(user["id"]),
+                credential_id,
+                verification,
+            )
+            credentials = list_teacher_smart_classroom_credentials(conn, int(user["id"]))
+            conn.commit()
+        except ValueError as exc:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    auto_sync = None
+    if verification.get("ok"):
+        auto_sync = await sync_teacher_smart_classroom_data_after_credential_verified(int(user["id"]))
+
+    return {
+        "status": "success" if verification.get("ok") else "failed",
+        "message": (
+            auto_sync.get("message")
+            if auto_sync
+            else verification.get("message") or "智慧课堂连接校验完成。"
+        ),
+        "verification": verification,
+        "credential": credential,
+        "credentials": credentials,
+        "auto_sync": auto_sync,
+    }
+
+
+@router.delete("/system/smart-classroom-credentials/{credential_id}", response_class=JSONResponse)
+async def api_delete_smart_classroom_credential(credential_id: int, user: dict = Depends(get_current_teacher)):
+    """Delete a saved Smart Classroom credential for the current teacher."""
+    with get_db_connection() as conn:
+        try:
+            removed_count = delete_teacher_smart_classroom_credential(conn, int(user["id"]), credential_id)
+            credentials = list_teacher_smart_classroom_credentials(conn, int(user["id"]))
+            conn.commit()
+        except ValueError as exc:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "status": "success",
+        "message": "智慧课堂对接已删除。",
         "removed_count": removed_count,
         "credentials": credentials,
     }

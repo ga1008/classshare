@@ -596,6 +596,64 @@
                     </div>
                 </div>
             </section>
+            <div class="teaching-session-modal-backdrop" id="teachingSessionModal" hidden>
+                <div class="teaching-session-modal" role="dialog" aria-modal="true" aria-labelledby="teachingSessionModalTitle">
+                    <div class="teaching-session-modal-head">
+                        <div>
+                            <span class="teaching-session-modal-kicker" id="teachingSessionModalKicker">课次</span>
+                            <h3 id="teachingSessionModalTitle">课堂详情</h3>
+                            <p id="teachingSessionModalMeta">选择课次后查看文档与点名统计。</p>
+                        </div>
+                        <button type="button" class="teaching-session-modal-close" id="teachingSessionModalClose" aria-label="关闭课次详情">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+                        </button>
+                    </div>
+                    <div class="teaching-session-modal-body">
+                        <div class="teaching-session-modal-summary" id="teachingSessionModalSummary"></div>
+                        <div class="teaching-session-modal-actions">
+                            <button type="button" class="teaching-session-action" id="teachingSessionOpenHomeBtn">
+                                <span>文档首页</span>
+                                <small>课程目录与入口</small>
+                            </button>
+                            <button type="button" class="teaching-session-action" id="teachingSessionOpenMaterialBtn">
+                                <span>学习文档</span>
+                                <small>进入本次课材料</small>
+                            </button>
+                            {% if user_info.role == 'teacher' %}
+                            <button type="button" class="teaching-session-action is-accent" id="teachingSessionCheckinBtn">
+                                <span>点名统计</span>
+                                <small>智慧课堂签到</small>
+                            </button>
+                            {% endif %}
+                        </div>
+                        {% if user_info.role == 'teacher' %}
+                        <section class="teaching-session-checkin-panel" id="teachingSessionCheckinPanel" hidden>
+                            <div class="teaching-session-checkin-head">
+                                <div>
+                                    <h4>智慧课堂点名统计</h4>
+                                    <p id="teachingSessionCheckinMessage">读取本次课导入的点名记录。</p>
+                                </div>
+                                <button type="button" class="btn btn-outline btn-sm" id="teachingSessionSyncCheckinBtn">同步本次课</button>
+                            </div>
+                            <div class="teaching-session-checkin-stats" id="teachingSessionCheckinStats"></div>
+                            <div class="teaching-session-checkin-table-wrap">
+                                <table class="teaching-session-checkin-table">
+                                    <thead>
+                                        <tr>
+                                            <th>学号</th>
+                                            <th>姓名</th>
+                                            <th>状态</th>
+                                            <th>匹配</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="teachingSessionCheckinRows"></tbody>
+                                </table>
+                            </div>
+                        </section>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
             {% endif %}
 
             <nav class="workspace-hero-nav workspace-floating-nav" aria-label="课堂快速跳转">

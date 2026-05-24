@@ -117,6 +117,10 @@ from ..services.academic_integration_service import (
     list_academic_system_profiles,
     list_teacher_academic_credentials,
 )
+from ..services.smart_classroom_integration_service import (
+    list_smart_classroom_profiles,
+    list_teacher_smart_classroom_credentials,
+)
 from ..services.academic_classroom_sync_service import (
     count_teacher_teaching_places,
     load_teacher_teaching_place_dashboard,
@@ -2814,6 +2818,29 @@ async def get_manage_system_academic_integrations_page(request: Request, user: d
             extra={
                 "academic_profiles": profiles,
                 "academic_credentials": credentials,
+            },
+        ),
+    )
+
+
+@router.get("/manage/system/smart-classroom-integrations", response_class=HTMLResponse)
+async def get_manage_system_smart_classroom_integrations_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """教师个人智慧课堂账号与点名同步管理页面。"""
+    profiles = list_smart_classroom_profiles()
+    with get_db_connection() as conn:
+        credentials = list_teacher_smart_classroom_credentials(conn, int(user["id"]))
+
+    return templates.TemplateResponse(
+        request,
+        "manage/system/smart_classroom_integrations.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="智慧课堂对接",
+            active_page="system_smart_classroom_integrations",
+            extra={
+                "smart_classroom_profiles": profiles,
+                "smart_classroom_credentials": credentials,
             },
         ),
     )

@@ -35824,3 +35824,308 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
         padding: 0 0.28rem;
     }
 }
+
+.teaching-session-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1600;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(15, 23, 42, 0.42);
+    backdrop-filter: blur(10px);
+}
+
+.teaching-session-modal-backdrop[hidden] {
+    display: none;
+}
+
+body.has-teaching-session-modal {
+    overflow: hidden;
+}
+
+.teaching-session-modal {
+    width: min(920px, 100%);
+    max-height: min(760px, calc(100vh - 48px));
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 28px 80px rgba(15, 23, 42, 0.28);
+}
+
+.teaching-session-modal-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 22px 24px 18px;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.72);
+}
+
+.teaching-session-modal-kicker {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: rgba(244, 63, 94, 0.1);
+    color: #be123c;
+    font-size: 0.76rem;
+    font-weight: 800;
+}
+
+.teaching-session-modal-head h3 {
+    margin: 10px 0 0;
+    color: #111827;
+    font-size: 1.25rem;
+    font-weight: 850;
+    letter-spacing: 0;
+}
+
+.teaching-session-modal-head p {
+    margin: 8px 0 0;
+    color: #64748b;
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+.teaching-session-modal-close {
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 999px;
+    color: #475569;
+    background: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.teaching-session-modal-close:hover {
+    color: #be123c;
+    background: rgba(244, 63, 94, 0.08);
+    transform: translateY(-1px);
+}
+
+.teaching-session-modal-body {
+    min-height: 0;
+    overflow: auto;
+    padding: 20px 24px 24px;
+}
+
+.teaching-session-modal-summary {
+    display: grid;
+    gap: 8px;
+    padding: 14px 16px;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: 14px;
+    background: rgba(248, 250, 252, 0.86);
+}
+
+.teaching-session-modal-summary p {
+    margin: 0;
+    color: #334155;
+    line-height: 1.7;
+    font-size: 0.92rem;
+}
+
+.teaching-session-modal-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.teaching-session-action {
+    min-height: 76px;
+    display: grid;
+    gap: 5px;
+    align-content: center;
+    justify-items: start;
+    padding: 14px 16px;
+    border: 1px solid rgba(148, 163, 184, 0.26);
+    border-radius: 14px;
+    color: #0f172a;
+    background: #fff;
+    text-align: left;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.teaching-session-action:hover:not(:disabled) {
+    border-color: rgba(14, 165, 233, 0.36);
+    box-shadow: 0 12px 28px rgba(14, 165, 233, 0.12);
+    transform: translateY(-1px);
+}
+
+.teaching-session-action:disabled {
+    cursor: not-allowed;
+    opacity: 0.52;
+}
+
+.teaching-session-action span {
+    font-size: 0.98rem;
+    font-weight: 850;
+}
+
+.teaching-session-action small {
+    color: #64748b;
+    font-size: 0.78rem;
+}
+
+.teaching-session-action.is-accent {
+    border-color: rgba(244, 63, 94, 0.24);
+    background: rgba(255, 241, 242, 0.78);
+}
+
+.teaching-session-checkin-panel {
+    margin-top: 18px;
+    padding: 16px;
+    border: 1px solid rgba(244, 63, 94, 0.18);
+    border-radius: 16px;
+    background: rgba(255, 241, 242, 0.48);
+}
+
+.teaching-session-checkin-panel[hidden] {
+    display: none;
+}
+
+.teaching-session-checkin-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    align-items: flex-start;
+}
+
+.teaching-session-checkin-head h4 {
+    margin: 0;
+    color: #111827;
+    font-size: 1rem;
+    font-weight: 850;
+}
+
+.teaching-session-checkin-head p {
+    margin: 6px 0 0;
+    color: #64748b;
+    font-size: 0.84rem;
+    line-height: 1.55;
+}
+
+.teaching-session-checkin-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin: 14px 0;
+}
+
+.teaching-session-checkin-stats article {
+    padding: 12px;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.92);
+}
+
+.teaching-session-checkin-stats strong,
+.teaching-session-checkin-stats span {
+    display: block;
+}
+
+.teaching-session-checkin-stats strong {
+    color: #111827;
+    font-size: 1.18rem;
+    font-weight: 850;
+}
+
+.teaching-session-checkin-stats span {
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.teaching-session-checkin-table-wrap {
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid rgba(226, 232, 240, 0.88);
+    border-radius: 12px;
+    background: #fff;
+}
+
+.teaching-session-checkin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.86rem;
+}
+
+.teaching-session-checkin-table th,
+.teaching-session-checkin-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.76);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.teaching-session-checkin-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    color: #475569;
+    background: #f8fafc;
+    font-weight: 850;
+}
+
+.teaching-session-checkin-table td.is-empty {
+    text-align: center;
+    color: #94a3b8;
+    white-space: normal;
+}
+
+.checkin-status {
+    display: inline-flex;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.12);
+    color: #475569;
+    font-size: 0.76rem;
+    font-weight: 800;
+}
+
+.checkin-status.is-checked {
+    background: rgba(16, 185, 129, 0.12);
+    color: #047857;
+}
+
+.checkin-status.is-unchecked {
+    background: rgba(244, 63, 94, 0.12);
+    color: #be123c;
+}
+
+.checkin-status.is-personal_leave,
+.checkin-status.is-sick_leave,
+.checkin-status.is-late_or_early {
+    background: rgba(245, 158, 11, 0.14);
+    color: #b45309;
+}
+
+@media (max-width: 760px) {
+    .teaching-session-modal-backdrop {
+        padding: 12px;
+        place-items: stretch;
+    }
+
+    .teaching-session-modal {
+        max-height: calc(100vh - 24px);
+    }
+
+    .teaching-session-modal-actions,
+    .teaching-session-checkin-stats {
+        grid-template-columns: 1fr;
+    }
+
+    .teaching-session-checkin-head {
+        flex-direction: column;
+    }
+}

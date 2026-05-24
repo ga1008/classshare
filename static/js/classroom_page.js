@@ -797,6 +797,33 @@ function initTeachingTimelineLegacy() {
         window.open(buildLearningViewerUrl(viewerUrl, { is_home_entry: true }), '_blank', 'noopener');
     });
 
+    /* session modal bindings are attached in initTeachingTimeline; legacy timeline intentionally skips them.
+        const homeMaterial = getHomeMaterial();
+        const viewerUrl = String(homeMaterial?.viewer_url || '').trim();
+        if (!viewerUrl) {
+            showToast(isTeacher ? '课程首页尚未配置' : '教师尚未配置课程首页', 'warning');
+            return;
+        }
+        window.open(buildLearningViewerUrl(viewerUrl, { is_home_entry: true }), '_blank', 'noopener');
+    });
+    sessionModalOpenMaterialBtn?.addEventListener('click', () => {
+        const session = activeModalSession || getSessionByOrder(selectedOrder);
+        const viewerUrl = getSessionViewerUrl(session);
+        if (!viewerUrl) {
+            showToast(isTeacher ? '当前次课还没有绑定文档' : '教师尚未配置学习文档', 'warning');
+            return;
+        }
+        window.open(buildLearningViewerUrl(viewerUrl, session), '_blank', 'noopener');
+    });
+    sessionModalCheckinBtn?.addEventListener('click', () => {
+        if (sessionCheckinPanel) sessionCheckinPanel.hidden = false;
+        fetchSessionCheckin({ sync: false });
+    });
+    sessionSyncCheckinBtn?.addEventListener('click', () => {
+        fetchSessionCheckin({ sync: true });
+    });
+
+    */
     selectHomeMaterialBtn?.addEventListener('click', async () => {
         try {
             const currentHomeMaterial = getHomeMaterial();
@@ -908,6 +935,20 @@ function initTeachingTimeline() {
     const aiMaterialBtn = document.getElementById('teachingTimelineAiMaterialBtn');
     const openHomeMaterialBtn = document.getElementById('teachingTimelineOpenHomeMaterialBtn');
     const openMaterialBtn = document.getElementById('teachingTimelineOpenMaterialBtn');
+    const sessionModal = document.getElementById('teachingSessionModal');
+    const sessionModalCloseBtn = document.getElementById('teachingSessionModalClose');
+    const sessionModalKicker = document.getElementById('teachingSessionModalKicker');
+    const sessionModalTitle = document.getElementById('teachingSessionModalTitle');
+    const sessionModalMeta = document.getElementById('teachingSessionModalMeta');
+    const sessionModalSummary = document.getElementById('teachingSessionModalSummary');
+    const sessionModalOpenHomeBtn = document.getElementById('teachingSessionOpenHomeBtn');
+    const sessionModalOpenMaterialBtn = document.getElementById('teachingSessionOpenMaterialBtn');
+    const sessionModalCheckinBtn = document.getElementById('teachingSessionCheckinBtn');
+    const sessionCheckinPanel = document.getElementById('teachingSessionCheckinPanel');
+    const sessionCheckinMessage = document.getElementById('teachingSessionCheckinMessage');
+    const sessionCheckinStats = document.getElementById('teachingSessionCheckinStats');
+    const sessionCheckinRows = document.getElementById('teachingSessionCheckinRows');
+    const sessionSyncCheckinBtn = document.getElementById('teachingSessionSyncCheckinBtn');
     const sessionButtons = Array.from(scrollEl.querySelectorAll('[data-session-order]'));
     const sessionMap = new Map(
         sessions.map((session) => [String(session.order_index), session]),
@@ -938,10 +979,12 @@ function initTeachingTimeline() {
     let motionMode = 'idle';
     let suppressSnapUntil = 0;
     let ignoreClickUntil = 0;
+    let tapCandidateButton = null;
     let projectionFrame = 0;
     let cardMotionFrame = 0;
     let detailTransitionTimer = 0;
     let sessionMaterialAssistant = null;
+    let activeModalSession = null;
 
     const getSessionByOrder = (sessionOrder) => sessionMap.get(String(sessionOrder || '').trim());
     const getHomeMaterial = () => teachingPlan.home_material || null;
@@ -973,6 +1016,137 @@ function initTeachingTimeline() {
             learningMaterialName: session.learning_material_name || '',
             learningMaterialPath: session.learning_material_path || '',
         };
+    };
+    const renderCheckinEmpty = (message = '本次课还没有从智慧课堂导入点名记录。') => {
+        if (sessionCheckinMessage) sessionCheckinMessage.textContent = message;
+        if (sessionCheckinStats) {
+            sessionCheckinStats.innerHTML = `
+                <article><strong>0</strong><span>出勤</span></article>
+                <article><strong>0</strong><span>缺勤</span></article>
+                <article><strong>0</strong><span>请假/异常</span></article>
+                <article><strong>0</strong><span>合计</span></article>
+            `;
+        }
+        if (sessionCheckinRows) {
+            sessionCheckinRows.innerHTML = '<tr><td colspan="4" class="is-empty">点击“同步本次课”后查看智慧课堂签到名单。</td></tr>';
+        }
+    };
+    const renderCheckinSummary = (payload = {}) => {
+        const record = payload.record || null;
+        const summary = payload.summary || {};
+        const students = Array.isArray(payload.students) ? payload.students : [];
+        const abnormalCount = Number(summary.sick_leave || 0)
+            + Number(summary.personal_leave || 0)
+            + Number(summary.late_or_early || 0);
+        if (sessionCheckinMessage) {
+            sessionCheckinMessage.textContent = record
+                ? `${record.checkin_time || '智慧课堂'} · ${record.match_message || '已对齐本次课'}`
+                : (payload.message || '本次课还没有从智慧课堂导入点名记录。');
+        }
+        if (sessionCheckinStats) {
+            sessionCheckinStats.innerHTML = `
+                <article><strong>${Number(summary.checked || 0)}</strong><span>出勤</span></article>
+                <article><strong>${Number(summary.unchecked || 0)}</strong><span>缺勤</span></article>
+                <article><strong>${abnormalCount}</strong><span>请假/异常</span></article>
+                <article><strong>${Number(summary.total || 0)}</strong><span>合计</span></article>
+            `;
+        }
+        if (!sessionCheckinRows) return;
+        if (!students.length) {
+            sessionCheckinRows.innerHTML = '<tr><td colspan="4" class="is-empty">暂无学生签到明细。</td></tr>';
+            return;
+        }
+        sessionCheckinRows.innerHTML = students.map((student) => {
+            const status = String(student.status || '').toLowerCase();
+            const matchLabel = student.local_match_status === 'matched' ? '本地匹配' : '智慧课堂';
+            return `
+                <tr>
+                    <td>${escapeHtml(student.student_number || '-')}</td>
+                    <td>${escapeHtml(student.student_name || '-')}</td>
+                    <td><span class="checkin-status is-${escapeHtml(status || 'unknown')}">${escapeHtml(student.status_label || student.status || '-')}</span></td>
+                    <td>${escapeHtml(matchLabel)}</td>
+                </tr>
+            `;
+        }).join('');
+    };
+    const fetchSessionCheckin = async ({ sync = false } = {}) => {
+        const session = activeModalSession || getSessionByOrder(selectedOrder);
+        if (!session?.id || isHomeEntry(session)) {
+            renderCheckinEmpty('课程首页没有点名记录。');
+            return;
+        }
+        if (sessionCheckinPanel) sessionCheckinPanel.hidden = false;
+        if (sessionCheckinMessage) sessionCheckinMessage.textContent = sync ? '正在顺序同步智慧课堂点名记录...' : '正在读取已导入的点名记录...';
+        if (sessionCheckinRows) {
+            sessionCheckinRows.innerHTML = '<tr><td colspan="4" class="is-empty">读取中...</td></tr>';
+        }
+        if (sessionSyncCheckinBtn) {
+            sessionSyncCheckinBtn.disabled = true;
+            sessionSyncCheckinBtn.dataset.originalText = sessionSyncCheckinBtn.dataset.originalText || sessionSyncCheckinBtn.textContent;
+            sessionSyncCheckinBtn.textContent = sync ? '同步中' : '读取中';
+        }
+        try {
+            const endpoint = `/api/classrooms/${window.APP_CONFIG.classOfferingId}/sessions/${session.id}/smart-checkin${sync ? '/sync' : ''}`;
+            const result = await apiFetch(endpoint, { method: sync ? 'POST' : 'GET', silent: true });
+            const checkin = result.checkin || result;
+            if (!checkin?.record) {
+                renderCheckinEmpty(checkin?.message || result.message || '本次课还没有点名记录。');
+                if (sync) showToast(result.message || '智慧课堂暂未返回可对齐的点名记录。', 'warning');
+                return;
+            }
+            renderCheckinSummary(checkin);
+            if (sync) showToast(result.message || '本次课点名记录已同步。', 'success');
+        } catch (error) {
+            renderCheckinEmpty(error.message || '读取智慧课堂点名记录失败。');
+            showToast(error.message || '读取智慧课堂点名记录失败。', 'error');
+        } finally {
+            if (sessionSyncCheckinBtn) {
+                sessionSyncCheckinBtn.disabled = false;
+                sessionSyncCheckinBtn.textContent = sessionSyncCheckinBtn.dataset.originalText || '同步本次课';
+            }
+        }
+    };
+    const renderSessionModal = (session) => {
+        if (!sessionModal || !session) return;
+        const isHome = isHomeEntry(session);
+        activeModalSession = session;
+        if (sessionModalKicker) sessionModalKicker.textContent = session.session_number_label || (isHome ? '首页' : '课次');
+        if (sessionModalTitle) sessionModalTitle.textContent = session.detail_title || session.title || '';
+        if (sessionModalMeta) sessionModalMeta.textContent = session.detail_meta || session.date_label || '';
+        if (sessionModalSummary) {
+            const text = String(session.detail_content || session.detail_summary || '').trim();
+            sessionModalSummary.innerHTML = text
+                ? text.split(/\r?\n/).filter(Boolean).slice(0, 4).map((line) => `<p>${escapeHtml(line)}</p>`).join('')
+                : '<p>本次课暂未填写详细说明。</p>';
+        }
+        if (sessionModalOpenHomeBtn) {
+            sessionModalOpenHomeBtn.disabled = !hasHomeMaterial();
+        }
+        if (sessionModalOpenMaterialBtn) {
+            sessionModalOpenMaterialBtn.disabled = !getSessionMaterialReady(session);
+            const label = sessionModalOpenMaterialBtn.querySelector('small');
+            if (label) label.textContent = isHome ? '打开课程首页' : '进入本次课材料';
+        }
+        if (sessionModalCheckinBtn) {
+            sessionModalCheckinBtn.disabled = isHome;
+        }
+        renderCheckinEmpty(isHome ? '课程首页没有点名记录。' : '点击“点名统计”读取本次课签到情况。');
+        if (sessionCheckinPanel) sessionCheckinPanel.hidden = true;
+    };
+    const openSessionModal = (session) => {
+        if (!sessionModal || !session) return;
+        renderSessionModal(session);
+        sessionModal.hidden = false;
+        sessionModal.classList.add('is-open');
+        document.body.classList.add('has-teaching-session-modal');
+        sessionModalCloseBtn?.focus({ preventScroll: true });
+    };
+    const closeSessionModal = () => {
+        if (!sessionModal) return;
+        sessionModal.classList.remove('is-open');
+        document.body.classList.remove('has-teaching-session-modal');
+        sessionModal.hidden = true;
+        activeModalSession = null;
     };
     const getMaxScrollLeft = () => Math.max(0, scrollEl.scrollWidth - scrollEl.clientWidth);
     const clampScrollLeft = (value) => Math.max(0, Math.min(getMaxScrollLeft(), Number(value) || 0));
@@ -1457,6 +1631,19 @@ function initTeachingTimeline() {
         }, delay);
     };
 
+    const activateSessionButton = (button, options = {}) => {
+        if (!button) return;
+        const order = button.getAttribute('data-session-order');
+        setActiveSession(order, {
+            center: true,
+            behavior: options.behavior || 'gear',
+            forceCenter: true,
+        });
+        if (options.openModal !== false) {
+            openSessionModal(getSessionByOrder(order));
+        }
+    };
+
     const startInertia = (initialVelocity) => {
         stopTimelineMotion();
         const maxScrollLeft = getMaxScrollLeft();
@@ -1532,6 +1719,9 @@ function initTeachingTimeline() {
         lastPointerTime = event.timeStamp || performance.now();
         scrollVelocity = 0;
         dragDistance = 0;
+        tapCandidateButton = event.target instanceof Element
+            ? event.target.closest('[data-session-select]')
+            : null;
         motionMode = 'drag';
         scrollEl.classList.add('is-dragging');
         scrollEl.setPointerCapture(event.pointerId);
@@ -1563,9 +1753,16 @@ function initTeachingTimeline() {
         }
         if (didDrag) {
             ignoreClickUntil = Date.now() + 180;
+            tapCandidateButton = null;
             startInertia(scrollVelocity + ((dragTargetScrollLeft - scrollEl.scrollLeft) * 0.18));
         } else {
             stopTimelineMotion();
+            const tapButton = tapCandidateButton;
+            tapCandidateButton = null;
+            if (tapButton && scrollEl.contains(tapButton)) {
+                ignoreClickUntil = Date.now() + 180;
+                activateSessionButton(tapButton);
+            }
         }
         scrollVelocity = 0;
     };
@@ -1581,11 +1778,7 @@ function initTeachingTimeline() {
     sessionButtons.forEach((button) => {
         button.addEventListener('click', () => {
             if (Date.now() < ignoreClickUntil) return;
-            setActiveSession(button.getAttribute('data-session-order'), {
-                center: true,
-                behavior: 'gear',
-                forceCenter: true,
-            });
+            activateSessionButton(button);
         });
         button.addEventListener('keydown', (event) => {
             if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
@@ -1729,6 +1922,43 @@ function initTeachingTimeline() {
         } catch (error) {
             showToast(error.message || '更新课堂材料失败', 'error');
         }
+    });
+
+    sessionModalCloseBtn?.addEventListener('click', closeSessionModal);
+    sessionModal?.addEventListener('click', (event) => {
+        if (event.target === sessionModal) {
+            closeSessionModal();
+        }
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && sessionModal && !sessionModal.hidden) {
+            closeSessionModal();
+        }
+    });
+    sessionModalOpenHomeBtn?.addEventListener('click', () => {
+        const homeMaterial = getHomeMaterial();
+        const viewerUrl = String(homeMaterial?.viewer_url || '').trim();
+        if (!viewerUrl) {
+            showToast(isTeacher ? '课程首页尚未配置' : '教师尚未配置课程首页', 'warning');
+            return;
+        }
+        window.open(buildLearningViewerUrl(viewerUrl, { is_home_entry: true }), '_blank', 'noopener');
+    });
+    sessionModalOpenMaterialBtn?.addEventListener('click', () => {
+        const session = activeModalSession || getSessionByOrder(selectedOrder);
+        const viewerUrl = getSessionViewerUrl(session);
+        if (!viewerUrl) {
+            showToast(isTeacher ? '当前次课还没有绑定文档' : '教师尚未配置学习文档', 'warning');
+            return;
+        }
+        window.open(buildLearningViewerUrl(viewerUrl, session), '_blank', 'noopener');
+    });
+    sessionModalCheckinBtn?.addEventListener('click', () => {
+        if (sessionCheckinPanel) sessionCheckinPanel.hidden = false;
+        fetchSessionCheckin({ sync: false });
+    });
+    sessionSyncCheckinBtn?.addEventListener('click', () => {
+        fetchSessionCheckin({ sync: true });
     });
 
     aiMaterialBtn?.addEventListener('click', () => {
