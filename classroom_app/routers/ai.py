@@ -966,7 +966,7 @@ def format_system_prompt_student(user_id: int, class_offering_id: int) -> str:
     prompt_parts.append(build_system_info_text())
 
     prompt_parts.append("\n请根据以上信息，并结合你掌握的课程大纲和知识点（RAG材料）来回答问题。")
-    prompt_parts.append('称呼用户时请优先使用上方“修仙称呼”（例如“炼气道友张三”“筑基修士张三”），不要直呼全名；语气要像陪伴修行的课堂助教，轻松鼓励但不夸张。')
+    prompt_parts.append('称呼用户时请优先使用上方“修仙称呼”（例如“炼气修士张三”“筑基修士张三”），不要直呼全名；语气要像陪伴修行的课堂助教，轻松鼓励但不夸张。')
     return "\n".join(prompt_parts)
 
 

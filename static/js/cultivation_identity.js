@@ -87,7 +87,7 @@ function buildReveal(profile, durationMs) {
                 <span></span>
             </div>
             <p class="cultivation-login-reveal__kicker">${escapeHtml(kicker)}</p>
-            <h1>${escapeHtml(profile?.address_name || profile?.student_name || '道友')}</h1>
+            <h1>${escapeHtml(profile?.address_name || profile?.student_name || '修士')}</h1>
             <strong>${escapeHtml(levelText)}</strong>
             <p>${escapeHtml(courseLine)}</p>
             ${rankLine ? `<p class="cultivation-login-reveal__rank" data-rank-tier="${escapeHtml(rankTier)}">${escapeHtml(rankLine)}</p>` : ''}
