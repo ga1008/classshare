@@ -147,6 +147,7 @@ from ..services.smart_classroom_integration_service import (
     update_smart_classroom_credential_verification_status,
     verify_smart_classroom_credential,
 )
+from ..services.integration_request_probe_service import probe_integration_request
 from ..storage_paths import resolve_migrated_file_path
 from ..time_utils import local_iso
 
@@ -2968,6 +2969,18 @@ async def api_sync_academic_data(user: dict = Depends(get_current_teacher)):
         "message": auto_sync.get("message") or "教务系统同步已完成。",
         "auto_sync": auto_sync,
     }
+
+
+@router.post("/system/integration-request-probe", response_class=JSONResponse)
+async def api_probe_integration_request(request: Request, user: dict = Depends(get_current_teacher)):
+    """Run a bounded read-only-style request probe with the teacher's saved integration credential."""
+    payload = await _parse_json_request(request)
+    try:
+        return await probe_integration_request(int(user["id"]), payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"对接系统请求失败：{str(exc)[:180]}") from exc
 
 
 @router.post("/system/academic-invigilations/sync-current", response_class=JSONResponse)

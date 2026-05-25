@@ -343,6 +343,16 @@
         font-weight: 800;
     }
 
+    .edu-sync-card-meta span.is-muted {
+        background: rgba(148, 163, 184, 0.14);
+        color: #64748b;
+    }
+
+    .edu-sync-card-meta span.is-stat {
+        background: rgba(14, 165, 233, 0.09);
+        color: #0369a1;
+    }
+
     .edu-sync-modal-backdrop {
         position: fixed;
         inset: 0;
@@ -366,6 +376,106 @@
         border-radius: 12px;
         background: #fff;
         box-shadow: 0 26px 80px -40px rgba(15, 23, 42, 0.72);
+    }
+
+    .edu-sync-modal.is-wide {
+        width: min(1040px, 100%);
+    }
+
+    .edu-account-grid {
+        display: grid;
+        grid-template-columns: minmax(280px, 0.88fr) minmax(0, 1.12fr);
+        gap: var(--spacing-lg);
+        align-items: start;
+    }
+
+    .edu-account-form,
+    .edu-account-list {
+        min-width: 0;
+        padding: var(--spacing-lg);
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.74);
+    }
+
+    .edu-account-form form {
+        display: grid;
+        gap: var(--spacing-md);
+        margin-top: var(--spacing-md);
+    }
+
+    .edu-account-toolbar {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-sm);
+        align-items: center;
+        margin-bottom: var(--spacing-md);
+    }
+
+    .edu-password-mask {
+        letter-spacing: 0.16em;
+        color: var(--text-primary);
+    }
+
+    .edu-request-builder {
+        display: grid;
+        gap: var(--spacing-md);
+        margin-top: var(--spacing-md);
+        padding: var(--spacing-md);
+        border: 1px solid rgba(226, 232, 240, 0.95);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.74);
+    }
+
+    .edu-request-grid {
+        display: grid;
+        grid-template-columns: minmax(120px, 0.28fr) minmax(0, 1fr);
+        gap: var(--spacing-sm);
+    }
+
+    .edu-code-field {
+        min-height: 112px;
+        font-family: Consolas, "SFMono-Regular", monospace;
+        font-size: 0.82rem;
+        line-height: 1.5;
+        resize: vertical;
+    }
+
+    .edu-probe-result {
+        margin-top: var(--spacing-md);
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        border-radius: 8px;
+        overflow: hidden;
+        background: #0f172a;
+        color: #e2e8f0;
+    }
+
+    .edu-probe-result[hidden] {
+        display: none;
+    }
+
+    .edu-probe-result-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 10px 12px;
+        background: rgba(15, 23, 42, 0.96);
+        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+        color: #cbd5e1;
+        font-size: 0.78rem;
+        font-weight: 800;
+    }
+
+    .edu-probe-result pre {
+        max-height: 360px;
+        margin: 0;
+        overflow: auto;
+        padding: var(--spacing-md);
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: Consolas, "SFMono-Regular", monospace;
+        font-size: 0.8rem;
+        line-height: 1.55;
     }
 
     .edu-sync-modal-head,
@@ -501,6 +611,11 @@
         .edu-sync-modal-grid {
             grid-template-columns: 1fr;
         }
+
+        .edu-account-grid,
+        .edu-request-grid {
+            grid-template-columns: 1fr;
+        }
     }
 </style>
 {% endblock %}
@@ -520,6 +635,7 @@
                 <span class="edu-chip">按教师隔离</span>
             </div>
             <div class="edu-hero-actions">
+                <button type="button" class="btn btn-outline" id="academic-account-manage-btn">账号管理</button>
                 <button type="button" class="btn btn-primary" id="academic-sync-all-btn">一键同步</button>
                 <button type="button" class="btn btn-outline" id="academic-sync-capability-refresh-btn">刷新同步状态</button>
             </div>
@@ -549,50 +665,60 @@
     </div>
 </section>
 
-<section class="edu-grid">
-    <div class="edu-form-card">
-        <h3>保存账号</h3>
-        <p class="edu-form-help">密码不会在页面回显；更新密码时重新填写并保存即可覆盖旧凭据。</p>
-        <form id="academic-credential-form" autocomplete="off">
-            <div class="form-group">
-                <label class="form-label" for="academic-school-code">学校</label>
-                <select class="form-control" id="academic-school-code" name="school_code" required>
-                    {% for profile in academic_profiles %}
-                    <option value="{{ profile.school_code }}">{{ profile.school_name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="form-group">
-                <label class="form-label" for="academic-username">教务账号</label>
-                <input class="form-control" type="text" id="academic-username" name="username" autocomplete="username" placeholder="请输入教职工号或统一账号" required>
-            </div>
-            <div class="form-group">
-                <label class="form-label" for="academic-password">教务密码</label>
-                <input class="form-control" type="password" id="academic-password" name="password" autocomplete="current-password" placeholder="保存前会先连接教务系统校验" required>
-            </div>
-            <button type="submit" class="btn btn-primary" id="academic-save-btn">验证并保存</button>
-        </form>
-        <div class="edu-auto-sync" id="academic-auto-sync-panel" hidden>
-            <h4 id="academic-auto-sync-title">教务数据自动同步</h4>
-            <p id="academic-auto-sync-message"></p>
-            <div class="edu-auto-sync-stages" id="academic-auto-sync-stages"></div>
-        </div>
-    </div>
-
-    <div class="edu-panel">
-        <div class="edu-panel-header">
+<div class="edu-sync-modal-backdrop" id="academic-account-modal" hidden>
+    <article class="edu-sync-modal is-wide" role="dialog" aria-modal="true" aria-labelledby="academic-account-modal-title">
+        <div class="edu-sync-modal-head">
             <div>
-                <h3>已保存的对接</h3>
-                <p class="edu-form-help">这里只显示账号和校验状态，不显示密码；需要重跑课程、班级学生与监考同步时可直接点击同步数据。</p>
+                <p class="edu-sync-modal-kicker">ACCOUNT</p>
+                <h3 id="academic-account-modal-title">账号管理</h3>
             </div>
-            <button type="button" class="btn btn-outline btn-sm" id="academic-refresh-btn">刷新</button>
+            <button type="button" class="edu-sync-modal-close" id="academic-account-modal-close" aria-label="关闭">&times;</button>
         </div>
-        <div class="edu-list" id="academic-credential-list"></div>
-    </div>
-</section>
+        <div class="edu-sync-modal-body">
+            <div class="edu-account-grid">
+                <section class="edu-account-form">
+                    <h3>教务账号</h3>
+                    <p class="edu-form-help">已保存密码按安全策略掩码显示；如需修改，请重新填写密码并验证保存。</p>
+                    <form id="academic-credential-form" autocomplete="off">
+                        <div class="form-group">
+                            <label class="form-label" for="academic-school-code">学校</label>
+                            <select class="form-control" id="academic-school-code" name="school_code" required>
+                                {% for profile in academic_profiles %}
+                                <option value="{{ profile.school_code }}">{{ profile.school_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="academic-username">教务账号</label>
+                            <input class="form-control" type="text" id="academic-username" name="username" autocomplete="username" placeholder="请输入教职工号或统一账号" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="academic-password">教务密码</label>
+                            <input class="form-control" type="password" id="academic-password" name="password" autocomplete="current-password" placeholder="重新验证时填写新密码" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="academic-save-btn">验证并保存</button>
+                    </form>
+                    <div class="edu-auto-sync" id="academic-auto-sync-panel" hidden>
+                        <h4 id="academic-auto-sync-title">教务数据自动同步</h4>
+                        <p id="academic-auto-sync-message"></p>
+                        <div class="edu-auto-sync-stages" id="academic-auto-sync-stages"></div>
+                    </div>
+                </section>
+
+                <section class="edu-account-list">
+                    <div class="edu-account-toolbar">
+                        <h3>已对接信息</h3>
+                        <button type="button" class="btn btn-outline btn-sm" id="academic-refresh-btn">刷新</button>
+                    </div>
+                    <div class="edu-list" id="academic-credential-list"></div>
+                </section>
+            </div>
+        </div>
+    </article>
+</div>
 
 <div class="edu-sync-modal-backdrop" id="academic-sync-modal" hidden>
-    <article class="edu-sync-modal" role="dialog" aria-modal="true" aria-labelledby="academic-sync-modal-title">
+    <article class="edu-sync-modal is-wide" role="dialog" aria-modal="true" aria-labelledby="academic-sync-modal-title">
         <div class="edu-sync-modal-head">
             <div>
                 <p class="edu-sync-modal-kicker">SYNC DETAIL</p>
@@ -609,6 +735,50 @@
                 <div><span>数据范围</span><strong id="academic-sync-modal-scope">当前教师账号可访问的数据</strong></div>
             </div>
             <div class="edu-sync-modal-params" id="academic-sync-modal-params"></div>
+            <div class="edu-request-builder">
+                <h3>验证请求</h3>
+                <p class="edu-form-help">可临时调整请求地址、查询参数、载荷和请求头，只用于本次验证，不会保存为业务配置。</p>
+                <div class="edu-request-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="academic-probe-method">方法</label>
+                        <select class="form-control" id="academic-probe-method">
+                            <option value="POST">POST</option>
+                            <option value="GET">GET</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="academic-probe-url">请求地址</label>
+                        <input class="form-control" type="text" id="academic-probe-url" autocomplete="off">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="academic-probe-params">查询参数 JSON</label>
+                    <textarea class="form-control edu-code-field" id="academic-probe-params" spellcheck="false"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="academic-probe-headers">请求头 JSON</label>
+                    <textarea class="form-control edu-code-field" id="academic-probe-headers" spellcheck="false"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="academic-probe-body-mode">载荷格式</label>
+                    <select class="form-control" id="academic-probe-body-mode">
+                        <option value="form">Form 表单</option>
+                        <option value="json">JSON</option>
+                        <option value="raw">Raw 文本</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="academic-probe-body">请求载荷</label>
+                    <textarea class="form-control edu-code-field" id="academic-probe-body" spellcheck="false"></textarea>
+                </div>
+                <div class="edu-sync-modal-actions">
+                    <button type="button" class="btn btn-outline" id="academic-sync-modal-probe">验证请求</button>
+                </div>
+                <div class="edu-probe-result" id="academic-probe-result" hidden>
+                    <div class="edu-probe-result-head" id="academic-probe-result-head"></div>
+                    <pre><code id="academic-probe-result-body"></code></pre>
+                </div>
+            </div>
             <p class="edu-form-help" id="academic-sync-modal-safe"></p>
             <div class="edu-sync-modal-actions">
                 <button type="button" class="btn btn-primary" id="academic-sync-modal-run">同步</button>

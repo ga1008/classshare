@@ -1727,6 +1727,24 @@ def build_smart_classroom_sync_capabilities(conn, teacher_id: int) -> list[dict[
                 "checkin_count": checkin_count,
                 "matched_checkin_count": int((row["matched_count"] if row else 0) or 0),
             },
+            "stats": [
+                {"label": "授课班", "value": schedule_count},
+                {"label": "点名记录", "value": checkin_count},
+                {"label": "已对齐记录", "value": int((row["matched_count"] if row else 0) or 0)},
+            ],
+            "request_template": {
+                "provider": "smart_classroom",
+                "method": "POST",
+                "url": "https://edu_api.gxufl.com/api/teaching/checkinCourse/teacherScheduleList",
+                "params": {},
+                "headers": {
+                    "Accept": "application/json, text/plain, */*",
+                    "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+                    "Referer": "https://edu.gxufl.edu.cn/teaching/checkin",
+                },
+                "body_mode": "form",
+                "body": {},
+            },
             "safe_note": "只读取点名数据，不向智慧课堂写入任何内容；请求顺序执行并带随机间隔。",
         }
     ]

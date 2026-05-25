@@ -349,6 +349,16 @@
         font-weight: 800;
     }
 
+    .smart-classroom-sync-card-meta span.is-muted {
+        background: rgba(148, 163, 184, 0.14);
+        color: #64748b;
+    }
+
+    .smart-classroom-sync-card-meta span.is-stat {
+        background: rgba(14, 165, 233, 0.09);
+        color: #0369a1;
+    }
+
     .smart-classroom-modal-backdrop {
         position: fixed;
         inset: 0;
@@ -372,6 +382,106 @@
         border: 1px solid rgba(148, 163, 184, 0.24);
         background: #fff;
         box-shadow: 0 26px 80px -40px rgba(15, 23, 42, 0.72);
+    }
+
+    .smart-classroom-modal.is-wide {
+        width: min(1040px, 100%);
+    }
+
+    .smart-classroom-account-grid {
+        display: grid;
+        grid-template-columns: minmax(280px, 0.88fr) minmax(0, 1.12fr);
+        gap: var(--spacing-lg);
+        align-items: start;
+    }
+
+    .smart-classroom-account-form,
+    .smart-classroom-account-list {
+        min-width: 0;
+        padding: var(--spacing-lg);
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.74);
+    }
+
+    .smart-classroom-account-form form {
+        display: grid;
+        gap: var(--spacing-md);
+        margin-top: var(--spacing-md);
+    }
+
+    .smart-classroom-account-toolbar {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-sm);
+        align-items: center;
+        margin-bottom: var(--spacing-md);
+    }
+
+    .smart-classroom-password-mask {
+        letter-spacing: 0.16em;
+        color: var(--text-primary);
+    }
+
+    .smart-classroom-request-builder {
+        display: grid;
+        gap: var(--spacing-md);
+        margin-top: var(--spacing-md);
+        padding: var(--spacing-md);
+        border: 1px solid rgba(226, 232, 240, 0.95);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.74);
+    }
+
+    .smart-classroom-request-grid {
+        display: grid;
+        grid-template-columns: minmax(120px, 0.28fr) minmax(0, 1fr);
+        gap: var(--spacing-sm);
+    }
+
+    .smart-classroom-code-field {
+        min-height: 112px;
+        font-family: Consolas, "SFMono-Regular", monospace;
+        font-size: 0.82rem;
+        line-height: 1.5;
+        resize: vertical;
+    }
+
+    .smart-classroom-probe-result {
+        margin-top: var(--spacing-md);
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        border-radius: 8px;
+        overflow: hidden;
+        background: #0f172a;
+        color: #e2e8f0;
+    }
+
+    .smart-classroom-probe-result[hidden] {
+        display: none;
+    }
+
+    .smart-classroom-probe-result-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 10px 12px;
+        background: rgba(15, 23, 42, 0.96);
+        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+        color: #cbd5e1;
+        font-size: 0.78rem;
+        font-weight: 800;
+    }
+
+    .smart-classroom-probe-result pre {
+        max-height: 360px;
+        margin: 0;
+        overflow: auto;
+        padding: var(--spacing-md);
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: Consolas, "SFMono-Regular", monospace;
+        font-size: 0.8rem;
+        line-height: 1.55;
     }
 
     .smart-classroom-modal-head,
@@ -460,6 +570,11 @@
         .smart-classroom-modal-grid {
             grid-template-columns: 1fr;
         }
+
+        .smart-classroom-account-grid,
+        .smart-classroom-request-grid {
+            grid-template-columns: 1fr;
+        }
     }
 </style>
 {% endblock %}
@@ -482,6 +597,7 @@
                     <span class="smart-classroom-chip">不写入智慧课堂</span>
                 </div>
                 <div class="smart-classroom-hero-actions">
+                    <button type="button" class="btn btn-outline" id="smart-account-manage-btn">账号管理</button>
                     <button type="button" class="btn btn-primary" id="smart-sync-all-btn">一键同步</button>
                     <button type="button" class="btn btn-outline" id="smart-sync-capability-refresh-btn">刷新同步状态</button>
                 </div>
@@ -511,51 +627,61 @@
         </div>
     </section>
 
-    <section class="smart-classroom-grid">
-        <div class="smart-classroom-card smart-classroom-panel">
-            <h3>保存账号</h3>
-            <p class="smart-classroom-help">密码不会在页面回显；更新密码时重新填写并保存即可覆盖旧凭据。</p>
-            <form id="smart-classroom-credential-form" autocomplete="off">
-                <div class="form-group">
-                    <label class="form-label" for="smart-platform-code">平台</label>
-                    <select class="form-control" id="smart-platform-code" name="platform_code" required>
-                        {% for profile in smart_classroom_profiles %}
-                        <option value="{{ profile.platform_code }}">{{ profile.platform_name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="smart-username">智慧课堂账号</label>
-                    <input class="form-control" type="text" id="smart-username" name="username" autocomplete="username" placeholder="请输入工号或统一账号" required>
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="smart-password">智慧课堂密码</label>
-                    <input class="form-control" type="password" id="smart-password" name="password" autocomplete="current-password" placeholder="保存前会先连接智慧课堂校验" required>
-                </div>
-                <button type="submit" class="btn btn-primary" id="smart-save-btn">验证并保存</button>
-            </form>
-            <div class="smart-classroom-sync-panel" id="smart-auto-sync-panel" hidden>
-                <h3 id="smart-auto-sync-title">智慧课堂自动同步</h3>
-                <p id="smart-auto-sync-message"></p>
-                <div class="smart-classroom-stage-list" id="smart-auto-sync-stages"></div>
-            </div>
-        </div>
-
-        <div class="smart-classroom-card smart-classroom-panel">
-            <div class="smart-classroom-panel-head">
+    <div class="smart-classroom-modal-backdrop" id="smart-account-modal" hidden>
+        <article class="smart-classroom-modal is-wide" role="dialog" aria-modal="true" aria-labelledby="smart-account-modal-title">
+            <div class="smart-classroom-modal-head">
                 <div>
-                    <h3>已保存的对接</h3>
-                    <p class="smart-classroom-help">这里仅显示账号和校验状态。手动同步会重新登录智慧课堂，只读取点名记录和签到名单。</p>
+                    <p class="smart-classroom-kicker">ACCOUNT</p>
+                    <h3 id="smart-account-modal-title">账号管理</h3>
                 </div>
-                <button type="button" class="btn btn-outline btn-sm" id="smart-refresh-btn">刷新</button>
+                <button type="button" class="smart-classroom-modal-close" id="smart-account-modal-close" aria-label="关闭">&times;</button>
             </div>
-            <div class="smart-classroom-list" id="smart-credential-list"></div>
-        </div>
-    </section>
+            <div class="smart-classroom-modal-body">
+                <div class="smart-classroom-account-grid">
+                    <section class="smart-classroom-account-form">
+                        <h3>智慧课堂账号</h3>
+                        <p class="smart-classroom-help">已保存密码按安全策略掩码显示；如需修改，请重新填写密码并验证保存。</p>
+                        <form id="smart-classroom-credential-form" autocomplete="off">
+                            <div class="form-group">
+                                <label class="form-label" for="smart-platform-code">平台</label>
+                                <select class="form-control" id="smart-platform-code" name="platform_code" required>
+                                    {% for profile in smart_classroom_profiles %}
+                                    <option value="{{ profile.platform_code }}">{{ profile.platform_name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="smart-username">智慧课堂账号</label>
+                                <input class="form-control" type="text" id="smart-username" name="username" autocomplete="username" placeholder="请输入工号或统一账号" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="smart-password">智慧课堂密码</label>
+                                <input class="form-control" type="password" id="smart-password" name="password" autocomplete="current-password" placeholder="重新验证时填写新密码" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="smart-save-btn">验证并保存</button>
+                        </form>
+                        <div class="smart-classroom-sync-panel" id="smart-auto-sync-panel" hidden>
+                            <h3 id="smart-auto-sync-title">智慧课堂自动同步</h3>
+                            <p id="smart-auto-sync-message"></p>
+                            <div class="smart-classroom-stage-list" id="smart-auto-sync-stages"></div>
+                        </div>
+                    </section>
+
+                    <section class="smart-classroom-account-list">
+                        <div class="smart-classroom-account-toolbar">
+                            <h3>已对接信息</h3>
+                            <button type="button" class="btn btn-outline btn-sm" id="smart-refresh-btn">刷新</button>
+                        </div>
+                        <div class="smart-classroom-list" id="smart-credential-list"></div>
+                    </section>
+                </div>
+            </div>
+        </article>
+    </div>
 </section>
 
 <div class="smart-classroom-modal-backdrop" id="smart-sync-modal" hidden>
-    <article class="smart-classroom-modal" role="dialog" aria-modal="true" aria-labelledby="smart-sync-modal-title">
+    <article class="smart-classroom-modal is-wide" role="dialog" aria-modal="true" aria-labelledby="smart-sync-modal-title">
         <div class="smart-classroom-modal-head">
             <div>
                 <p class="smart-classroom-kicker">SYNC DETAIL</p>
@@ -572,6 +698,50 @@
                 <div><span>范围</span><strong id="smart-sync-modal-scope">-</strong></div>
             </div>
             <div class="smart-classroom-modal-params" id="smart-sync-modal-params"></div>
+            <div class="smart-classroom-request-builder">
+                <h3>验证请求</h3>
+                <p class="smart-classroom-help">可临时调整请求地址、查询参数、载荷和请求头，只用于本次验证，不会保存为业务配置。</p>
+                <div class="smart-classroom-request-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="smart-probe-method">方法</label>
+                        <select class="form-control" id="smart-probe-method">
+                            <option value="POST">POST</option>
+                            <option value="GET">GET</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="smart-probe-url">请求地址</label>
+                        <input class="form-control" type="text" id="smart-probe-url" autocomplete="off">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="smart-probe-params">查询参数 JSON</label>
+                    <textarea class="form-control smart-classroom-code-field" id="smart-probe-params" spellcheck="false"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="smart-probe-headers">请求头 JSON</label>
+                    <textarea class="form-control smart-classroom-code-field" id="smart-probe-headers" spellcheck="false"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="smart-probe-body-mode">载荷格式</label>
+                    <select class="form-control" id="smart-probe-body-mode">
+                        <option value="form">Form 表单</option>
+                        <option value="json">JSON</option>
+                        <option value="raw">Raw 文本</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="smart-probe-body">请求载荷</label>
+                    <textarea class="form-control smart-classroom-code-field" id="smart-probe-body" spellcheck="false"></textarea>
+                </div>
+                <div class="smart-classroom-modal-actions">
+                    <button type="button" class="btn btn-outline" id="smart-sync-modal-probe">验证请求</button>
+                </div>
+                <div class="smart-classroom-probe-result" id="smart-probe-result" hidden>
+                    <div class="smart-classroom-probe-result-head" id="smart-probe-result-head"></div>
+                    <pre><code id="smart-probe-result-body"></code></pre>
+                </div>
+            </div>
             <p class="smart-classroom-help" id="smart-sync-modal-safe"></p>
             <div class="smart-classroom-modal-actions">
                 <button type="button" class="btn btn-primary" id="smart-sync-modal-run">同步</button>

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import time
 from typing import Any, Awaitable, Callable
 
+from .academic_service import china_now
 from .academic_course_sync_service import sync_current_teacher_courses_from_academic_system
 from .academic_classroom_sync_service import sync_teaching_places_from_academic_system
 from .academic_invigilation_sync_service import sync_current_teacher_invigilations_from_academic_system
@@ -69,6 +71,61 @@ def _compact_teaching_place_counts(result: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def _current_term_params() -> dict[str, str]:
+    today = china_now().date()
+    year_start = today.year if today.month >= 8 else today.year - 1
+    return {
+        "xnm": str(year_start),
+        "xqm": "12" if 2 <= today.month <= 7 else "3",
+    }
+
+
+def _request_template(
+    *,
+    url: str,
+    params: dict[str, Any] | None = None,
+    body: dict[str, Any] | None = None,
+    referer: str = "",
+    body_mode: str = "form",
+) -> dict[str, Any]:
+    headers = {
+        "Accept": "application/json,text/javascript,*/*;q=0.8",
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+    if referer:
+        headers["Referer"] = referer
+    return {
+        "provider": "academic",
+        "method": "POST",
+        "url": url,
+        "params": dict(params or {}),
+        "headers": headers,
+        "body_mode": body_mode,
+        "body": dict(body or {}),
+    }
+
+
+def _jqgrid_probe_body(
+    *,
+    term_params: dict[str, str],
+    show_count: int = 10,
+    sort_name: str = "",
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        **term_params,
+        **dict(extra or {}),
+        "_search": "false",
+        "nd": str(int(time.time() * 1000)),
+        "queryModel.showCount": str(max(1, int(show_count or 10))),
+        "queryModel.currentPage": "1",
+        "queryModel.sortName": sort_name,
+        "queryModel.sortOrder": "asc",
+        "time": "0",
+    }
+
+
 def _sync_stat(conn, table_name: str, teacher_id: int, *, time_column: str = "synced_at") -> dict[str, Any]:
     allowed_tables = {
         "teacher_academic_course_sync_items",
@@ -97,6 +154,28 @@ def _sync_stat(conn, table_name: str, teacher_id: int, *, time_column: str = "sy
 
 
 def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, Any]]:
+    term_params = _current_term_params()
+    common_query_params = {"gnmkdm": "N2150"}
+    timetable_body: dict[str, Any] = {
+        **term_params,
+        "kzlx": "ck",
+        "djsktkb": "0",
+        "xsdm": "",
+        "ccdm": "",
+        "xsewkbnr": "0",
+        "xszd[kch]": "true",
+        "xszd[jxbmc]": "true",
+        "xszd[jxbzc]": "true",
+        "xszd[cd]": "true",
+        "xszd[zxs]": "true",
+        "xszd[xf]": "true",
+        "xszd[xq]": "true",
+        "xszd[jxbrs]": "true",
+        "xszd[kcxzjc]": "true",
+        "xszd[khfs]": "true",
+        "xszd[ksfs]": "true",
+        "xszd[zhxs]": "true",
+    }
     course_stat = _sync_stat(conn, "teacher_academic_course_sync_items", int(teacher_id))
     occurrence_row = conn.execute(
         """
@@ -132,6 +211,16 @@ def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, An
             "has_synced": course_stat["count"] > 0 or occurrence_count > 0,
             "status_text": f"已同步 {course_stat['count']} 条课表、{occurrence_count} 次真实课次",
             "counts": {"course_sync_item_count": course_stat["count"], "occurrence_count": occurrence_count},
+            "stats": [
+                {"label": "课表记录", "value": course_stat["count"]},
+                {"label": "真实课次", "value": occurrence_count},
+            ],
+            "request_template": _request_template(
+                url="https://jwxt.gxufl.com/kbcx/jskbcx_cxJsKb1.html",
+                params=common_query_params,
+                referer="https://jwxt.gxufl.com/kbcx/jskbcx_cxJskbcxIndex.html?doType=details&gnmkdm=N2150&layout=default",
+                body=timetable_body,
+            ),
             "safe_note": "只读取教师课表和课程字段，不向教务系统写入信息。",
         },
         {
@@ -148,6 +237,16 @@ def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, An
             "has_synced": roster_stat["count"] > 0 or membership_stat["count"] > 0,
             "status_text": f"已同步 {roster_stat['count']} 个教学班、{membership_stat['count']} 条名单关系",
             "counts": {"teaching_class_count": roster_stat["count"], "membership_count": membership_stat["count"]},
+            "stats": [
+                {"label": "教学班", "value": roster_stat["count"]},
+                {"label": "名单关系", "value": membership_stat["count"]},
+            ],
+            "request_template": _request_template(
+                url="https://jwxt.gxufl.com/xsxkjk/xsxkcx_cxJxbxxList.html",
+                params={"doType": "query", "gnmkdm": "N255005"},
+                referer="https://jwxt.gxufl.com/xsxkjk/xsxkcx_cxXsxkIndex.html?gnmkdm=N255005&layout=default",
+                body=_jqgrid_probe_body(term_params=term_params, show_count=10, sort_name=" "),
+            ),
             "safe_note": "按学号和行政班对齐本地数据，冲突不会直接覆盖敏感信息。",
         },
         {
@@ -164,6 +263,21 @@ def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, An
             "has_synced": bool(semester_stat["last_synced_at"]),
             "status_text": f"已维护 {semester_stat['count']} 个学期",
             "counts": {"semester_count": semester_stat["count"]},
+            "stats": [
+                {"label": "已维护学期", "value": semester_stat["count"]},
+            ],
+            "request_template": {
+                "provider": "academic",
+                "method": "GET",
+                "url": "https://jwxt.gxufl.com/xtgl/index_cxAreaSix.html",
+                "params": {"localeKey": "zh_CN"},
+                "headers": {
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                "body_mode": "form",
+                "body": {},
+            },
             "safe_note": "生成本地校历，不向教务系统提交修改。",
         },
         {
@@ -180,6 +294,26 @@ def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, An
             "has_synced": invigilation_stat["count"] > 0,
             "status_text": f"已同步 {invigilation_stat['count']} 条监考安排",
             "counts": {"invigilation_count": invigilation_stat["count"]},
+            "stats": [
+                {"label": "监考安排", "value": invigilation_stat["count"]},
+            ],
+            "request_template": _request_template(
+                url="https://jwxt.gxufl.com/kwgl/jkcx_cxJsjkxxIndex.html",
+                params={"doType": "query", "gnmkdm": "N358125"},
+                referer="https://jwxt.gxufl.com/kwgl/jkcx_cxJsjkxxIndex.html?gnmkdm=N358125&layout=default",
+                body=_jqgrid_probe_body(
+                    term_params=term_params,
+                    show_count=10,
+                    sort_name="kssj",
+                    extra={
+                        "ksmcdmb_id": "",
+                        "ksrq": "",
+                        "sjbh": "",
+                        "kc": "",
+                        "kch": "",
+                    },
+                ),
+            ),
             "safe_note": "只读取监考安排，日历和待办只写入本系统。",
         },
         {
@@ -196,6 +330,15 @@ def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, An
             "has_synced": place_stat["count"] > 0,
             "status_text": f"已同步 {place_stat['count']} 个教学场地",
             "counts": {"place_count": place_stat["count"]},
+            "stats": [
+                {"label": "教学场地", "value": place_stat["count"]},
+            ],
+            "request_template": _request_template(
+                url="https://jwxt.gxufl.com/pkgl/jxcdjbxxgl_cxJxcdjbxxIndex.html",
+                params={"doType": "query", "gnmkdm": "N211015"},
+                referer="https://jwxt.gxufl.com/pkgl/jxcdjbxxgl_cxJxcdjbxxIndex.html?gnmkdm=N211015&layout=default",
+                body=_jqgrid_probe_body(term_params={}, show_count=10, sort_name="cdbh"),
+            ),
             "safe_note": "空闲教室仍实时查询教务系统，场地列表只作为本地筛选与选择基础。",
         },
     ]
