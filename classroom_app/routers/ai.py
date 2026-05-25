@@ -1187,6 +1187,15 @@ async def update_user_profile(
             latest_hidden_profile = _load_latest_hidden_psych_profile(
                 conn, class_offering_id, user_pk, user_role
             )
+            support_signal_prompt = ""
+            if user_role == "student":
+                support_signal_prompt = build_student_support_signal_prompt(
+                    conn,
+                    student_id=int(user_pk),
+                    class_offering_id=int(class_offering_id),
+                    include_teacher_note=True,
+                    include_course_signals=True,
+                )
             recent_messages = conn.execute(
                 """
                 SELECT role, message, attachments_json, final_answer
@@ -1249,6 +1258,9 @@ System Prompt:
 
 【上一轮内部学习支持摘要】
 {previous_hidden_summary or "（这是当前课堂中的首次内部学习支持分析）"}
+
+【跨课堂、教师补充与出勤信号】
+{support_signal_prompt or "暂无额外跨课堂、教师补充或出勤信号。"}
 
 【最近课堂对话记录】
 {transcript}

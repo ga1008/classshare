@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from .psych_profile_service import sanitize_hidden_profile_leaks
+from .smart_classroom_checkin_sync_service import build_student_attendance_support_prompt
 
 
 MAX_SHARED_NOTE_LENGTH = 2400
@@ -328,6 +329,14 @@ def build_student_support_signal_prompt(
                         is_current=int(item.get("class_offering_id") or 0) == int(class_offering_id or 0),
                     )
                 )
+
+    attendance_signal = build_student_attendance_support_prompt(
+        conn,
+        student_id=int(student_id),
+        class_offering_id=int(class_offering_id or 0) or None,
+    )
+    if attendance_signal:
+        lines.append(attendance_signal)
 
     return sanitize_hidden_profile_leaks("\n".join(lines))[:MAX_SUPPORT_CONTEXT_LENGTH].strip()
 

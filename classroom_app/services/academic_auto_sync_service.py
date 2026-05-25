@@ -69,6 +69,138 @@ def _compact_teaching_place_counts(result: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def _sync_stat(conn, table_name: str, teacher_id: int, *, time_column: str = "synced_at") -> dict[str, Any]:
+    allowed_tables = {
+        "teacher_academic_course_sync_items",
+        "teacher_academic_roster_sync_items",
+        "teacher_academic_roster_memberships",
+        "teacher_academic_invigilation_items",
+        "teacher_academic_teaching_places",
+        "academic_semesters",
+    }
+    if table_name not in allowed_tables:
+        return {"count": 0, "last_synced_at": ""}
+    column = time_column if time_column in {"synced_at", "academic_sync_at", "calendar_sync_at"} else "synced_at"
+    row = conn.execute(
+        f"""
+        SELECT COUNT(*) AS count,
+               MAX({column}) AS last_synced_at
+        FROM {table_name}
+        WHERE teacher_id = ?
+        """,
+        (int(teacher_id),),
+    ).fetchone()
+    return {
+        "count": int((row["count"] if row else 0) or 0),
+        "last_synced_at": str((row["last_synced_at"] if row else "") or ""),
+    }
+
+
+def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, Any]]:
+    course_stat = _sync_stat(conn, "teacher_academic_course_sync_items", int(teacher_id))
+    occurrence_row = conn.execute(
+        """
+        SELECT COUNT(*) AS count,
+               MAX(synced_at) AS last_synced_at
+        FROM teacher_academic_course_session_occurrences
+        WHERE teacher_id = ?
+        """,
+        (int(teacher_id),),
+    ).fetchone()
+    occurrence_count = int((occurrence_row["count"] if occurrence_row else 0) or 0)
+    occurrence_synced_at = str((occurrence_row["last_synced_at"] if occurrence_row else "") or "")
+
+    roster_stat = _sync_stat(conn, "teacher_academic_roster_sync_items", int(teacher_id))
+    membership_stat = _sync_stat(conn, "teacher_academic_roster_memberships", int(teacher_id))
+    invigilation_stat = _sync_stat(conn, "teacher_academic_invigilation_items", int(teacher_id))
+    place_stat = _sync_stat(conn, "teacher_academic_teaching_places", int(teacher_id))
+    semester_stat = _sync_stat(conn, "academic_semesters", int(teacher_id), time_column="calendar_sync_at")
+
+    return [
+        {
+            "key": "courses",
+            "label": "课程与课次",
+            "description": "同步当前学期教师课表、课程基础信息、真实课次和非周期变动，并对齐本系统课堂。",
+            "endpoint": "/api/manage/courses/sync-current-academic",
+            "method": "POST",
+            "parameters": [
+                {"name": "xnm/xqm", "value": "自动识别当前学年学期"},
+                {"name": "kzlx", "value": "ck"},
+                {"name": "xsxx", "value": "课程字段完整读取"},
+            ],
+            "last_synced_at": occurrence_synced_at or course_stat["last_synced_at"],
+            "has_synced": course_stat["count"] > 0 or occurrence_count > 0,
+            "status_text": f"已同步 {course_stat['count']} 条课表、{occurrence_count} 次真实课次",
+            "counts": {"course_sync_item_count": course_stat["count"], "occurrence_count": occurrence_count},
+            "safe_note": "只读取教师课表和课程字段，不向教务系统写入信息。",
+        },
+        {
+            "key": "rosters",
+            "label": "班级与学生名单",
+            "description": "同步教师授课班对应的行政班、学生基础信息和教学班名单关系，保留差异复核信息。",
+            "endpoint": "/api/manage/classes/sync-current-academic",
+            "method": "POST",
+            "parameters": [
+                {"name": "xnm/xqm", "value": "自动识别当前学年学期"},
+                {"name": "分页", "value": "按教务系统名单接口逐页读取"},
+            ],
+            "last_synced_at": membership_stat["last_synced_at"] or roster_stat["last_synced_at"],
+            "has_synced": roster_stat["count"] > 0 or membership_stat["count"] > 0,
+            "status_text": f"已同步 {roster_stat['count']} 个教学班、{membership_stat['count']} 条名单关系",
+            "counts": {"teaching_class_count": roster_stat["count"], "membership_count": membership_stat["count"]},
+            "safe_note": "按学号和行政班对齐本地数据，冲突不会直接覆盖敏感信息。",
+        },
+        {
+            "key": "semester_calendar",
+            "label": "学期校历",
+            "description": "识别当前学期，拉取教务系统教学日历并结合节假日/补课日期生成本系统校历。",
+            "endpoint": "/api/manage/semesters/calendar/sync-current",
+            "method": "POST",
+            "parameters": [
+                {"name": "当前学期", "value": "优先从教务系统本学期上下文识别"},
+                {"name": "节假日", "value": "结合广西适配节假日和补课日期"},
+            ],
+            "last_synced_at": semester_stat["last_synced_at"],
+            "has_synced": bool(semester_stat["last_synced_at"]),
+            "status_text": f"已维护 {semester_stat['count']} 个学期",
+            "counts": {"semester_count": semester_stat["count"]},
+            "safe_note": "生成本地校历，不向教务系统提交修改。",
+        },
+        {
+            "key": "invigilations",
+            "label": "监考安排",
+            "description": "同步当前学期监考信息，并写入教师日历和待办提醒。",
+            "endpoint": "/api/manage/system/academic-invigilations/sync-current",
+            "method": "POST",
+            "parameters": [
+                {"name": "xnm/xqm", "value": "自动识别当前学年学期"},
+                {"name": "监考查询", "value": "教师当前账号可见安排"},
+            ],
+            "last_synced_at": invigilation_stat["last_synced_at"],
+            "has_synced": invigilation_stat["count"] > 0,
+            "status_text": f"已同步 {invigilation_stat['count']} 条监考安排",
+            "counts": {"invigilation_count": invigilation_stat["count"]},
+            "safe_note": "只读取监考安排，日历和待办只写入本系统。",
+        },
+        {
+            "key": "teaching_places",
+            "label": "教学场地",
+            "description": "同步教务系统教学场地，用于本地模糊查询、考试教室选择和空闲教室推荐。",
+            "endpoint": "/api/manage/classrooms/sync-academic",
+            "method": "POST",
+            "parameters": [
+                {"name": "场地列表", "value": "按教务系统分页读取"},
+                {"name": "场地类别/校区/楼号", "value": "同步为本地筛选字段"},
+            ],
+            "last_synced_at": place_stat["last_synced_at"],
+            "has_synced": place_stat["count"] > 0,
+            "status_text": f"已同步 {place_stat['count']} 个教学场地",
+            "counts": {"place_count": place_stat["count"]},
+            "safe_note": "空闲教室仍实时查询教务系统，场地列表只作为本地筛选与选择基础。",
+        },
+    ]
+
+
 def _stage_payload(
     *,
     key: str,

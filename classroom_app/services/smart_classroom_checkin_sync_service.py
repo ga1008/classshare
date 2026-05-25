@@ -29,6 +29,10 @@ STATUS_LABELS = {
     "PERSONAL_LEAVE": "事假",
     "LATE_OR_EARLY": "迟到或早退",
 }
+CHECKED_STATUS = "CHECKED"
+ABSENT_STATUS = "UNCHECKED"
+LEAVE_STATUSES = {"SICK_LEAVE", "PERSONAL_LEAVE"}
+ATTENDANCE_ABNORMAL_STATUSES = {ABSENT_STATUS, "LATE_OR_EARLY", *LEAVE_STATUSES}
 
 _teacher_sync_locks: dict[int, asyncio.Lock] = {}
 
@@ -460,6 +464,91 @@ def _match_session(
 def _status_label(status: Any) -> str:
     normalized = str(status or "").strip().upper()
     return STATUS_LABELS.get(normalized, str(status or "").strip() or "未知")
+
+
+def _rate_percent(numerator: int | float, denominator: int | float, *, digits: int = 1) -> float:
+    try:
+        denominator_value = float(denominator)
+        if denominator_value <= 0:
+            return 0.0
+        return round(float(numerator) * 100 / denominator_value, digits)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return 0.0
+
+
+def _status_bucket(status: Any) -> str:
+    normalized = str(status or "").strip().upper()
+    if normalized == CHECKED_STATUS:
+        return "checked"
+    if normalized == ABSENT_STATUS:
+        return "absent"
+    if normalized == "LATE_OR_EARLY":
+        return "late_or_early"
+    if normalized == "SICK_LEAVE":
+        return "sick_leave"
+    if normalized == "PERSONAL_LEAVE":
+        return "personal_leave"
+    return "unknown"
+
+
+def _empty_student_attendance(
+    *,
+    student_id: int | None,
+    student_number: str,
+    student_name: str,
+) -> dict[str, Any]:
+    return {
+        "student_id": student_id,
+        "student_number": str(student_number or ""),
+        "student_name": str(student_name or ""),
+        "checked": 0,
+        "absent": 0,
+        "late_or_early": 0,
+        "sick_leave": 0,
+        "personal_leave": 0,
+        "unknown": 0,
+        "total": 0,
+        "attendance_rate": 0.0,
+        "abnormal_count": 0,
+        "risk_score": 0.0,
+        "risk_level": "none",
+        "latest_status": "",
+        "latest_status_label": "",
+        "latest_checkin_time": "",
+        "local_match_status": "matched" if student_id else "remote_only",
+    }
+
+
+def _finalize_student_attendance(item: dict[str, Any]) -> dict[str, Any]:
+    total = int(item.get("total") or 0)
+    abnormal_count = (
+        int(item.get("absent") or 0)
+        + int(item.get("late_or_early") or 0)
+        + int(item.get("sick_leave") or 0)
+        + int(item.get("personal_leave") or 0)
+    )
+    risk_score = (
+        int(item.get("absent") or 0) * 2.2
+        + int(item.get("late_or_early") or 0) * 1.2
+        + (int(item.get("sick_leave") or 0) + int(item.get("personal_leave") or 0)) * 0.7
+    )
+    attendance_rate = _rate_percent(int(item.get("checked") or 0), total)
+    if total <= 0:
+        risk_level = "none"
+    elif attendance_rate < 70 or int(item.get("absent") or 0) >= 3:
+        risk_level = "high"
+    elif attendance_rate < 85 or int(item.get("absent") or 0) >= 2 or int(item.get("late_or_early") or 0) >= 2:
+        risk_level = "medium"
+    elif abnormal_count:
+        risk_level = "watch"
+    else:
+        risk_level = "healthy"
+
+    item["attendance_rate"] = attendance_rate
+    item["abnormal_count"] = abnormal_count
+    item["risk_score"] = round(risk_score, 2)
+    item["risk_level"] = risk_level
+    return item
 
 
 def _remote_checkin_payload(record: dict[str, Any], detail: dict[str, Any]) -> dict[str, Any]:
@@ -978,6 +1067,669 @@ def load_session_smart_checkin_summary(
             "total": selected["total_count"],
         },
     }
+
+
+def _load_latest_matched_checkin_sessions(
+    conn,
+    *,
+    class_offering_id: int,
+    teacher_id: int | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    params: list[Any] = [int(class_offering_id)]
+    teacher_filter = ""
+    if teacher_id is not None:
+        teacher_filter = "AND teacher_id = ?"
+        params.append(int(teacher_id))
+    rows = conn.execute(
+        f"""
+        SELECT *
+        FROM smart_classroom_checkin_sessions
+        WHERE class_offering_id = ?
+          AND session_id IS NOT NULL
+          {teacher_filter}
+        ORDER BY session_id,
+                 COALESCE(checkin_time, '') DESC,
+                 COALESCE(synced_at, '') DESC,
+                 id DESC
+        """,
+        params,
+    ).fetchall()
+    latest_by_session: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        session_id = _coerce_int(row["session_id"])
+        if session_id <= 0 or session_id in latest_by_session:
+            continue
+        latest_by_session[session_id] = dict(row)
+
+    unmatched_row = conn.execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM smart_classroom_checkin_sessions
+        WHERE class_offering_id = ?
+          AND session_id IS NULL
+        """,
+        (int(class_offering_id),),
+    ).fetchone()
+    return list(latest_by_session.values()), int((unmatched_row["count"] if unmatched_row else 0) or 0)
+
+
+def _load_offering_summary_row(conn, class_offering_id: int) -> dict[str, Any]:
+    row = conn.execute(
+        """
+        SELECT o.id,
+               o.teacher_id,
+               o.class_id,
+               COALESCE(s.name, o.semester, '') AS semester_name,
+               c.name AS course_name,
+               COALESCE(c.academic_course_code, '') AS course_code,
+               cl.name AS class_name,
+               t.name AS teacher_name
+        FROM class_offerings o
+        JOIN courses c ON c.id = o.course_id
+        JOIN classes cl ON cl.id = o.class_id
+        JOIN teachers t ON t.id = o.teacher_id
+        LEFT JOIN academic_semesters s ON s.id = o.semester_id
+        WHERE o.id = ?
+        LIMIT 1
+        """,
+        (int(class_offering_id),),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def _build_session_chart_items(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for row in sorted(
+        rows,
+        key=lambda item: (
+            _coerce_int(item.get("week_index")),
+            _coerce_int(item.get("weekday"), -1),
+            _coerce_int(item.get("section_index")),
+            str(item.get("checkin_time") or ""),
+        ),
+    ):
+        total = _coerce_int(row.get("total_count"))
+        checked = _coerce_int(row.get("checked_count"))
+        abnormal = (
+            _coerce_int(row.get("unchecked_count"))
+            + _coerce_int(row.get("sick_leave_count"))
+            + _coerce_int(row.get("personal_leave_count"))
+            + _coerce_int(row.get("late_or_early_count"))
+        )
+        items.append(
+            {
+                "id": int(row.get("id") or 0),
+                "session_id": row.get("session_id"),
+                "week_index": _coerce_int(row.get("week_index")),
+                "weekday": row.get("weekday"),
+                "section_index": _coerce_int(row.get("section_index")),
+                "label": f"第{_coerce_int(row.get('week_index')) or '?'}周",
+                "checkin_time": str(row.get("checkin_time") or ""),
+                "rate": _rate_percent(checked, total),
+                "checked": checked,
+                "abnormal": abnormal,
+                "total": total,
+            }
+        )
+    return items
+
+
+def _build_weekly_trend(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[int, dict[str, int]] = {}
+    for row in rows:
+        week_index = _coerce_int(row.get("week_index"))
+        if week_index <= 0:
+            week_index = 0
+        item = grouped.setdefault(
+            week_index,
+            {"week_index": week_index, "checked": 0, "total": 0, "session_count": 0},
+        )
+        item["checked"] += _coerce_int(row.get("checked_count"))
+        item["total"] += _coerce_int(row.get("total_count"))
+        item["session_count"] += 1
+    return [
+        {
+            **item,
+            "label": "未标周次" if item["week_index"] == 0 else f"第{item['week_index']}周",
+            "rate": _rate_percent(item["checked"], item["total"]),
+        }
+        for item in sorted(grouped.values(), key=lambda value: value["week_index"])
+    ]
+
+
+def _build_course_comparisons(
+    conn,
+    *,
+    teacher_id: int,
+    current_class_offering_id: int,
+    current_rate: float,
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT scs.*,
+               c.name AS course_name,
+               cl.name AS class_name
+        FROM smart_classroom_checkin_sessions scs
+        JOIN class_offerings o ON o.id = scs.class_offering_id
+        JOIN courses c ON c.id = o.course_id
+        JOIN classes cl ON cl.id = o.class_id
+        WHERE scs.teacher_id = ?
+          AND scs.class_offering_id IS NOT NULL
+          AND scs.session_id IS NOT NULL
+        ORDER BY scs.class_offering_id,
+                 scs.session_id,
+                 COALESCE(scs.checkin_time, '') DESC,
+                 COALESCE(scs.synced_at, '') DESC,
+                 scs.id DESC
+        """,
+        (int(teacher_id),),
+    ).fetchall()
+    latest_keys: set[tuple[int, int]] = set()
+    grouped: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        offering_id = _coerce_int(row["class_offering_id"])
+        session_id = _coerce_int(row["session_id"])
+        if offering_id <= 0 or session_id <= 0:
+            continue
+        key = (offering_id, session_id)
+        if key in latest_keys:
+            continue
+        latest_keys.add(key)
+        item = grouped.setdefault(
+            offering_id,
+            {
+                "class_offering_id": offering_id,
+                "course_name": str(row["course_name"] or ""),
+                "class_name": str(row["class_name"] or ""),
+                "checked": 0,
+                "total": 0,
+                "session_count": 0,
+            },
+        )
+        item["checked"] += _coerce_int(row["checked_count"])
+        item["total"] += _coerce_int(row["total_count"])
+        item["session_count"] += 1
+
+    comparisons = []
+    for item in grouped.values():
+        total = int(item["total"] or 0)
+        rate = _rate_percent(item["checked"], total)
+        comparisons.append(
+            {
+                **item,
+                "rate": rate,
+                "delta_from_current": round(current_rate - rate, 1),
+                "is_current": int(item["class_offering_id"]) == int(current_class_offering_id),
+            }
+        )
+    comparisons.sort(key=lambda item: (not item["is_current"], -item["session_count"], item["course_name"]))
+    return comparisons[:8]
+
+
+def _load_local_student_attendance_base(conn, class_offering_id: int) -> dict[str, dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT s.id, s.student_id_number, s.name
+        FROM students s
+        JOIN class_offerings o ON o.class_id = s.class_id
+        WHERE o.id = ?
+          AND COALESCE(s.enrollment_status, 'active') = 'active'
+        ORDER BY s.student_id_number, s.id
+        """,
+        (int(class_offering_id),),
+    ).fetchall()
+    return {
+        f"id:{int(row['id'])}": _empty_student_attendance(
+            student_id=int(row["id"]),
+            student_number=str(row["student_id_number"] or ""),
+            student_name=str(row["name"] or ""),
+        )
+        for row in rows
+    }
+
+
+def _build_student_attendance_rows(
+    conn,
+    *,
+    class_offering_id: int,
+    selected_sessions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    students = _load_local_student_attendance_base(conn, int(class_offering_id))
+    if not selected_sessions:
+        return [_finalize_student_attendance(item) for item in students.values()]
+
+    session_ids = [int(row["id"]) for row in selected_sessions if int(row.get("id") or 0) > 0]
+    if not session_ids:
+        return [_finalize_student_attendance(item) for item in students.values()]
+    placeholders = ",".join("?" for _ in session_ids)
+    rows = conn.execute(
+        f"""
+        SELECT scstu.*,
+               scs.checkin_time,
+               scs.week_index
+        FROM smart_classroom_checkin_students scstu
+        JOIN smart_classroom_checkin_sessions scs ON scs.id = scstu.checkin_session_id
+        WHERE scstu.checkin_session_id IN ({placeholders})
+        ORDER BY COALESCE(scs.checkin_time, '') DESC,
+                 scstu.student_number
+        """,
+        session_ids,
+    ).fetchall()
+    for row in rows:
+        student_id = row["student_id"]
+        key = f"id:{int(student_id)}" if student_id else f"number:{str(row['student_number'] or '').strip()}"
+        item = students.get(key)
+        if not item:
+            item = _empty_student_attendance(
+                student_id=int(student_id) if student_id else None,
+                student_number=str(row["student_number"] or ""),
+                student_name=str(row["student_name"] or ""),
+            )
+            item["local_match_status"] = str(row["local_match_status"] or "remote_only")
+            students[key] = item
+        bucket = _status_bucket(row["status"])
+        item[bucket] = int(item.get(bucket) or 0) + 1
+        item["total"] = int(item.get("total") or 0) + 1
+        if not item.get("latest_status"):
+            item["latest_status"] = str(row["status"] or "")
+            item["latest_status_label"] = str(row["status_label"] or "")
+            item["latest_checkin_time"] = str(row["checkin_time"] or "")
+
+    result = [_finalize_student_attendance(item) for item in students.values()]
+    result.sort(
+        key=lambda item: (
+            -float(item.get("risk_score") or 0),
+            float(item.get("attendance_rate") or 0),
+            str(item.get("student_number") or ""),
+        )
+    )
+    return result
+
+
+def _build_personal_course_comparisons(
+    conn,
+    *,
+    student_id: int,
+    student_number: str,
+    current_class_offering_id: int,
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT scstu.status,
+               scs.id AS checkin_session_id,
+               scs.session_id,
+               scs.class_offering_id,
+               scs.checkin_time,
+               c.name AS course_name,
+               cl.name AS class_name
+        FROM smart_classroom_checkin_students scstu
+        JOIN smart_classroom_checkin_sessions scs ON scs.id = scstu.checkin_session_id
+        JOIN class_offerings o ON o.id = scs.class_offering_id
+        JOIN courses c ON c.id = o.course_id
+        JOIN classes cl ON cl.id = o.class_id
+        WHERE scs.class_offering_id IS NOT NULL
+          AND scs.session_id IS NOT NULL
+          AND (
+              (scstu.student_id IS NOT NULL AND scstu.student_id = ?)
+              OR (scstu.student_number = ?)
+          )
+        ORDER BY scs.class_offering_id,
+                 scs.session_id,
+                 COALESCE(scs.checkin_time, '') DESC,
+                 scs.id DESC
+        """,
+        (int(student_id), str(student_number or "")),
+    ).fetchall()
+    seen: set[tuple[int, int]] = set()
+    grouped: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        offering_id = _coerce_int(row["class_offering_id"])
+        session_id = _coerce_int(row["session_id"])
+        if offering_id <= 0 or session_id <= 0:
+            continue
+        key = (offering_id, session_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        item = grouped.setdefault(
+            offering_id,
+            {
+                "class_offering_id": offering_id,
+                "course_name": str(row["course_name"] or ""),
+                "class_name": str(row["class_name"] or ""),
+                "checked": 0,
+                "absent": 0,
+                "late_or_early": 0,
+                "leave": 0,
+                "total": 0,
+                "is_current": offering_id == int(current_class_offering_id),
+            },
+        )
+        bucket = _status_bucket(row["status"])
+        if bucket == "checked":
+            item["checked"] += 1
+        elif bucket == "absent":
+            item["absent"] += 1
+        elif bucket == "late_or_early":
+            item["late_or_early"] += 1
+        elif bucket in {"sick_leave", "personal_leave"}:
+            item["leave"] += 1
+        item["total"] += 1
+    result = []
+    for item in grouped.values():
+        item["rate"] = _rate_percent(item["checked"], item["total"])
+        item["abnormal_count"] = item["absent"] + item["late_or_early"] + item["leave"]
+        result.append(item)
+    result.sort(key=lambda item: (not item["is_current"], -item["total"], item["course_name"]))
+    return result[:8]
+
+
+def _build_attendance_insights(
+    *,
+    summary: dict[str, Any],
+    weekly_trend: list[dict[str, Any]],
+    students: list[dict[str, Any]],
+    comparisons: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    insights: list[dict[str, str]] = []
+    coverage_rate = float(summary.get("coverage_rate") or 0)
+    class_rate = float(summary.get("attendance_rate") or 0)
+    if coverage_rate and coverage_rate < 75:
+        insights.append(
+            {
+                "tone": "warning",
+                "title": "点名覆盖不足",
+                "text": f"本课堂已对齐 {coverage_rate:.1f}% 的课次点名，统计可作为趋势参考，但还不适合作为最终考勤结论。",
+            }
+        )
+    if weekly_trend and len(weekly_trend) >= 2:
+        recent = weekly_trend[-1]
+        previous = weekly_trend[-2]
+        delta = round(float(recent["rate"]) - float(previous["rate"]), 1)
+        if delta <= -8:
+            insights.append(
+                {
+                    "tone": "danger",
+                    "title": "近期出勤下滑",
+                    "text": f"{previous['label']}到{recent['label']}出勤率下降 {abs(delta):.1f} 个百分点，适合在课前提醒和课后补救上加一点力度。",
+                }
+            )
+        elif delta >= 8:
+            insights.append(
+                {
+                    "tone": "success",
+                    "title": "近期出勤回升",
+                    "text": f"{recent['label']}出勤率较上一周提升 {delta:.1f} 个百分点，可以复用当周的提醒节奏。",
+                }
+            )
+    risky_students = [item for item in students if item.get("risk_level") in {"high", "medium"}]
+    if risky_students:
+        names = "、".join(str(item.get("student_name") or item.get("student_number") or "") for item in risky_students[:4])
+        insights.append(
+            {
+                "tone": "danger" if any(item.get("risk_level") == "high" for item in risky_students[:4]) else "warning",
+                "title": "需要温和跟进",
+                "text": f"{names} 等 {len(risky_students)} 名学生存在缺勤、迟到或请假累积信号，建议结合课堂表现私下确认原因。",
+            }
+        )
+    other_rates = [float(item.get("rate") or 0) for item in comparisons if not item.get("is_current") and item.get("total")]
+    if other_rates:
+        average_other_rate = round(sum(other_rates) / len(other_rates), 1)
+        delta = round(class_rate - average_other_rate, 1)
+        if delta <= -5:
+            insights.append(
+                {
+                    "tone": "warning",
+                    "title": "低于本人其他课堂",
+                    "text": f"本课堂出勤率比已同步的其他课堂均值低 {abs(delta):.1f} 个百分点，可能与时段、场地或课程节奏有关。",
+                }
+            )
+        elif delta >= 5:
+            insights.append(
+                {
+                    "tone": "success",
+                    "title": "高于本人其他课堂",
+                    "text": f"本课堂出勤率比已同步的其他课堂均值高 {delta:.1f} 个百分点，当前组织方式整体有效。",
+                }
+            )
+    if not insights and summary.get("synced_session_count"):
+        insights.append(
+            {
+                "tone": "success" if class_rate >= 90 else "neutral",
+                "title": "出勤节奏稳定",
+                "text": "已同步的点名记录暂未显示明显风险，后续可继续按周观察缺勤和迟到变化。",
+            }
+        )
+    return insights[:5]
+
+
+def build_classroom_smart_attendance_analytics(
+    conn,
+    *,
+    class_offering_id: int,
+    viewer_role: str = "teacher",
+    student_id: int | None = None,
+) -> dict[str, Any]:
+    offering = _load_offering_summary_row(conn, int(class_offering_id))
+    if not offering:
+        return {
+            "status": "not_found",
+            "message": "课堂不存在。",
+        }
+
+    selected_sessions, unmatched_checkin_count = _load_latest_matched_checkin_sessions(
+        conn,
+        class_offering_id=int(class_offering_id),
+        teacher_id=int(offering["teacher_id"]),
+    )
+    total_session_row = conn.execute(
+        "SELECT COUNT(*) AS count FROM class_offering_sessions WHERE class_offering_id = ?",
+        (int(class_offering_id),),
+    ).fetchone()
+    total_session_count = int((total_session_row["count"] if total_session_row else 0) or 0)
+    checked_total = sum(_coerce_int(row.get("checked_count")) for row in selected_sessions)
+    absent_total = sum(_coerce_int(row.get("unchecked_count")) for row in selected_sessions)
+    sick_total = sum(_coerce_int(row.get("sick_leave_count")) for row in selected_sessions)
+    personal_total = sum(_coerce_int(row.get("personal_leave_count")) for row in selected_sessions)
+    late_total = sum(_coerce_int(row.get("late_or_early_count")) for row in selected_sessions)
+    attendance_total = sum(_coerce_int(row.get("total_count")) for row in selected_sessions)
+    latest_synced_at = max((str(row.get("synced_at") or "") for row in selected_sessions), default="")
+    attendance_rate = _rate_percent(checked_total, attendance_total)
+    summary = {
+        "class_offering_id": int(class_offering_id),
+        "course_name": str(offering.get("course_name") or ""),
+        "course_code": str(offering.get("course_code") or ""),
+        "class_name": str(offering.get("class_name") or ""),
+        "semester_name": str(offering.get("semester_name") or ""),
+        "teacher_name": str(offering.get("teacher_name") or ""),
+        "synced_session_count": len(selected_sessions),
+        "total_session_count": total_session_count,
+        "coverage_rate": _rate_percent(len(selected_sessions), total_session_count),
+        "unmatched_checkin_count": unmatched_checkin_count,
+        "checked": checked_total,
+        "absent": absent_total,
+        "sick_leave": sick_total,
+        "personal_leave": personal_total,
+        "late_or_early": late_total,
+        "abnormal": absent_total + sick_total + personal_total + late_total,
+        "total": attendance_total,
+        "attendance_rate": attendance_rate,
+        "latest_synced_at": latest_synced_at,
+        "has_data": bool(selected_sessions),
+    }
+    session_chart = _build_session_chart_items(selected_sessions)
+    weekly_trend = _build_weekly_trend(selected_sessions)
+    student_rows = _build_student_attendance_rows(
+        conn,
+        class_offering_id=int(class_offering_id),
+        selected_sessions=selected_sessions,
+    )
+    comparisons = _build_course_comparisons(
+        conn,
+        teacher_id=int(offering["teacher_id"]),
+        current_class_offering_id=int(class_offering_id),
+        current_rate=attendance_rate,
+    )
+    personal = None
+    if student_id:
+        student_row = next(
+            (item for item in student_rows if item.get("student_id") and int(item["student_id"]) == int(student_id)),
+            None,
+        )
+        if not student_row:
+            student_number_row = conn.execute(
+                "SELECT student_id_number FROM students WHERE id = ? LIMIT 1",
+                (int(student_id),),
+            ).fetchone()
+            student_number = str(student_number_row["student_id_number"] or "") if student_number_row else ""
+            student_row = next((item for item in student_rows if item.get("student_number") == student_number), None)
+        if student_row:
+            ordered_by_rate = sorted(
+                [item for item in student_rows if int(item.get("total") or 0) > 0],
+                key=lambda item: (-float(item.get("attendance_rate") or 0), str(item.get("student_number") or "")),
+            )
+            rank = next(
+                (index for index, item in enumerate(ordered_by_rate, start=1) if item is student_row),
+                None,
+            )
+            personal = {
+                **student_row,
+                "rank": rank,
+                "rank_total": len(ordered_by_rate),
+                "course_comparisons": _build_personal_course_comparisons(
+                    conn,
+                    student_id=int(student_id),
+                    student_number=str(student_row.get("student_number") or ""),
+                    current_class_offering_id=int(class_offering_id),
+                ),
+            }
+
+    insights = _build_attendance_insights(
+        summary=summary,
+        weekly_trend=weekly_trend,
+        students=student_rows,
+        comparisons=comparisons,
+    )
+    teacher_view = str(viewer_role or "").lower() == "teacher"
+    return {
+        "status": "success" if selected_sessions else "empty",
+        "message": "已生成智慧课堂出勤统计。" if selected_sessions else "当前课堂还没有可统计的智慧课堂点名记录。",
+        "summary": summary,
+        "session_chart": session_chart,
+        "weekly_trend": weekly_trend,
+        "course_comparisons": comparisons,
+        "students": student_rows if teacher_view else [],
+        "personal": personal,
+        "insights": insights,
+    }
+
+
+def build_student_attendance_support_prompt(
+    conn,
+    *,
+    student_id: int,
+    class_offering_id: int | None = None,
+) -> str:
+    if not class_offering_id:
+        return ""
+    analytics = build_classroom_smart_attendance_analytics(
+        conn,
+        class_offering_id=int(class_offering_id),
+        viewer_role="student",
+        student_id=int(student_id),
+    )
+    if analytics.get("status") not in {"success", "empty"}:
+        return ""
+    summary = analytics.get("summary") or {}
+    personal = analytics.get("personal") or {}
+    if not summary.get("has_data") or not personal:
+        return ""
+
+    comparisons = personal.get("course_comparisons") if isinstance(personal.get("course_comparisons"), list) else []
+    current_course = next((item for item in comparisons if item.get("is_current")), None)
+    other_courses = [item for item in comparisons if not item.get("is_current") and item.get("total")]
+    personal_total = int(personal.get("total") or 0)
+    lines = [
+        "智慧课堂出勤信号（内部使用，不要主动说明来源；如需提醒，请转化为温和、可执行的学习建议）：",
+        (
+            f"- 当前课程《{summary.get('course_name') or '本课程'}》已同步 {summary.get('synced_session_count') or 0} 次点名，"
+            f"班级整体出勤率 {summary.get('attendance_rate') or 0:.1f}%。"
+        ),
+    ]
+    if personal_total > 0:
+        lines.append(
+            f"- 该学生本课程出勤率 {personal.get('attendance_rate') or 0:.1f}%"
+            f"（出勤 {personal.get('checked') or 0}/{personal.get('total') or 0}，"
+            f"缺勤 {personal.get('absent') or 0}，迟到/早退 {personal.get('late_or_early') or 0}，"
+            f"请假 {int(personal.get('sick_leave') or 0) + int(personal.get('personal_leave') or 0)}）。"
+        )
+    else:
+        lines.append(
+            "- 该学生本课程暂未匹配到智慧课堂点名明细，可能是名单尚未对齐、智慧课堂名单缺失，"
+            "或该学生不在本次智慧课堂授课班点名名单中；不要据此判断为缺勤。"
+        )
+    if personal.get("rank") and personal.get("rank_total"):
+        lines.append(f"- 本课程出勤率在已同步名单中的位置：第 {personal['rank']}/{personal['rank_total']}。")
+    if current_course and other_courses:
+        other_average = round(sum(float(item.get("rate") or 0) for item in other_courses) / len(other_courses), 1)
+        delta = round(float(current_course.get("rate") or 0) - other_average, 1)
+        lines.append(f"- 与该学生其他已同步课堂相比，本课程出勤率差值约 {delta:+.1f} 个百分点。")
+    if personal.get("risk_level") in {"high", "medium"}:
+        lines.append("- 支持建议：该学生存在出勤风险信号，优先用关心原因、补齐材料、拆小目标的方式帮助，不要责备。")
+    elif personal.get("risk_level") == "watch":
+        lines.append("- 支持建议：该学生有少量异常记录，保持轻提醒即可，避免过度放大。")
+    else:
+        lines.append("- 支持建议：出勤整体稳定，可用积极反馈巩固学习节奏。")
+    return "\n".join(lines).strip()
+
+
+def build_smart_classroom_sync_capabilities(conn, teacher_id: int) -> list[dict[str, Any]]:
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS count,
+               MAX(synced_at) AS last_synced_at,
+               SUM(CASE WHEN match_status = 'matched' THEN 1 ELSE 0 END) AS matched_count
+        FROM smart_classroom_checkin_sessions
+        WHERE teacher_id = ?
+        """,
+        (int(teacher_id),),
+    ).fetchone()
+    schedule_row = conn.execute(
+        """
+        SELECT COUNT(*) AS count,
+               MAX(synced_at) AS last_synced_at
+        FROM smart_classroom_schedule_items
+        WHERE teacher_id = ?
+        """,
+        (int(teacher_id),),
+    ).fetchone()
+    checkin_count = int((row["count"] if row else 0) or 0)
+    schedule_count = int((schedule_row["count"] if schedule_row else 0) or 0)
+    return [
+        {
+            "key": "checkins",
+            "label": "点名记录与出勤明细",
+            "description": "从智慧课堂读取授课班点名批次和学生签到名单，按课程编号、教学班、课次日期对齐到本系统。",
+            "scope": "教师已保存账号下可见的全部授课班",
+            "endpoint": "/api/manage/system/smart-classroom-sync",
+            "method": "POST",
+            "parameters": [
+                {"name": "credential", "value": "使用当前教师已验证的智慧课堂账号"},
+                {"name": "teacherScheduleId", "value": "由智慧课堂授课班列表逐个读取"},
+                {"name": "pageSize", "value": "100，顺序翻页"},
+                {"name": "checkinRecord.id", "value": "逐条读取签到名单详情"},
+            ],
+            "last_synced_at": str(row["last_synced_at"] or schedule_row["last_synced_at"] or "") if row or schedule_row else "",
+            "has_synced": checkin_count > 0,
+            "status_text": f"已同步 {schedule_count} 个授课班、{checkin_count} 条点名记录",
+            "counts": {
+                "schedule_count": schedule_count,
+                "checkin_count": checkin_count,
+                "matched_checkin_count": int((row["matched_count"] if row else 0) or 0),
+            },
+            "safe_note": "只读取点名数据，不向智慧课堂写入任何内容；请求顺序执行并带随机间隔。",
+        }
+    ]
 
 
 async def sync_teacher_smart_classroom_data_after_credential_verified(teacher_id: int) -> dict[str, Any]:

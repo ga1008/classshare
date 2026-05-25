@@ -277,6 +277,167 @@
         font-weight: 800;
     }
 
+    .smart-classroom-hero-actions,
+    .smart-classroom-sync-card-actions,
+    .smart-classroom-modal-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-md);
+    }
+
+    .smart-classroom-sync-board {
+        padding: var(--spacing-lg);
+    }
+
+    .smart-classroom-sync-board-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-md);
+    }
+
+    .smart-classroom-sync-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: var(--spacing-md);
+    }
+
+    .smart-classroom-sync-card {
+        display: grid;
+        gap: 10px;
+        padding: var(--spacing-lg);
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        border-radius: 8px;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.86));
+        box-shadow: 0 18px 36px -32px rgba(15, 23, 42, 0.5);
+        text-align: left;
+        cursor: pointer;
+        transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .smart-classroom-sync-card:hover {
+        transform: translateY(-2px);
+        border-color: rgba(244, 63, 94, 0.34);
+        box-shadow: 0 24px 44px -34px rgba(15, 23, 42, 0.58);
+    }
+
+    .smart-classroom-sync-card h4 {
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 1rem;
+        font-weight: 850;
+    }
+
+    .smart-classroom-sync-card p {
+        margin: 0;
+    }
+
+    .smart-classroom-sync-card-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .smart-classroom-sync-card-meta span {
+        padding: 4px 8px;
+        border-radius: var(--radius-full);
+        background: rgba(244, 63, 94, 0.09);
+        color: #be123c;
+        font-size: 0.74rem;
+        font-weight: 800;
+    }
+
+    .smart-classroom-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1100;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+        background: rgba(15, 23, 42, 0.42);
+        backdrop-filter: blur(10px);
+    }
+
+    .smart-classroom-modal-backdrop[hidden] {
+        display: none;
+    }
+
+    .smart-classroom-modal {
+        width: min(760px, 100%);
+        max-height: calc(100vh - 40px);
+        overflow: auto;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        background: #fff;
+        box-shadow: 0 26px 80px -40px rgba(15, 23, 42, 0.72);
+    }
+
+    .smart-classroom-modal-head,
+    .smart-classroom-modal-body {
+        padding: var(--spacing-lg);
+    }
+
+    .smart-classroom-modal-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        border-bottom: 1px solid rgba(226, 232, 240, 0.95);
+    }
+
+    .smart-classroom-modal-head h3 {
+        margin: 4px 0 0;
+    }
+
+    .smart-classroom-modal-close {
+        width: 38px;
+        height: 38px;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 999px;
+        background: #fff;
+        color: #64748b;
+        font-size: 1.3rem;
+        cursor: pointer;
+    }
+
+    .smart-classroom-modal-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin: var(--spacing-md) 0;
+    }
+
+    .smart-classroom-modal-grid div,
+    .smart-classroom-modal-params {
+        padding: 12px;
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.82);
+        border: 1px solid rgba(226, 232, 240, 0.86);
+    }
+
+    .smart-classroom-modal-grid span,
+    .smart-classroom-modal-params span {
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.76rem;
+        font-weight: 800;
+    }
+
+    .smart-classroom-modal-grid strong,
+    .smart-classroom-modal-params strong {
+        display: block;
+        margin-top: 4px;
+        color: var(--text-primary);
+        word-break: break-word;
+    }
+
+    .smart-classroom-modal-params {
+        display: grid;
+        gap: 8px;
+    }
+
     @media (max-width: 960px) {
         .smart-classroom-hero,
         .smart-classroom-grid {
@@ -289,6 +450,15 @@
 
         .smart-classroom-actions {
             justify-content: flex-start;
+        }
+
+        .smart-classroom-sync-board-head,
+        .smart-classroom-modal-head {
+            flex-direction: column;
+        }
+
+        .smart-classroom-modal-grid {
+            grid-template-columns: 1fr;
         }
     }
 </style>
@@ -311,6 +481,10 @@
                     <span class="smart-classroom-chip">顺序同步</span>
                     <span class="smart-classroom-chip">不写入智慧课堂</span>
                 </div>
+                <div class="smart-classroom-hero-actions">
+                    <button type="button" class="btn btn-primary" id="smart-sync-all-btn">一键同步</button>
+                    <button type="button" class="btn btn-outline" id="smart-sync-capability-refresh-btn">刷新同步状态</button>
+                </div>
             </div>
         </article>
 
@@ -324,6 +498,18 @@
             </div>
         </aside>
     </div>
+
+    <section class="smart-classroom-card smart-classroom-sync-board">
+        <div class="smart-classroom-sync-board-head">
+            <div>
+                <h3>可同步功能</h3>
+                <p class="smart-classroom-help">点击卡片查看最近同步、接口、参数和安全说明。同步过程会顺序访问智慧课堂，避免高频并发。</p>
+            </div>
+        </div>
+        <div class="smart-classroom-sync-cards" id="smart-sync-capability-list">
+            <div class="smart-classroom-empty">正在读取可同步功能。</div>
+        </div>
+    </section>
 
     <section class="smart-classroom-grid">
         <div class="smart-classroom-card smart-classroom-panel">
@@ -367,6 +553,33 @@
         </div>
     </section>
 </section>
+
+<div class="smart-classroom-modal-backdrop" id="smart-sync-modal" hidden>
+    <article class="smart-classroom-modal" role="dialog" aria-modal="true" aria-labelledby="smart-sync-modal-title">
+        <div class="smart-classroom-modal-head">
+            <div>
+                <p class="smart-classroom-kicker">SYNC DETAIL</p>
+                <h3 id="smart-sync-modal-title">同步详情</h3>
+            </div>
+            <button type="button" class="smart-classroom-modal-close" id="smart-sync-modal-close" aria-label="关闭">&times;</button>
+        </div>
+        <div class="smart-classroom-modal-body">
+            <p id="smart-sync-modal-description"></p>
+            <div class="smart-classroom-modal-grid">
+                <div><span>最近同步</span><strong id="smart-sync-modal-last">-</strong></div>
+                <div><span>同步状态</span><strong id="smart-sync-modal-state">-</strong></div>
+                <div><span>接口</span><strong id="smart-sync-modal-endpoint">-</strong></div>
+                <div><span>范围</span><strong id="smart-sync-modal-scope">-</strong></div>
+            </div>
+            <div class="smart-classroom-modal-params" id="smart-sync-modal-params"></div>
+            <p class="smart-classroom-help" id="smart-sync-modal-safe"></p>
+            <div class="smart-classroom-modal-actions">
+                <button type="button" class="btn btn-primary" id="smart-sync-modal-run">同步</button>
+                <button type="button" class="btn btn-outline" id="smart-sync-modal-cancel">关闭</button>
+            </div>
+        </div>
+    </article>
+</div>
 
 <script type="application/json" id="smart-profiles-data">{{ smart_classroom_profiles | tojson }}</script>
 <script type="application/json" id="smart-credentials-data">{{ smart_classroom_credentials | tojson }}</script>

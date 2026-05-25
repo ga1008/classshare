@@ -35,9 +35,20 @@ function initCoursePopover() {
     const triggerButtons = Array.from(document.querySelectorAll('[data-course-popover-target]'));
     const panels = Array.from(popover.querySelectorAll('[data-course-popover-panel]'));
     const popoverCard = popover.querySelector('.course-popover-card');
+    const smartAttendancePanel = document.getElementById('smartAttendancePanel');
+    const smartAttendanceMessage = document.getElementById('smartAttendanceMessage');
+    const smartAttendanceMetrics = document.getElementById('smartAttendanceMetrics');
+    const smartAttendanceWeekChart = document.getElementById('smartAttendanceWeekChart');
+    const smartAttendanceCourseChart = document.getElementById('smartAttendanceCourseChart');
+    const smartAttendanceInsights = document.getElementById('smartAttendanceInsights');
+    const smartAttendanceRows = document.getElementById('smartAttendanceRows');
+    const smartAttendanceTableNote = document.getElementById('smartAttendanceTableNote');
+    const smartAttendanceSyncBtn = document.getElementById('smartAttendanceSyncBtn');
     const transitionMs = 280;
     let activeTrigger = null;
     let closeTimer = 0;
+    let attendanceLoaded = false;
+    let attendanceLoading = false;
 
     const getFocusableElements = () => Array.from(
         popover.querySelectorAll('a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'),
@@ -53,6 +64,171 @@ function initCoursePopover() {
         });
 
         return resolvedTarget;
+    };
+
+    const formatPercent = (value) => `${Number(value || 0).toFixed(1)}%`;
+    const riskLabel = (risk) => ({
+        high: '高风险',
+        medium: '需关注',
+        watch: '轻提醒',
+        healthy: '稳定',
+        none: '暂无',
+    }[String(risk || '')] || '暂无');
+    const riskTone = (risk) => ({
+        high: 'danger',
+        medium: 'warning',
+        watch: 'watch',
+        healthy: 'success',
+        none: 'neutral',
+    }[String(risk || '')] || 'neutral');
+
+    const renderAttendanceEmpty = (message) => {
+        if (smartAttendanceMessage) smartAttendanceMessage.textContent = message || '当前课堂还没有可统计的智慧课堂点名记录。';
+        if (smartAttendanceMetrics) smartAttendanceMetrics.innerHTML = '';
+        if (smartAttendanceWeekChart) smartAttendanceWeekChart.innerHTML = '<div class="smart-attendance-empty">暂无趋势数据</div>';
+        if (smartAttendanceCourseChart) smartAttendanceCourseChart.innerHTML = '<div class="smart-attendance-empty">暂无对比数据</div>';
+        if (smartAttendanceInsights) smartAttendanceInsights.innerHTML = '';
+        if (smartAttendanceRows) smartAttendanceRows.innerHTML = '<tr><td colspan="7" class="is-empty">同步智慧课堂点名后，这里会显示出勤明细。</td></tr>';
+        if (smartAttendanceTableNote) smartAttendanceTableNote.textContent = '';
+    };
+
+    const renderMetricCard = (label, value, note, tone = 'neutral') => `
+        <article class="smart-attendance-metric is-${escapeHtml(tone)}">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value)}</strong>
+            <small>${escapeHtml(note || '')}</small>
+        </article>
+    `;
+
+    const renderAttendanceBars = (items, { labelKey = 'label', valueKey = 'rate', noteBuilder = null } = {}) => {
+        if (!items.length) return '<div class="smart-attendance-empty">暂无可展示的数据</div>';
+        return items.map((item) => {
+            const rate = Number(item[valueKey] || 0);
+            const width = Math.max(2, Math.min(rate, 100));
+            const note = typeof noteBuilder === 'function' ? noteBuilder(item) : `${formatPercent(rate)}`;
+            return `
+                <div class="smart-attendance-bar-row">
+                    <span>${escapeHtml(item[labelKey] || '-')}</span>
+                    <div class="smart-attendance-bar"><i style="width:${width}%"></i></div>
+                    <strong>${escapeHtml(note)}</strong>
+                </div>
+            `;
+        }).join('');
+    };
+
+    const renderAttendanceAnalytics = (payload = {}) => {
+        const summary = payload.summary || {};
+        const personal = payload.personal || null;
+        const students = Array.isArray(payload.students) ? payload.students : [];
+        const isTeacher = window.APP_CONFIG?.userInfo?.role === 'teacher';
+        const rows = isTeacher ? students : (personal ? [personal] : []);
+        if (!summary.has_data) {
+            renderAttendanceEmpty(payload.message || '当前课堂还没有可统计的智慧课堂点名记录。');
+            return;
+        }
+        if (smartAttendanceMessage) {
+            const latest = summary.latest_synced_at ? `最近同步 ${summary.latest_synced_at}` : '已读取本地同步记录';
+            smartAttendanceMessage.textContent = `${summary.course_name || '本课程'} · ${latest}`;
+        }
+        if (smartAttendanceMetrics) {
+            smartAttendanceMetrics.innerHTML = [
+                renderMetricCard('全班出勤率', formatPercent(summary.attendance_rate), `出勤 ${summary.checked || 0}/${summary.total || 0}`, summary.attendance_rate >= 90 ? 'success' : (summary.attendance_rate < 80 ? 'danger' : 'warning')),
+                renderMetricCard('点名覆盖', formatPercent(summary.coverage_rate), `${summary.synced_session_count || 0}/${summary.total_session_count || 0} 次课`, summary.coverage_rate >= 85 ? 'success' : 'warning'),
+                renderMetricCard('异常记录', String(summary.abnormal || 0), `缺勤 ${summary.absent || 0} · 迟到/请假 ${Number(summary.late_or_early || 0) + Number(summary.sick_leave || 0) + Number(summary.personal_leave || 0)}`, summary.abnormal ? 'warning' : 'success'),
+                personal ? renderMetricCard('我的出勤率', formatPercent(personal.attendance_rate), `排名 ${personal.rank || '-'}/${personal.rank_total || '-'}`, personal.risk_level === 'healthy' ? 'success' : riskTone(personal.risk_level)) : '',
+            ].join('');
+        }
+        const weekly = Array.isArray(payload.weekly_trend) ? payload.weekly_trend : [];
+        if (smartAttendanceWeekChart) {
+            smartAttendanceWeekChart.innerHTML = renderAttendanceBars(weekly, {
+                noteBuilder: (item) => `${formatPercent(item.rate)} · ${Number(item.session_count || 0)}次`,
+            });
+        }
+        let comparisons = Array.isArray(payload.course_comparisons) ? payload.course_comparisons : [];
+        if (!isTeacher && personal && Array.isArray(personal.course_comparisons)) {
+            comparisons = personal.course_comparisons;
+        }
+        if (smartAttendanceCourseChart) {
+            smartAttendanceCourseChart.innerHTML = renderAttendanceBars(comparisons.slice(0, 6).map((item) => ({
+                ...item,
+                label: `${item.is_current ? '当前' : ''}${item.course_name || '课程'}${item.class_name ? ` · ${item.class_name}` : ''}`,
+            })), {
+                noteBuilder: (item) => {
+                    if (item.is_current) return `${formatPercent(item.rate)}`;
+                    const delta = Number(item.delta_from_current || 0);
+                    return item.delta_from_current === undefined
+                        ? `${formatPercent(item.rate)}`
+                        : `${formatPercent(item.rate)} (${delta >= 0 ? '+' : ''}${delta.toFixed(1)})`;
+                },
+            });
+        }
+        const insights = Array.isArray(payload.insights) ? payload.insights : [];
+        if (smartAttendanceInsights) {
+            smartAttendanceInsights.innerHTML = insights.length
+                ? insights.map((item) => `
+                    <article class="smart-attendance-insight is-${escapeHtml(item.tone || 'neutral')}">
+                        <strong>${escapeHtml(item.title || '出勤提醒')}</strong>
+                        <span>${escapeHtml(item.text || '')}</span>
+                    </article>
+                `).join('')
+                : '';
+        }
+        if (smartAttendanceTableNote) {
+            smartAttendanceTableNote.textContent = isTeacher
+                ? `共 ${rows.length} 名学生，按风险优先排序`
+                : '仅显示你的个人出勤，不展示同学明细';
+        }
+        if (smartAttendanceRows) {
+            if (!rows.length) {
+                smartAttendanceRows.innerHTML = '<tr><td colspan="7" class="is-empty">暂无学生出勤明细。</td></tr>';
+                return;
+            }
+            smartAttendanceRows.innerHTML = rows.slice(0, isTeacher ? 80 : 1).map((student) => {
+                const leaveCount = Number(student.sick_leave || 0) + Number(student.personal_leave || 0);
+                const studentName = `${student.student_name || '-'}${student.student_number ? ` · ${student.student_number}` : ''}`;
+                return `
+                    <tr>
+                        <td>${escapeHtml(studentName)}</td>
+                        <td><strong>${formatPercent(student.attendance_rate)}</strong></td>
+                        <td>${Number(student.checked || 0)}/${Number(student.total || 0)}</td>
+                        <td>${Number(student.absent || 0)}</td>
+                        <td>${Number(student.late_or_early || 0)}</td>
+                        <td>${leaveCount}</td>
+                        <td><span class="smart-attendance-risk is-${escapeHtml(riskTone(student.risk_level))}">${escapeHtml(riskLabel(student.risk_level))}</span></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+    };
+
+    const loadAttendanceAnalytics = async ({ force = false, sync = false } = {}) => {
+        if (!smartAttendancePanel || attendanceLoading) return;
+        if (attendanceLoaded && !force && !sync) return;
+        attendanceLoading = true;
+        if (smartAttendanceMessage) smartAttendanceMessage.textContent = sync ? '正在顺序同步智慧课堂点名记录...' : '正在读取智慧课堂出勤统计...';
+        if (smartAttendanceSyncBtn) {
+            smartAttendanceSyncBtn.disabled = true;
+            smartAttendanceSyncBtn.dataset.originalText = smartAttendanceSyncBtn.dataset.originalText || smartAttendanceSyncBtn.textContent;
+            smartAttendanceSyncBtn.textContent = sync ? '同步中' : '读取中';
+        }
+        try {
+            if (sync) {
+                const syncResult = await apiFetch('/api/manage/system/smart-classroom-sync', { method: 'POST', silent: true });
+                showToast(syncResult.message || '智慧课堂点名同步完成。', syncResult.status === 'failed' ? 'warning' : 'success');
+            }
+            const result = await apiFetch(`/api/classrooms/${window.APP_CONFIG.classOfferingId}/smart-attendance/analytics`, { silent: true });
+            renderAttendanceAnalytics(result);
+            attendanceLoaded = true;
+        } catch (error) {
+            renderAttendanceEmpty(error.message || '读取智慧课堂出勤统计失败。');
+            showToast(error.message || '读取智慧课堂出勤统计失败。', 'error');
+        } finally {
+            attendanceLoading = false;
+            if (smartAttendanceSyncBtn) {
+                smartAttendanceSyncBtn.disabled = false;
+                smartAttendanceSyncBtn.textContent = smartAttendanceSyncBtn.dataset.originalText || '同步点名';
+            }
+        }
     };
 
     const openPopover = (targetName = 'stats', triggerButton = null) => {
@@ -78,6 +254,9 @@ function initCoursePopover() {
             popover.classList.add('popover-open');
             (closeBtn || popoverCard)?.focus({ preventScroll: true });
         });
+        if (activePanel === 'stats') {
+            loadAttendanceAnalytics();
+        }
     };
 
     const closePopover = () => {
@@ -103,6 +282,7 @@ function initCoursePopover() {
 
     overlay?.addEventListener('click', closePopover);
     closeBtn?.addEventListener('click', closePopover);
+    smartAttendanceSyncBtn?.addEventListener('click', () => loadAttendanceAnalytics({ force: true, sync: true }));
 
     document.addEventListener('keydown', (event) => {
         if (!popover.classList.contains('popover-open')) return;

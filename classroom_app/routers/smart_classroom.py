@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from ..database import get_db_connection
-from ..dependencies import get_current_teacher
+from ..dependencies import get_current_teacher, get_current_user
 from ..services.materials_service import ensure_classroom_access
 from ..services.smart_classroom_checkin_sync_service import (
+    build_classroom_smart_attendance_analytics,
     load_session_smart_checkin_summary,
     sync_teacher_smart_classroom_checkins,
 )
@@ -75,3 +76,21 @@ async def api_sync_session_smart_checkin(
         "sync": sync_result,
         "checkin": summary,
     }
+
+
+@router.get("/{class_offering_id}/smart-attendance/analytics", response_class=JSONResponse)
+async def api_get_classroom_smart_attendance_analytics(
+    class_offering_id: int,
+    user: dict = Depends(get_current_user),
+):
+    with get_db_connection() as conn:
+        ensure_classroom_access(conn, int(class_offering_id), user)
+        analytics = build_classroom_smart_attendance_analytics(
+            conn,
+            class_offering_id=int(class_offering_id),
+            viewer_role=str(user.get("role") or ""),
+            student_id=int(user["id"]) if str(user.get("role") or "") == "student" else None,
+        )
+    if analytics.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=analytics.get("message") or "课堂不存在。")
+    return analytics

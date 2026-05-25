@@ -14,6 +14,8 @@ const parseJsonScript = (id, fallback) => {
 const state = {
     profiles: parseJsonScript('smart-profiles-data', []),
     credentials: parseJsonScript('smart-credentials-data', []),
+    capabilities: [],
+    activeCapability: null,
 };
 
 const refs = {
@@ -32,6 +34,21 @@ const refs = {
     syncTitle: document.getElementById('smart-auto-sync-title'),
     syncMessage: document.getElementById('smart-auto-sync-message'),
     syncStages: document.getElementById('smart-auto-sync-stages'),
+    syncAllBtn: document.getElementById('smart-sync-all-btn'),
+    capabilityRefreshBtn: document.getElementById('smart-sync-capability-refresh-btn'),
+    capabilityList: document.getElementById('smart-sync-capability-list'),
+    syncModal: document.getElementById('smart-sync-modal'),
+    syncModalTitle: document.getElementById('smart-sync-modal-title'),
+    syncModalDescription: document.getElementById('smart-sync-modal-description'),
+    syncModalLast: document.getElementById('smart-sync-modal-last'),
+    syncModalState: document.getElementById('smart-sync-modal-state'),
+    syncModalEndpoint: document.getElementById('smart-sync-modal-endpoint'),
+    syncModalScope: document.getElementById('smart-sync-modal-scope'),
+    syncModalParams: document.getElementById('smart-sync-modal-params'),
+    syncModalSafe: document.getElementById('smart-sync-modal-safe'),
+    syncModalRun: document.getElementById('smart-sync-modal-run'),
+    syncModalClose: document.getElementById('smart-sync-modal-close'),
+    syncModalCancel: document.getElementById('smart-sync-modal-cancel'),
 };
 
 const statusLabels = {
@@ -111,6 +128,80 @@ function countLabel(key, value) {
     return `${countLabels[key] || key} ${Number(value || 0)}`;
 }
 
+function formatSyncTime(value) {
+    return value || '从未同步';
+}
+
+function renderCapabilities() {
+    if (!refs.capabilityList) return;
+    if (!state.capabilities.length) {
+        refs.capabilityList.innerHTML = '<div class="smart-classroom-empty">暂无可同步功能。请先保存并验证智慧课堂账号。</div>';
+        return;
+    }
+    refs.capabilityList.innerHTML = state.capabilities.map((item) => {
+        const counts = item.counts && typeof item.counts === 'object' ? item.counts : {};
+        const countText = Object.entries(counts)
+            .filter(([, value]) => Number(value || 0) > 0)
+            .slice(0, 3)
+            .map(([key, value]) => `<span>${escapeHtml(countLabel(key, value))}</span>`)
+            .join('');
+        return `
+            <button type="button" class="smart-classroom-sync-card" data-sync-key="${escapeHtml(item.key || '')}">
+                <div class="smart-classroom-sync-card-meta">
+                    <span>${escapeHtml(item.has_synced ? '已同步过' : '尚未同步')}</span>
+                    <span>${escapeHtml(formatSyncTime(item.last_synced_at))}</span>
+                </div>
+                <h4>${escapeHtml(item.label || '同步功能')}</h4>
+                <p>${escapeHtml(item.description || '')}</p>
+                <div class="smart-classroom-sync-card-meta">${countText || `<span>${escapeHtml(item.status_text || '等待同步')}</span>`}</div>
+            </button>
+        `;
+    }).join('');
+}
+
+function closeSyncModal() {
+    if (!refs.syncModal) return;
+    refs.syncModal.hidden = true;
+    state.activeCapability = null;
+}
+
+function openSyncModal(item) {
+    if (!refs.syncModal || !item) return;
+    state.activeCapability = item;
+    refs.syncModalTitle.textContent = item.label || '同步详情';
+    refs.syncModalDescription.textContent = item.description || '';
+    refs.syncModalLast.textContent = formatSyncTime(item.last_synced_at);
+    refs.syncModalState.textContent = item.has_synced ? (item.status_text || '已同步过') : '尚未同步';
+    refs.syncModalEndpoint.textContent = `${item.method || 'POST'} ${item.endpoint || '-'}`;
+    refs.syncModalScope.textContent = item.scope || '当前教师账号可访问的数据';
+    const parameters = Array.isArray(item.parameters) ? item.parameters : [];
+    refs.syncModalParams.innerHTML = parameters.length
+        ? parameters.map((param) => `
+            <div>
+                <span>${escapeHtml(param.name || '参数')}</span>
+                <strong>${escapeHtml(param.value || '-')}</strong>
+            </div>
+        `).join('')
+        : '<div><span>同步参数</span><strong>由系统根据已保存账号和当前教师自动生成</strong></div>';
+    refs.syncModalSafe.textContent = item.safe_note || '';
+    refs.syncModal.hidden = false;
+    refs.syncModalRun?.focus({ preventScroll: true });
+}
+
+async function refreshCapabilities() {
+    setBusy(refs.capabilityRefreshBtn, true, '刷新中');
+    try {
+        const result = await apiFetch('/api/manage/system/smart-classroom-sync-capabilities');
+        state.capabilities = result.capabilities || [];
+        renderCapabilities();
+    } catch (error) {
+        refs.capabilityList.innerHTML = '<div class="smart-classroom-empty">读取同步功能失败。</div>';
+        showMessage(error.message || '读取智慧课堂同步功能失败。', 'error');
+    } finally {
+        setBusy(refs.capabilityRefreshBtn, false);
+    }
+}
+
 function renderAutoSync(autoSync) {
     if (!refs.syncPanel || !refs.syncMessage || !refs.syncStages) return;
     if (!autoSync) {
@@ -186,6 +277,7 @@ async function refreshCredentials() {
         const result = await apiFetch('/api/manage/system/smart-classroom-credentials');
         state.credentials = result.credentials || [];
         renderCredentials();
+        await refreshCapabilities();
     } catch (error) {
         showMessage(error.message || '刷新智慧课堂对接状态失败。', 'error');
     } finally {
@@ -214,6 +306,7 @@ async function saveCredential(event) {
         refs.password.value = '';
         renderCredentials();
         renderAutoSync(result.auto_sync);
+        await refreshCapabilities();
         showMessage(result.message || '智慧课堂账号已保存，并已尝试自动同步点名记录。', 'success');
     } catch (error) {
         showMessage(error.message || '智慧课堂账号验证失败。', 'error');
@@ -232,6 +325,7 @@ async function verifyCredential(id, button) {
         state.credentials = result.credentials || [];
         renderCredentials();
         renderAutoSync(result.auto_sync);
+        await refreshCapabilities();
         showMessage(result.message || '智慧课堂连接校验完成。', result.status === 'success' ? 'success' : 'warning');
     } catch (error) {
         showMessage(error.message || '重新验证失败。', 'error');
@@ -248,6 +342,8 @@ async function syncSmartClassroom(button) {
             method: 'POST',
         });
         renderAutoSync(result.auto_sync);
+        await refreshCapabilities();
+        closeSyncModal();
         showMessage(result.message || '智慧课堂点名同步已完成。', result.status === 'failed' ? 'warning' : 'success');
     } catch (error) {
         showMessage(error.message || '智慧课堂点名同步失败。', 'error');
@@ -279,6 +375,20 @@ async function deleteCredential(id, button) {
 refs.form?.addEventListener('submit', saveCredential);
 refs.platformSelect?.addEventListener('change', renderProfile);
 refs.refreshBtn?.addEventListener('click', refreshCredentials);
+refs.syncAllBtn?.addEventListener('click', (event) => syncSmartClassroom(event.currentTarget));
+refs.capabilityRefreshBtn?.addEventListener('click', refreshCapabilities);
+refs.capabilityList?.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-sync-key]');
+    if (!card) return;
+    const item = state.capabilities.find((capability) => capability.key === card.dataset.syncKey);
+    openSyncModal(item);
+});
+refs.syncModalRun?.addEventListener('click', (event) => syncSmartClassroom(event.currentTarget));
+refs.syncModalClose?.addEventListener('click', closeSyncModal);
+refs.syncModalCancel?.addEventListener('click', closeSyncModal);
+refs.syncModal?.addEventListener('click', (event) => {
+    if (event.target === refs.syncModal) closeSyncModal();
+});
 refs.list?.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-action]');
     if (!button) return;
@@ -295,3 +405,4 @@ refs.list?.addEventListener('click', (event) => {
 renderProfile();
 renderCredentials();
 renderAutoSync(null);
+refreshCapabilities();

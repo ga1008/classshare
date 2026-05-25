@@ -14,6 +14,8 @@ const parseJsonScript = (id, fallback) => {
 const state = {
     profiles: parseJsonScript('academic-profiles-data', []),
     credentials: parseJsonScript('academic-credentials-data', []),
+    capabilities: [],
+    activeCapability: null,
 };
 
 const refs = {
@@ -32,6 +34,21 @@ const refs = {
     autoSyncTitle: document.getElementById('academic-auto-sync-title'),
     autoSyncMessage: document.getElementById('academic-auto-sync-message'),
     autoSyncStages: document.getElementById('academic-auto-sync-stages'),
+    syncAllBtn: document.getElementById('academic-sync-all-btn'),
+    capabilityRefreshBtn: document.getElementById('academic-sync-capability-refresh-btn'),
+    capabilityList: document.getElementById('academic-sync-capability-list'),
+    syncModal: document.getElementById('academic-sync-modal'),
+    syncModalTitle: document.getElementById('academic-sync-modal-title'),
+    syncModalDescription: document.getElementById('academic-sync-modal-description'),
+    syncModalLast: document.getElementById('academic-sync-modal-last'),
+    syncModalState: document.getElementById('academic-sync-modal-state'),
+    syncModalEndpoint: document.getElementById('academic-sync-modal-endpoint'),
+    syncModalScope: document.getElementById('academic-sync-modal-scope'),
+    syncModalParams: document.getElementById('academic-sync-modal-params'),
+    syncModalSafe: document.getElementById('academic-sync-modal-safe'),
+    syncModalRun: document.getElementById('academic-sync-modal-run'),
+    syncModalClose: document.getElementById('academic-sync-modal-close'),
+    syncModalCancel: document.getElementById('academic-sync-modal-cancel'),
 };
 
 const statusLabels = {
@@ -125,6 +142,80 @@ function countLabel(key, value) {
     return `${labels[key] || key} ${Number(value || 0)}`;
 }
 
+function formatSyncTime(value) {
+    return value || '从未同步';
+}
+
+function renderCapabilities() {
+    if (!refs.capabilityList) return;
+    if (!state.capabilities.length) {
+        refs.capabilityList.innerHTML = '<div class="edu-empty">暂无可同步功能。请先保存并验证教务账号。</div>';
+        return;
+    }
+    refs.capabilityList.innerHTML = state.capabilities.map((item) => {
+        const counts = item.counts && typeof item.counts === 'object' ? item.counts : {};
+        const countText = Object.entries(counts)
+            .filter(([, value]) => Number(value || 0) > 0)
+            .slice(0, 3)
+            .map(([key, value]) => `<span>${escapeHtml(countLabel(key, value))}</span>`)
+            .join('');
+        return `
+            <button type="button" class="edu-sync-card" data-sync-key="${escapeHtml(item.key || '')}">
+                <div class="edu-sync-card-meta">
+                    <span>${escapeHtml(item.has_synced ? '已同步过' : '尚未同步')}</span>
+                    <span>${escapeHtml(formatSyncTime(item.last_synced_at))}</span>
+                </div>
+                <h4>${escapeHtml(item.label || '同步功能')}</h4>
+                <p>${escapeHtml(item.description || '')}</p>
+                <div class="edu-sync-card-meta">${countText || `<span>${escapeHtml(item.status_text || '等待同步')}</span>`}</div>
+            </button>
+        `;
+    }).join('');
+}
+
+function closeSyncModal() {
+    if (!refs.syncModal) return;
+    refs.syncModal.hidden = true;
+    state.activeCapability = null;
+}
+
+function openSyncModal(item) {
+    if (!refs.syncModal || !item) return;
+    state.activeCapability = item;
+    refs.syncModalTitle.textContent = item.label || '同步详情';
+    refs.syncModalDescription.textContent = item.description || '';
+    refs.syncModalLast.textContent = formatSyncTime(item.last_synced_at);
+    refs.syncModalState.textContent = item.has_synced ? (item.status_text || '已同步过') : '尚未同步';
+    refs.syncModalEndpoint.textContent = `${item.method || 'POST'} ${item.endpoint || '-'}`;
+    refs.syncModalScope.textContent = item.scope || '当前教师账号可访问的数据';
+    const parameters = Array.isArray(item.parameters) ? item.parameters : [];
+    refs.syncModalParams.innerHTML = parameters.length
+        ? parameters.map((param) => `
+            <div>
+                <span>${escapeHtml(param.name || '参数')}</span>
+                <strong>${escapeHtml(param.value || '-')}</strong>
+            </div>
+        `).join('')
+        : '<div><span>同步参数</span><strong>由系统根据已保存账号和当前教师自动生成</strong></div>';
+    refs.syncModalSafe.textContent = item.safe_note || '';
+    refs.syncModal.hidden = false;
+    refs.syncModalRun?.focus({ preventScroll: true });
+}
+
+async function refreshCapabilities() {
+    setBusy(refs.capabilityRefreshBtn, true, '刷新中');
+    try {
+        const result = await apiFetch('/api/manage/system/academic-sync-capabilities');
+        state.capabilities = result.capabilities || [];
+        renderCapabilities();
+    } catch (error) {
+        refs.capabilityList.innerHTML = '<div class="edu-empty">读取同步功能失败。</div>';
+        showMessage(error.message || '读取教务同步功能失败。', 'error');
+    } finally {
+        setBusy(refs.capabilityRefreshBtn, false);
+    }
+}
+
 function renderAutoSync(autoSync) {
     if (!refs.autoSyncPanel || !refs.autoSyncMessage || !refs.autoSyncStages) return;
     if (!autoSync) {
@@ -202,6 +293,7 @@ async function refreshCredentials() {
         const result = await apiFetch('/api/manage/system/academic-credentials');
         state.credentials = result.credentials || [];
         renderCredentials();
+        await refreshCapabilities();
     } catch (error) {
         showMessage(error.message || '刷新教务对接状态失败。', 'error');
     } finally {
@@ -230,6 +322,7 @@ async function saveCredential(event) {
         refs.password.value = '';
         renderCredentials();
         renderAutoSync(result.auto_sync);
+        await refreshCapabilities();
         showMessage(result.message || '教务系统账号已保存，并已尝试自动同步教务数据。', 'success');
     } catch (error) {
         showMessage(error.message || '教务系统账号验证失败。', 'error');
@@ -248,6 +341,7 @@ async function verifyCredential(id, button) {
         state.credentials = result.credentials || [];
         renderCredentials();
         renderAutoSync(result.auto_sync);
+        await refreshCapabilities();
         showMessage(result.message || '教务系统连接校验完成。', result.status === 'success' ? 'success' : 'warning');
     } catch (error) {
         showMessage(error.message || '重新验证失败。', 'error');
@@ -264,6 +358,7 @@ async function syncAcademicData(button) {
             method: 'POST',
         });
         renderAutoSync(result.auto_sync);
+        await refreshCapabilities();
         showMessage(result.message || '教务系统数据同步已完成。', result.status === 'failed' ? 'warning' : 'success');
     } catch (error) {
         showMessage(error.message || '教务系统数据同步失败。', 'error');
@@ -291,9 +386,55 @@ async function deleteCredential(id, button) {
     }
 }
 
+async function syncAcademicCapability(button) {
+    const capability = state.activeCapability;
+    if (!capability?.endpoint) {
+        showMessage('未找到可执行的同步接口。', 'warning');
+        return;
+    }
+    setBusy(button, true, '同步中');
+    try {
+        const result = await apiFetch(capability.endpoint, { method: capability.method || 'POST' });
+        await refreshCapabilities();
+        const stage = {
+            key: capability.key,
+            label: capability.label,
+            status: result.status || 'success',
+            message: result.message || `${capability.label || '同步'}已完成。`,
+            counts: result.counts || result,
+            warnings: result.warnings || [],
+        };
+        renderAutoSync({
+            status: stage.status,
+            message: stage.message,
+            stages: [stage],
+        });
+        closeSyncModal();
+        showMessage(stage.message, stage.status === 'failed' ? 'warning' : 'success');
+    } catch (error) {
+        showMessage(error.message || '同步失败。', 'error');
+    } finally {
+        setBusy(button, false);
+    }
+}
+
 refs.schoolSelect?.addEventListener('change', renderProfile);
 refs.refreshBtn?.addEventListener('click', refreshCredentials);
 refs.form?.addEventListener('submit', saveCredential);
+refs.syncAllBtn?.addEventListener('click', (event) => syncAcademicData(event.currentTarget));
+refs.capabilityRefreshBtn?.addEventListener('click', refreshCapabilities);
+refs.capabilityList?.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-sync-key]');
+    if (!card) return;
+    const item = state.capabilities.find((capability) => capability.key === card.dataset.syncKey);
+    openSyncModal(item);
+});
+refs.syncModalRun?.addEventListener('click', (event) => syncAcademicCapability(event.currentTarget));
+refs.syncModalClose?.addEventListener('click', closeSyncModal);
+refs.syncModalCancel?.addEventListener('click', closeSyncModal);
+refs.syncModal?.addEventListener('click', (event) => {
+    if (event.target === refs.syncModal) closeSyncModal();
+});
 refs.list?.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-action]');
     if (!button) return;
@@ -310,3 +451,4 @@ refs.list?.addEventListener('click', (event) => {
 
 renderProfile();
 renderCredentials();
+refreshCapabilities();

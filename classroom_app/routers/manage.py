@@ -113,7 +113,10 @@ from ..services.academic_calendar_sync_service import (
     prepare_current_semester_from_academic_system,
     sync_semester_calendar_background,
 )
-from ..services.academic_auto_sync_service import sync_teacher_academic_data_after_credential_verified
+from ..services.academic_auto_sync_service import (
+    build_academic_sync_capabilities,
+    sync_teacher_academic_data_after_credential_verified,
+)
 from ..services.academic_classroom_sync_service import (
     count_teacher_teaching_places,
     load_free_classroom_options_from_academic_system,
@@ -131,6 +134,7 @@ from ..services.academic_exam_roster_sync_service import (
 from ..services.academic_invigilation_sync_service import sync_current_teacher_invigilations_from_academic_system
 from ..services.academic_roster_sync_service import sync_current_teacher_rosters_from_academic_system
 from ..services.smart_classroom_checkin_sync_service import (
+    build_smart_classroom_sync_capabilities,
     sync_teacher_smart_classroom_checkins,
     sync_teacher_smart_classroom_data_after_credential_verified,
 )
@@ -2947,6 +2951,14 @@ async def api_list_academic_credentials(user: dict = Depends(get_current_teacher
     return {"status": "success", "credentials": credentials}
 
 
+@router.get("/system/academic-sync-capabilities", response_class=JSONResponse)
+async def api_list_academic_sync_capabilities(user: dict = Depends(get_current_teacher)):
+    """Return syncable academic-system features and their latest local sync state."""
+    with get_db_connection() as conn:
+        capabilities = build_academic_sync_capabilities(conn, int(user["id"]))
+    return {"status": "success", "capabilities": capabilities}
+
+
 @router.post("/system/academic-sync", response_class=JSONResponse)
 async def api_sync_academic_data(user: dict = Depends(get_current_teacher)):
     """Manually rerun the saved academic-system sync chain."""
@@ -3075,6 +3087,14 @@ async def api_list_smart_classroom_credentials(user: dict = Depends(get_current_
     with get_db_connection() as conn:
         credentials = list_teacher_smart_classroom_credentials(conn, int(user["id"]))
     return {"status": "success", "credentials": credentials}
+
+
+@router.get("/system/smart-classroom-sync-capabilities", response_class=JSONResponse)
+async def api_list_smart_classroom_sync_capabilities(user: dict = Depends(get_current_teacher)):
+    """Return syncable Smart Classroom features and their latest local sync state."""
+    with get_db_connection() as conn:
+        capabilities = build_smart_classroom_sync_capabilities(conn, int(user["id"]))
+    return {"status": "success", "capabilities": capabilities}
 
 
 @router.post("/system/smart-classroom-sync", response_class=JSONResponse)
