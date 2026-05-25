@@ -44,11 +44,14 @@ function initCoursePopover() {
     const smartAttendanceRows = document.getElementById('smartAttendanceRows');
     const smartAttendanceTableNote = document.getElementById('smartAttendanceTableNote');
     const smartAttendanceSyncBtn = document.getElementById('smartAttendanceSyncBtn');
+    const smartAttendanceExportButtons = Array.from(document.querySelectorAll('[data-smart-attendance-export]'));
     const transitionMs = 280;
     let activeTrigger = null;
     let closeTimer = 0;
     let attendanceLoaded = false;
     let attendanceLoading = false;
+    let attendanceExportReady = false;
+    let attendanceExporting = false;
 
     const getFocusableElements = () => Array.from(
         popover.querySelectorAll('a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'),
@@ -90,6 +93,82 @@ function initCoursePopover() {
         if (smartAttendanceInsights) smartAttendanceInsights.innerHTML = '';
         if (smartAttendanceRows) smartAttendanceRows.innerHTML = '<tr><td colspan="7" class="is-empty">同步智慧课堂点名后，这里会显示出勤明细。</td></tr>';
         if (smartAttendanceTableNote) smartAttendanceTableNote.textContent = '';
+        setAttendanceExportReady(false);
+    };
+
+    const setAttendanceExportReady = (ready) => {
+        attendanceExportReady = Boolean(ready);
+        smartAttendanceExportButtons.forEach((button) => {
+            button.disabled = !attendanceExportReady || attendanceExporting;
+        });
+    };
+
+    const setAttendanceExporting = (busy, format = '') => {
+        attendanceExporting = Boolean(busy);
+        smartAttendanceExportButtons.forEach((button) => {
+            button.disabled = !attendanceExportReady || attendanceExporting;
+            button.setAttribute('aria-busy', attendanceExporting ? 'true' : 'false');
+            const label = button.querySelector('span');
+            if (!label) return;
+            if (!button.dataset.originalLabel) button.dataset.originalLabel = label.textContent || '';
+            label.textContent = attendanceExporting && button.dataset.smartAttendanceExport === format
+                ? '导出中'
+                : button.dataset.originalLabel;
+        });
+    };
+
+    const filenameFromDisposition = (disposition) => {
+        const value = String(disposition || '');
+        const utf8Match = value.match(/filename\*=UTF-8''([^;]+)/i);
+        if (utf8Match) {
+            try {
+                return decodeURIComponent(utf8Match[1]);
+            } catch {
+                return utf8Match[1];
+            }
+        }
+        const plainMatch = value.match(/filename="?([^";]+)"?/i);
+        return plainMatch ? plainMatch[1] : '';
+    };
+
+    const downloadAttendanceExport = async (format) => {
+        if (!window.APP_CONFIG?.classOfferingId || attendanceExporting) return;
+        const normalizedFormat = format === 'pdf' ? 'pdf' : 'xlsx';
+        setAttendanceExporting(true, normalizedFormat);
+        try {
+            const response = await fetch(
+                `/api/classrooms/${window.APP_CONFIG.classOfferingId}/smart-attendance/export?format=${encodeURIComponent(normalizedFormat)}`,
+                { credentials: 'same-origin' },
+            );
+            if (!response.ok) {
+                const contentType = response.headers.get('Content-Type') || '';
+                let message = '导出平时成绩记录表失败。';
+                if (contentType.includes('application/json')) {
+                    const payload = await response.json().catch(() => ({}));
+                    message = payload.detail || payload.message || message;
+                } else {
+                    const text = await response.text().catch(() => '');
+                    message = text || message;
+                }
+                throw new Error(message);
+            }
+            const blob = await response.blob();
+            const fallbackName = `智慧课堂平时成绩记录表.${normalizedFormat === 'pdf' ? 'pdf' : 'xlsx'}`;
+            const filename = filenameFromDisposition(response.headers.get('Content-Disposition')) || fallbackName;
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = filename;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+            showToast(`${normalizedFormat === 'pdf' ? 'PDF' : 'Excel'} 导出已生成`, 'success');
+        } catch (error) {
+            showToast(error.message || '导出平时成绩记录表失败。', 'error');
+        } finally {
+            setAttendanceExporting(false, normalizedFormat);
+        }
     };
 
     const renderMetricCard = (label, value, note, tone = 'neutral') => `
@@ -126,6 +205,7 @@ function initCoursePopover() {
             renderAttendanceEmpty(payload.message || '当前课堂还没有可统计的智慧课堂点名记录。');
             return;
         }
+        setAttendanceExportReady(true);
         if (smartAttendanceMessage) {
             const latest = summary.latest_synced_at ? `最近同步 ${summary.latest_synced_at}` : '已读取本地同步记录';
             smartAttendanceMessage.textContent = `${summary.course_name || '本课程'} · ${latest}`;
@@ -283,6 +363,9 @@ function initCoursePopover() {
     overlay?.addEventListener('click', closePopover);
     closeBtn?.addEventListener('click', closePopover);
     smartAttendanceSyncBtn?.addEventListener('click', () => loadAttendanceAnalytics({ force: true, sync: true }));
+    smartAttendanceExportButtons.forEach((button) => {
+        button.addEventListener('click', () => downloadAttendanceExport(button.dataset.smartAttendanceExport || 'xlsx'));
+    });
 
     document.addEventListener('keydown', (event) => {
         if (!popover.classList.contains('popover-open')) return;

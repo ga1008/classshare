@@ -1964,7 +1964,19 @@
                             <h4>学期出勤画像</h4>
                         </div>
                         {% if user_info.role == 'teacher' %}
-                        <button type="button" class="btn btn-outline btn-sm" id="smartAttendanceSyncBtn">同步点名</button>
+                        <div class="smart-attendance-actions">
+                            <button type="button" class="btn btn-outline btn-sm" id="smartAttendanceSyncBtn">同步点名</button>
+                            <div class="smart-attendance-export-group" role="group" aria-label="导出平时成绩记录表">
+                                <button type="button" class="smart-attendance-export-btn" data-smart-attendance-export="xlsx" title="导出 Excel" aria-label="导出 Excel" disabled>
+                                    {{ app_topbar_icon('download') }}
+                                    <span>Excel</span>
+                                </button>
+                                <button type="button" class="smart-attendance-export-btn" data-smart-attendance-export="pdf" title="导出 PDF" aria-label="导出 PDF" disabled>
+                                    {{ app_topbar_icon('download') }}
+                                    <span>PDF</span>
+                                </button>
+                            </div>
+                        </div>
                         {% endif %}
                     </div>
                     <p class="smart-attendance-message" id="smartAttendanceMessage">正在准备出勤统计。</p>
@@ -2080,7 +2092,7 @@
     import * as fileApp from '/static/js/app_files.js';
     import * as materialsApp from '/static/js/classroom_materials.js?v=learning-progress-20260503';
     import * as examApp from '/static/js/app_exams.js';
-    import { initClassroomPage } from '/static/js/classroom_page.js?v=smart-attendance-20260525';
+    import { initClassroomPage } from '/static/js/classroom_page.js?v=smart-attendance-export-20260526';
     import { initLearningProgress } from '/static/js/learning_progress.js?v=exam-roster-place-picker-20260519';
     import { initClassroomInteractions } from '{{ asset_url("js/classroom_interactions.js") }}';
     import { initCollaborationPanel } from '{{ asset_url("collaboration") }}';

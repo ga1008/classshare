@@ -17,7 +17,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt requirements.lock.txt requirements-docker.txt ./
-RUN python -m pip install --no-cache-dir -r requirements.txt -i "${PIP_INDEX_URL}"
+RUN python -m pip uninstall -y fitz >/dev/null 2>&1 || true \
+    && python -m pip install --no-cache-dir -r requirements.txt -i "${PIP_INDEX_URL}"
 
 COPY deployment/docker/entrypoint.sh /usr/local/bin/lanshare-entrypoint
 RUN sed -i 's/\r$//' /usr/local/bin/lanshare-entrypoint \
@@ -25,7 +26,7 @@ RUN sed -i 's/\r$//' /usr/local/bin/lanshare-entrypoint \
 
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git tzdata \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git tzdata fonts-noto-cjk \
     && ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime \
     && echo "${TZ}" > /etc/timezone \
     && apt-get clean \

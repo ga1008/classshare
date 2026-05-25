@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import io
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher, get_current_user
 from ..services.materials_service import ensure_classroom_access
+from ..services.smart_attendance_export_service import build_smart_attendance_export
 from ..services.smart_classroom_checkin_sync_service import (
     build_classroom_smart_attendance_analytics,
     load_session_smart_checkin_summary,
@@ -94,3 +98,29 @@ async def api_get_classroom_smart_attendance_analytics(
     if analytics.get("status") == "not_found":
         raise HTTPException(status_code=404, detail=analytics.get("message") or "课堂不存在。")
     return analytics
+
+
+@router.get("/{class_offering_id}/smart-attendance/export")
+async def api_export_classroom_smart_attendance(
+    class_offering_id: int,
+    format: str = "xlsx",
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        ensure_classroom_access(conn, int(class_offering_id), user)
+        try:
+            export = build_smart_attendance_export(
+                conn,
+                class_offering_id=int(class_offering_id),
+                teacher_id=int(user["id"]),
+                file_format=format,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    encoded_filename = quote(export.filename)
+    return StreamingResponse(
+        io.BytesIO(export.content),
+        media_type=export.media_type,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
+    )

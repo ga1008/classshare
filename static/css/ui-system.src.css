@@ -36149,6 +36149,60 @@ body.has-teaching-session-modal {
     gap: 12px;
 }
 
+.smart-attendance-actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.smart-attendance-export-group {
+    display: inline-flex;
+    overflow: hidden;
+    min-height: 32px;
+    border: 1px solid rgba(14, 165, 233, 0.22);
+    border-radius: 8px;
+    background: rgba(248, 250, 252, 0.9);
+}
+
+.smart-attendance-export-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 72px;
+    border: 0;
+    border-left: 1px solid rgba(14, 165, 233, 0.16);
+    background: transparent;
+    color: #0369a1;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 850;
+    line-height: 1;
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
+}
+
+.smart-attendance-export-btn:first-child {
+    border-left: 0;
+}
+
+.smart-attendance-export-btn svg {
+    width: 15px;
+    height: 15px;
+}
+
+.smart-attendance-export-btn:hover,
+.smart-attendance-export-btn:focus-visible {
+    background: rgba(14, 165, 233, 0.12);
+    color: #075985;
+}
+
+.smart-attendance-export-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.46;
+}
+
 .smart-attendance-kicker {
     display: inline-flex;
     align-items: center;
@@ -36407,5 +36461,19 @@ body.has-teaching-session-modal {
     .smart-attendance-table-head,
     .smart-attendance-chart-head {
         flex-direction: column;
+    }
+
+    .smart-attendance-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .smart-attendance-export-group {
+        flex: 1 1 210px;
+    }
+
+    .smart-attendance-export-btn {
+        flex: 1 1 0;
+        min-height: 36px;
     }
 }
