@@ -686,7 +686,7 @@
                                 data-start-date="{{ semester.start_date or '' }}"
                                 data-week-count="{{ semester.week_count or 20 }}"
                                 {% if semester.id == default_semester_id %}selected{% endif %}
-                            >{{ semester.name or semester.display_range or ('学期 #' ~ semester.id) }}</option>
+                            >{{ semester.name or semester.display_range or ('学期 #' ~ semester.id) }}{% if semester.is_shared_semester %} · 同校共享{% endif %}</option>
                             {% endfor %}
                         </select>
                     </label>

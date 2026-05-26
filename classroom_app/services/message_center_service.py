@@ -55,6 +55,7 @@ MESSAGE_CATEGORY_APP_FEEDBACK = "app_feedback"
 MESSAGE_CATEGORY_PASSWORD_RESET = "password_reset_request"
 MESSAGE_CATEGORY_TODO = "todo"
 MESSAGE_CATEGORY_COLLABORATION = "collaboration"
+MESSAGE_CATEGORY_ATTENDANCE_ALERT = "attendance_alert"
 
 AI_ASSISTANT_ROLE = "assistant"
 AI_ASSISTANT_LABEL = "AI助教"
@@ -124,6 +125,7 @@ ALL_NOTIFICATION_CATEGORIES = (
     MESSAGE_CATEGORY_PASSWORD_RESET,
     MESSAGE_CATEGORY_TODO,
     MESSAGE_CATEGORY_COLLABORATION,
+    MESSAGE_CATEGORY_ATTENDANCE_ALERT,
 )
 
 VISIBLE_NOTIFICATION_CATEGORIES = {
@@ -138,6 +140,7 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_BLOG_HOT,
         MESSAGE_CATEGORY_TODO,
         MESSAGE_CATEGORY_COLLABORATION,
+        MESSAGE_CATEGORY_ATTENDANCE_ALERT,
     ),
     "teacher": (
         "all",
@@ -152,6 +155,7 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_PASSWORD_RESET,
         MESSAGE_CATEGORY_TODO,
         MESSAGE_CATEGORY_COLLABORATION,
+        MESSAGE_CATEGORY_ATTENDANCE_ALERT,
     ),
 }
 
@@ -170,6 +174,7 @@ CATEGORY_LABELS = {
     MESSAGE_CATEGORY_PASSWORD_RESET: "找回申请",
     MESSAGE_CATEGORY_TODO: "待办提醒",
     MESSAGE_CATEGORY_COLLABORATION: "小组协作",
+    MESSAGE_CATEGORY_ATTENDANCE_ALERT: "考勤提醒",
 }
 
 APP_FEEDBACK_TYPE_LABELS = {
@@ -3694,6 +3699,59 @@ def create_todo_notification(
         created_at=timestamp,
     )
     return 1 if _insert_notification_if_allowed(conn, payload, allow_duplicates=allow_duplicates) else 0
+
+
+def create_smart_attendance_alert_notification(
+    conn,
+    *,
+    student_id: int | str,
+    class_offering_id: int | str,
+    course_name: str,
+    absences: list[dict[str, Any]],
+    reminder_date: str,
+) -> int:
+    normalized_student_id = _safe_int(student_id)
+    normalized_class_offering_id = _safe_int(class_offering_id)
+    if normalized_student_id is None or normalized_class_offering_id is None or not absences:
+        return 0
+
+    course_title = _sanitize_student_notification_text(course_name or "本课程", limit=48)
+    detail_items: list[str] = []
+    for item in absences[:12]:
+        item_course = _sanitize_student_notification_text(item.get("course_name") or course_title, limit=48)
+        date_label = _sanitize_student_notification_text(item.get("date_label") or item.get("date") or "日期待确认", limit=24)
+        weekday_label = _sanitize_student_notification_text(item.get("weekday_label") or "", limit=12)
+        week_label = _sanitize_student_notification_text(item.get("week_label") or "", limit=16)
+        suffix = "，".join(part for part in (weekday_label, week_label) if part)
+        detail_items.append(f"{item_course}：{date_label}{f'（{suffix}）' if suffix else ''}")
+    if len(absences) > len(detail_items):
+        detail_items.append(f"另有 {len(absences) - len(detail_items)} 条记录请进入课堂查看。")
+
+    body_preview = _sanitize_student_notification_text(
+        "考勤有异常，请登录考勤网站/小程序/app确认。缺勤课程、日期、星期、周次："
+        + "；".join(detail_items),
+        limit=700,
+    )
+    payload = _build_notification_payload(
+        recipient_role="student",
+        recipient_user_pk=normalized_student_id,
+        category=MESSAGE_CATEGORY_ATTENDANCE_ALERT,
+        severity="important",
+        title=f"考勤异常提醒：{course_title}",
+        body_preview=body_preview,
+        link_url=f"/classroom/{normalized_class_offering_id}",
+        class_offering_id=normalized_class_offering_id,
+        ref_type="smart_attendance_absence_daily",
+        ref_id=f"{normalized_class_offering_id}:{normalized_student_id}:{str(reminder_date or '').strip()}",
+        metadata={
+            "course_name": course_title,
+            "reminder_date": str(reminder_date or "").strip(),
+            "absence_count": len(absences),
+            "absences": absences[:30],
+        },
+    )
+    payload["email_notification_allowed"] = False
+    return 1 if _insert_notification_if_allowed(conn, payload) else 0
 
 
 def create_collaboration_notification(

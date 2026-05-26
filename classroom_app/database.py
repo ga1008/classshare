@@ -16,6 +16,11 @@ from .config import (
     SQLITE_WAL_AUTOCHECKPOINT_PAGES,
 )
 from .services.department_service import infer_department_from_text
+from .services.organization_scope_service import (
+    DEFAULT_SCHOOL_CODE,
+    DEFAULT_SCHOOL_NAME,
+    load_teacher_org_scope,
+)
 
 
 def _apply_sqlite_pragmas(conn: sqlite3.Connection) -> None:
@@ -340,6 +345,132 @@ def _backfill_academic_departments(conn: sqlite3.Connection) -> None:
         )
 
 
+def _backfill_organization_scopes(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        UPDATE teachers
+        SET school_code = CASE
+                WHEN TRIM(COALESCE(school_code, '')) = '' THEN ?
+                ELSE lower(TRIM(school_code))
+            END,
+            school_name = CASE
+                WHEN TRIM(COALESCE(school_name, '')) = '' THEN ?
+                ELSE TRIM(school_name)
+            END
+        """,
+        (DEFAULT_SCHOOL_CODE, DEFAULT_SCHOOL_NAME),
+    )
+
+    teacher_rows = conn.execute("SELECT id FROM teachers").fetchall()
+    for teacher in teacher_rows:
+        teacher_id = int(teacher["id"])
+        scope = load_teacher_org_scope(conn, teacher_id)
+        conn.execute(
+            """
+            UPDATE teachers
+            SET school_code = ?,
+                school_name = ?,
+                college = CASE WHEN TRIM(COALESCE(college, '')) = '' THEN ? ELSE TRIM(college) END,
+                department = CASE WHEN TRIM(COALESCE(department, '')) = '' THEN ? ELSE TRIM(department) END
+            WHERE id = ?
+            """,
+            (
+                scope["school_code"],
+                scope["school_name"],
+                scope["college"],
+                scope["department"],
+                teacher_id,
+            ),
+        )
+
+    conn.execute(
+        """
+        UPDATE classes
+        SET school_code = COALESCE(
+                NULLIF(TRIM(school_code), ''),
+                (SELECT NULLIF(TRIM(t.school_code), '') FROM teachers t WHERE t.id = classes.created_by_teacher_id),
+                ?
+            ),
+            school_name = COALESCE(
+                NULLIF(TRIM(school_name), ''),
+                (SELECT NULLIF(TRIM(t.school_name), '') FROM teachers t WHERE t.id = classes.created_by_teacher_id),
+                ?
+            ),
+            college = COALESCE(
+                NULLIF(TRIM(college), ''),
+                NULLIF(TRIM(academic_college), ''),
+                (SELECT NULLIF(TRIM(t.college), '') FROM teachers t WHERE t.id = classes.created_by_teacher_id),
+                ''
+            )
+        """,
+        (DEFAULT_SCHOOL_CODE, DEFAULT_SCHOOL_NAME),
+    )
+    conn.execute(
+        """
+        UPDATE courses
+        SET school_code = COALESCE(
+                NULLIF(TRIM(school_code), ''),
+                (SELECT NULLIF(TRIM(t.school_code), '') FROM teachers t WHERE t.id = courses.created_by_teacher_id),
+                ?
+            ),
+            school_name = COALESCE(
+                NULLIF(TRIM(school_name), ''),
+                (SELECT NULLIF(TRIM(t.school_name), '') FROM teachers t WHERE t.id = courses.created_by_teacher_id),
+                ?
+            ),
+            college = COALESCE(
+                NULLIF(TRIM(college), ''),
+                (SELECT NULLIF(TRIM(t.college), '') FROM teachers t WHERE t.id = courses.created_by_teacher_id),
+                ''
+            )
+        """,
+        (DEFAULT_SCHOOL_CODE, DEFAULT_SCHOOL_NAME),
+    )
+    conn.execute(
+        """
+        UPDATE academic_semesters
+        SET school_code = COALESCE(
+                NULLIF(TRIM(school_code), ''),
+                (SELECT NULLIF(TRIM(t.school_code), '') FROM teachers t WHERE t.id = academic_semesters.teacher_id),
+                ?
+            ),
+            school_name = COALESCE(
+                NULLIF(TRIM(school_name), ''),
+                (SELECT NULLIF(TRIM(t.school_name), '') FROM teachers t WHERE t.id = academic_semesters.teacher_id),
+                ?
+            )
+        """,
+        (DEFAULT_SCHOOL_CODE, DEFAULT_SCHOOL_NAME),
+    )
+    conn.execute(
+        """
+        UPDATE students
+        SET school_code = COALESCE(
+                NULLIF(TRIM(school_code), ''),
+                (SELECT NULLIF(TRIM(c.school_code), '') FROM classes c WHERE c.id = students.class_id),
+                ?
+            ),
+            school_name = COALESCE(
+                NULLIF(TRIM(school_name), ''),
+                (SELECT NULLIF(TRIM(c.school_name), '') FROM classes c WHERE c.id = students.class_id),
+                ?
+            ),
+            college = COALESCE(
+                NULLIF(TRIM(college), ''),
+                NULLIF(TRIM(academic_college), ''),
+                (SELECT NULLIF(TRIM(c.college), '') FROM classes c WHERE c.id = students.class_id),
+                ''
+            ),
+            department = COALESCE(
+                NULLIF(TRIM(department), ''),
+                (SELECT NULLIF(TRIM(c.department), '') FROM classes c WHERE c.id = students.class_id),
+                ''
+            )
+        """,
+        (DEFAULT_SCHOOL_CODE, DEFAULT_SCHOOL_NAME),
+    )
+
+
 def save_user_session(
     *,
     session_user_key: str,
@@ -638,6 +769,10 @@ def init_database():
                               1,
                               created_by_teacher_id
                               INTEGER,
+                              school_code TEXT NOT NULL DEFAULT 'gxufl',
+                              school_name TEXT NOT NULL DEFAULT '广西外国语学院',
+                              college TEXT NOT NULL DEFAULT '',
+                              department TEXT NOT NULL DEFAULT '',
                               updated_at
                               TEXT
                               DEFAULT
@@ -667,6 +802,10 @@ def init_database():
                 "is_super_admin": "INTEGER NOT NULL DEFAULT 0",
                 "is_active": "INTEGER NOT NULL DEFAULT 1",
                 "created_by_teacher_id": "INTEGER",
+                "school_code": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_CODE}'",
+                "school_name": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_NAME}'",
+                "college": "TEXT NOT NULL DEFAULT ''",
+                "department": "TEXT NOT NULL DEFAULT ''",
                 "updated_at": "TEXT",
                 "deactivated_at": "TEXT",
                 "deactivated_by_teacher_id": "INTEGER",
@@ -730,6 +869,9 @@ def init_database():
                              INTEGER
                              NOT
                              NULL,
+                             school_code TEXT NOT NULL DEFAULT 'gxufl',
+                             school_name TEXT NOT NULL DEFAULT '广西外国语学院',
+                             college TEXT NOT NULL DEFAULT '',
                              department TEXT DEFAULT '',
                              description TEXT,
                              created_at
@@ -764,6 +906,9 @@ def init_database():
                 "ALTER TABLE classes ADD COLUMN academic_sync_at TEXT",
                 "ALTER TABLE classes ADD COLUMN academic_sync_message TEXT DEFAULT ''",
                 "ALTER TABLE classes ADD COLUMN academic_metadata_json TEXT NOT NULL DEFAULT '{}'",
+                f"ALTER TABLE classes ADD COLUMN school_code TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_CODE}'",
+                f"ALTER TABLE classes ADD COLUMN school_name TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_NAME}'",
+                "ALTER TABLE classes ADD COLUMN college TEXT NOT NULL DEFAULT ''",
             ):
                 try:
                     conn.execute(statement)
@@ -839,6 +984,10 @@ def init_database():
                               TEXT,
                               enrollment_note
                               TEXT,
+                              school_code TEXT NOT NULL DEFAULT 'gxufl',
+                              school_name TEXT NOT NULL DEFAULT '广西外国语学院',
+                              college TEXT NOT NULL DEFAULT '',
+                              department TEXT NOT NULL DEFAULT '',
                               created_at
                               TEXT
                               DEFAULT
@@ -892,6 +1041,10 @@ def init_database():
                 "academic_sync_at": "TEXT",
                 "academic_sync_message": "TEXT DEFAULT ''",
                 "academic_metadata_json": "TEXT NOT NULL DEFAULT '{}'",
+                "school_code": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_CODE}'",
+                "school_name": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_NAME}'",
+                "college": "TEXT NOT NULL DEFAULT ''",
+                "department": "TEXT NOT NULL DEFAULT ''",
             }.items():
                 try:
                     conn.execute(f"ALTER TABLE students ADD COLUMN {column_name} {column_def}")
@@ -958,10 +1111,13 @@ def init_database():
                                   TEXT
                                   DEFAULT '',
                              department
-                                  TEXT
-                                  DEFAULT '',
+                                   TEXT
+                                   DEFAULT '',
+                             school_code TEXT NOT NULL DEFAULT 'gxufl',
+                             school_name TEXT NOT NULL DEFAULT '广西外国语学院',
+                             college TEXT NOT NULL DEFAULT '',
                              credits
-                                  FLOAT,
+                                   FLOAT,
                              created_by_teacher_id
                                  INTEGER
                                  NOT
@@ -1004,6 +1160,9 @@ def init_database():
                 "ALTER TABLE courses ADD COLUMN academic_sync_at TEXT",
                 "ALTER TABLE courses ADD COLUMN academic_sync_message TEXT DEFAULT ''",
                 "ALTER TABLE courses ADD COLUMN academic_metadata_json TEXT NOT NULL DEFAULT '{}'",
+                f"ALTER TABLE courses ADD COLUMN school_code TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_CODE}'",
+                f"ALTER TABLE courses ADD COLUMN school_name TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_NAME}'",
+                "ALTER TABLE courses ADD COLUMN college TEXT NOT NULL DEFAULT ''",
             ):
                 try:
                     conn.execute(statement)
@@ -1507,6 +1666,8 @@ def init_database():
                 (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     teacher_id INTEGER NOT NULL,
+                    school_code TEXT NOT NULL DEFAULT 'gxufl',
+                    school_name TEXT NOT NULL DEFAULT '广西外国语学院',
                     name TEXT NOT NULL,
                     start_date TEXT NOT NULL,
                     end_date TEXT NOT NULL,
@@ -1527,6 +1688,8 @@ def init_database():
                 "ALTER TABLE academic_semesters ADD COLUMN calendar_sync_at TEXT",
                 "ALTER TABLE academic_semesters ADD COLUMN calendar_sync_message TEXT DEFAULT ''",
                 "ALTER TABLE academic_semesters ADD COLUMN calendar_source_summary_json TEXT NOT NULL DEFAULT '[]'",
+                f"ALTER TABLE academic_semesters ADD COLUMN school_code TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_CODE}'",
+                f"ALTER TABLE academic_semesters ADD COLUMN school_name TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_NAME}'",
             ):
                 try:
                     conn.execute(statement)
@@ -4290,6 +4453,27 @@ def init_database():
                         )
                          ''')
 
+            conn.execute('''
+                        CREATE TABLE IF NOT EXISTS smart_attendance_daily_tasks
+                        (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            class_offering_id INTEGER NOT NULL,
+                            teacher_id INTEGER NOT NULL,
+                            task_type TEXT NOT NULL,
+                            task_date TEXT NOT NULL,
+                            status TEXT NOT NULL DEFAULT 'queued',
+                            message TEXT DEFAULT '',
+                            raw_payload_json TEXT NOT NULL DEFAULT '{}',
+                            started_at TEXT,
+                            finished_at TEXT,
+                            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                            FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                            UNIQUE (class_offering_id, teacher_id, task_type, task_date)
+                        )
+                         ''')
+
             try:
                 conn.execute("ALTER TABLE course_materials ADD COLUMN git_repo_status TEXT NOT NULL DEFAULT 'unscanned'")
             except sqlite3.OperationalError:
@@ -4331,9 +4515,19 @@ def init_database():
             except sqlite3.OperationalError:
                 pass
 
+            _backfill_organization_scopes(conn)
+
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_academic_semesters_teacher_period "
                 "ON academic_semesters (teacher_id, start_date DESC, end_date DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_academic_semesters_school_period "
+                "ON academic_semesters (school_code COLLATE NOCASE, start_date DESC, end_date DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teachers_org_scope "
+                "ON teachers (school_code COLLATE NOCASE, college COLLATE NOCASE, department COLLATE NOCASE, is_active)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_smart_credentials_teacher "
@@ -4354,6 +4548,10 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_smart_checkin_students_lookup "
                 "ON smart_classroom_checkin_students (checkin_session_id, status, student_number)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_smart_attendance_daily_tasks_lookup "
+                "ON smart_attendance_daily_tasks (class_offering_id, teacher_id, task_type, task_date, status)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_academic_semester_calendar_days_lookup "
@@ -4384,8 +4582,16 @@ def init_database():
                 "ON classes (created_by_teacher_id, department COLLATE NOCASE, name COLLATE NOCASE)"
             )
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_classes_org_department "
+                "ON classes (school_code COLLATE NOCASE, college COLLATE NOCASE, department COLLATE NOCASE, name COLLATE NOCASE)"
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_courses_teacher_department "
                 "ON courses (created_by_teacher_id, department COLLATE NOCASE, name COLLATE NOCASE)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_courses_org_department "
+                "ON courses (school_code COLLATE NOCASE, college COLLATE NOCASE, department COLLATE NOCASE, name COLLATE NOCASE)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_courses_teacher_academic_code "

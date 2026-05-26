@@ -44,6 +44,7 @@ function initCoursePopover() {
     const smartAttendanceRows = document.getElementById('smartAttendanceRows');
     const smartAttendanceTableNote = document.getElementById('smartAttendanceTableNote');
     const smartAttendanceSyncBtn = document.getElementById('smartAttendanceSyncBtn');
+    const smartAttendanceAbnormalPopover = document.getElementById('smartAttendanceAbnormalPopover');
     const smartAttendanceExportButtons = Array.from(document.querySelectorAll('[data-smart-attendance-export]'));
     const transitionMs = 280;
     let activeTrigger = null;
@@ -52,6 +53,7 @@ function initCoursePopover() {
     let attendanceLoading = false;
     let attendanceExportReady = false;
     let attendanceExporting = false;
+    let latestAttendancePayload = null;
 
     const getFocusableElements = () => Array.from(
         popover.querySelectorAll('a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'),
@@ -86,6 +88,7 @@ function initCoursePopover() {
     }[String(risk || '')] || 'neutral');
 
     const renderAttendanceEmpty = (message) => {
+        latestAttendancePayload = null;
         if (smartAttendanceMessage) smartAttendanceMessage.textContent = message || '当前课堂还没有可统计的智慧课堂点名记录。';
         if (smartAttendanceMetrics) smartAttendanceMetrics.innerHTML = '';
         if (smartAttendanceWeekChart) smartAttendanceWeekChart.innerHTML = '<div class="smart-attendance-empty">暂无趋势数据</div>';
@@ -93,6 +96,7 @@ function initCoursePopover() {
         if (smartAttendanceInsights) smartAttendanceInsights.innerHTML = '';
         if (smartAttendanceRows) smartAttendanceRows.innerHTML = '<tr><td colspan="7" class="is-empty">同步智慧课堂点名后，这里会显示出勤明细。</td></tr>';
         if (smartAttendanceTableNote) smartAttendanceTableNote.textContent = '';
+        closeAttendanceAbnormalPopover();
         setAttendanceExportReady(false);
     };
 
@@ -171,22 +175,44 @@ function initCoursePopover() {
         }
     };
 
-    const renderMetricCard = (label, value, note, tone = 'neutral') => `
-        <article class="smart-attendance-metric is-${escapeHtml(tone)}">
+    const closeAttendanceAbnormalPopover = () => {
+        if (!smartAttendanceAbnormalPopover) return;
+        smartAttendanceAbnormalPopover.hidden = true;
+        smartAttendanceAbnormalPopover.innerHTML = '';
+    };
+
+    const renderMetricCard = (label, value, note, tone = 'neutral', options = {}) => {
+        const interactiveAttrs = options.action
+            ? ' role="button" tabindex="0" data-smart-attendance-abnormal-trigger="true" aria-haspopup="dialog"'
+            : '';
+        const detail = options.action ? '<small class="smart-attendance-metric-action">详情</small>' : '';
+        return `
+        <article class="smart-attendance-metric is-${escapeHtml(tone)}${options.action ? ' is-actionable' : ''}"${interactiveAttrs}>
             <span>${escapeHtml(label)}</span>
             <strong>${escapeHtml(value)}</strong>
             <small>${escapeHtml(note || '')}</small>
+            ${detail}
         </article>
     `;
+    };
 
-    const renderAttendanceBars = (items, { labelKey = 'label', valueKey = 'rate', noteBuilder = null } = {}) => {
+    const comparisonTone = (item) => {
+        if (item?.is_current || item?.delta_from_current === undefined) return 'current';
+        const delta = Number(item.delta_from_current || 0);
+        if (delta >= 1) return 'more';
+        if (delta <= -1) return 'less';
+        return 'even';
+    };
+
+    const renderAttendanceBars = (items, { labelKey = 'label', valueKey = 'rate', noteBuilder = null, toneBuilder = null } = {}) => {
         if (!items.length) return '<div class="smart-attendance-empty">暂无可展示的数据</div>';
         return items.map((item) => {
             const rate = Number(item[valueKey] || 0);
             const width = Math.max(2, Math.min(rate, 100));
             const note = typeof noteBuilder === 'function' ? noteBuilder(item) : `${formatPercent(rate)}`;
+            const tone = typeof toneBuilder === 'function' ? toneBuilder(item) : 'neutral';
             return `
-                <div class="smart-attendance-bar-row">
+                <div class="smart-attendance-bar-row is-${escapeHtml(tone)}">
                     <span>${escapeHtml(item[labelKey] || '-')}</span>
                     <div class="smart-attendance-bar"><i style="width:${width}%"></i></div>
                     <strong>${escapeHtml(note)}</strong>
@@ -195,7 +221,126 @@ function initCoursePopover() {
         }).join('');
     };
 
+    const renderAttendanceLineChart = (items) => {
+        if (!items.length) return '<div class="smart-attendance-empty">暂无趋势数据</div>';
+        const width = 560;
+        const height = 220;
+        const padding = { left: 40, right: 18, top: 18, bottom: 44 };
+        const plotWidth = width - padding.left - padding.right;
+        const plotHeight = height - padding.top - padding.bottom;
+        const points = items.map((item, index) => {
+            const x = padding.left + (items.length === 1 ? plotWidth / 2 : (plotWidth * index) / (items.length - 1));
+            const rate = Math.max(0, Math.min(Number(item.rate || 0), 100));
+            const y = padding.top + plotHeight - (rate / 100) * plotHeight;
+            return { ...item, x, y, rate };
+        });
+        const path = points.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
+        const areaPath = `${path} L${points[points.length - 1].x.toFixed(1)} ${padding.top + plotHeight} L${points[0].x.toFixed(1)} ${padding.top + plotHeight} Z`;
+        const gridLines = [100, 75, 50].map((rate) => {
+            const y = padding.top + plotHeight - (rate / 100) * plotHeight;
+            return `<g class="smart-attendance-line-grid"><line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}"></line><text x="8" y="${y + 4}">${rate}%</text></g>`;
+        }).join('');
+        const circles = points.map((point) => `
+            <g class="smart-attendance-line-point">
+                <circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="4.5"></circle>
+                <text x="${point.x.toFixed(1)}" y="${Math.max(14, point.y - 10).toFixed(1)}">${formatPercent(point.rate)}</text>
+            </g>
+        `).join('');
+        const labels = points.map((point, index) => {
+            const anchor = index === 0 ? 'start' : (index === points.length - 1 ? 'end' : 'middle');
+            return `<text class="smart-attendance-line-label" x="${point.x.toFixed(1)}" y="${height - 18}" text-anchor="${anchor}">${escapeHtml(point.label || '-')}</text>`;
+        }).join('');
+        const captions = items.map((item) => `<span>${escapeHtml(item.label || '-')} · ${formatPercent(item.rate)} · ${Number(item.session_count || 0)}次</span>`).join('');
+        return `
+            <div class="smart-attendance-line-chart" role="img" aria-label="周次出勤率折线图">
+                <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+                    ${gridLines}
+                    <path class="smart-attendance-line-area" d="${areaPath}"></path>
+                    <path class="smart-attendance-line-path" d="${path}"></path>
+                    ${circles}
+                    ${labels}
+                </svg>
+                <div class="smart-attendance-line-caption">${captions}</div>
+            </div>
+        `;
+    };
+
+    const renderAttendanceAbnormalPopover = (payload = {}) => {
+        if (!smartAttendanceAbnormalPopover) return;
+        const summary = payload.summary || {};
+        const isTeacher = window.APP_CONFIG?.userInfo?.role === 'teacher';
+        const personal = payload.personal || null;
+        const studentRows = isTeacher
+            ? (Array.isArray(payload.students) ? payload.students : [])
+            : (personal ? [personal] : []);
+        const riskyStudents = studentRows
+            .filter((student) => Number(student.abnormal_count || 0) > 0)
+            .slice(0, 8);
+        const abnormalSessions = (Array.isArray(payload.session_chart) ? payload.session_chart : [])
+            .filter((item) => Number(item.abnormal || 0) > 0)
+            .slice(-8)
+            .reverse();
+        const leaveCount = Number(summary.sick_leave || 0) + Number(summary.personal_leave || 0);
+        const statusCards = [
+            ['缺勤', Number(summary.absent || 0), 'danger'],
+            ['迟到/早退', Number(summary.late_or_early || 0), 'warning'],
+            ['请假', leaveCount, 'watch'],
+            ['覆盖课次', Number(summary.synced_session_count || 0), 'neutral'],
+        ].map(([label, value, tone]) => `
+            <article class="smart-attendance-detail-stat is-${tone}">
+                <span>${label}</span>
+                <strong>${value}</strong>
+            </article>
+        `).join('');
+        const studentList = riskyStudents.length
+            ? riskyStudents.map((student) => {
+                const studentLeave = Number(student.sick_leave || 0) + Number(student.personal_leave || 0);
+                const name = `${student.student_name || '-'}${student.student_number ? ` · ${student.student_number}` : ''}`;
+                return `
+                    <li>
+                        <span>${escapeHtml(name)}</span>
+                        <strong>${formatPercent(student.attendance_rate)}</strong>
+                        <small>缺勤 ${Number(student.absent || 0)} · 迟到/早退 ${Number(student.late_or_early || 0)} · 请假 ${studentLeave}</small>
+                    </li>
+                `;
+            }).join('')
+            : '<li class="is-empty">暂无需要展开跟进的学生记录</li>';
+        const sessionList = abnormalSessions.length
+            ? abnormalSessions.map((item) => `
+                <li>
+                    <span>${escapeHtml(item.label || '未标周次')}${item.checkin_time ? ` · ${escapeHtml(item.checkin_time)}` : ''}</span>
+                    <strong>${Number(item.abnormal || 0)} 条</strong>
+                    <small>出勤率 ${formatPercent(item.rate)} · ${Number(item.total || 0)} 人次</small>
+                </li>
+            `).join('')
+            : '<li class="is-empty">近期课次暂无异常记录</li>';
+
+        smartAttendanceAbnormalPopover.innerHTML = `
+            <div class="smart-attendance-detail-head">
+                <div>
+                    <span>异常记录</span>
+                    <strong>${Number(summary.abnormal || 0)} 条</strong>
+                </div>
+                <button type="button" class="smart-attendance-detail-close" data-smart-attendance-abnormal-close aria-label="关闭">×</button>
+            </div>
+            <div class="smart-attendance-detail-stats">${statusCards}</div>
+            <div class="smart-attendance-detail-grid">
+                <section>
+                    <h5>${isTeacher ? '重点学生' : '我的异常'}</h5>
+                    <ul>${studentList}</ul>
+                </section>
+                <section>
+                    <h5>异常课次</h5>
+                    <ul>${sessionList}</ul>
+                </section>
+            </div>
+        `;
+        smartAttendanceAbnormalPopover.hidden = false;
+    };
+
     const renderAttendanceAnalytics = (payload = {}) => {
+        latestAttendancePayload = payload;
+        closeAttendanceAbnormalPopover();
         const summary = payload.summary || {};
         const personal = payload.personal || null;
         const students = Array.isArray(payload.students) ? payload.students : [];
@@ -214,15 +359,13 @@ function initCoursePopover() {
             smartAttendanceMetrics.innerHTML = [
                 renderMetricCard('全班出勤率', formatPercent(summary.attendance_rate), `出勤 ${summary.checked || 0}/${summary.total || 0}`, summary.attendance_rate >= 90 ? 'success' : (summary.attendance_rate < 80 ? 'danger' : 'warning')),
                 renderMetricCard('点名覆盖', formatPercent(summary.coverage_rate), `${summary.synced_session_count || 0}/${summary.total_session_count || 0} 次课`, summary.coverage_rate >= 85 ? 'success' : 'warning'),
-                renderMetricCard('异常记录', String(summary.abnormal || 0), `缺勤 ${summary.absent || 0} · 迟到/请假 ${Number(summary.late_or_early || 0) + Number(summary.sick_leave || 0) + Number(summary.personal_leave || 0)}`, summary.abnormal ? 'warning' : 'success'),
+                renderMetricCard('异常记录', String(summary.abnormal || 0), `缺勤 ${summary.absent || 0} · 迟到/请假 ${Number(summary.late_or_early || 0) + Number(summary.sick_leave || 0) + Number(summary.personal_leave || 0)}`, summary.abnormal ? 'warning' : 'success', { action: true }),
                 personal ? renderMetricCard('我的出勤率', formatPercent(personal.attendance_rate), `排名 ${personal.rank || '-'}/${personal.rank_total || '-'}`, personal.risk_level === 'healthy' ? 'success' : riskTone(personal.risk_level)) : '',
             ].join('');
         }
         const weekly = Array.isArray(payload.weekly_trend) ? payload.weekly_trend : [];
         if (smartAttendanceWeekChart) {
-            smartAttendanceWeekChart.innerHTML = renderAttendanceBars(weekly, {
-                noteBuilder: (item) => `${formatPercent(item.rate)} · ${Number(item.session_count || 0)}次`,
-            });
+            smartAttendanceWeekChart.innerHTML = renderAttendanceLineChart(weekly);
         }
         let comparisons = Array.isArray(payload.course_comparisons) ? payload.course_comparisons : [];
         if (!isTeacher && personal && Array.isArray(personal.course_comparisons)) {
@@ -233,6 +376,7 @@ function initCoursePopover() {
                 ...item,
                 label: `${item.is_current ? '当前' : ''}${item.course_name || '课程'}${item.class_name ? ` · ${item.class_name}` : ''}`,
             })), {
+                toneBuilder: comparisonTone,
                 noteBuilder: (item) => {
                     if (item.is_current) return `${formatPercent(item.rate)}`;
                     const delta = Number(item.delta_from_current || 0);
@@ -363,11 +507,39 @@ function initCoursePopover() {
     overlay?.addEventListener('click', closePopover);
     closeBtn?.addEventListener('click', closePopover);
     smartAttendanceSyncBtn?.addEventListener('click', () => loadAttendanceAnalytics({ force: true, sync: true }));
+    smartAttendanceMetrics?.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-smart-attendance-abnormal-trigger]');
+        if (!trigger || !latestAttendancePayload) return;
+        if (smartAttendanceAbnormalPopover && !smartAttendanceAbnormalPopover.hidden) {
+            closeAttendanceAbnormalPopover();
+            return;
+        }
+        renderAttendanceAbnormalPopover(latestAttendancePayload);
+    });
+    smartAttendanceMetrics?.addEventListener('keydown', (event) => {
+        if (!['Enter', ' '].includes(event.key)) return;
+        const trigger = event.target.closest('[data-smart-attendance-abnormal-trigger]');
+        if (!trigger || !latestAttendancePayload) return;
+        event.preventDefault();
+        renderAttendanceAbnormalPopover(latestAttendancePayload);
+    });
+    smartAttendanceAbnormalPopover?.addEventListener('click', (event) => {
+        if (event.target.closest('[data-smart-attendance-abnormal-close]')) {
+            closeAttendanceAbnormalPopover();
+        }
+    });
     smartAttendanceExportButtons.forEach((button) => {
         button.addEventListener('click', () => downloadAttendanceExport(button.dataset.smartAttendanceExport || 'xlsx'));
     });
+    document.addEventListener('click', (event) => {
+        if (!smartAttendanceAbnormalPopover || smartAttendanceAbnormalPopover.hidden) return;
+        if (event.target.closest('[data-smart-attendance-abnormal-trigger]')) return;
+        if (smartAttendanceAbnormalPopover.contains(event.target)) return;
+        closeAttendanceAbnormalPopover();
+    });
 
     document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeAttendanceAbnormalPopover();
         if (!popover.classList.contains('popover-open')) return;
 
         if (event.key === 'Escape') {

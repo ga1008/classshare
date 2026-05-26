@@ -25,6 +25,7 @@ from .academic_service import (
     infer_semester_name,
     parse_date_input,
 )
+from .organization_scope_service import load_teacher_org_scope
 
 
 SYNC_STATUS_PENDING = "pending"
@@ -661,12 +662,20 @@ def mark_semester_calendar_sync_queued(conn, *, teacher_id: int, semester_id: in
     )
 
 
-def _find_existing_semester_for_alignment(conn, *, teacher_id: int, name: str, start_date: str, end_date: str):
+def _find_existing_semester_for_alignment(
+    conn,
+    *,
+    teacher_id: int,
+    name: str,
+    start_date: str,
+    end_date: str,
+):
+    teacher_scope = load_teacher_org_scope(conn, teacher_id)
     row = conn.execute(
         """
         SELECT *
         FROM academic_semesters
-        WHERE teacher_id = ?
+        WHERE lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
           AND (
               name = ?
               OR (start_date = ? AND end_date = ?)
@@ -681,7 +690,16 @@ def _find_existing_semester_for_alignment(conn, *, teacher_id: int, name: str, s
           id DESC
         LIMIT 1
         """,
-        (int(teacher_id), name, start_date, end_date, name, start_date, end_date),
+        (
+            teacher_scope["school_code"],
+            teacher_scope["school_code"],
+            name,
+            start_date,
+            end_date,
+            name,
+            start_date,
+            end_date,
+        ),
     ).fetchone()
     return dict(row) if row else None
 
@@ -731,6 +749,7 @@ async def prepare_current_semester_from_academic_system(teacher_id: int) -> dict
     sync_message = "已从教务系统识别本学期，节假日和补课处理已排队。"
 
     with get_db_connection() as conn:
+        teacher_scope = load_teacher_org_scope(conn, teacher_id)
         existing = _find_existing_semester_for_alignment(
             conn,
             teacher_id=teacher_id,
@@ -741,43 +760,54 @@ async def prepare_current_semester_from_academic_system(teacher_id: int) -> dict
         try:
             if existing:
                 semester_id = int(existing["id"])
-                conn.execute(
-                    """
-                    UPDATE academic_semesters
-                    SET name = ?,
-                        start_date = ?,
-                        end_date = ?,
-                        week_count = ?,
-                        calendar_sync_status = ?,
-                        calendar_sync_message = ?,
-                        calendar_source_summary_json = ?,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ? AND teacher_id = ?
-                    """,
-                    (
-                        semester_name,
-                        start_iso,
-                        end_iso,
-                        week_count,
-                        SYNC_STATUS_PENDING,
-                        sync_message,
-                        _json_dumps(academic_sources),
-                        semester_id,
-                        int(teacher_id),
-                    ),
-                )
-                action = "reused"
+                if int(existing.get("teacher_id") or 0) == int(teacher_id):
+                    conn.execute(
+                        """
+                        UPDATE academic_semesters
+                        SET name = ?,
+                            start_date = ?,
+                            end_date = ?,
+                            week_count = ?,
+                            school_code = ?,
+                            school_name = ?,
+                            calendar_sync_status = ?,
+                            calendar_sync_message = ?,
+                            calendar_source_summary_json = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ? AND teacher_id = ?
+                        """,
+                        (
+                            semester_name,
+                            start_iso,
+                            end_iso,
+                            week_count,
+                            teacher_scope["school_code"],
+                            teacher_scope["school_name"],
+                            SYNC_STATUS_PENDING,
+                            sync_message,
+                            _json_dumps(academic_sources),
+                            semester_id,
+                            int(teacher_id),
+                        ),
+                    )
+                    action = "reused"
+                    should_sync_calendar = True
+                else:
+                    action = "shared_reused"
+                    should_sync_calendar = False
             else:
                 cursor = conn.execute(
                     """
                     INSERT INTO academic_semesters (
-                        teacher_id, name, start_date, end_date, week_count,
+                        teacher_id, school_code, school_name, name, start_date, end_date, week_count,
                         calendar_sync_status, calendar_sync_message, calendar_source_summary_json
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         int(teacher_id),
+                        teacher_scope["school_code"],
+                        teacher_scope["school_name"],
                         semester_name,
                         start_iso,
                         end_iso,
@@ -789,6 +819,7 @@ async def prepare_current_semester_from_academic_system(teacher_id: int) -> dict
                 )
                 semester_id = int(cursor.lastrowid)
                 action = "created"
+                should_sync_calendar = True
             conn.commit()
         except Exception:
             conn.rollback()
@@ -802,8 +833,11 @@ async def prepare_current_semester_from_academic_system(teacher_id: int) -> dict
         "start_date": start_iso,
         "end_date": end_iso,
         "week_count": week_count,
+        "should_sync_calendar": should_sync_calendar,
         "message": (
-            f"已从教务系统{'复用' if action == 'reused' else '创建'}本学期：{semester_name}，"
+            f"已从教务系统识别并复用同校本学期：{semester_name}。"
+            if action == "shared_reused"
+            else f"已从教务系统{'复用' if action == 'reused' else '创建'}本学期：{semester_name}，"
             "系统会继续核对广西节假日和补课日期。"
         ),
         "source_summary": academic_sources,

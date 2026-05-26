@@ -908,7 +908,7 @@
         <article class="academic-stat-card">
             <div class="academic-stat-label">课程总数</div>
             <div class="academic-stat-value">{{ course_stats.course_count }}</div>
-            <div class="academic-stat-help">当前教师已创建的课程模板数量。</div>
+            <div class="academic-stat-help">当前教师可使用的课程模板数量，包含同系共享课程。</div>
         </article>
         <article class="academic-stat-card">
             <div class="academic-stat-label">已开设课堂</div>
@@ -963,8 +963,8 @@
     <section class="academic-card course-list-card">
         <div class="academic-card-header">
             <div>
-                <h3 class="academic-card-title">已创建课程</h3>
-                <p class="academic-card-subtitle">支持按课程名称、简介、课堂标题和内容搜索，并按状态、系别和创建学期组织查看。</p>
+                <h3 class="academic-card-title">可用课程</h3>
+                <p class="academic-card-subtitle">支持按课程名称、简介、课堂标题和内容搜索；同校同系课程可直接复用开课，只有创建者维护内容。</p>
             </div>
         </div>
         <div class="academic-card-body course-list-body">
@@ -1026,14 +1026,18 @@
                     data-semester-meta="{{ course.created_semester_group_meta }}"
                     data-semester-order="{{ course.created_semester_group_order }}"
                     data-created-at="{{ course.created_date_label }}"
+                    data-can-manage="{{ 1 if course.can_manage else 0 }}"
                     tabindex="0"
-                    aria-label="编辑课程 {{ course.name }}"
+                    aria-label="课程 {{ course.name }}"
                 >
                     <div class="course-card-head">
                         <div class="course-card-statusline">
                             <span class="course-status-pill is-{{ course.coverage_status }}">{{ course.coverage_label }}</span>
                             {% if course.academic_is_synced %}
                             <span class="course-status-pill is-synced">教务已同步</span>
+                            {% endif %}
+                            {% if course.is_shared_course %}
+                            <span class="course-status-pill is-synced">系内共享</span>
                             {% endif %}
                         </div>
                         <span class="course-card-hours">{{ course.total_hours }} 学时</span>
@@ -1091,13 +1095,27 @@
                             </span>
                         </div>
                         {% endif %}
+                        {% if course.is_shared_course %}
+                        <div class="course-card-sync-summary">
+                            <strong>共享来源</strong>
+                            <span>
+                                {{ course.owner_teacher_name or '其他教师' }} 创建
+                                {% if course.organization_label %} · {{ course.organization_label }}{% endif %}
+                            </span>
+                        </div>
+                        {% endif %}
                     </div>
 
                     <div class="academic-card-actions">
                         <div class="academic-action-group">
+                            {% if course.can_manage %}
                             <button type="button" class="btn btn-outline btn-sm" data-action="edit-course" data-course-id="{{ course.id }}">编辑</button>
+                            {% else %}
+                            <span class="academic-badge is-accent">可直接开课</span>
+                            {% endif %}
                             <a href="/manage/offerings?course_id={{ course.id }}" class="btn btn-ghost btn-sm">去开课</a>
                         </div>
+                        {% if course.can_manage %}
                         <button
                             type="button"
                             class="btn btn-danger btn-sm"
@@ -1107,6 +1125,7 @@
                         >
                             删除
                         </button>
+                        {% endif %}
                     </div>
                 </article>
                 {% else %}

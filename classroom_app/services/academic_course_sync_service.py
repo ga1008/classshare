@@ -27,6 +27,7 @@ from .course_planning_service import (
 )
 from .department_service import infer_department_from_text, normalize_department
 from .learning_progress_service import normalize_course_sect_name
+from .organization_scope_service import apply_teacher_scope_to_org, load_teacher_org_scope
 
 
 ACADEMIC_COURSE_SOURCE = "gxufl_jwxt"
@@ -897,25 +898,39 @@ async def _fetch_teacher_timetable(
 
 
 def _load_current_semester(conn, teacher_id: int, today: date) -> dict[str, Any] | None:
+    teacher_scope = load_teacher_org_scope(conn, teacher_id)
     row = conn.execute(
         """
         SELECT *
         FROM academic_semesters
-        WHERE teacher_id = ?
+        WHERE lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
           AND date(start_date) <= date(?)
           AND date(end_date) >= date(?)
-        ORDER BY updated_at DESC, id DESC
+        ORDER BY CASE WHEN teacher_id = ? THEN 0 ELSE 1 END, updated_at DESC, id DESC
         LIMIT 1
         """,
-        (int(teacher_id), today.isoformat(), today.isoformat()),
+        (
+            teacher_scope["school_code"],
+            teacher_scope["school_code"],
+            today.isoformat(),
+            today.isoformat(),
+            int(teacher_id),
+        ),
     ).fetchone()
     return dict(row) if row else None
 
 
 def _load_semester_by_id(conn, teacher_id: int, semester_id: int) -> dict[str, Any] | None:
+    teacher_scope = load_teacher_org_scope(conn, teacher_id)
     row = conn.execute(
-        "SELECT * FROM academic_semesters WHERE id = ? AND teacher_id = ? LIMIT 1",
-        (int(semester_id), int(teacher_id)),
+        """
+        SELECT *
+        FROM academic_semesters
+        WHERE id = ?
+          AND lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
+        LIMIT 1
+        """,
+        (int(semester_id), teacher_scope["school_code"], teacher_scope["school_code"]),
     ).fetchone()
     return dict(row) if row else None
 
@@ -1325,6 +1340,7 @@ def _upsert_courses_and_schedule_items(
             default=0,
         )
         department = normalize_department(infer_department_from_text(first_item.course_name, first_item.raw_text))
+        org_scope = apply_teacher_scope_to_org(conn, teacher_id, department=department)
         metadata = _course_metadata(semester=semester, items=group_items, source_summary=source_summary)
 
         if existing:
@@ -1338,6 +1354,12 @@ def _upsert_courses_and_schedule_items(
             }
             if not str(existing.get("department") or "").strip() and department:
                 updates["department"] = department
+            if not str(existing.get("school_code") or "").strip():
+                updates["school_code"] = org_scope["school_code"]
+            if not str(existing.get("school_name") or "").strip():
+                updates["school_name"] = org_scope["school_name"]
+            if not str(existing.get("college") or "").strip():
+                updates["college"] = org_scope["college"]
             if not str(existing.get("description") or "").strip():
                 updates["description"] = _course_description(first_item, len(group_items))
             if not float(existing.get("credits") or 0) and credits > 0:
@@ -1357,10 +1379,11 @@ def _upsert_courses_and_schedule_items(
                 """
                 INSERT INTO courses (
                     name, description, sect_name, department, credits, total_hours, created_by_teacher_id,
+                    school_code, school_name, college,
                     academic_source, academic_course_code, academic_sync_at, academic_sync_message,
                     academic_metadata_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     first_item.course_name,
@@ -1370,6 +1393,9 @@ def _upsert_courses_and_schedule_items(
                     credits,
                     total_hours,
                     int(teacher_id),
+                    org_scope["school_code"],
+                    org_scope["school_name"],
+                    org_scope["college"],
                     ACADEMIC_COURSE_SOURCE,
                     first_item.course_code,
                     synced_at,

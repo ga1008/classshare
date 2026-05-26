@@ -45,6 +45,12 @@ from ..services.course_planning_service import (
 from ..services.file_handler import save_upload_file
 from ..services.file_service import save_file_globally
 from ..services.department_service import infer_department_from_text, normalize_department
+from ..services.organization_scope_service import (
+    apply_teacher_scope_to_org,
+    is_same_department,
+    is_same_school,
+    load_teacher_org_scope,
+)
 from ..services.learning_progress_service import normalize_course_sect_name
 from ..services.materials_service import (
     attach_learning_material_briefs,
@@ -199,12 +205,29 @@ async def api_create_onboarding_class(request: Request, user: dict = Depends(get
 
     with get_db_connection() as conn:
         try:
+            org_scope = apply_teacher_scope_to_org(
+                conn,
+                user["id"],
+                college=data.get("college") or "",
+                department=department,
+            )
             cursor = conn.execute(
                 """
-                INSERT INTO classes (name, department, description, created_by_teacher_id)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO classes (
+                    name, department, description, created_by_teacher_id,
+                    school_code, school_name, college
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (class_name, department, description, user["id"]),
+                (
+                    class_name,
+                    department,
+                    description,
+                    user["id"],
+                    org_scope["school_code"],
+                    org_scope["school_name"],
+                    org_scope["college"],
+                ),
             )
             class_id = int(cursor.lastrowid)
             conn.commit()
@@ -319,6 +342,54 @@ def _ensure_teacher_owned_record(
     return row
 
 
+def _ensure_teacher_can_use_semester(conn, *, semester_id: int, teacher_id: int):
+    row = conn.execute(
+        """
+        SELECT *
+        FROM academic_semesters
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(semester_id),),
+    ).fetchone()
+    if not row or not is_same_school(row, load_teacher_org_scope(conn, teacher_id)):
+        raise HTTPException(404, "学期不存在或不属于当前教师所在学校")
+    return row
+
+
+def _ensure_teacher_can_manage_semester(conn, *, semester_id: int, teacher_id: int):
+    row = _ensure_teacher_can_use_semester(conn, semester_id=semester_id, teacher_id=teacher_id)
+    if int(row["teacher_id"]) != int(teacher_id) and not is_super_admin_teacher(conn, teacher_id):
+        raise HTTPException(403, "该学期由同校其他教师维护，仅可复用，不能编辑或删除")
+    return row
+
+
+def _ensure_teacher_can_use_course(conn, *, course_id: int, teacher_id: int):
+    row = conn.execute(
+        """
+        SELECT *
+        FROM courses
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(course_id),),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "课程不存在")
+    if int(row["created_by_teacher_id"]) == int(teacher_id):
+        return row
+    if not is_same_department(row, load_teacher_org_scope(conn, teacher_id)):
+        raise HTTPException(404, "课程不存在或不属于当前教师所在系别")
+    return row
+
+
+def _ensure_teacher_can_manage_course(conn, *, course_id: int, teacher_id: int):
+    row = _ensure_teacher_can_use_course(conn, course_id=course_id, teacher_id=teacher_id)
+    if int(row["created_by_teacher_id"]) != int(teacher_id) and not is_super_admin_teacher(conn, teacher_id):
+        raise HTTPException(403, "该课程为系内共享课程，仅创建者或超管可编辑")
+    return row
+
+
 def _ensure_teacher_owned_offering(conn, offering_id: int, teacher_id: int):
     offering = conn.execute(
         """
@@ -354,20 +425,8 @@ def _validate_teacher_owned_selection(
         teacher_id=teacher_id,
         owner_column="created_by_teacher_id",
     )
-    course_row = _ensure_teacher_owned_record(
-        conn,
-        table="courses",
-        record_id=course_id,
-        teacher_id=teacher_id,
-        owner_column="created_by_teacher_id",
-    )
-    semester_row = _ensure_teacher_owned_record(
-        conn,
-        table="academic_semesters",
-        record_id=semester_id,
-        teacher_id=teacher_id,
-        owner_column="teacher_id",
-    )
+    course_row = _ensure_teacher_can_use_course(conn, course_id=course_id, teacher_id=teacher_id)
+    semester_row = _ensure_teacher_can_use_semester(conn, semester_id=semester_id, teacher_id=teacher_id)
     textbook_row = _ensure_teacher_owned_record(
         conn,
         table="textbooks",
@@ -729,18 +788,16 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                 home_learning_material_id = None
 
             if course_payload["course_id"]:
-                _ensure_teacher_owned_record(
+                _ensure_teacher_can_manage_course(
                     conn,
-                    table="courses",
-                    record_id=course_payload["course_id"],
+                    course_id=course_payload["course_id"],
                     teacher_id=teacher_id,
-                    owner_column="created_by_teacher_id",
                 )
                 conn.execute(
                     """
                     UPDATE courses
                     SET name = ?, description = ?, sect_name = ?, department = ?, credits = ?, total_hours = ?
-                    WHERE id = ? AND created_by_teacher_id = ?
+                    WHERE id = ?
                     """,
                     (
                         course_payload["name"],
@@ -750,16 +807,23 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                         course_payload["credits"],
                         course_payload["total_hours"],
                         course_payload["course_id"],
-                        teacher_id,
                     ),
                 )
                 course_id = int(course_payload["course_id"])
                 course_action = "更新"
             else:
+                org_scope = apply_teacher_scope_to_org(
+                    conn,
+                    teacher_id,
+                    department=course_payload["department"],
+                )
                 cursor = conn.execute(
                     """
-                    INSERT INTO courses (name, description, sect_name, department, credits, total_hours, created_by_teacher_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO courses (
+                        name, description, sect_name, department, credits, total_hours,
+                        created_by_teacher_id, school_code, school_name, college
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         course_payload["name"],
@@ -769,6 +833,9 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                         course_payload["credits"],
                         course_payload["total_hours"],
                         teacher_id,
+                        org_scope["school_code"],
+                        org_scope["school_name"],
+                        org_scope["college"],
                     ),
                 )
                 course_id = int(cursor.lastrowid)
@@ -994,6 +1061,8 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
 @router.post("/classes/create", response_class=JSONResponse)
 async def api_create_class(request: Request, class_name: str = Form(), file: UploadFile = File(...),
                            department: str = Form(default=""),
+                           school_name: str = Form(default=""),
+                           college: str = Form(default=""),
                            user: dict = Depends(get_current_teacher)):
     """从Excel文件创建班级和学生"""
 
@@ -1019,19 +1088,56 @@ async def api_create_class(request: Request, class_name: str = Form(), file: Upl
     try:
         # 创建班级
         normalized_department = normalize_department(department) or infer_department_from_text(class_name)
+        org_scope = apply_teacher_scope_to_org(
+            conn,
+            user["id"],
+            school_name=school_name,
+            college=college,
+            department=normalized_department,
+        )
         cursor.execute(
-            "INSERT INTO classes (name, department, created_by_teacher_id) VALUES (?, ?, ?)",
-            (class_name, normalized_department, user['id']),
+            """
+            INSERT INTO classes (
+                name, department, created_by_teacher_id,
+                school_code, school_name, college
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                class_name,
+                normalized_department,
+                user['id'],
+                org_scope["school_code"],
+                org_scope["school_name"],
+                org_scope["college"],
+            ),
         )
         class_id = cursor.lastrowid
 
         # 批量插入学生
         students_to_insert = [
-            (s['student_id_number'], s['name'], class_id, s.get('gender'), s.get('email'), s.get('phone'))
+            (
+                s['student_id_number'],
+                s['name'],
+                class_id,
+                s.get('gender'),
+                s.get('email'),
+                s.get('phone'),
+                org_scope["school_code"],
+                org_scope["school_name"],
+                org_scope["college"],
+                org_scope["department"],
+            )
             for s in students_data
         ]
         cursor.executemany(
-            "INSERT INTO students (student_id_number, name, class_id, gender, email, phone) VALUES (?, ?, ?, ?, ?, ?)",
+            """
+            INSERT INTO students (
+                student_id_number, name, class_id, gender, email, phone,
+                school_code, school_name, college, department
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
             students_to_insert
         )
         conn.commit()
@@ -1268,14 +1374,23 @@ async def api_create_class_student(
         raise HTTPException(status_code=400, detail="请填写学生学号")
 
     with get_db_connection() as conn:
-        _ensure_teacher_owned_class(conn, class_id=class_id, teacher_id=user["id"])
+        class_row = _ensure_teacher_owned_class(conn, class_id=class_id, teacher_id=user["id"])
+        class_scope = apply_teacher_scope_to_org(
+            conn,
+            user["id"],
+            school_code=class_row["school_code"] if "school_code" in class_row.keys() else "",
+            school_name=class_row["school_name"] if "school_name" in class_row.keys() else "",
+            college=class_row["college"] if "college" in class_row.keys() else "",
+            department=class_row["department"] if "department" in class_row.keys() else "",
+        )
         try:
             cursor = conn.execute(
                 """
                 INSERT INTO students (
                     student_id_number, name, class_id, gender, email, phone,
-                    enrollment_status, enrollment_status_updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?)
+                    enrollment_status, enrollment_status_updated_at,
+                    school_code, school_name, college, department
+                ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
                 """,
                 (
                     cleaned_student_id,
@@ -1285,6 +1400,10 @@ async def api_create_class_student(
                     cleaned_email,
                     cleaned_phone,
                     local_iso(),
+                    class_scope["school_code"],
+                    class_scope["school_name"],
+                    class_scope["college"],
+                    class_scope["department"],
                 ),
             )
             student_id = int(cursor.lastrowid)
@@ -1426,6 +1545,8 @@ async def api_delete_class(class_id: int, user: dict = Depends(get_current_teach
             conn.execute("DELETE FROM classes WHERE id = ?", (class_id,))
             conn.commit()
 
+    except HTTPException:
+        raise
     except sqlite3.IntegrityError as e:
         raise HTTPException(400, f"删除失败: {e}")
     except Exception as e:
@@ -1464,18 +1585,16 @@ async def api_save_course(
                 raise HTTPException(400, "课程中选择的课堂材料不存在、无权访问，或不是 Markdown 文档")
 
             if payload["course_id"]:
-                _ensure_teacher_owned_record(
+                _ensure_teacher_can_manage_course(
                     conn,
-                    table="courses",
-                    record_id=payload["course_id"],
+                    course_id=payload["course_id"],
                     teacher_id=user["id"],
-                    owner_column="created_by_teacher_id",
                 )
                 conn.execute(
                     """
                     UPDATE courses
                     SET name = ?, description = ?, sect_name = ?, department = ?, credits = ?, total_hours = ?
-                    WHERE id = ? AND created_by_teacher_id = ?
+                    WHERE id = ?
                     """,
                     (
                         payload["name"],
@@ -1485,16 +1604,23 @@ async def api_save_course(
                         payload["credits"],
                         payload["total_hours"],
                         payload["course_id"],
-                        user["id"],
                     ),
                 )
                 course_id = int(payload["course_id"])
                 action_text = "更新"
             else:
+                org_scope = apply_teacher_scope_to_org(
+                    conn,
+                    user["id"],
+                    department=payload["department"],
+                )
                 cursor = conn.execute(
                     """
-                    INSERT INTO courses (name, description, sect_name, department, credits, total_hours, created_by_teacher_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO courses (
+                        name, description, sect_name, department, credits, total_hours,
+                        created_by_teacher_id, school_code, school_name, college
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         payload["name"],
@@ -1504,6 +1630,9 @@ async def api_save_course(
                         payload["credits"],
                         payload["total_hours"],
                         user["id"],
+                        org_scope["school_code"],
+                        org_scope["school_name"],
+                        org_scope["college"],
                     ),
                 )
                 course_id = int(cursor.lastrowid)
@@ -1668,9 +1797,30 @@ async def api_create_course(
 
         normalized_department = normalize_department(department) or infer_department_from_text(name, description)
         with get_db_connection() as conn:
+            org_scope = apply_teacher_scope_to_org(
+                conn,
+                user["id"],
+                department=normalized_department,
+            )
             conn.execute(
-                "INSERT INTO courses (name, description, sect_name, department, credits, created_by_teacher_id) VALUES (?, ?, ?, ?, ?, ?)",
-                (name.strip(), description, normalize_course_sect_name(sect_name, course_name=name), normalized_department, credits, user['id'])
+                """
+                INSERT INTO courses (
+                    name, description, sect_name, department, credits, created_by_teacher_id,
+                    school_code, school_name, college
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    name.strip(),
+                    description,
+                    normalize_course_sect_name(sect_name, course_name=name),
+                    normalized_department,
+                    credits,
+                    user['id'],
+                    org_scope["school_code"],
+                    org_scope["school_name"],
+                    org_scope["college"],
+                )
             )
             conn.commit()
     except sqlite3.IntegrityError:
@@ -1688,19 +1838,22 @@ async def api_delete_course(course_id: int, user: dict = Depends(get_current_tea
     """删除一个课程 (及其所有文件和课堂关联)"""
     try:
         with get_db_connection() as conn:
-            # 权限检查
-            cursor = conn.execute(
-                "SELECT id FROM courses WHERE id = ? AND created_by_teacher_id = ?",
-                (course_id, user['id'])
+            course_row = _ensure_teacher_can_manage_course(
+                conn,
+                course_id=course_id,
+                teacher_id=user["id"],
             )
-            if not cursor.fetchone():
-                raise HTTPException(403, "无权删除该课程或课程不存在")
+            linked_count_row = conn.execute(
+                "SELECT COUNT(*) AS count FROM class_offerings WHERE course_id = ?",
+                (course_id,),
+            ).fetchone()
+            linked_count = int((linked_count_row["count"] if linked_count_row else 0) or 0)
+            if linked_count > 0:
+                raise HTTPException(
+                    400,
+                    f"课程“{course_row['name']}”已被 {linked_count} 个课堂使用，请先调整课堂绑定后再删除",
+                )
 
-            # 删除 (依赖于 ON DELETE CASCADE)
-            # 1. 删除 course_files (通过外键)
-            # 2. 删除 class_offerings (通过外键)
-            # 3. 删除 assignments (通过外键)
-            # 4. 删除 course
             conn.execute("DELETE FROM courses WHERE id = ?", (course_id,))
 
             # TODO: 还应按引用计数清理未被其他课程复用的哈希文件。
@@ -1784,47 +1937,88 @@ async def api_save_semester(
     with get_db_connection() as conn:
         try:
             saved_semester_id: int | None = semester_id_value
+            teacher_scope = load_teacher_org_scope(conn, int(user["id"]))
+            should_sync_calendar = False
             if semester_id_value:
-                _ensure_teacher_owned_record(
+                _ensure_teacher_can_manage_semester(
                     conn,
-                    table="academic_semesters",
-                    record_id=semester_id_value,
+                    semester_id=semester_id_value,
                     teacher_id=user["id"],
-                    owner_column="teacher_id",
                 )
                 conn.execute(
                     """
                     UPDATE academic_semesters
-                    SET name = ?, start_date = ?, end_date = ?, week_count = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ? AND teacher_id = ?
+                    SET name = ?,
+                        start_date = ?,
+                        end_date = ?,
+                        week_count = ?,
+                        school_code = ?,
+                        school_name = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
                     """,
                     (
                         semester_name,
                         start_date_value.isoformat(),
                         end_date_value.isoformat(),
                         week_count,
+                        teacher_scope["school_code"],
+                        teacher_scope["school_name"],
                         semester_id_value,
-                        user["id"],
                     ),
                 )
                 action_text = "更新"
+                should_sync_calendar = True
             else:
-                cursor = conn.execute(
+                existing_row = conn.execute(
                     """
-                    INSERT INTO academic_semesters (teacher_id, name, start_date, end_date, week_count)
-                    VALUES (?, ?, ?, ?, ?)
+                    SELECT id, teacher_id, calendar_sync_status
+                    FROM academic_semesters
+                    WHERE lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
+                      AND (
+                          lower(TRIM(name)) = lower(TRIM(?))
+                          OR (start_date = ? AND end_date = ?)
+                      )
+                    ORDER BY
+                        CASE WHEN lower(TRIM(name)) = lower(TRIM(?)) THEN 0 ELSE 1 END,
+                        updated_at DESC,
+                        id DESC
+                    LIMIT 1
+                    """,
+                    (
+                        teacher_scope["school_code"],
+                        teacher_scope["school_code"],
+                        semester_name,
+                        start_date_value.isoformat(),
+                        end_date_value.isoformat(),
+                        semester_name,
+                    ),
+                ).fetchone()
+                if existing_row:
+                    saved_semester_id = int(existing_row["id"])
+                    action_text = "复用"
+                else:
+                    cursor = conn.execute(
+                    """
+                    INSERT INTO academic_semesters (
+                        teacher_id, school_code, school_name, name, start_date, end_date, week_count
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user["id"],
+                        teacher_scope["school_code"],
+                        teacher_scope["school_name"],
                         semester_name,
                         start_date_value.isoformat(),
                         end_date_value.isoformat(),
                         week_count,
                     ),
-                )
-                saved_semester_id = int(cursor.lastrowid)
-                action_text = "创建"
-            if saved_semester_id:
+                    )
+                    saved_semester_id = int(cursor.lastrowid)
+                    action_text = "创建"
+                    should_sync_calendar = True
+            if saved_semester_id and should_sync_calendar:
                 mark_semester_calendar_sync_queued(
                     conn,
                     teacher_id=int(user["id"]),
@@ -1834,7 +2028,7 @@ async def api_save_semester(
         except sqlite3.IntegrityError as exc:
             raise HTTPException(400, f"保存失败，学期名称“{semester_name}”已存在") from exc
 
-    if saved_semester_id:
+    if saved_semester_id and should_sync_calendar:
         background_tasks.add_task(
             sync_semester_calendar_background,
             int(user["id"]),
@@ -1843,9 +2037,13 @@ async def api_save_semester(
 
     return {
         "status": "success",
-        "message": f"学期已{action_text}：{semester_name}，校历同步已开始。",
+        "message": (
+            f"学期已{action_text}：{semester_name}，校历同步已开始。"
+            if should_sync_calendar
+            else f"已复用同校学期：{semester_name}。"
+        ),
         "semester_id": saved_semester_id,
-        "calendar_sync_status": "pending",
+        "calendar_sync_status": "pending" if should_sync_calendar else "",
     }
 
 
@@ -1856,12 +2054,10 @@ async def api_sync_semester_calendar(
     user: dict = Depends(get_current_teacher),
 ):
     with get_db_connection() as conn:
-        _ensure_teacher_owned_record(
+        _ensure_teacher_can_manage_semester(
             conn,
-            table="academic_semesters",
-            record_id=semester_id,
+            semester_id=semester_id,
             teacher_id=user["id"],
-            owner_column="teacher_id",
         )
         mark_semester_calendar_sync_queued(
             conn,
@@ -1894,29 +2090,28 @@ async def api_sync_current_semester_from_academic_system(
         raise HTTPException(502, detail)
 
     semester_id = int(result["semester_id"])
-    background_tasks.add_task(sync_semester_calendar_background, int(user["id"]), semester_id)
+    if result.get("should_sync_calendar", True):
+        background_tasks.add_task(sync_semester_calendar_background, int(user["id"]), semester_id)
     return {
         "status": "success",
         "message": result.get("message") or "已从教务系统同步本学期，校历处理已开始。",
         "semester_id": semester_id,
         "action": result.get("action") or "",
-        "calendar_sync_status": "pending",
+        "calendar_sync_status": "pending" if result.get("should_sync_calendar", True) else "",
     }
 
 
 @router.delete("/semesters/{semester_id}", response_class=JSONResponse)
 async def api_delete_semester(semester_id: int, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
-        semester_row = _ensure_teacher_owned_record(
+        semester_row = _ensure_teacher_can_manage_semester(
             conn,
-            table="academic_semesters",
-            record_id=semester_id,
+            semester_id=semester_id,
             teacher_id=user["id"],
-            owner_column="teacher_id",
         )
         offering_count = conn.execute(
-            "SELECT COUNT(*) AS count FROM class_offerings WHERE semester_id = ? AND teacher_id = ?",
-            (semester_id, user["id"]),
+            "SELECT COUNT(*) AS count FROM class_offerings WHERE semester_id = ?",
+            (semester_id,),
         ).fetchone()
         linked_count = int((offering_count["count"] if offering_count else 0) or 0)
         if linked_count > 0:
@@ -1926,8 +2121,8 @@ async def api_delete_semester(semester_id: int, user: dict = Depends(get_current
             )
 
         conn.execute(
-            "DELETE FROM academic_semesters WHERE id = ? AND teacher_id = ?",
-            (semester_id, user["id"]),
+            "DELETE FROM academic_semesters WHERE id = ?",
+            (semester_id,),
         )
         conn.commit()
 
@@ -3388,6 +3583,10 @@ async def api_create_teacher_account(
     email: str = Form(...),
     password: str = Form(...),
     is_super_admin: str = Form(default=""),
+    school_code: str = Form(default=""),
+    school_name: str = Form(default=""),
+    college: str = Form(default=""),
+    department: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
     """新增教师账号，仅超管可用。"""
@@ -3401,6 +3600,10 @@ async def api_create_teacher_account(
                 email=email,
                 password=password,
                 is_super_admin=_form_bool(is_super_admin),
+                school_code=school_code,
+                school_name=school_name,
+                college=college,
+                department=department,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -3418,6 +3621,10 @@ async def api_update_teacher_account(
     qq: str = Form(default=""),
     homepage_url: str = Form(default=""),
     description: str = Form(default=""),
+    school_code: str = Form(default=""),
+    school_name: str = Form(default=""),
+    college: str = Form(default=""),
+    department: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
     """修改教师账号资料，仅超管可用。"""
@@ -3434,6 +3641,10 @@ async def api_update_teacher_account(
                 qq=qq,
                 homepage_url=homepage_url,
                 description=description,
+                school_code=school_code,
+                school_name=school_name,
+                college=college,
+                department=department,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

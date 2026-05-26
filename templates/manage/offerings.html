@@ -362,7 +362,7 @@
                             <select id="offeringSemesterSelect" class="form-control" required>
                                 <option value="">请选择学期</option>
                                 {% for semester in my_semesters %}
-                                <option value="{{ semester.id }}" {% if default_semester_id and semester.id == default_semester_id %}selected{% endif %}>{{ semester.name }} · {{ semester.start_date }} 至 {{ semester.end_date }}</option>
+                                <option value="{{ semester.id }}" {% if default_semester_id and semester.id == default_semester_id %}selected{% endif %}>{{ semester.name }} · {{ semester.start_date }} 至 {{ semester.end_date }}{% if semester.is_shared_semester %} · 同校共享{% endif %}</option>
                                 {% endfor %}
                             </select>
                             <a href="/manage/semesters?open=new" class="academic-link-btn">新增学期</a>
@@ -388,7 +388,7 @@
                             <select id="offeringCourseSelect" class="form-control" required>
                                 <option value="">请选择课程</option>
                                 {% for course in my_courses %}
-                                <option value="{{ course.id }}">{{ course.name }}{% if course.department %} · {{ course.department }}{% endif %}</option>
+                                <option value="{{ course.id }}">{{ course.name }}{% if course.department %} · {{ course.department }}{% endif %}{% if course.is_shared_course %} · 系内共享{% endif %}</option>
                                 {% endfor %}
                             </select>
                             <a href="/manage/courses" class="academic-link-btn">新增课程</a>

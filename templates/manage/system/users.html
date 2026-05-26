@@ -348,6 +348,20 @@
                 <label class="form-label required" for="create-password">初始密码</label>
                 <input class="form-control" id="create-password" name="password" type="password" minlength="8" required placeholder="{{ teacher_password_hint }}">
             </div>
+            <div class="form-group">
+                <label class="form-label" for="create-school-name">学校</label>
+                <input class="form-control" id="create-school-name" name="school_name" type="text" placeholder="默认：广西外国语学院">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="form-group">
+                    <label class="form-label" for="create-college">学院</label>
+                    <input class="form-control" id="create-college" name="college" type="text" placeholder="例如：信息工程学院">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="create-department">系别</label>
+                    <input class="form-control" id="create-department" name="department" type="text" placeholder="例如：软件工程系">
+                </div>
+            </div>
             <label class="form-check">
                 <input class="form-check-input" type="checkbox" name="is_super_admin" value="1">
                 <span>同时授予超管权限</span>
@@ -397,9 +411,13 @@
                     data-qq="{{ teacher.qq|e }}"
                     data-homepage-url="{{ teacher.homepage_url|e }}"
                     data-description="{{ teacher.description|e }}"
+                    data-school-code="{{ teacher.school_code|e }}"
+                    data-school-name="{{ teacher.school_name|e }}"
+                    data-college="{{ teacher.college|e }}"
+                    data-department="{{ teacher.department|e }}"
                     data-active="{{ 1 if teacher.is_active else 0 }}"
                     data-super="{{ 1 if teacher.is_super_admin else 0 }}"
-                    data-search="{{ (teacher.name ~ ' ' ~ teacher.email ~ ' ' ~ teacher.phone ~ ' ' ~ teacher.wechat ~ ' ' ~ teacher.qq)|lower|e }}"
+                    data-search="{{ (teacher.name ~ ' ' ~ teacher.email ~ ' ' ~ teacher.phone ~ ' ' ~ teacher.wechat ~ ' ' ~ teacher.qq ~ ' ' ~ teacher.organization_label)|lower|e }}"
                 >
                     <td>
                         <strong>{{ teacher.name }}</strong>
@@ -408,6 +426,7 @@
                             {% if teacher.phone %}<span>{{ teacher.phone }}</span>{% endif %}
                             {% if teacher.wechat %}<span>微信 {{ teacher.wechat }}</span>{% endif %}
                             {% if teacher.qq %}<span>QQ {{ teacher.qq }}</span>{% endif %}
+                            {% if teacher.organization_label %}<span>{{ teacher.organization_label }}</span>{% endif %}
                         </div>
                     </td>
                     <td>
@@ -489,6 +508,21 @@
                     <div class="form-group">
                         <label class="form-label" for="edit-homepage-url">主页</label>
                         <input class="form-control" id="edit-homepage-url" name="homepage_url" type="url">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-school-name">学校</label>
+                    <input class="form-control" id="edit-school-name" name="school_name" type="text">
+                    <input id="edit-school-code" name="school_code" type="hidden">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="form-group">
+                        <label class="form-label" for="edit-college">学院</label>
+                        <input class="form-control" id="edit-college" name="college" type="text">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="edit-department">系别</label>
+                        <input class="form-control" id="edit-department" name="department" type="text">
                     </div>
                 </div>
                 <div class="form-group">
@@ -626,6 +660,10 @@
         document.getElementById('edit-qq').value = row.dataset.qq || '';
         document.getElementById('edit-homepage-url').value = row.dataset.homepageUrl || '';
         document.getElementById('edit-description').value = row.dataset.description || '';
+        document.getElementById('edit-school-code').value = row.dataset.schoolCode || '';
+        document.getElementById('edit-school-name').value = row.dataset.schoolName || '';
+        document.getElementById('edit-college').value = row.dataset.college || '';
+        document.getElementById('edit-department').value = row.dataset.department || '';
     };
 
     document.getElementById('teacher-edit-form')?.addEventListener('submit', async (event) => {

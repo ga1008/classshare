@@ -521,6 +521,10 @@ function openEditModal(courseId) {
         showMessage('未找到对应课程信息', 'warning');
         return;
     }
+    if (course.can_manage === false) {
+        showMessage('系内共享课程可以直接开课，只有创建者可以编辑课程内容。', 'warning');
+        return;
+    }
     populateForm(course);
     openModal('courseModal');
 }

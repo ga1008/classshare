@@ -23,6 +23,7 @@ from .academic_integration_service import (
     open_authenticated_academic_client,
 )
 from .academic_service import china_now, parse_date_input
+from .organization_scope_service import load_teacher_org_scope
 
 
 ACADEMIC_EXAM_ROSTER_SOURCE = "gxufl_jwxt"
@@ -427,11 +428,18 @@ def _load_semester_for_offering(
     teacher_id: int,
     offering_context: dict[str, Any],
 ) -> dict[str, Any] | None:
+    teacher_scope = load_teacher_org_scope(conn, teacher_id)
     semester_id = _optional_int(offering_context.get("semester_id"))
     if semester_id:
         row = conn.execute(
-            "SELECT * FROM academic_semesters WHERE id = ? AND teacher_id = ? LIMIT 1",
-            (semester_id, int(teacher_id)),
+            """
+            SELECT *
+            FROM academic_semesters
+            WHERE id = ?
+              AND lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
+            LIMIT 1
+            """,
+            (semester_id, teacher_scope["school_code"], teacher_scope["school_code"]),
         ).fetchone()
         if row:
             return dict(row)
@@ -447,13 +455,19 @@ def _load_semester_for_offering(
         """
         SELECT *
         FROM academic_semesters
-        WHERE teacher_id = ?
+        WHERE lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
           AND date(start_date) <= date(?)
           AND date(end_date) >= date(?)
-        ORDER BY start_date DESC, id DESC
+        ORDER BY CASE WHEN teacher_id = ? THEN 0 ELSE 1 END, start_date DESC, id DESC
         LIMIT 1
         """,
-        (int(teacher_id), china_now().date().isoformat(), china_now().date().isoformat()),
+        (
+            teacher_scope["school_code"],
+            teacher_scope["school_code"],
+            china_now().date().isoformat(),
+            china_now().date().isoformat(),
+            int(teacher_id),
+        ),
     ).fetchone()
     return dict(row) if row else None
 

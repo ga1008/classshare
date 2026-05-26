@@ -19,6 +19,7 @@ from .academic_integration_service import (
 )
 from .academic_service import china_now, parse_date_input
 from .message_center_service import create_todo_notification
+from .organization_scope_service import load_teacher_org_scope
 
 
 ACADEMIC_INVIGILATION_SOURCE = "gxufl_jwxt"
@@ -482,25 +483,39 @@ async def _fetch_teacher_invigilations(
 
 
 def _load_current_semester(conn: sqlite3.Connection, teacher_id: int, today: date) -> dict[str, Any] | None:
+    teacher_scope = load_teacher_org_scope(conn, teacher_id)
     row = conn.execute(
         """
         SELECT *
         FROM academic_semesters
-        WHERE teacher_id = ?
+        WHERE lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
           AND date(start_date) <= date(?)
           AND date(end_date) >= date(?)
-        ORDER BY updated_at DESC, id DESC
+        ORDER BY CASE WHEN teacher_id = ? THEN 0 ELSE 1 END, updated_at DESC, id DESC
         LIMIT 1
         """,
-        (int(teacher_id), today.isoformat(), today.isoformat()),
+        (
+            teacher_scope["school_code"],
+            teacher_scope["school_code"],
+            today.isoformat(),
+            today.isoformat(),
+            int(teacher_id),
+        ),
     ).fetchone()
     return dict(row) if row else None
 
 
 def _load_semester_by_id(conn: sqlite3.Connection, teacher_id: int, semester_id: int) -> dict[str, Any] | None:
+    teacher_scope = load_teacher_org_scope(conn, teacher_id)
     row = conn.execute(
-        "SELECT * FROM academic_semesters WHERE id = ? AND teacher_id = ? LIMIT 1",
-        (int(semester_id), int(teacher_id)),
+        """
+        SELECT *
+        FROM academic_semesters
+        WHERE id = ?
+          AND lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
+        LIMIT 1
+        """,
+        (int(semester_id), teacher_scope["school_code"], teacher_scope["school_code"]),
     ).fetchone()
     return dict(row) if row else None
 

@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from ..dependencies import get_password_hash
+from .organization_scope_service import build_org_scope, normalize_org_text
 
 TEACHER_PASSWORD_MIN_LENGTH = 8
 TEACHER_PASSWORD_HINT = "密码至少 8 位。"
@@ -67,6 +68,7 @@ def _get_teacher_account_row(conn: sqlite3.Connection, teacher_id: int | str):
     return conn.execute(
         """
         SELECT id, name, email, phone, wechat, qq, homepage_url, description,
+               school_code, school_name, college, department,
                COALESCE(is_super_admin, 0) AS is_super_admin,
                COALESCE(is_active, 1) AS is_active,
                created_at, updated_at, password_updated_at, deactivated_at
@@ -88,6 +90,19 @@ def _serialize_teacher_account(row) -> dict[str, Any]:
         "qq": str(row["qq"] or ""),
         "homepage_url": str(row["homepage_url"] or ""),
         "description": str(row["description"] or ""),
+        "school_code": str(row["school_code"] or ""),
+        "school_name": str(row["school_name"] or ""),
+        "college": str(row["college"] or ""),
+        "department": str(row["department"] or ""),
+        "organization_label": " / ".join(
+            part
+            for part in (
+                str(row["school_name"] or ""),
+                str(row["college"] or ""),
+                str(row["department"] or ""),
+            )
+            if part
+        ),
         "is_super_admin": bool(row["is_super_admin"]),
         "is_active": bool(row["is_active"]),
         "created_at": str(row["created_at"] or ""),
@@ -106,6 +121,7 @@ def list_teacher_accounts(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT t.id, t.name, t.email, t.phone, t.wechat, t.qq, t.homepage_url, t.description,
+               t.school_code, t.school_name, t.college, t.department,
                COALESCE(t.is_super_admin, 0) AS is_super_admin,
                COALESCE(t.is_active, 1) AS is_active,
                t.created_at, t.updated_at, t.password_updated_at, t.deactivated_at,
@@ -158,9 +174,19 @@ def create_teacher_account(
     email: str,
     password: str,
     is_super_admin: bool = False,
+    school_code: str = "",
+    school_name: str = "",
+    college: str = "",
+    department: str = "",
 ) -> dict[str, Any]:
     normalized_name, normalized_email = _validate_teacher_identity(name, email)
     validate_teacher_password(password)
+    org_scope = build_org_scope(
+        school_code=school_code,
+        school_name=school_name,
+        college=college,
+        department=department,
+    )
     existing = _teacher_exists_by_email(conn, normalized_email)
     timestamp = _now_iso()
     password_hash = get_password_hash(password)
@@ -177,6 +203,10 @@ def create_teacher_account(
                 email = ?,
                 hashed_password = ?,
                 password_updated_at = ?,
+                school_code = ?,
+                school_name = ?,
+                college = ?,
+                department = ?,
                 is_super_admin = ?,
                 is_active = 1,
                 deactivated_at = NULL,
@@ -190,6 +220,10 @@ def create_teacher_account(
                 normalized_email,
                 password_hash,
                 timestamp,
+                org_scope["school_code"],
+                org_scope["school_name"],
+                org_scope["college"],
+                org_scope["department"],
                 1 if is_super_admin else 0,
                 timestamp,
                 int(actor_teacher_id),
@@ -201,15 +235,20 @@ def create_teacher_account(
             """
             INSERT INTO teachers (
                 name, email, hashed_password, password_updated_at,
+                school_code, school_name, college, department,
                 is_super_admin, is_active, created_by_teacher_id, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
             """,
             (
                 normalized_name,
                 normalized_email,
                 password_hash,
                 timestamp,
+                org_scope["school_code"],
+                org_scope["school_name"],
+                org_scope["college"],
+                org_scope["department"],
                 1 if is_super_admin else 0,
                 int(actor_teacher_id),
                 timestamp,
@@ -238,6 +277,10 @@ def update_teacher_account(
     qq: str = "",
     homepage_url: str = "",
     description: str = "",
+    school_code: str = "",
+    school_name: str = "",
+    college: str = "",
+    department: str = "",
 ) -> dict[str, Any]:
     target = _get_teacher_account_row(conn, teacher_id)
     if not target:
@@ -249,6 +292,18 @@ def update_teacher_account(
     email_conflict = _teacher_exists_by_email(conn, normalized_email, exclude_teacher_id=teacher_id)
     if email_conflict:
         raise ValueError("该教师邮箱已被其他账号使用。")
+    current_scope = {
+        "school_code": target["school_code"],
+        "school_name": target["school_name"],
+        "college": target["college"],
+        "department": target["department"],
+    }
+    org_scope = build_org_scope(
+        school_code=school_code or current_scope["school_code"],
+        school_name=school_name or current_scope["school_name"],
+        college=college if normalize_org_text(college) else current_scope["college"],
+        department=department if normalize_org_text(department) else current_scope["department"],
+    )
 
     conn.execute(
         """
@@ -260,6 +315,10 @@ def update_teacher_account(
             qq = ?,
             homepage_url = ?,
             description = ?,
+            school_code = ?,
+            school_name = ?,
+            college = ?,
+            department = ?,
             updated_at = ?
         WHERE id = ?
         """,
@@ -271,6 +330,10 @@ def update_teacher_account(
             str(qq or "").strip(),
             str(homepage_url or "").strip(),
             str(description or "").strip(),
+            org_scope["school_code"],
+            org_scope["school_name"],
+            org_scope["college"],
+            org_scope["department"],
             _now_iso(),
             int(teacher_id),
         ),

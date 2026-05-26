@@ -7,6 +7,8 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
+from .organization_scope_service import load_teacher_org_scope, organization_label
+
 
 try:
     CHINA_TZ = ZoneInfo("Asia/Shanghai")
@@ -362,20 +364,33 @@ def _attach_semester_calendar_days(conn, rows: list[dict[str, Any]]) -> list[dic
 
 
 def load_teacher_semester_rows(conn, teacher_id: int):
+    teacher_scope = load_teacher_org_scope(conn, teacher_id)
     rows = [
         dict(row)
         for row in conn.execute(
         """
-        SELECT id, teacher_id, name, start_date, end_date, week_count,
+        SELECT id, teacher_id, school_code, school_name, name, start_date, end_date, week_count,
                calendar_sync_status, calendar_sync_at, calendar_sync_message,
                calendar_source_summary_json, created_at, updated_at
         FROM academic_semesters
-        WHERE teacher_id = ?
+        WHERE lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
         ORDER BY start_date DESC, updated_at DESC, id DESC
         """,
-        (teacher_id,),
+        (teacher_scope["school_code"], teacher_scope["school_code"]),
         ).fetchall()
     ]
+    for row in rows:
+        row["is_owned"] = int(row.get("teacher_id") or 0) == int(teacher_id)
+        row["can_manage"] = row["is_owned"]
+        row["is_shared_semester"] = not row["is_owned"]
+        row["organization_label"] = organization_label(
+            {
+                "school_code": row.get("school_code"),
+                "school_name": row.get("school_name"),
+                "college": "",
+                "department": "",
+            }
+        )
     return _attach_semester_calendar_days(conn, rows)
 
 
@@ -424,7 +439,7 @@ def load_student_semester_rows(conn, student_id: int):
         dict(row)
         for row in conn.execute(
             f"""
-            SELECT id, teacher_id, name, start_date, end_date, week_count,
+            SELECT id, teacher_id, school_code, school_name, name, start_date, end_date, week_count,
                    calendar_sync_status, calendar_sync_at, calendar_sync_message,
                    calendar_source_summary_json, created_at, updated_at
             FROM academic_semesters
@@ -434,9 +449,6 @@ def load_student_semester_rows(conn, student_id: int):
             tuple(teacher_ids),
         ).fetchall()
     ]
-    if not candidate_rows:
-        return []
-
     direct_semester_ids = {
         int(row["semester_id"])
         for row in offering_rows
@@ -449,6 +461,31 @@ def load_student_semester_rows(conn, student_id: int):
         and row.get("semester_id") in (None, "")
         and str(row.get("semester") or "").strip()
     }
+    missing_direct_semester_ids = direct_semester_ids - {
+        int(item.get("id") or 0)
+        for item in candidate_rows
+        if item.get("id") not in (None, "")
+    }
+    if missing_direct_semester_ids:
+        direct_placeholders = ",".join("?" for _ in missing_direct_semester_ids)
+        candidate_rows.extend(
+            [
+                dict(row)
+                for row in conn.execute(
+                    f"""
+                    SELECT id, teacher_id, school_code, school_name, name, start_date, end_date, week_count,
+                           calendar_sync_status, calendar_sync_at, calendar_sync_message,
+                           calendar_source_summary_json, created_at, updated_at
+                    FROM academic_semesters
+                    WHERE id IN ({direct_placeholders})
+                    ORDER BY start_date DESC, updated_at DESC, id DESC
+                    """,
+                    tuple(sorted(missing_direct_semester_ids)),
+                ).fetchall()
+            ]
+        )
+    if not candidate_rows:
+        return []
 
     matched_items: list[dict[str, Any]] = []
     matched_teacher_ids: set[int] = set()
@@ -561,6 +598,12 @@ def serialize_semester_row(row: Any, *, reference_date: date | None = None) -> d
         week_count = compute_semester_week_count(start_date_value, end_date_value)
 
     item["name"] = str(item.get("name") or "").strip()
+    item["school_code"] = str(item.get("school_code") or "").strip()
+    item["school_name"] = str(item.get("school_name") or "").strip()
+    item["organization_label"] = str(item.get("organization_label") or item["school_name"] or "").strip()
+    item["is_owned"] = bool(item.get("is_owned", True))
+    item["can_manage"] = bool(item.get("can_manage", item["is_owned"]))
+    item["is_shared_semester"] = bool(item.get("is_shared_semester", not item["is_owned"]))
     item["start_date"] = start_date_value.isoformat() if start_date_value else ""
     item["end_date"] = end_date_value.isoformat() if end_date_value else ""
     item["week_count"] = week_count

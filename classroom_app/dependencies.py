@@ -39,6 +39,7 @@ _sessions_lock = threading.Lock()
 
 AUTH_ERROR_LOGIN_REQUIRED = "login_required"
 AUTH_ERROR_PERMISSION_DENIED = "permission_denied"
+VALID_AUTHENTICATED_ROLES = {"teacher", "student"}
 
 _AUTH_PAGE_PATHS = {
     "/student/login",
@@ -486,6 +487,100 @@ def get_current_user_optional(request: Request) -> Optional[dict]:
     """获取当前用户（如果已登录），但不强制。"""
     return get_active_user_from_request(request)
 
+
+def _permission_denied_headers(required_role: Optional[str] = None) -> dict[str, str]:
+    headers = {"X-Auth-Error": AUTH_ERROR_PERMISSION_DENIED}
+    if required_role:
+        headers["X-Required-Role"] = required_role
+    return headers
+
+
+def _permission_denied(detail: str, required_role: Optional[str] = None) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=detail,
+        headers=_permission_denied_headers(required_role),
+    )
+
+
+def _validate_teacher_identity(user: dict) -> None:
+    user_id = str(user.get("id") or "").strip()
+    if not user_id:
+        raise _permission_denied("当前教师账号无效，请重新登录。", "teacher")
+
+    try:
+        with get_db_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT COALESCE(is_active, 1) AS is_active
+                FROM teachers
+                WHERE id = ?
+                LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
+    except Exception:
+        row = None
+
+    if row is None:
+        invalidate_session_for_user(user_id, "teacher")
+        raise _permission_denied("当前教师账号不存在或已移除。", "teacher")
+
+    if int(row["is_active"] or 0) != 1:
+        invalidate_session_for_user(user_id, "teacher")
+        raise _permission_denied("当前教师账号已停用，暂不能继续访问系统。", "teacher")
+
+
+def _validate_student_identity(user: dict) -> None:
+    user_id = str(user.get("id") or "").strip()
+    if not user_id:
+        raise _permission_denied("当前学生账号无效，请重新登录。", "student")
+
+    try:
+        with get_db_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT COALESCE(enrollment_status, 'active') AS enrollment_status
+                FROM students
+                WHERE id = ?
+                LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
+    except Exception:
+        row = None
+
+    if row is None:
+        invalidate_session_for_user(user_id, "student")
+        raise _permission_denied("当前学生账号不存在或已移除。", "student")
+
+    normalized_status = normalize_student_enrollment_status(row["enrollment_status"])
+    if normalized_status != STUDENT_STATUS_ACTIVE:
+        invalidate_session_for_user(user_id, "student")
+        raise _permission_denied(
+            f"当前学生账号已设置为{student_enrollment_status_label(normalized_status)}，暂不纳入课堂学习。",
+            "student",
+        )
+
+
+def validate_authenticated_user_identity(user: dict) -> dict:
+    normalized_role = str(user.get("role") or "").strip().lower()
+    if normalized_role not in VALID_AUTHENTICATED_ROLES:
+        user_id = str(user.get("id") or "").strip()
+        if user_id:
+            invalidate_session_for_user(user_id, normalized_role or None)
+        raise _permission_denied("当前登录身份无效，请重新登录。")
+
+    normalized_user = dict(user)
+    normalized_user["role"] = normalized_role
+
+    if normalized_role == "teacher":
+        _validate_teacher_identity(normalized_user)
+    else:
+        _validate_student_identity(normalized_user)
+
+    return normalized_user
+
 def get_current_user(user: Optional[dict] = Depends(get_current_user_optional)) -> dict:
     """依赖项：强制用户必须登录"""
     if user is None:
@@ -497,42 +592,7 @@ def get_current_user(user: Optional[dict] = Depends(get_current_user_optional)) 
                 "X-Auth-Error": AUTH_ERROR_LOGIN_REQUIRED,
             },
         )
-    if user.get("role") == "student":
-        try:
-            with get_db_connection() as conn:
-                row = conn.execute(
-                    """
-                    SELECT COALESCE(enrollment_status, 'active') AS enrollment_status
-                    FROM students
-                    WHERE id = ?
-                    LIMIT 1
-                    """,
-                    (user.get("id"),),
-                ).fetchone()
-        except Exception:
-            row = None
-        if row is None:
-            invalidate_session_for_user(str(user.get("id") or ""), "student")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="当前学生账号不存在或已移除。",
-                headers={
-                    "X-Auth-Error": AUTH_ERROR_PERMISSION_DENIED,
-                    "X-Required-Role": "student",
-                },
-            )
-        normalized_status = normalize_student_enrollment_status(row["enrollment_status"])
-        if normalized_status != STUDENT_STATUS_ACTIVE:
-            invalidate_session_for_user(str(user.get("id") or ""), "student")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"当前学生账号已设置为{student_enrollment_status_label(normalized_status)}，暂不纳入课堂学习。",
-                headers={
-                    "X-Auth-Error": AUTH_ERROR_PERMISSION_DENIED,
-                    "X-Required-Role": "student",
-                },
-            )
-    return user
+    return validate_authenticated_user_identity(user)
 
 def get_current_teacher(user: dict = Depends(get_current_user)) -> dict:
     """依赖项：强制用户必须是教师"""
@@ -540,33 +600,7 @@ def get_current_teacher(user: dict = Depends(get_current_user)) -> dict:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permission denied: Not a teacher",
-            headers={
-                "X-Auth-Error": AUTH_ERROR_PERMISSION_DENIED,
-                "X-Required-Role": "teacher",
-            },
-        )
-    try:
-        with get_db_connection() as conn:
-            row = conn.execute(
-                """
-                SELECT COALESCE(is_active, 1) AS is_active
-                FROM teachers
-                WHERE id = ?
-                LIMIT 1
-                """,
-                (user.get("id"),),
-            ).fetchone()
-    except Exception:
-        row = None
-    if row is None or int(row["is_active"] or 0) != 1:
-        invalidate_session_for_user(str(user.get("id") or ""), "teacher")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied: Teacher account is disabled",
-            headers={
-                "X-Auth-Error": AUTH_ERROR_PERMISSION_DENIED,
-                "X-Required-Role": "teacher",
-            },
+            headers=_permission_denied_headers("teacher"),
         )
     return user
 
@@ -576,10 +610,7 @@ def get_current_student(user: dict = Depends(get_current_user)) -> dict:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permission denied: Not a student",
-            headers={
-                "X-Auth-Error": AUTH_ERROR_PERMISSION_DENIED,
-                "X-Required-Role": "student",
-            },
+            headers=_permission_denied_headers("student"),
         )
     return user
 

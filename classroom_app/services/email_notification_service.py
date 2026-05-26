@@ -49,6 +49,7 @@ IMPORTANT_NOTIFICATION_CATEGORIES = {
     "submission",
     "grading_result",
     "learning_progress",
+    "attendance_alert",
 }
 
 SYSTEM_NOTIFICATION_CATEGORIES = {

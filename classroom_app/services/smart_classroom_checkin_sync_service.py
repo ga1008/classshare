@@ -34,6 +34,8 @@ ABSENT_STATUS = "UNCHECKED"
 LEAVE_STATUSES = {"SICK_LEAVE", "PERSONAL_LEAVE"}
 ATTENDANCE_ABNORMAL_STATUSES = {ABSENT_STATUS, "LATE_OR_EARLY", *LEAVE_STATUSES}
 
+WEEKDAY_LABELS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+
 _teacher_sync_locks: dict[int, asyncio.Lock] = {}
 
 
@@ -111,6 +113,43 @@ def _parse_remote_datetime(value: Any) -> tuple[str, str]:
         return "", raw
     date_text = f"{int(match.group(1)):04d}-{int(match.group(2)):02d}-{int(match.group(3)):02d}"
     return date_text, raw
+
+
+def _date_from_text(value: Any) -> datetime | None:
+    date_text, dt_text = _parse_remote_datetime(value)
+    for candidate in (dt_text, date_text):
+        if not candidate:
+            continue
+        try:
+            return datetime.fromisoformat(str(candidate).replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            pass
+    return None
+
+
+def _weekday_label(weekday_value: Any, date_text: str = "") -> str:
+    parsed_date = _date_from_text(date_text)
+    if parsed_date:
+        return WEEKDAY_LABELS[parsed_date.weekday()]
+    weekday = _coerce_int(weekday_value, -1)
+    if 0 <= weekday <= 6:
+        return WEEKDAY_LABELS[weekday]
+    if 1 <= weekday <= 7:
+        return WEEKDAY_LABELS[weekday - 1]
+    return ""
+
+
+def _week_label_from_start(week_index: Any, date_text: str, semester_start_date: str = "") -> str:
+    week = _coerce_int(week_index)
+    if week > 0:
+        return f"第{week}周"
+    checkin_date = _date_from_text(date_text)
+    start_date = _date_from_text(semester_start_date)
+    if checkin_date and start_date:
+        delta_days = (checkin_date.date() - start_date.date()).days
+        if delta_days >= 0:
+            return f"第{delta_days // 7 + 1}周"
+    return "周次待确认"
 
 
 def _extract_section_index(record: dict[str, Any]) -> int:
@@ -1420,8 +1459,101 @@ def _build_personal_course_comparisons(
         item["rate"] = _rate_percent(item["checked"], item["total"])
         item["abnormal_count"] = item["absent"] + item["late_or_early"] + item["leave"]
         result.append(item)
+    current_rate = next((float(item.get("rate") or 0) for item in result if item.get("is_current")), 0.0)
+    for item in result:
+        item["delta_from_current"] = round(current_rate - float(item.get("rate") or 0), 1)
     result.sort(key=lambda item: (not item["is_current"], -item["total"], item["course_name"]))
     return result[:8]
+
+
+def load_student_smart_attendance_absences(
+    conn,
+    *,
+    class_offering_id: int,
+    student_id: int,
+) -> list[dict[str, Any]]:
+    student = conn.execute(
+        """
+        SELECT student_id_number, name
+        FROM students
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(student_id),),
+    ).fetchone()
+    if not student:
+        return []
+
+    offering = conn.execute(
+        """
+        SELECT c.name AS course_name,
+               COALESCE(s.start_date, '') AS semester_start_date
+        FROM class_offerings o
+        JOIN courses c ON c.id = o.course_id
+        LEFT JOIN academic_semesters s ON s.id = o.semester_id
+        WHERE o.id = ?
+        LIMIT 1
+        """,
+        (int(class_offering_id),),
+    ).fetchone()
+    selected_sessions, _unmatched_count = _load_latest_matched_checkin_sessions(
+        conn,
+        class_offering_id=int(class_offering_id),
+    )
+    session_ids = [int(row.get("id") or 0) for row in selected_sessions if int(row.get("id") or 0) > 0]
+    if not session_ids:
+        return []
+
+    placeholders = ",".join("?" for _ in session_ids)
+    student_number = str(student["student_id_number"] or "").strip()
+    rows = conn.execute(
+        f"""
+        SELECT scstu.status,
+               scstu.status_label,
+               scs.checkin_time,
+               scs.week_index,
+               scs.weekday,
+               s.session_date,
+               c.name AS course_name
+        FROM smart_classroom_checkin_students scstu
+        JOIN smart_classroom_checkin_sessions scs ON scs.id = scstu.checkin_session_id
+        LEFT JOIN class_offering_sessions s ON s.id = scs.session_id
+        LEFT JOIN class_offerings o ON o.id = scs.class_offering_id
+        LEFT JOIN courses c ON c.id = o.course_id
+        WHERE scstu.checkin_session_id IN ({placeholders})
+          AND scstu.status = ?
+          AND (
+              (scstu.student_id IS NOT NULL AND scstu.student_id = ?)
+              OR scstu.student_number = ?
+          )
+        ORDER BY COALESCE(scs.checkin_time, s.session_date, '') ASC,
+                 scs.id ASC
+        """,
+        (*session_ids, ABSENT_STATUS, int(student_id), student_number),
+    ).fetchall()
+
+    semester_start_date = str((offering["semester_start_date"] if offering else "") or "")
+    fallback_course_name = str((offering["course_name"] if offering else "") or "")
+    absences: list[dict[str, Any]] = []
+    for row in rows:
+        date_text, dt_text = _parse_remote_datetime(row["checkin_time"] or row["session_date"])
+        checkin_label = date_text or str(row["session_date"] or row["checkin_time"] or "")
+        week_label = _week_label_from_start(row["week_index"], checkin_label, semester_start_date)
+        weekday_label = _weekday_label(row["weekday"], checkin_label)
+        absences.append(
+            {
+                "course_name": str(row["course_name"] or fallback_course_name or "本课程"),
+                "date": checkin_label,
+                "date_label": checkin_label,
+                "weekday_label": weekday_label,
+                "week_index": _coerce_int(row["week_index"]),
+                "week_label": week_label,
+                "status": str(row["status"] or ABSENT_STATUS),
+                "status_label": str(row["status_label"] or STATUS_LABELS.get(ABSENT_STATUS, "缺勤")),
+                "checkin_time": dt_text or str(row["checkin_time"] or ""),
+            }
+        )
+    return absences
 
 
 def _build_attendance_insights(

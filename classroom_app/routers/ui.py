@@ -3,7 +3,7 @@ import json
 import re
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Request, Form, HTTPException, Depends, status, UploadFile, File
+from fastapi import APIRouter, Request, Form, HTTPException, Depends, status, UploadFile, File, BackgroundTasks
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from typing import Optional, List, Any
 from pathlib import Path
@@ -66,7 +66,8 @@ from ..services.course_planning_service import (
     load_course_lessons_by_course_id,
     serialize_course_row,
 )
-from ..services.department_service import collect_department_options
+from ..services.department_service import collect_department_options, normalize_department
+from ..services.organization_scope_service import load_teacher_org_scope, organization_label
 from ..services.materials_service import attach_home_learning_material_briefs, attach_learning_material_briefs
 from ..services.learning_progress_service import (
     build_class_learning_overview,
@@ -120,6 +121,11 @@ from ..services.academic_integration_service import (
 from ..services.smart_classroom_integration_service import (
     list_smart_classroom_profiles,
     list_teacher_smart_classroom_credentials,
+)
+from ..services.smart_attendance_entry_service import (
+    maybe_enqueue_teacher_daily_checkin_sync,
+    maybe_send_student_attendance_alert,
+    run_teacher_daily_checkin_sync_task,
 )
 from ..services.academic_classroom_sync_service import (
     count_teacher_teaching_places,
@@ -981,10 +987,16 @@ async def dashboard(
 # ============================
 
 @router.get("/classroom/{class_offering_id}", response_class=HTMLResponse)
-async def classroom_main(request: Request, class_offering_id: int, user: dict = Depends(get_current_user)):
+async def classroom_main(
+    request: Request,
+    class_offering_id: int,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+):
     """V4.0: 替换旧的 /app，这是特定班级课堂的主界面"""
     student_security_summary = None
     classroom_page = None
+    teacher_daily_sync_task_id = None
     with get_db_connection() as conn:
         offering = conn.execute(
             """SELECT o.*,
@@ -1040,9 +1052,33 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
             ):
                 raise HTTPException(403, "您未加入此课堂")
             student_security_summary = build_student_security_summary(conn, int(user['id']))
+            try:
+                maybe_send_student_attendance_alert(
+                    conn,
+                    class_offering_id=int(class_offering_id),
+                    student_id=int(user["id"]),
+                )
+            except Exception as exc:
+                print(f"[SMART_ATTENDANCE] 学生考勤提醒创建失败: {exc}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
         elif user['role'] == 'teacher':
             if offering_data['teacher_id'] != user['id']:
                 raise HTTPException(403, "您不是此课堂的教师")
+            try:
+                teacher_daily_sync_task_id = maybe_enqueue_teacher_daily_checkin_sync(
+                    conn,
+                    class_offering_id=int(class_offering_id),
+                    teacher_id=int(user["id"]),
+                )
+            except Exception as exc:
+                print(f"[SMART_ATTENDANCE] 教师每日后台同步任务入队失败: {exc}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
 
         if user['role'] == 'teacher':
             files_cursor = conn.execute(
@@ -1237,6 +1273,14 @@ async def classroom_main(request: Request, class_offering_id: int, user: dict = 
         )
     except Exception as exc:
         print(f"[DISCUSSION_MOOD] 课堂页面预热失败: {exc}")
+
+    if teacher_daily_sync_task_id:
+        background_tasks.add_task(
+            run_teacher_daily_checkin_sync_task,
+            int(teacher_daily_sync_task_id),
+            teacher_id=int(user["id"]),
+            class_offering_id=int(class_offering_id),
+        )
 
     return templates.TemplateResponse(request, "classroom_main_v4.html", {
         "request": request,
@@ -1460,6 +1504,9 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
                    c.academic_college,
                    c.academic_grade,
                    c.academic_major,
+                   c.school_code,
+                   c.school_name,
+                   c.college,
                    c.academic_sync_at,
                    c.academic_sync_message,
                    c.created_at,
@@ -1501,6 +1548,7 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
              GROUP BY c.id, c.name, c.department, c.description,
                       c.academic_source, c.academic_class_code, c.academic_class_name,
                       c.academic_college, c.academic_grade, c.academic_major,
+                      c.school_code, c.school_name, c.college,
                       c.academic_sync_at, c.academic_sync_message, c.created_at
              ORDER BY COALESCE(NULLIF(TRIM(c.department), ''), '未分类'), c.name
             """,
@@ -1520,6 +1568,14 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
             class_item["academic_synced_student_count"] = int(class_item.get("academic_synced_student_count") or 0)
             class_item["offering_count"] = int(class_item.get("offering_count") or 0)
             class_item["department_label"] = str(class_item.get("department") or "").strip() or "未分类"
+            class_item["organization_label"] = organization_label(
+                {
+                    "school_code": class_item.get("school_code"),
+                    "school_name": class_item.get("school_name"),
+                    "college": class_item.get("college") or class_item.get("academic_college"),
+                    "department": class_item.get("department"),
+                }
+            )
             class_item["is_academic_synced"] = str(class_item.get("academic_source") or "").strip() == "gxufl_jwxt"
             class_item["latest_academic_sync_at"] = (
                 class_item.get("latest_student_academic_sync_at")
@@ -1859,6 +1915,10 @@ def _load_teacher_academic_course_occurrence_summaries(
 
 
 def _load_teacher_course_rows(conn, teacher_id: int):
+    teacher_scope = load_teacher_org_scope(conn, teacher_id)
+    teacher_department = normalize_department(teacher_scope.get("department"))
+    teacher_school_code = teacher_scope["school_code"]
+    current_teacher_is_super_admin = is_super_admin_teacher(conn, teacher_id)
     rows = conn.execute(
         """
         SELECT c.id,
@@ -1870,24 +1930,45 @@ def _load_teacher_course_rows(conn, teacher_id: int):
                c.total_hours,
                c.created_at,
                c.created_by_teacher_id,
+               c.school_code,
+               c.school_name,
+               c.college,
                c.academic_source,
                c.academic_course_code,
                c.academic_sync_at,
                c.academic_sync_message,
                c.academic_metadata_json,
+               t.name AS owner_teacher_name,
                COALESCE(o.offering_count, 0) AS offering_count
         FROM courses c
+        LEFT JOIN teachers t ON t.id = c.created_by_teacher_id
         LEFT JOIN (
-            SELECT teacher_id, course_id, COUNT(DISTINCT id) AS offering_count
+            SELECT course_id, COUNT(DISTINCT id) AS offering_count
             FROM class_offerings
-            GROUP BY teacher_id, course_id
+            WHERE teacher_id = ?
+            GROUP BY course_id
         ) o
             ON o.course_id = c.id
-           AND o.teacher_id = c.created_by_teacher_id
         WHERE c.created_by_teacher_id = ?
-        ORDER BY c.created_at DESC, c.name
+           OR (
+                lower(TRIM(COALESCE(c.school_code, ?))) = lower(TRIM(?))
+                AND ? != ''
+                AND lower(TRIM(COALESCE(c.department, ''))) = lower(TRIM(?))
+           )
+        ORDER BY
+            CASE WHEN c.created_by_teacher_id = ? THEN 0 ELSE 1 END,
+            c.created_at DESC,
+            c.name
         """,
-        (teacher_id,),
+        (
+            teacher_id,
+            teacher_id,
+            teacher_school_code,
+            teacher_school_code,
+            teacher_department,
+            teacher_department,
+            teacher_id,
+        ),
     ).fetchall()
     course_ids = [int(row["id"]) for row in rows]
     lessons_by_course = load_course_lessons_by_course_id(conn, course_ids)
@@ -1904,10 +1985,26 @@ def _load_teacher_course_rows(conn, teacher_id: int):
     result = []
     for row in rows:
         course_id = int(row["id"])
+        is_owned = int(row["created_by_teacher_id"] or 0) == int(teacher_id)
         item = serialize_course_row(
             row,
             lessons=lessons_by_course.get(course_id, []),
             offering_count=int(row["offering_count"] or 0),
+        )
+        item["is_owned"] = is_owned
+        item["can_manage"] = is_owned or current_teacher_is_super_admin
+        item["is_shared_course"] = not is_owned
+        item["owner_teacher_name"] = str(row["owner_teacher_name"] or "").strip()
+        item["school_code"] = str(row["school_code"] or "").strip()
+        item["school_name"] = str(row["school_name"] or "").strip()
+        item["college"] = str(row["college"] or "").strip()
+        item["organization_label"] = organization_label(
+            {
+                "school_code": item["school_code"],
+                "school_name": item["school_name"],
+                "college": item["college"],
+                "department": item["department"],
+            }
         )
         sync_items = academic_items_by_course.get(course_id, [])
         occurrence_items = academic_occurrences_by_course.get(course_id, [])
@@ -1944,7 +2041,16 @@ def _load_teacher_course_rows(conn, teacher_id: int):
                 ],
             )
         )
-        item["search_blob"] = f"{item.get('search_blob') or ''} {academic_search}".lower()
+        item["search_blob"] = " ".join(
+            part
+            for part in (
+                item.get("search_blob"),
+                academic_search,
+                item.get("owner_teacher_name"),
+                item.get("organization_label"),
+            )
+            if part
+        ).lower()
         result.append(item)
     return result
 

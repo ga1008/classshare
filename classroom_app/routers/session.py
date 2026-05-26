@@ -2,21 +2,29 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from ..database import get_db_connection
 from ..dependencies import (
+    get_current_teacher,
     get_current_user,
     invalidate_session_for_user,
     list_active_session_roles_for_user,
     list_active_sessions,
 )
+from ..services.message_center_service import is_super_admin_teacher
 
 router = APIRouter()
 
 
+def _require_super_admin_teacher(user: dict) -> None:
+    with get_db_connection() as conn:
+        if not is_super_admin_teacher(conn, user.get("id")):
+            raise HTTPException(status_code=403, detail="仅超管教师可管理系统会话。")
+
+
 @router.get("/api/session/active")
-def get_active_sessions(user: dict = Depends(get_current_user)):
-    """获取当前活跃会话，仅教师可访问。"""
-    if user.get("role") != "teacher":
-        raise HTTPException(status_code=403, detail="仅教师可查看活跃会话")
+def get_active_sessions(user: dict = Depends(get_current_teacher)):
+    """获取当前活跃会话，仅超管教师可访问。"""
+    _require_super_admin_teacher(user)
 
     sessions = list_active_sessions()
 
@@ -31,11 +39,10 @@ def get_active_sessions(user: dict = Depends(get_current_user)):
 def invalidate_session(
     user_id: str,
     role: Optional[str] = None,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_teacher),
 ):
-    """强制指定用户下线，仅教师可访问。"""
-    if user.get("role") != "teacher":
-        raise HTTPException(status_code=403, detail="仅教师可强制下线用户")
+    """强制指定用户下线，仅超管教师可访问。"""
+    _require_super_admin_teacher(user)
 
     normalized_role = role.strip().lower() if role else None
     if normalized_role and normalized_role not in {"student", "teacher"}:

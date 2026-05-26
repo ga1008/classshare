@@ -49,10 +49,17 @@ let semesterCalendar = null;
 
 function normalizeSemester(item) {
     const weekCount = Number(item.week_count || 0);
+    const isOwned = item.is_owned !== false;
+    const canManage = item.can_manage !== false && isOwned;
     return {
         ...item,
         id: Number(item.id),
         week_count: Number.isFinite(weekCount) ? weekCount : 0,
+        is_owned: isOwned,
+        can_manage: canManage,
+        is_shared_semester: item.is_shared_semester === true || !isOwned,
+        school_name: String(item.school_name || ''),
+        organization_label: String(item.organization_label || item.school_name || ''),
         calendar_sync_status: String(item.calendar_sync_status || 'pending'),
         calendar_sync_message: String(item.calendar_sync_message || ''),
         calendar_sync_at: String(item.calendar_sync_at || ''),
@@ -63,6 +70,8 @@ function normalizeSemester(item) {
             item.start_date,
             item.end_date,
             item.display_range,
+            item.school_name,
+            item.organization_label,
             weekCount ? `${weekCount}周` : '',
             item.calendar_sync_status,
             item.calendar_sync_message,
@@ -135,6 +144,7 @@ function renderSemesterList() {
     elements.list.innerHTML = items.map((semester) => `
         ${(() => {
             const sync = calendarSyncMeta(semester);
+            const canManage = semester.can_manage !== false;
             return `
         <div
             class="academic-list-item${semester.id === state.activeSemesterId ? ' is-active' : ''}"
@@ -148,13 +158,15 @@ function renderSemesterList() {
                     ${semester.is_current ? '<span class="academic-badge is-success">当前学期</span>' : '<span class="academic-badge is-muted">历史或未来学期</span>'}
                     <span class="academic-badge">开学首周自动计为第 1 周</span>
                     <span class="academic-badge ${sync.className}">${sync.label}</span>
+                    ${semester.is_shared_semester ? '<span class="academic-badge is-accent">同校共享</span>' : ''}
+                    ${semester.organization_label ? `<span class="academic-badge">${escapeHtml(semester.organization_label)}</span>` : ''}
                 </div>
             </div>
             <div class="academic-list-side">
                 <button type="button" class="btn btn-ghost btn-sm" data-action="focus" data-semester-id="${semester.id}">查看日历</button>
-                <button type="button" class="btn btn-outline btn-sm" data-action="sync-calendar" data-semester-id="${semester.id}">同步校历</button>
-                <button type="button" class="btn btn-outline btn-sm" data-action="edit" data-semester-id="${semester.id}">编辑</button>
-                <button type="button" class="btn btn-danger btn-sm" data-action="delete" data-semester-id="${semester.id}">删除</button>
+                ${canManage ? `<button type="button" class="btn btn-outline btn-sm" data-action="sync-calendar" data-semester-id="${semester.id}">同步校历</button>` : ''}
+                ${canManage ? `<button type="button" class="btn btn-outline btn-sm" data-action="edit" data-semester-id="${semester.id}">编辑</button>` : ''}
+                ${canManage ? `<button type="button" class="btn btn-danger btn-sm" data-action="delete" data-semester-id="${semester.id}">删除</button>` : ''}
             </div>
         </div>
             `;
@@ -224,6 +236,10 @@ function openModal(mode, semester = null) {
     if (!elements.modalBackdrop || !elements.form) {
         return;
     }
+    if (mode === 'edit' && semester?.can_manage === false) {
+        showMessage('同校共享学期可以直接复用，只有创建者可以编辑。', 'warning');
+        return;
+    }
 
     const defaults = config.defaults || {};
     elements.modalTitle.textContent = mode === 'edit' ? '编辑学期' : '新增学期';
@@ -289,6 +305,10 @@ async function handleDeleteSemester(semesterId) {
     if (!semester) {
         return;
     }
+    if (semester.can_manage === false) {
+        showMessage('同校共享学期可以直接复用，只有创建者可以删除。', 'warning');
+        return;
+    }
 
     const confirmed = window.confirm(`确定删除学期“${semester.name}”吗？\n如果已经有课堂绑定到这个学期，需要先调整课堂绑定。`);
     if (!confirmed) {
@@ -303,6 +323,10 @@ async function handleDeleteSemester(semesterId) {
 async function handleSyncCalendar(semesterId, button = null) {
     const semester = getSemesterById(semesterId);
     if (!semester) {
+        return;
+    }
+    if (semester.can_manage === false) {
+        showMessage('同校共享学期已可复用，校历同步由创建者维护。', 'warning');
         return;
     }
     const originalText = button?.textContent || '';

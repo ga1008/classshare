@@ -7,6 +7,7 @@ from .academic_service import load_teacher_semester_rows, serialize_semester_row
 from .course_planning_service import load_course_lessons_by_course_id, serialize_course_row, truncate_text
 from .department_service import collect_department_options, infer_department_from_text, normalize_department
 from .materials_service import attach_learning_material_briefs
+from .organization_scope_service import load_teacher_org_scope, organization_label
 
 
 def _count(conn: sqlite3.Connection, sql: str, params: tuple[Any, ...]) -> int:
@@ -27,6 +28,9 @@ def _parse_grouped_ids(raw_value: Any) -> list[int]:
 
 
 def _load_teacher_courses(conn: sqlite3.Connection, teacher_id: int) -> list[dict]:
+    teacher_scope = load_teacher_org_scope(conn, teacher_id)
+    teacher_department = normalize_department(teacher_scope.get("department"))
+    teacher_school_code = teacher_scope["school_code"]
     rows = conn.execute(
         """
         SELECT c.id,
@@ -38,18 +42,40 @@ def _load_teacher_courses(conn: sqlite3.Connection, teacher_id: int) -> list[dic
                c.total_hours,
                c.created_at,
                c.created_by_teacher_id,
+               c.school_code,
+               c.school_name,
+               c.college,
+               t.name AS owner_teacher_name,
                COUNT(DISTINCT o.id) AS offering_count,
                GROUP_CONCAT(DISTINCT o.class_id) AS related_class_ids,
                GROUP_CONCAT(DISTINCT o.textbook_id) AS related_textbook_ids
         FROM courses c
+        LEFT JOIN teachers t ON t.id = c.created_by_teacher_id
         LEFT JOIN class_offerings o
             ON o.course_id = c.id
-           AND o.teacher_id = c.created_by_teacher_id
+           AND o.teacher_id = ?
         WHERE c.created_by_teacher_id = ?
-        GROUP BY c.id, c.name, c.description, c.sect_name, c.department, c.credits, c.total_hours, c.created_at, c.created_by_teacher_id
-        ORDER BY c.created_at DESC, c.name
+           OR (
+                lower(TRIM(COALESCE(c.school_code, ?))) = lower(TRIM(?))
+                AND ? != ''
+                AND lower(TRIM(COALESCE(c.department, ''))) = lower(TRIM(?))
+           )
+        GROUP BY c.id, c.name, c.description, c.sect_name, c.department, c.credits, c.total_hours,
+                 c.created_at, c.created_by_teacher_id, c.school_code, c.school_name, c.college, t.name
+        ORDER BY
+            CASE WHEN c.created_by_teacher_id = ? THEN 0 ELSE 1 END,
+            c.created_at DESC,
+            c.name
         """,
-        (teacher_id,),
+        (
+            teacher_id,
+            teacher_id,
+            teacher_school_code,
+            teacher_school_code,
+            teacher_department,
+            teacher_department,
+            teacher_id,
+        ),
     ).fetchall()
     course_ids = [int(row["id"]) for row in rows]
     lessons_by_course = load_course_lessons_by_course_id(conn, course_ids)
@@ -63,6 +89,7 @@ def _load_teacher_courses(conn: sqlite3.Connection, teacher_id: int) -> list[dic
 
     courses: list[dict] = []
     for row in rows:
+        is_owned = int(row["created_by_teacher_id"] or 0) == int(teacher_id)
         item = serialize_course_row(
             row,
             lessons=lessons_by_course.get(int(row["id"]), []),
@@ -72,8 +99,28 @@ def _load_teacher_courses(conn: sqlite3.Connection, teacher_id: int) -> list[dic
             item.get("name"),
             item.get("description"),
         )
+        item["is_owned"] = is_owned
+        item["can_manage"] = is_owned
+        item["is_shared_course"] = not is_owned
+        item["owner_teacher_name"] = str(row["owner_teacher_name"] or "").strip()
+        item["school_code"] = str(row["school_code"] or "").strip()
+        item["school_name"] = str(row["school_name"] or "").strip()
+        item["college"] = str(row["college"] or "").strip()
+        item["organization_label"] = organization_label(
+            {
+                "school_code": item["school_code"],
+                "school_name": item["school_name"],
+                "college": item["college"],
+                "department": item["department"],
+            }
+        )
         item["related_class_ids"] = _parse_grouped_ids(row["related_class_ids"])
         item["related_textbook_ids"] = _parse_grouped_ids(row["related_textbook_ids"])
+        item["search_blob"] = " ".join(
+            part
+            for part in (item.get("search_blob"), item.get("owner_teacher_name"), item.get("organization_label"))
+            if part
+        ).lower()
         courses.append(item)
     return courses
 

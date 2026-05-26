@@ -19,6 +19,7 @@ from .academic_integration_service import (
 )
 from .academic_service import china_now, parse_date_input
 from .department_service import infer_department_from_text, normalize_department
+from .organization_scope_service import apply_teacher_scope_to_org, load_teacher_org_scope
 from .student_lifecycle_service import STUDENT_STATUS_ACTIVE, STUDENT_STATUS_SUSPENDED
 
 
@@ -377,25 +378,51 @@ def _load_current_semester(conn, teacher_id: int, today: date) -> dict[str, Any]
 
 
 def _load_semester_by_id(conn, teacher_id: int, semester_id: int) -> dict[str, Any] | None:
+    teacher_scope = load_teacher_org_scope(conn, teacher_id)
     row = conn.execute(
-        "SELECT * FROM academic_semesters WHERE id = ? AND teacher_id = ? LIMIT 1",
-        (int(semester_id), int(teacher_id)),
+        """
+        SELECT *
+        FROM academic_semesters
+        WHERE id = ?
+          AND lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
+        LIMIT 1
+        """,
+        (int(semester_id), teacher_scope["school_code"], teacher_scope["school_code"]),
     ).fetchone()
     return dict(row) if row else None
 
 
 def _find_course_id(conn, teacher_id: int, roster: AcademicTeachingClassRoster) -> int | None:
+    teacher_scope = load_teacher_org_scope(conn, teacher_id)
+    teacher_department = normalize_department(teacher_scope.get("department"))
     if roster.course_code:
         row = conn.execute(
             """
             SELECT id
             FROM courses
-            WHERE created_by_teacher_id = ?
+            WHERE (
+                    created_by_teacher_id = ?
+                    OR (
+                        lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
+                        AND ? != ''
+                        AND lower(TRIM(COALESCE(department, ''))) = lower(TRIM(?))
+                    )
+                  )
               AND academic_source = ?
               AND academic_course_code = ?
+            ORDER BY CASE WHEN created_by_teacher_id = ? THEN 0 ELSE 1 END, id DESC
             LIMIT 1
             """,
-            (int(teacher_id), ACADEMIC_ROSTER_SOURCE, roster.course_code),
+            (
+                int(teacher_id),
+                teacher_scope["school_code"],
+                teacher_scope["school_code"],
+                teacher_department,
+                teacher_department,
+                ACADEMIC_ROSTER_SOURCE,
+                roster.course_code,
+                int(teacher_id),
+            ),
         ).fetchone()
         if row:
             return int(row["id"])
@@ -404,12 +431,27 @@ def _find_course_id(conn, teacher_id: int, roster: AcademicTeachingClassRoster) 
             """
             SELECT id
             FROM courses
-            WHERE created_by_teacher_id = ?
+            WHERE (
+                    created_by_teacher_id = ?
+                    OR (
+                        lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
+                        AND ? != ''
+                        AND lower(TRIM(COALESCE(department, ''))) = lower(TRIM(?))
+                    )
+                  )
               AND name = ?
-            ORDER BY id ASC
+            ORDER BY CASE WHEN created_by_teacher_id = ? THEN 0 ELSE 1 END, id ASC
             LIMIT 1
             """,
-            (int(teacher_id), roster.course_name),
+            (
+                int(teacher_id),
+                teacher_scope["school_code"],
+                teacher_scope["school_code"],
+                teacher_department,
+                teacher_department,
+                roster.course_name,
+                int(teacher_id),
+            ),
         ).fetchone()
         if row:
             return int(row["id"])
@@ -452,6 +494,12 @@ def _upsert_class(
     class_name = student.class_name.strip()
     row = conn.execute("SELECT * FROM classes WHERE name = ? LIMIT 1", (class_name,)).fetchone()
     department = normalize_department(student.college) or normalize_department(student.major) or infer_department_from_text(class_name)
+    org_scope = apply_teacher_scope_to_org(
+        conn,
+        teacher_id,
+        college=student.college,
+        department=department,
+    )
     message = f"由教务系统同步：{student.college or student.major or class_name}"
     metadata = _json_dumps(_class_metadata(student, rosters))
     if row is None:
@@ -459,16 +507,20 @@ def _upsert_class(
             """
             INSERT INTO classes (
                 name, department, created_by_teacher_id,
+                school_code, school_name, college,
                 academic_source, academic_class_code, academic_class_name,
                 academic_college, academic_grade, academic_major,
                 academic_sync_at, academic_sync_message, academic_metadata_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 class_name,
                 department,
                 int(teacher_id),
+                org_scope["school_code"],
+                org_scope["school_name"],
+                org_scope["college"],
                 ACADEMIC_ROSTER_SOURCE,
                 student.class_code,
                 class_name,
@@ -492,6 +544,9 @@ def _upsert_class(
         """
         UPDATE classes
         SET department = CASE WHEN TRIM(COALESCE(department, '')) = '' THEN ? ELSE department END,
+            school_code = CASE WHEN TRIM(COALESCE(school_code, '')) = '' THEN ? ELSE school_code END,
+            school_name = CASE WHEN TRIM(COALESCE(school_name, '')) = '' THEN ? ELSE school_name END,
+            college = CASE WHEN TRIM(COALESCE(college, '')) = '' THEN ? ELSE college END,
             academic_source = ?,
             academic_class_code = ?,
             academic_class_name = ?,
@@ -505,6 +560,9 @@ def _upsert_class(
         """,
         (
             department,
+            org_scope["school_code"],
+            org_scope["school_name"],
+            org_scope["college"],
             ACADEMIC_ROSTER_SOURCE,
             student.class_code,
             class_name,
@@ -579,6 +637,13 @@ def _upsert_student(
         (student.student_number,),
     ).fetchone()
     academic_status = _student_status_from_academic(student.school_status)
+    department = normalize_department(student.college) or normalize_department(student.major)
+    org_scope = apply_teacher_scope_to_org(
+        conn,
+        teacher_id,
+        college=student.college,
+        department=department,
+    )
     student_flags = _json_dumps(student.flags)
     metadata = _json_dumps(_student_metadata(student, roster))
     message = f"由教务系统同步：{roster.course_name or roster.teaching_class_name}"
@@ -587,12 +652,13 @@ def _upsert_student(
             """
             INSERT INTO students (
                 student_id_number, name, class_id, gender, email, phone,
+                school_code, school_name, college, department,
                 enrollment_status, enrollment_status_updated_at, enrollment_note,
                 academic_source, academic_student_id, academic_class_code, academic_class_name,
                 academic_college, academic_grade, academic_major, academic_school_status,
                 academic_student_flags, academic_sync_at, academic_sync_message, academic_metadata_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 student.student_number,
@@ -601,6 +667,10 @@ def _upsert_student(
                 student.gender,
                 student.email,
                 student.phone,
+                org_scope["school_code"],
+                org_scope["school_name"],
+                org_scope["college"],
+                org_scope["department"],
                 academic_status,
                 synced_at if academic_status != STUDENT_STATUS_ACTIVE else None,
                 student.school_status if academic_status != STUDENT_STATUS_ACTIVE else "",
@@ -652,6 +722,10 @@ def _upsert_student(
             gender = CASE WHEN ? != '' THEN ? ELSE gender END,
             email = ?,
             phone = ?,
+            school_code = CASE WHEN TRIM(COALESCE(school_code, '')) = '' THEN ? ELSE school_code END,
+            school_name = CASE WHEN TRIM(COALESCE(school_name, '')) = '' THEN ? ELSE school_name END,
+            college = CASE WHEN TRIM(COALESCE(college, '')) = '' THEN ? ELSE college END,
+            department = CASE WHEN TRIM(COALESCE(department, '')) = '' THEN ? ELSE department END,
             enrollment_status = ?,
             enrollment_status_updated_at = CASE
                 WHEN COALESCE(enrollment_status, 'active') != ? THEN ?
@@ -679,6 +753,10 @@ def _upsert_student(
             student.gender,
             next_email,
             next_phone,
+            org_scope["school_code"],
+            org_scope["school_name"],
+            org_scope["college"],
+            org_scope["department"],
             academic_status,
             academic_status,
             synced_at,
