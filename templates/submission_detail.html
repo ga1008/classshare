@@ -24,13 +24,141 @@
     }
     .back-link:hover { color: var(--primary-color); }
 
-    .detail-container {
-        max-width: 960px;
+    .submission-detail-shell {
+        width: min(1240px, 100%);
         margin: 0 auto;
         padding: var(--spacing-xl) var(--spacing-md);
+        display: grid;
+        grid-template-columns: minmax(220px, 260px) minmax(0, 960px);
+        gap: var(--spacing-lg);
+        align-items: start;
+    }
+
+    .detail-container {
+        min-width: 0;
+        margin: 0;
+        padding: 0;
         display: flex;
         flex-direction: column;
         gap: var(--spacing-lg);
+    }
+
+    .submission-jump-nav {
+        position: sticky;
+        top: 86px;
+        display: grid;
+        gap: 12px;
+        max-height: calc(100vh - 112px);
+        overflow: auto;
+        padding: 14px;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 18px 42px -34px rgba(15, 23, 42, 0.6);
+    }
+    .submission-jump-nav__head {
+        display: grid;
+        gap: 4px;
+    }
+    .submission-jump-nav__head span {
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        font-weight: 800;
+    }
+    .submission-jump-nav__head strong {
+        color: var(--text-primary);
+        font-size: 0.98rem;
+        line-height: 1.35;
+    }
+    .submission-jump-section-list,
+    .submission-jump-question-groups,
+    .submission-jump-question-list {
+        display: grid;
+        gap: 8px;
+    }
+    .submission-jump-btn,
+    .submission-jump-question {
+        width: 100%;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.78);
+        color: var(--text-secondary);
+        cursor: pointer;
+        text-align: left;
+        transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+    }
+    .submission-jump-btn {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 9px 10px;
+        font-size: 0.84rem;
+        font-weight: 700;
+    }
+    .submission-jump-question-group {
+        display: grid;
+        gap: 7px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(148, 163, 184, 0.16);
+    }
+    .submission-jump-group-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        color: var(--text-muted);
+        font-size: 0.76rem;
+        font-weight: 800;
+        line-height: 1.35;
+    }
+    .submission-jump-question {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: start;
+        min-height: 40px;
+        padding: 8px;
+        font-size: 0.78rem;
+    }
+    .submission-jump-number {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 22px;
+        height: 22px;
+        padding: 0 6px;
+        border-radius: 7px;
+        background: #fff;
+        color: var(--text-primary);
+        font-weight: 800;
+    }
+    .submission-jump-copy {
+        display: -webkit-box;
+        min-width: 0;
+        overflow: hidden;
+        line-height: 1.35;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+    .submission-jump-state {
+        width: 8px;
+        height: 8px;
+        margin-top: 7px;
+        border-radius: 999px;
+        background: #cbd5e1;
+    }
+    .submission-jump-question.is-answered .submission-jump-state {
+        background: #10b981;
+    }
+    .submission-jump-btn:hover,
+    .submission-jump-question:hover,
+    .submission-jump-btn:focus-visible,
+    .submission-jump-question:focus-visible {
+        border-color: rgba(99, 102, 241, 0.28);
+        background: #fff;
+        color: var(--text-primary);
+        outline: none;
+        transform: translateY(-1px);
     }
 
     /* Student info grid */
@@ -211,12 +339,31 @@
         padding: var(--spacing-md);
         margin-bottom: var(--spacing-md);
         border-left: 4px solid var(--primary-color);
+        scroll-margin-top: 96px;
     }
     .question-card .q-title {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
         font-weight: 600;
         font-size: 0.9rem;
         color: var(--text-primary);
         margin-bottom: 8px;
+    }
+    .question-card .q-title-number {
+        flex: 0 0 auto;
+        min-width: 30px;
+        padding: 3px 8px;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.82);
+        color: var(--text-primary);
+        font-size: 0.82rem;
+        font-weight: 800;
+        text-align: center;
+    }
+    .question-card .q-title-copy {
+        min-width: 0;
     }
     .question-card .q-title.md-content > :first-child,
     .question-card .q-content .md-content > :first-child,
@@ -233,12 +380,26 @@
     }
     .question-card .q-options {
         margin-bottom: 10px;
-        padding-left: 16px;
+        padding-left: 0;
+        list-style: none;
+        display: grid;
+        gap: 6px;
         font-size: 0.85rem;
         color: var(--text-secondary);
     }
-    .question-card .q-options li { margin-bottom: 4px; }
-    .question-card .q-options li.selected { color: var(--primary-color); font-weight: 600; }
+    .question-card .q-options li {
+        margin-bottom: 0;
+        padding: 8px 10px;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.62);
+    }
+    .question-card .q-options li.selected {
+        border-color: rgba(16, 185, 129, 0.34);
+        background: rgba(236, 253, 245, 0.86);
+        color: #047857;
+        font-weight: 700;
+    }
     .question-card .q-answer-label { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; font-weight: 600; }
     .question-card .q-content {
         font-size: 0.95rem;
@@ -566,6 +727,20 @@
     }
 
     @media (max-width: 768px) {
+        .submission-detail-shell {
+            grid-template-columns: 1fr;
+            padding: var(--spacing-md);
+        }
+        .submission-jump-nav {
+            position: static;
+            max-height: none;
+        }
+        .submission-jump-section-list {
+            grid-auto-flow: column;
+            grid-auto-columns: minmax(120px, 1fr);
+            overflow-x: auto;
+            padding-bottom: 2px;
+        }
         .grading-body { flex-direction: column; }
         .grading-score-group { flex: none; width: 100%; }
         .grading-feedback-head {
@@ -610,9 +785,40 @@
 
 {% include "partials/feedback_modal.html" %}
 
-<main class="detail-container">
+<main class="submission-detail-shell">
+<aside class="submission-jump-nav" id="submission-jump-nav" aria-label="批阅详情快速跳转">
+    <div class="submission-jump-nav__head">
+        <span>批阅导航</span>
+        <strong>{{ submission.student_name }}</strong>
+    </div>
+    <div class="submission-jump-section-list">
+        <button type="button" class="submission-jump-btn" data-scroll-target="submission-info-card">
+            <span>学生信息</span><span>概览</span>
+        </button>
+        {% if submission.feedback_md %}
+        <button type="button" class="submission-jump-btn" data-scroll-target="submission-feedback-card">
+            <span>批改总览</span><span>反馈</span>
+        </button>
+        {% endif %}
+        <button type="button" class="submission-jump-btn" data-scroll-target="submission-answers-card">
+            <span>答题内容</span><span id="submission-jump-answer-count">0</span>
+        </button>
+        {% if (submission_files and submission_files|length > 0) or user_info.role == 'teacher' %}
+        <button type="button" class="submission-jump-btn" data-scroll-target="submission-files-card">
+            <span>附件文件</span><span>{{ submission_files|length if submission_files else 0 }}</span>
+        </button>
+        {% endif %}
+        {% if user_info.role == 'teacher' %}
+        <button type="button" class="submission-jump-btn" data-scroll-target="submission-grading-card">
+            <span>批改操作</span><span>评分</span>
+        </button>
+        {% endif %}
+    </div>
+    <div class="submission-jump-question-groups" id="submission-jump-question-groups"></div>
+</aside>
+<div class="detail-container">
     <!-- Student Info Card -->
-    <div class="card">
+    <div class="card" id="submission-info-card">
         <div class="card-body">
             <div class="info-grid">
                 <div class="info-item">
@@ -698,7 +904,7 @@
 
     <!-- Teacher Feedback Section (shown if graded) -->
     {% if submission.feedback_md %}
-    <div class="card grade-feedback-card">
+    <div class="card grade-feedback-card" id="submission-feedback-card">
         <div class="card-header">
             <h2 class="card-title text-base m-0">批改总览</h2>
             <span class="grade-feedback-meta">显示给学生的总体反馈</span>
@@ -710,7 +916,7 @@
     {% endif %}
 
     <!-- Answers Section -->
-    <div class="card">
+    <div class="card" id="submission-answers-card">
         <div class="card-header">
             <h2 class="card-title text-base m-0">答题内容</h2>
         </div>
@@ -726,7 +932,7 @@
 
     <!-- Submission Files Section -->
     {% if (submission_files and submission_files|length > 0) or user_info.role == 'teacher' %}
-    <div class="card">
+    <div class="card" id="submission-files-card">
         <div class="card-header">
             <h2 class="card-title text-base m-0">附件文件</h2>
         </div>
@@ -813,7 +1019,7 @@
     <!-- Grading Section (teacher only) -->
     {% if user_info.role == 'teacher' %}
     {% if submission.resubmission_allowed %}
-    <div class="card">
+    <div class="card" id="submission-grading-card">
         <div class="card-body">
             <div class="status-card warning">
                 <strong>该提交已被撤回，正在等待学生重交。</strong>
@@ -822,7 +1028,7 @@
         </div>
     </div>
     {% else %}
-    <div class="grading-section">
+    <div class="grading-section" id="submission-grading-card">
         <div class="grading-header">
             批改作业
         </div>
@@ -859,6 +1065,7 @@
     </div>
     {% endif %}
     {% endif %}
+</div>
 </main>
 
 {% include "partials/markdown_assets.html" %}
@@ -923,6 +1130,154 @@
         }
     }
 
+    function stripMarkdownText(value) {
+        return String(value || '')
+            .replace(/```[\s\S]*?```/g, ' ')
+            .replace(/`([^`]+)`/g, '$1')
+            .replace(/!\[[^\]]*]\([^)]*\)/g, ' ')
+            .replace(/\[([^\]]+)]\([^)]*\)/g, '$1')
+            .replace(/[#>*_~]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function truncateText(value, maxLength = 30) {
+        const text = stripMarkdownText(value);
+        return text.length > maxLength ? `${text.slice(0, maxLength).trim()}...` : text;
+    }
+
+    function renderQuestionTitle(questionText, index) {
+        return `
+            <div class="q-title">
+                <span class="q-title-number">${index}</span>
+                <div class="q-title-copy md-content">${renderMarkdownHtml(questionText)}</div>
+            </div>
+        `;
+    }
+
+    function answerHasDisplayContent(value) {
+        const text = extractAnswerText(value);
+        return Boolean((text && text.trim() !== '') || extractAnswerAttachments(value).length);
+    }
+
+    function isOptionSelected(answerText, option) {
+        const answer = String(answerText || '').trim();
+        const target = String(option || '').trim();
+        if (!answer || !target) return false;
+        if (answer === target) return true;
+        const normalizedAnswers = answer
+            .split('|||')
+            .flatMap(item => item.split(/\s*,\s*/))
+            .map(item => item.trim())
+            .filter(Boolean);
+        return normalizedAnswers.includes(target);
+    }
+
+    function scrollToSubmissionTarget(targetId) {
+        const target = document.getElementById(targetId);
+        if (!target) return;
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function setupSubmissionSectionJumpNav() {
+        document.querySelectorAll('[data-scroll-target]').forEach((button) => {
+            button.addEventListener('click', () => scrollToSubmissionTarget(button.dataset.scrollTarget));
+        });
+    }
+
+    function collectSubmissionJumpGroups(answers) {
+        const groups = [];
+        if (examQuestions && examQuestions.pages) {
+            let questionIndex = 0;
+            const matchedIds = new Set();
+            examQuestions.pages.forEach((page, pageIndex) => {
+                const items = [];
+                (page.questions || []).forEach((question) => {
+                    questionIndex++;
+                    matchedIds.add(question.id);
+                    items.push({
+                        index: questionIndex,
+                        id: question.id,
+                        text: question.text,
+                        answered: answerHasDisplayContent(getAnswer(answers, question.id, questionIndex)),
+                    });
+                });
+                if (items.length) {
+                    groups.push({
+                        title: page.name || `第 ${pageIndex + 1} 大题`,
+                        items,
+                    });
+                }
+            });
+            const extras = getExtraAnswers(answers, matchedIds);
+            if (extras.length) {
+                groups.push({
+                    title: '其他内容',
+                    items: extras.map(([key, value], extraIndex) => ({
+                        index: questionIndex + extraIndex + 1,
+                        id: key,
+                        text: key,
+                        answered: answerHasDisplayContent(value),
+                    })),
+                });
+            }
+            return groups;
+        }
+
+        const items = [];
+        if (Array.isArray(answers)) {
+            answers.forEach((item, index) => {
+                items.push({
+                    index: index + 1,
+                    id: item?.question_id || item?.question || `q${index + 1}`,
+                    text: item?.question || item?.question_id || `第 ${index + 1} 题`,
+                    answered: answerHasDisplayContent(item),
+                });
+            });
+        } else if (answers && typeof answers === 'object') {
+            Object.entries(answers).forEach(([key, value], index) => {
+                items.push({
+                    index: index + 1,
+                    id: key,
+                    text: key,
+                    answered: answerHasDisplayContent(value),
+                });
+            });
+        }
+        if (items.length) groups.push({ title: '答题内容', items });
+        return groups;
+    }
+
+    function renderSubmissionJumpNav(answers) {
+        const groupsHost = document.getElementById('submission-jump-question-groups');
+        const answerCount = document.getElementById('submission-jump-answer-count');
+        if (!groupsHost) return;
+        const groups = collectSubmissionJumpGroups(answers);
+        const totalQuestions = groups.reduce((total, group) => total + group.items.length, 0);
+        const answered = groups.reduce((total, group) => total + group.items.filter(item => item.answered).length, 0);
+        if (answerCount) answerCount.textContent = `${answered}/${totalQuestions}`;
+        groupsHost.innerHTML = groups.map((group) => `
+            <div class="submission-jump-question-group">
+                <div class="submission-jump-group-title">
+                    <span>${escapeHtml(group.title)}</span>
+                    <span>${group.items.filter(item => item.answered).length}/${group.items.length}</span>
+                </div>
+                <div class="submission-jump-question-list">
+                    ${group.items.map((item) => `
+                        <button type="button" class="submission-jump-question ${item.answered ? 'is-answered' : ''}" data-jump-question="submission-q-${item.index}">
+                            <span class="submission-jump-number">${item.index}</span>
+                            <span class="submission-jump-copy">${escapeHtml(truncateText(item.text, 34) || `第 ${item.index} 题`)}</span>
+                            <span class="submission-jump-state" aria-hidden="true"></span>
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+        `).join('');
+        groupsHost.querySelectorAll('[data-jump-question]').forEach((button) => {
+            button.addEventListener('click', () => scrollToSubmissionTarget(button.dataset.jumpQuestion));
+        });
+    }
+
     // Render answers
     function renderAnswers() {
         const container = document.getElementById('answers-container');
@@ -930,6 +1285,7 @@
 
         if (!answers || (typeof answers === 'object' && Object.keys(answers).length === 0)) {
             container.innerHTML = '<p class="text-muted text-center p-xl">暂无答题内容</p>';
+            renderSubmissionJumpNav(null);
             return;
         }
 
@@ -960,8 +1316,10 @@
                         questionId: key,
                         questionText: key,
                     });
-                    html += `<div class="question-card">
-                        <div class="q-title md-content">${renderMarkdownHtml(String(key))}</div>
+                    const extraIndex = qIndex + 1;
+                    qIndex++;
+                    html += `<div class="question-card" id="submission-q-${extraIndex}" data-question-index="${extraIndex}" data-question-id="${escapeHtml(String(key))}">
+                        ${renderQuestionTitle(String(key), extraIndex)}
                         <div class="q-answer-label">学生答案</div>
                         <div class="q-content">${answerText ? formatAnswer(val) : '<span class="empty-answer">(未作答)</span>'}</div>
                         ${renderAnswerAttachments(val)}
@@ -975,13 +1333,14 @@
                 answers.forEach((item, i) => {
                     const q = item.question || item.question_id || `第 ${i + 1} 题`;
                     const a = extractAnswerText(item);
+                    const displayIndex = i + 1;
                     const feedback = findQuestionFeedback(gradingFeedback, {
-                        index: i + 1,
+                        index: displayIndex,
                         questionId: item.question_id,
                         questionText: item.question || q,
                     });
-                    html += `<div class="question-card">
-                        <div class="q-title md-content">${renderMarkdownHtml(String(q))}</div>
+                    html += `<div class="question-card" id="submission-q-${displayIndex}" data-question-index="${displayIndex}" data-question-id="${escapeHtml(String(item.question_id || q))}">
+                        ${renderQuestionTitle(String(q), displayIndex)}
                         <div class="q-answer-label">学生答案</div>
                         <div class="q-content">${a ? formatAnswer(a) : '<span class="empty-answer">(未作答)</span>'}</div>
                         ${renderAnswerAttachments(item)}
@@ -990,13 +1349,14 @@
                 });
             } else if (typeof answers === 'object') {
                 Object.entries(answers).forEach(([key, value], index) => {
+                    const displayIndex = index + 1;
                     const feedback = findQuestionFeedback(gradingFeedback, {
-                        index: index + 1,
+                        index: displayIndex,
                         questionId: key,
                         questionText: key,
                     });
-                    html += `<div class="question-card">
-                        <div class="q-title md-content">${renderMarkdownHtml(String(key))}</div>
+                    html += `<div class="question-card" id="submission-q-${displayIndex}" data-question-index="${displayIndex}" data-question-id="${escapeHtml(String(key))}">
+                        ${renderQuestionTitle(String(key), displayIndex)}
                         <div class="q-answer-label">学生答案</div>
                         <div class="q-content">${formatAnswer(value)}</div>
                         ${renderAnswerAttachments(value)}
@@ -1007,6 +1367,7 @@
         }
 
         container.innerHTML = html || '<p class="text-muted text-center p-xl">暂无答题内容</p>';
+        renderSubmissionJumpNav(answers);
         updateQuestionFeedbackNote();
     }
 
@@ -1110,16 +1471,15 @@
 
     function renderQuestionCard(q, studentAnswer, index) {
         const answerText = extractAnswerText(studentAnswer);
-        let html = `<div class="question-card">`;
-        html += `<div class="q-title md-content">${renderMarkdownHtml(q.text)}</div>`;
+        let html = `<div class="question-card" id="submission-q-${index}" data-question-index="${index}" data-question-id="${escapeHtml(String(q.id || ''))}">`;
+        html += renderQuestionTitle(q.text, index);
 
         // Render options for radio/checkbox questions
         if (q.options && Array.isArray(q.options)) {
             html += `<ul class="q-options">`;
             q.options.forEach(opt => {
-                const isSelected = answerText === opt;
+                const isSelected = isOptionSelected(answerText, opt);
                 html += `<li class="${isSelected ? 'selected' : ''}">`;
-                if (isSelected) html += `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="vertical-align:-1px;margin-right:4px"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
                 html += `<span class="md-content">${renderMarkdownHtml(opt)}</span></li>`;
             });
             html += `</ul>`;
@@ -1433,6 +1793,7 @@
 
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
+        setupSubmissionSectionJumpNav();
         renderAnswers();
         initSubmissionPreview();
         initTeacherAttachmentManager();

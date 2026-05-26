@@ -170,7 +170,7 @@ function renderQuestion(question, questionIndex) {
     const type = questionType(question);
     const points = Number(question?.points ?? question?.score ?? question?.point);
     const pointText = Number.isFinite(points) && points > 0 ? String(points).replace(/\.0+$/, '') : '';
-    const displayId = compactText(question?.id, String(questionIndex + 1));
+    const displayId = String(questionIndex + 1);
     return `
         <article class="exam-paper-preview__question">
             <div class="exam-paper-preview__question-head">
