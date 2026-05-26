@@ -30,7 +30,8 @@ _STATUS_SYMBOLS = {
     "SICK_LEAVE": "○",
     "PERSONAL_LEAVE": "○",
 }
-_PDF_FONT_NAME = "lanshare-cjk"
+_SPREADSHEET_FONT_NAME = "宋体"
+_PDF_FONT_NAME = "lanshare-song"
 _PDF_FALLBACK_FONT = "china-s"
 
 
@@ -38,13 +39,10 @@ def _resolve_pdf_font_file() -> str | None:
     env_font = os.getenv("LANSHARE_PDF_FONT_FILE", "").strip()
     candidates = [
         env_font,
-        r"C:\Windows\Fonts\msyh.ttc",
         r"C:\Windows\Fonts\simsun.ttc",
+        r"C:\Windows\Fonts\simsunb.ttf",
         r"C:\Windows\Fonts\simhei.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/truetype/arphic/uming.ttc",
     ]
     for candidate in candidates:
         if candidate and Path(candidate).exists():
@@ -138,10 +136,14 @@ def _session_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
 
 def _build_title(semester_name: str) -> str:
     text = _clean_text(semester_name)
-    match = re.search(r"(\d{4})\D+(\d{4}).*?(?:第)?([一二12])学期", text)
-    if match:
+    year_match = re.search(r"(\d{4})\D+(\d{4})", text)
+    term_match = re.search(r"(?:第)?\s*([一二12])\s*学期", text)
+    if not term_match and year_match:
+        term_match = re.search(r"(?:^|[-_/\s])([12])(?:$|\D)", text[year_match.end() :])
+    if year_match and term_match:
         term_map = {"一": "1", "二": "2", "1": "1", "2": "2"}
-        return f"{match.group(1)}-{match.group(2)}学年第{term_map.get(match.group(3), match.group(3))}学期平时成绩记录表"
+        term = term_map.get(term_match.group(1), term_match.group(1))
+        return f"{year_match.group(1)}-{year_match.group(2)}学年第{term}学期平时成绩记录表"
     if text:
         return f"{text}平时成绩记录表"
     return "平时成绩记录表"
@@ -371,12 +373,11 @@ def _column_headers(dataset: dict[str, Any]) -> list[str]:
 
 
 def _notes(dataset: dict[str, Any]) -> list[str]:
-    session_count = len(dataset["sessions"])
     return [
-        "注：1. 此表记录平时成绩，满分为100分，授课教师要详实记录，期末作为学生平时成绩判定的依据，并装订入试卷册；",
-        f"    2. 本次导出按智慧课堂已同步的 {session_count} 次点名计算：成绩=出勤次数÷有记录点名次数×100，平时成绩与成绩保持一致；",
-        "    3. 记号说明：出勤√、缺课×、迟到与早退⊕、请假○；名单未匹配或该次点名无记录处留空，不直接计为缺课；",
-        "    4. 如点名覆盖不足或名单存在差异，请先在课堂页同步智慧课堂点名记录，再导出用于打印归档。",
+        "注： 1. 此表记录平时成绩，满分为100分，授课教师要详实记录，期末作为学生平时成绩判定的依据，并装订入试卷册；",
+        "    2. 平时成绩占__%，期末成绩占__%；平时成绩中出勤占100.0%，课堂测验占0.0%，作业占0.0%，课堂表现占0.0%其他占__%（如有，请列出具体名称）；",
+        "    3. 同一门课程多个平行教学班的平时成绩项目须一致，评分标准由教师制定，教师各负责任教，授课教师在开学第一周向学生公布平时成绩记录与评判标准；",
+        "    4. 出勤√、缺课×、迟到与早退⊕、请假○，作业、实验、测验及课堂表现等用A、B、C、D、E五级给与评价或给出相应的分数，实验学时超过总学时的1/3者，实验成绩单独计算。",
     ]
 
 
@@ -389,6 +390,10 @@ def _build_xlsx(dataset: dict[str, Any]) -> bytes:
     score_start_col = 6 + len(sessions)
 
     wb = Workbook()
+    for named_style in wb._named_styles:
+        if getattr(named_style, "name", "") == "Normal":
+            named_style.font = Font(name=_SPREADSHEET_FONT_NAME, size=10)
+            break
     ws = wb.active
     ws.title = "平时成绩"
 
@@ -404,14 +409,15 @@ def _build_xlsx(dataset: dict[str, Any]) -> bytes:
     ws.page_margins.header = 0.1
     ws.page_margins.footer = 0.1
     ws.print_options.horizontalCentered = True
-    ws.print_title_rows = "3:4"
+    ws.print_title_rows = "1:4"
     ws.freeze_panes = "F5"
-    ws.oddHeader.center.text = f"&KCCCCCC&18{context['watermark_text']}"
+    ws.oddHeader.center.text = f'&"{_SPREADSHEET_FONT_NAME},Regular"&KCCCCCC&18{context["watermark_text"]}'
+    ws.sheet_view.showGridLines = False
 
-    title_font = Font(name="SimSun", size=18, bold=True)
-    meta_font = Font(name="SimSun", size=11)
-    body_font = Font(name="SimSun", size=10)
-    symbol_font = Font(name="SimSun", size=12)
+    title_font = Font(name=_SPREADSHEET_FONT_NAME, size=20, bold=True)
+    meta_font = Font(name=_SPREADSHEET_FONT_NAME, size=11)
+    body_font = Font(name=_SPREADSHEET_FONT_NAME, size=10)
+    symbol_font = Font(name=_SPREADSHEET_FONT_NAME, size=13)
     header_fill = PatternFill("solid", fgColor="FFFFFF")
     thin_side = Side(style="thin", color="222222")
     border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
@@ -421,7 +427,7 @@ def _build_xlsx(dataset: dict[str, Any]) -> bytes:
     ws.cell(1, 1, context["title"])
     ws.cell(1, 1).font = title_font
     ws.cell(1, 1).alignment = center
-    ws.row_dimensions[1].height = 30
+    ws.row_dimensions[1].height = 34
 
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(5, total_columns))
     ws.cell(2, 1, f"任课教师：{context['teacher_name']}        课程名称：{context['course_name']}")
@@ -444,7 +450,7 @@ def _build_xlsx(dataset: dict[str, Any]) -> bytes:
         ws.cell(3, 6).fill = header_fill
         for index, session in enumerate(sessions, start=6):
             cell = ws.cell(4, index, _format_checkin_label(session.get("checkin_time")))
-            cell.font = Font(name="SimSun", size=9)
+            cell.font = Font(name=_SPREADSHEET_FONT_NAME, size=9)
             cell.alignment = center
             cell.fill = header_fill
 
@@ -481,7 +487,7 @@ def _build_xlsx(dataset: dict[str, Any]) -> bytes:
         row = note_start_row + offset
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=total_columns)
         cell = ws.cell(row, 1, note)
-        cell.font = Font(name="SimSun", size=9)
+        cell.font = Font(name=_SPREADSHEET_FONT_NAME, size=8.5)
         cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
         ws.row_dimensions[row].height = 22
 
@@ -628,14 +634,14 @@ def _draw_pdf_header(
     page.insert_textbox(
         title_rect,
         context["title"],
-        fontsize=18,
+        fontsize=20,
         fontname=fontname,
         color=(0, 0, 0),
         align=fitz.TEXT_ALIGN_CENTER,
     )
     meta = f"任课教师： {context['teacher_name']}        课程名称： {context['course_name']}"
     page.insert_textbox(
-        fitz.Rect(margin_x, title_top + 34, page.rect.width - margin_x, title_top + 55),
+        fitz.Rect(margin_x, title_top + 38, page.rect.width - margin_x, title_top + 60),
         meta,
         fontsize=10.5,
         fontname=fontname,
@@ -730,7 +736,7 @@ def _draw_pdf_notes(page: fitz.Page, dataset: dict[str, Any], *, y: float, margi
     page.insert_textbox(
         note_rect,
         "\n".join(_notes(dataset)),
-        fontsize=8.4,
+        fontsize=8.0,
         fontname=fontname,
         color=(0.05, 0.05, 0.05),
         align=fitz.TEXT_ALIGN_LEFT,
@@ -738,7 +744,7 @@ def _draw_pdf_notes(page: fitz.Page, dataset: dict[str, Any], *, y: float, margi
 
 
 def _pdf_capacity(page_height: float, table_top: float, *, row_height: float, notes: bool) -> int:
-    reserved_notes = 58.0 if notes else 0.0
+    reserved_notes = 76.0 if notes else 0.0
     available = page_height - 18.0 - reserved_notes - table_top - 39.0
     return max(1, int(math.floor(available / row_height)))
 
@@ -750,17 +756,14 @@ def _build_pdf(dataset: dict[str, Any]) -> bytes:
     page_height = 595.28
     margin_x = 24.0
     row_height = 32.0
-    first_table_top = 82.0
-    later_table_top = 24.0
+    table_top = 90.0
     remaining = students[:]
     page_index = 0
     while remaining:
         page = doc.new_page(width=page_width, height=page_height)
         fontname = _ensure_pdf_font(page)
         _draw_watermark(page, dataset["context"]["watermark_text"], fontname=fontname)
-        table_top = first_table_top if page_index == 0 else later_table_top
-        if page_index == 0:
-            _draw_pdf_header(page, dataset, margin_x=margin_x, title_top=22.0, fontname=fontname)
+        _draw_pdf_header(page, dataset, margin_x=margin_x, title_top=18.0, fontname=fontname)
 
         cap_with_notes = _pdf_capacity(page_height, table_top, row_height=row_height, notes=True)
         cap_full = _pdf_capacity(page_height, table_top, row_height=row_height, notes=False)
