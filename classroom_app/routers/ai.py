@@ -1534,6 +1534,8 @@ async def handle_ai_workspace_chat(
         "你要结合当前页面上下文帮助用户完成教学、学习、管理或材料相关问题。"
         "如果页面上下文不足，应明确说明需要用户补充的信息；不要编造课堂、学生、成绩或文件事实。"
         "如果用户要求修改核心代码、部署、删除数据库或越权访问，应拒绝并给出安全替代建议。"
+        "回答要使用结构清晰的 Markdown：标题、列表、表格、分隔线和代码块必须换行完整；"
+        "不要把 `---`、`##`、表格管道符或列表项挤在同一段里。"
     )
     if user_role == "teacher":
         system_prompt += "当前用户是教师，可以提供备课、材料整理、作业设计和课堂运营建议。"
@@ -1826,6 +1828,10 @@ async def handle_ai_chat(
         classroom_context_prompt=classroom_ai_context.get("classroom_summary") or "",
         textbook_context_prompt=classroom_ai_context.get("textbook_summary") or "",
     )
+    final_system_prompt += (
+        "\n\n回答格式要求：使用结构清晰的 Markdown；标题、列表、表格、分隔线和代码块必须换行完整；"
+        "不要把 `---`、`##`、表格管道符或列表项挤在同一段里。"
+    )
     extra_context = str(context_prompt_extra or "").strip()
     if extra_context:
         final_system_prompt += (
@@ -1983,7 +1989,7 @@ async def handle_ai_chat(
                 if not response.is_success:
                     error_detail = await response.aread()
                     error_message = (
-                        f"AI 鍔╂墜鏈嶅姟杩炴帴澶辫触 (鐘舵€佺爜 {response.status_code}): "
+                        f"AI 助手服务连接失败 (状态码 {response.status_code}): "
                         f"{error_detail.decode('utf-8', errors='ignore')}"
                     )
                     print(f"[ERROR] {error_message}")
@@ -2084,11 +2090,11 @@ async def handle_ai_chat(
                 conn.commit()
 
             print(
-                f"[CHAT] 鎴愬姛淇濆瓨缁撴瀯鍖栨祦寮忓搷搴? "
+                f"[CHAT] 成功保存结构化流式响应 "
                 f"(Session: {session_db_id}, answer={len(stored_final_answer)}, thinking={len(stored_thinking or '')})"
             )
         except Exception as e:
-            print(f"[ERROR] 淇濆瓨 AI 娴佸紡鍝嶅簲澶辫触: {e}")
+            print(f"[ERROR] 保存 AI 流式响应失败: {e}")
 
         # 内部个性化支持摘要已改为全局定时调度，这里不再按对话轮次触发。
 

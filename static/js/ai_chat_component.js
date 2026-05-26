@@ -26,13 +26,47 @@ function notifyAIChat(message, type = 'info') {
 }
 
 function renderAIChatMarkdown(content, fallback = '') {
+    const normalizedContent = normalizeAIChatMarkdown(content);
     if (typeof window.safeMarkedParse === 'function') {
-        return window.safeMarkedParse(content, fallback);
+        return window.safeMarkedParse(normalizedContent, fallback);
     }
     const holder = document.createElement('div');
-    holder.textContent = String(content || fallback || '');
+    holder.textContent = String(normalizedContent || fallback || '');
     return holder.innerHTML.replace(/\n/g, '<br>');
 }
+
+function normalizeAIChatMarkdown(content) {
+    const raw = String(content ?? '').replace(/\r\n?/g, '\n');
+    if (!raw.trim()) {
+        return '';
+    }
+
+    const segments = raw.split(/(```[\s\S]*?```)/g);
+    return segments.map((segment) => {
+        if (segment.startsWith('```')) {
+            return segment;
+        }
+        return normalizeAIChatMarkdownText(segment);
+    }).join('').replace(/\n{4,}/g, '\n\n\n').trim();
+}
+
+function normalizeAIChatMarkdownText(text) {
+    let normalized = String(text || '');
+    normalized = normalized
+        .replace(/([^\n])\s*(---|\*\*\*|___)\s*(#{1,6})\s*/g, '$1\n\n$2\n\n$3 ')
+        .replace(/([。！？；;：:])\s*(#{1,6})\s*(?=[^\s#])/g, '$1\n\n$2 ')
+        .replace(/(^|\n)(#{1,6})(?=[^\s#])/g, '$1$2 ')
+        .replace(/([^\n])\s*(#{2,6})\s*(?=[^\s#])/g, '$1\n\n$2 ')
+        .replace(/([。！？；;])\s+((?:[-*+]|\d+[.)])\s+)/g, '$1\n$2')
+        .replace(/\n(\|[^\n]*\|)\n(\|?\s*:?-{3,}:?(?:\s*\|\s*:?-{3,}:?)+\s*\|?)/g, '\n\n$1\n$2')
+        .replace(/(\|[^\n]*\|)\s+(\|?\s*:?-{3,}:?(?:\s*\|\s*:?-{3,}:?)+\s*\|?)/g, '$1\n$2')
+        .replace(/(\|?\s*:?-{3,}:?(?:\s*\|\s*:?-{3,}:?)+\s*\|?)\s+(\|)/g, '$1\n$2')
+        .replace(/\n{3,}(\|[^\n]*\|)/g, '\n\n$1');
+
+    return normalized;
+}
+
+window.normalizeAIChatMarkdown = normalizeAIChatMarkdown;
 
 class AIChatComponent {
     constructor(options) {
@@ -568,13 +602,23 @@ class AIChatComponent {
 
         if (shouldShowAnswer) {
             const answerSection = document.createElement('div');
-            answerSection.className = 'final-answer';
+            answerSection.className = 'final-answer md-content ai-chat-markdown';
             answerSection.innerHTML = renderAIChatMarkdown(content, '');
             if (showStreamingCursor) {
                 answerSection.innerHTML += '<span class="streaming-cursor"></span>';
             }
+            this.enhanceRenderedMarkdown(answerSection);
             bubble.appendChild(answerSection);
         }
+    }
+
+    enhanceRenderedMarkdown(root) {
+        if (!root) {
+            return;
+        }
+        root.querySelectorAll('table').forEach((table) => {
+            table.classList.add('ai-chat-markdown-table');
+        });
     }
 
     /* *** 新增 (V5): 创建思考过程区域

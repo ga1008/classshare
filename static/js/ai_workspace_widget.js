@@ -45,6 +45,24 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+function normalizeWorkspaceMarkdown(value) {
+    if (typeof window.normalizeAIChatMarkdown === 'function') {
+        return window.normalizeAIChatMarkdown(value);
+    }
+    return String(value ?? '').replace(/\r\n?/g, '\n').trim();
+}
+
+function renderWorkspaceMarkdown(value, fallback = '') {
+    const normalized = normalizeWorkspaceMarkdown(value);
+    if (!normalized) {
+        return fallback;
+    }
+    if (typeof window.safeMarkedParse === 'function') {
+        return window.safeMarkedParse(normalized, fallback);
+    }
+    return escapeHtml(normalized).replace(/\n/g, '<br>');
+}
+
 function clampText(value, maxLength) {
     const text = String(value ?? '').replace(/\s+/g, ' ').trim();
     return text.length > maxLength ? `${text.slice(0, maxLength).trim()}...` : text;
@@ -270,7 +288,7 @@ function refreshContextPreview() {
     });
     const subtitle = $('#ai-workspace-subtitle');
     if (subtitle) {
-        subtitle.textContent = agentMode ? `Agent 任务 · ${label}` : `懂当前页面 · ${label}`;
+        subtitle.textContent = agentMode ? `Agent 任务 · 全平台队列 · ${label}` : `普通对话 · ${label}`;
     }
 }
 
@@ -357,16 +375,24 @@ function setQueueState(queueState = {}, counts = {}) {
         }
     });
 
-    const state = queueState.is_running ? 'red' : (queueState.is_composing ? 'yellow' : 'green');
-    let tooltip = '可以执行新任务';
+    const state = queueState.is_running ? 'red' : ((queueState.is_composing || queued > 0) ? 'yellow' : 'green');
+    let tooltip = 'Agent 队列空闲';
+    let modebarStatus = queued > 0 ? `排队 ${queued}` : '队列空闲';
     if (state === 'red') {
         const running = queueState.running || {};
         tooltip = `${running.teacher_name || '某位老师'}的${running.public_summary || running.task_type_label || 'Agent 任务'}正在运行`;
+        modebarStatus = queued > 0 ? `运行中 · 排队 ${queued}` : '运行中';
     } else if (state === 'yellow') {
         const composer = queueState.composer || {};
-        tooltip = `${composer.teacher_name || '某位老师'}正在编写新任务`;
+        if (queued > 0) {
+            tooltip = `已有 ${queued} 个 Agent 任务在等待全平台单任务队列`;
+            modebarStatus = `排队 ${queued}`;
+        } else {
+            tooltip = `${composer.teacher_name || '某位老师'}正在编写新任务`;
+            modebarStatus = '有人正在编辑';
+        }
     }
-    ['#ai-agent-traffic-light', '#ai-agent-fab-light'].forEach((selector) => {
+    ['#ai-agent-traffic-light', '#ai-agent-fab-light', '#ai-agent-modebar-light'].forEach((selector) => {
         const node = $(selector);
         if (!node) {
             return;
@@ -375,6 +401,16 @@ function setQueueState(queueState = {}, counts = {}) {
         node.classList.add(`is-${state}`);
         node.title = tooltip;
     });
+    const statusNode = $('#ai-agent-modebar-status');
+    if (statusNode) {
+        statusNode.textContent = modebarStatus;
+    }
+    const agentModeOption = $('[data-ai-mode-select="agent"]');
+    if (agentModeOption) {
+        agentModeOption.classList.remove('is-green', 'is-yellow', 'is-red');
+        agentModeOption.classList.add(`is-${state}`);
+        agentModeOption.title = tooltip;
+    }
 }
 
 function inferAgentTaskType(instruction, context = collectPageContext()) {
@@ -564,7 +600,7 @@ function renderBusinessResult(detail = {}) {
                     `).join('')}
                 </dl>
             ` : ''}
-            ${markdown ? `<div class="ai-task-business-markdown">${escapeHtml(markdown)}</div>` : ''}
+            ${markdown ? `<div class="ai-task-business-markdown md-content">${renderWorkspaceMarkdown(markdown)}</div>` : ''}
             ${renderDetailList(detail.items || [])}
             ${nextActions.length ? `
                 <div class="ai-task-runtime-section">
@@ -606,7 +642,7 @@ function renderRuntimeDetail(detail = {}) {
             ${textOutputs.length ? `
                 <div class="ai-task-runtime-section">
                     <strong>关键输出</strong>
-                    ${textOutputs.map((item) => `<p>${escapeHtml(item.text || item)}</p>`).join('')}
+                    ${textOutputs.map((item) => `<div class="ai-task-runtime-output md-content">${renderWorkspaceMarkdown(item.text || item)}</div>`).join('')}
                 </div>
             ` : ''}
             ${artifacts.length ? `
@@ -928,6 +964,11 @@ function setAgentMode(enabled, { persist = true } = {}) {
     document.body.dataset.aiAgentMode = agentMode ? 'agent' : 'chat';
     toggle?.classList.toggle('is-active', agentMode);
     toggle?.setAttribute('aria-pressed', agentMode ? 'true' : 'false');
+    $all('[data-ai-mode-select]').forEach((button) => {
+        const isActive = button.dataset.aiModeSelect === (agentMode ? 'agent' : 'chat');
+        button.classList.toggle('is-active', isActive);
+        button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
     if (toggle) {
         toggle.title = agentMode ? '切换为普通 AI 对话' : '切换为 Agent 任务';
     }
@@ -954,6 +995,7 @@ function setAgentMode(enabled, { persist = true } = {}) {
         surface.sendBtn.setAttribute('aria-label', agentMode ? '加入 Agent 队列' : '发送');
     }
     refreshContextPreview();
+    setQueueState(lastTaskPayload.queue_state || {}, lastTaskPayload.counts || {});
     if (persist) {
         try {
             window.localStorage.setItem('lanshare.aiWorkspace.agentMode', agentMode ? '1' : '0');
@@ -1083,6 +1125,11 @@ function bindTaskCenter() {
         return;
     }
     $('#ai-agent-mode-toggle')?.addEventListener('click', () => setAgentMode(!agentMode));
+    $all('[data-ai-mode-select]').forEach((button) => {
+        button.addEventListener('click', () => {
+            setAgentMode(button.dataset.aiModeSelect === 'agent');
+        });
+    });
     $('#ai-agent-history-toggle')?.addEventListener('click', () => {
         const drawer = $('#ai-agent-history-drawer');
         setAgentHistoryOpen(!drawer || drawer.hidden);

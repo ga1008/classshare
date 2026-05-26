@@ -684,6 +684,7 @@
     <script type="module" src="/static/js/feedback.js"></script>
     {% if not embedded_mode %}
     <script type="module" src="/static/js/teacher_onboarding.js"></script>
+    {% include "partials/markdown_assets.html" %}
     <script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
     <script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>
     {% endif %}
