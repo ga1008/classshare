@@ -23,6 +23,7 @@ const elements = {
     firstClassDateInput: document.getElementById('offeringFirstClassDateInput'),
     fixedSchedulePanel: document.getElementById('fixedSchedulePanel'),
     weeklyScheduleContainer: document.getElementById('weeklyScheduleContainer'),
+    weeklyScheduleMenu: document.getElementById('weeklyScheduleMenu'),
     weeklyScheduleTemplate: document.getElementById('weeklyScheduleRowTemplate'),
     addWeeklyScheduleBtn: document.getElementById('addWeeklyScheduleBtn'),
     previewMeta: document.getElementById('offeringPreviewMeta'),
@@ -35,6 +36,84 @@ const elements = {
 };
 
 let previewDebounceTimer = null;
+let activeScheduleIndex = 0;
+
+const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+function getScheduleRows() {
+    return Array.from(elements.weeklyScheduleContainer?.querySelectorAll('[data-schedule-row]') || []);
+}
+
+function scheduleRowState(row) {
+    const weekday = Number(row?.querySelector('[data-field="weekday"]')?.value ?? -1);
+    const sections = Number(row?.querySelector('[data-field="section_count"]')?.value || 0);
+    if (weekday >= 0 && weekday <= 6 && sections > 0) return 'complete';
+    if (weekday >= 0 || sections > 0) return 'partial';
+    return 'empty';
+}
+
+function scheduleRowLabel(row, index) {
+    const weekday = Number(row?.querySelector('[data-field="weekday"]')?.value ?? index % 7);
+    return weekdayLabels[weekday] || `安排 ${index + 1}`;
+}
+
+function scheduleRowMeta(row) {
+    const sections = Number(row?.querySelector('[data-field="section_count"]')?.value || 0);
+    const state = scheduleRowState(row);
+    const status = state === 'complete' ? '已完整' : (state === 'partial' ? '待补齐' : '未填写');
+    return `${sections || 0} 小节 · ${status}`;
+}
+
+function syncScheduleWorkbench() {
+    const rows = getScheduleRows();
+    if (!rows.length) {
+        if (elements.weeklyScheduleMenu) elements.weeklyScheduleMenu.innerHTML = '';
+        return;
+    }
+    activeScheduleIndex = Math.max(0, Math.min(activeScheduleIndex, rows.length - 1));
+
+    rows.forEach((row, index) => {
+        const isActive = index === activeScheduleIndex;
+        const heading = row.querySelector('[data-schedule-heading]');
+        const status = row.querySelector('[data-schedule-status]');
+        row.hidden = !isActive;
+        row.classList.toggle('is-active', isActive);
+        row.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+        row.dataset.scheduleIndex = String(index);
+        if (heading) heading.textContent = `第 ${index + 1} 个上课日 · ${scheduleRowLabel(row, index)}`;
+        if (status) status.textContent = scheduleRowMeta(row);
+    });
+
+    if (!elements.weeklyScheduleMenu) return;
+    elements.weeklyScheduleMenu.innerHTML = rows.map((row, index) => {
+        const state = scheduleRowState(row);
+        const isActive = index === activeScheduleIndex;
+        return `
+            <button type="button"
+                    class="offering-schedule-tab is-${state}${isActive ? ' is-active' : ''}"
+                    data-action="select-schedule"
+                    data-schedule-index="${index}"
+                    aria-current="${isActive ? 'true' : 'false'}">
+                <span class="offering-schedule-tab-dot" aria-hidden="true"></span>
+                <span class="offering-schedule-tab-copy">
+                    <strong>${scheduleRowLabel(row, index)}</strong>
+                    <span>${scheduleRowMeta(row)}</span>
+                </span>
+                <span class="offering-schedule-tab-index">${index + 1}</span>
+            </button>
+        `;
+    }).join('');
+}
+
+function setActiveSchedule(index, { focus = false } = {}) {
+    const rows = getScheduleRows();
+    if (!rows.length) return;
+    activeScheduleIndex = Math.max(0, Math.min(Number(index) || 0, rows.length - 1));
+    syncScheduleWorkbench();
+    if (focus) {
+        rows[activeScheduleIndex]?.querySelector('[data-field="weekday"]')?.focus({ preventScroll: true });
+    }
+}
 
 function createScheduleRow(data = {}) {
     if (!elements.weeklyScheduleTemplate || !elements.weeklyScheduleContainer) {
@@ -51,14 +130,16 @@ function createScheduleRow(data = {}) {
 }
 
 function ensureOneScheduleRow() {
-    const rows = elements.weeklyScheduleContainer?.querySelectorAll('[data-schedule-row]') || [];
+    const rows = getScheduleRows();
     if (!rows.length) {
+        activeScheduleIndex = 0;
         createScheduleRow();
     }
+    syncScheduleWorkbench();
 }
 
 function collectWeeklySchedule() {
-    return Array.from(elements.weeklyScheduleContainer?.querySelectorAll('[data-schedule-row]') || []).map((row) => ({
+    return getScheduleRows().map((row) => ({
         weekday: Number(row.querySelector('[data-field="weekday"]')?.value || 0),
         section_count: Number(row.querySelector('[data-field="section_count"]')?.value || 0),
     }));
@@ -364,6 +445,7 @@ function resetForm() {
     if (elements.academicClassSelect) elements.academicClassSelect.value = '';
     if (elements.firstClassDateInput) elements.firstClassDateInput.value = '';
     if (elements.weeklyScheduleContainer) elements.weeklyScheduleContainer.innerHTML = '';
+    activeScheduleIndex = 0;
     ensureOneScheduleRow();
 
     if (elements.semesterSelect && config.defaultSemesterId) {
@@ -389,6 +471,7 @@ function populateForm(offering) {
     if (elements.firstClassDateInput) elements.firstClassDateInput.value = offering.first_class_date || '';
 
     if (elements.weeklyScheduleContainer) elements.weeklyScheduleContainer.innerHTML = '';
+    activeScheduleIndex = 0;
     const weeklySchedule = Array.isArray(offering.weekly_schedule) && offering.weekly_schedule.length
         ? offering.weekly_schedule
         : [{ weekday: 0, section_count: 2 }];
@@ -462,6 +545,9 @@ function applyQueryDefaults() {
 function bindEvents() {
     elements.addWeeklyScheduleBtn?.addEventListener('click', () => {
         createScheduleRow();
+        activeScheduleIndex = getScheduleRows().length - 1;
+        syncScheduleWorkbench();
+        setActiveSchedule(activeScheduleIndex, { focus: true });
         schedulePreviewRefresh();
     });
 
@@ -490,12 +576,29 @@ function bindEvents() {
     elements.weeklyScheduleContainer?.addEventListener('click', (event) => {
         const button = event.target.closest('[data-action="remove-schedule"]');
         if (!button) return;
-        button.closest('[data-schedule-row]')?.remove();
+        const row = button.closest('[data-schedule-row]');
+        const removedIndex = Number(row?.dataset.scheduleIndex || 0);
+        row?.remove();
+        if (removedIndex < activeScheduleIndex) {
+            activeScheduleIndex -= 1;
+        } else if (removedIndex === activeScheduleIndex) {
+            activeScheduleIndex = Math.max(0, removedIndex - 1);
+        }
         ensureOneScheduleRow();
         schedulePreviewRefresh();
     });
 
-    elements.weeklyScheduleContainer?.addEventListener('change', schedulePreviewRefresh);
+    elements.weeklyScheduleMenu?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-action="select-schedule"]');
+        if (!button) return;
+        setActiveSchedule(Number(button.dataset.scheduleIndex || 0));
+    });
+
+    elements.weeklyScheduleContainer?.addEventListener('input', syncScheduleWorkbench);
+    elements.weeklyScheduleContainer?.addEventListener('change', () => {
+        syncScheduleWorkbench();
+        schedulePreviewRefresh();
+    });
     elements.offeringList?.addEventListener('click', (event) => {
         const editButton = event.target.closest('[data-action="edit-offering"]');
         if (editButton) {

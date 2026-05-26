@@ -46,6 +46,7 @@ if (modal) {
             totalHours: 32,
             sectName: '',
             lessons: [],
+            activeLessonIndex: 0,
             firstClassDate: '',
             weeklySchedule: [{ weekday: 0, section_count: 2 }],
             aiSystemPrompt: '',
@@ -711,7 +712,10 @@ if (modal) {
 
     function ensureLessons() {
         const totalHours = Number(state.selected.totalHours || 32);
-        if (state.selected.lessons.length) return;
+        if (state.selected.lessons.length) {
+            state.selected.activeLessonIndex = Math.max(0, Math.min(Number(state.selected.activeLessonIndex || 0), state.selected.lessons.length - 1));
+            return;
+        }
         const sectionCount = 2;
         const lessonCount = Math.max(1, Math.ceil(totalHours / sectionCount));
         state.selected.lessons = Array.from({ length: lessonCount }, (_, index) => ({
@@ -720,6 +724,7 @@ if (modal) {
             section_count: index === lessonCount - 1 ? totalHours - sectionCount * (lessonCount - 1) || sectionCount : sectionCount,
             learning_material_id: null,
         }));
+        state.selected.activeLessonIndex = 0;
     }
 
     function updateLesson(index, field, value) {
@@ -733,6 +738,63 @@ if (modal) {
             lesson[field] = value;
         }
         updateFooter();
+    }
+
+    function lessonCompletionState(lesson) {
+        const title = normalizeText(lesson?.title);
+        const content = normalizeText(lesson?.content);
+        const sections = Number(lesson?.section_count || 0);
+        if (title && content && sections > 0) return 'complete';
+        if (title || content || sections > 0) return 'partial';
+        return 'empty';
+    }
+
+    function lessonTabLabel(lesson, index) {
+        const source = normalizeText(lesson?.title) || `第 ${index + 1} 次课`;
+        return source.length > 12 ? `${source.slice(0, 12)}...` : source;
+    }
+
+    function lessonTabMeta(lesson) {
+        const stateKey = lessonCompletionState(lesson);
+        const status = stateKey === 'complete' ? '已完整' : (stateKey === 'partial' ? '待补齐' : '未填写');
+        return `${Number(lesson?.section_count || 0)} 小节 · ${lesson?.learning_material_id ? '已绑材料' : '未绑材料'} · ${status}`;
+    }
+
+    function clampActiveLessonIndex() {
+        const maxIndex = Math.max(0, state.selected.lessons.length - 1);
+        state.selected.activeLessonIndex = Math.max(0, Math.min(Number(state.selected.activeLessonIndex || 0), maxIndex));
+        return state.selected.activeLessonIndex;
+    }
+
+    function syncDetailsLessonWorkbench(container) {
+        const activeIndex = clampActiveLessonIndex();
+        container.querySelectorAll('[data-lesson-index]').forEach((row) => {
+            const index = Number(row.dataset.lessonIndex || 0);
+            const isActive = index === activeIndex;
+            row.hidden = !isActive;
+            row.classList.toggle('is-active', isActive);
+            row.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+        });
+        container.querySelectorAll('[data-action="select-lesson"]').forEach((button) => {
+            const index = Number(button.dataset.lessonIndex || 0);
+            const lesson = state.selected.lessons[index] || {};
+            const stateKey = lessonCompletionState(lesson);
+            const isActive = index === activeIndex;
+            button.className = `onboarding-lesson-tab is-${stateKey}${isActive ? ' is-active' : ''}`;
+            button.setAttribute('aria-current', isActive ? 'true' : 'false');
+            const label = button.querySelector('[data-lesson-label]');
+            const meta = button.querySelector('[data-lesson-meta]');
+            if (label) label.textContent = lessonTabLabel(lesson, index);
+            if (meta) meta.textContent = lessonTabMeta(lesson);
+        });
+    }
+
+    function setDetailsLessonActive(container, index, { focus = false } = {}) {
+        state.selected.activeLessonIndex = Number(index || 0);
+        syncDetailsLessonWorkbench(container);
+        if (focus) {
+            container.querySelector(`[data-lesson-index="${state.selected.activeLessonIndex}"] [data-field="title"]`)?.focus({ preventScroll: true });
+        }
     }
 
     function matchTokens(value) {
@@ -798,13 +860,32 @@ if (modal) {
 
     function renderDetailsStep(container) {
         ensureLessons();
+        const activeLessonIndex = clampActiveLessonIndex();
         const selectedMaterialIds = selectedOrDescendantMaterialIds();
         const markdownMaterials = list('materials').filter((item) => item.is_markdown && (selectedMaterialIds.length === 0 || selectedMaterialIds.includes(Number(item.id))));
         const materialOptions = ['<option value="">不绑定</option>']
             .concat(markdownMaterials.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`))
             .join('');
+        const lessonsMenuHtml = state.selected.lessons.map((lesson, index) => {
+            const stateKey = lessonCompletionState(lesson);
+            const isActive = index === activeLessonIndex;
+            return `
+                <button type="button"
+                        class="onboarding-lesson-tab is-${stateKey}${isActive ? ' is-active' : ''}"
+                        data-action="select-lesson"
+                        data-lesson-index="${index}"
+                        aria-current="${isActive ? 'true' : 'false'}">
+                    <span class="onboarding-lesson-tab-dot" aria-hidden="true"></span>
+                    <span class="onboarding-lesson-tab-copy">
+                        <strong data-lesson-label>${escapeHtml(lessonTabLabel(lesson, index))}</strong>
+                        <span data-lesson-meta>${escapeHtml(lessonTabMeta(lesson))}</span>
+                    </span>
+                    <span class="onboarding-lesson-tab-index">${index + 1}</span>
+                </button>
+            `;
+        }).join('');
         const lessonsHtml = state.selected.lessons.map((lesson, index) => `
-            <article class="onboarding-lesson-row" data-lesson-index="${index}">
+            <article class="onboarding-lesson-row${index === activeLessonIndex ? ' is-active' : ''}" data-lesson-index="${index}" ${index === activeLessonIndex ? '' : 'hidden'} aria-hidden="${index === activeLessonIndex ? 'false' : 'true'}">
                 <div class="onboarding-field">
                     <label>第 ${index + 1} 次课标题</label>
                     <input type="text" value="${escapeHtml(lesson.title || '')}" data-field="title">
@@ -857,19 +938,28 @@ if (modal) {
                 </div>
             </div>
             ${aiSuggestion}
-            <div class="onboarding-toolbar">
-                <div class="onboarding-badge-row">
-                    <span class="onboarding-badge is-green">8 学时 = 0.5 学分</span>
-                    <span class="onboarding-badge is-blue">32 学时 = 2.0 学分</span>
+            <div class="onboarding-dynamic-list">
+                <div class="onboarding-dynamic-head">
+                    <div>
+                        <h4>课堂设置</h4>
+                        <p>左侧按课次快速跳转，右侧只编辑当前课次；标题、内容和小节数完整后会显示为绿色。</p>
+                        <div class="onboarding-badge-row">
+                            <span class="onboarding-badge is-green">8 学时 = 0.5 学分</span>
+                            <span class="onboarding-badge is-blue">32 学时 = 2.0 学分</span>
+                        </div>
+                    </div>
+                    <div class="onboarding-dynamic-actions">
+                        <button type="button" class="btn btn-outline btn-sm" data-action="generate-description">快速 AI 生成简介</button>
+                        <button type="button" class="btn btn-outline btn-sm" data-action="generate-lessons">AI 生成课堂设置</button>
+                        <button type="button" class="btn btn-ghost btn-sm" data-action="bind-materials">智能绑定材料</button>
+                        <button type="button" class="btn btn-ghost btn-sm" data-action="add-lesson">新增一次课</button>
+                    </div>
                 </div>
-                <div class="onboarding-badge-row">
-                    <button type="button" class="btn btn-outline btn-sm" data-action="generate-description">快速 AI 生成简介</button>
-                    <button type="button" class="btn btn-outline btn-sm" data-action="generate-lessons">AI 生成课堂设置</button>
-                    <button type="button" class="btn btn-ghost btn-sm" data-action="bind-materials">智能绑定材料</button>
-                    <button type="button" class="btn btn-ghost btn-sm" data-action="add-lesson">新增一次课</button>
+                <div class="onboarding-dynamic-workbench">
+                    <nav class="onboarding-lesson-menu" aria-label="课堂设置快捷跳转">${lessonsMenuHtml}</nav>
+                    <div class="onboarding-lesson-list">${lessonsHtml}</div>
                 </div>
             </div>
-            <div class="onboarding-lesson-list">${lessonsHtml}</div>
         `);
 
         container.querySelectorAll('[data-lesson-index]').forEach((row) => {
@@ -878,9 +968,18 @@ if (modal) {
                 if (field.dataset.field === 'learning_material_id') {
                     field.value = String(state.selected.lessons[index]?.learning_material_id || '');
                 }
-                field.addEventListener('input', () => updateLesson(index, field.dataset.field, field.value));
-                field.addEventListener('change', () => updateLesson(index, field.dataset.field, field.value));
+                field.addEventListener('input', () => {
+                    updateLesson(index, field.dataset.field, field.value);
+                    syncDetailsLessonWorkbench(container);
+                });
+                field.addEventListener('change', () => {
+                    updateLesson(index, field.dataset.field, field.value);
+                    syncDetailsLessonWorkbench(container);
+                });
             });
+        });
+        container.querySelectorAll('[data-action="select-lesson"]').forEach((button) => {
+            button.addEventListener('click', () => setDetailsLessonActive(container, Number(button.dataset.lessonIndex || 0)));
         });
         container.querySelector('#onboardingCreditsInput')?.addEventListener('input', (event) => {
             state.selected.creditTouched = true;
@@ -934,6 +1033,7 @@ if (modal) {
                 section_count: 2,
                 learning_material_id: null,
             });
+            state.selected.activeLessonIndex = state.selected.lessons.length - 1;
             render();
         });
         container.querySelectorAll('[data-action="remove-lesson"]').forEach((button) => {
@@ -942,6 +1042,11 @@ if (modal) {
                 const index = Number(row?.dataset.lessonIndex || -1);
                 if (index >= 0) {
                     state.selected.lessons.splice(index, 1);
+                    if (index < state.selected.activeLessonIndex) {
+                        state.selected.activeLessonIndex -= 1;
+                    } else if (index === state.selected.activeLessonIndex) {
+                        state.selected.activeLessonIndex = Math.max(0, index - 1);
+                    }
                     render();
                 }
             });
@@ -1306,6 +1411,7 @@ if (modal) {
                 silent: true,
             });
             state.selected.lessons = Array.isArray(result.lessons) ? result.lessons : [];
+            state.selected.activeLessonIndex = 0;
             state.selected.aiSystemPrompt = '';
             state.selected.aiSyllabus = '';
             showToast(result.message || '课堂设置已生成', 'success');

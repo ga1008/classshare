@@ -536,8 +536,8 @@
     }
 
     .course-modal-dialog {
-        width: min(96vw, 1180px);
-        max-width: min(96vw, 1180px);
+        width: min(96vw, 1260px);
+        max-width: min(96vw, 1260px);
         height: min(92vh, 900px);
         margin: clamp(8px, 2vh, 18px) auto;
     }
@@ -547,6 +547,7 @@
         border-radius: 16px;
         overflow: hidden;
         background: #ffffff;
+        position: relative;
     }
 
     .course-modal-dialog .modal-header {
@@ -561,19 +562,10 @@
         background: rgba(248, 250, 252, 0.88);
     }
 
-    .course-modal-layout {
+    .course-modal-stack {
         display: grid;
-        grid-template-columns: minmax(300px, 370px) minmax(0, 1fr);
         gap: 16px;
-        align-items: start;
         padding: 18px;
-    }
-
-    .course-modal-side,
-    .course-modal-main {
-        display: grid;
-        gap: 14px;
-        min-width: 0;
     }
 
     .course-form-card,
@@ -588,6 +580,10 @@
         box-shadow: 0 16px 36px -34px rgba(15, 23, 42, 0.5);
     }
 
+    .course-form-card--primary {
+        grid-column: 1 / -1;
+    }
+
     .course-section-heading {
         display: grid;
         gap: 4px;
@@ -600,7 +596,7 @@
     .course-form-grid {
         display: grid;
         gap: 14px;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: minmax(240px, 1.25fr) minmax(180px, 0.85fr) minmax(130px, 0.45fr) minmax(130px, 0.45fr);
     }
 
     .course-form-grid .full-span {
@@ -611,6 +607,71 @@
         border-color: rgba(14, 165, 233, 0.2);
         background:
             linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.72));
+    }
+
+    .course-ai-dialog-backdrop {
+        position: absolute;
+        inset: 0;
+        z-index: 5;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: rgba(15, 23, 42, 0.42);
+        backdrop-filter: blur(10px);
+    }
+
+    .course-ai-dialog-backdrop.is-open {
+        display: flex;
+        animation: courseAiBackdropIn 0.22s ease both;
+    }
+
+    .course-ai-dialog {
+        width: min(560px, 100%);
+        max-height: min(720px, calc(100vh - 80px));
+        overflow: auto;
+        border-radius: 14px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        background: #ffffff;
+        box-shadow: 0 28px 70px -34px rgba(15, 23, 42, 0.72);
+        animation: courseAiDialogIn 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    .course-ai-dialog-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 18px 18px 0;
+    }
+
+    .course-ai-dialog-head :is(h4, p) {
+        margin: 0;
+    }
+
+    .course-ai-dialog-head p {
+        margin-top: 6px;
+        color: var(--text-secondary);
+        line-height: 1.6;
+    }
+
+    .course-ai-dialog-close {
+        width: 36px;
+        height: 36px;
+        border: 1px solid rgba(148, 163, 184, 0.26);
+        border-radius: 999px;
+        background: rgba(248, 250, 252, 0.92);
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+    }
+
+    .course-ai-dialog-close:hover,
+    .course-ai-dialog-close:focus-visible {
+        background: rgba(239, 246, 255, 0.96);
+        color: #0369a1;
+        outline: none;
+        transform: translateY(-1px);
     }
 
     .course-ai-grid {
@@ -643,9 +704,116 @@
         flex-wrap: wrap;
     }
 
+    .course-lessons-actions {
+        display: inline-flex;
+        justify-content: flex-end;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .course-lesson-workbench {
+        display: grid;
+        grid-template-columns: minmax(176px, 1fr) minmax(0, 3fr);
+        gap: 14px;
+        align-items: start;
+        min-height: 430px;
+    }
+
+    .course-lesson-menu {
+        display: grid;
+        gap: 8px;
+        max-height: min(56vh, 540px);
+        overflow: auto;
+        padding: 6px;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        background: rgba(248, 250, 252, 0.74);
+        scrollbar-width: thin;
+    }
+
+    .course-lesson-nav-item {
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr) auto;
+        gap: 9px;
+        align-items: center;
+        width: 100%;
+        min-height: 54px;
+        padding: 9px 10px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.74);
+        color: var(--text-secondary);
+        text-align: left;
+        cursor: pointer;
+        transition: border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+    }
+
+    .course-lesson-nav-item:hover,
+    .course-lesson-nav-item:focus-visible {
+        border-color: rgba(15, 118, 110, 0.24);
+        background: #ffffff;
+        box-shadow: 0 14px 30px -24px rgba(15, 118, 110, 0.65);
+        outline: none;
+        transform: translateY(-1px);
+    }
+
+    .course-lesson-nav-item.is-active {
+        border-color: rgba(15, 118, 110, 0.36);
+        background: rgba(240, 253, 250, 0.92);
+        color: #0f766e;
+        box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.1);
+    }
+
+    .course-lesson-nav-status {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #94a3b8;
+    }
+
+    .course-lesson-nav-item.is-complete .course-lesson-nav-status {
+        background: #10b981;
+    }
+
+    .course-lesson-nav-item.is-partial .course-lesson-nav-status {
+        background: #f59e0b;
+    }
+
+    .course-lesson-nav-copy {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+    }
+
+    .course-lesson-nav-copy strong,
+    .course-lesson-nav-copy span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .course-lesson-nav-copy strong {
+        color: inherit;
+        font-size: 0.9rem;
+        font-weight: 800;
+    }
+
+    .course-lesson-nav-copy span {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+    }
+
+    .course-lesson-nav-index {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        font-weight: 800;
+    }
+
     .course-lessons-container {
         display: grid;
         gap: 14px;
+        min-width: 0;
     }
 
     .course-lesson-editor {
@@ -655,6 +823,14 @@
         border-radius: 12px;
         border: 1px solid rgba(148, 163, 184, 0.18);
         background: rgba(248, 250, 252, 0.92);
+    }
+
+    .course-lesson-editor.is-active {
+        animation: courseLessonPanelIn 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    .course-lesson-editor[hidden] {
+        display: none;
     }
 
     .course-lesson-editor-head {
@@ -756,9 +932,37 @@
         justify-content: flex-end;
     }
 
+    @keyframes courseLessonPanelIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @keyframes courseAiBackdropIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    @keyframes courseAiDialogIn {
+        from {
+            opacity: 0;
+            transform: translateY(18px) scale(0.98);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+
     @media (max-width: 1100px) {
         .course-list-toolbar,
-        .course-modal-layout {
+        .course-form-grid,
+        .course-lesson-workbench {
             grid-template-columns: 1fr;
         }
 
@@ -769,7 +973,6 @@
     }
 
     @media (max-width: 960px) {
-        .course-form-grid,
         .course-lesson-editor-grid {
             grid-template-columns: 1fr;
         }
@@ -838,7 +1041,23 @@
             margin: 6px;
         }
 
-        .course-modal-layout {
+        .course-modal-stack {
+            padding: 12px;
+        }
+
+        .course-lesson-workbench {
+            min-height: 0;
+        }
+
+        .course-lesson-menu {
+            grid-auto-flow: column;
+            grid-auto-columns: minmax(160px, 1fr);
+            max-height: none;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .course-ai-dialog-backdrop {
             padding: 12px;
         }
 
@@ -1152,91 +1371,63 @@
             <div class="modal-body course-modal-body">
                 <input type="hidden" id="courseIdInput">
 
-                <div class="course-modal-layout">
-                    <div class="course-modal-side">
-                        <section class="course-form-card">
-                            <div class="course-section-heading">
-                                <h4 class="academic-card-title">基础信息</h4>
-                                <p class="academic-card-subtitle">课程名称、学时和简介会被课堂开设、AI 拆课和学生端展示复用。</p>
+                <div class="course-modal-stack">
+                    <section class="course-form-card course-form-card--primary">
+                        <div class="course-section-heading">
+                            <h4 class="academic-card-title">基础信息</h4>
+                            <p class="academic-card-subtitle">课程名称、学时和简介会被课堂开设、AI 拆课和学生端展示复用。</p>
+                        </div>
+                        <div class="course-form-grid">
+                            <div class="form-group">
+                                <label class="form-label required" for="courseNameInput">课程名称</label>
+                                <input id="courseNameInput" class="form-control" type="text" placeholder="例如：动态 Web 程序设计实验">
                             </div>
-                            <div class="course-form-grid">
-                                <div class="form-group full-span">
-                                    <label class="form-label required" for="courseNameInput">课程名称</label>
-                                    <input id="courseNameInput" class="form-control" type="text" placeholder="例如：动态 Web 程序设计实验">
-                                </div>
-                                <div class="form-group full-span">
-                                    <label class="form-label" for="courseDepartmentInput">所属系别</label>
-                                    <input id="courseDepartmentInput" class="form-control" type="text" list="courseDepartmentOptions" placeholder="例如：网络工程系">
-                                    <datalist id="courseDepartmentOptions">
-                                        {% for department in department_options %}
-                                        <option value="{{ department }}"></option>
-                                        {% endfor %}
-                                    </datalist>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="courseSectNameInput">宗门名称</label>
-                                    <input id="courseSectNameInput" class="form-control" type="text" maxlength="18" placeholder="例如：计网宗">
-                                    <div class="academic-hint">留空时会按课程名自动生成。</div>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="courseCreditsInput">学分</label>
-                                    <input id="courseCreditsInput" class="form-control" type="number" min="0" max="100" step="0.5" value="0">
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="courseTotalHoursInput">学时</label>
-                                    <input id="courseTotalHoursInput" class="form-control" type="number" min="0" max="512" step="1" value="0">
-                                </div>
-                                <div class="form-group full-span">
-                                    <label class="form-label" for="courseDescriptionInput">课程简介</label>
-                                    <textarea id="courseDescriptionInput" class="form-control" rows="6" placeholder="补充课程定位、教学目标、授课环境和必要说明"></textarea>
-                                </div>
+                            <div class="form-group">
+                                <label class="form-label" for="courseDepartmentInput">所属系别</label>
+                                <input id="courseDepartmentInput" class="form-control" type="text" list="courseDepartmentOptions" placeholder="例如：网络工程系">
+                                <datalist id="courseDepartmentOptions">
+                                    {% for department in department_options %}
+                                    <option value="{{ department }}"></option>
+                                    {% endfor %}
+                                </datalist>
                             </div>
-                        </section>
+                            <div class="form-group">
+                                <label class="form-label" for="courseCreditsInput">学分</label>
+                                <input id="courseCreditsInput" class="form-control" type="number" min="0" max="100" step="0.5" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="courseTotalHoursInput">学时</label>
+                                <input id="courseTotalHoursInput" class="form-control" type="number" min="0" max="512" step="1" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="courseSectNameInput">宗门名称</label>
+                                <input id="courseSectNameInput" class="form-control" type="text" maxlength="18" placeholder="例如：计网宗">
+                                <div class="academic-hint">留空时会按课程名自动生成。</div>
+                            </div>
+                            <div class="form-group full-span">
+                                <label class="form-label" for="courseDescriptionInput">课程简介</label>
+                                <textarea id="courseDescriptionInput" class="form-control" rows="4" placeholder="补充课程定位、教学目标、授课环境和必要说明"></textarea>
+                            </div>
+                        </div>
+                    </section>
 
-                        <section class="course-ai-panel">
+                    <section class="course-lessons-section">
+                        <div class="course-lessons-head">
                             <div class="course-section-heading">
-                                <h4 class="academic-card-title">AI 生成课堂设置</h4>
-                                <p class="academic-card-subtitle">选择教材、课程总学时和每次课小节数后，自动拆出课堂设置，生成后仍可手工微调。</p>
+                                <h4 class="academic-card-title">课堂设置</h4>
+                                <p class="academic-card-subtitle">每条课堂设置会参与后续课堂排期和时间轴生成，可继续绑定课程材料。</p>
                             </div>
-                            <div class="course-ai-grid">
-                                <div class="form-group">
-                                    <label class="form-label" for="courseAiTextbookSelect">教材</label>
-                                    <select id="courseAiTextbookSelect" class="form-control">
-                                        <option value="">请选择教材</option>
-                                        {% for textbook in textbooks_json %}
-                                        <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
-                                        {% endfor %}
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="courseAiSectionCountInput">每次课小节数</label>
-                                    <input id="courseAiSectionCountInput" class="form-control" type="number" min="1" max="12" step="1" value="2">
-                                </div>
-                            </div>
-                            <div class="course-ai-meta" id="courseAiMeta">
-                                <span>预计生成 <strong id="courseAiSessionCount">0</strong> 次课</span>
-                                <span id="courseAiMetaHint">请先填写课程总学时，并保证能被每次课小节数整除。</span>
-                            </div>
-                            <div class="academic-action-group">
-                                <button type="button" class="btn btn-primary" id="courseAiGenerateBtn">AI 生成课堂设置</button>
-                            </div>
-                        </section>
-                    </div>
-
-                    <div class="course-modal-main">
-                        <section class="course-lessons-section">
-                            <div class="course-lessons-head">
-                                <div class="course-section-heading">
-                                    <h4 class="academic-card-title">课堂设置</h4>
-                                    <p class="academic-card-subtitle">每条课堂设置会参与后续课堂排期和时间轴生成，可继续绑定课程材料。</p>
-                                </div>
+                            <div class="course-lessons-actions">
                                 <span class="academic-badge is-muted" id="courseLessonCounter">0 条课堂设置</span>
+                                <button type="button" class="btn btn-outline" id="courseAiOpenBtn">AI 生成课次</button>
+                                <button type="button" class="btn btn-outline" id="courseAddLessonBtn">新增一课</button>
                             </div>
+                        </div>
+                        <div class="course-lesson-workbench">
+                            <nav class="course-lesson-menu" id="courseLessonMenu" aria-label="课堂设置快捷跳转"></nav>
                             <div class="course-lessons-container" id="courseLessonsContainer"></div>
-
-                            <button type="button" class="btn btn-outline" id="courseAddLessonBtn">新增一课</button>
-                        </section>
-                    </div>
+                        </div>
+                    </section>
                 </div>
             </div>
             <div class="modal-footer">
@@ -1246,6 +1437,42 @@
                     <button class="btn btn-outline" data-dismiss="modal">取消</button>
                     <button class="btn btn-primary" type="button" id="courseSaveBtn">保存课程</button>
                 </div>
+            </div>
+            <div class="course-ai-dialog-backdrop" id="courseAiDialog" aria-hidden="true">
+                <section class="course-ai-dialog" role="dialog" aria-modal="true" aria-labelledby="courseAiDialogTitle">
+                    <div class="course-ai-dialog-head">
+                        <div>
+                            <h4 class="academic-card-title" id="courseAiDialogTitle">AI 生成课堂设置</h4>
+                            <p>选择教材、课程总学时和每次课小节数后，自动拆出课堂设置，生成后仍可手工微调。</p>
+                        </div>
+                        <button type="button" class="course-ai-dialog-close" id="courseAiCloseBtn" aria-label="关闭 AI 生成课堂设置">×</button>
+                    </div>
+                    <div class="course-ai-panel">
+                        <div class="course-ai-grid">
+                            <div class="form-group">
+                                <label class="form-label" for="courseAiTextbookSelect">教材</label>
+                                <select id="courseAiTextbookSelect" class="form-control">
+                                    <option value="">请选择教材</option>
+                                    {% for textbook in textbooks_json %}
+                                    <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="courseAiSectionCountInput">每次课小节数</label>
+                                <input id="courseAiSectionCountInput" class="form-control" type="number" min="1" max="12" step="1" value="2">
+                            </div>
+                        </div>
+                        <div class="course-ai-meta" id="courseAiMeta">
+                            <span>预计生成 <strong id="courseAiSessionCount">0</strong> 次课</span>
+                            <span id="courseAiMetaHint">请先填写课程总学时，并保证能被每次课小节数整除。</span>
+                        </div>
+                        <div class="academic-action-group">
+                            <button type="button" class="btn btn-outline" id="courseAiCancelBtn">取消</button>
+                            <button type="button" class="btn btn-primary" id="courseAiGenerateBtn">AI 生成课堂设置</button>
+                        </div>
+                    </div>
+                </section>
             </div>
         </div>
     </div>

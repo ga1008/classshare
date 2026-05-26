@@ -4944,6 +4944,140 @@ body.has-cultivation-login-reveal {
 .onboarding-lesson-list {
     display: grid;
     gap: 10px;
+    min-width: 0;
+}
+
+.onboarding-dynamic-list {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid rgba(203, 213, 225, 0.78);
+    border-radius: 8px;
+    background: rgba(248, 250, 252, 0.72);
+}
+
+.onboarding-dynamic-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.onboarding-dynamic-head h4 {
+    margin: 0;
+    color: #0f172a;
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.onboarding-dynamic-head p {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 0.86rem;
+    line-height: 1.6;
+}
+
+.onboarding-dynamic-actions {
+    display: inline-flex;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.onboarding-dynamic-workbench {
+    display: grid;
+    grid-template-columns: minmax(164px, 1fr) minmax(0, 3fr);
+    gap: 12px;
+    align-items: start;
+    min-height: 300px;
+}
+
+.onboarding-lesson-menu {
+    display: grid;
+    gap: 8px;
+    max-height: min(46vh, 420px);
+    overflow: auto;
+    padding: 6px;
+    border: 1px solid rgba(203, 213, 225, 0.76);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.78);
+    scrollbar-width: thin;
+}
+
+.onboarding-lesson-tab {
+    display: grid;
+    grid-template-columns: 10px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    width: 100%;
+    min-height: 50px;
+    padding: 8px 9px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.88);
+    color: #475569;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.onboarding-lesson-tab:hover,
+.onboarding-lesson-tab:focus-visible {
+    border-color: rgba(15, 118, 110, 0.3);
+    background: #ffffff;
+    box-shadow: 0 12px 24px rgba(15, 118, 110, 0.1);
+    outline: none;
+    transform: translateY(-1px);
+}
+
+.onboarding-lesson-tab.is-active {
+    border-color: rgba(15, 118, 110, 0.45);
+    background: #f0fdfa;
+    color: #0f766e;
+    box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.1);
+}
+
+.onboarding-lesson-tab-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: #94a3b8;
+}
+
+.onboarding-lesson-tab.is-complete .onboarding-lesson-tab-dot {
+    background: #10b981;
+}
+
+.onboarding-lesson-tab.is-partial .onboarding-lesson-tab-dot {
+    background: #f59e0b;
+}
+
+.onboarding-lesson-tab-copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.onboarding-lesson-tab-copy strong,
+.onboarding-lesson-tab-copy span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.onboarding-lesson-tab-copy strong {
+    color: inherit;
+    font-size: 0.88rem;
+    font-weight: 800;
+}
+
+.onboarding-lesson-tab-copy span,
+.onboarding-lesson-tab-index {
+    color: #64748b;
+    font-size: 0.74rem;
+    font-weight: 700;
 }
 
 .onboarding-lesson-row {
@@ -4957,8 +5091,27 @@ body.has-cultivation-login-reveal {
     background: #ffffff;
 }
 
+.onboarding-lesson-row[hidden] {
+    display: none;
+}
+
+.onboarding-lesson-row.is-active {
+    animation: onboardingDynamicPanelIn 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 .onboarding-lesson-row textarea {
     min-height: 42px;
+}
+
+@keyframes onboardingDynamicPanelIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .onboarding-empty {
@@ -5121,8 +5274,17 @@ body.has-cultivation-login-reveal {
 
     .onboarding-field-grid,
     .onboarding-upload-choice-grid,
+    .onboarding-dynamic-workbench,
     .onboarding-lesson-row {
         grid-template-columns: 1fr;
+    }
+
+    .onboarding-lesson-menu {
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(150px, 1fr);
+        max-height: none;
+        overflow-x: auto;
+        overflow-y: hidden;
     }
 
     .onboarding-material-select {
@@ -5155,6 +5317,7 @@ body.has-cultivation-login-reveal {
     .onboarding-step-shell,
     .onboarding-step-shell.is-leaving,
     .onboarding-option-card.is-selected,
+    .onboarding-lesson-row.is-active,
     .onboarding-material-node.is-selected > .onboarding-material-row .onboarding-material-select,
     .teacher-onboarding-submodal,
     .teacher-onboarding-submodal-card {

@@ -31,10 +31,15 @@ const elements = {
     aiSectionCountInput: document.getElementById('courseAiSectionCountInput'),
     aiSessionCount: document.getElementById('courseAiSessionCount'),
     aiMetaHint: document.getElementById('courseAiMetaHint'),
+    aiOpenBtn: document.getElementById('courseAiOpenBtn'),
+    aiDialog: document.getElementById('courseAiDialog'),
+    aiCloseBtn: document.getElementById('courseAiCloseBtn'),
+    aiCancelBtn: document.getElementById('courseAiCancelBtn'),
     aiGenerateBtn: document.getElementById('courseAiGenerateBtn'),
     addLessonBtn: document.getElementById('courseAddLessonBtn'),
     saveBtn: document.getElementById('courseSaveBtn'),
     lessonsContainer: document.getElementById('courseLessonsContainer'),
+    lessonsMenu: document.getElementById('courseLessonMenu'),
     lessonCounter: document.getElementById('courseLessonCounter'),
     lessonTemplate: document.getElementById('courseLessonRowTemplate'),
     searchInput: document.getElementById('courseSearchInput'),
@@ -48,6 +53,7 @@ const elements = {
 let currentGroupMode = 'none';
 let courseGroupSectionSerial = 0;
 let courseGroupResizeFrame = 0;
+let activeLessonIndex = 0;
 const storedCollapsedCourseGroups = readJsonStorage('manage:courses:collapsed-groups', []);
 const collapsedCourseGroups = new Set(Array.isArray(storedCollapsedCourseGroups) ? storedCollapsedCourseGroups : []);
 
@@ -164,6 +170,94 @@ function setLessonMaterial(row, material) {
     row.dataset.learningMaterialViewerUrl = normalized.viewer_url || '';
 }
 
+function getLessonRows() {
+    return Array.from(elements.lessonsContainer?.querySelectorAll('[data-lesson-row]') || []);
+}
+
+function lessonCompletionState(row) {
+    const title = String(row?.querySelector('[data-field="title"]')?.value || '').trim();
+    const content = String(row?.querySelector('[data-field="content"]')?.value || '').trim();
+    const sections = Number(row?.querySelector('[data-field="section_count"]')?.value || 0);
+    if (title && content && sections > 0) return 'complete';
+    if (title || content || sections > 0) return 'partial';
+    return 'empty';
+}
+
+function lessonMenuLabel(row, index) {
+    const title = String(row?.querySelector('[data-field="title"]')?.value || '').trim();
+    const fallback = `第 ${index + 1} 次课`;
+    const source = title || fallback;
+    return source.length > 14 ? `${source.slice(0, 14)}...` : source;
+}
+
+function lessonMenuMeta(row) {
+    const sections = Number(row?.querySelector('[data-field="section_count"]')?.value || 0);
+    const hasMaterial = Boolean(row?.querySelector('[data-field="learning_material_id"]')?.value || '');
+    const state = lessonCompletionState(row);
+    const status = state === 'complete' ? '已完整' : (state === 'partial' ? '待补齐' : '未填写');
+    return `${sections || 0} 小节 · ${hasMaterial ? '已绑材料' : '未绑材料'} · ${status}`;
+}
+
+function syncLessonWorkbench() {
+    const rows = getLessonRows();
+    if (!rows.length) {
+        if (elements.lessonsMenu) elements.lessonsMenu.innerHTML = '';
+        return;
+    }
+
+    activeLessonIndex = Math.max(0, Math.min(activeLessonIndex, rows.length - 1));
+
+    rows.forEach((row, index) => {
+        const isActive = index === activeLessonIndex;
+        row.hidden = !isActive;
+        row.classList.toggle('is-active', isActive);
+        row.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+        row.dataset.lessonIndex = String(index);
+    });
+
+    if (!elements.lessonsMenu) return;
+    elements.lessonsMenu.innerHTML = rows.map((row, index) => {
+        const state = lessonCompletionState(row);
+        const isActive = index === activeLessonIndex;
+        return `
+            <button type="button"
+                    class="course-lesson-nav-item is-${state}${isActive ? ' is-active' : ''}"
+                    data-action="select-lesson"
+                    data-lesson-index="${index}"
+                    aria-current="${isActive ? 'true' : 'false'}">
+                <span class="course-lesson-nav-status" aria-hidden="true"></span>
+                <span class="course-lesson-nav-copy">
+                    <strong>${escapeHtml(lessonMenuLabel(row, index))}</strong>
+                    <span>${escapeHtml(lessonMenuMeta(row))}</span>
+                </span>
+                <span class="course-lesson-nav-index">${index + 1}</span>
+            </button>
+        `;
+    }).join('');
+}
+
+function setActiveLesson(index, { focus = false } = {}) {
+    const rows = getLessonRows();
+    if (!rows.length) return;
+    activeLessonIndex = Math.max(0, Math.min(Number(index) || 0, rows.length - 1));
+    syncLessonWorkbench();
+    if (focus) {
+        rows[activeLessonIndex]?.querySelector('[data-field="title"]')?.focus({ preventScroll: true });
+    }
+}
+
+function setAiDialogOpen(isOpen) {
+    if (!elements.aiDialog) return;
+    elements.aiDialog.classList.toggle('is-open', Boolean(isOpen));
+    elements.aiDialog.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+    if (isOpen) {
+        updateAiMeta();
+        window.setTimeout(() => elements.aiTextbookSelect?.focus({ preventScroll: true }), 40);
+    } else {
+        elements.aiOpenBtn?.focus({ preventScroll: true });
+    }
+}
+
 function createLessonRow(data = {}) {
     if (!elements.lessonTemplate || !elements.lessonsContainer) {
         return null;
@@ -183,7 +277,7 @@ function createLessonRow(data = {}) {
 }
 
 function renumberLessonRows() {
-    const rows = Array.from(elements.lessonsContainer?.querySelectorAll('[data-lesson-row]') || []);
+    const rows = getLessonRows();
     rows.forEach((row, index) => {
         const label = index + 1;
         const indexNode = row.querySelector('[data-lesson-index]');
@@ -194,18 +288,20 @@ function renumberLessonRows() {
     if (elements.lessonCounter) {
         elements.lessonCounter.textContent = `${rows.length} 条课堂设置`;
     }
+    syncLessonWorkbench();
 }
 
 function ensureOneLessonRow() {
-    const rows = elements.lessonsContainer?.querySelectorAll('[data-lesson-row]') || [];
+    const rows = getLessonRows();
     if (!rows.length) {
+        activeLessonIndex = 0;
         createLessonRow();
     }
     renumberLessonRows();
 }
 
 function collectLessons() {
-    return Array.from(elements.lessonsContainer?.querySelectorAll('[data-lesson-row]') || []).map((row) => ({
+    return getLessonRows().map((row) => ({
         title: row.querySelector('[data-field="title"]')?.value || '',
         content: row.querySelector('[data-field="content"]')?.value || '',
         section_count: Number(row.querySelector('[data-field="section_count"]')?.value || 0),
@@ -225,6 +321,7 @@ function resetForm() {
     if (elements.aiTextbookSelect) elements.aiTextbookSelect.value = '';
     if (elements.aiSectionCountInput) elements.aiSectionCountInput.value = '2';
     if (elements.lessonsContainer) elements.lessonsContainer.innerHTML = '';
+    activeLessonIndex = 0;
     ensureOneLessonRow();
     updateAiMeta();
 }
@@ -243,6 +340,7 @@ function populateForm(course) {
     if (elements.descriptionInput) elements.descriptionInput.value = course.description || '';
     if (elements.totalHoursInput) elements.totalHoursInput.value = String(course.total_hours || 0);
     if (elements.lessonsContainer) elements.lessonsContainer.innerHTML = '';
+    activeLessonIndex = 0;
 
     if (Array.isArray(course.lessons) && course.lessons.length) {
         course.lessons.forEach((lesson) => createLessonRow(lesson));
@@ -605,8 +703,10 @@ async function handleAiGenerateLessons() {
         if (elements.lessonsContainer) {
             elements.lessonsContainer.innerHTML = '';
         }
+        activeLessonIndex = 0;
         (result.lessons || []).forEach((lesson) => createLessonRow(lesson));
         ensureOneLessonRow();
+        setAiDialogOpen(false);
         showMessage(result.message || 'AI 已生成课堂设置', 'success');
     } catch (error) {
         showMessage(error.message || 'AI 生成失败', 'error');
@@ -658,9 +758,19 @@ async function handleAcademicCourseSync(triggerButton) {
 function bindEvents() {
     elements.openButtons.forEach((button) => button.addEventListener('click', openCreateModal));
     elements.academicSyncButtons.forEach((button) => button.addEventListener('click', () => handleAcademicCourseSync(button)));
+    elements.aiOpenBtn?.addEventListener('click', () => setAiDialogOpen(true));
+    elements.aiCloseBtn?.addEventListener('click', () => setAiDialogOpen(false));
+    elements.aiCancelBtn?.addEventListener('click', () => setAiDialogOpen(false));
+    elements.aiDialog?.addEventListener('click', (event) => {
+        if (event.target === elements.aiDialog) {
+            setAiDialogOpen(false);
+        }
+    });
     elements.addLessonBtn?.addEventListener('click', () => {
         createLessonRow();
+        activeLessonIndex = getLessonRows().length - 1;
         renumberLessonRows();
+        setActiveLesson(activeLessonIndex, { focus: true });
     });
     elements.saveBtn?.addEventListener('click', handleSaveCourse);
     elements.aiGenerateBtn?.addEventListener('click', handleAiGenerateLessons);
@@ -676,11 +786,29 @@ function bindEvents() {
     elements.totalHoursInput?.addEventListener('input', updateAiMeta);
     elements.aiSectionCountInput?.addEventListener('input', updateAiMeta);
 
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && elements.aiDialog?.classList.contains('is-open')) {
+            setAiDialogOpen(false);
+        }
+    });
+
+    elements.lessonsMenu?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-action="select-lesson"]');
+        if (!button) return;
+        setActiveLesson(Number(button.dataset.lessonIndex || 0));
+    });
+
     elements.lessonsContainer?.addEventListener('click', (event) => {
         const button = event.target.closest('[data-action="remove-lesson"]');
         if (button) {
             const row = button.closest('[data-lesson-row]');
+            const removedIndex = Number(row?.dataset.lessonIndex || 0);
             row?.remove();
+            if (removedIndex < activeLessonIndex) {
+                activeLessonIndex -= 1;
+            } else if (removedIndex === activeLessonIndex) {
+                activeLessonIndex = Math.max(0, removedIndex - 1);
+            }
             ensureOneLessonRow();
             return;
         }
@@ -704,6 +832,7 @@ function bindEvents() {
             }).then((selectedMaterial) => {
                 if (!selectedMaterial) return;
                 setLessonMaterial(row, selectedMaterial);
+                syncLessonWorkbench();
             }).catch((error) => {
                 showMessage(error.message || '加载材料选择器失败', 'error');
             });
@@ -724,8 +853,12 @@ function bindEvents() {
         const clearButton = event.target.closest('[data-action="clear-material"]');
         if (clearButton) {
             setLessonMaterial(row, null);
+            syncLessonWorkbench();
         }
     });
+
+    elements.lessonsContainer?.addEventListener('input', syncLessonWorkbench);
+    elements.lessonsContainer?.addEventListener('change', syncLessonWorkbench);
 
     elements.courseCardGrid?.addEventListener('click', (event) => {
         const groupToggle = event.target.closest('[data-action="toggle-course-group"]');

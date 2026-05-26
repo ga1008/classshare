@@ -830,17 +830,115 @@
             font-size: 0.86rem;
             color: var(--text-secondary);
         }
-        .scoring-question-list {
-            display: flex;
-            flex-direction: column;
+        .scoring-question-workbench {
+            display: grid;
+            grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr);
             gap: 14px;
             margin-top: 16px;
+            align-items: start;
+        }
+        .scoring-question-menu {
+            display: grid;
+            gap: 8px;
+            max-height: min(52vh, 520px);
+            overflow: auto;
+            padding: 6px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: rgba(248, 250, 252, 0.78);
+            scrollbar-width: thin;
+        }
+        .scoring-question-tab {
+            display: grid;
+            grid-template-columns: 10px minmax(0, 1fr) auto;
+            gap: 8px;
+            align-items: center;
+            min-height: 52px;
+            width: 100%;
+            padding: 8px 9px;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.88);
+            color: var(--text-secondary);
+            text-align: left;
+            cursor: pointer;
+            transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, transform 0.18s ease;
+        }
+        .scoring-question-tab:hover,
+        .scoring-question-tab:focus-visible {
+            border-color: rgba(79, 70, 229, 0.3);
+            background: #ffffff;
+            box-shadow: 0 12px 24px rgba(79, 70, 229, 0.1);
+            outline: none;
+            transform: translateY(-1px);
+        }
+        .scoring-question-tab.is-active {
+            border-color: rgba(79, 70, 229, 0.44);
+            background: #eef2ff;
+            color: #3730a3;
+            box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+        }
+        .scoring-question-tab-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            background: #94a3b8;
+        }
+        .scoring-question-tab.is-complete .scoring-question-tab-dot {
+            background: #10b981;
+        }
+        .scoring-question-tab.is-partial .scoring-question-tab-dot {
+            background: #f59e0b;
+        }
+        .scoring-question-tab-copy {
+            display: grid;
+            gap: 2px;
+            min-width: 0;
+        }
+        .scoring-question-tab-copy strong,
+        .scoring-question-tab-copy span {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .scoring-question-tab-copy strong {
+            color: inherit;
+            font-size: 0.86rem;
+            font-weight: 800;
+        }
+        .scoring-question-tab-copy span,
+        .scoring-question-tab-index {
+            color: var(--text-muted);
+            font-size: 0.74rem;
+            font-weight: 700;
+        }
+        .scoring-question-list {
+            display: grid;
+            gap: 14px;
+            min-width: 0;
         }
         .scoring-question-card {
             border: 1px solid var(--border-color);
             border-radius: 8px;
             background: var(--bg-color);
             padding: 16px;
+        }
+        .scoring-question-card[hidden] {
+            display: none;
+        }
+        .scoring-question-card.is-active {
+            animation: scoringQuestionPanelIn 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+        @keyframes scoringQuestionPanelIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         .scoring-question-head {
             display: flex;
@@ -896,8 +994,16 @@
         }
         @media (max-width: 860px) {
             .scoring-overview-grid,
-            .scoring-fields-grid {
+            .scoring-fields-grid,
+            .scoring-question-workbench {
                 grid-template-columns: 1fr;
+            }
+            .scoring-question-menu {
+                grid-auto-flow: column;
+                grid-auto-columns: minmax(150px, 1fr);
+                max-height: none;
+                overflow-x: auto;
+                overflow-y: hidden;
             }
             .scoring-question-head {
                 flex-direction: column;
@@ -1055,7 +1161,10 @@
                         <strong>逐题评分标准</strong>
                         <small>选择题可直接点选正确答案</small>
                     </div>
-                    <div class="scoring-question-list" id="scoring-question-list"></div>
+                    <div class="scoring-question-workbench">
+                        <nav class="scoring-question-menu" id="scoring-question-menu" aria-label="评分题目快捷跳转"></nav>
+                        <div class="scoring-question-list" id="scoring-question-list"></div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -1292,6 +1401,7 @@
         let currentPageIdx = -1;
         let nativeJsonFile = null;
         let scoringSaveAfterApply = false;
+        let activeScoringIndex = 0;
 
         try {
             examConfig = typeof EXAM_CONFIG_RAW === 'string'
@@ -1586,6 +1696,61 @@
             `;
         }
 
+        function scoringQuestionState(q) {
+            const hasAnswer = answerHasValueForQuestion(q);
+            const hasPoints = getQuestionPoints(q) > 0;
+            const hasGuidance = Boolean(getQuestionGuidance(q));
+            const hasDeduction = Boolean(getQuestionDeduction(q));
+            if (hasAnswer && hasPoints && hasGuidance && hasDeduction) return 'complete';
+            if (hasAnswer || hasPoints || hasGuidance || hasDeduction) return 'partial';
+            return 'empty';
+        }
+
+        function scoringQuestionLabel(q, idx) {
+            const text = String(q?.text || '').trim();
+            const source = text || `第 ${idx + 1} 题`;
+            return source.length > 13 ? `${source.slice(0, 13)}...` : source;
+        }
+
+        function scoringQuestionMeta(q) {
+            const stateKey = scoringQuestionState(q);
+            const status = stateKey === 'complete' ? '已完整' : (stateKey === 'partial' ? '待补齐' : '未填写');
+            return `${formatScoreValue(getQuestionPoints(q) || 0)} 分 · ${status}`;
+        }
+
+        function syncScoringWorkbench() {
+            const questions = getAllEditorQuestions();
+            if (!questions.length) {
+                activeScoringIndex = 0;
+                return;
+            }
+            activeScoringIndex = Math.max(0, Math.min(activeScoringIndex, questions.length - 1));
+            document.querySelectorAll('.scoring-question-card[data-scoring-index]').forEach((card) => {
+                const index = Number(card.dataset.scoringIndex || 0);
+                const isActive = index === activeScoringIndex;
+                card.hidden = !isActive;
+                card.classList.toggle('is-active', isActive);
+                card.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+            });
+            document.querySelectorAll('[data-action="select-scoring-question"]').forEach((button) => {
+                const index = Number(button.dataset.scoringIndex || 0);
+                const q = questions[index]?.q || {};
+                const stateKey = scoringQuestionState(q);
+                const isActive = index === activeScoringIndex;
+                button.className = `scoring-question-tab is-${stateKey}${isActive ? ' is-active' : ''}`;
+                button.setAttribute('aria-current', isActive ? 'true' : 'false');
+                const label = button.querySelector('[data-scoring-label]');
+                const meta = button.querySelector('[data-scoring-meta]');
+                if (label) label.textContent = scoringQuestionLabel(q, index);
+                if (meta) meta.textContent = scoringQuestionMeta(q);
+            });
+        }
+
+        window.selectScoringQuestion = function(idx) {
+            activeScoringIndex = Number(idx || 0);
+            syncScoringWorkbench();
+        };
+
         function renderScoringModal() {
             ensureScoringDefaults();
             const descriptionEl = document.getElementById('scoring-description');
@@ -1597,9 +1762,30 @@
 
             const questions = getAllEditorQuestions();
             const list = document.getElementById('scoring-question-list');
-            if (!list) return;
+            const menu = document.getElementById('scoring-question-menu');
+            if (!list || !menu) return;
+            activeScoringIndex = Math.max(0, Math.min(activeScoringIndex, Math.max(questions.length - 1, 0)));
+            menu.innerHTML = questions.map(({ q }, idx) => {
+                const stateKey = scoringQuestionState(q);
+                const isActive = idx === activeScoringIndex;
+                return `
+                    <button type="button"
+                            class="scoring-question-tab is-${stateKey}${isActive ? ' is-active' : ''}"
+                            data-action="select-scoring-question"
+                            data-scoring-index="${idx}"
+                            aria-current="${isActive ? 'true' : 'false'}"
+                            onclick="window.selectScoringQuestion(${idx})">
+                        <span class="scoring-question-tab-dot" aria-hidden="true"></span>
+                        <span class="scoring-question-tab-copy">
+                            <strong data-scoring-label>${escapeHtml(scoringQuestionLabel(q, idx))}</strong>
+                            <span data-scoring-meta>${escapeHtml(scoringQuestionMeta(q))}</span>
+                        </span>
+                        <span class="scoring-question-tab-index">${idx + 1}</span>
+                    </button>
+                `;
+            }).join('');
             list.innerHTML = questions.map(({ page, q }, idx) => `
-                <section class="scoring-question-card">
+                <section class="scoring-question-card${idx === activeScoringIndex ? ' is-active' : ''}" data-scoring-index="${idx}" ${idx === activeScoringIndex ? '' : 'hidden'} aria-hidden="${idx === activeScoringIndex ? 'false' : 'true'}">
                     <div class="scoring-question-head">
                         <div class="scoring-question-title">
                             第 ${idx + 1} 题 · ${typeLabels[q.type] || q.type || '题目'}
@@ -1628,6 +1814,7 @@
                 </section>
             `).join('');
             updateScoringSummary();
+            syncScoringWorkbench();
         }
 
         function updateScoringSummary() {
@@ -1707,6 +1894,7 @@
             if (!item.q.grading || typeof item.q.grading !== 'object') item.q.grading = {};
             item.q.grading.points = item.q.points;
             updateScoringSummary();
+            syncScoringWorkbench();
         };
 
         window.updateScoringChoiceAnswer = function(idx) {
@@ -1719,11 +1907,13 @@
                 .map(input => input.value)
                 .filter(Boolean);
             item.q.answer = item.q.type === 'checkbox' ? checked : (checked[0] || '');
+            syncScoringWorkbench();
         };
 
         window.updateScoringTextAnswer = function(idx, value) {
             const item = getAllEditorQuestions()[idx];
             if (item) item.q.answer = value;
+            syncScoringWorkbench();
         };
 
         window.updateScoringGuidance = function(idx, value) {
@@ -1732,6 +1922,7 @@
             item.q.grading_guidance = value;
             if (!item.q.grading || typeof item.q.grading !== 'object') item.q.grading = {};
             item.q.grading.guidance = value;
+            syncScoringWorkbench();
         };
 
         window.updateScoringDeduction = function(idx, value) {
@@ -1740,6 +1931,7 @@
             item.q.deduction_points = value;
             if (!item.q.grading || typeof item.q.grading !== 'object') item.q.grading = {};
             item.q.grading.deduction_points = value;
+            syncScoringWorkbench();
         };
 
         window.applyScoringModal = async function() {
