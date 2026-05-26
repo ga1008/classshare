@@ -4474,6 +4474,31 @@ def init_database():
                         )
                          ''')
 
+            conn.execute('''
+                        CREATE TABLE IF NOT EXISTS smart_attendance_student_advice
+                        (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            class_offering_id INTEGER NOT NULL,
+                            student_id INTEGER NOT NULL,
+                            fingerprint TEXT NOT NULL,
+                            status TEXT NOT NULL DEFAULT 'queued',
+                            attempts INTEGER NOT NULL DEFAULT 0,
+                            advice_json TEXT NOT NULL DEFAULT '{}',
+                            fallback_insights_json TEXT NOT NULL DEFAULT '[]',
+                            context_json TEXT NOT NULL DEFAULT '{}',
+                            last_error TEXT DEFAULT '',
+                            first_requested_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            last_requested_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            started_at TEXT,
+                            completed_at TEXT,
+                            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
+                            FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+                            UNIQUE (class_offering_id, student_id, fingerprint)
+                        )
+                         ''')
+
             try:
                 conn.execute("ALTER TABLE course_materials ADD COLUMN git_repo_status TEXT NOT NULL DEFAULT 'unscanned'")
             except sqlite3.OperationalError:
@@ -4552,6 +4577,14 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_smart_attendance_daily_tasks_lookup "
                 "ON smart_attendance_daily_tasks (class_offering_id, teacher_id, task_type, task_date, status)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_smart_attendance_student_advice_lookup "
+                "ON smart_attendance_student_advice (class_offering_id, student_id, fingerprint, status)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_smart_attendance_student_advice_queue "
+                "ON smart_attendance_student_advice (status, updated_at, attempts)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_academic_semester_calendar_days_lookup "

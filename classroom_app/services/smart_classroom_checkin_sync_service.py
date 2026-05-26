@@ -16,6 +16,7 @@ from .smart_classroom_integration_service import (
     load_teacher_smart_classroom_access_method,
     open_authenticated_smart_classroom_client,
 )
+from .smart_attendance_advice_service import attach_student_attendance_ai_advice
 
 
 SMART_PLATFORM_CODE = "gxufl_smart_classroom"
@@ -1608,6 +1609,7 @@ def _build_personal_attendance_insights(
     if not personal or int(personal.get("total") or 0) <= 0:
         return [
             {
+                "key": "no_records",
                 "tone": "neutral",
                 "title": "暂无本人点名记录",
                 "text": "当前同步数据里还没有匹配到你的个人点名明细，可以先和任课教师确认名单是否已对齐。",
@@ -1622,6 +1624,7 @@ def _build_personal_attendance_insights(
     if rate < 80 or absent >= 2:
         insights.append(
             {
+                "key": "personal_attention",
                 "tone": "warning",
                 "title": "个人出勤需要留意",
                 "text": f"本课程目前出勤率 {rate:.1f}%，缺勤 {absent} 次。建议及时补齐课堂材料并确认后续课次安排。",
@@ -1630,6 +1633,7 @@ def _build_personal_attendance_insights(
     elif late or leave_count:
         insights.append(
             {
+                "key": "personal_abnormal",
                 "tone": "neutral",
                 "title": "有少量异常记录",
                 "text": f"已记录迟到/早退 {late} 次、请假 {leave_count} 次。后续保持稳定出勤即可。",
@@ -1644,6 +1648,7 @@ def _build_personal_attendance_insights(
         if delta <= -5:
             insights.append(
                 {
+                    "key": "course_compare",
                     "tone": "warning",
                     "title": "低于你的其他课堂",
                     "text": f"本课程出勤率比你其他已同步课堂均值低 {abs(delta):.1f} 个百分点，可优先检查这门课的时间安排和材料补齐情况。",
@@ -1652,6 +1657,7 @@ def _build_personal_attendance_insights(
         elif delta >= 5:
             insights.append(
                 {
+                    "key": "course_compare",
                     "tone": "success",
                     "title": "高于你的其他课堂",
                     "text": f"本课程出勤率比你其他已同步课堂均值高 {delta:.1f} 个百分点，当前节奏保持得不错。",
@@ -1661,6 +1667,7 @@ def _build_personal_attendance_insights(
     if not insights and summary.get("synced_session_count"):
         insights.append(
             {
+                "key": "personal_stable",
                 "tone": "success",
                 "title": "个人出勤稳定",
                 "text": "已同步的个人点名记录整体稳定，继续保持当前学习节奏。",
@@ -1844,6 +1851,7 @@ def build_classroom_smart_attendance_analytics(
     class_offering_id: int,
     viewer_role: str = "teacher",
     student_id: int | None = None,
+    allow_ai_advice: bool = True,
 ) -> dict[str, Any]:
     offering = _load_offering_summary_row(conn, int(class_offering_id))
     if not offering:
@@ -1972,6 +1980,18 @@ def build_classroom_smart_attendance_analytics(
             personal=personal,
             comparisons=personal.get("course_comparisons", []) if personal else [],
         )
+        if allow_ai_advice and student_id:
+            insights, ai_advice = attach_student_attendance_ai_advice(
+                conn,
+                class_offering_id=int(class_offering_id),
+                student_id=int(student_id),
+                summary=response_summary,
+                personal=personal,
+                personal_sessions=personal_sessions,
+                insights=insights,
+            )
+        else:
+            ai_advice = {"status": "skipped", "available": False}
 
     return {
         "status": "success" if selected_sessions else "empty",
@@ -1985,6 +2005,7 @@ def build_classroom_smart_attendance_analytics(
         "students": student_rows if teacher_view else [],
         "personal": personal,
         "insights": insights,
+        "ai_advice": {"status": "skipped", "available": False} if teacher_view else ai_advice,
     }
 
 
@@ -2001,6 +2022,7 @@ def build_student_attendance_support_prompt(
         class_offering_id=int(class_offering_id),
         viewer_role="student",
         student_id=int(student_id),
+        allow_ai_advice=False,
     )
     if analytics.get("status") not in {"success", "empty"}:
         return ""

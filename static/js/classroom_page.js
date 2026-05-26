@@ -54,6 +54,8 @@ function initCoursePopover() {
     let attendanceExportReady = false;
     let attendanceExporting = false;
     let latestAttendancePayload = null;
+    const attendanceAdvicePollCounts = new Map();
+    let attendanceAdviceRefreshTimer = 0;
 
     const getFocusableElements = () => Array.from(
         popover.querySelectorAll('a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'),
@@ -266,6 +268,23 @@ function initCoursePopover() {
                 <div class="smart-attendance-line-caption">${captions}</div>
             </div>
         `;
+    };
+
+    const scheduleAttendanceAdviceRefresh = (advice = {}) => {
+        if (isTeacherAttendanceView()) return;
+        if (!advice || advice.available) return;
+        const status = String(advice.status || '').toLowerCase();
+        if (!['queued', 'running', 'retrying'].includes(status)) return;
+        const fingerprint = String(advice.fingerprint || 'current');
+        const pollCount = attendanceAdvicePollCounts.get(fingerprint) || 0;
+        if (pollCount >= 3) return;
+        attendanceAdvicePollCounts.set(fingerprint, pollCount + 1);
+        const delays = [4500, 12000, 24000];
+        window.clearTimeout(attendanceAdviceRefreshTimer);
+        attendanceAdviceRefreshTimer = window.setTimeout(() => {
+            if (document.hidden || popover.hidden || !popover.classList.contains('popover-open')) return;
+            loadAttendanceAnalytics({ force: true, adviceRefresh: true });
+        }, delays[Math.min(pollCount, delays.length - 1)]);
     };
 
     const renderPersonalSessionAttendance = (items) => {
@@ -506,6 +525,7 @@ function initCoursePopover() {
                 `).join('')
                 : '';
         }
+        scheduleAttendanceAdviceRefresh(payload.ai_advice || {});
         if (smartAttendanceTableNote) {
             smartAttendanceTableNote.textContent = isTeacher
                 ? `共 ${rows.length} 名学生，按风险优先排序`
@@ -534,12 +554,13 @@ function initCoursePopover() {
         }
     };
 
-    const loadAttendanceAnalytics = async ({ force = false, sync = false } = {}) => {
+    const loadAttendanceAnalytics = async ({ force = false, sync = false, adviceRefresh = false } = {}) => {
         if (!smartAttendancePanel || attendanceLoading) return;
         if (attendanceLoaded && !force && !sync) return;
+        const quiet = Boolean(adviceRefresh);
         attendanceLoading = true;
-        if (smartAttendanceMessage) smartAttendanceMessage.textContent = sync ? '正在顺序同步智慧课堂点名记录...' : '正在读取智慧课堂出勤统计...';
-        if (smartAttendanceSyncBtn) {
+        if (!quiet && smartAttendanceMessage) smartAttendanceMessage.textContent = sync ? '正在顺序同步智慧课堂点名记录...' : '正在读取智慧课堂出勤统计...';
+        if (smartAttendanceSyncBtn && !quiet) {
             smartAttendanceSyncBtn.disabled = true;
             smartAttendanceSyncBtn.dataset.originalText = smartAttendanceSyncBtn.dataset.originalText || smartAttendanceSyncBtn.textContent;
             smartAttendanceSyncBtn.textContent = sync ? '同步中' : '读取中';
@@ -553,11 +574,13 @@ function initCoursePopover() {
             renderAttendanceAnalytics(result);
             attendanceLoaded = true;
         } catch (error) {
-            renderAttendanceEmpty(error.message || '读取智慧课堂出勤统计失败。');
-            showToast(error.message || '读取智慧课堂出勤统计失败。', 'error');
+            if (!quiet) {
+                renderAttendanceEmpty(error.message || '读取智慧课堂出勤统计失败。');
+                showToast(error.message || '读取智慧课堂出勤统计失败。', 'error');
+            }
         } finally {
             attendanceLoading = false;
-            if (smartAttendanceSyncBtn) {
+            if (smartAttendanceSyncBtn && !quiet) {
                 smartAttendanceSyncBtn.disabled = false;
                 smartAttendanceSyncBtn.textContent = smartAttendanceSyncBtn.dataset.originalText || '同步点名';
             }

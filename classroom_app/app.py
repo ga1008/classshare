@@ -36,6 +36,10 @@ from .services.discussion_mood_service import stop_discussion_mood_refresh_tasks
 from .services.email_notification_service import email_worker_health_snapshot
 from .services.message_center_service import schedule_pending_private_ai_reply_jobs
 from .services.runtime_metrics_service import begin_http_request, finish_http_request, get_runtime_metrics_snapshot
+from .services.smart_attendance_advice_service import (
+    start_smart_attendance_advice_worker,
+    stop_smart_attendance_advice_worker,
+)
 from .services.submission_file_alignment import repair_stale_stored_paths
 from .services.assignment_lifecycle_service import close_overdue_assignments
 from .services.ai_grading_service import expire_stale_ai_grading_submissions
@@ -108,6 +112,9 @@ async def startup_event():
     resumed_private_ai_jobs = schedule_pending_private_ai_reply_jobs()
     if resumed_private_ai_jobs:
         print(f"[MESSAGE_CENTER] 恢复 {resumed_private_ai_jobs} 个待处理的 AI 私信任务")
+    resumed_attendance_advice_jobs = start_smart_attendance_advice_worker()
+    if resumed_attendance_advice_jobs:
+        print(f"[SMART_ATTENDANCE_ADVICE] 恢复 {resumed_attendance_advice_jobs} 个待处理的学生出勤建议任务")
     start_behavior_write_pipeline()
     start_behavior_profile_scheduler()
 
@@ -146,6 +153,7 @@ async def startup_event():
 async def shutdown_event():
     """应用关闭时执行"""
     await stop_discussion_mood_refresh_tasks()
+    await stop_smart_attendance_advice_worker()
     await stop_behavior_profile_scheduler()
     stop_behavior_write_pipeline()
     await ai_client.__aexit__(None, None, None)  # 关闭 HTTP 客户端
