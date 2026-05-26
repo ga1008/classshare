@@ -87,5 +87,9 @@ def format_local_datetime(
     return parsed.strftime(fmt)
 
 
+def format_display_datetime(value: str | datetime | None, *, fallback: str = "") -> str:
+    return format_local_datetime(value, "%Y-%m-%d %H:%M", fallback=fallback)
+
+
 def format_local_time(value: str | datetime | None, *, fallback: str = "") -> str:
     return format_local_datetime(value, "%H:%M", fallback=fallback)

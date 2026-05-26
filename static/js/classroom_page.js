@@ -86,12 +86,15 @@ function initCoursePopover() {
         healthy: 'success',
         none: 'neutral',
     }[String(risk || '')] || 'neutral');
+    const isTeacherAttendanceView = () => window.APP_CONFIG?.userInfo?.role === 'teacher';
 
     const renderAttendanceEmpty = (message) => {
         latestAttendancePayload = null;
         if (smartAttendanceMessage) smartAttendanceMessage.textContent = message || '当前课堂还没有可统计的智慧课堂点名记录。';
         if (smartAttendanceMetrics) smartAttendanceMetrics.innerHTML = '';
-        if (smartAttendanceWeekChart) smartAttendanceWeekChart.innerHTML = '<div class="smart-attendance-empty">暂无趋势数据</div>';
+        if (smartAttendanceWeekChart) {
+            smartAttendanceWeekChart.innerHTML = `<div class="smart-attendance-empty">${isTeacherAttendanceView() ? '暂无趋势数据' : '暂无个人课次数据'}</div>`;
+        }
         if (smartAttendanceCourseChart) smartAttendanceCourseChart.innerHTML = '<div class="smart-attendance-empty">暂无对比数据</div>';
         if (smartAttendanceInsights) smartAttendanceInsights.innerHTML = '';
         if (smartAttendanceRows) smartAttendanceRows.innerHTML = '<tr><td colspan="7" class="is-empty">同步智慧课堂点名后，这里会显示出勤明细。</td></tr>';
@@ -265,11 +268,108 @@ function initCoursePopover() {
         `;
     };
 
+    const renderPersonalSessionAttendance = (items) => {
+        if (!items.length) return '<div class="smart-attendance-empty">暂无个人课次数据</div>';
+        const legendItems = [
+            ['checked', '✓', '出勤'],
+            ['absent', '×', '缺勤'],
+            ['leave', '○', '请假'],
+            ['late', '⊕', '迟到/早退'],
+        ];
+        const cards = items.map((item) => {
+            const tone = item.status_tone || 'unknown';
+            const label = item.label || `第${Number(item.order || 0) || '-'}次课`;
+            const time = item.checkin_time || '';
+            const statusLabel = item.status_label || '暂无记录';
+            return `
+                <article class="smart-attendance-session-item is-${escapeHtml(tone)}" role="listitem" title="${escapeHtml(`${label}${time ? ` · ${time}` : ''} · ${statusLabel}`)}">
+                    <span class="smart-attendance-session-marker" aria-hidden="true">${escapeHtml(item.status_marker || '—')}</span>
+                    <strong>${escapeHtml(label)}</strong>
+                    <small>${escapeHtml(time || '时间待确认')}</small>
+                    <em>${escapeHtml(statusLabel)}</em>
+                </article>
+            `;
+        }).join('');
+        const legend = legendItems.map(([tone, marker, label]) => `
+            <span class="smart-attendance-session-legend-item is-${tone}">
+                <i>${marker}</i>${label}
+            </span>
+        `).join('');
+        return `
+            <div class="smart-attendance-session-view">
+                <div class="smart-attendance-session-grid" role="list" aria-label="每次课本人出勤情况">${cards}</div>
+                <div class="smart-attendance-session-legend" aria-label="出勤符号说明">${legend}</div>
+            </div>
+        `;
+    };
+
     const renderAttendanceAbnormalPopover = (payload = {}) => {
         if (!smartAttendanceAbnormalPopover) return;
         const summary = payload.summary || {};
-        const isTeacher = window.APP_CONFIG?.userInfo?.role === 'teacher';
+        const isTeacher = isTeacherAttendanceView();
         const personal = payload.personal || null;
+        if (!isTeacher) {
+            const personalSessions = Array.isArray(payload.personal_sessions) ? payload.personal_sessions : [];
+            const abnormalSessions = personalSessions.filter((item) => item.is_abnormal);
+            const leaveCount = Number(summary.sick_leave || 0) + Number(summary.personal_leave || 0);
+            const statusCards = [
+                ['缺勤', Number(summary.absent || 0), 'danger'],
+                ['迟到/早退', Number(summary.late_or_early || 0), 'warning'],
+                ['请假', leaveCount, 'watch'],
+                ['记录课次', Number(summary.total || 0), 'neutral'],
+            ].map(([label, value, tone]) => `
+                <article class="smart-attendance-detail-stat is-${tone}">
+                    <span>${label}</span>
+                    <strong>${value}</strong>
+                </article>
+            `).join('');
+            const typeList = [
+                ['缺勤', Number(summary.absent || 0), 'danger'],
+                ['迟到/早退', Number(summary.late_or_early || 0), 'warning'],
+                ['病假', Number(summary.sick_leave || 0), 'watch'],
+                ['事假', Number(summary.personal_leave || 0), 'watch'],
+            ].filter(([, value]) => value > 0);
+            const typeItems = typeList.length
+                ? typeList.map(([label, value, tone]) => `
+                    <li>
+                        <span>${escapeHtml(label)}</span>
+                        <strong class="is-${escapeHtml(tone)}">${Number(value)} 条</strong>
+                    </li>
+                `).join('')
+                : '<li class="is-empty">暂无个人异常出勤记录</li>';
+            const sessionList = abnormalSessions.length
+                ? abnormalSessions.map((item) => `
+                    <li>
+                        <span>${escapeHtml(item.label || '未标课次')}${item.checkin_time ? ` · ${escapeHtml(item.checkin_time)}` : ''}</span>
+                        <strong>${escapeHtml(item.status_marker || '')} ${escapeHtml(item.status_label || '异常')}</strong>
+                        <small>仅显示你的个人出勤状态</small>
+                    </li>
+                `).join('')
+                : '<li class="is-empty">近期课次暂无个人异常记录</li>';
+
+            smartAttendanceAbnormalPopover.innerHTML = `
+                <div class="smart-attendance-detail-head">
+                    <div>
+                        <span>我的异常记录</span>
+                        <strong>${Number(summary.abnormal || 0)} 条</strong>
+                    </div>
+                    <button type="button" class="smart-attendance-detail-close" data-smart-attendance-abnormal-close aria-label="关闭">×</button>
+                </div>
+                <div class="smart-attendance-detail-stats">${statusCards}</div>
+                <div class="smart-attendance-detail-grid">
+                    <section>
+                        <h5>异常类型</h5>
+                        <ul>${typeItems}</ul>
+                    </section>
+                    <section>
+                        <h5>异常课次</h5>
+                        <ul>${sessionList}</ul>
+                    </section>
+                </div>
+            `;
+            smartAttendanceAbnormalPopover.hidden = false;
+            return;
+        }
         const studentRows = isTeacher
             ? (Array.isArray(payload.students) ? payload.students : [])
             : (personal ? [personal] : []);
@@ -344,28 +444,37 @@ function initCoursePopover() {
         const summary = payload.summary || {};
         const personal = payload.personal || null;
         const students = Array.isArray(payload.students) ? payload.students : [];
-        const isTeacher = window.APP_CONFIG?.userInfo?.role === 'teacher';
+        const isTeacher = isTeacherAttendanceView();
         const rows = isTeacher ? students : (personal ? [personal] : []);
         if (!summary.has_data) {
             renderAttendanceEmpty(payload.message || '当前课堂还没有可统计的智慧课堂点名记录。');
             return;
         }
-        setAttendanceExportReady(true);
+        setAttendanceExportReady(isTeacher);
         if (smartAttendanceMessage) {
             const latest = summary.latest_synced_at ? `最近同步 ${summary.latest_synced_at}` : '已读取本地同步记录';
             smartAttendanceMessage.textContent = `${summary.course_name || '本课程'} · ${latest}`;
         }
         if (smartAttendanceMetrics) {
-            smartAttendanceMetrics.innerHTML = [
-                renderMetricCard('全班出勤率', formatPercent(summary.attendance_rate), `出勤 ${summary.checked || 0}/${summary.total || 0}`, summary.attendance_rate >= 90 ? 'success' : (summary.attendance_rate < 80 ? 'danger' : 'warning')),
-                renderMetricCard('点名覆盖', formatPercent(summary.coverage_rate), `${summary.synced_session_count || 0}/${summary.total_session_count || 0} 次课`, summary.coverage_rate >= 85 ? 'success' : 'warning'),
-                renderMetricCard('异常记录', String(summary.abnormal || 0), `缺勤 ${summary.absent || 0} · 迟到/请假 ${Number(summary.late_or_early || 0) + Number(summary.sick_leave || 0) + Number(summary.personal_leave || 0)}`, summary.abnormal ? 'warning' : 'success', { action: true }),
-                personal ? renderMetricCard('我的出勤率', formatPercent(personal.attendance_rate), `排名 ${personal.rank || '-'}/${personal.rank_total || '-'}`, personal.risk_level === 'healthy' ? 'success' : riskTone(personal.risk_level)) : '',
-            ].join('');
+            const leaveCount = Number(summary.sick_leave || 0) + Number(summary.personal_leave || 0);
+            smartAttendanceMetrics.innerHTML = isTeacher
+                ? [
+                    renderMetricCard('全班出勤率', formatPercent(summary.attendance_rate), `出勤 ${summary.checked || 0}/${summary.total || 0}`, summary.attendance_rate >= 90 ? 'success' : (summary.attendance_rate < 80 ? 'danger' : 'warning')),
+                    renderMetricCard('点名覆盖', formatPercent(summary.coverage_rate), `${summary.synced_session_count || 0}/${summary.total_session_count || 0} 次课`, summary.coverage_rate >= 85 ? 'success' : 'warning'),
+                    renderMetricCard('异常记录', String(summary.abnormal || 0), `缺勤 ${summary.absent || 0} · 迟到/请假 ${Number(summary.late_or_early || 0) + leaveCount}`, summary.abnormal ? 'warning' : 'success', { action: true }),
+                ].join('')
+                : [
+                    renderMetricCard('我的出勤率', formatPercent(summary.attendance_rate), `出勤 ${summary.checked || 0}/${summary.total || 0}`, summary.attendance_rate >= 90 ? 'success' : (summary.attendance_rate < 80 ? 'danger' : 'warning')),
+                    renderMetricCard('本人记录', `${summary.total || 0} 次`, `已同步课次 ${summary.synced_session_count || 0} 次`, summary.total ? 'success' : 'warning'),
+                    renderMetricCard('异常记录', String(summary.abnormal || 0), `缺勤 ${summary.absent || 0} · 迟到/请假 ${Number(summary.late_or_early || 0) + leaveCount}`, summary.abnormal ? 'warning' : 'success', { action: true }),
+                    personal ? renderMetricCard('最近状态', personal.latest_status_label || '暂无记录', personal.latest_checkin_time ? `最近 ${personal.latest_checkin_time}` : '等待点名同步', riskTone(personal.risk_level)) : '',
+                ].join('');
         }
         const weekly = Array.isArray(payload.weekly_trend) ? payload.weekly_trend : [];
         if (smartAttendanceWeekChart) {
-            smartAttendanceWeekChart.innerHTML = renderAttendanceLineChart(weekly);
+            smartAttendanceWeekChart.innerHTML = isTeacher
+                ? renderAttendanceLineChart(weekly)
+                : renderPersonalSessionAttendance(Array.isArray(payload.personal_sessions) ? payload.personal_sessions : []);
         }
         let comparisons = Array.isArray(payload.course_comparisons) ? payload.course_comparisons : [];
         if (!isTeacher && personal && Array.isArray(personal.course_comparisons)) {
@@ -400,11 +509,11 @@ function initCoursePopover() {
         if (smartAttendanceTableNote) {
             smartAttendanceTableNote.textContent = isTeacher
                 ? `共 ${rows.length} 名学生，按风险优先排序`
-                : '仅显示你的个人出勤，不展示同学明细';
+                : '仅显示你的个人出勤和异常记录';
         }
         if (smartAttendanceRows) {
             if (!rows.length) {
-                smartAttendanceRows.innerHTML = '<tr><td colspan="7" class="is-empty">暂无学生出勤明细。</td></tr>';
+                smartAttendanceRows.innerHTML = `<tr><td colspan="7" class="is-empty">${isTeacher ? '暂无学生出勤明细。' : '暂无你的个人出勤明细。'}</td></tr>`;
                 return;
             }
             smartAttendanceRows.innerHTML = rows.slice(0, isTeacher ? 80 : 1).map((student) => {

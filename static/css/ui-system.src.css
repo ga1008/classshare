@@ -36806,6 +36806,141 @@ body.has-teaching-session-modal {
     font-weight: 760;
 }
 
+.smart-attendance-session-view {
+    display: grid;
+    gap: 10px;
+}
+
+.smart-attendance-session-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+    gap: 8px;
+}
+
+.smart-attendance-session-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+        "marker label"
+        "marker time"
+        "marker status";
+    align-items: center;
+    gap: 2px 8px;
+    min-width: 0;
+    min-height: 76px;
+    padding: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    background: rgba(248, 250, 252, 0.78);
+}
+
+.smart-attendance-session-marker {
+    grid-area: marker;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.14);
+    color: #475569;
+    font-size: 1.05rem;
+    font-weight: 900;
+}
+
+.smart-attendance-session-item strong {
+    grid-area: label;
+    min-width: 0;
+    overflow: hidden;
+    color: #0f172a;
+    font-size: 0.82rem;
+    font-weight: 850;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.smart-attendance-session-item small {
+    grid-area: time;
+    min-width: 0;
+    overflow: hidden;
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.smart-attendance-session-item em {
+    grid-area: status;
+    color: #475569;
+    font-size: 0.72rem;
+    font-style: normal;
+    font-weight: 850;
+}
+
+.smart-attendance-session-item.is-checked {
+    border-color: rgba(16, 185, 129, 0.24);
+    background: rgba(236, 253, 245, 0.74);
+}
+
+.smart-attendance-session-item.is-checked .smart-attendance-session-marker {
+    background: rgba(16, 185, 129, 0.14);
+    color: #047857;
+}
+
+.smart-attendance-session-item.is-absent {
+    border-color: rgba(244, 63, 94, 0.26);
+    background: rgba(255, 241, 242, 0.78);
+}
+
+.smart-attendance-session-item.is-absent .smart-attendance-session-marker {
+    background: rgba(244, 63, 94, 0.14);
+    color: #be123c;
+}
+
+.smart-attendance-session-item.is-leave {
+    border-color: rgba(14, 165, 233, 0.24);
+    background: rgba(240, 249, 255, 0.78);
+}
+
+.smart-attendance-session-item.is-leave .smart-attendance-session-marker {
+    background: rgba(14, 165, 233, 0.14);
+    color: #0369a1;
+}
+
+.smart-attendance-session-item.is-late {
+    border-color: rgba(245, 158, 11, 0.3);
+    background: rgba(255, 251, 235, 0.82);
+}
+
+.smart-attendance-session-item.is-late .smart-attendance-session-marker {
+    background: rgba(245, 158, 11, 0.16);
+    color: #b45309;
+}
+
+.smart-attendance-session-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.smart-attendance-session-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: rgba(241, 245, 249, 0.86);
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.smart-attendance-session-legend-item i {
+    font-style: normal;
+    font-weight: 900;
+}
+
 .smart-attendance-detail-popover {
     position: sticky;
     top: 0;
@@ -36952,6 +37087,18 @@ body.has-teaching-session-modal {
     color: #be123c;
     font-size: 0.82rem;
     white-space: nowrap;
+}
+
+.smart-attendance-detail-grid li strong.is-warning {
+    color: #b45309;
+}
+
+.smart-attendance-detail-grid li strong.is-watch {
+    color: #0369a1;
+}
+
+.smart-attendance-detail-grid li strong.is-danger {
+    color: #be123c;
 }
 
 .smart-attendance-detail-grid li small {
