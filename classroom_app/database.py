@@ -19,7 +19,9 @@ from .services.department_service import infer_department_from_text
 from .services.organization_scope_service import (
     DEFAULT_SCHOOL_CODE,
     DEFAULT_SCHOOL_NAME,
+    build_org_scope,
     load_teacher_org_scope,
+    normalize_org_text,
 )
 
 
@@ -360,6 +362,190 @@ def _backfill_organization_scopes(conn: sqlite3.Connection) -> None:
         """,
         (DEFAULT_SCHOOL_CODE, DEFAULT_SCHOOL_NAME),
     )
+
+
+def _ensure_organization_catalog_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS organization_schools (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            school_code TEXT NOT NULL UNIQUE,
+            school_name TEXT NOT NULL,
+            display_order INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            source TEXT NOT NULL DEFAULT 'manual',
+            created_by_teacher_id INTEGER,
+            updated_by_teacher_id INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            deactivated_at TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS organization_colleges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            school_code TEXT NOT NULL,
+            college_name TEXT NOT NULL COLLATE NOCASE,
+            display_order INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            source TEXT NOT NULL DEFAULT 'manual',
+            created_by_teacher_id INTEGER,
+            updated_by_teacher_id INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            deactivated_at TEXT,
+            UNIQUE (school_code, college_name)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS organization_departments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            school_code TEXT NOT NULL,
+            college_name TEXT NOT NULL DEFAULT '' COLLATE NOCASE,
+            department_name TEXT NOT NULL COLLATE NOCASE,
+            display_order INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            source TEXT NOT NULL DEFAULT 'manual',
+            created_by_teacher_id INTEGER,
+            updated_by_teacher_id INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            deactivated_at TEXT,
+            UNIQUE (school_code, college_name, department_name)
+        )
+        """
+    )
+    for table_name in ("organization_schools", "organization_colleges", "organization_departments"):
+        for column_name, column_def in {
+            "display_order": "INTEGER NOT NULL DEFAULT 0",
+            "is_active": "INTEGER NOT NULL DEFAULT 1",
+            "source": "TEXT NOT NULL DEFAULT 'manual'",
+            "created_by_teacher_id": "INTEGER",
+            "updated_by_teacher_id": "INTEGER",
+            "updated_at": "TEXT DEFAULT CURRENT_TIMESTAMP",
+            "deactivated_at": "TEXT",
+        }.items():
+            try:
+                conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+            except sqlite3.OperationalError:
+                pass
+    for statement in (
+        "CREATE INDEX IF NOT EXISTS idx_organization_schools_active "
+        "ON organization_schools (is_active, display_order, school_name COLLATE NOCASE)",
+        "CREATE INDEX IF NOT EXISTS idx_organization_colleges_school "
+        "ON organization_colleges (school_code, is_active, display_order, college_name COLLATE NOCASE)",
+        "CREATE INDEX IF NOT EXISTS idx_organization_departments_college "
+        "ON organization_departments (school_code, college_name COLLATE NOCASE, is_active, display_order, department_name COLLATE NOCASE)",
+    ):
+        conn.execute(statement)
+
+
+def _source_table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
+def _sync_organization_catalog_from_existing(conn: sqlite3.Connection) -> None:
+    _ensure_organization_catalog_schema(conn)
+    source_tables = (
+        ("teachers", "school_code", "school_name", "college", "department"),
+        ("students", "school_code", "school_name", "college", "department"),
+        ("classes", "school_code", "school_name", "college", "department"),
+        ("courses", "school_code", "school_name", "college", "department"),
+        ("academic_semesters", "school_code", "school_name", "", ""),
+        ("electronic_signatures", "school_code", "school_name", "college", "department"),
+    )
+
+    schools: dict[str, str] = {DEFAULT_SCHOOL_CODE: DEFAULT_SCHOOL_NAME}
+    colleges: set[tuple[str, str]] = set()
+    departments: set[tuple[str, str, str]] = set()
+    for table_name, school_col, school_name_col, college_col, department_col in source_tables:
+        if not _source_table_exists(conn, table_name):
+            continue
+        selected_columns = [school_col, school_name_col]
+        if college_col:
+            selected_columns.append(college_col)
+        if department_col:
+            selected_columns.append(department_col)
+        rows = conn.execute(
+            f"SELECT DISTINCT {', '.join(selected_columns)} FROM {table_name}"
+        ).fetchall()
+        for row in rows:
+            scope = build_org_scope(
+                school_code=row[school_col],
+                school_name=row[school_name_col],
+                college=row[college_col] if college_col else "",
+                department=row[department_col] if department_col else "",
+            )
+            schools.setdefault(scope["school_code"], scope["school_name"])
+            if scope["school_name"] and schools.get(scope["school_code"]) == DEFAULT_SCHOOL_NAME:
+                schools[scope["school_code"]] = scope["school_name"]
+            if scope["college"]:
+                colleges.add((scope["school_code"], scope["college"]))
+            if scope["department"]:
+                departments.add((scope["school_code"], scope["college"], scope["department"]))
+
+    for school_code, school_name in sorted(schools.items()):
+        conn.execute(
+            """
+            INSERT INTO organization_schools (school_code, school_name, source)
+            VALUES (?, ?, 'backfill')
+            ON CONFLICT(school_code) DO UPDATE SET
+                school_name = CASE
+                    WHEN TRIM(COALESCE(organization_schools.school_name, '')) = '' THEN excluded.school_name
+                    WHEN organization_schools.source = 'backfill' THEN excluded.school_name
+                    ELSE organization_schools.school_name
+                END,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (school_code, school_name or DEFAULT_SCHOOL_NAME),
+        )
+
+    for school_code, college in sorted(colleges):
+        clean_college = normalize_org_text(college)
+        if not clean_college:
+            continue
+        conn.execute(
+            """
+            INSERT INTO organization_colleges (school_code, college_name, source)
+            VALUES (?, ?, 'backfill')
+            ON CONFLICT(school_code, college_name) DO UPDATE SET
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (school_code, clean_college),
+        )
+
+    for school_code, college, department in sorted(departments):
+        clean_department = normalize_org_text(department)
+        if not clean_department:
+            continue
+        clean_college = normalize_org_text(college)
+        if clean_college:
+            conn.execute(
+                """
+                INSERT INTO organization_colleges (school_code, college_name, source)
+                VALUES (?, ?, 'backfill')
+                ON CONFLICT(school_code, college_name) DO UPDATE SET
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (school_code, clean_college),
+            )
+        conn.execute(
+            """
+            INSERT INTO organization_departments (school_code, college_name, department_name, source)
+            VALUES (?, ?, ?, 'backfill')
+            ON CONFLICT(school_code, college_name, department_name) DO UPDATE SET
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (school_code, clean_college, clean_department),
+        )
 
     teacher_rows = conn.execute("SELECT id FROM teachers").fetchall()
     for teacher in teacher_rows:
@@ -5509,6 +5695,11 @@ def init_database():
                     owner_role TEXT NOT NULL,
                     owner_id INTEGER,
                     owner_name_snapshot TEXT NOT NULL DEFAULT '',
+                    uploaded_by_role TEXT NOT NULL DEFAULT '',
+                    uploaded_by_id INTEGER,
+                    uploaded_by_name_snapshot TEXT NOT NULL DEFAULT '',
+                    ownership_updated_at TEXT,
+                    ownership_updated_by_teacher_id INTEGER,
                     school_code TEXT NOT NULL DEFAULT 'gxufl',
                     school_name TEXT NOT NULL DEFAULT '广西外国语学院',
                     college TEXT NOT NULL DEFAULT '',
@@ -5533,6 +5724,11 @@ def init_database():
                 "subject_role": "TEXT NOT NULL DEFAULT 'teacher'",
                 "scope_level": "TEXT NOT NULL DEFAULT 'college'",
                 "owner_name_snapshot": "TEXT NOT NULL DEFAULT ''",
+                "uploaded_by_role": "TEXT NOT NULL DEFAULT ''",
+                "uploaded_by_id": "INTEGER",
+                "uploaded_by_name_snapshot": "TEXT NOT NULL DEFAULT ''",
+                "ownership_updated_at": "TEXT",
+                "ownership_updated_by_teacher_id": "INTEGER",
                 "school_code": "TEXT NOT NULL DEFAULT 'gxufl'",
                 "school_name": "TEXT NOT NULL DEFAULT '广西外国语学院'",
                 "college": "TEXT NOT NULL DEFAULT ''",
@@ -5552,6 +5748,22 @@ def init_database():
                     conn.execute(f"ALTER TABLE electronic_signatures ADD COLUMN {column_name} {column_def}")
                 except sqlite3.OperationalError:
                     pass
+
+            conn.execute(
+                """
+                UPDATE electronic_signatures
+                SET uploaded_by_role = COALESCE(NULLIF(TRIM(uploaded_by_role), ''), owner_role, ''),
+                    uploaded_by_id = COALESCE(uploaded_by_id, owner_id),
+                    uploaded_by_name_snapshot = COALESCE(
+                        NULLIF(TRIM(uploaded_by_name_snapshot), ''),
+                        NULLIF(TRIM(owner_name_snapshot), ''),
+                        ''
+                    )
+                WHERE TRIM(COALESCE(uploaded_by_role, '')) = ''
+                   OR uploaded_by_id IS NULL
+                   OR TRIM(COALESCE(uploaded_by_name_snapshot, '')) = ''
+                """
+            )
 
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS signature_usage_logs (
@@ -5590,6 +5802,8 @@ def init_database():
             for statement in (
                 "CREATE INDEX IF NOT EXISTS idx_electronic_signatures_owner "
                 "ON electronic_signatures (owner_role, owner_id, status, created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_electronic_signatures_uploader "
+                "ON electronic_signatures (uploaded_by_role, uploaded_by_id, created_at DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_electronic_signatures_org "
                 "ON electronic_signatures (school_code, college, subject_role, status, created_at DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_electronic_signatures_hash "
@@ -5604,6 +5818,8 @@ def init_database():
                 "ON signature_usage_logs (context_type, context_id, created_at DESC)",
             ):
                 conn.execute(statement)
+
+            _sync_organization_catalog_from_existing(conn)
 
             # App Feedback System
             conn.execute('''

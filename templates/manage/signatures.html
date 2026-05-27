@@ -100,6 +100,23 @@
         align-items: end;
     }
 
+    .signature-school-switcher {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) auto;
+        gap: 10px;
+        align-items: end;
+        padding: 12px;
+        border: 1px solid rgba(20, 184, 166, 0.22);
+        border-radius: 8px;
+        background: rgba(240, 253, 250, 0.62);
+    }
+
+    .signature-school-note {
+        color: var(--text-secondary);
+        font-size: 0.84rem;
+        line-height: 1.45;
+    }
+
     .signature-field {
         display: grid;
         gap: 6px;
@@ -329,10 +346,25 @@
         font-size: 0.86rem;
     }
 
+    .signature-edit-modal .modal-dialog {
+        max-width: 760px;
+    }
+
+    .signature-edit-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+    }
+
+    .signature-edit-grid .signature-field--full {
+        grid-column: 1 / -1;
+    }
+
     @media (max-width: 980px) {
         .signature-overview,
         .signature-shell,
-        .signature-toolbar {
+        .signature-toolbar,
+        .signature-school-switcher {
             grid-template-columns: 1fr;
         }
 
@@ -343,7 +375,8 @@
 
     @media (max-width: 640px) {
         .signature-stat-grid,
-        .signature-upload-grid {
+        .signature-upload-grid,
+        .signature-edit-grid {
             grid-template-columns: 1fr;
         }
 
@@ -360,6 +393,75 @@
     {{ topbar_action('上传签名', '新增签名', 'upload', button_id='signature-open-upload-btn', variant='solid', tone='teal') }}
     {{ topbar_action('刷新', '更新列表', 'refresh', button_id='signature-refresh-btn', variant='primary', tone='cyan') }}
 </div>
+
+<div id="signature-edit-modal" class="modal-backdrop signature-edit-modal" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <form class="modal-content" id="signature-edit-form">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">编辑签名属性</h3>
+                    <p class="modal-subtitle">归属人可维护签名信息；超管可调整学校、学院、系部与归属教师。</p>
+                </div>
+                <button type="button" class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="signature-edit-grid">
+                    <label class="signature-field">
+                        <span>签名名称</span>
+                        <input type="text" class="form-control" id="signature-edit-name-input" name="name" maxlength="80" required>
+                    </label>
+                    <label class="signature-field">
+                        <span>签名人</span>
+                        <input type="text" class="form-control" id="signature-edit-subject-name-input" name="subject_name" maxlength="80">
+                    </label>
+                    <label class="signature-field">
+                        <span>所属身份</span>
+                        <select class="form-control" id="signature-edit-subject-role-input" name="subject_role">
+                            <option value="teacher">教师</option>
+                            <option value="student">学生</option>
+                            <option value="other">其他</option>
+                            <option value="system">平台</option>
+                        </select>
+                    </label>
+                    <label class="signature-field">
+                        <span>可用层级</span>
+                        <select class="form-control" id="signature-edit-scope-level-input" name="scope_level">
+                            <option value="personal">个人</option>
+                            <option value="college">学院可用</option>
+                            <option value="platform">平台可用</option>
+                        </select>
+                    </label>
+                    <label class="signature-field" id="signature-edit-school-field">
+                        <span>所属学校</span>
+                        <input type="search" class="form-control" id="signature-edit-school-input" list="signature-school-options" autocomplete="off">
+                    </label>
+                    <label class="signature-field">
+                        <span>学院</span>
+                        <input type="text" class="form-control" id="signature-edit-college-input" name="college" maxlength="120">
+                    </label>
+                    <label class="signature-field">
+                        <span>系部</span>
+                        <input type="text" class="form-control" id="signature-edit-department-input" name="department" maxlength="120">
+                    </label>
+                    <label class="signature-field">
+                        <span>归属教师</span>
+                        <input type="search" class="form-control" id="signature-edit-owner-input" list="signature-owner-teacher-options" autocomplete="off" placeholder="输入姓名、邮箱、学院筛选">
+                        <datalist id="signature-owner-teacher-options"></datalist>
+                    </label>
+                    <label class="signature-field signature-field--full">
+                        <span>备注</span>
+                        <textarea class="form-control" id="signature-edit-description-input" name="description" rows="3" maxlength="300"></textarea>
+                    </label>
+                </div>
+                <div class="signature-upload-status" id="signature-edit-status"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
+                <button type="submit" class="btn btn-primary" id="signature-edit-submit-btn">保存属性</button>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}
 
 {% block content %}
@@ -368,13 +470,15 @@
     data-signature-page
     data-is-super-admin="{{ '1' if signature_actor.is_super_admin else '0' }}"
     data-actor-role="{{ signature_actor.role }}"
+    data-actor-school-code="{{ signature_actor.school_code }}"
+    data-actor-school-name="{{ signature_actor.school_name }}"
 >
     <div class="signature-overview">
         <div class="signature-overview-copy">
             <div class="signature-eyebrow">基础资源 / 电子签名</div>
             <h2>签名库</h2>
             <p>
-                当前账号可管理自己的签名；同学院教师可调用本学院教师与学生签名，学生侧接口仅返回本人签名。
+                签名按学校隔离，同学院教师可调用本学院教师与学生签名；归属人可以维护属性与删除，学生侧接口仅返回本人签名。
             </p>
         </div>
         <div class="signature-stat-grid" aria-label="签名概览">
@@ -383,7 +487,7 @@
                 <strong id="signature-stat-total">{{ signature_stats.visible_total }}</strong>
             </article>
             <article class="signature-stat-card">
-                <span>我的签名</span>
+                <span>我的归属</span>
                 <strong id="signature-stat-mine">{{ signature_stats.mine }}</strong>
             </article>
             <article class="signature-stat-card">
@@ -399,16 +503,26 @@
 
     <div class="signature-shell">
         <section class="signature-panel signature-library-panel" aria-label="签名列表">
+            <div class="signature-school-switcher" id="signature-school-switcher">
+                <label class="signature-field" id="signature-school-field">
+                    <span>学校</span>
+                    <input type="search" class="form-control" id="signature-school-search-input" list="signature-school-options" placeholder="输入学校名称或代码筛选" autocomplete="off">
+                    <datalist id="signature-school-options"></datalist>
+                </label>
+                <div class="signature-school-note" id="signature-school-note">
+                    当前学校：{{ signature_actor.school_name or '未记录' }}
+                </div>
+            </div>
             <div class="signature-toolbar">
                 <label class="signature-field">
                     <span>搜索</span>
-                    <input type="search" class="form-control" id="signature-search-input" placeholder="姓名、签名名或上传者" autocomplete="off">
+                    <input type="search" class="form-control" id="signature-search-input" placeholder="姓名、签名名、归属人或上传者" autocomplete="off">
                 </label>
                 <label class="signature-field">
                     <span>范围</span>
                     <select class="form-control" id="signature-scope-filter">
                         <option value="">全部可见</option>
-                        <option value="mine">我的签名</option>
+                        <option value="mine">我的归属签名</option>
                         <option value="college">同学院</option>
                         <option value="system">平台导入</option>
                     </select>
@@ -423,9 +537,9 @@
                     </select>
                 </label>
                 <label class="signature-field">
-                    <span>上传者</span>
+                    <span>归属人</span>
                     <select class="form-control" id="signature-owner-filter">
-                        <option value="">全部上传者</option>
+                        <option value="">全部归属人</option>
                         <option value="teacher">教师</option>
                         <option value="student">学生</option>
                         <option value="system">平台</option>
@@ -451,6 +565,7 @@
             <div class="signature-actions">
                 <a class="btn btn-outline btn-sm" id="signature-download-link" href="#" hidden>下载</a>
                 <button type="button" class="btn btn-primary btn-sm" id="signature-use-btn" hidden>记录调用</button>
+                <button type="button" class="btn btn-outline btn-sm" id="signature-edit-btn" hidden>编辑属性</button>
                 <button type="button" class="btn btn-danger btn-sm" id="signature-delete-btn" hidden>删除</button>
             </div>
         </aside>

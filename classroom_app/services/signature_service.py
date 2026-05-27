@@ -15,7 +15,15 @@ from fastapi import UploadFile
 from ..config import SIGNATURES_DIR, SIGNATURES_LEGACY_DIRS
 from ..storage_paths import unique_paths
 from .message_center_service import is_super_admin_teacher
-from .organization_scope_service import build_org_scope, load_teacher_org_scope, normalize_college, normalize_school_code
+from .organization_management_service import list_school_options
+from .organization_scope_service import (
+    build_org_scope,
+    load_teacher_org_scope,
+    normalize_college,
+    normalize_org_text,
+    normalize_school_code,
+    normalize_school_name,
+)
 
 
 MAX_SIGNATURE_FILE_BYTES = 5 * 1024 * 1024
@@ -133,6 +141,12 @@ def _same_college(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> b
     return bool(actor_college and row_college and actor_college == row_college)
 
 
+def _same_school(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
+    scope = actor.get("scope") or {}
+    row_school = normalize_school_code(row["school_code"] if "school_code" in row.keys() else "")
+    return row_school == normalize_school_code(scope.get("school_code"))
+
+
 def _is_owner(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
     role, user_id = _actor_identity(actor)
     try:
@@ -146,6 +160,8 @@ def can_use_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) 
     if bool(actor.get("is_super_admin")):
         return True
     role, _ = _actor_identity(actor)
+    if not _same_school(actor, row):
+        return False
     if role == "student":
         return _is_owner(actor, row)
     if role == "teacher":
@@ -162,19 +178,73 @@ def can_delete_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any
     return bool(actor.get("is_super_admin")) or _is_owner(actor, row)
 
 
-def _visibility_sql(actor: dict[str, Any]) -> tuple[str, list[Any]]:
+def can_edit_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
+    return bool(actor.get("is_super_admin")) or _is_owner(actor, row)
+
+
+def _resolve_selected_school(conn: sqlite3.Connection, actor: dict[str, Any], school_code: str = "") -> dict[str, str]:
+    actor_scope = actor.get("scope") or {}
+    if not bool(actor.get("is_super_admin")):
+        return build_org_scope(
+            school_code=actor_scope.get("school_code"),
+            school_name=actor_scope.get("school_name"),
+        )
+
+    requested_code = normalize_school_code(school_code) if normalize_org_text(school_code) else ""
+    if requested_code:
+        row = conn.execute(
+            """
+            SELECT school_code, school_name
+            FROM organization_schools
+            WHERE school_code = ?
+            LIMIT 1
+            """,
+            (requested_code,),
+        ).fetchone()
+        if row:
+            return build_org_scope(school_code=row["school_code"], school_name=row["school_name"])
+        signature_row = conn.execute(
+            """
+            SELECT school_code, school_name
+            FROM electronic_signatures
+            WHERE school_code = ?
+            LIMIT 1
+            """,
+            (requested_code,),
+        ).fetchone()
+        if signature_row:
+            return build_org_scope(school_code=signature_row["school_code"], school_name=signature_row["school_name"])
+        raise SignatureServiceError(404, "学校不存在或尚未纳入组织目录。")
+
+    actor_school = normalize_school_code(actor_scope.get("school_code"))
+    if actor_school:
+        return build_org_scope(
+            school_code=actor_school,
+            school_name=actor_scope.get("school_name"),
+        )
+    options = list_school_options(conn, limit=1)
+    if options:
+        return build_org_scope(
+            school_code=options[0]["school_code"],
+            school_name=options[0]["school_name"],
+        )
+    return build_org_scope()
+
+
+def _visibility_sql(actor: dict[str, Any], selected_school_code: str = "") -> tuple[str, list[Any]]:
+    selected_school_code = normalize_school_code(selected_school_code)
     if bool(actor.get("is_super_admin")):
-        return "1 = 1", []
+        return "s.school_code = ?", [selected_school_code]
 
     role, user_id = _actor_identity(actor)
-    if role == "student":
-        return "(s.owner_role = 'student' AND s.owner_id = ?)", [user_id]
-
     scope = actor.get("scope") or {}
     school_code = normalize_school_code(scope.get("school_code"))
+    if role == "student":
+        return "(s.school_code = ? AND s.owner_role = 'student' AND s.owner_id = ?)", [school_code, user_id]
+
     college = normalize_college(scope.get("college"))
-    clauses = ["(s.owner_role = 'teacher' AND s.owner_id = ?)"]
-    params: list[Any] = [user_id]
+    clauses = ["(s.school_code = ? AND s.owner_role = 'teacher' AND s.owner_id = ?)"]
+    params: list[Any] = [school_code, user_id]
     if school_code and college:
         clauses.append("(s.school_code = ? AND s.college = ? AND s.owner_role IN ('teacher', 'student', 'system'))")
         params.extend([school_code, college])
@@ -197,11 +267,23 @@ def _base_signature_select() -> str:
                 NULLIF(s.owner_name_snapshot, ''),
                 '平台导入'
             ) AS owner_display_name,
+            COALESCE(
+                CASE
+                    WHEN s.uploaded_by_role = 'teacher' THEN ut.name
+                    WHEN s.uploaded_by_role = 'student' THEN us.name
+                    ELSE NULL
+                END,
+                NULLIF(s.uploaded_by_name_snapshot, ''),
+                NULLIF(s.owner_name_snapshot, ''),
+                '平台导入'
+            ) AS uploaded_by_display_name,
             COALESCE(usage_stats.usage_count, 0) AS usage_count,
             usage_stats.last_used_at AS last_used_at
         FROM electronic_signatures s
         LEFT JOIN teachers ot ON s.owner_role = 'teacher' AND ot.id = s.owner_id
         LEFT JOIN students os ON s.owner_role = 'student' AND os.id = s.owner_id
+        LEFT JOIN teachers ut ON s.uploaded_by_role = 'teacher' AND ut.id = s.uploaded_by_id
+        LEFT JOIN students us ON s.uploaded_by_role = 'student' AND us.id = s.uploaded_by_id
         LEFT JOIN (
             SELECT signature_id, COUNT(*) AS usage_count, MAX(created_at) AS last_used_at
             FROM signature_usage_logs
@@ -210,18 +292,44 @@ def _base_signature_select() -> str:
     """
 
 
+def _signature_school_options(conn: sqlite3.Connection, actor: dict[str, Any], query: str = "") -> list[dict[str, Any]]:
+    if bool(actor.get("is_super_admin")):
+        return [
+            {
+                "school_code": item["school_code"],
+                "school_name": item["school_name"],
+                "is_active": item.get("is_active", True),
+                "reference_count": item.get("reference_count", 0),
+            }
+            for item in list_school_options(conn, query=query, limit=120)
+        ]
+    scope = actor.get("scope") or {}
+    school = build_org_scope(
+        school_code=scope.get("school_code"),
+        school_name=scope.get("school_name"),
+    )
+    return [{
+        "school_code": school["school_code"],
+        "school_name": school["school_name"],
+        "is_active": True,
+        "reference_count": 0,
+    }]
+
+
 def list_signatures(
     conn: sqlite3.Connection,
     user: dict[str, Any],
     *,
     search: str = "",
+    school_code: str = "",
     owner_role: str = "",
     subject_role: str = "",
     scope: str = "",
     limit: int = 200,
 ) -> dict[str, Any]:
     actor = build_signature_actor(conn, user)
-    visibility_sql, params = _visibility_sql(actor)
+    selected_school = _resolve_selected_school(conn, actor, school_code)
+    visibility_sql, params = _visibility_sql(actor, selected_school.get("school_code"))
     where = ["s.status = 'active'", "s.deleted_at IS NULL", visibility_sql]
 
     query = _clean_text(search, 80)
@@ -233,12 +341,15 @@ def list_signatures(
                 s.name LIKE ?
                 OR s.subject_name LIKE ?
                 OR s.owner_name_snapshot LIKE ?
+                OR s.uploaded_by_name_snapshot LIKE ?
                 OR ot.name LIKE ?
                 OR os.name LIKE ?
+                OR ut.name LIKE ?
+                OR us.name LIKE ?
             )
             """
         )
-        params.extend([like, like, like, like, like])
+        params.extend([like, like, like, like, like, like, like, like])
 
     normalized_owner_role = str(owner_role or "").strip().lower()
     if normalized_owner_role in {"teacher", "student", "system"}:
@@ -273,6 +384,8 @@ def list_signatures(
             FROM electronic_signatures s
             LEFT JOIN teachers ot ON s.owner_role = 'teacher' AND ot.id = s.owner_id
             LEFT JOIN students os ON s.owner_role = 'student' AND os.id = s.owner_id
+            LEFT JOIN teachers ut ON s.uploaded_by_role = 'teacher' AND ut.id = s.uploaded_by_id
+            LEFT JOIN students us ON s.uploaded_by_role = 'student' AND us.id = s.uploaded_by_id
             WHERE
             """
             + where_sql,
@@ -295,6 +408,8 @@ def list_signatures(
         "items": items,
         "total": total,
         "actor": serialize_signature_actor(actor),
+        "selected_school": selected_school,
+        "school_options": _signature_school_options(conn, actor),
         "stats": _build_signature_stats(items, actor),
     }
 
@@ -306,6 +421,7 @@ def serialize_signature_actor(actor: dict[str, Any]) -> dict[str, Any]:
         "id": actor.get("id"),
         "name": actor.get("name"),
         "is_super_admin": bool(actor.get("is_super_admin")),
+        "school_code": scope.get("school_code") or "",
         "school_name": scope.get("school_name") or "",
         "college": scope.get("college") or "",
         "department": scope.get("department") or "",
@@ -348,6 +464,7 @@ def serialize_signature(row: sqlite3.Row, actor: dict[str, Any]) -> dict[str, An
     subject_name = row["subject_name"] or row["name"]
     is_owner = _is_owner(actor, row)
     can_delete = can_delete_signature(actor, row)
+    can_edit = can_edit_signature(actor, row)
     return {
         "id": row_id,
         "name": row["name"],
@@ -358,8 +475,13 @@ def serialize_signature(row: sqlite3.Row, actor: dict[str, Any]) -> dict[str, An
         "owner_role_label": _role_label(owner_role),
         "owner_id": row["owner_id"],
         "owner_name": row["owner_display_name"],
+        "uploaded_by_role": row["uploaded_by_role"] or owner_role,
+        "uploaded_by_role_label": _role_label(row["uploaded_by_role"] or owner_role),
+        "uploaded_by_id": row["uploaded_by_id"] if row["uploaded_by_id"] is not None else row["owner_id"],
+        "uploaded_by_name": row["uploaded_by_display_name"],
         "scope_level": scope_level,
         "scope_label": _scope_label(scope_level),
+        "school_code": row["school_code"],
         "school_name": row["school_name"],
         "college": row["college"],
         "department": row["department"],
@@ -373,6 +495,7 @@ def serialize_signature(row: sqlite3.Row, actor: dict[str, Any]) -> dict[str, An
         "usage_count": int(row["usage_count"] or 0),
         "last_used_at": row["last_used_at"] or "",
         "is_owner": is_owner,
+        "can_edit": can_edit,
         "can_delete": can_delete,
         "can_use": can_use_signature(actor, row),
         "image_url": f"/api/signatures/{row_id}/image",
@@ -398,6 +521,243 @@ def get_signature_row_for_actor(conn: sqlite3.Connection, user: dict[str, Any], 
     if not can_use_signature(actor, row):
         raise SignatureServiceError(403, "当前账号无权访问此签名。")
     return row, actor
+
+
+def _get_signature_row(conn: sqlite3.Connection, signature_id: int) -> sqlite3.Row:
+    row = conn.execute(
+        _base_signature_select()
+        + """
+        WHERE s.id = ?
+          AND s.status = 'active'
+          AND s.deleted_at IS NULL
+        LIMIT 1
+        """,
+        (int(signature_id),),
+    ).fetchone()
+    if not row:
+        raise SignatureServiceError(404, "签名不存在或已删除。")
+    return row
+
+
+def _teacher_owner_row(conn: sqlite3.Connection, teacher_id: int | str) -> sqlite3.Row:
+    row = conn.execute(
+        """
+        SELECT id, name, email, school_code, school_name, college, department
+        FROM teachers
+        WHERE id = ?
+          AND COALESCE(is_active, 1) = 1
+        LIMIT 1
+        """,
+        (int(teacher_id),),
+    ).fetchone()
+    if not row:
+        raise SignatureServiceError(400, "目标归属教师不存在或已停用。")
+    return row
+
+
+def list_signature_teacher_options(
+    conn: sqlite3.Connection,
+    user: dict[str, Any],
+    *,
+    q: str = "",
+    school_code: str = "",
+    limit: int = 60,
+) -> dict[str, Any]:
+    actor = build_signature_actor(conn, user)
+    selected_school = _resolve_selected_school(conn, actor, school_code)
+    params: list[Any] = [selected_school["school_code"]]
+    where = ["COALESCE(is_active, 1) = 1", "school_code = ?"]
+    query = _clean_text(q, 80)
+    if query:
+        like = f"%{query}%"
+        where.append("(name LIKE ? OR email LIKE ? OR college LIKE ? OR department LIKE ?)")
+        params.extend([like, like, like, like])
+    rows = conn.execute(
+        """
+        SELECT id, name, email, school_code, school_name, college, department
+        FROM teachers
+        WHERE
+        """
+        + " AND ".join(f"({item})" for item in where)
+        + """
+        ORDER BY name COLLATE NOCASE ASC, id ASC
+        LIMIT ?
+        """,
+        (*params, max(1, min(int(limit or 60), 120))),
+    ).fetchall()
+    return {
+        "items": [
+            {
+                "id": int(row["id"]),
+                "name": row["name"] or "",
+                "email": row["email"] or "",
+                "school_code": row["school_code"] or "",
+                "school_name": row["school_name"] or "",
+                "college": row["college"] or "",
+                "department": row["department"] or "",
+            }
+            for row in rows
+        ],
+        "selected_school": selected_school,
+        "actor": serialize_signature_actor(actor),
+    }
+
+
+def list_signature_school_options(
+    conn: sqlite3.Connection,
+    user: dict[str, Any],
+    *,
+    q: str = "",
+) -> dict[str, Any]:
+    actor = build_signature_actor(conn, user)
+    return {
+        "items": _signature_school_options(conn, actor, query=q),
+        "actor": serialize_signature_actor(actor),
+    }
+
+
+def update_signature_metadata(
+    conn: sqlite3.Connection,
+    user: dict[str, Any],
+    signature_id: int,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    actor = build_signature_actor(conn, user)
+    row = _get_signature_row(conn, signature_id)
+    if not can_edit_signature(actor, row):
+        raise SignatureServiceError(403, "只有签名归属人或超管可以修改此签名。")
+
+    actor_role, actor_id = _actor_identity(actor)
+    is_super_admin = bool(actor.get("is_super_admin"))
+    owner_role = str(row["owner_role"] or "")
+    owner_id = int(row["owner_id"] or 0) if row["owner_id"] is not None else None
+    owner_name_snapshot = str(row["owner_name_snapshot"] or "")
+    ownership_changed = False
+
+    target_owner_id = payload.get("owner_teacher_id", payload.get("owner_id"))
+    if target_owner_id not in (None, ""):
+        target_teacher = _teacher_owner_row(conn, int(target_owner_id))
+        target_scope = build_org_scope(
+            school_code=target_teacher["school_code"],
+            school_name=target_teacher["school_name"],
+            college=target_teacher["college"],
+            department=target_teacher["department"],
+        )
+        if not is_super_admin:
+            actor_school = normalize_school_code((actor.get("scope") or {}).get("school_code"))
+            if target_scope["school_code"] != actor_school:
+                raise SignatureServiceError(403, "只能把签名归属权转给同一学校的教师。")
+        new_owner_role = "teacher"
+        new_owner_id = int(target_teacher["id"])
+        if owner_role != new_owner_role or int(owner_id or 0) != new_owner_id:
+            ownership_changed = True
+        owner_role = new_owner_role
+        owner_id = new_owner_id
+        owner_name_snapshot = _clean_text(target_teacher["name"], 80)
+    else:
+        target_teacher = None
+        target_scope = None
+
+    clean_name = _clean_text(payload.get("name", row["name"]), 80) or row["name"]
+    clean_subject_name = _clean_text(payload.get("subject_name", row["subject_name"]), 80) or clean_name
+    clean_description = _clean_text(payload.get("description", row["description"]), 300)
+
+    if is_super_admin or actor_role == "teacher":
+        subject_role = _normalize_subject_role(payload.get("subject_role", row["subject_role"]), row["subject_role"])
+    else:
+        subject_role = str(row["subject_role"] or actor_role)
+
+    requested_scope_level = _normalize_scope_level(payload.get("scope_level", row["scope_level"]), row["scope_level"])
+    if not is_super_admin and requested_scope_level == "platform":
+        requested_scope_level = "college" if actor_role == "teacher" else "personal"
+
+    current_org = build_org_scope(
+        school_code=row["school_code"],
+        school_name=row["school_name"],
+        college=row["college"],
+        department=row["department"],
+    )
+    if is_super_admin:
+        requested_school_code = normalize_school_code(
+            payload.get("school_code")
+            or (target_scope["school_code"] if target_scope else "")
+            or current_org["school_code"]
+        )
+        school_row = conn.execute(
+            """
+            SELECT school_code, school_name
+            FROM organization_schools
+            WHERE school_code = ?
+            LIMIT 1
+            """,
+            (requested_school_code,),
+        ).fetchone()
+        school_name = normalize_school_name(
+            payload.get("school_name")
+            or (school_row["school_name"] if school_row else "")
+            or (target_scope["school_name"] if target_scope else "")
+            or current_org["school_name"]
+        )
+        org_scope = build_org_scope(
+            school_code=requested_school_code,
+            school_name=school_name,
+            college=payload.get("college", target_scope["college"] if target_scope else current_org["college"]),
+            department=payload.get("department", target_scope["department"] if target_scope else current_org["department"]),
+        )
+    else:
+        actor_scope = actor.get("scope") or {}
+        org_scope = build_org_scope(
+            school_code=actor_scope.get("school_code") or current_org["school_code"],
+            school_name=actor_scope.get("school_name") or current_org["school_name"],
+            college=payload.get("college", current_org["college"]),
+            department=payload.get("department", current_org["department"]),
+        )
+
+    if requested_scope_level == "platform" and is_super_admin:
+        org_scope["college"] = normalize_org_text(payload.get("college", org_scope["college"]))
+        org_scope["department"] = normalize_org_text(payload.get("department", org_scope["department"]))
+
+    conn.execute(
+        """
+        UPDATE electronic_signatures
+        SET name = ?,
+            subject_name = ?,
+            subject_role = ?,
+            scope_level = ?,
+            owner_role = ?,
+            owner_id = ?,
+            owner_name_snapshot = ?,
+            ownership_updated_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE ownership_updated_at END,
+            ownership_updated_by_teacher_id = CASE WHEN ? = 1 THEN ? ELSE ownership_updated_by_teacher_id END,
+            school_code = ?,
+            school_name = ?,
+            college = ?,
+            department = ?,
+            description = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (
+            clean_name,
+            clean_subject_name,
+            subject_role,
+            requested_scope_level,
+            owner_role,
+            owner_id,
+            owner_name_snapshot,
+            1 if ownership_changed else 0,
+            1 if ownership_changed else 0,
+            actor_id if actor_role == "teacher" else None,
+            org_scope["school_code"],
+            org_scope["school_name"],
+            org_scope["college"],
+            org_scope["department"],
+            clean_description,
+            int(signature_id),
+        ),
+    )
+    refreshed = _get_signature_row(conn, signature_id)
+    return serialize_signature(refreshed, actor)
 
 
 async def _read_upload_bytes(file: UploadFile) -> bytes:
@@ -513,17 +873,21 @@ async def create_signature_from_upload(
         INSERT INTO electronic_signatures (
             name, subject_name, subject_role, scope_level,
             owner_role, owner_id, owner_name_snapshot,
+            uploaded_by_role, uploaded_by_id, uploaded_by_name_snapshot,
             school_code, school_name, college, department,
             file_hash, file_ext, mime_type, stored_path, file_size,
             description, metadata_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             clean_name,
             clean_subject_name,
             normalized_subject_role,
             normalized_scope,
+            actor_role,
+            actor_id,
+            actor.get("name") or "",
             actor_role,
             actor_id,
             actor.get("name") or "",
@@ -576,7 +940,7 @@ def resolve_signature_file_path(row: sqlite3.Row | dict[str, Any]) -> Path | Non
 def delete_signature(conn: sqlite3.Connection, user: dict[str, Any], signature_id: int) -> dict[str, Any]:
     row, actor = get_signature_row_for_actor(conn, user, signature_id)
     if not can_delete_signature(actor, row):
-        raise SignatureServiceError(403, "只有签名上传者或超管可以删除此签名。")
+        raise SignatureServiceError(403, "只有签名归属人或超管可以删除此签名。")
     conn.execute(
         """
         UPDATE electronic_signatures

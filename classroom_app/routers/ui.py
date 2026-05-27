@@ -123,6 +123,7 @@ from ..services.smart_classroom_integration_service import (
     list_teacher_smart_classroom_credentials,
 )
 from ..services.signature_service import build_signature_dashboard_context
+from ..services.organization_management_service import list_organization_tree
 from ..services.smart_attendance_entry_service import (
     maybe_enqueue_teacher_daily_checkin_sync,
     maybe_send_student_attendance_alert,
@@ -3013,6 +3014,30 @@ async def get_manage_system_users_page(request: Request, user: dict = Depends(ge
 async def get_manage_system_super_admin_page(request: Request, user: dict = Depends(get_current_teacher)):
     """兼容旧超管设置入口，统一进入用户管理页。"""
     return RedirectResponse(url="/manage/system/users", status_code=302)
+
+
+@router.get("/manage/system/organizations", response_class=HTMLResponse)
+async def get_manage_system_organizations_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """学校、学院、系部组织目录管理页面。"""
+    with get_db_connection() as conn:
+        _ensure_manage_super_admin(conn, user)
+        organization_payload = list_organization_tree(conn)
+        current_teacher_is_super_admin = is_super_admin_teacher(conn, user["id"])
+
+    return templates.TemplateResponse(
+        request,
+        "manage/system/organizations.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="学校组织",
+            active_page="system_organizations",
+            extra={
+                "organization_payload": organization_payload,
+                "current_teacher_is_super_admin": current_teacher_is_super_admin,
+            },
+        ),
+    )
 
 
 @router.get("/manage/system/feedback", response_class=HTMLResponse)

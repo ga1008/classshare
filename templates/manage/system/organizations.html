@@ -1,0 +1,417 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}学校组织{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('用户管理', '教师账号', 'users', href='/manage/system/users', variant='outline', tone='slate') }}
+{{ topbar_action('电子签名', '基础资源', 'pen', href='/manage/signatures', variant='solid', tone='teal') }}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    .org-page {
+        display: grid;
+        gap: 18px;
+    }
+
+    .org-overview {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+        gap: 18px;
+        align-items: stretch;
+    }
+
+    .org-hero,
+    .org-panel {
+        min-width: 0;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .org-hero {
+        display: flex;
+        gap: 16px;
+        padding: 18px;
+        align-items: flex-start;
+    }
+
+    .org-hero-mark {
+        display: inline-flex;
+        width: 46px;
+        height: 46px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        color: #047857;
+        background: rgba(16, 185, 129, 0.12);
+        flex: 0 0 auto;
+    }
+
+    .org-hero h2,
+    .org-panel h3 {
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 1.14rem;
+        line-height: 1.35;
+    }
+
+    .org-hero p {
+        margin: 8px 0 0;
+        color: var(--text-secondary);
+        line-height: 1.65;
+    }
+
+    .org-stat-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .org-stat {
+        padding: 14px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.88);
+    }
+
+    .org-stat span {
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.76rem;
+        font-weight: 800;
+    }
+
+    .org-stat strong {
+        display: block;
+        margin-top: 4px;
+        color: var(--text-primary);
+        font-size: 1.42rem;
+        line-height: 1.1;
+    }
+
+    .org-workspace {
+        display: grid;
+        grid-template-columns: minmax(300px, 0.9fr) minmax(0, 1.1fr);
+        gap: 18px;
+        align-items: start;
+    }
+
+    .org-panel {
+        display: grid;
+        gap: 14px;
+        padding: 16px;
+    }
+
+    .org-toolbar {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .org-search {
+        flex: 1 1 240px;
+        min-width: 0;
+    }
+
+    .org-toggle {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        color: var(--text-secondary);
+        font-size: 0.84rem;
+        font-weight: 700;
+    }
+
+    .org-list {
+        display: grid;
+        gap: 10px;
+    }
+
+    .org-school-card {
+        display: grid;
+        gap: 10px;
+        padding: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 8px;
+        background: #fff;
+        transition: border-color 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    .org-school-card.is-active {
+        border-color: rgba(16, 185, 129, 0.5);
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+    }
+
+    .org-school-head,
+    .org-unit-head {
+        display: flex;
+        gap: 10px;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+
+    .org-school-title,
+    .org-unit-title {
+        min-width: 0;
+    }
+
+    .org-school-title strong,
+    .org-unit-title strong {
+        display: block;
+        color: var(--text-primary);
+        font-size: 0.95rem;
+        overflow-wrap: anywhere;
+    }
+
+    .org-school-title span,
+    .org-unit-title span {
+        color: var(--text-muted);
+        font-size: 0.78rem;
+    }
+
+    .org-chip-line {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    .org-chip {
+        display: inline-flex;
+        align-items: center;
+        border-radius: var(--radius-full);
+        padding: 4px 8px;
+        color: #0f766e;
+        background: rgba(15, 118, 110, 0.1);
+        font-size: 0.72rem;
+        font-weight: 800;
+    }
+
+    .org-chip.is-muted {
+        color: var(--text-secondary);
+        background: rgba(148, 163, 184, 0.14);
+    }
+
+    .org-chip.is-off {
+        color: #991b1b;
+        background: rgba(239, 68, 68, 0.12);
+    }
+
+    .org-college-list,
+    .org-dept-list {
+        display: grid;
+        gap: 8px;
+    }
+
+    .org-unit-card {
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.74);
+    }
+
+    .org-unit-card.is-active {
+        border-color: rgba(14, 165, 233, 0.46);
+        background: rgba(240, 249, 255, 0.72);
+    }
+
+    .org-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .org-form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .org-form-grid .is-full {
+        grid-column: 1 / -1;
+    }
+
+    .org-field {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+    }
+
+    .org-field span {
+        color: var(--text-muted);
+        font-size: 0.76rem;
+        font-weight: 800;
+    }
+
+    .org-field input,
+    .org-field select {
+        border-radius: 8px;
+        width: 100%;
+    }
+
+    .org-section-note {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: 0.86rem;
+        line-height: 1.6;
+    }
+
+    .org-empty {
+        padding: 24px 12px;
+        border: 1px dashed rgba(148, 163, 184, 0.42);
+        border-radius: 8px;
+        color: var(--text-muted);
+        text-align: center;
+    }
+
+    @media (max-width: 980px) {
+        .org-overview,
+        .org-workspace {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 640px) {
+        .org-hero {
+            flex-direction: column;
+        }
+
+        .org-stat-grid,
+        .org-form-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .org-form-grid .is-full {
+            grid-column: auto;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="org-page" data-organization-page>
+    <div class="org-overview">
+        <article class="org-hero">
+            <div class="org-hero-mark" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"></path><path d="M5 21V7l8-4 6 4v14"></path><path d="M9 21v-6h6v6"></path></svg>
+            </div>
+            <div>
+                <h2>学校、学院、系部目录</h2>
+                <p>这里维护平台后续权限与资源划分的组织底座。停用组织不会删除历史课堂、账号或签名，重命名会同步更新已引用的主要资源字段。</p>
+            </div>
+        </article>
+        <div class="org-stat-grid" aria-label="组织概览">
+            <article class="org-stat"><span>学校</span><strong id="org-stat-schools">{{ organization_payload.summary.school_count }}</strong></article>
+            <article class="org-stat"><span>学院</span><strong id="org-stat-colleges">{{ organization_payload.summary.college_count }}</strong></article>
+            <article class="org-stat"><span>系部</span><strong id="org-stat-departments">{{ organization_payload.summary.department_count }}</strong></article>
+            <article class="org-stat"><span>启用学校</span><strong id="org-stat-active">{{ organization_payload.summary.active_school_count }}</strong></article>
+        </div>
+    </div>
+
+    <div class="org-workspace">
+        <section class="org-panel" aria-label="组织树">
+            <div class="org-toolbar">
+                <input class="form-control org-search" type="search" id="org-search-input" placeholder="搜索学校、学院或系部" autocomplete="off">
+                <label class="org-toggle">
+                    <input type="checkbox" id="org-include-inactive-input">
+                    显示停用
+                </label>
+                <button type="button" class="btn btn-outline btn-sm" id="org-refresh-btn">刷新</button>
+            </div>
+            <div class="org-list" id="org-tree"></div>
+        </section>
+
+        <aside class="org-panel" aria-label="组织维护">
+            <div>
+                <h3>新增学校</h3>
+                <p class="org-section-note">学校代码是未来权限隔离的稳定键，创建后请尽量保持不变。</p>
+            </div>
+            <form id="org-school-form" class="org-form-grid">
+                <label class="org-field">
+                    <span>学校代码</span>
+                    <input class="form-control" name="school_code" maxlength="40" placeholder="例如 gxufl" required>
+                </label>
+                <label class="org-field">
+                    <span>显示顺序</span>
+                    <input class="form-control" type="number" name="display_order" value="0">
+                </label>
+                <label class="org-field is-full">
+                    <span>学校名称</span>
+                    <input class="form-control" name="school_name" maxlength="120" placeholder="例如 广西外国语学院" required>
+                </label>
+                <div class="org-actions is-full">
+                    <button type="submit" class="btn btn-primary">保存学校</button>
+                </div>
+            </form>
+
+            <div>
+                <h3>当前选择</h3>
+                <p class="org-section-note" id="org-current-note">请选择左侧学校后维护学院与系部。</p>
+            </div>
+            <form id="org-current-school-form" class="org-form-grid" hidden>
+                <label class="org-field is-full">
+                    <span>学校名称</span>
+                    <input class="form-control" name="school_name" maxlength="120" required>
+                </label>
+                <label class="org-field">
+                    <span>显示顺序</span>
+                    <input class="form-control" type="number" name="display_order" value="0">
+                </label>
+                <label class="org-field">
+                    <span>状态</span>
+                    <select class="form-control" name="is_active">
+                        <option value="1">启用</option>
+                        <option value="0">停用</option>
+                    </select>
+                </label>
+                <div class="org-actions is-full">
+                    <button type="submit" class="btn btn-primary">更新学校</button>
+                    <button type="button" class="btn btn-danger" id="org-deactivate-school-btn">停用学校</button>
+                </div>
+            </form>
+
+            <form id="org-college-form" class="org-form-grid" hidden>
+                <label class="org-field is-full">
+                    <span>新增学院</span>
+                    <input class="form-control" name="college_name" maxlength="120" placeholder="学院名称">
+                </label>
+                <label class="org-field">
+                    <span>显示顺序</span>
+                    <input class="form-control" type="number" name="display_order" value="0">
+                </label>
+                <div class="org-actions">
+                    <button type="submit" class="btn btn-outline">保存学院</button>
+                </div>
+            </form>
+
+            <form id="org-department-form" class="org-form-grid" hidden>
+                <label class="org-field is-full">
+                    <span>新增系部</span>
+                    <input class="form-control" name="department_name" maxlength="120" placeholder="先在左侧选择学院">
+                </label>
+                <label class="org-field">
+                    <span>显示顺序</span>
+                    <input class="form-control" type="number" name="display_order" value="0">
+                </label>
+                <div class="org-actions">
+                    <button type="submit" class="btn btn-outline">保存系部</button>
+                </div>
+            </form>
+        </aside>
+    </div>
+</section>
+
+<script>
+    window.__organizationPayload = {{ organization_payload | tojson }};
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/manage_organizations.js') }}"></script>
+{% endblock %}

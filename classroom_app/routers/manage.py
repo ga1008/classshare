@@ -51,6 +51,20 @@ from ..services.organization_scope_service import (
     is_same_school,
     load_teacher_org_scope,
 )
+from ..services.organization_management_service import (
+    OrganizationManagementError,
+    create_college,
+    create_department,
+    create_school,
+    delete_college,
+    delete_department,
+    delete_school,
+    list_organization_tree,
+    list_school_options,
+    update_college,
+    update_department,
+    update_school,
+)
 from ..services.learning_progress_service import normalize_course_sect_name
 from ..services.materials_service import (
     attach_learning_material_briefs,
@@ -3496,6 +3510,208 @@ async def api_update_super_admin_teacher(
 def _require_current_super_admin(conn, user: dict, detail: str = "只有当前超管教师可以执行该系统操作。") -> None:
     if not is_super_admin_teacher(conn, user["id"]):
         raise HTTPException(status_code=403, detail=detail)
+
+
+@router.get("/system/organizations/tree", response_class=JSONResponse)
+async def api_list_organization_tree(
+    q: str = "",
+    include_inactive: int = 0,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        return {
+            "status": "success",
+            **list_organization_tree(
+                conn,
+                query=q,
+                include_inactive=bool(int(include_inactive or 0)),
+            ),
+        }
+
+
+@router.get("/system/organizations/schools", response_class=JSONResponse)
+async def api_list_organization_school_options(
+    q: str = "",
+    include_inactive: int = 0,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        return {
+            "status": "success",
+            "items": list_school_options(
+                conn,
+                query=q,
+                include_inactive=bool(int(include_inactive or 0)),
+            ),
+        }
+
+
+@router.post("/system/organizations/schools", response_class=JSONResponse)
+async def api_create_organization_school(request: Request, user: dict = Depends(get_current_teacher)):
+    payload = await _parse_json_request(request)
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            item = create_school(
+                conn,
+                school_code=str(payload.get("school_code") or ""),
+                school_name=str(payload.get("school_name") or ""),
+                display_order=int(payload.get("display_order") or 0),
+                actor_teacher_id=int(user["id"]),
+            )
+        except (OrganizationManagementError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": "学校已保存。", "item": item}
+
+
+@router.patch("/system/organizations/schools/{school_id:int}", response_class=JSONResponse)
+async def api_update_organization_school(
+    school_id: int,
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    payload = await _parse_json_request(request)
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            item = update_school(
+                conn,
+                school_id=school_id,
+                school_name=str(payload.get("school_name") or ""),
+                display_order=int(payload.get("display_order") or 0),
+                is_active=_form_bool(payload.get("is_active", "1")),
+                actor_teacher_id=int(user["id"]),
+            )
+        except (OrganizationManagementError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": "学校已更新。", "item": item}
+
+
+@router.delete("/system/organizations/schools/{school_id:int}", response_class=JSONResponse)
+async def api_delete_organization_school(school_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            item = delete_school(conn, school_id=school_id, actor_teacher_id=int(user["id"]))
+        except OrganizationManagementError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": "学校已停用，历史资源不会被删除。", "item": item}
+
+
+@router.post("/system/organizations/colleges", response_class=JSONResponse)
+async def api_create_organization_college(request: Request, user: dict = Depends(get_current_teacher)):
+    payload = await _parse_json_request(request)
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            item = create_college(
+                conn,
+                school_code=str(payload.get("school_code") or ""),
+                college_name=str(payload.get("college_name") or ""),
+                display_order=int(payload.get("display_order") or 0),
+                actor_teacher_id=int(user["id"]),
+            )
+        except (OrganizationManagementError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": "学院已保存。", "item": item}
+
+
+@router.patch("/system/organizations/colleges/{college_id:int}", response_class=JSONResponse)
+async def api_update_organization_college(
+    college_id: int,
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    payload = await _parse_json_request(request)
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            item = update_college(
+                conn,
+                college_id=college_id,
+                college_name=str(payload.get("college_name") or ""),
+                display_order=int(payload.get("display_order") or 0),
+                is_active=_form_bool(payload.get("is_active", "1")),
+                actor_teacher_id=int(user["id"]),
+            )
+        except (OrganizationManagementError, ValueError, sqlite3.IntegrityError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": "学院已更新。", "item": item}
+
+
+@router.delete("/system/organizations/colleges/{college_id:int}", response_class=JSONResponse)
+async def api_delete_organization_college(college_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            item = delete_college(conn, college_id=college_id, actor_teacher_id=int(user["id"]))
+        except OrganizationManagementError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": "学院已停用，历史资源不会被删除。", "item": item}
+
+
+@router.post("/system/organizations/departments", response_class=JSONResponse)
+async def api_create_organization_department(request: Request, user: dict = Depends(get_current_teacher)):
+    payload = await _parse_json_request(request)
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            item = create_department(
+                conn,
+                school_code=str(payload.get("school_code") or ""),
+                college_name=str(payload.get("college_name") or ""),
+                department_name=str(payload.get("department_name") or ""),
+                display_order=int(payload.get("display_order") or 0),
+                actor_teacher_id=int(user["id"]),
+            )
+        except (OrganizationManagementError, ValueError, sqlite3.IntegrityError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": "系部已保存。", "item": item}
+
+
+@router.patch("/system/organizations/departments/{department_id:int}", response_class=JSONResponse)
+async def api_update_organization_department(
+    department_id: int,
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    payload = await _parse_json_request(request)
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            item = update_department(
+                conn,
+                department_id=department_id,
+                department_name=str(payload.get("department_name") or ""),
+                display_order=int(payload.get("display_order") or 0),
+                is_active=_form_bool(payload.get("is_active", "1")),
+                actor_teacher_id=int(user["id"]),
+            )
+        except (OrganizationManagementError, ValueError, sqlite3.IntegrityError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": "系部已更新。", "item": item}
+
+
+@router.delete("/system/organizations/departments/{department_id:int}", response_class=JSONResponse)
+async def api_delete_organization_department(department_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            item = delete_department(conn, department_id=department_id, actor_teacher_id=int(user["id"]))
+        except OrganizationManagementError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": "系部已停用，历史资源不会被删除。", "item": item}
 
 
 @router.get("/system/agent-keys/status", response_class=JSONResponse)

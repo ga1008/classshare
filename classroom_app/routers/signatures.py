@@ -30,6 +30,7 @@ async def _json_body(request: Request) -> dict[str, Any]:
 @router.get("/list", response_class=JSONResponse)
 async def api_list_signatures(
     q: str = "",
+    school_code: str = "",
     owner_role: str = "",
     subject_role: str = "",
     scope: str = "",
@@ -42,9 +43,42 @@ async def api_list_signatures(
                 conn,
                 user,
                 search=q,
+                school_code=school_code,
                 owner_role=owner_role,
                 subject_role=subject_role,
                 scope=scope,
+                limit=limit,
+            )
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.get("/schools", response_class=JSONResponse)
+async def api_signature_school_options(
+    q: str = "",
+    user: dict = Depends(get_current_user),
+):
+    try:
+        with get_db_connection() as conn:
+            return signature_service.list_signature_school_options(conn, user, q=q)
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.get("/teachers", response_class=JSONResponse)
+async def api_signature_teacher_options(
+    q: str = "",
+    school_code: str = "",
+    limit: int = 60,
+    user: dict = Depends(get_current_user),
+):
+    try:
+        with get_db_connection() as conn:
+            return signature_service.list_signature_teacher_options(
+                conn,
+                user,
+                q=q,
+                school_code=school_code,
                 limit=limit,
             )
     except signature_service.SignatureServiceError as exc:
@@ -73,6 +107,18 @@ async def api_upload_signature(
                 scope_level=scope_level,
                 description=description,
             )
+            conn.commit()
+        return {"status": "success", "signature": item}
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.patch("/{signature_id:int}", response_class=JSONResponse)
+async def api_update_signature(signature_id: int, request: Request, user: dict = Depends(get_current_user)):
+    payload = await _json_body(request)
+    try:
+        with get_db_connection() as conn:
+            item = signature_service.update_signature_metadata(conn, user, signature_id, payload)
             conn.commit()
         return {"status": "success", "signature": item}
     except signature_service.SignatureServiceError as exc:
