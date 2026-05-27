@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ class AIGradingQueueError(Exception):
 
 
 STALE_GRADING_MESSAGE = "AI 批改任务长时间未返回结果，系统已自动转为失败状态，请重新发起 AI 批改或手动批改。"
+STOPPED_GRADING_MESSAGE = "教师已停止本次 AI 批改，旧批改结果将被系统忽略。"
 
 
 def expire_stale_ai_grading_submissions(
@@ -324,6 +326,11 @@ def build_submission_grading_fingerprint(
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
+def _build_grading_attempt_token(content_fingerprint: str) -> str:
+    normalized = str(content_fingerprint or "").strip()
+    return f"{normalized}:{uuid.uuid4().hex}" if normalized else uuid.uuid4().hex
+
+
 def _prepare_grading_inputs(
     submission: dict[str, Any],
     submission_files: list[dict[str, Any]],
@@ -412,6 +419,137 @@ def _resolve_grading_rubric(submission: dict[str, Any]) -> str:
     return str(submission.get("rubric_md") or "").strip()
 
 
+def _resume_status_after_grading_interrupt(submission: dict[str, Any]) -> str:
+    return "graded" if submission.get("score") is not None else "submitted"
+
+
+def _release_stage_exam_grading_attempts(conn, submission: dict[str, Any], message: str) -> None:
+    assignment_id = submission.get("assignment_id")
+    student_pk_id = submission.get("student_pk_id")
+    if assignment_id is None or student_pk_id is None:
+        return
+    rows = [
+        dict(row)
+        for row in conn.execute(
+            """
+            SELECT id, class_offering_id, student_id, stage_key
+            FROM learning_stage_exam_attempts
+            WHERE assignment_id = ?
+              AND student_id = ?
+              AND status = 'grading'
+            """,
+            (assignment_id, student_pk_id),
+        ).fetchall()
+    ]
+    if not rows:
+        return
+    attempt_ids = [int(row["id"]) for row in rows if row.get("id") is not None]
+    if attempt_ids:
+        placeholders = ",".join("?" for _ in attempt_ids)
+        conn.execute(
+            f"""
+            UPDATE learning_stage_exam_attempts
+            SET status = 'failed',
+                ai_error = ?
+            WHERE id IN ({placeholders})
+              AND status = 'grading'
+            """,
+            (message, *attempt_ids),
+        )
+    stage_targets = {
+        (
+            int(row["class_offering_id"]),
+            int(row["student_id"]),
+            str(row["stage_key"]),
+        )
+        for row in rows
+        if row.get("class_offering_id") is not None
+        and row.get("student_id") is not None
+        and row.get("stage_key") is not None
+    }
+    for class_offering_id, student_id, stage_key in stage_targets:
+        conn.execute(
+            """
+            UPDATE learning_stage_status
+            SET status = 'challenge_ready',
+                last_calculated_at = ?
+            WHERE class_offering_id = ?
+              AND student_id = ?
+              AND stage_key = ?
+              AND status IN ('generating', 'in_exam')
+            """,
+            (datetime.now().isoformat(), class_offering_id, student_id, stage_key),
+        )
+
+
+def stop_submission_ai_grading(
+    submission_id: int,
+    *,
+    teacher_id: int | None = None,
+) -> dict[str, Any]:
+    with get_db_connection() as conn:
+        submission = _load_submission_for_grading(conn, submission_id, teacher_id=teacher_id)
+        if int(submission.get("resubmission_allowed") or 0):
+            raise AIGradingQueueError(400, "该提交已撤回并等待重交，不能操作旧版本")
+        if submission["status"] != "grading":
+            return {
+                "status": "not_grading",
+                "submission_id": submission_id,
+                "submission_status": submission["status"],
+            }
+        resume_status = _resume_status_after_grading_interrupt(submission)
+        cursor = conn.execute(
+            """
+            UPDATE submissions
+            SET status = ?,
+                grading_started_at = NULL,
+                grading_attempt_fingerprint = NULL
+            WHERE id = ? AND status = 'grading'
+            """,
+            (resume_status, submission_id),
+        )
+        if cursor.rowcount != 1:
+            raise AIGradingQueueError(409, "该提交状态刚刚发生变化，请刷新后重试")
+        _release_stage_exam_grading_attempts(conn, submission, STOPPED_GRADING_MESSAGE)
+        conn.commit()
+        return {
+            "status": "stopped",
+            "submission_id": submission_id,
+            "submission_status": resume_status,
+        }
+
+
+async def force_submit_submission_for_ai_grading(
+    submission_id: int,
+    *,
+    teacher_id: int | None = None,
+) -> dict[str, Any]:
+    with get_db_connection() as conn:
+        submission = _load_submission_for_grading(conn, submission_id, teacher_id=teacher_id)
+        if int(submission.get("resubmission_allowed") or 0):
+            raise AIGradingQueueError(400, "该提交已撤回并等待重交，不能批改旧版本")
+        if submission["status"] == "grading":
+            resume_status = _resume_status_after_grading_interrupt(submission)
+            cursor = conn.execute(
+                """
+                UPDATE submissions
+                SET status = ?,
+                    grading_started_at = NULL,
+                    grading_attempt_fingerprint = NULL
+                WHERE id = ? AND status = 'grading'
+                """,
+                (resume_status, submission_id),
+            )
+            if cursor.rowcount != 1:
+                raise AIGradingQueueError(409, "该提交状态刚刚发生变化，请刷新后重试")
+            conn.commit()
+    return await submit_submission_for_ai_grading(
+        submission_id,
+        teacher_id=teacher_id,
+        allow_graded=True,
+    )
+
+
 async def submit_submission_for_ai_grading(
     submission_id: int,
     *,
@@ -428,7 +566,7 @@ async def submit_submission_for_ai_grading(
             return {"status": "already_graded"}
 
         submission_files = _load_submission_files_for_grading(conn, submission_id)
-        submission_fingerprint = build_submission_grading_fingerprint(submission, submission_files)
+        content_fingerprint = build_submission_grading_fingerprint(submission, submission_files)
         resolved_files, has_files, has_answers = _prepare_grading_inputs(submission, submission_files)
 
         # 同一连接内二次确认指纹，消除 TOCTOU 窗口
@@ -441,13 +579,14 @@ async def submit_submission_for_ai_grading(
             return {"status": "already_graded"}
         current_files = _load_submission_files_for_grading(conn, submission_id)
         current_fingerprint = build_submission_grading_fingerprint(current, current_files)
-        if current_fingerprint != submission_fingerprint:
+        if current_fingerprint != content_fingerprint:
             submission = current
             submission_files = current_files
-            submission_fingerprint = current_fingerprint
+            content_fingerprint = current_fingerprint
             resolved_files, has_files, has_answers = _prepare_grading_inputs(submission, submission_files)
 
         rubric_md = _resolve_grading_rubric(submission)
+        attempt_token = _build_grading_attempt_token(content_fingerprint)
         cursor = conn.execute(
             """
             UPDATE submissions
@@ -456,7 +595,7 @@ async def submit_submission_for_ai_grading(
                 grading_attempt_fingerprint = ?
             WHERE id = ? AND COALESCE(resubmission_allowed, 0) = 0
             """,
-            (datetime.now().isoformat(), submission_fingerprint, submission_id),
+            (datetime.now().isoformat(), attempt_token, submission_id),
         )
         if cursor.rowcount != 1:
             raise AIGradingQueueError(409, "该提交状态刚刚发生变化，请刷新后重试")
@@ -484,7 +623,7 @@ async def submit_submission_for_ai_grading(
         "answers_json": submission["answers_json"] if has_answers else None,
         "student_profile_context": student_profile_context,
         "submitted_at": submission.get("submitted_at"),
-        "submission_fingerprint": submission_fingerprint,
+        "submission_fingerprint": attempt_token,
     }
 
     try:
@@ -508,16 +647,26 @@ async def submit_submission_for_ai_grading(
 def _reset_submission_after_queue_failure(submission_id: int, error_message: str = "") -> None:
     try:
         with get_db_connection() as conn:
+            submission = conn.execute(
+                "SELECT * FROM submissions WHERE id = ?",
+                (submission_id,),
+            ).fetchone()
             conn.execute(
                 """
                 UPDATE submissions
-                SET status = 'submitted',
+                SET status = CASE WHEN score IS NOT NULL THEN 'graded' ELSE 'submitted' END,
                     grading_started_at = NULL,
                     grading_attempt_fingerprint = NULL
                 WHERE id = ? AND status = 'grading'
                 """,
                 (submission_id,),
             )
+            if submission:
+                _release_stage_exam_grading_attempts(
+                    conn,
+                    dict(submission),
+                    error_message or "AI 批改任务未能进入队列，需要教师查看并处理。",
+                )
             try:
                 from .message_center_service import create_teacher_grading_issue_notification
 

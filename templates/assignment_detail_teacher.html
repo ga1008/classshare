@@ -2649,6 +2649,13 @@
             const withdrawButton = selectable && !isReturned
                 ? `<button class="btn btn-outline btn-sm text-warning" onclick="event.stopPropagation(); openWithdrawModalForOne(${sub.student_pk_id})" title="撤回后开放重交">撤回</button>`
                 : '';
+            const aiActionButtons = sub.status === 'grading'
+                ? `
+                        <button class="btn btn-outline btn-sm text-warning" onclick="event.stopPropagation(); aiForceRegrade(${sub.id})" title="让旧批改结果失效，并重新进入 AI 队列">强制重批</button>
+                        <button class="btn btn-outline btn-sm text-danger" onclick="event.stopPropagation(); stopAiGrading(${sub.id})" title="停止当前 AI 批改，提交回到可处理状态">停止</button>
+                  `
+                : `<button class="btn btn-outline btn-sm text-warning" onclick="event.stopPropagation(); aiRegrade(${sub.id})"
+                            ${aiDisabled ? `disabled title="${aiTitle}"` : `title="${aiTitle}"`}>AI</button>`;
 
             row.innerHTML = `
                 <td data-label="选择">
@@ -2664,8 +2671,7 @@
                     <div class="action-btns">
                         ${!isUnsubmitted ? `
                         <button class="btn btn-ghost btn-sm text-primary" onclick="event.stopPropagation(); goDetail(${sub.id})" title="查看详情">详情</button>
-                        <button class="btn btn-outline btn-sm text-warning" onclick="event.stopPropagation(); aiRegrade(${sub.id})"
-                            ${aiDisabled ? `disabled title="${aiTitle}"` : `title="${aiTitle}"`}>AI</button>
+                        ${aiActionButtons}
                         ${withdrawButton}
                         ` : ''}
                         <button class="btn btn-outline btn-sm text-primary" onclick="event.stopPropagation(); openOfflineSubmit(${sub.student_pk_id})"
@@ -2879,7 +2885,7 @@
         if (!confirm('确定要使用 AI 重新批改此作业吗？')) return;
         try {
             const response = await fetch(`/api/submissions/${subId}/regrade`, { method: 'POST' });
-            const data = await response.json();
+            const data = await response.json().catch(() => ({}));
             if (response.ok) {
                 showToast(data.status === 'already_grading' ? '正在批改中' : 'AI 批改任务已提交', 'success');
                 await loadSubmissions();
@@ -2888,6 +2894,32 @@
             }
         } catch (error) {
             showToast(error.message, 'error');
+        }
+    };
+
+    window.aiForceRegrade = async function(subId) {
+        if (!confirm('当前提交正在 AI 批改中。强制重批会让旧批改结果自动失效，并重新进入 AI 队列，确定继续吗？')) return;
+        try {
+            const response = await fetch(`/api/submissions/${subId}/force-regrade`, { method: 'POST' });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || '强制重批失败');
+            showToast(data.status === 'queued' ? '已重新进入 AI 批改队列' : '已提交 AI 批改任务', 'success');
+            await loadSubmissions();
+        } catch (error) {
+            showToast(error.message || '强制重批失败', 'error');
+        }
+    };
+
+    window.stopAiGrading = async function(subId) {
+        if (!confirm('停止后，本次 AI 批改结果将被忽略。已有成绩会保留；没有成绩的提交会回到待批改状态。确定停止吗？')) return;
+        try {
+            const response = await fetch(`/api/submissions/${subId}/stop-grading`, { method: 'POST' });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || '停止批改失败');
+            showToast(data.status === 'stopped' ? '已停止 AI 批改' : '当前提交不在批改中', data.status === 'stopped' ? 'success' : 'info');
+            await loadSubmissions();
+        } catch (error) {
+            showToast(error.message || '停止批改失败', 'error');
         }
     };
 

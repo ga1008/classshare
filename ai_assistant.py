@@ -14,6 +14,7 @@ import traceback
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import AsyncGenerator
 from typing import Dict, Any, List, Optional, Literal
@@ -144,6 +145,19 @@ AI_GRADING_CALLBACK_RETRY_BASE_SECONDS = max(
     0.5,
     _read_float_env("AI_GRADING_CALLBACK_RETRY_BASE_SECONDS", 2.0),
 )
+AI_PROVIDER_HTTP_MAX_ATTEMPTS = max(
+    1,
+    min(_read_int_env("AI_PROVIDER_HTTP_MAX_ATTEMPTS", default=4), 10),
+)
+AI_PROVIDER_HTTP_RETRY_BASE_SECONDS = max(
+    0.5,
+    _read_float_env("AI_PROVIDER_HTTP_RETRY_BASE_SECONDS", 8.0),
+)
+AI_PROVIDER_HTTP_RETRY_MAX_SECONDS = max(
+    AI_PROVIDER_HTTP_RETRY_BASE_SECONDS,
+    _read_float_env("AI_PROVIDER_HTTP_RETRY_MAX_SECONDS", 90.0),
+)
+AI_PROVIDER_HTTP_RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
 
 AI_TASK_LIGHT_MULTIMODAL = "light_multimodal_understanding"
 AI_TASK_DEEP_MULTIMODAL = "deep_multimodal_reasoning"
@@ -704,6 +718,58 @@ def _truncate_for_log(value: Any, limit: int = 500) -> str:
     return text[:limit] + "...[truncated]"
 
 
+def _parse_retry_after_seconds(raw_value: Any) -> float | None:
+    text = str(raw_value or "").strip()
+    if not text:
+        return None
+    try:
+        return max(0.0, float(text))
+    except ValueError:
+        pass
+    try:
+        retry_at = parsedate_to_datetime(text)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=timezone.utc)
+    return max(0.0, (retry_at.astimezone(timezone.utc) - datetime.now(timezone.utc)).total_seconds())
+
+
+def _provider_http_status(exc: BaseException) -> int | None:
+    response = getattr(exc, "response", None)
+    try:
+        return int(response.status_code)
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _is_retryable_provider_error(exc: BaseException) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = _provider_http_status(exc)
+        return status_code in AI_PROVIDER_HTTP_RETRY_STATUS_CODES
+    return isinstance(exc, (httpx.TimeoutException, httpx.NetworkError))
+
+
+def _provider_retry_delay_seconds(exc: BaseException, attempt: int) -> float:
+    response = getattr(exc, "response", None)
+    retry_after = None
+    if response is not None:
+        retry_after = _parse_retry_after_seconds(response.headers.get("Retry-After"))
+    if retry_after is None:
+        retry_after = AI_PROVIDER_HTTP_RETRY_BASE_SECONDS * (2 ** max(0, attempt - 1))
+    return min(max(0.0, retry_after), AI_PROVIDER_HTTP_RETRY_MAX_SECONDS)
+
+
+def _provider_error_summary(exc: BaseException, limit: int = 800) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = _provider_http_status(exc)
+        body = ""
+        with suppress(Exception):
+            body = exc.response.text
+        return _truncate_for_log(f"HTTP {status_code}: {body or exc}", limit=limit)
+    return _truncate_for_log(exc, limit=limit)
+
+
 def _usage_to_dict(usage: Any) -> dict[str, Any] | None:
     if usage is None:
         return None
@@ -1063,6 +1129,12 @@ async def lifespan(app: FastAPI):
         "[AI SERVER] 厂商并发上限: "
         f"{provider_limits}, provider_queue_limit={AI_PROVIDER_QUEUE_MAX_PENDING or 'unlimited'}, "
         f"deepseek_text_spillover_threshold={DEEPSEEK_TEXT_SPILLOVER_THRESHOLD}"
+    )
+    print(
+        "[AI SERVER] Provider HTTP retry: "
+        f"attempts={AI_PROVIDER_HTTP_MAX_ATTEMPTS}, "
+        f"base_delay={AI_PROVIDER_HTTP_RETRY_BASE_SECONDS:g}s, "
+        f"max_delay={AI_PROVIDER_HTTP_RETRY_MAX_SECONDS:g}s"
     )
     await callback_client.__aenter__()
 
@@ -2434,19 +2506,70 @@ async def _call_volcengine_responses_api(
         model_name=model_name,
     )
 
-    async with ai_model_router.route([volcengine_route], task_priority=task_priority):
-        async with ai_limiter.slot(priority=task_priority, label=task_label or f"responses_api:{normalized_task_type}"):
-            async with httpx.AsyncClient(timeout=180.0) as client:
-                response = await client.post(
-                    f"{VOLCENGINE_OPENAI_BASE_URL}/responses",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=request_payload,
-                )
-                response.raise_for_status()
-                data = response.json()
+    data: dict[str, Any] | None = None
+    for provider_attempt in range(1, AI_PROVIDER_HTTP_MAX_ATTEMPTS + 1):
+        attempt_call_id, attempt_started_at, attempt_start_perf = _new_ai_usage_context()
+        try:
+            async with ai_model_router.route([volcengine_route], task_priority=task_priority):
+                async with ai_limiter.slot(
+                    priority=task_priority,
+                    label=task_label or f"responses_api:{normalized_task_type}",
+                ):
+                    async with httpx.AsyncClient(timeout=180.0) as client:
+                        response = await client.post(
+                            f"{VOLCENGINE_OPENAI_BASE_URL}/responses",
+                            headers={
+                                "Authorization": f"Bearer {api_key}",
+                                "Content-Type": "application/json",
+                            },
+                            json=request_payload,
+                        )
+                        response.raise_for_status()
+                        data = response.json()
+            break
+        except (httpx.HTTPStatusError, httpx.TransportError) as exc:
+            retryable = _is_retryable_provider_error(exc)
+            should_retry = retryable and provider_attempt < AI_PROVIDER_HTTP_MAX_ATTEMPTS
+            delay_seconds = _provider_retry_delay_seconds(exc, provider_attempt) if should_retry else 0.0
+            error_summary = _provider_error_summary(exc)
+            _log_ai_usage(
+                call_id=attempt_call_id,
+                started_at=attempt_started_at,
+                start_perf=attempt_start_perf,
+                task_label=task_label,
+                platform_name="volcengine",
+                platform_type="responses",
+                model_name=model_name,
+                capability=capability,
+                api_style="responses",
+                request_payload=request_payload,
+                response_text="",
+                response_payload=None,
+                provider_usage=None,
+                status="retry" if should_retry else "error",
+                stream=False,
+                error=error_summary,
+                extra={
+                    "base_url": VOLCENGINE_OPENAI_BASE_URL,
+                    "task_type": normalized_task_type,
+                    "attempt": provider_attempt,
+                    "max_attempts": AI_PROVIDER_HTTP_MAX_ATTEMPTS,
+                    "retryable": retryable,
+                    "retry_delay_seconds": round(delay_seconds, 3),
+                    "http_status": _provider_http_status(exc),
+                },
+            )
+            if not should_retry:
+                raise
+            print(
+                "[AI WORKER] volcengine responses transient error; "
+                f"retrying attempt {provider_attempt + 1}/{AI_PROVIDER_HTTP_MAX_ATTEMPTS} "
+                f"after {delay_seconds:.1f}s: {error_summary}"
+            )
+            await asyncio.sleep(delay_seconds)
+
+    if data is None:
+        raise RuntimeError("volcengine responses returned no data after retry loop")
 
     output_text = data.get("output_text")
     if not output_text:

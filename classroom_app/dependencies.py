@@ -72,7 +72,7 @@ _TEACHER_ONLY_PATTERNS = (
     re.compile(r"^/api/courses/[^/]+/assignments$"),
     re.compile(r"^/api/courses/[^/]+/files/(?:upload|[^/]+)$"),
     re.compile(r"^/api/assignments/[^/]+(?:/submissions(?:/(?:withdraw|offline))?|/export/[^/]+)?$"),
-    re.compile(r"^/api/submissions/(?!download(?:/|$))[^/]+(?:/(?:grade|regrade|files))?$"),
+    re.compile(r"^/api/submissions/(?!download(?:/|$))[^/]+(?:/(?:grade|regrade|force-regrade|stop-grading|files))?$"),
     re.compile(r"^/api/submission-files/[^/]+$"),
     re.compile(r"^/api/exam-papers(?:/|$)"),
     re.compile(r"^/api/ai/generate_assignment$"),

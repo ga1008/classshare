@@ -44,7 +44,9 @@ from ..services.submission_file_alignment import resolve_submission_file_path
 from ..services.ai_grading_service import (
     AIGradingQueueError,
     build_submission_grading_fingerprint,
+    force_submit_submission_for_ai_grading,
     submit_submission_for_ai_grading,
+    stop_submission_ai_grading,
 )
 from ..services.grading_feedback_service import normalize_grading_result, sanitize_student_feedback_text
 from ..services.late_submission_policy import append_late_policy_feedback, apply_late_policy_to_score
@@ -245,6 +247,30 @@ async def ai_regrade_submission(submission_id: int, user: dict = Depends(get_cur
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
+@router.post("/submissions/{submission_id}/force-regrade", response_class=JSONResponse)
+async def ai_force_regrade_submission(submission_id: int, user: dict = Depends(get_current_teacher)):
+    """停止当前批改尝试并重新发起 AI 批改，旧回调会被批改尝试令牌忽略。"""
+    try:
+        return await force_submit_submission_for_ai_grading(
+            int(submission_id),
+            teacher_id=int(user["id"]),
+        )
+    except AIGradingQueueError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.post("/submissions/{submission_id}/stop-grading", response_class=JSONResponse)
+async def ai_stop_grading_submission(submission_id: int, user: dict = Depends(get_current_teacher)):
+    """停止当前 AI 批改尝试，并将提交恢复到可继续处理的状态。"""
+    try:
+        return stop_submission_ai_grading(
+            int(submission_id),
+            teacher_id=int(user["id"]),
+        )
+    except AIGradingQueueError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
 @router.post("/internal/grading-complete", response_class=JSONResponse, include_in_schema=False)
 async def handle_ai_grading_callback(request: Request):
     """(内部接口) 接收来自 AI 助手的批改结果"""
@@ -268,19 +294,21 @@ async def handle_ai_grading_callback(request: Request):
                 return {"status": "ignored_non_grading_submission", "current_status": current_status}
             expected_fingerprint = str(data.get("submission_fingerprint") or "").strip()
             if expected_fingerprint:
-                file_rows = [
-                    dict(row)
-                    for row in conn.execute(
-                        """
-                        SELECT id, stored_path, original_filename, relative_path, mime_type, file_size, file_ext, file_hash
-                        FROM submission_files
-                        WHERE submission_id = ?
-                        ORDER BY COALESCE(relative_path, original_filename), id
-                        """,
-                        (submission_id,),
-                    )
-                ]
-                current_fingerprint = build_submission_grading_fingerprint(dict(submission), file_rows)
+                current_fingerprint = str(submission["grading_attempt_fingerprint"] or "").strip()
+                if not current_fingerprint:
+                    file_rows = [
+                        dict(row)
+                        for row in conn.execute(
+                            """
+                            SELECT id, stored_path, original_filename, relative_path, mime_type, file_size, file_ext, file_hash
+                            FROM submission_files
+                            WHERE submission_id = ?
+                            ORDER BY COALESCE(relative_path, original_filename), id
+                            """,
+                            (submission_id,),
+                        )
+                    ]
+                    current_fingerprint = build_submission_grading_fingerprint(dict(submission), file_rows)
                 if current_fingerprint != expected_fingerprint:
                     conn.commit()
                     return {"status": "ignored_stale_grading_result"}
