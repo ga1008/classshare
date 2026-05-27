@@ -5498,6 +5498,113 @@ def init_database():
                 """
             )
 
+            # 14.1 Electronic signature library
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS electronic_signatures (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    subject_name TEXT NOT NULL DEFAULT '',
+                    subject_role TEXT NOT NULL DEFAULT 'teacher',
+                    scope_level TEXT NOT NULL DEFAULT 'college',
+                    owner_role TEXT NOT NULL,
+                    owner_id INTEGER,
+                    owner_name_snapshot TEXT NOT NULL DEFAULT '',
+                    school_code TEXT NOT NULL DEFAULT 'gxufl',
+                    school_name TEXT NOT NULL DEFAULT '广西外国语学院',
+                    college TEXT NOT NULL DEFAULT '',
+                    department TEXT NOT NULL DEFAULT '',
+                    file_hash TEXT NOT NULL,
+                    file_ext TEXT NOT NULL DEFAULT '',
+                    mime_type TEXT NOT NULL DEFAULT '',
+                    stored_path TEXT NOT NULL,
+                    file_size INTEGER NOT NULL DEFAULT 0,
+                    description TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    legacy_source TEXT NOT NULL DEFAULT '',
+                    legacy_id TEXT NOT NULL DEFAULT '',
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TEXT
+                )
+            ''')
+            for column_name, column_def in {
+                "subject_name": "TEXT NOT NULL DEFAULT ''",
+                "subject_role": "TEXT NOT NULL DEFAULT 'teacher'",
+                "scope_level": "TEXT NOT NULL DEFAULT 'college'",
+                "owner_name_snapshot": "TEXT NOT NULL DEFAULT ''",
+                "school_code": "TEXT NOT NULL DEFAULT 'gxufl'",
+                "school_name": "TEXT NOT NULL DEFAULT '广西外国语学院'",
+                "college": "TEXT NOT NULL DEFAULT ''",
+                "department": "TEXT NOT NULL DEFAULT ''",
+                "file_ext": "TEXT NOT NULL DEFAULT ''",
+                "mime_type": "TEXT NOT NULL DEFAULT ''",
+                "file_size": "INTEGER NOT NULL DEFAULT 0",
+                "description": "TEXT NOT NULL DEFAULT ''",
+                "status": "TEXT NOT NULL DEFAULT 'active'",
+                "legacy_source": "TEXT NOT NULL DEFAULT ''",
+                "legacy_id": "TEXT NOT NULL DEFAULT ''",
+                "metadata_json": "TEXT NOT NULL DEFAULT '{}'",
+                "updated_at": "TEXT DEFAULT CURRENT_TIMESTAMP",
+                "deleted_at": "TEXT",
+            }.items():
+                try:
+                    conn.execute(f"ALTER TABLE electronic_signatures ADD COLUMN {column_name} {column_def}")
+                except sqlite3.OperationalError:
+                    pass
+
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS signature_usage_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    signature_id INTEGER,
+                    signature_name_snapshot TEXT NOT NULL DEFAULT '',
+                    actor_role TEXT NOT NULL,
+                    actor_id INTEGER NOT NULL,
+                    actor_name_snapshot TEXT NOT NULL DEFAULT '',
+                    action TEXT NOT NULL DEFAULT 'use',
+                    context_type TEXT NOT NULL DEFAULT '',
+                    context_id TEXT NOT NULL DEFAULT '',
+                    context_label TEXT NOT NULL DEFAULT '',
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    ip TEXT NOT NULL DEFAULT '',
+                    user_agent TEXT NOT NULL DEFAULT '',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (signature_id) REFERENCES electronic_signatures (id) ON DELETE SET NULL
+                )
+            ''')
+            for column_name, column_def in {
+                "signature_name_snapshot": "TEXT NOT NULL DEFAULT ''",
+                "actor_name_snapshot": "TEXT NOT NULL DEFAULT ''",
+                "context_type": "TEXT NOT NULL DEFAULT ''",
+                "context_id": "TEXT NOT NULL DEFAULT ''",
+                "context_label": "TEXT NOT NULL DEFAULT ''",
+                "metadata_json": "TEXT NOT NULL DEFAULT '{}'",
+                "ip": "TEXT NOT NULL DEFAULT ''",
+                "user_agent": "TEXT NOT NULL DEFAULT ''",
+            }.items():
+                try:
+                    conn.execute(f"ALTER TABLE signature_usage_logs ADD COLUMN {column_name} {column_def}")
+                except sqlite3.OperationalError:
+                    pass
+
+            for statement in (
+                "CREATE INDEX IF NOT EXISTS idx_electronic_signatures_owner "
+                "ON electronic_signatures (owner_role, owner_id, status, created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_electronic_signatures_org "
+                "ON electronic_signatures (school_code, college, subject_role, status, created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_electronic_signatures_hash "
+                "ON electronic_signatures (file_hash, status)",
+                "CREATE INDEX IF NOT EXISTS idx_electronic_signatures_legacy "
+                "ON electronic_signatures (legacy_source, legacy_id)",
+                "CREATE INDEX IF NOT EXISTS idx_signature_usage_signature "
+                "ON signature_usage_logs (signature_id, created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_signature_usage_actor "
+                "ON signature_usage_logs (actor_role, actor_id, created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_signature_usage_context "
+                "ON signature_usage_logs (context_type, context_id, created_at DESC)",
+            ):
+                conn.execute(statement)
+
             # App Feedback System
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS app_feedback (

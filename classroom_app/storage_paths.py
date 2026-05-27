@@ -43,6 +43,9 @@ LEGACY_CHAT_LOG_DIR = BASE_DIR / "chat_logs"
 NEW_GLOBAL_FILES_DIR = DATA_ROOT / "media" / "blobs" / "sha256"
 LEGACY_GLOBAL_FILES_DIR = BASE_DIR / "storage" / "global_files"
 
+NEW_SIGNATURES_DIR = DATA_ROOT / "media" / "signatures" / "sha256"
+LEGACY_SIGNATURES_DIR = BASE_DIR / "storage" / "signatures"
+
 NEW_TEXTBOOK_ATTACHMENT_DIR = DATA_ROOT / "files" / "textbook_attachments"
 LEGACY_TEXTBOOK_ATTACHMENT_DIR = BASE_DIR / "storage" / "textbook_attachments"
 
@@ -202,6 +205,7 @@ def data_layout_manifest() -> dict[str, Path]:
         "attendance": NEW_ATTENDANCE_DIR,
         "chat_logs": NEW_CHAT_LOG_DIR,
         "global_files": NEW_GLOBAL_FILES_DIR,
+        "signatures": NEW_SIGNATURES_DIR,
         "textbook_attachments": NEW_TEXTBOOK_ATTACHMENT_DIR,
         "chunked_uploads": NEW_CHUNKED_UPLOADS_DIR,
         "runtime_state": NEW_RUNTIME_STATE_PATH,

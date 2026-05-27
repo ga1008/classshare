@@ -1,0 +1,520 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}电子签名{% endblock %}
+
+{% block extra_head %}
+<style>
+    .signature-page {
+        display: grid;
+        gap: 18px;
+    }
+
+    .signature-overview {
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+        gap: 18px;
+        align-items: stretch;
+    }
+
+    .signature-overview-copy {
+        display: grid;
+        gap: 10px;
+        align-content: center;
+        min-width: 0;
+    }
+
+    .signature-eyebrow {
+        color: #0f766e;
+        font-size: 0.75rem;
+        font-weight: 800;
+    }
+
+    .signature-overview h2 {
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 1.55rem;
+        line-height: 1.25;
+    }
+
+    .signature-overview p {
+        max-width: 62ch;
+        margin: 0;
+        color: var(--text-secondary);
+        line-height: 1.65;
+    }
+
+    .signature-stat-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .signature-stat-card {
+        min-width: 0;
+        padding: 14px;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.86);
+    }
+
+    .signature-stat-card span {
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.76rem;
+        font-weight: 700;
+    }
+
+    .signature-stat-card strong {
+        display: block;
+        margin-top: 5px;
+        color: var(--text-primary);
+        font-size: 1.45rem;
+        line-height: 1.1;
+    }
+
+    .signature-shell {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+        gap: 18px;
+        align-items: start;
+    }
+
+    .signature-panel {
+        min-width: 0;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .signature-library-panel {
+        display: grid;
+        gap: 14px;
+        padding: 16px;
+    }
+
+    .signature-toolbar {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(130px, 170px));
+        gap: 10px;
+        align-items: end;
+    }
+
+    .signature-field {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+    }
+
+    .signature-field span {
+        color: var(--text-muted);
+        font-size: 0.76rem;
+        font-weight: 800;
+    }
+
+    .signature-field input,
+    .signature-field select,
+    .signature-field textarea {
+        width: 100%;
+        border-radius: 8px;
+    }
+
+    .signature-list-summary {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        color: var(--text-muted);
+        font-size: 0.88rem;
+    }
+
+    .signature-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 12px;
+    }
+
+    .signature-card {
+        display: grid;
+        gap: 10px;
+        min-width: 0;
+        padding: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 8px;
+        background: #fff;
+        cursor: pointer;
+        transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+    }
+
+    .signature-card:hover,
+    .signature-card.is-active {
+        border-color: rgba(20, 184, 166, 0.55);
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+        transform: translateY(-1px);
+    }
+
+    .signature-preview-tile {
+        display: grid;
+        place-items: center;
+        aspect-ratio: 16 / 9;
+        min-height: 110px;
+        overflow: hidden;
+        border-radius: 6px;
+        background-color: #fff;
+        background-image:
+            linear-gradient(45deg, rgba(148, 163, 184, 0.14) 25%, transparent 25%),
+            linear-gradient(-45deg, rgba(148, 163, 184, 0.14) 25%, transparent 25%),
+            linear-gradient(45deg, transparent 75%, rgba(148, 163, 184, 0.14) 75%),
+            linear-gradient(-45deg, transparent 75%, rgba(148, 163, 184, 0.14) 75%);
+        background-size: 16px 16px;
+        background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    }
+
+    .signature-preview-tile img {
+        max-width: 92%;
+        max-height: 82%;
+        object-fit: contain;
+        filter: drop-shadow(0 2px 5px rgba(15, 23, 42, 0.16));
+    }
+
+    .signature-card-main {
+        min-width: 0;
+    }
+
+    .signature-card-title {
+        display: block;
+        overflow: hidden;
+        color: var(--text-primary);
+        font-weight: 800;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .signature-meta-line {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 6px;
+    }
+
+    .signature-chip {
+        display: inline-flex;
+        max-width: 100%;
+        align-items: center;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: rgba(15, 118, 110, 0.1);
+        color: #0f766e;
+        font-size: 0.72rem;
+        font-weight: 800;
+    }
+
+    .signature-chip.is-owner {
+        background: rgba(245, 158, 11, 0.14);
+        color: #92400e;
+    }
+
+    .signature-chip.is-system {
+        background: rgba(71, 85, 105, 0.12);
+        color: #334155;
+    }
+
+    .signature-detail-panel {
+        position: sticky;
+        top: 96px;
+        display: grid;
+        gap: 14px;
+        padding: 16px;
+    }
+
+    .signature-detail-preview {
+        display: grid;
+        place-items: center;
+        min-height: 180px;
+        border-radius: 8px;
+        border: 1px dashed rgba(148, 163, 184, 0.42);
+        background:
+            linear-gradient(135deg, rgba(20, 184, 166, 0.08), rgba(255, 255, 255, 0.82)),
+            #fff;
+    }
+
+    .signature-detail-preview img {
+        max-width: 92%;
+        max-height: 170px;
+        object-fit: contain;
+        filter: drop-shadow(0 3px 9px rgba(15, 23, 42, 0.14));
+    }
+
+    .signature-detail-title {
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 1.05rem;
+        line-height: 1.35;
+    }
+
+    .signature-detail-list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+    }
+
+    .signature-detail-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        color: var(--text-secondary);
+        font-size: 0.86rem;
+    }
+
+    .signature-detail-row span {
+        flex: 0 0 auto;
+        color: var(--text-muted);
+    }
+
+    .signature-detail-row strong {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        text-align: right;
+    }
+
+    .signature-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .signature-empty {
+        padding: 28px 16px;
+        border: 1px dashed rgba(148, 163, 184, 0.42);
+        border-radius: 8px;
+        color: var(--text-muted);
+        text-align: center;
+    }
+
+    .signature-upload-modal .modal-dialog {
+        max-width: 640px;
+    }
+
+    .signature-upload-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 14px;
+    }
+
+    .signature-upload-grid .signature-field--full {
+        grid-column: 1 / -1;
+    }
+
+    .signature-upload-drop {
+        display: grid;
+        gap: 8px;
+        place-items: center;
+        min-height: 150px;
+        border: 1px dashed rgba(20, 184, 166, 0.55);
+        border-radius: 8px;
+        background: rgba(240, 253, 250, 0.58);
+        color: var(--text-secondary);
+        cursor: pointer;
+        text-align: center;
+    }
+
+    .signature-upload-drop strong {
+        color: var(--text-primary);
+    }
+
+    .signature-upload-status {
+        min-height: 1.35rem;
+        color: var(--text-muted);
+        font-size: 0.86rem;
+    }
+
+    @media (max-width: 980px) {
+        .signature-overview,
+        .signature-shell,
+        .signature-toolbar {
+            grid-template-columns: 1fr;
+        }
+
+        .signature-detail-panel {
+            position: static;
+        }
+    }
+
+    @media (max-width: 640px) {
+        .signature-stat-grid,
+        .signature-upload-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .signature-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+<div class="materials-toolbar-group materials-header-actions">
+    {{ topbar_action('上传签名', '新增签名', 'upload', button_id='signature-open-upload-btn', variant='solid', tone='teal') }}
+    {{ topbar_action('刷新', '更新列表', 'refresh', button_id='signature-refresh-btn', variant='primary', tone='cyan') }}
+</div>
+{% endblock %}
+
+{% block content %}
+<section
+    class="signature-page"
+    data-signature-page
+    data-is-super-admin="{{ '1' if signature_actor.is_super_admin else '0' }}"
+    data-actor-role="{{ signature_actor.role }}"
+>
+    <div class="signature-overview">
+        <div class="signature-overview-copy">
+            <div class="signature-eyebrow">基础资源 / 电子签名</div>
+            <h2>签名库</h2>
+            <p>
+                当前账号可管理自己的签名；同学院教师可调用本学院教师与学生签名，学生侧接口仅返回本人签名。
+            </p>
+        </div>
+        <div class="signature-stat-grid" aria-label="签名概览">
+            <article class="signature-stat-card">
+                <span>可见签名</span>
+                <strong id="signature-stat-total">{{ signature_stats.visible_total }}</strong>
+            </article>
+            <article class="signature-stat-card">
+                <span>我的签名</span>
+                <strong id="signature-stat-mine">{{ signature_stats.mine }}</strong>
+            </article>
+            <article class="signature-stat-card">
+                <span>学院可用</span>
+                <strong id="signature-stat-college">{{ signature_stats.college }}</strong>
+            </article>
+            <article class="signature-stat-card">
+                <span>调用记录</span>
+                <strong id="signature-stat-usage">{{ signature_stats.usage_total }}</strong>
+            </article>
+        </div>
+    </div>
+
+    <div class="signature-shell">
+        <section class="signature-panel signature-library-panel" aria-label="签名列表">
+            <div class="signature-toolbar">
+                <label class="signature-field">
+                    <span>搜索</span>
+                    <input type="search" class="form-control" id="signature-search-input" placeholder="姓名、签名名或上传者" autocomplete="off">
+                </label>
+                <label class="signature-field">
+                    <span>范围</span>
+                    <select class="form-control" id="signature-scope-filter">
+                        <option value="">全部可见</option>
+                        <option value="mine">我的签名</option>
+                        <option value="college">同学院</option>
+                        <option value="system">平台导入</option>
+                    </select>
+                </label>
+                <label class="signature-field">
+                    <span>所属身份</span>
+                    <select class="form-control" id="signature-subject-filter">
+                        <option value="">全部身份</option>
+                        <option value="teacher">教师</option>
+                        <option value="student">学生</option>
+                        <option value="other">其他</option>
+                    </select>
+                </label>
+                <label class="signature-field">
+                    <span>上传者</span>
+                    <select class="form-control" id="signature-owner-filter">
+                        <option value="">全部上传者</option>
+                        <option value="teacher">教师</option>
+                        <option value="student">学生</option>
+                        <option value="system">平台</option>
+                    </select>
+                </label>
+            </div>
+            <div class="signature-list-summary">
+                <span id="signature-result-summary">正在加载签名...</span>
+                <button type="button" class="btn btn-ghost btn-sm" id="signature-clear-filter-btn">清空筛选</button>
+            </div>
+            <div class="signature-grid" id="signature-grid"></div>
+        </section>
+
+        <aside class="signature-panel signature-detail-panel" aria-label="签名详情">
+            <div class="signature-detail-preview" id="signature-detail-preview">
+                <div class="signature-empty">选择签名后查看预览与调用信息。</div>
+            </div>
+            <div>
+                <h3 class="signature-detail-title" id="signature-detail-title">未选择签名</h3>
+                <div class="signature-meta-line" id="signature-detail-chips"></div>
+            </div>
+            <dl class="signature-detail-list" id="signature-detail-list"></dl>
+            <div class="signature-actions">
+                <a class="btn btn-outline btn-sm" id="signature-download-link" href="#" hidden>下载</a>
+                <button type="button" class="btn btn-primary btn-sm" id="signature-use-btn" hidden>记录调用</button>
+                <button type="button" class="btn btn-danger btn-sm" id="signature-delete-btn" hidden>删除</button>
+            </div>
+        </aside>
+    </div>
+</section>
+
+<div id="signature-upload-modal" class="modal-backdrop signature-upload-modal" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <form class="modal-content" id="signature-upload-form">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">上传电子签名</h3>
+                    <p class="modal-subtitle">支持 PNG、JPG、JPEG，单个文件不超过 5 MB。</p>
+                </div>
+                <button type="button" class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="signature-upload-grid">
+                    <label class="signature-upload-drop signature-field--full" for="signature-file-input">
+                        <strong id="signature-file-label">选择签名图片</strong>
+                        <span>可一次选择多个文件，未填写名称时使用文件名。</span>
+                        <input type="file" id="signature-file-input" name="file" accept=".png,.jpg,.jpeg" multiple hidden>
+                    </label>
+                    <label class="signature-field">
+                        <span>签名名称</span>
+                        <input type="text" class="form-control" id="signature-name-input" name="name" maxlength="80" placeholder="例如：张海林-常用签名">
+                    </label>
+                    <label class="signature-field" id="signature-subject-role-field">
+                        <span>所属身份</span>
+                        <select class="form-control" id="signature-subject-role-input" name="subject_role">
+                            <option value="teacher">教师</option>
+                            <option value="student">学生</option>
+                            <option value="other">其他</option>
+                            <option value="system">平台</option>
+                        </select>
+                    </label>
+                    <label class="signature-field" id="signature-subject-name-field">
+                        <span>签名人</span>
+                        <input type="text" class="form-control" id="signature-subject-name-input" name="subject_name" maxlength="80" placeholder="签名对应的姓名">
+                    </label>
+                    <label class="signature-field" id="signature-scope-level-field">
+                        <span>可用层级</span>
+                        <select class="form-control" id="signature-scope-level-input" name="scope_level">
+                            <option value="college">学院可用</option>
+                            <option value="platform">平台可用</option>
+                            <option value="personal">个人</option>
+                        </select>
+                    </label>
+                    <label class="signature-field signature-field--full">
+                        <span>备注</span>
+                        <textarea class="form-control" id="signature-description-input" name="description" rows="3" maxlength="300" placeholder="可填写来源或用途"></textarea>
+                    </label>
+                </div>
+                <div class="signature-upload-status" id="signature-upload-status"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
+                <button type="submit" class="btn btn-primary" id="signature-upload-submit-btn">上传</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/manage_signatures.js') }}"></script>
+{% endblock %}

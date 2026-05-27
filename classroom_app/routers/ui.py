@@ -122,6 +122,7 @@ from ..services.smart_classroom_integration_service import (
     list_smart_classroom_profiles,
     list_teacher_smart_classroom_credentials,
 )
+from ..services.signature_service import build_signature_dashboard_context
 from ..services.smart_attendance_entry_service import (
     maybe_enqueue_teacher_daily_checkin_sync,
     maybe_send_student_attendance_alert,
@@ -2599,6 +2600,10 @@ def _build_manage_workflow_snapshot(conn, teacher_id: int) -> dict:
             "SELECT COUNT(*) FROM course_materials WHERE teacher_id = ? AND name != '.git'",
             (teacher_id,),
         ).fetchone()[0] or 0),
+        "signatures": int((build_signature_dashboard_context(
+            conn,
+            {"id": teacher_id, "role": "teacher"},
+        ).get("signature_stats") or {}).get("visible_total") or 0),
         "semesters": len(semester_rows),
         "current_semesters": sum(1 for item in semester_rows if item.get("is_current")),
         "offerings": int(conn.execute(
@@ -2651,6 +2656,13 @@ def _build_manage_workflow_snapshot(conn, teacher_id: int) -> dict:
             "description": "课堂材料和文档目录建议提前维护，便于课程与课堂持续复用。",
             "count_key": "materials",
             "href": "/manage/materials",
+        },
+        {
+            "id": "signatures",
+            "title": "签名",
+            "description": "维护教师、学生与平台导入的电子签名，后续导出和审批可直接调用。",
+            "count_key": "signatures",
+            "href": "/manage/signatures",
         },
     ]
 
@@ -2818,6 +2830,24 @@ async def get_manage_textbooks_page(request: Request, user: dict = Depends(get_c
                 "textbooks": textbooks,
                 "textbooks_json": textbooks,
             },
+        ),
+    )
+
+
+@router.get("/manage/signatures", response_class=HTMLResponse)
+async def get_manage_signatures_page(request: Request, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        signature_context = build_signature_dashboard_context(conn, user)
+
+    return templates.TemplateResponse(
+        request,
+        "manage/signatures.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="电子签名",
+            active_page="signatures",
+            extra=signature_context,
         ),
     )
 
