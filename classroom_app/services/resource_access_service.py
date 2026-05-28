@@ -128,6 +128,79 @@ def _teacher_matches_department(conn: sqlite3.Connection, teacher_id: int, row: 
     return any(_same_department(scope, target) for scope in _teacher_memberships(conn, teacher_id))
 
 
+def teacher_matches_school(conn: sqlite3.Connection, teacher_id: int | str, row: Any) -> bool:
+    teacher_pk = _safe_int(teacher_id)
+    if teacher_pk is None:
+        return False
+    return _teacher_matches_school(conn, teacher_pk, row)
+
+
+def teacher_matches_department(conn: sqlite3.Connection, teacher_id: int | str, row: Any) -> bool:
+    teacher_pk = _safe_int(teacher_id)
+    if teacher_pk is None:
+        return False
+    return _teacher_matches_department(conn, teacher_pk, row)
+
+
+def teacher_can_manage_owned_row(
+    conn: sqlite3.Connection,
+    teacher_id: int | str,
+    row: Any,
+    *,
+    owner_key: str = "teacher_id",
+) -> bool:
+    teacher_pk = _safe_int(teacher_id)
+    if teacher_pk is None:
+        return False
+    owner_pk = _safe_int(_row_value(row, owner_key))
+    return owner_pk == teacher_pk or is_super_admin_teacher(conn, teacher_pk)
+
+
+def teacher_can_use_class(conn: sqlite3.Connection, teacher_id: int | str, class_row: Any) -> bool:
+    teacher_pk = _safe_int(teacher_id)
+    if teacher_pk is None:
+        return False
+    return teacher_can_manage_owned_row(conn, teacher_pk, class_row, owner_key="created_by_teacher_id") or _teacher_matches_school(
+        conn,
+        teacher_pk,
+        class_row,
+    )
+
+
+def teacher_can_manage_class(conn: sqlite3.Connection, teacher_id: int | str, class_row: Any) -> bool:
+    return teacher_can_manage_owned_row(conn, teacher_id, class_row, owner_key="created_by_teacher_id")
+
+
+def teacher_can_use_course(conn: sqlite3.Connection, teacher_id: int | str, course_row: Any) -> bool:
+    teacher_pk = _safe_int(teacher_id)
+    if teacher_pk is None:
+        return False
+    return teacher_can_manage_owned_row(conn, teacher_pk, course_row, owner_key="created_by_teacher_id") or _teacher_matches_school(
+        conn,
+        teacher_pk,
+        course_row,
+    )
+
+
+def teacher_can_manage_course(conn: sqlite3.Connection, teacher_id: int | str, course_row: Any) -> bool:
+    return teacher_can_manage_owned_row(conn, teacher_id, course_row, owner_key="created_by_teacher_id")
+
+
+def teacher_can_use_exam_paper(conn: sqlite3.Connection, teacher_id: int | str, paper_row: Any) -> bool:
+    teacher_pk = _safe_int(teacher_id)
+    if teacher_pk is None:
+        return False
+    return teacher_can_manage_owned_row(conn, teacher_pk, paper_row, owner_key="teacher_id") or _teacher_matches_department(
+        conn,
+        teacher_pk,
+        paper_row,
+    )
+
+
+def teacher_can_manage_exam_paper(conn: sqlite3.Connection, teacher_id: int | str, paper_row: Any) -> bool:
+    return teacher_can_manage_owned_row(conn, teacher_id, paper_row, owner_key="teacher_id")
+
+
 def _student_matches_school(conn: sqlite3.Connection, student_id: int, row: Any) -> bool:
     student = _load_student_context(conn, student_id)
     return bool(student and _same_school(student["scope"], _resource_scope(row)))

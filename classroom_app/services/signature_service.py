@@ -18,8 +18,10 @@ from .message_center_service import is_super_admin_teacher
 from .organization_management_service import list_school_options
 from .organization_scope_service import (
     build_org_scope,
+    load_teacher_org_memberships,
     load_teacher_org_scope,
     normalize_college,
+    normalize_department,
     normalize_org_text,
     normalize_school_code,
     normalize_school_name,
@@ -33,7 +35,7 @@ ALLOWED_SIGNATURE_EXTENSIONS = {
     ".jpeg": "image/jpeg",
 }
 VALID_SUBJECT_ROLES = {"teacher", "student", "other", "system"}
-VALID_SCOPE_LEVELS = {"personal", "college", "platform"}
+VALID_SCOPE_LEVELS = {"personal", "department", "college", "platform"}
 
 
 class SignatureServiceError(Exception):
@@ -67,6 +69,8 @@ def _normalize_subject_role(value: Any, fallback: str = "teacher") -> str:
 
 def _normalize_scope_level(value: Any, fallback: str = "college") -> str:
     normalized = str(value or "").strip().lower()
+    if normalized == "college":
+        return "department"
     return normalized if normalized in VALID_SCOPE_LEVELS else fallback
 
 
@@ -95,6 +99,7 @@ def build_signature_actor(conn: sqlite3.Connection, user: dict[str, Any]) -> dic
         ).fetchone()
         if not row:
             raise SignatureServiceError(403, "当前教师账号不存在或已失效。")
+        memberships = load_teacher_org_memberships(conn, user_id)
         scope = load_teacher_org_scope(conn, user_id)
         name = _clean_text(row["name"] or user.get("name") or "教师", 80)
         return {
@@ -103,6 +108,7 @@ def build_signature_actor(conn: sqlite3.Connection, user: dict[str, Any]) -> dic
             "name": name,
             "is_super_admin": is_super_admin_teacher(conn, user_id),
             "scope": scope,
+            "memberships": memberships,
         }
 
     row = conn.execute(
@@ -127,24 +133,75 @@ def build_signature_actor(conn: sqlite3.Connection, user: dict[str, Any]) -> dic
             college=row["college"],
             department=row["department"],
         ),
+        "memberships": [],
     }
 
 
-def _same_college(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
+def _actor_memberships(actor: dict[str, Any]) -> list[dict[str, str]]:
+    memberships = actor.get("memberships")
+    if isinstance(memberships, list) and memberships:
+        return [
+            build_org_scope(
+                school_code=item.get("school_code"),
+                school_name=item.get("school_name"),
+                college=item.get("college"),
+                department=item.get("department"),
+            )
+            for item in memberships
+            if isinstance(item, dict)
+        ]
     scope = actor.get("scope") or {}
+    return [
+        build_org_scope(
+            school_code=scope.get("school_code"),
+            school_name=scope.get("school_name"),
+            college=scope.get("college"),
+            department=scope.get("department"),
+        )
+    ]
+
+
+def _actor_membership_for_school(actor: dict[str, Any], school_code: Any) -> dict[str, str]:
+    normalized_school = normalize_school_code(school_code)
+    for scope in _actor_memberships(actor):
+        if normalize_school_code(scope.get("school_code")) == normalized_school:
+            return scope
+    scope = actor.get("scope") or {}
+    return build_org_scope(
+        school_code=scope.get("school_code"),
+        school_name=scope.get("school_name"),
+        college=scope.get("college"),
+        department=scope.get("department"),
+    )
+
+
+def _same_college(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
     row_school = normalize_school_code(row["school_code"] if "school_code" in row.keys() else "")
-    actor_school = normalize_school_code(scope.get("school_code"))
-    if row_school != actor_school:
-        return False
-    actor_college = normalize_college(scope.get("college"))
     row_college = normalize_college(row["college"] if "college" in row.keys() else "")
-    return bool(actor_college and row_college and actor_college == row_college)
+    for scope in _actor_memberships(actor):
+        if normalize_school_code(scope.get("school_code")) != row_school:
+            continue
+        actor_college = normalize_college(scope.get("college"))
+        if actor_college and row_college and actor_college == row_college:
+            return True
+    return False
+
+
+def _same_department(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
+    row_school = normalize_school_code(row["school_code"] if "school_code" in row.keys() else "")
+    row_department = normalize_department(row["department"] if "department" in row.keys() else "")
+    for scope in _actor_memberships(actor):
+        if normalize_school_code(scope.get("school_code")) != row_school:
+            continue
+        actor_department = normalize_department(scope.get("department"))
+        if actor_department and row_department and actor_department == row_department:
+            return True
+    return False
 
 
 def _same_school(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
-    scope = actor.get("scope") or {}
     row_school = normalize_school_code(row["school_code"] if "school_code" in row.keys() else "")
-    return row_school == normalize_school_code(scope.get("school_code"))
+    return any(normalize_school_code(scope.get("school_code")) == row_school for scope in _actor_memberships(actor))
 
 
 def _is_owner(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
@@ -156,7 +213,7 @@ def _is_owner(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
     return str(row["owner_role"] or "") == role and owner_id == user_id
 
 
-def can_use_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
+def can_view_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
     if bool(actor.get("is_super_admin")):
         return True
     role, _ = _actor_identity(actor)
@@ -167,11 +224,68 @@ def can_use_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) 
     if role == "teacher":
         if _is_owner(actor, row):
             return True
-        if str(row["scope_level"] or "") == "platform":
-            row_school = normalize_school_code(row["school_code"] if "school_code" in row.keys() else "")
-            return row_school == normalize_school_code((actor.get("scope") or {}).get("school_code"))
-        return _same_college(actor, row)
+        return _same_department(actor, row)
     return False
+
+
+def _signature_request_state(
+    conn: sqlite3.Connection | None,
+    actor: dict[str, Any],
+    row: sqlite3.Row | dict[str, Any],
+) -> dict[str, Any]:
+    if conn is None or actor.get("role") != "teacher":
+        return {}
+    requester_id = int(actor.get("id") or 0)
+    if requester_id <= 0:
+        return {}
+    request_row = conn.execute(
+        """
+        SELECT id, status, requested_at, reviewed_at, review_note
+        FROM signature_access_requests
+        WHERE signature_id = ?
+          AND requester_teacher_id = ?
+        ORDER BY requested_at DESC, id DESC
+        LIMIT 1
+        """,
+        (int(row["id"]), requester_id),
+    ).fetchone()
+    if not request_row:
+        return {}
+    return {
+        "request_id": int(request_row["id"]),
+        "request_status": request_row["status"] or "",
+        "requested_at": request_row["requested_at"] or "",
+        "reviewed_at": request_row["reviewed_at"] or "",
+        "review_note": request_row["review_note"] or "",
+    }
+
+
+def can_use_signature(
+    actor: dict[str, Any],
+    row: sqlite3.Row | dict[str, Any],
+    conn: sqlite3.Connection | None = None,
+) -> bool:
+    if bool(actor.get("is_super_admin")) or _is_owner(actor, row):
+        return True
+    if actor.get("role") != "teacher":
+        return False
+    if not can_view_signature(actor, row):
+        return False
+    return _signature_request_state(conn, actor, row).get("request_status") == "approved"
+
+
+def can_request_signature_use(
+    actor: dict[str, Any],
+    row: sqlite3.Row | dict[str, Any],
+    conn: sqlite3.Connection | None = None,
+) -> bool:
+    if actor.get("role") != "teacher":
+        return False
+    if bool(actor.get("is_super_admin")) or _is_owner(actor, row):
+        return False
+    if not can_view_signature(actor, row):
+        return False
+    return _signature_request_state(conn, actor, row).get("request_status") not in {"pending", "approved"}
 
 
 def can_delete_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
@@ -184,13 +298,21 @@ def can_edit_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any])
 
 def _resolve_selected_school(conn: sqlite3.Connection, actor: dict[str, Any], school_code: str = "") -> dict[str, str]:
     actor_scope = actor.get("scope") or {}
+    requested_code = normalize_school_code(school_code) if normalize_org_text(school_code) else ""
     if not bool(actor.get("is_super_admin")):
+        if requested_code:
+            for scope in _actor_memberships(actor):
+                if normalize_school_code(scope.get("school_code")) == requested_code:
+                    return build_org_scope(
+                        school_code=scope.get("school_code"),
+                        school_name=scope.get("school_name"),
+                    )
+            raise SignatureServiceError(403, "当前教师无权查看该学校的签名。")
         return build_org_scope(
             school_code=actor_scope.get("school_code"),
             school_name=actor_scope.get("school_name"),
         )
 
-    requested_code = normalize_school_code(school_code) if normalize_org_text(school_code) else ""
     if requested_code:
         row = conn.execute(
             """
@@ -232,8 +354,8 @@ def _resolve_selected_school(conn: sqlite3.Connection, actor: dict[str, Any], sc
 
 
 def _visibility_sql(actor: dict[str, Any], selected_school_code: str = "") -> tuple[str, list[Any]]:
-    selected_school_code = normalize_school_code(selected_school_code)
     if bool(actor.get("is_super_admin")):
+        selected_school_code = normalize_school_code(selected_school_code)
         return "s.school_code = ?", [selected_school_code]
 
     role, user_id = _actor_identity(actor)
@@ -242,15 +364,37 @@ def _visibility_sql(actor: dict[str, Any], selected_school_code: str = "") -> tu
     if role == "student":
         return "(s.school_code = ? AND s.owner_role = 'student' AND s.owner_id = ?)", [school_code, user_id]
 
-    college = normalize_college(scope.get("college"))
-    clauses = ["(s.school_code = ? AND s.owner_role = 'teacher' AND s.owner_id = ?)"]
-    params: list[Any] = [school_code, user_id]
-    if school_code and college:
-        clauses.append("(s.school_code = ? AND s.college = ? AND s.owner_role IN ('teacher', 'student', 'system'))")
-        params.extend([school_code, college])
-    if school_code:
-        clauses.append("(s.scope_level = 'platform' AND s.school_code = ?)")
-        params.append(school_code)
+    memberships = _actor_memberships(actor)
+    if normalize_org_text(selected_school_code):
+        selected = normalize_school_code(selected_school_code)
+        memberships = [item for item in memberships if normalize_school_code(item.get("school_code")) == selected]
+    school_codes = sorted(
+        {
+            normalize_school_code(item.get("school_code"))
+            for item in memberships
+            if normalize_school_code(item.get("school_code"))
+        }
+    )
+    department_pairs = sorted(
+        {
+            (normalize_school_code(item.get("school_code")), normalize_department(item.get("department")))
+            for item in memberships
+            if normalize_school_code(item.get("school_code")) and normalize_department(item.get("department"))
+        }
+    )
+
+    clauses: list[str] = []
+    params: list[Any] = []
+    if school_codes:
+        placeholders = ", ".join("?" for _ in school_codes)
+        clauses.append(f"(s.owner_role = 'teacher' AND s.owner_id = ? AND s.school_code IN ({placeholders}))")
+        params.extend([user_id, *school_codes])
+    else:
+        clauses.append("(s.owner_role = 'teacher' AND s.owner_id = ?)")
+        params.append(user_id)
+    for item_school_code, department in department_pairs:
+        clauses.append("(s.school_code = ? AND s.department = ? AND s.owner_role IN ('teacher', 'student', 'system'))")
+        params.extend([item_school_code, department])
     return "(" + " OR ".join(clauses) + ")", params
 
 
@@ -303,17 +447,27 @@ def _signature_school_options(conn: sqlite3.Connection, actor: dict[str, Any], q
             }
             for item in list_school_options(conn, query=query, limit=120)
         ]
-    scope = actor.get("scope") or {}
-    school = build_org_scope(
-        school_code=scope.get("school_code"),
-        school_name=scope.get("school_name"),
-    )
-    return [{
-        "school_code": school["school_code"],
-        "school_name": school["school_name"],
-        "is_active": True,
-        "reference_count": 0,
-    }]
+    query_text = normalize_org_text(query).casefold()
+    options: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for scope in _actor_memberships(actor):
+        school = build_org_scope(
+            school_code=scope.get("school_code"),
+            school_name=scope.get("school_name"),
+        )
+        school_code = normalize_school_code(school.get("school_code"))
+        if school_code in seen:
+            continue
+        if query_text and query_text not in school_code.casefold() and query_text not in school["school_name"].casefold():
+            continue
+        seen.add(school_code)
+        options.append({
+            "school_code": school["school_code"],
+            "school_name": school["school_name"],
+            "is_active": True,
+            "reference_count": 0,
+        })
+    return options
 
 
 def list_signatures(
@@ -329,7 +483,8 @@ def list_signatures(
 ) -> dict[str, Any]:
     actor = build_signature_actor(conn, user)
     selected_school = _resolve_selected_school(conn, actor, school_code)
-    visibility_sql, params = _visibility_sql(actor, selected_school.get("school_code"))
+    explicit_school_filter = selected_school.get("school_code") if bool(actor.get("is_super_admin")) or normalize_org_text(school_code) else ""
+    visibility_sql, params = _visibility_sql(actor, explicit_school_filter)
     where = ["s.status = 'active'", "s.deleted_at IS NULL", visibility_sql]
 
     query = _clean_text(search, 80)
@@ -366,13 +521,20 @@ def list_signatures(
     if normalized_scope == "mine":
         where.append("s.owner_role = ? AND s.owner_id = ?")
         params.extend([actor_role, actor_id])
-    elif normalized_scope == "college" and actor_role == "teacher":
-        actor_scope = actor.get("scope") or {}
-        where.append("s.school_code = ? AND s.college = ?")
-        params.extend([
-            normalize_school_code(actor_scope.get("school_code")),
-            normalize_college(actor_scope.get("college")),
-        ])
+    elif normalized_scope in {"college", "department"} and actor_role == "teacher":
+        department_pairs = [
+            (normalize_school_code(item.get("school_code")), normalize_department(item.get("department")))
+            for item in _actor_memberships(actor)
+            if normalize_school_code(item.get("school_code")) and normalize_department(item.get("department"))
+        ]
+        if department_pairs:
+            where.append(
+                "("
+                + " OR ".join("(s.school_code = ? AND s.department = ?)" for _ in department_pairs)
+                + ")"
+            )
+            for item_school_code, department in department_pairs:
+                params.extend([item_school_code, department])
     elif normalized_scope == "system":
         where.append("(s.owner_role = 'system' OR s.scope_level = 'platform')")
 
@@ -403,7 +565,7 @@ def list_signatures(
     )
     params.append(bounded_limit)
     rows = conn.execute(sql, params).fetchall()
-    items = [serialize_signature(row, actor) for row in rows]
+    items = [serialize_signature(row, actor, conn) for row in rows]
     return {
         "items": items,
         "total": total,
@@ -429,10 +591,12 @@ def serialize_signature_actor(actor: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_signature_stats(items: list[dict[str, Any]], actor: dict[str, Any]) -> dict[str, Any]:
+    department_total = sum(1 for item in items if item.get("scope_level") in {"college", "department"})
     return {
         "visible_total": len(items),
         "mine": sum(1 for item in items if item.get("is_owner")),
-        "college": sum(1 for item in items if item.get("scope_level") == "college"),
+        "college": department_total,
+        "department": department_total,
         "system": sum(1 for item in items if item.get("owner_role") == "system" or item.get("scope_level") == "platform"),
         "usage_total": sum(int(item.get("usage_count") or 0) for item in items),
         "can_upload": actor.get("role") in {"teacher", "student"},
@@ -451,12 +615,17 @@ def _role_label(role: str) -> str:
 def _scope_label(scope_level: str) -> str:
     return {
         "personal": "个人",
+        "department": "系部可见",
         "college": "学院可用",
         "platform": "平台可用",
     }.get(str(scope_level or ""), "未分类")
 
 
-def serialize_signature(row: sqlite3.Row, actor: dict[str, Any]) -> dict[str, Any]:
+def serialize_signature(
+    row: sqlite3.Row,
+    actor: dict[str, Any],
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
     row_id = int(row["id"])
     owner_role = str(row["owner_role"] or "")
     subject_role = str(row["subject_role"] or "")
@@ -465,6 +634,9 @@ def serialize_signature(row: sqlite3.Row, actor: dict[str, Any]) -> dict[str, An
     is_owner = _is_owner(actor, row)
     can_delete = can_delete_signature(actor, row)
     can_edit = can_edit_signature(actor, row)
+    request_state = _signature_request_state(conn, actor, row)
+    can_view = can_view_signature(actor, row)
+    can_use = can_use_signature(actor, row, conn)
     return {
         "id": row_id,
         "name": row["name"],
@@ -497,14 +669,27 @@ def serialize_signature(row: sqlite3.Row, actor: dict[str, Any]) -> dict[str, An
         "is_owner": is_owner,
         "can_edit": can_edit,
         "can_delete": can_delete,
-        "can_use": can_use_signature(actor, row),
+        "can_view": can_view,
+        "can_use": can_use,
+        "can_request_use": can_request_signature_use(actor, row, conn),
+        "request_id": request_state.get("request_id"),
+        "request_status": request_state.get("request_status", ""),
+        "requested_at": request_state.get("requested_at", ""),
+        "reviewed_at": request_state.get("reviewed_at", ""),
+        "request_review_note": request_state.get("review_note", ""),
         "image_url": f"/api/signatures/{row_id}/image",
         "download_url": f"/api/signatures/{row_id}/image?download=1",
         "legacy_source": row["legacy_source"] or "",
     }
 
 
-def get_signature_row_for_actor(conn: sqlite3.Connection, user: dict[str, Any], signature_id: int) -> tuple[sqlite3.Row, dict[str, Any]]:
+def get_signature_row_for_actor(
+    conn: sqlite3.Connection,
+    user: dict[str, Any],
+    signature_id: int,
+    *,
+    require_use: bool = True,
+) -> tuple[sqlite3.Row, dict[str, Any]]:
     actor = build_signature_actor(conn, user)
     row = conn.execute(
         _base_signature_select()
@@ -518,7 +703,8 @@ def get_signature_row_for_actor(conn: sqlite3.Connection, user: dict[str, Any], 
     ).fetchone()
     if not row:
         raise SignatureServiceError(404, "签名不存在或已删除。")
-    if not can_use_signature(actor, row):
+    allowed = can_use_signature(actor, row, conn) if require_use else can_view_signature(actor, row)
+    if not allowed:
         raise SignatureServiceError(403, "当前账号无权访问此签名。")
     return row, actor
 
@@ -643,6 +829,17 @@ def update_signature_metadata(
             college=target_teacher["college"],
             department=target_teacher["department"],
         )
+        if not is_super_admin and target_scope["school_code"] != normalize_school_code((actor.get("scope") or {}).get("school_code")):
+            matching_scope = next(
+                (
+                    scope
+                    for scope in _actor_memberships(actor)
+                    if normalize_school_code(scope.get("school_code")) == target_scope["school_code"]
+                ),
+                None,
+            )
+            if matching_scope:
+                actor["scope"] = matching_scope
         if not is_super_admin:
             actor_school = normalize_school_code((actor.get("scope") or {}).get("school_code"))
             if target_scope["school_code"] != actor_school:
@@ -669,7 +866,7 @@ def update_signature_metadata(
 
     requested_scope_level = _normalize_scope_level(payload.get("scope_level", row["scope_level"]), row["scope_level"])
     if not is_super_admin and requested_scope_level == "platform":
-        requested_scope_level = "college" if actor_role == "teacher" else "personal"
+        requested_scope_level = "department" if actor_role == "teacher" else "personal"
 
     current_org = build_org_scope(
         school_code=row["school_code"],
@@ -705,12 +902,12 @@ def update_signature_metadata(
             department=payload.get("department", target_scope["department"] if target_scope else current_org["department"]),
         )
     else:
-        actor_scope = actor.get("scope") or {}
+        actor_scope = target_scope or _actor_membership_for_school(actor, current_org["school_code"])
         org_scope = build_org_scope(
             school_code=actor_scope.get("school_code") or current_org["school_code"],
             school_name=actor_scope.get("school_name") or current_org["school_name"],
-            college=payload.get("college", current_org["college"]),
-            department=payload.get("department", current_org["department"]),
+            college=actor_scope.get("college") or current_org["college"],
+            department=actor_scope.get("department") or current_org["department"],
         )
 
     if requested_scope_level == "platform" and is_super_admin:
@@ -757,7 +954,7 @@ def update_signature_metadata(
         ),
     )
     refreshed = _get_signature_row(conn, signature_id)
-    return serialize_signature(refreshed, actor)
+    return serialize_signature(refreshed, actor, conn)
 
 
 async def _read_upload_bytes(file: UploadFile) -> bytes:
@@ -858,11 +1055,11 @@ async def create_signature_from_upload(
     actor_role, actor_id = _actor_identity(actor)
 
     if actor.get("is_super_admin"):
-        normalized_scope = _normalize_scope_level(scope_level, "college")
+        normalized_scope = _normalize_scope_level(scope_level, "department")
         normalized_subject_role = _normalize_subject_role(subject_role, "teacher")
     else:
         normalized_subject_role = actor_role
-        normalized_scope = "college" if actor_role == "teacher" else "personal"
+        normalized_scope = "department" if actor_role == "teacher" else "personal"
 
     clean_name = _clean_text(name, 80) or _clean_text(Path(original_filename).stem, 80) or "电子签名"
     clean_subject_name = _clean_text(subject_name, 80) or actor.get("name") or clean_name
@@ -906,7 +1103,7 @@ async def create_signature_from_upload(
     )
     signature_id = int(cursor.lastrowid)
     row, refreshed_actor = get_signature_row_for_actor(conn, user, signature_id)
-    return serialize_signature(row, refreshed_actor)
+    return serialize_signature(row, refreshed_actor, conn)
 
 
 def _candidate_signature_paths(row: sqlite3.Row | dict[str, Any]) -> tuple[Path, ...]:
@@ -976,6 +1173,231 @@ def delete_signature(conn: sqlite3.Connection, user: dict[str, Any], signature_i
     return {"id": int(signature_id), "removed_file": removed_file}
 
 
+def _request_status_filter(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in {"pending", "approved", "rejected"} else ""
+
+
+def _signature_request_select() -> str:
+    return """
+        SELECT
+            r.*,
+            s.name AS signature_name,
+            s.subject_name AS signature_subject_name,
+            s.scope_level AS signature_scope_level,
+            s.school_code AS signature_school_code,
+            s.school_name AS signature_school_name,
+            s.college AS signature_college,
+            s.department AS signature_department,
+            rt.name AS requester_name,
+            rt.email AS requester_email,
+            ot.name AS owner_teacher_name,
+            reviewer.name AS reviewer_name
+        FROM signature_access_requests r
+        JOIN electronic_signatures s ON s.id = r.signature_id
+        LEFT JOIN teachers rt ON rt.id = r.requester_teacher_id
+        LEFT JOIN teachers ot ON r.owner_role = 'teacher' AND ot.id = r.owner_id
+        LEFT JOIN teachers reviewer ON reviewer.id = r.reviewed_by_teacher_id
+    """
+
+
+def _serialize_signature_access_request(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": int(row["id"]),
+        "signature_id": int(row["signature_id"]),
+        "signature_name": row["signature_name"] or "",
+        "signature_subject_name": row["signature_subject_name"] or row["signature_name"] or "",
+        "signature_scope_level": row["signature_scope_level"] or "",
+        "school_code": row["signature_school_code"] or "",
+        "school_name": row["signature_school_name"] or "",
+        "college": row["signature_college"] or "",
+        "department": row["signature_department"] or "",
+        "requester_teacher_id": int(row["requester_teacher_id"] or 0),
+        "requester_name": row["requester_name"] or "",
+        "requester_email": row["requester_email"] or "",
+        "owner_role": row["owner_role"] or "",
+        "owner_id": row["owner_id"],
+        "owner_name": row["owner_teacher_name"] or "",
+        "status": row["status"] or "",
+        "request_note": row["request_note"] or "",
+        "review_note": row["review_note"] or "",
+        "context_type": row["context_type"] or "",
+        "context_id": row["context_id"] or "",
+        "context_label": row["context_label"] or "",
+        "requested_at": row["requested_at"] or "",
+        "reviewed_at": row["reviewed_at"] or "",
+        "reviewed_by_teacher_id": row["reviewed_by_teacher_id"],
+        "reviewer_name": row["reviewer_name"] or "",
+    }
+
+
+def create_signature_access_request(
+    conn: sqlite3.Connection,
+    user: dict[str, Any],
+    signature_id: int,
+    *,
+    note: str = "",
+    context_type: str = "",
+    context_id: str = "",
+    context_label: str = "",
+) -> dict[str, Any]:
+    actor = build_signature_actor(conn, user)
+    if actor.get("role") != "teacher":
+        raise SignatureServiceError(403, "Only teachers can request signature usage.")
+    row = _get_signature_row(conn, signature_id)
+    if not can_view_signature(actor, row):
+        raise SignatureServiceError(403, "Current account cannot view this signature.")
+    if can_use_signature(actor, row, conn):
+        raise SignatureServiceError(400, "Current account can already use this signature.")
+    if not can_request_signature_use(actor, row, conn):
+        state = _signature_request_state(conn, actor, row)
+        status = state.get("request_status", "")
+        if status == "pending":
+            raise SignatureServiceError(409, "A pending request already exists.")
+        if status == "approved":
+            raise SignatureServiceError(409, "This request has already been approved.")
+        raise SignatureServiceError(403, "Current account cannot request this signature.")
+    try:
+        cursor = conn.execute(
+            """
+            INSERT INTO signature_access_requests (
+                signature_id, requester_teacher_id, owner_role, owner_id,
+                request_note, context_type, context_id, context_label
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(signature_id),
+                int(actor["id"]),
+                row["owner_role"] or "",
+                row["owner_id"],
+                _clean_text(note, 300),
+                _clean_text(context_type, 60),
+                _clean_text(context_id, 80),
+                _clean_text(context_label, 120),
+            ),
+        )
+        request_id = int(cursor.lastrowid)
+    except sqlite3.IntegrityError as exc:
+        state = _signature_request_state(conn, actor, row)
+        if state:
+            raise SignatureServiceError(409, "A request for this signature already exists.") from exc
+        raise
+
+    request_row = conn.execute(
+        _signature_request_select()
+        + """
+        WHERE r.id = ?
+        LIMIT 1
+        """,
+        (request_id,),
+    ).fetchone()
+    return {"status": "success", "request": _serialize_signature_access_request(request_row)}
+
+
+def list_signature_access_requests(
+    conn: sqlite3.Connection,
+    user: dict[str, Any],
+    *,
+    direction: str = "incoming",
+    status: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    actor = build_signature_actor(conn, user)
+    if actor.get("role") != "teacher":
+        raise SignatureServiceError(403, "Only teachers can view signature requests.")
+    normalized_direction = str(direction or "incoming").strip().lower()
+    where: list[str] = []
+    params: list[Any] = []
+    if normalized_direction == "outgoing":
+        where.append("r.requester_teacher_id = ?")
+        params.append(int(actor["id"]))
+    else:
+        normalized_direction = "incoming"
+        if not bool(actor.get("is_super_admin")):
+            where.append("r.owner_role = 'teacher' AND r.owner_id = ?")
+            params.append(int(actor["id"]))
+    normalized_status = _request_status_filter(status)
+    if normalized_status:
+        where.append("r.status = ?")
+        params.append(normalized_status)
+    where_sql = " AND ".join(f"({item})" for item in where) if where else "1 = 1"
+    bounded_limit = max(1, min(int(limit or 100), 500))
+    rows = conn.execute(
+        _signature_request_select()
+        + """
+        WHERE
+        """
+        + where_sql
+        + """
+        ORDER BY
+            CASE r.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
+            r.requested_at DESC,
+            r.id DESC
+        LIMIT ?
+        """,
+        (*params, bounded_limit),
+    ).fetchall()
+    return {
+        "items": [_serialize_signature_access_request(row) for row in rows],
+        "direction": normalized_direction,
+        "status": normalized_status,
+        "actor": serialize_signature_actor(actor),
+    }
+
+
+def review_signature_access_request(
+    conn: sqlite3.Connection,
+    user: dict[str, Any],
+    request_id: int,
+    *,
+    action: str,
+    note: str = "",
+) -> dict[str, Any]:
+    actor = build_signature_actor(conn, user)
+    if actor.get("role") != "teacher":
+        raise SignatureServiceError(403, "Only teachers can review signature requests.")
+    row = conn.execute(
+        _signature_request_select()
+        + """
+        WHERE r.id = ?
+        LIMIT 1
+        """,
+        (int(request_id),),
+    ).fetchone()
+    if not row:
+        raise SignatureServiceError(404, "Signature request does not exist.")
+    is_owner_teacher = row["owner_role"] == "teacher" and int(row["owner_id"] or 0) == int(actor["id"])
+    if not bool(actor.get("is_super_admin")) and not is_owner_teacher:
+        raise SignatureServiceError(403, "Only the signature owner or super admin can review this request.")
+    if row["status"] != "pending":
+        raise SignatureServiceError(409, "Only pending requests can be reviewed.")
+    normalized_action = str(action or "").strip().lower()
+    if normalized_action not in {"approve", "reject"}:
+        raise SignatureServiceError(400, "Review action must be approve or reject.")
+    new_status = "approved" if normalized_action == "approve" else "rejected"
+    conn.execute(
+        """
+        UPDATE signature_access_requests
+        SET status = ?,
+            review_note = ?,
+            reviewed_at = CURRENT_TIMESTAMP,
+            reviewed_by_teacher_id = ?
+        WHERE id = ?
+        """,
+        (new_status, _clean_text(note, 300), int(actor["id"]), int(request_id)),
+    )
+    refreshed = conn.execute(
+        _signature_request_select()
+        + """
+        WHERE r.id = ?
+        LIMIT 1
+        """,
+        (int(request_id),),
+    ).fetchone()
+    return {"status": "success", "request": _serialize_signature_access_request(refreshed)}
+
+
 def record_signature_usage(
     conn: sqlite3.Connection,
     user: dict[str, Any],
@@ -1021,7 +1443,9 @@ def record_signature_usage(
 
 def build_signature_dashboard_context(conn: sqlite3.Connection, user: dict[str, Any]) -> dict[str, Any]:
     payload = list_signatures(conn, user, limit=500)
+    pending_requests = list_signature_access_requests(conn, user, direction="incoming", status="pending", limit=20)
     return {
         "signature_actor": payload["actor"],
         "signature_stats": payload["stats"],
+        "signature_pending_requests": pending_requests["items"],
     }

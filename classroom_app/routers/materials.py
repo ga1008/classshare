@@ -53,6 +53,7 @@ from ..services.materials_git_service import (
     save_material_repository_credential,
 )
 from ..services.message_center_service import is_super_admin_teacher
+from ..services.organization_scope_service import load_teacher_org_memberships, load_teacher_org_scope
 from ..services.session_material_generation_service import (
     create_generation_task,
     extract_example_documents,
@@ -77,6 +78,10 @@ class MaterialBatchDownloadRequest(BaseModel):
 class MaterialContentUpdateRequest(BaseModel):
     content: str = ""
     encoding: str | None = None
+
+
+class MaterialScopeUpdateRequest(BaseModel):
+    scope_level: str = "private"
 
 
 class MaterialRepositoryCommandRequest(BaseModel):
@@ -192,11 +197,32 @@ async def _write_material_file(file_hash: str, payload_bytes: bytes):
     return target_path
 
 
-def _serialize_material_items(conn, rows) -> list[dict]:
+def _decorate_material_ownership(conn, item: dict, user: dict | None) -> dict:
+    if not user or str(user.get("role") or "") != "teacher":
+        return item
+    teacher_id = int(user.get("id") or 0)
+    is_owned = int(item.get("teacher_id") or 0) == teacher_id
+    item["is_owned"] = is_owned
+    item["can_manage"] = is_owned or is_super_admin_teacher(conn, teacher_id)
+    item["scope_level"] = str(item.get("scope_level") or "private")
+    item["scope_label"] = {
+        "private": "私有",
+        "school": "本校可见",
+        "department": "本系部可见",
+        "classroom": "课堂可见",
+        "public": "全网公开",
+    }.get(item["scope_level"], "私有")
+    return item
+
+
+def _serialize_material_items(conn, rows, user: dict | None = None) -> list[dict]:
     items = [serialize_material_row(row) for row in rows]
     items = attach_learning_document_metadata(conn, items)
     items = attach_git_repository_metadata(conn, items)
-    return [_decorate_material_download_policy(item) for item in items]
+    return [
+        _decorate_material_download_policy(_decorate_material_ownership(conn, item, user))
+        for item in items
+    ]
 
 
 def _decorate_learning_document_item(item: dict) -> dict:
@@ -309,6 +335,99 @@ def _build_material_order_clause(sort_by: str, sort_order: str) -> str:
     )
 
 
+def _material_visibility_condition(conn, teacher_id: int) -> tuple[str, list[object]]:
+    if is_super_admin_teacher(conn, teacher_id):
+        return "1 = 1", []
+    memberships = load_teacher_org_memberships(conn, int(teacher_id))
+    raw_membership_rows = conn.execute(
+        """
+        SELECT school_code, department
+        FROM teacher_organization_memberships
+        WHERE teacher_id = ?
+          AND COALESCE(is_active, 1) = 1
+        UNION ALL
+        SELECT school_code, department
+        FROM teachers
+        WHERE id = ?
+        """,
+        (int(teacher_id), int(teacher_id)),
+    ).fetchall()
+    school_codes = sorted(
+        {
+            str(scope.get("school_code") or "").strip().lower()
+            for scope in memberships
+            if str(scope.get("school_code") or "").strip()
+        }
+        | {
+            str(row["school_code"] or "").strip().lower()
+            for row in raw_membership_rows
+            if str(row["school_code"] or "").strip()
+        }
+    )
+    department_pairs = sorted(
+        {
+            (
+                str(scope.get("school_code") or "").strip().lower(),
+                str(scope.get("department") or "").strip().lower(),
+            )
+            for scope in memberships
+            if str(scope.get("school_code") or "").strip()
+            and str(scope.get("department") or "").strip()
+        }
+        | {
+            (
+                str(row["school_code"] or "").strip().lower(),
+                str(row["department"] or "").strip().lower(),
+            )
+            for row in raw_membership_rows
+            if str(row["school_code"] or "").strip()
+            and str(row["department"] or "").strip()
+        }
+    )
+
+    conditions = ["m.teacher_id = ?"]
+    params: list[object] = [int(teacher_id)]
+
+    if school_codes:
+        placeholders = ", ".join("?" for _ in school_codes)
+        conditions.append(
+            f"""
+            (
+                m.scope_level = 'school'
+                AND lower(TRIM(COALESCE(m.school_code, ''))) IN ({placeholders})
+            )
+            """
+        )
+        params.extend(school_codes)
+
+    if department_pairs:
+        pair_conditions = []
+        for school_code, department in department_pairs:
+            pair_conditions.append(
+                """
+                (
+                    lower(TRIM(COALESCE(m.school_code, ''))) = ?
+                    AND lower(TRIM(COALESCE(m.department, ''))) = ?
+                )
+                """
+            )
+            params.extend([school_code, department])
+        conditions.append(
+            """
+            (
+                m.scope_level = 'department'
+                AND (
+            """
+            + " OR ".join(pair_conditions)
+            + """
+                )
+            )
+            """
+        )
+
+    return "(" + " OR ".join(f"({condition})" for condition in conditions) + ")", params
+
+
 def _list_material_rows_for_parent(
     conn,
     teacher_id: int,
@@ -320,8 +439,9 @@ def _list_material_rows_for_parent(
     keyword = _normalize_material_keyword(keyword)
     sort_by, sort_order = _normalize_material_sort(sort_by, sort_order)
 
-    conditions = ["m.teacher_id = ?"]
-    params: list[object] = [teacher_id]
+    visible_sql, visible_params = _material_visibility_condition(conn, int(teacher_id))
+    conditions = [visible_sql]
+    params: list[object] = [*visible_params]
 
     if parent_row is None:
         if keyword:
@@ -1229,7 +1349,7 @@ async def get_teacher_material_library(
         current_folder = None
         breadcrumbs = []
         if parent_id is not None:
-            current_folder = ensure_teacher_material_owner(conn, parent_id, user["id"])
+            current_folder = ensure_user_material_access(conn, parent_id, user)
             if current_folder["node_type"] != "folder":
                 raise HTTPException(400, "只能打开文件夹")
             breadcrumbs = get_material_breadcrumbs(conn, parent_id)
@@ -1242,10 +1362,13 @@ async def get_teacher_material_library(
             sort_by=normalized_sort_by,
             sort_order=normalized_sort_order,
         )
-        items = [_decorate_learning_document_item(item) for item in _serialize_material_items(conn, rows)]
+        items = [_decorate_learning_document_item(item) for item in _serialize_material_items(conn, rows, user=user)]
         current_folder_item = None
         if current_folder:
-            current_folder_item = attach_git_repository_metadata(conn, [serialize_material_row(current_folder)])[0]
+            current_folder_item = attach_git_repository_metadata(
+                conn,
+                [_decorate_material_ownership(conn, serialize_material_row(current_folder), user)],
+            )[0]
         stats = _get_teacher_material_stats(conn, user["id"])
         overview = _build_teacher_library_overview(
             current_folder,
@@ -1273,7 +1396,7 @@ async def get_teacher_material_library(
 @router.get("/api/materials/{material_id}", response_class=JSONResponse)
 async def get_material_detail(material_id: int, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
-        material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        material = ensure_user_material_access(conn, material_id, user)
         child_count = conn.execute(
             "SELECT COUNT(*) FROM course_materials WHERE parent_id = ? AND name != '.git'",
             (material_id,),
@@ -1300,6 +1423,7 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
                 "has_optimized_version": bool(material["ai_optimized_markdown"]),
             },
         )
+        detail = _decorate_material_ownership(conn, detail, user)
         detail = attach_git_repository_metadata(conn, [detail])[0]
         if material["node_type"] == "folder":
             detail = attach_learning_document_metadata(conn, [detail])[0]
@@ -1423,6 +1547,7 @@ async def upload_materials(
         uploaded_file_count = 0
         uploaded_folder_count = 0
         now = datetime.now().isoformat()
+        owner_scope = load_teacher_org_scope(conn, int(user["id"]))
 
         for entry in prepared_entries:
             file = entry["file"]
@@ -1457,8 +1582,10 @@ async def upload_materials(
                     INSERT INTO course_materials
                     (teacher_id, parent_id, root_id, material_path, name, node_type, mime_type,
                      preview_type, ai_capability, file_ext, file_hash, file_size,
-                     ai_parse_status, ai_optimize_status, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, 'folder', 'inode/directory', 'folder', 'none', '', NULL, 0, 'idle', 'idle', ?, ?)
+                     ai_parse_status, ai_optimize_status, owner_role, owner_user_pk, scope_level,
+                     school_code, school_name, college, department, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 'folder', 'inode/directory', 'folder', 'none', '', NULL, 0,
+                            'idle', 'idle', 'teacher', ?, 'private', ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user["id"],
@@ -1466,6 +1593,11 @@ async def upload_materials(
                         inherited_root_id,
                         folder_path,
                         folder_name,
+                        user["id"],
+                        owner_scope["school_code"],
+                        owner_scope["school_name"],
+                        owner_scope["college"],
+                        owner_scope["department"],
                         now,
                         now,
                     ),
@@ -1504,8 +1636,10 @@ async def upload_materials(
                 INSERT INTO course_materials
                 (teacher_id, parent_id, root_id, material_path, name, node_type, mime_type,
                  preview_type, ai_capability, file_ext, file_hash, file_size,
-                 ai_parse_status, ai_optimize_status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'file', ?, ?, ?, ?, ?, ?, 'idle', 'idle', ?, ?)
+                  ai_parse_status, ai_optimize_status, owner_role, owner_user_pk, scope_level,
+                  school_code, school_name, college, department, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'file', ?, ?, ?, ?, ?, ?, 'idle', 'idle',
+                        'teacher', ?, 'private', ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user["id"],
@@ -1519,6 +1653,11 @@ async def upload_materials(
                     file_profile["file_ext"],
                     file_info["hash"],
                     file_info["size"],
+                    user["id"],
+                    owner_scope["school_code"],
+                    owner_scope["school_name"],
+                    owner_scope["college"],
+                    owner_scope["department"],
                     now,
                     now,
                 ),
@@ -1555,7 +1694,7 @@ async def upload_materials(
                 """,
                 top_level_created_ids,
             ).fetchall()
-            created_items = [_decorate_learning_document_item(item) for item in _serialize_material_items(conn, created_rows)]
+            created_items = [_decorate_learning_document_item(item) for item in _serialize_material_items(conn, created_rows, user=user)]
 
     return {
         "status": "success",
@@ -1575,7 +1714,7 @@ async def assign_material_to_classrooms(
     desired_ids = {int(item) for item in payload.class_offering_ids if item}
 
     with get_db_connection() as conn:
-        material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        material = ensure_user_material_access(conn, material_id, user)
         offering_rows = conn.execute(
             "SELECT id FROM class_offerings WHERE teacher_id = ?",
             (user["id"],),
@@ -2134,6 +2273,55 @@ async def create_classroom_session_ai_material_task(
         "task": task,
         "session": session_item,
     }
+
+
+@router.patch("/api/materials/{material_id}/scope", response_class=JSONResponse)
+async def update_material_scope(
+    material_id: int,
+    payload: MaterialScopeUpdateRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    normalized_scope = str(payload.scope_level or "private").strip().lower()
+    if normalized_scope not in {"private", "school", "department"}:
+        raise HTTPException(400, "Invalid material scope")
+    now_text = datetime.now().isoformat()
+    with get_db_connection() as conn:
+        material = ensure_user_material_access(conn, material_id, user)
+        owner_scope = load_teacher_org_scope(conn, int(material["teacher_id"]))
+        conn.execute(
+            """
+            UPDATE course_materials
+            SET scope_level = ?,
+                owner_role = 'teacher',
+                owner_user_pk = ?,
+                school_code = ?,
+                school_name = ?,
+                college = ?,
+                department = ?,
+                published_at = CASE WHEN ? != 'private' THEN COALESCE(published_at, ?) ELSE published_at END,
+                updated_at = ?
+            WHERE root_id = ?
+              AND (material_path = ? OR material_path LIKE ?)
+            """,
+            (
+                normalized_scope,
+                int(material["teacher_id"]),
+                owner_scope["school_code"],
+                owner_scope["school_name"],
+                owner_scope["college"],
+                owner_scope["department"],
+                normalized_scope,
+                now_text,
+                now_text,
+                int(material["root_id"]),
+                material["material_path"],
+                f"{material['material_path']}/%",
+            ),
+        )
+        conn.commit()
+        refreshed = ensure_teacher_material_owner(conn, material_id, user["id"])
+        item = _serialize_material_items(conn, [refreshed], user=user)[0]
+    return {"status": "success", "material": item}
 
 
 @router.delete("/api/materials/{material_id}", response_class=JSONResponse)

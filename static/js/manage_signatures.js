@@ -8,6 +8,7 @@ const state = {
     selectedSchoolCode: '',
     schoolOptions: [],
     ownerTeacherOptions: [],
+    pendingRequests: [],
 };
 
 const els = {};
@@ -75,8 +76,11 @@ function cacheElements() {
         'signature-detail-list',
         'signature-download-link',
         'signature-use-btn',
+        'signature-request-btn',
         'signature-edit-btn',
         'signature-delete-btn',
+        'signature-requests-refresh-btn',
+        'signature-request-list',
         'signature-upload-form',
         'signature-file-input',
         'signature-file-label',
@@ -111,6 +115,19 @@ function cacheElements() {
     ].forEach((id) => {
         els[id] = byId(id);
     });
+    if (!els['signature-request-btn']) {
+        const actions = document.querySelector('.signature-actions');
+        if (actions) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'btn btn-outline btn-sm';
+            button.id = 'signature-request-btn';
+            button.hidden = true;
+            button.textContent = '申请使用';
+            actions.insertBefore(button, els['signature-edit-btn'] || null);
+            els['signature-request-btn'] = button;
+        }
+    }
 }
 
 function signatureQuery() {
@@ -119,7 +136,9 @@ function signatureQuery() {
     const scope = els['signature-scope-filter']?.value;
     const subjectRole = els['signature-subject-filter']?.value;
     const ownerRole = els['signature-owner-filter']?.value;
-    const schoolCode = state.selectedSchoolCode || schoolCodeFromInput(els['signature-school-search-input']?.value) || actorSchoolCode();
+    const schoolCode = state.selectedSchoolCode
+        || schoolCodeFromInput(els['signature-school-search-input']?.value)
+        || (isSuperAdmin() ? actorSchoolCode() : '');
     if (search) params.set('q', search);
     if (schoolCode) params.set('school_code', schoolCode);
     if (scope) params.set('scope', scope);
@@ -153,6 +172,7 @@ async function loadSignatures({ keepSelection = true } = {}) {
             state.selectedId = null;
             renderDetail(null);
         }
+        await loadSignatureRequests();
     } catch (error) {
         if (grid) {
             grid.innerHTML = '<div class="signature-empty">签名加载失败，请稍后重试。</div>';
@@ -273,7 +293,7 @@ function renderDetail(item) {
         if (els['signature-detail-title']) els['signature-detail-title'].textContent = '未选择签名';
         if (els['signature-detail-chips']) els['signature-detail-chips'].innerHTML = '';
         if (els['signature-detail-list']) els['signature-detail-list'].innerHTML = '';
-        setActionVisibility(false, false);
+        setActionVisibility(false, false, false, false);
         return;
     }
     if (els['signature-detail-preview']) {
@@ -309,15 +329,21 @@ function renderDetail(item) {
             </div>
         `).join('');
     }
-    setActionVisibility(Boolean(item.can_use), Boolean(item.can_delete), Boolean(item.can_edit));
+    setActionVisibility(Boolean(item.can_use), Boolean(item.can_delete), Boolean(item.can_edit), Boolean(item.can_request_use));
     if (els['signature-download-link']) {
         els['signature-download-link'].href = item.download_url || '#';
     }
 }
 
-function setActionVisibility(canUse, canDelete, canEdit = false) {
+function setActionVisibility(canUse, canDelete, canEdit = false, canRequestUse = false) {
     if (els['signature-download-link']) els['signature-download-link'].hidden = !canUse;
     if (els['signature-use-btn']) els['signature-use-btn'].hidden = !canUse;
+    if (els['signature-request-btn']) {
+        els['signature-request-btn'].hidden = !canRequestUse;
+        const item = state.items.find((entry) => entry.id === state.selectedId);
+        els['signature-request-btn'].disabled = item?.request_status === 'pending';
+        els['signature-request-btn'].textContent = item?.request_status === 'pending' ? '已申请' : '申请使用';
+    }
     if (els['signature-edit-btn']) els['signature-edit-btn'].hidden = !canEdit;
     if (els['signature-delete-btn']) els['signature-delete-btn'].hidden = !canDelete;
 }
@@ -334,6 +360,82 @@ async function recordCurrentUse() {
             },
         });
         showMessage('已记录本次签名调用', 'success');
+        await loadSignatures({ keepSelection: true });
+    } catch {
+        // apiFetch already surfaces the error.
+    }
+}
+
+async function requestCurrentSignatureUse() {
+    if (!state.selectedId) return;
+    const item = state.items.find((entry) => entry.id === state.selectedId);
+    if (!item || !item.can_request_use) return;
+    try {
+        await apiFetch(`/api/signatures/${state.selectedId}/requests`, {
+            method: 'POST',
+            body: {
+                context_type: 'signature_library',
+                context_label: '签名库申请',
+            },
+        });
+        showMessage('已提交签名使用申请，等待归属人审批。', 'success');
+        await loadSignatures({ keepSelection: true });
+    } catch {
+        // apiFetch already surfaces the error.
+    }
+}
+
+async function loadSignatureRequests() {
+    const list = els['signature-request-list'];
+    if (!list) return;
+    try {
+        const payload = await apiFetch('/api/signatures/requests?direction=incoming&status=pending', {
+            method: 'GET',
+            silent: true,
+        });
+        state.pendingRequests = Array.isArray(payload.items) ? payload.items : [];
+        renderSignatureRequests();
+    } catch (error) {
+        list.innerHTML = '<div class="signature-empty">申请加载失败，请稍后重试。</div>';
+    }
+}
+
+function renderSignatureRequests() {
+    const list = els['signature-request-list'];
+    if (!list) return;
+    if (!state.pendingRequests.length) {
+        list.innerHTML = '<div class="signature-empty">暂无待审批申请。</div>';
+        return;
+    }
+    list.innerHTML = state.pendingRequests.map((item) => {
+        const signatureName = escapeHtml(item.signature_name || '未命名签名');
+        const requester = escapeHtml(item.requester_name || `教师 ${item.requester_teacher_id}`);
+        const org = [item.school_name, item.department].filter(Boolean).join(' / ');
+        const meta = escapeHtml(`${requester} · ${org || '未记录组织'} · ${item.requested_at ? formatDate(item.requested_at) : ''}`);
+        return `
+            <article class="signature-request-item" data-signature-request-id="${item.id}">
+                <div class="signature-request-main">
+                    <p class="signature-request-title">${signatureName}</p>
+                    <div class="signature-request-meta">${meta}</div>
+                </div>
+                <div class="signature-request-actions">
+                    <button type="button" class="btn btn-primary btn-sm" data-signature-request-action="approve">批准</button>
+                    <button type="button" class="btn btn-outline btn-sm" data-signature-request-action="reject">拒绝</button>
+                </div>
+            </article>
+        `;
+    }).join('');
+}
+
+async function reviewSignatureRequest(requestId, action) {
+    if (!requestId || !['approve', 'reject'].includes(action)) return;
+    try {
+        await apiFetch(`/api/signatures/requests/${requestId}/${action}`, {
+            method: 'POST',
+            body: {},
+        });
+        showMessage(action === 'approve' ? '已批准签名使用申请。' : '已拒绝签名使用申请。', 'success');
+        await loadSignatureRequests();
         await loadSignatures({ keepSelection: true });
     } catch {
         // apiFetch already surfaces the error.
@@ -363,7 +465,8 @@ async function openEditModal() {
     if (els['signature-edit-name-input']) els['signature-edit-name-input'].value = item.name || '';
     if (els['signature-edit-subject-name-input']) els['signature-edit-subject-name-input'].value = item.subject_name || '';
     if (els['signature-edit-subject-role-input']) els['signature-edit-subject-role-input'].value = item.subject_role || 'teacher';
-    if (els['signature-edit-scope-level-input']) els['signature-edit-scope-level-input'].value = item.scope_level || 'college';
+    const scopeLevel = item.scope_level === 'college' ? 'department' : (item.scope_level || 'department');
+    if (els['signature-edit-scope-level-input']) els['signature-edit-scope-level-input'].value = scopeLevel;
     if (els['signature-edit-college-input']) els['signature-edit-college-input'].value = item.college || '';
     if (els['signature-edit-department-input']) els['signature-edit-department-input'].value = item.department || '';
     if (els['signature-edit-description-input']) els['signature-edit-description-input'].value = item.description || '';
@@ -536,6 +639,15 @@ function bindEvents() {
     els['signature-upload-form']?.addEventListener('submit', submitUpload);
     els['signature-edit-form']?.addEventListener('submit', submitEdit);
     els['signature-use-btn']?.addEventListener('click', recordCurrentUse);
+    els['signature-request-btn']?.addEventListener('click', requestCurrentSignatureUse);
+    els['signature-requests-refresh-btn']?.addEventListener('click', loadSignatureRequests);
+    els['signature-request-list']?.addEventListener('click', (event) => {
+        const button = event.target.closest?.('[data-signature-request-action]');
+        if (!button) return;
+        const item = button.closest('[data-signature-request-id]');
+        const requestId = Number(item?.dataset.signatureRequestId || 0);
+        reviewSignatureRequest(requestId, button.dataset.signatureRequestAction);
+    });
     els['signature-edit-btn']?.addEventListener('click', openEditModal);
     els['signature-delete-btn']?.addEventListener('click', deleteCurrentSignature);
     const ownerDebounced = debounce(() => fetchOwnerTeachers(els['signature-edit-owner-input']?.value?.trim() || ''), 220);

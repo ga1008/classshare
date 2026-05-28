@@ -360,6 +360,65 @@
         grid-column: 1 / -1;
     }
 
+    .signature-requests-panel {
+        display: grid;
+        gap: 12px;
+        padding: 16px;
+    }
+
+    .signature-requests-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+    }
+
+    .signature-requests-head h3 {
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 1rem;
+    }
+
+    .signature-request-list {
+        display: grid;
+        gap: 10px;
+    }
+
+    .signature-request-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        padding: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 8px;
+        background: #fff;
+    }
+
+    .signature-request-main {
+        min-width: 0;
+    }
+
+    .signature-request-title {
+        margin: 0;
+        color: var(--text-primary);
+        font-weight: 800;
+    }
+
+    .signature-request-meta {
+        margin-top: 5px;
+        color: var(--text-muted);
+        font-size: 0.84rem;
+    }
+
+    .signature-request-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
     @media (max-width: 980px) {
         .signature-overview,
         .signature-shell,
@@ -376,7 +435,8 @@
     @media (max-width: 640px) {
         .signature-stat-grid,
         .signature-upload-grid,
-        .signature-edit-grid {
+        .signature-edit-grid,
+        .signature-request-item {
             grid-template-columns: 1fr;
         }
 
@@ -427,7 +487,7 @@
                         <span>可用层级</span>
                         <select class="form-control" id="signature-edit-scope-level-input" name="scope_level">
                             <option value="personal">个人</option>
-                            <option value="college">学院可用</option>
+                            <option value="department">系部可见</option>
                             <option value="platform">平台可用</option>
                         </select>
                     </label>
@@ -478,7 +538,7 @@
             <div class="signature-eyebrow">基础资源 / 电子签名</div>
             <h2>签名库</h2>
             <p>
-                签名按学校隔离，同学院教师可调用本学院教师与学生签名；归属人可以维护属性与删除，学生侧接口仅返回本人签名。
+                签名按学校与系部隔离，同系部教师可查看；引用他人签名需要归属人审批，归属人和超管可维护属性与删除。
             </p>
         </div>
         <div class="signature-stat-grid" aria-label="签名概览">
@@ -491,7 +551,7 @@
                 <strong id="signature-stat-mine">{{ signature_stats.mine }}</strong>
             </article>
             <article class="signature-stat-card">
-                <span>学院可用</span>
+                <span>系部可见</span>
                 <strong id="signature-stat-college">{{ signature_stats.college }}</strong>
             </article>
             <article class="signature-stat-card">
@@ -523,7 +583,7 @@
                     <select class="form-control" id="signature-scope-filter">
                         <option value="">全部可见</option>
                         <option value="mine">我的归属签名</option>
-                        <option value="college">同学院</option>
+                        <option value="department">同系部</option>
                         <option value="system">平台导入</option>
                     </select>
                 </label>
@@ -565,11 +625,22 @@
             <div class="signature-actions">
                 <a class="btn btn-outline btn-sm" id="signature-download-link" href="#" hidden>下载</a>
                 <button type="button" class="btn btn-primary btn-sm" id="signature-use-btn" hidden>记录调用</button>
+                <button type="button" class="btn btn-outline btn-sm" id="signature-request-btn" hidden>申请使用</button>
                 <button type="button" class="btn btn-outline btn-sm" id="signature-edit-btn" hidden>编辑属性</button>
                 <button type="button" class="btn btn-danger btn-sm" id="signature-delete-btn" hidden>删除</button>
             </div>
         </aside>
     </div>
+
+    <section class="signature-panel signature-requests-panel" aria-label="签名申请审批">
+        <div class="signature-requests-head">
+            <h3>待审批申请</h3>
+            <button type="button" class="btn btn-ghost btn-sm" id="signature-requests-refresh-btn">刷新</button>
+        </div>
+        <div class="signature-request-list" id="signature-request-list">
+            <div class="signature-empty">暂无待审批申请。</div>
+        </div>
+    </section>
 </section>
 
 <div id="signature-upload-modal" class="modal-backdrop signature-upload-modal" style="display:none;">
@@ -609,7 +680,7 @@
                     <label class="signature-field" id="signature-scope-level-field">
                         <span>可用层级</span>
                         <select class="form-control" id="signature-scope-level-input" name="scope_level">
-                            <option value="college">学院可用</option>
+                            <option value="department">系部可见</option>
                             <option value="platform">平台可用</option>
                             <option value="personal">个人</option>
                         </select>

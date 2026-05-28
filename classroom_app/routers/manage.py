@@ -51,6 +51,12 @@ from ..services.organization_scope_service import (
     is_same_school,
     load_teacher_org_scope,
 )
+from ..services.resource_access_service import (
+    teacher_can_manage_class,
+    teacher_can_manage_course,
+    teacher_can_use_class,
+    teacher_can_use_course,
+)
 from ..services.organization_management_service import (
     OrganizationManagementError,
     create_college,
@@ -280,13 +286,7 @@ async def api_generate_onboarding_course_description(request: Request, user: dic
     textbook = None
     if textbook_id:
         with get_db_connection() as conn:
-            textbook_row = _ensure_teacher_owned_record(
-                conn,
-                table="textbooks",
-                record_id=textbook_id,
-                teacher_id=user["id"],
-                owner_column="teacher_id",
-            )
+            textbook_row = _ensure_teacher_can_use_textbook(conn, textbook_id=textbook_id, teacher_id=user["id"])
             textbook = serialize_textbook_row(textbook_row)
 
     fallback = build_default_course_description(
@@ -394,17 +394,32 @@ def _ensure_teacher_can_use_course(conn, *, course_id: int, teacher_id: int):
     ).fetchone()
     if not row:
         raise HTTPException(404, "课程不存在")
-    if int(row["created_by_teacher_id"]) == int(teacher_id):
-        return row
-    if not is_same_department(row, load_teacher_org_scope(conn, teacher_id)):
+    if not teacher_can_use_course(conn, teacher_id, row):
         raise HTTPException(404, "课程不存在或不属于当前教师所在系别")
     return row
 
 
 def _ensure_teacher_can_manage_course(conn, *, course_id: int, teacher_id: int):
     row = _ensure_teacher_can_use_course(conn, course_id=course_id, teacher_id=teacher_id)
-    if int(row["created_by_teacher_id"]) != int(teacher_id) and not is_super_admin_teacher(conn, teacher_id):
+    if not teacher_can_manage_course(conn, teacher_id, row):
         raise HTTPException(403, "该课程为系内共享课程，仅创建者或超管可编辑")
+    return row
+
+
+def _ensure_teacher_can_use_textbook(conn, *, textbook_id: int, teacher_id: int):
+    row = conn.execute(
+        "SELECT * FROM textbooks WHERE id = ? LIMIT 1",
+        (int(textbook_id),),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Textbook not found")
+    return row
+
+
+def _ensure_teacher_can_manage_textbook(conn, *, textbook_id: int, teacher_id: int):
+    row = _ensure_teacher_can_use_textbook(conn, textbook_id=textbook_id, teacher_id=teacher_id)
+    if int(row["teacher_id"] or 0) != int(teacher_id) and not is_super_admin_teacher(conn, teacher_id):
+        raise HTTPException(403, "Only the textbook owner or a super admin can edit this textbook")
     return row
 
 
@@ -436,22 +451,10 @@ def _validate_teacher_owned_selection(
     semester_id: int,
     textbook_id: int,
 ) -> tuple[sqlite3.Row, sqlite3.Row, sqlite3.Row, sqlite3.Row]:
-    class_row = _ensure_teacher_owned_record(
-        conn,
-        table="classes",
-        record_id=class_id,
-        teacher_id=teacher_id,
-        owner_column="created_by_teacher_id",
-    )
+    class_row = _ensure_teacher_can_use_class(conn, class_id=class_id, teacher_id=teacher_id)
     course_row = _ensure_teacher_can_use_course(conn, course_id=course_id, teacher_id=teacher_id)
     semester_row = _ensure_teacher_can_use_semester(conn, semester_id=semester_id, teacher_id=teacher_id)
-    textbook_row = _ensure_teacher_owned_record(
-        conn,
-        table="textbooks",
-        record_id=textbook_id,
-        teacher_id=teacher_id,
-        owner_column="teacher_id",
-    )
+    textbook_row = _ensure_teacher_can_use_textbook(conn, textbook_id=textbook_id, teacher_id=teacher_id)
     return class_row, course_row, semester_row, textbook_row
 
 
@@ -713,13 +716,28 @@ def _ensure_teacher_owned_class(conn, *, class_id: int, teacher_id: int):
         """
         SELECT *
         FROM classes
-        WHERE id = ? AND created_by_teacher_id = ?
+        WHERE id = ?
         LIMIT 1
         """,
-        (int(class_id), int(teacher_id)),
+        (int(class_id),),
     ).fetchone()
-    if not class_row:
+    if not class_row or not teacher_can_manage_class(conn, teacher_id, class_row):
         raise HTTPException(status_code=404, detail="班级不存在或无权操作")
+    return class_row
+
+
+def _ensure_teacher_can_use_class(conn, *, class_id: int, teacher_id: int):
+    class_row = conn.execute(
+        """
+        SELECT *
+        FROM classes
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(class_id),),
+    ).fetchone()
+    if not class_row or not teacher_can_use_class(conn, teacher_id, class_row):
+        raise HTTPException(status_code=404, detail="Class not found or not visible")
     return class_row
 
 
@@ -730,12 +748,11 @@ def _ensure_teacher_owned_student(conn, *, student_id: int, teacher_id: int):
         FROM students s
         JOIN classes c ON c.id = s.class_id
         WHERE s.id = ?
-          AND c.created_by_teacher_id = ?
         LIMIT 1
         """,
-        (int(student_id), int(teacher_id)),
+        (int(student_id),),
     ).fetchone()
-    if not student_row:
+    if not student_row or not teacher_can_manage_class(conn, teacher_id, student_row):
         raise HTTPException(status_code=404, detail="学生不存在或无权操作")
     return student_row
 
@@ -1012,20 +1029,8 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                     (home_learning_material_id, offering_id, teacher_id),
                 )
 
-            textbook_row = _ensure_teacher_owned_record(
-                conn,
-                table="textbooks",
-                record_id=textbook_id,
-                teacher_id=teacher_id,
-                owner_column="teacher_id",
-            )
-            class_row = _ensure_teacher_owned_record(
-                conn,
-                table="classes",
-                record_id=class_id,
-                teacher_id=teacher_id,
-                owner_column="created_by_teacher_id",
-            )
+            textbook_row = _ensure_teacher_can_use_textbook(conn, textbook_id=textbook_id, teacher_id=teacher_id)
+            class_row = _ensure_teacher_can_use_class(conn, class_id=class_id, teacher_id=teacher_id)
             default_ai = build_default_ai_config(
                 teacher_name=str(user.get("name") or "老师"),
                 course_name=course_payload["name"],
@@ -1550,8 +1555,8 @@ async def api_delete_class(class_id: int, user: dict = Depends(get_current_teach
         with get_db_connection() as conn:
             # 权限检查
             cursor = conn.execute(
-                "SELECT id FROM classes WHERE id = ? AND created_by_teacher_id = ?",
-                (class_id, user['id'])
+                "SELECT id FROM classes WHERE id = ? AND (created_by_teacher_id = ? OR ? = 1)",
+                (class_id, user['id'], 1 if is_super_admin_teacher(conn, user["id"]) else 0)
             )
             if not cursor.fetchone():
                 raise HTTPException(403, "无权删除该班级或班级不存在")
@@ -1707,13 +1712,7 @@ async def api_ai_generate_course_lessons(
 
     session_count = total_hours // per_session_sections
     with get_db_connection() as conn:
-        textbook_row = _ensure_teacher_owned_record(
-            conn,
-            table="textbooks",
-            record_id=textbook_id,
-            teacher_id=user["id"],
-            owner_column="teacher_id",
-        )
+        textbook_row = _ensure_teacher_can_use_textbook(conn, textbook_id=textbook_id, teacher_id=user["id"])
         textbook = serialize_textbook_row(textbook_row)
 
     textbook_context = build_textbook_prompt_context(textbook)
@@ -2201,12 +2200,10 @@ async def api_save_textbook(
     with get_db_connection() as conn:
         try:
             if textbook_id_value:
-                existing_row = _ensure_teacher_owned_record(
+                existing_row = _ensure_teacher_can_manage_textbook(
                     conn,
-                    table="textbooks",
-                    record_id=textbook_id_value,
+                    textbook_id=textbook_id_value,
                     teacher_id=user["id"],
-                    owner_column="teacher_id",
                 )
                 old_attachment_path = str(existing_row["attachment_path"] or "")
                 old_attachment_name = str(existing_row["attachment_name"] or "")
@@ -2245,7 +2242,7 @@ async def api_save_textbook(
                         attachment_mime_type = ?,
                         tags_json = ?,
                         updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ? AND teacher_id = ?
+                    WHERE id = ?
                     """,
                     (
                         normalized_title,
@@ -2260,7 +2257,6 @@ async def api_save_textbook(
                         attachment_mime_type,
                         json.dumps(tags, ensure_ascii=False),
                         textbook_id_value,
-                        user["id"],
                     ),
                 )
                 persisted_textbook_id = textbook_id_value
@@ -2328,16 +2324,10 @@ async def api_save_textbook(
 async def api_delete_textbook(textbook_id: int, user: dict = Depends(get_current_teacher)):
     attachment_path = ""
     with get_db_connection() as conn:
-        textbook_row = _ensure_teacher_owned_record(
-            conn,
-            table="textbooks",
-            record_id=textbook_id,
-            teacher_id=user["id"],
-            owner_column="teacher_id",
-        )
+        textbook_row = _ensure_teacher_can_manage_textbook(conn, textbook_id=textbook_id, teacher_id=user["id"])
         offering_count = conn.execute(
-            "SELECT COUNT(*) AS count FROM class_offerings WHERE textbook_id = ? AND teacher_id = ?",
-            (textbook_id, user["id"]),
+            "SELECT COUNT(*) AS count FROM class_offerings WHERE textbook_id = ?",
+            (textbook_id,),
         ).fetchone()
         linked_count = int((offering_count["count"] if offering_count else 0) or 0)
         if linked_count > 0:
@@ -2348,8 +2338,8 @@ async def api_delete_textbook(textbook_id: int, user: dict = Depends(get_current
 
         attachment_path = str(textbook_row["attachment_path"] or "")
         conn.execute(
-            "DELETE FROM textbooks WHERE id = ? AND teacher_id = ?",
-            (textbook_id, user["id"]),
+            "DELETE FROM textbooks WHERE id = ?",
+            (textbook_id,),
         )
         conn.commit()
 
@@ -2363,13 +2353,7 @@ async def api_delete_textbook(textbook_id: int, user: dict = Depends(get_current
 @router.get("/textbooks/{textbook_id}/attachment")
 async def api_download_textbook_attachment(textbook_id: int, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
-        textbook_row = _ensure_teacher_owned_record(
-            conn,
-            table="textbooks",
-            record_id=textbook_id,
-            teacher_id=user["id"],
-            owner_column="teacher_id",
-        )
+        textbook_row = _ensure_teacher_can_use_textbook(conn, textbook_id=textbook_id, teacher_id=user["id"])
 
     attachment_path = str(textbook_row["attachment_path"] or "").strip()
     if not attachment_path:
@@ -2868,13 +2852,7 @@ async def api_configure_ai_offering(
         textbook_id_value = int(str(textbook_id).strip()) if str(textbook_id).strip() else None
         bound_textbook_id = None
         if textbook_id_value:
-            textbook_row = _ensure_teacher_owned_record(
-                conn,
-                table="textbooks",
-                record_id=textbook_id_value,
-                teacher_id=user["id"],
-                owner_column="teacher_id",
-            )
+            textbook_row = _ensure_teacher_can_use_textbook(conn, textbook_id=textbook_id_value, teacher_id=user["id"])
             bound_textbook_id = int(textbook_row["id"])
 
         conn.execute(
@@ -2987,13 +2965,7 @@ async def api_ai_generate_config(
     # 获取课堂和教材上下文
     with get_db_connection() as conn:
         _ensure_teacher_owned_offering(conn, class_offering_id, user["id"])
-        _ensure_teacher_owned_record(
-            conn,
-            table="textbooks",
-            record_id=textbook_id,
-            teacher_id=user["id"],
-            owner_column="teacher_id",
-        )
+        _ensure_teacher_can_use_textbook(conn, textbook_id=textbook_id, teacher_id=user["id"])
         classroom_context = build_classroom_ai_context(conn, class_offering_id)
 
     if not classroom_context:
@@ -3470,10 +3442,18 @@ async def api_get_password_reset_request_detail(
             JOIN classes c ON c.id = r.class_id
             LEFT JOIN teachers reviewer ON reviewer.id = r.reviewed_by_teacher_id
             WHERE r.id = ?
-              AND r.teacher_id = ?
-              AND c.created_by_teacher_id = ?
+              AND (
+                    ? = 1
+                    OR r.teacher_id = ?
+                    OR c.created_by_teacher_id = ?
+                    OR EXISTS (
+                        SELECT 1 FROM class_offerings o
+                        WHERE o.class_id = r.class_id
+                          AND o.teacher_id = ?
+                    )
+              )
             """,
-            (request_id, user["id"], user["id"]),
+            (request_id, 1 if is_super_admin_teacher(conn, user["id"]) else 0, user["id"], user["id"], user["id"]),
         ).fetchone()
 
         if not request_row:
@@ -4090,10 +4070,18 @@ async def api_approve_password_reset_request(
             FROM student_password_reset_requests r
             JOIN classes c ON c.id = r.class_id
             WHERE r.id = ?
-              AND r.teacher_id = ?
-              AND c.created_by_teacher_id = ?
+              AND (
+                    ? = 1
+                    OR r.teacher_id = ?
+                    OR c.created_by_teacher_id = ?
+                    OR EXISTS (
+                        SELECT 1 FROM class_offerings o
+                        WHERE o.class_id = r.class_id
+                          AND o.teacher_id = ?
+                    )
+              )
             """,
-            (request_id, user["id"], user["id"]),
+            (request_id, 1 if is_super_admin_teacher(conn, user["id"]) else 0, user["id"], user["id"], user["id"]),
         ).fetchone()
         if not request_row:
             raise HTTPException(status_code=404, detail="找回密码申请不存在。")
@@ -4141,10 +4129,18 @@ async def api_reject_password_reset_request(
             FROM student_password_reset_requests r
             JOIN classes c ON c.id = r.class_id
             WHERE r.id = ?
-              AND r.teacher_id = ?
-              AND c.created_by_teacher_id = ?
+              AND (
+                    ? = 1
+                    OR r.teacher_id = ?
+                    OR c.created_by_teacher_id = ?
+                    OR EXISTS (
+                        SELECT 1 FROM class_offerings o
+                        WHERE o.class_id = r.class_id
+                          AND o.teacher_id = ?
+                    )
+              )
             """,
-            (request_id, user["id"], user["id"]),
+            (request_id, 1 if is_super_admin_teacher(conn, user["id"]) else 0, user["id"], user["id"], user["id"]),
         ).fetchone()
         if not request_row:
             raise HTTPException(status_code=404, detail="找回密码申请不存在。")

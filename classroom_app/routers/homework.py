@@ -93,6 +93,11 @@ from ..services.learning_progress_service import (
     student_can_access_assignment,
     submit_stage_exam_for_ai_grading,
 )
+from ..services.organization_scope_service import load_teacher_org_scope
+from ..services.resource_access_service import (
+    teacher_can_manage_exam_paper,
+    teacher_can_use_exam_paper,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -196,12 +201,17 @@ def _hide_personal_stage_asset() -> None:
     raise HTTPException(404, PERSONAL_STAGE_TEACHER_HIDDEN_MESSAGE)
 
 
-def _get_exam_paper_for_teacher(conn, paper_id: str, teacher_id: int) -> dict[str, Any]:
+def _get_exam_paper_for_teacher(conn, paper_id: str, teacher_id: int, *, manage: bool = False) -> dict[str, Any]:
     paper = conn.execute("SELECT * FROM exam_papers WHERE id = ?", (paper_id,)).fetchone()
     if not paper:
         raise HTTPException(404, "试卷不存在")
     paper_dict = dict(paper)
-    if int(paper_dict.get("teacher_id") or 0) != int(teacher_id):
+    allowed = (
+        teacher_can_manage_exam_paper(conn, teacher_id, paper_dict)
+        if manage
+        else teacher_can_use_exam_paper(conn, teacher_id, paper_dict)
+    )
+    if not allowed:
         raise HTTPException(403, "无权操作此试卷")
     if is_personal_stage_exam_paper(conn, paper_id):
         _hide_personal_stage_asset()
@@ -3145,8 +3155,15 @@ async def withdraw_submission(assignment_id: str, user: dict = Depends(get_curre
 async def list_exam_papers(user: dict = Depends(get_current_teacher)):
     """获取当前教师的所有试卷"""
     with get_db_connection() as conn:
+        teacher_scope = load_teacher_org_scope(conn, int(user["id"]))
+        super_row = conn.execute(
+            "SELECT COALESCE(is_super_admin, 0) AS is_super_admin FROM teachers WHERE id = ?",
+            (int(user["id"]),),
+        ).fetchone()
+        is_super_admin = bool(super_row and int(super_row["is_super_admin"] or 0) == 1)
         cursor = conn.execute(
             """SELECT ep.*,
+                      t.name AS owner_teacher_name,
                       (SELECT COUNT(*)
                        FROM assignments a
                        WHERE a.exam_paper_id = ep.id
@@ -3155,15 +3172,35 @@ async def list_exam_papers(user: dict = Depends(get_current_teacher)):
                              WHERE lsea.assignment_id = a.id
                          )) as assigned_count
                FROM exam_papers ep
-               WHERE ep.teacher_id = ?
+               LEFT JOIN teachers t ON t.id = ep.teacher_id
+               WHERE (
+                    ? = 1
+                    OR ep.teacher_id = ?
+                    OR (
+                        lower(TRIM(COALESCE(ep.school_code, ?))) = lower(TRIM(?))
+                        AND lower(TRIM(COALESCE(ep.department, ''))) = lower(TRIM(?))
+                    )
+               )
                  AND NOT EXISTS (
                      SELECT 1 FROM learning_stage_exam_attempts lsea
                      WHERE lsea.exam_paper_id = ep.id
                  )
                ORDER BY ep.updated_at DESC""",
-            (user['id'],)
+            (
+                1 if is_super_admin else 0,
+                user["id"],
+                teacher_scope["school_code"],
+                teacher_scope["school_code"],
+                teacher_scope["department"],
+            )
         )
-        papers = [dict(row) for row in cursor]
+        papers = []
+        for row in cursor:
+            item = dict(row)
+            item["is_owned"] = int(item.get("teacher_id") or 0) == int(user["id"])
+            item["can_manage"] = item["is_owned"] or is_super_admin
+            item["is_shared_paper"] = not item["is_owned"]
+            papers.append(item)
     return {"status": "success", "papers": papers}
 
 
@@ -3180,7 +3217,7 @@ async def update_exam_paper_tags(paper_id: str, request: Request, user: dict = D
 
     now = datetime.now().isoformat()
     with get_db_connection() as conn:
-        _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]))
+        _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]), manage=True)
         conn.execute(
             "UPDATE exam_papers SET tags_json = ?, updated_at = ? WHERE id = ?",
             (json.dumps(tags, ensure_ascii=False), now, paper_id)
@@ -3240,13 +3277,24 @@ async def create_exam_paper(request: Request, user: dict = Depends(get_current_t
         raise HTTPException(400, str(exc)) from exc
 
     with get_db_connection() as conn:
+        teacher_scope = load_teacher_org_scope(conn, int(user["id"]))
         conn.execute(
-            """INSERT INTO exam_papers (id, teacher_id, title, description, questions_json, exam_config_json, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO exam_papers (
+                    id, teacher_id, title, description, questions_json, exam_config_json, status,
+                    owner_role, owner_user_pk, scope_level, school_code, school_name, college, department,
+                    created_at, updated_at
+               )
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'teacher', ?, 'department', ?, ?, ?, ?, ?, ?)""",
             (paper_id, user['id'], data['title'], data.get('description', ''),
              json.dumps(questions_payload, ensure_ascii=False),
              json.dumps(data.get('config', {}), ensure_ascii=False),
-             data.get('status', 'draft'), now, now)
+             data.get('status', 'draft'),
+             user["id"],
+             teacher_scope["school_code"],
+             teacher_scope["school_name"],
+             teacher_scope["college"],
+             teacher_scope["department"],
+             now, now)
         )
         conn.commit()
     return {"status": "success", "paper_id": paper_id}
@@ -3288,7 +3336,7 @@ async def update_exam_paper(paper_id: str, request: Request, user: dict = Depend
         raise HTTPException(400, str(exc)) from exc
 
     with get_db_connection() as conn:
-        _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]))
+        _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]), manage=True)
 
         conn.execute(
             """UPDATE exam_papers
@@ -3307,7 +3355,7 @@ async def update_exam_paper(paper_id: str, request: Request, user: dict = Depend
 async def delete_exam_paper(paper_id: str, user: dict = Depends(get_current_teacher)):
     """删除试卷"""
     with get_db_connection() as conn:
-        _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]))
+        _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]), manage=True)
         # 检查是否已被分配
         assigned = conn.execute(
             f"""
@@ -3401,10 +3449,11 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
                 f"试卷评分标准不完整，请先回到试卷编辑器补齐标准答案、分值、评分指导和扣分点：{exc}",
             ) from exc
 
-        conn.execute(
-            "UPDATE exam_papers SET questions_json = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(paper_questions, ensure_ascii=False), created_at, paper_id),
-        )
+        if teacher_can_manage_exam_paper(conn, int(user["id"]), paper):
+            conn.execute(
+                "UPDATE exam_papers SET questions_json = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(paper_questions, ensure_ascii=False), created_at, paper_id),
+            )
 
         allowed_file_types_json = encode_allowed_file_types_json(_get_allowed_file_types(data))
         cursor = conn.execute(

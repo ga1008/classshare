@@ -354,10 +354,12 @@ function renderList() {
         const primaryAction = getMaterialPrimaryAction(item);
         const aiStatus = item.can_ai_parse ? `<span class="materials-meta-item">AI ${escapeHtml(item.ai_parse_status || 'idle')}</span>` : '';
         const readmeStatus = hasLearningDocument(item) ? '<span class="materials-meta-item">README</span>' : '';
+        const scopeBadge = item.scope_label ? `<span class="materials-meta-item">${escapeHtml(item.scope_label)}</span>` : '';
+        const sharedBadge = item.can_manage === false ? '<span class="materials-meta-item">共享材料</span>' : '';
         const documentAction = hasLearningDocument(item)
             ? '<button type="button" class="btn btn-outline btn-sm" data-action="view-doc">文档</button>'
             : '';
-        const repositoryAction = isGitRepository(item)
+        const repositoryAction = isGitRepository(item) && item.can_manage !== false
             ? '<button type="button" class="btn btn-outline btn-sm" data-action="repository">仓库</button>'
             : '';
         const repositoryBadge = visualMeta.badge
@@ -382,6 +384,8 @@ function renderList() {
                         <span class="materials-type-pill">${escapeHtml(getMaterialTypeLabel(item))}</span>
                         <span class="materials-meta-item">${escapeHtml(getMetaText(item))}</span>
                         ${item.assignment_count ? `<span class="materials-meta-item">已分配 ${escapeHtml(String(item.assignment_count))} 次</span>` : ''}
+                        ${scopeBadge}
+                        ${sharedBadge}
                         ${aiStatus}
                         ${readmeStatus}
                     </div>
@@ -480,6 +484,18 @@ function renderDetail(detail) {
     const optimizedUrl = detail.has_optimized_version ? `/materials/view/${detail.id}?variant=optimized` : '';
     const aiSummary = detail.ai_parse_result?.summary || '尚未执行 AI 解析。';
     const assignmentCount = Array.isArray(detail.assignments) ? detail.assignments.length : 0;
+    const canManage = detail.can_manage !== false;
+    const scopeLevel = detail.scope_level || 'private';
+    const scopeOptions = [
+        ['private', '私有'],
+        ['department', '本系部可见'],
+        ['school', '本校可见'],
+    ];
+    const scopeControl = canManage
+        ? `<select class="form-control" data-material-scope-select aria-label="材料开放范围">
+            ${scopeOptions.map(([value, label]) => `<option value="${value}" ${scopeLevel === value ? 'selected' : ''}>${label}</option>`).join('')}
+          </select>`
+        : `<span>${escapeHtml(detail.scope_label || '私有')}</span>`;
     const repositoryMeta = getRepositoryVisualMeta(detail);
     const previewLabel = detail.node_type === 'folder' && detail.document_readme_id
         ? '查看文档'
@@ -522,11 +538,11 @@ function renderDetail(detail) {
                         ${previewUrl ? `<a href="${previewUrl}" class="btn btn-primary" target="_blank" rel="noopener">${previewLabel}</a>` : ''}
                         ${optimizedUrl ? `<a href="${optimizedUrl}" class="btn btn-outline" target="_blank" rel="noopener">查看优化稿</a>` : ''}
                         ${detail.node_type === 'file' ? `<a href="/materials/download/${detail.id}" class="btn btn-outline">下载</a>` : ''}
-                        ${isGitRepository(detail) ? '<button type="button" class="btn btn-outline" data-detail-action="repository">仓库</button>' : ''}
+                        ${isGitRepository(detail) && canManage ? '<button type="button" class="btn btn-outline" data-detail-action="repository">仓库</button>' : ''}
                         <button type="button" class="btn btn-outline" data-detail-action="assign" ${config.canAssign ? '' : 'disabled'}>分配课堂</button>
-                        <button type="button" class="btn btn-outline" data-detail-action="ai-parse" ${detail.can_ai_parse ? '' : 'disabled'}>AI 解析</button>
-                        <button type="button" class="btn btn-outline" data-detail-action="ai-optimize" ${detail.can_ai_optimize ? '' : 'disabled'}>AI 优化</button>
-                        <button type="button" class="btn btn-danger" data-detail-action="delete">删除</button>
+                        <button type="button" class="btn btn-outline" data-detail-action="ai-parse" ${canManage && detail.can_ai_parse ? '' : 'disabled'}>AI 解析</button>
+                        <button type="button" class="btn btn-outline" data-detail-action="ai-optimize" ${canManage && detail.can_ai_optimize ? '' : 'disabled'}>AI 优化</button>
+                        ${canManage ? '<button type="button" class="btn btn-danger" data-detail-action="delete">删除</button>' : ''}
                     </div>
                 </div>
                 <div class="materials-detail-meta">
@@ -545,6 +561,10 @@ function renderDetail(detail) {
                     <div class="meta-chip">
                         <strong>已分配课堂</strong>
                         <span>${escapeHtml(String(assignmentCount))}</span>
+                    </div>
+                    <div class="meta-chip">
+                        <strong>开放范围</strong>
+                        ${scopeControl}
                     </div>
                     <div class="meta-chip">
                         <strong>AI 解析状态</strong>
@@ -928,6 +948,18 @@ async function runAiOptimize() {
     if (result.viewer_url) {
         window.open(result.viewer_url, '_blank', 'noopener');
     }
+}
+
+async function updateActiveMaterialScope(scopeLevel) {
+    if (!state.activeDetail || state.activeDetail.can_manage === false) return;
+    const normalizedScope = ['private', 'department', 'school'].includes(scopeLevel) ? scopeLevel : 'private';
+    const result = await apiFetch(`/api/materials/${state.activeDetail.id}/scope`, {
+        method: 'PATCH',
+        body: { scope_level: normalizedScope },
+    });
+    showToast(result.message || '材料开放范围已更新', 'success');
+    await loadLibrary(state.currentParentId);
+    await loadMaterialDetail(state.activeDetail.id);
 }
 
 async function deleteActiveMaterial() {
@@ -1465,6 +1497,14 @@ function bindEvents() {
                 showToast(error.message || '删除材料失败', 'error');
             });
         }
+    });
+    refs.detail?.addEventListener('change', (event) => {
+        const select = event.target.closest('[data-material-scope-select]');
+        if (!select) return;
+        updateActiveMaterialScope(select.value).catch((error) => {
+            showToast(error.message || '开放范围更新失败', 'error');
+            loadMaterialDetail(state.activeDetail?.id).catch(() => {});
+        });
     });
 
     refs.breadcrumbs?.addEventListener('click', (event) => {

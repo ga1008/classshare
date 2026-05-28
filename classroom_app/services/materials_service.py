@@ -307,16 +307,13 @@ def get_learning_material_brief_map(
     conditions = [f"id IN ({placeholders})"]
     params: list[object] = list(normalized_ids)
 
-    if teacher_id is not None:
-        conditions.append("teacher_id = ?")
-        params.append(int(teacher_id))
     if markdown_only:
         conditions.append("node_type = 'file'")
         conditions.append("preview_type = 'markdown'")
 
     rows = conn.execute(
         f"""
-        SELECT id, parent_id, root_id, name, material_path, preview_type, node_type
+        SELECT *
         FROM course_materials
         WHERE {' AND '.join(conditions)}
         ORDER BY id
@@ -325,9 +322,13 @@ def get_learning_material_brief_map(
     ).fetchall()
 
     result: dict[int, dict] = {}
+    actor_user = {"role": "teacher", "id": int(teacher_id)} if teacher_id is not None else None
     for row in rows:
         if is_git_internal_material_path(row["material_path"]):
             continue
+        if actor_user is not None and int(row["teacher_id"] or 0) != int(teacher_id):
+            if not can_read_scoped_resource(conn, row, actor_user):
+                continue
         brief = build_learning_material_brief(row)
         result[int(brief["id"])] = brief
     return result
@@ -537,6 +538,9 @@ def ensure_user_material_access(conn, material_id: int, user: dict):
     if user["role"] == "teacher":
         if int(material["teacher_id"]) != int(user["id"]) and not can_read_scoped_resource(conn, material, user):
             raise HTTPException(403, "无权访问该材料")
+        return material
+
+    if can_read_scoped_resource(conn, material, user):
         return material
 
     offering_ids = _get_student_offering_ids(conn, int(user["id"]))

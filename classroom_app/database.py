@@ -696,6 +696,48 @@ def _ensure_resource_scope_schema(conn: sqlite3.Connection) -> None:
             "ON course_materials (scope_level, school_code COLLATE NOCASE, department COLLATE NOCASE)"
         )
 
+    if _source_table_exists(conn, "exam_papers"):
+        for column_name, column_def in {
+            "owner_role": "TEXT NOT NULL DEFAULT 'teacher'",
+            "owner_user_pk": "INTEGER",
+            "scope_level": "TEXT NOT NULL DEFAULT 'department'",
+            "school_code": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_CODE}'",
+            "school_name": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_NAME}'",
+            "college": "TEXT NOT NULL DEFAULT ''",
+            "department": "TEXT NOT NULL DEFAULT ''",
+            "published_at": "TEXT",
+        }.items():
+            _add_column_if_missing(conn, "exam_papers", column_name, column_def)
+        conn.execute(
+            """
+            UPDATE exam_papers
+            SET owner_role = COALESCE(NULLIF(TRIM(owner_role), ''), 'teacher'),
+                owner_user_pk = COALESCE(owner_user_pk, teacher_id),
+                school_code = COALESCE(NULLIF(TRIM(school_code), ''), (
+                    SELECT NULLIF(TRIM(t.school_code), '') FROM teachers t WHERE t.id = exam_papers.teacher_id
+                ), ?),
+                school_name = COALESCE(NULLIF(TRIM(school_name), ''), (
+                    SELECT NULLIF(TRIM(t.school_name), '') FROM teachers t WHERE t.id = exam_papers.teacher_id
+                ), ?),
+                college = COALESCE(NULLIF(TRIM(college), ''), (
+                    SELECT NULLIF(TRIM(t.college), '') FROM teachers t WHERE t.id = exam_papers.teacher_id
+                ), ''),
+                department = COALESCE(NULLIF(TRIM(department), ''), (
+                    SELECT NULLIF(TRIM(t.department), '') FROM teachers t WHERE t.id = exam_papers.teacher_id
+                ), ''),
+                scope_level = COALESCE(NULLIF(TRIM(scope_level), ''), 'department')
+            """,
+            (DEFAULT_SCHOOL_CODE, DEFAULT_SCHOOL_NAME),
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_exam_papers_scope_owner "
+            "ON exam_papers (owner_role, owner_user_pk, scope_level, updated_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_exam_papers_scope_org "
+            "ON exam_papers (scope_level, school_code COLLATE NOCASE, department COLLATE NOCASE, updated_at DESC)"
+        )
+
     if _source_table_exists(conn, "blog_posts"):
         for column_name, column_def in {
             "scope_level": "TEXT NOT NULL DEFAULT 'public'",
@@ -6064,6 +6106,62 @@ def init_database():
                    OR TRIM(COALESCE(uploaded_by_name_snapshot, '')) = ''
                 """
             )
+            conn.execute(
+                """
+                UPDATE electronic_signatures
+                SET school_code = COALESCE(NULLIF(TRIM(school_code), ''), (
+                        SELECT NULLIF(TRIM(t.school_code), '')
+                        FROM teachers t
+                        WHERE electronic_signatures.owner_role = 'teacher'
+                          AND t.id = electronic_signatures.owner_id
+                    ), (
+                        SELECT NULLIF(TRIM(s.school_code), '')
+                        FROM students s
+                        WHERE electronic_signatures.owner_role = 'student'
+                          AND s.id = electronic_signatures.owner_id
+                    ), school_code),
+                    school_name = COALESCE(NULLIF(TRIM(school_name), ''), (
+                        SELECT NULLIF(TRIM(t.school_name), '')
+                        FROM teachers t
+                        WHERE electronic_signatures.owner_role = 'teacher'
+                          AND t.id = electronic_signatures.owner_id
+                    ), (
+                        SELECT NULLIF(TRIM(s.school_name), '')
+                        FROM students s
+                        WHERE electronic_signatures.owner_role = 'student'
+                          AND s.id = electronic_signatures.owner_id
+                    ), school_name),
+                    college = COALESCE(NULLIF(TRIM(college), ''), (
+                        SELECT NULLIF(TRIM(t.college), '')
+                        FROM teachers t
+                        WHERE electronic_signatures.owner_role = 'teacher'
+                          AND t.id = electronic_signatures.owner_id
+                    ), (
+                        SELECT NULLIF(TRIM(s.college), '')
+                        FROM students s
+                        WHERE electronic_signatures.owner_role = 'student'
+                          AND s.id = electronic_signatures.owner_id
+                    ), ''),
+                    department = COALESCE(NULLIF(TRIM(department), ''), (
+                        SELECT NULLIF(TRIM(t.department), '')
+                        FROM teachers t
+                        WHERE electronic_signatures.owner_role = 'teacher'
+                          AND t.id = electronic_signatures.owner_id
+                    ), (
+                        SELECT NULLIF(TRIM(s.department), '')
+                        FROM students s
+                        WHERE electronic_signatures.owner_role = 'student'
+                          AND s.id = electronic_signatures.owner_id
+                    ), '')
+                """
+            )
+            conn.execute(
+                """
+                UPDATE electronic_signatures
+                SET scope_level = 'department'
+                WHERE scope_level = 'college'
+                """
+            )
 
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS signature_usage_logs (
@@ -6082,6 +6180,27 @@ def init_database():
                     user_agent TEXT NOT NULL DEFAULT '',
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (signature_id) REFERENCES electronic_signatures (id) ON DELETE SET NULL
+                )
+            ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS signature_access_requests (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    signature_id INTEGER NOT NULL,
+                    requester_teacher_id INTEGER NOT NULL,
+                    owner_role TEXT NOT NULL DEFAULT '',
+                    owner_id INTEGER,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    request_note TEXT NOT NULL DEFAULT '',
+                    review_note TEXT NOT NULL DEFAULT '',
+                    context_type TEXT NOT NULL DEFAULT '',
+                    context_id TEXT NOT NULL DEFAULT '',
+                    context_label TEXT NOT NULL DEFAULT '',
+                    requested_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    reviewed_at TEXT,
+                    reviewed_by_teacher_id INTEGER,
+                    FOREIGN KEY (signature_id) REFERENCES electronic_signatures (id) ON DELETE CASCADE,
+                    FOREIGN KEY (requester_teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                    FOREIGN KEY (reviewed_by_teacher_id) REFERENCES teachers (id) ON DELETE SET NULL
                 )
             ''')
             for column_name, column_def in {
@@ -6106,6 +6225,8 @@ def init_database():
                 "ON electronic_signatures (uploaded_by_role, uploaded_by_id, created_at DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_electronic_signatures_org "
                 "ON electronic_signatures (school_code, college, subject_role, status, created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_electronic_signatures_department "
+                "ON electronic_signatures (school_code, department, subject_role, status, created_at DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_electronic_signatures_hash "
                 "ON electronic_signatures (file_hash, status)",
                 "CREATE INDEX IF NOT EXISTS idx_electronic_signatures_legacy "
@@ -6116,8 +6237,21 @@ def init_database():
                 "ON signature_usage_logs (actor_role, actor_id, created_at DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_signature_usage_context "
                 "ON signature_usage_logs (context_type, context_id, created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_signature_access_requests_incoming "
+                "ON signature_access_requests (owner_role, owner_id, status, requested_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_signature_access_requests_outgoing "
+                "ON signature_access_requests (requester_teacher_id, status, requested_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_signature_access_requests_signature "
+                "ON signature_access_requests (signature_id, status, requested_at DESC)",
             ):
                 conn.execute(statement)
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_signature_access_requests_active_unique
+                ON signature_access_requests (signature_id, requester_teacher_id)
+                WHERE status IN ('pending', 'approved')
+                """
+            )
 
             _ensure_resource_scope_schema(conn)
             _sync_organization_catalog_from_existing(conn)

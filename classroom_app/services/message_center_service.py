@@ -2732,7 +2732,36 @@ def create_password_reset_request_notification(conn, request_id: int | str) -> i
         },
         created_at=str(request_row["submitted_at"] or _now_iso()),
     )
-    return 1 if _insert_notification_if_allowed(conn, payload) else 0
+    inserted_count = 1 if _insert_notification_if_allowed(conn, payload) else 0
+    extra_recipients = conn.execute(
+        """
+        SELECT DISTINCT t.id
+        FROM teachers t
+        WHERE COALESCE(t.is_active, 1) = 1
+          AND t.id != ?
+          AND (
+                t.id IN (
+                    SELECT c.created_by_teacher_id
+                    FROM classes c
+                    WHERE c.id = ?
+                )
+                OR t.id IN (
+                    SELECT o.teacher_id
+                    FROM class_offerings o
+                    WHERE o.class_id = ?
+                )
+          )
+        """,
+        (
+            int(request_row["teacher_id"]),
+            int(request_row["class_id"]),
+            int(request_row["class_id"]),
+        ),
+    ).fetchall()
+    for recipient in extra_recipients:
+        payload["recipient_user_pk"] = int(recipient["id"])
+        inserted_count += 1 if _insert_notification_if_allowed(conn, dict(payload)) else 0
+    return inserted_count
 
 
 def mark_password_reset_request_notification_read(conn, request_id: int | str, teacher_id: int | str) -> int:

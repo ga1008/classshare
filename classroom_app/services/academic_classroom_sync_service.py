@@ -19,6 +19,7 @@ from .academic_integration_service import (
     open_authenticated_academic_client,
 )
 from .academic_service import china_now, parse_date_input
+from .organization_scope_service import load_teacher_org_memberships, normalize_school_code
 
 
 ACADEMIC_CLASSROOM_SOURCE = "gxufl_jwxt"
@@ -47,6 +48,23 @@ DEFAULT_ROOM_TYPES = [
     {"id": "4505E6FE1B39775FE0630100007FF674", "name": "会议室"},
     {"id": "15", "name": "校外实训基地"},
 ]
+
+
+def _teacher_school_codes(conn: sqlite3.Connection, teacher_id: int) -> list[str]:
+    codes: list[str] = []
+    for scope in load_teacher_org_memberships(conn, int(teacher_id)):
+        code = normalize_school_code(scope.get("school_code"))
+        if code and code not in codes:
+            codes.append(code)
+    return codes
+
+
+def _teaching_place_school_filter(conn: sqlite3.Connection, teacher_id: int) -> tuple[str, list[Any]]:
+    codes = _teacher_school_codes(conn, int(teacher_id))
+    if not codes:
+        return "teacher_id = ?", [int(teacher_id)]
+    placeholders = ",".join("?" for _ in codes)
+    return f"school_code IN ({placeholders})", codes
 
 
 class AcademicSessionRedirectError(RuntimeError):
@@ -629,15 +647,16 @@ def _normalize_option(value: Any, label: Any) -> dict[str, str] | None:
 
 
 def _query_options_from_places(conn: sqlite3.Connection, teacher_id: int) -> dict[str, list[dict[str, str]]]:
+    school_filter, school_params = _teaching_place_school_filter(conn, int(teacher_id))
     rows = conn.execute(
-        """
+        f"""
         SELECT campus_id, campus_name, building_id, building_name, room_type_id, room_type_name
         FROM teacher_academic_teaching_places
-        WHERE teacher_id = ?
+        WHERE {school_filter}
           AND source = ?
           AND sync_status = 'active'
         """,
-        (int(teacher_id), ACADEMIC_CLASSROOM_SOURCE),
+        (*school_params, ACADEMIC_CLASSROOM_SOURCE),
     ).fetchall()
     campuses: dict[str, dict[str, str]] = {item["id"]: dict(item) for item in DEFAULT_CAMPUSES}
     buildings: dict[str, dict[str, str]] = {"": {"id": "", "name": "全部楼号"}}
@@ -723,17 +742,6 @@ async def sync_teaching_places_from_academic_system(teacher_id: int) -> dict[str
                 (int(teacher_id), access_payload.get("school_code") or "gxufl", ACADEMIC_CLASSROOM_SOURCE),
             ).fetchall()
         }
-        conn.execute(
-            """
-            UPDATE teacher_academic_teaching_places
-               SET sync_status = 'stale',
-                   updated_at = ?
-             WHERE teacher_id = ?
-               AND school_code = ?
-               AND source = ?
-            """,
-            (synced_at, int(teacher_id), access_payload.get("school_code") or "gxufl", ACADEMIC_CLASSROOM_SOURCE),
-        )
         for place in places:
             conn.execute(
                 """
@@ -837,19 +845,7 @@ async def sync_teaching_places_from_academic_system(teacher_id: int) -> dict[str
                     synced_at,
                 ),
             )
-        stale_count = _parse_int(
-            conn.execute(
-                """
-                SELECT COUNT(*) AS count
-                FROM teacher_academic_teaching_places
-                WHERE teacher_id = ?
-                  AND school_code = ?
-                  AND source = ?
-                  AND sync_status = 'stale'
-                """,
-                (int(teacher_id), access_payload.get("school_code") or "gxufl", ACADEMIC_CLASSROOM_SOURCE),
-            ).fetchone()["count"]
-        )
+        stale_count = 0
         conn.commit()
 
     created_count = sum(1 for place in places if place.place_key not in existing_keys)
@@ -867,6 +863,7 @@ async def sync_teaching_places_from_academic_system(teacher_id: int) -> dict[str
 
 
 def _build_teacher_teaching_place_filters(
+    conn: sqlite3.Connection,
     teacher_id: int,
     *,
     search: str = "",
@@ -876,8 +873,9 @@ def _build_teacher_teaching_place_filters(
     availability: str = "",
     include_stale: bool = False,
 ) -> tuple[list[str], list[Any]]:
-    where = ["teacher_id = ?", "source = ?"]
-    params: list[Any] = [int(teacher_id), ACADEMIC_CLASSROOM_SOURCE]
+    school_filter, school_params = _teaching_place_school_filter(conn, int(teacher_id))
+    where = [school_filter, "source = ?"]
+    params: list[Any] = [*school_params, ACADEMIC_CLASSROOM_SOURCE]
     if not include_stale:
         where.append("sync_status = 'active'")
     if campus_id:
@@ -948,6 +946,7 @@ def count_teacher_teaching_places(
     include_stale: bool = False,
 ) -> int:
     where, params = _build_teacher_teaching_place_filters(
+        conn,
         teacher_id,
         search=search,
         campus_id=campus_id,
@@ -959,8 +958,12 @@ def count_teacher_teaching_places(
     row = conn.execute(
         f"""
         SELECT COUNT(*) AS count
-        FROM teacher_academic_teaching_places
-        WHERE {' AND '.join(where)}
+        FROM (
+            SELECT school_code, source, place_key
+            FROM teacher_academic_teaching_places
+            WHERE {' AND '.join(where)}
+            GROUP BY school_code, source, place_key
+        ) visible_places
         """,
         params,
     ).fetchone()
@@ -981,6 +984,7 @@ def load_teacher_teaching_places(
     offset: int = 0,
 ) -> list[dict[str, Any]]:
     where, params = _build_teacher_teaching_place_filters(
+        conn,
         teacher_id,
         search=search,
         campus_id=campus_id,
@@ -993,9 +997,20 @@ def load_teacher_teaching_places(
     params.append(max(0, int(offset or 0)))
     rows = conn.execute(
         f"""
+        WITH ranked_places AS (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY school_code, source, place_key
+                       ORDER BY CASE WHEN sync_status = 'active' THEN 0 ELSE 1 END,
+                                synced_at DESC,
+                                id DESC
+                   ) AS rn
+            FROM teacher_academic_teaching_places
+            WHERE {' AND '.join(where)}
+        )
         SELECT *
-        FROM teacher_academic_teaching_places
-        WHERE {' AND '.join(where)}
+        FROM ranked_places
+        WHERE rn = 1
         ORDER BY campus_name, building_name, room_code, room_name
         LIMIT ? OFFSET ?
         """,
@@ -1017,8 +1032,9 @@ def load_teacher_teaching_place_by_key(
     if not (normalized_place_key or normalized_place_id):
         return None
 
-    where = ["teacher_id = ?", "source = ?"]
-    params: list[Any] = [int(teacher_id), ACADEMIC_CLASSROOM_SOURCE]
+    school_filter, school_params = _teaching_place_school_filter(conn, int(teacher_id))
+    where = [school_filter, "source = ?"]
+    params: list[Any] = [*school_params, ACADEMIC_CLASSROOM_SOURCE]
     if not include_stale:
         where.append("sync_status = 'active'")
 
@@ -1045,8 +1061,21 @@ def load_teacher_teaching_place_by_key(
 
 
 def load_teacher_teaching_place_dashboard(conn: sqlite3.Connection, teacher_id: int) -> dict[str, Any]:
+    school_filter, school_params = _teaching_place_school_filter(conn, int(teacher_id))
     stats = conn.execute(
-        """
+        f"""
+        WITH ranked_places AS (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY school_code, source, place_key
+                       ORDER BY CASE WHEN sync_status = 'active' THEN 0 ELSE 1 END,
+                                synced_at DESC,
+                                id DESC
+                   ) AS rn
+            FROM teacher_academic_teaching_places
+            WHERE {school_filter}
+              AND source = ?
+        )
         SELECT COUNT(*) AS total_count,
                SUM(CASE WHEN sync_status = 'active' THEN 1 ELSE 0 END) AS active_count,
                SUM(CASE WHEN sync_status = 'stale' THEN 1 ELSE 0 END) AS stale_count,
@@ -1054,11 +1083,10 @@ def load_teacher_teaching_place_dashboard(conn: sqlite3.Connection, teacher_id: 
                SUM(CASE WHEN is_borrowable = 1 AND sync_status = 'active' THEN 1 ELSE 0 END) AS borrowable_count,
                SUM(CASE WHEN is_exam_schedulable = 1 AND sync_status = 'active' THEN 1 ELSE 0 END) AS exam_count,
                MAX(synced_at) AS last_synced_at
-        FROM teacher_academic_teaching_places
-        WHERE teacher_id = ?
-          AND source = ?
+        FROM ranked_places
+        WHERE rn = 1
         """,
-        (int(teacher_id), ACADEMIC_CLASSROOM_SOURCE),
+        (*school_params, ACADEMIC_CLASSROOM_SOURCE),
     ).fetchone()
     options = _query_options_from_places(conn, teacher_id)
     return {

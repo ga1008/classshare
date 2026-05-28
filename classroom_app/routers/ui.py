@@ -67,7 +67,7 @@ from ..services.course_planning_service import (
     serialize_course_row,
 )
 from ..services.department_service import collect_department_options, normalize_department
-from ..services.organization_scope_service import load_teacher_org_scope, organization_label
+from ..services.organization_scope_service import load_teacher_org_memberships, load_teacher_org_scope, normalize_school_code, organization_label
 from ..services.materials_service import attach_home_learning_material_briefs, attach_learning_material_briefs
 from ..services.learning_progress_service import (
     build_class_learning_overview,
@@ -1494,8 +1494,18 @@ async def manage_workflow_page(request: Request, user: dict = Depends(get_curren
 async def get_manage_classes_page(request: Request, user: dict = Depends(get_current_teacher)):
     """显示班级管理页面 (列表和新建)"""
     with get_db_connection() as conn:
+        current_teacher_is_super_admin = is_super_admin_teacher(conn, user["id"])
+        school_codes = _teacher_school_codes(conn, int(user["id"]))
+        class_scope_where = "1 = 1" if current_teacher_is_super_admin else (
+            "lower(TRIM(COALESCE(c.school_code, ''))) IN ("
+            + ",".join("?" for _ in school_codes)
+            + ")"
+            if school_codes
+            else "c.created_by_teacher_id = ?"
+        )
+        class_scope_params = [] if current_teacher_is_super_admin else (school_codes or [int(user["id"])])
         my_classes_cursor = conn.execute(
-            """
+            f"""
             SELECT c.id,
                    c.name,
                    c.department,
@@ -1512,6 +1522,8 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
                    c.academic_sync_at,
                    c.academic_sync_message,
                    c.created_at,
+                   c.created_by_teacher_id,
+                   t.name AS owner_teacher_name,
                    COUNT(DISTINCT CASE
                        WHEN COALESCE(s.enrollment_status, 'active') = 'active'
                        THEN s.id END
@@ -1542,19 +1554,21 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
                     ) AS latest_student_created_at,
                     MAX(s.academic_sync_at) AS latest_student_academic_sync_at
              FROM classes c
+             LEFT JOIN teachers t ON t.id = c.created_by_teacher_id
              LEFT JOIN students s ON c.id = s.class_id
             LEFT JOIN class_offerings o
                    ON o.class_id = c.id
                   AND o.teacher_id = c.created_by_teacher_id
-            WHERE c.created_by_teacher_id = ?
+            WHERE {class_scope_where}
              GROUP BY c.id, c.name, c.department, c.description,
                       c.academic_source, c.academic_class_code, c.academic_class_name,
                       c.academic_college, c.academic_grade, c.academic_major,
                       c.school_code, c.school_name, c.college,
-                      c.academic_sync_at, c.academic_sync_message, c.created_at
+                      c.academic_sync_at, c.academic_sync_message, c.created_at,
+                      c.created_by_teacher_id, t.name
              ORDER BY COALESCE(NULLIF(TRIM(c.department), ''), '未分类'), c.name
             """,
-            (user["id"],),
+            class_scope_params,
         )
         my_classes = [dict(row) for row in my_classes_cursor.fetchall()]
         students_by_class = _load_teacher_class_student_rows(
@@ -1569,6 +1583,10 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
             class_item["missing_email_count"] = int(class_item.get("missing_email_count") or 0)
             class_item["academic_synced_student_count"] = int(class_item.get("academic_synced_student_count") or 0)
             class_item["offering_count"] = int(class_item.get("offering_count") or 0)
+            class_item["is_owned"] = int(class_item.get("created_by_teacher_id") or 0) == int(user["id"])
+            class_item["can_manage"] = class_item["is_owned"] or current_teacher_is_super_admin
+            class_item["is_shared_class"] = not class_item["is_owned"]
+            class_item["owner_teacher_name"] = str(class_item.get("owner_teacher_name") or "").strip()
             class_item["department_label"] = str(class_item.get("department") or "").strip() or "未分类"
             class_item["organization_label"] = organization_label(
                 {
@@ -1748,26 +1766,36 @@ async def get_manage_courses_page(request: Request, user: dict = Depends(get_cur
 def _load_teacher_textbook_rows(conn, teacher_id: int):
     return conn.execute(
         """
-        SELECT id,
-               title,
-               authors_json,
-               publisher,
-               publication_date,
-               introduction,
-               catalog_text,
-               attachment_name,
-               attachment_path,
-               attachment_size,
-               attachment_mime_type,
-               tags_json,
-               created_at,
-               updated_at
-        FROM textbooks
-        WHERE teacher_id = ?
-        ORDER BY updated_at DESC, id DESC
+        SELECT tb.id,
+               tb.teacher_id,
+               tb.title,
+               tb.authors_json,
+               tb.publisher,
+               tb.publication_date,
+               tb.introduction,
+               tb.catalog_text,
+               tb.attachment_name,
+               tb.attachment_path,
+               tb.attachment_size,
+               tb.attachment_mime_type,
+               tb.tags_json,
+               t.name AS owner_teacher_name,
+               tb.created_at,
+               tb.updated_at
+        FROM textbooks tb
+        LEFT JOIN teachers t ON t.id = tb.teacher_id
+        ORDER BY tb.updated_at DESC, tb.id DESC
         """,
-        (teacher_id,),
     ).fetchall()
+
+
+def _teacher_school_codes(conn, teacher_id: int) -> list[str]:
+    codes: list[str] = []
+    for scope in load_teacher_org_memberships(conn, int(teacher_id)):
+        code = normalize_school_code(scope.get("school_code"))
+        if code and code not in codes:
+            codes.append(code)
+    return codes
 
 
 def _safe_parse_json_list(raw_value):
@@ -1811,15 +1839,14 @@ def _load_teacher_class_student_rows(conn, teacher_id: int, class_ids: list[int]
                s.created_at
         FROM students s
         JOIN classes c ON c.id = s.class_id
-        WHERE c.created_by_teacher_id = ?
-          AND s.class_id IN ({placeholders})
+        WHERE s.class_id IN ({placeholders})
         ORDER BY
             s.class_id,
             CASE COALESCE(s.enrollment_status, 'active') WHEN 'active' THEN 0 ELSE 1 END,
             s.student_id_number,
             s.id
         """,
-        [int(teacher_id), *normalized_ids],
+        normalized_ids,
     ).fetchall()
     grouped: dict[int, list[dict]] = {class_id: [] for class_id in normalized_ids}
     for row in rows:
@@ -1918,7 +1945,6 @@ def _load_teacher_academic_course_occurrence_summaries(
 
 def _load_teacher_course_rows(conn, teacher_id: int):
     teacher_scope = load_teacher_org_scope(conn, teacher_id)
-    teacher_department = normalize_department(teacher_scope.get("department"))
     teacher_school_code = teacher_scope["school_code"]
     current_teacher_is_super_admin = is_super_admin_teacher(conn, teacher_id)
     rows = conn.execute(
@@ -1954,8 +1980,7 @@ def _load_teacher_course_rows(conn, teacher_id: int):
         WHERE c.created_by_teacher_id = ?
            OR (
                 lower(TRIM(COALESCE(c.school_code, ?))) = lower(TRIM(?))
-                AND ? != ''
-                AND lower(TRIM(COALESCE(c.department, ''))) = lower(TRIM(?))
+                AND lower(TRIM(COALESCE(c.school_code, ?))) = lower(TRIM(?))
            )
         ORDER BY
             CASE WHEN c.created_by_teacher_id = ? THEN 0 ELSE 1 END,
@@ -1967,8 +1992,8 @@ def _load_teacher_course_rows(conn, teacher_id: int):
             teacher_id,
             teacher_school_code,
             teacher_school_code,
-            teacher_department,
-            teacher_department,
+            teacher_school_code,
+            teacher_school_code,
             teacher_id,
         ),
     ).fetchall()
@@ -2814,10 +2839,15 @@ async def get_manage_semesters_page(request: Request, user: dict = Depends(get_c
 @router.get("/manage/textbooks", response_class=HTMLResponse)
 async def get_manage_textbooks_page(request: Request, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
+        current_teacher_is_super_admin = is_super_admin_teacher(conn, user["id"])
         textbooks = [
             serialize_textbook_row(row)
             for row in _load_teacher_textbook_rows(conn, int(user["id"]))
         ]
+        for item in textbooks:
+            item["is_owned"] = int(item.get("teacher_id") or 0) == int(user["id"])
+            item["can_manage"] = item["is_owned"] or current_teacher_is_super_admin
+            item["owner_teacher_name"] = str(item.get("owner_teacher_name") or "").strip()
 
     return templates.TemplateResponse(
         request,
@@ -2856,11 +2886,24 @@ async def get_manage_signatures_page(request: Request, user: dict = Depends(get_
 @router.get("/manage/offerings", response_class=HTMLResponse)
 async def get_manage_offerings_page(request: Request, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
+        school_codes = _teacher_school_codes(conn, int(user["id"]))
+        class_where = (
+            "1 = 1"
+            if is_super_admin_teacher(conn, user["id"])
+            else (
+                "lower(TRIM(COALESCE(school_code, ''))) IN ("
+                + ",".join("?" for _ in school_codes)
+                + ")"
+                if school_codes
+                else "created_by_teacher_id = ?"
+            )
+        )
+        class_params = [] if is_super_admin_teacher(conn, user["id"]) else (school_codes or [int(user["id"])])
         my_classes = [
             dict(row)
             for row in conn.execute(
-                "SELECT id, name, department FROM classes WHERE created_by_teacher_id = ? ORDER BY name",
-                (user["id"],),
+                f"SELECT id, name, department, created_by_teacher_id FROM classes WHERE {class_where} ORDER BY name",
+                class_params,
             ).fetchall()
         ]
         my_courses = _load_teacher_course_rows(conn, int(user["id"]))
@@ -3170,12 +3213,21 @@ async def get_manage_system_password_resets_page(request: Request, user: dict = 
                 SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_count,
                 SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count
             FROM student_password_reset_requests
-            WHERE teacher_id = ?
-              AND class_id IN (
+            WHERE ? = 1
+               OR teacher_id = ?
+               OR class_id IN (
                   SELECT id FROM classes WHERE created_by_teacher_id = ?
-              )
+               )
+               OR class_id IN (
+                  SELECT class_id FROM class_offerings WHERE teacher_id = ?
+               )
             """,
-            (user["id"], user["id"]),
+            (
+                1 if is_super_admin_teacher(conn, user["id"]) else 0,
+                user["id"],
+                user["id"],
+                user["id"],
+            ),
         ).fetchone()
 
         login_summary = conn.execute(
@@ -3186,9 +3238,15 @@ async def get_manage_system_password_resets_page(request: Request, user: dict = 
             FROM student_login_audit_logs logs
             JOIN students s ON s.id = logs.student_id
             JOIN classes c ON c.id = s.class_id
-            WHERE c.created_by_teacher_id = ?
+            WHERE ? = 1
+               OR c.created_by_teacher_id = ?
+               OR EXISTS (
+                    SELECT 1 FROM class_offerings o
+                    WHERE o.class_id = c.id
+                      AND o.teacher_id = ?
+               )
             """,
-            (user["id"],),
+            (1 if is_super_admin_teacher(conn, user["id"]) else 0, user["id"], user["id"]),
         ).fetchone()
 
         reset_requests = conn.execute(
@@ -3210,8 +3268,14 @@ async def get_manage_system_password_resets_page(request: Request, user: dict = 
             FROM student_password_reset_requests r
             JOIN students s ON s.id = r.student_id
             JOIN classes c ON c.id = r.class_id
-            WHERE r.teacher_id = ?
-              AND c.created_by_teacher_id = ?
+            WHERE ? = 1
+               OR r.teacher_id = ?
+               OR c.created_by_teacher_id = ?
+               OR EXISTS (
+                    SELECT 1 FROM class_offerings o
+                    WHERE o.class_id = r.class_id
+                      AND o.teacher_id = ?
+               )
             ORDER BY
                 CASE r.status
                     WHEN 'pending' THEN 0
@@ -3222,7 +3286,12 @@ async def get_manage_system_password_resets_page(request: Request, user: dict = 
                 r.submitted_at DESC,
                 r.id DESC
             """,
-            (user["id"], user["id"]),
+            (
+                1 if is_super_admin_teacher(conn, user["id"]) else 0,
+                user["id"],
+                user["id"],
+                user["id"],
+            ),
         ).fetchall()
 
     return templates.TemplateResponse(

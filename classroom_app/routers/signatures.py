@@ -135,7 +135,12 @@ async def api_signature_image(
 ):
     try:
         with get_db_connection() as conn:
-            row, _actor = signature_service.get_signature_row_for_actor(conn, user, signature_id)
+            row, _actor = signature_service.get_signature_row_for_actor(
+                conn,
+                user,
+                signature_id,
+                require_use=bool(int(download or 0) == 1),
+            )
             file_path = signature_service.resolve_signature_file_path(row)
             if not file_path:
                 raise HTTPException(status_code=404, detail="签名图片文件不存在。")
@@ -183,6 +188,92 @@ async def api_record_signature_use(
                 metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
                 ip=get_client_ip(request),
                 user_agent=request.headers.get("user-agent", ""),
+            )
+            conn.commit()
+        return result
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.post("/{signature_id:int}/requests", response_class=JSONResponse)
+async def api_create_signature_access_request(
+    signature_id: int,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    payload = await _json_body(request)
+    try:
+        with get_db_connection() as conn:
+            result = signature_service.create_signature_access_request(
+                conn,
+                user,
+                signature_id,
+                note=str(payload.get("note") or ""),
+                context_type=str(payload.get("context_type") or ""),
+                context_id=str(payload.get("context_id") or ""),
+                context_label=str(payload.get("context_label") or ""),
+            )
+            conn.commit()
+        return result
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.get("/requests", response_class=JSONResponse)
+async def api_list_signature_access_requests(
+    direction: str = "incoming",
+    status: str = "",
+    user: dict = Depends(get_current_user),
+):
+    try:
+        with get_db_connection() as conn:
+            return signature_service.list_signature_access_requests(
+                conn,
+                user,
+                direction=direction,
+                status=status,
+            )
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.post("/requests/{request_id:int}/approve", response_class=JSONResponse)
+async def api_approve_signature_access_request(
+    request_id: int,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    payload = await _json_body(request)
+    try:
+        with get_db_connection() as conn:
+            result = signature_service.review_signature_access_request(
+                conn,
+                user,
+                request_id,
+                action="approve",
+                note=str(payload.get("note") or ""),
+            )
+            conn.commit()
+        return result
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.post("/requests/{request_id:int}/reject", response_class=JSONResponse)
+async def api_reject_signature_access_request(
+    request_id: int,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    payload = await _json_body(request)
+    try:
+        with get_db_connection() as conn:
+            result = signature_service.review_signature_access_request(
+                conn,
+                user,
+                request_id,
+                action="reject",
+                note=str(payload.get("note") or ""),
             )
             conn.commit()
         return result
