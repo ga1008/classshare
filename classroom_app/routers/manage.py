@@ -48,7 +48,6 @@ from ..services.department_service import infer_department_from_text, normalize_
 from ..services.organization_scope_service import (
     apply_teacher_scope_to_org,
     is_same_department,
-    is_same_school,
     load_teacher_org_scope,
 )
 from ..services.resource_access_service import (
@@ -56,6 +55,7 @@ from ..services.resource_access_service import (
     teacher_can_manage_course,
     teacher_can_use_class,
     teacher_can_use_course,
+    teacher_matches_school,
 )
 from ..services.organization_management_service import (
     OrganizationManagementError,
@@ -370,7 +370,7 @@ def _ensure_teacher_can_use_semester(conn, *, semester_id: int, teacher_id: int)
         """,
         (int(semester_id),),
     ).fetchone()
-    if not row or not is_same_school(row, load_teacher_org_scope(conn, teacher_id)):
+    if not row or not teacher_matches_school(conn, teacher_id, row):
         raise HTTPException(404, "学期不存在或不属于当前教师所在学校")
     return row
 
