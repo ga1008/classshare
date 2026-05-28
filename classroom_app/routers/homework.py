@@ -551,6 +551,83 @@ def _delete_draft_file_rows_for_questions(
     return [str(row["stored_path"] or "") for row in rows if str(row["stored_path"] or "").strip()]
 
 
+def _delete_old_draft_physical_files(old_file_paths: list[str], *, keep_paths: set[str] | None = None) -> None:
+    keep_paths = keep_paths or set()
+    for old_path in old_file_paths:
+        if str(old_path) in keep_paths:
+            continue
+        physical_path = resolve_submission_file_path(old_path) or Path(old_path)
+        try:
+            physical_path = Path(physical_path)
+            if physical_path.exists() and physical_path.is_file():
+                physical_path.unlink()
+        except Exception as exc:
+            print(f"[SUBMISSION_DRAFT] failed to delete old draft file {old_path}: {exc}")
+
+
+def _save_assignment_draft_without_files_sync(
+    *,
+    assignment_id: str,
+    student_pk_id: int,
+    answers_json: str,
+    current_page: int,
+    client_updated_at: str,
+    replace_question_ids: str,
+) -> dict[str, Any]:
+    old_file_paths: list[str] = []
+    with get_db_connection() as conn:
+        close_overdue_assignments(conn)
+        conn.commit()
+        assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
+        if not assignment:
+            raise HTTPException(404, "Assignment not found")
+        assignment = enrich_assignment_runtime_view(assignment)
+        _ensure_student_can_save_assignment_draft(
+            conn,
+            assignment=assignment,
+            student_id=int(student_pk_id),
+        )
+
+        replace_ids = {
+            str(item or "").strip()
+            for item in _parse_json_list(replace_question_ids or "[]", field_name="replace_question_ids")
+            if str(item or "").strip()
+        }
+
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            draft = _ensure_submission_draft(
+                conn,
+                assignment_id=assignment_id,
+                student_pk_id=int(student_pk_id),
+                answers_json=answers_json,
+                current_page=current_page,
+                client_updated_at=client_updated_at,
+            )
+            old_file_paths = _delete_draft_file_rows_for_questions(
+                conn,
+                draft_id=int(draft["id"]),
+                question_ids=replace_ids,
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+        draft = _load_submission_draft(conn, assignment_id, int(student_pk_id))
+        payload = _serialize_submission_draft(conn, draft, assignment_id)
+
+    _delete_old_draft_physical_files(old_file_paths)
+    payload.update(
+        {
+            "status": "success",
+            "stored_file_count": 0,
+            "dropped_file_count": 0,
+        }
+    )
+    return payload
+
+
 def _move_stored_files_to_final_dir(
     stored_files: list[StoredSubmissionFile],
     *,
@@ -2450,7 +2527,7 @@ async def export_student_assignment_review_docx(
 
 # --- 学生作业 API ---
 @router.get("/assignments/{assignment_id}/draft", response_class=JSONResponse)
-async def get_assignment_draft(assignment_id: str, user: dict = Depends(get_current_student)):
+def get_assignment_draft(assignment_id: str, user: dict = Depends(get_current_student)):
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
         conn.commit()
@@ -2478,6 +2555,18 @@ async def save_assignment_draft(
     files: List[UploadFile] = File(default=[]),
     user: dict = Depends(get_current_student),
 ):
+    upload_files = [file for file in (files or []) if file and str(file.filename or "").strip()]
+    if not upload_files:
+        return await asyncio.to_thread(
+            _save_assignment_draft_without_files_sync,
+            assignment_id=assignment_id,
+            student_pk_id=int(user["id"]),
+            answers_json=answers_json,
+            current_page=current_page,
+            client_updated_at=client_updated_at,
+            replace_question_ids=replace_question_ids,
+        )
+
     staging_dir: Path | None = None
     move_backup_dir: Path | None = None
     moved_draft_files: list[tuple[Path, Path | None]] = []
@@ -2514,7 +2603,7 @@ async def save_assignment_draft(
                 continue
             manifest_by_path[relative_path.lower()] = item
 
-        prepared_entries = _validate_upload_entries(files, manifest)
+        prepared_entries = _validate_upload_entries(upload_files, manifest)
         allowed_file_types = decode_allowed_file_types_json(assignment.get("allowed_file_types_json"))
         draft_dir = _build_submission_draft_storage_dir(assignment["course_id"], assignment["id"], int(user["id"]))
         staging_dir = draft_dir.with_name(f"{draft_dir.name}.__staging__{uuid.uuid4().hex}")
@@ -2633,16 +2722,7 @@ async def save_assignment_draft(
                 delete_storage_tree(move_backup_dir)
 
         new_file_paths = {str(file_info.stored_path) for file_info in storage_result.stored_files}
-        for old_path in old_file_paths:
-            if str(old_path) in new_file_paths:
-                continue
-            physical_path = resolve_submission_file_path(old_path) or Path(old_path)
-            try:
-                physical_path = Path(physical_path)
-                if physical_path.exists() and physical_path.is_file():
-                    physical_path.unlink()
-            except Exception as exc:
-                print(f"[SUBMISSION_DRAFT] failed to delete old draft file {old_path}: {exc}")
+        _delete_old_draft_physical_files(old_file_paths, keep_paths=new_file_paths)
 
         draft = _load_submission_draft(conn, assignment_id, int(user["id"]))
         payload = _serialize_submission_draft(conn, draft, assignment_id)

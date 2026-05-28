@@ -31,7 +31,7 @@ from ..dependencies import build_login_url, sanitize_next_path
 from ..dependencies import infer_required_role_from_path, get_role_label
 from ..dependencies import apply_access_token_cookie, clear_access_token_cookie, invalidate_session_for_user
 from ..services.behavior_tracking_service import record_behavior_event
-from ..services.discussion_mood_service import maybe_schedule_discussion_mood_refresh
+from ..services.discussion_mood_service import schedule_discussion_mood_refresh_soon
 from ..services.submission_assets import decode_allowed_file_types_json, summarize_allowed_file_types
 from ..services.ai_grading_attachments import AI_GRADING_UPLOAD_EXTENSIONS, AI_GRADING_SUPPORTED_TYPES_LABEL
 from ..services.dashboard_service import build_dashboard_context
@@ -947,7 +947,7 @@ def logout(request: Request):
 # ============================
 
 @router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(
+def dashboard(
     request: Request,
     filter: Optional[str] = None,
     q: Optional[str] = None,
@@ -989,7 +989,7 @@ async def dashboard(
 # ============================
 
 @router.get("/classroom/{class_offering_id}", response_class=HTMLResponse)
-async def classroom_main(
+def classroom_main(
     request: Request,
     class_offering_id: int,
     background_tasks: BackgroundTasks,
@@ -1269,7 +1269,7 @@ async def classroom_main(
         print(f"[BEHAVIOR] 记录课堂页面访问失败: {exc}")
 
     try:
-        await maybe_schedule_discussion_mood_refresh(
+        schedule_discussion_mood_refresh_soon(
             class_offering_id,
             reason="page_view",
         )
@@ -1300,7 +1300,7 @@ async def classroom_main(
 # ============================
 
 @router.get("/assignment/{assignment_id}", response_class=HTMLResponse)
-async def assignment_detail_page(request: Request, assignment_id: str, user: dict = Depends(get_current_user)):
+def assignment_detail_page(request: Request, assignment_id: str, user: dict = Depends(get_current_user)):
     """V4.0: 作业详情页 (学生/教师均可访问)"""
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
@@ -3494,7 +3494,7 @@ async def submission_detail_page(request: Request, submission_id: int, user: dic
 
 
 @router.get("/exam/take/{assignment_id}", response_class=HTMLResponse)
-async def exam_take_page(request: Request, assignment_id: str, user: dict = Depends(get_current_user)):
+def exam_take_page(request: Request, assignment_id: str, user: dict = Depends(get_current_user)):
     """学生考试界面"""
     with get_db_connection() as conn:
         close_overdue_assignments(conn)

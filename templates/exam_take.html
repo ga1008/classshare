@@ -1714,6 +1714,8 @@
     const EXAM_AI_CONTEXT = {{ exam_ai_context | default('') | tojson }};
     const gradingFeedback = parseGradingFeedback(SUBMISSION_FEEDBACK_MD);
     const LOCAL_DRAFT_KEY = `exam_${ASSIGNMENT_ID}`;
+    const SERVER_DRAFT_TEXT_SAVE_DELAY_MS = 8000;
+    const SERVER_DRAFT_RESTORE_SYNC_DELAY_MS = 1200;
 
     {% if submission %}
     const SUBMISSION_EXISTS = true;
@@ -1757,6 +1759,7 @@
     let serverDraftInFlight = null;
     let serverDraftWriteChain = Promise.resolve();
     let serverDraftLoadDone = false;
+    let lastServerDraftSignature = '';
     let lastLocalSavedAt = '';
 
     // DOM Elements
@@ -2007,7 +2010,7 @@
             const draft = await apiFetch(`/api/assignments/${ASSIGNMENT_ID}/draft`, { method: 'GET', silent: true });
             serverDraftLoadDone = true;
             if (!draft?.exists) {
-                if (lastLocalSavedAt) scheduleServerDraftSave(200);
+                if (lastLocalSavedAt) scheduleServerDraftSave(SERVER_DRAFT_RESTORE_SYNC_DELAY_MS);
                 return;
             }
             const serverTime = Date.parse(draft.server_updated_at || '') || 0;
@@ -2017,7 +2020,7 @@
                 showMessage('已恢复服务器自动保存的作答进度。', 'success');
             } else {
                 applyServerDraftFiles(draft);
-                scheduleServerDraftSave(200);
+                scheduleServerDraftSave(SERVER_DRAFT_RESTORE_SYNC_DELAY_MS);
                 showMessage('检测到本机草稿更新，正在同步到服务器。', 'info');
             }
         } catch (error) {
@@ -2083,7 +2086,7 @@
         }
     }
 
-    function scheduleServerDraftSave(delay = 900) {
+    function scheduleServerDraftSave(delay = SERVER_DRAFT_TEXT_SAVE_DELAY_MS) {
         if (SUBMISSION_EXISTS && !isEditingResubmission) return;
         if (!serverDraftLoadDone && !lastLocalSavedAt) return;
         clearTimeout(serverDraftSaveTimer);
@@ -2102,10 +2105,12 @@
 
     async function performServerDraftSave({ uploadItems = [], replaceQuestionIds = [] } = {}) {
         if (SUBMISSION_EXISTS && !isEditingResubmission) return null;
+        const normalizedUploadItems = Array.isArray(uploadItems) ? uploadItems : [];
+        const normalizedReplaceQuestionIds = Array.isArray(replaceQuestionIds) ? replaceQuestionIds : [];
         const formData = new FormData();
         const manifest = [];
         const extraAttachments = [];
-        uploadItems.forEach((item) => {
+        normalizedUploadItems.forEach((item) => {
             if (!item?.file) return;
             formData.append('files', item.file, item.file.name || 'upload.bin');
             manifest.push({
@@ -2125,11 +2130,33 @@
                 question: item.question || '',
             });
         });
-        const answersList = buildAnswersListForDraft(extraAttachments, replaceQuestionIds);
+        const answersList = buildAnswersListForDraft(extraAttachments, normalizedReplaceQuestionIds);
+        const uploadSignature = normalizedUploadItems.map((item) => ({
+            relative_path: item?.relative_path || '',
+            name: item?.file?.name || '',
+            size: item?.file?.size || 0,
+            kind: item?.kind || '',
+            question_id: item?.question_id || '',
+        }));
+        const draftSignature = JSON.stringify({
+            answers: answersList,
+            current_page: state.currentPageIdx || 0,
+            replace_question_ids: normalizedReplaceQuestionIds,
+            uploads: uploadSignature,
+        });
+        const hasFileSideEffects = uploadSignature.length > 0 || normalizedReplaceQuestionIds.length > 0;
+        if (!hasFileSideEffects && draftSignature === lastServerDraftSignature) {
+            return {
+                status: 'success',
+                files_by_question: state.serverQuestionFiles || {},
+                stored_file_count: 0,
+                dropped_file_count: 0,
+            };
+        }
         formData.append('answers_json', JSON.stringify({ answers: answersList }));
         formData.append('current_page', String(state.currentPageIdx || 0));
         formData.append('client_updated_at', lastLocalSavedAt || new Date().toISOString());
-        formData.append('replace_question_ids', JSON.stringify(replaceQuestionIds || []));
+        formData.append('replace_question_ids', JSON.stringify(normalizedReplaceQuestionIds));
         formData.append('manifest', JSON.stringify(manifest));
 
         setSaveStatus('syncing', '正在同步到服务器...');
@@ -2140,6 +2167,7 @@
         });
         try {
             const resp = await serverDraftInFlight;
+            lastServerDraftSignature = draftSignature;
             state.serverQuestionFiles = resp.files_by_question || {};
             setSaveStatus('saved', '已保存到服务器');
             setTimeout(() => {

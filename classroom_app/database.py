@@ -2,6 +2,7 @@ import sqlite3
 import sys
 import json
 import uuid
+import threading
 from datetime import datetime, timezone
 
 from passlib.context import CryptContext
@@ -25,8 +26,17 @@ from .services.organization_scope_service import (
 )
 
 
+_sqlite_journal_mode_lock = threading.Lock()
+_sqlite_journal_mode_paths: set[str] = set()
+
+
 def _apply_sqlite_pragmas(conn: sqlite3.Connection) -> None:
-    conn.execute("PRAGMA journal_mode=WAL;")
+    db_key = str(DB_PATH.resolve())
+    if db_key not in _sqlite_journal_mode_paths:
+        with _sqlite_journal_mode_lock:
+            if db_key not in _sqlite_journal_mode_paths:
+                conn.execute("PRAGMA journal_mode=WAL;")
+                _sqlite_journal_mode_paths.add(db_key)
     conn.execute("PRAGMA synchronous=NORMAL;")
     conn.execute("PRAGMA temp_store=MEMORY;")
     conn.execute(f"PRAGMA busy_timeout = {int(max(0, SQLITE_BUSY_TIMEOUT_MS))};")

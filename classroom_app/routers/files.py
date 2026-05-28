@@ -39,7 +39,7 @@ from ..services.discussion_ai_service import (
 )
 from ..services.discussion_mood_service import (
     get_discussion_mood_payload,
-    maybe_schedule_discussion_mood_refresh,
+    schedule_discussion_mood_refresh_soon,
 )
 from ..services.discussion_attachment_service import (
     DISCUSSION_ATTACHMENT_MAX_BYTES,
@@ -640,7 +640,7 @@ async def _process_discussion_chat_message(
 
     await manager.broadcast(class_offering_id, json.dumps(stored_message, ensure_ascii=False))
     record_websocket_sent(class_offering_id, max(1, len(manager.rooms.get(class_offering_id, {}))))
-    await maybe_schedule_discussion_mood_refresh(
+    schedule_discussion_mood_refresh_soon(
         class_offering_id,
         reason="message",
         latest_message_id=int(stored_message["id"]),
@@ -1460,7 +1460,7 @@ async def get_discussion_mood(
         dict(user),
     )
 
-    await maybe_schedule_discussion_mood_refresh(
+    schedule_discussion_mood_refresh_soon(
         class_offering_id,
         reason="poll",
     )

@@ -5,6 +5,7 @@ import threading
 import ipaddress
 import re
 import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict
 from urllib.parse import urlencode, urlsplit
@@ -36,6 +37,9 @@ pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 active_sessions: Dict[str, Dict] = {}
 _sessions_lock = threading.Lock()
+_identity_validation_cache: Dict[str, float] = {}
+_identity_validation_lock = threading.Lock()
+IDENTITY_VALIDATION_CACHE_SECONDS = 10.0
 
 AUTH_ERROR_LOGIN_REQUIRED = "login_required"
 AUTH_ERROR_PERMISSION_DENIED = "permission_denied"
@@ -119,6 +123,20 @@ def _cache_session_snapshot(session_user_key: str, session_snapshot: dict) -> No
         active_sessions[normalized_user_key] = dict(session_snapshot)
 
 
+def _get_cached_session_snapshot(session_user_key: str) -> Optional[dict]:
+    normalized_user_key = str(session_user_key or "").strip()
+    if not normalized_user_key:
+        return None
+    with _sessions_lock:
+        snapshot = active_sessions.get(normalized_user_key)
+        return dict(snapshot) if snapshot else None
+
+
+def _is_cached_session_expired(session_snapshot: dict) -> bool:
+    expires_at = str(session_snapshot.get("expires_at") or "").strip()
+    return bool(expires_at and expires_at <= datetime.now(timezone.utc).isoformat())
+
+
 def _drop_cached_sessions_for_user(user_id: str, role: Optional[str] = None) -> int:
     raw_user_id = str(user_id or "").strip()
     normalized_role = str(role or "").strip().lower()
@@ -138,6 +156,43 @@ def _drop_cached_sessions_for_user(user_id: str, role: Optional[str] = None) -> 
                 del active_sessions[session_key]
                 removed_count += 1
     return removed_count
+
+
+def _identity_cache_key(role: str, user_id: str) -> str:
+    return f"{str(role or '').strip().lower()}:{str(user_id or '').strip()}"
+
+
+def _identity_cache_is_valid(role: str, user_id: str) -> bool:
+    key = _identity_cache_key(role, user_id)
+    now = time.monotonic()
+    with _identity_validation_lock:
+        expires_at = _identity_validation_cache.get(key)
+        if expires_at is None:
+            return False
+        if expires_at <= now:
+            _identity_validation_cache.pop(key, None)
+            return False
+        return True
+
+
+def _cache_valid_identity(role: str, user_id: str) -> None:
+    with _identity_validation_lock:
+        _identity_validation_cache[_identity_cache_key(role, user_id)] = (
+            time.monotonic() + IDENTITY_VALIDATION_CACHE_SECONDS
+        )
+
+
+def _drop_identity_cache_for_user(user_id: str, role: Optional[str] = None) -> None:
+    raw_user_id = str(user_id or "").strip()
+    normalized_role = str(role or "").strip().lower()
+    if not raw_user_id:
+        return
+    with _identity_validation_lock:
+        if normalized_role:
+            _identity_validation_cache.pop(_identity_cache_key(normalized_role, raw_user_id), None)
+            return
+        for candidate_role in VALID_AUTHENTICATED_ROLES:
+            _identity_validation_cache.pop(_identity_cache_key(candidate_role, raw_user_id), None)
 
 
 def list_active_sessions() -> dict[str, dict]:
@@ -256,7 +311,12 @@ def verify_token(token: Optional[str], client_ip: Optional[str] = None) -> Optio
         token_ip = normalize_ip(payload.get("ip"))
         normalized_client_ip = normalize_ip(client_ip)
 
-        current_session = get_user_session(session_user_key)
+        current_session = _get_cached_session_snapshot(session_user_key)
+        if current_session is not None and _is_cached_session_expired(current_session):
+            _drop_cached_sessions_for_user(user_id, str(payload.get("role") or ""))
+            current_session = None
+        if current_session is None:
+            current_session = get_user_session(session_user_key)
         if current_session is None:
             _drop_cached_sessions_for_user(user_id, str(payload.get("role") or ""))
             print(f"[SESSION] 用户 {user_id} 没有活跃会话")
@@ -450,6 +510,7 @@ def invalidate_session_for_user(
     normalized_role = role.strip().lower() if role else None
     removed_count = delete_user_sessions(raw_user_id, normalized_role, conn=conn)
     removed_cache_count = _drop_cached_sessions_for_user(raw_user_id, normalized_role)
+    _drop_identity_cache_for_user(raw_user_id, normalized_role)
 
     if removed_count > 0 or removed_cache_count > 0:
         print(f"[SESSION] Cleared session for {build_session_user_key(raw_user_id, normalized_role) or raw_user_id}")
@@ -508,6 +569,9 @@ def _validate_teacher_identity(user: dict) -> None:
     if not user_id:
         raise _permission_denied("当前教师账号无效，请重新登录。", "teacher")
 
+    if _identity_cache_is_valid("teacher", user_id):
+        return
+
     try:
         with get_db_connection() as conn:
             row = conn.execute(
@@ -531,10 +595,16 @@ def _validate_teacher_identity(user: dict) -> None:
         raise _permission_denied("当前教师账号已停用，暂不能继续访问系统。", "teacher")
 
 
+    _cache_valid_identity("teacher", user_id)
+
+
 def _validate_student_identity(user: dict) -> None:
     user_id = str(user.get("id") or "").strip()
     if not user_id:
         raise _permission_denied("当前学生账号无效，请重新登录。", "student")
+
+    if _identity_cache_is_valid("student", user_id):
+        return
 
     try:
         with get_db_connection() as conn:
@@ -561,6 +631,9 @@ def _validate_student_identity(user: dict) -> None:
             f"当前学生账号已设置为{student_enrollment_status_label(normalized_status)}，暂不纳入课堂学习。",
             "student",
         )
+
+
+    _cache_valid_identity("student", user_id)
 
 
 def validate_authenticated_user_identity(user: dict) -> dict:

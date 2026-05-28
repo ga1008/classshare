@@ -102,6 +102,39 @@ async def maybe_schedule_discussion_mood_refresh(
         return True
 
 
+def schedule_discussion_mood_refresh_soon(
+    class_offering_id: int,
+    *,
+    reason: str,
+    latest_message_id: int | None = None,
+    force: bool = False,
+) -> bool:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+
+    task = loop.create_task(
+        maybe_schedule_discussion_mood_refresh(
+            class_offering_id,
+            reason=reason,
+            latest_message_id=latest_message_id,
+            force=force,
+        )
+    )
+
+    def _log_background_error(done: asyncio.Task[bool]) -> None:
+        try:
+            done.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            print(f"[DISCUSSION_MOOD] background schedule failed: {exc}")
+
+    task.add_done_callback(_log_background_error)
+    return True
+
+
 async def stop_discussion_mood_refresh_tasks() -> None:
     async with _refresh_lock:
         tasks = list(_refresh_tasks.values())
