@@ -4764,6 +4764,33 @@ def init_database():
                          ''')
 
             conn.execute('''
+                        CREATE TABLE IF NOT EXISTS material_ai_import_records
+                        (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            teacher_id INTEGER NOT NULL,
+                            package_material_id INTEGER REFERENCES course_materials (id) ON DELETE SET NULL,
+                            source_material_id INTEGER REFERENCES course_materials (id) ON DELETE SET NULL,
+                            parsed_material_id INTEGER REFERENCES course_materials (id) ON DELETE SET NULL,
+                            document_group TEXT NOT NULL,
+                            document_type TEXT NOT NULL,
+                            document_type_label TEXT NOT NULL DEFAULT '',
+                            parse_status TEXT NOT NULL DEFAULT 'completed',
+                            parse_mode TEXT NOT NULL DEFAULT 'ai',
+                            extraction_method TEXT NOT NULL DEFAULT '',
+                            source_file_name TEXT NOT NULL DEFAULT '',
+                            metadata_json TEXT,
+                            content_markdown TEXT,
+                            export_payload_json TEXT,
+                            warnings_json TEXT,
+                            error_message TEXT DEFAULT '',
+                            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            completed_at TEXT,
+                            FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE
+                        )
+                         ''')
+
+            conn.execute('''
                         CREATE TABLE IF NOT EXISTS course_material_assignments
                         (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5437,6 +5464,14 @@ def init_database():
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_materials_teacher_parent_updated ON course_materials (teacher_id, parent_id, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_material_ai_import_teacher_updated "
+                "ON material_ai_import_records (teacher_id, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_material_ai_import_source "
+                "ON material_ai_import_records (source_material_id, parsed_material_id)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_material_assignments_offering ON course_material_assignments (class_offering_id, material_id)"

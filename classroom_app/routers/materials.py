@@ -23,6 +23,12 @@ from ..dependencies import get_current_teacher, get_current_user
 from ..services.file_service import delete_global_file, global_file_write_path, resolve_global_file_path, save_file_globally
 from ..services.download_policy import apply_download_policy, ensure_download_allowed
 from ..services.file_preview_service import TEXT_CONTENT_ENCODINGS
+from ..services.material_ai_import_service import (
+    build_import_readme,
+    get_material_ai_import_registry,
+    parse_material_document,
+    resolve_material_ai_import_type,
+)
 from ..services.materials_service import (
     MATERIAL_TYPE_REGISTRY,
     attach_home_learning_material_briefs,
@@ -256,19 +262,26 @@ async def _call_ai_chat(
     capability: str = "thinking",
     *,
     response_format: str = "text",
+    base64_urls: list[str] | None = None,
+    image_inputs: list[dict[str, Any]] | None = None,
+    file_texts: list[dict[str, str]] | None = None,
+    task_type: str | None = None,
+    timeout: float = 180.0,
 ):
     payload = {
         "system_prompt": system_prompt,
         "messages": [],
         "new_message": new_message,
-        "base64_urls": [],
+        "base64_urls": base64_urls or [],
+        "image_inputs": image_inputs or [],
+        "file_texts": file_texts or [],
         "model_capability": capability,
-        "task_type": "deep_text_reasoning" if capability == "thinking" else "fast_text_response",
+        "task_type": task_type or ("deep_text_reasoning" if capability == "thinking" else "fast_text_response"),
         "web_search_enabled": False,
         "response_format": response_format,
     }
     try:
-        response = await ai_client.post("/api/ai/chat", json=payload, timeout=180.0)
+        response = await ai_client.post("/api/ai/chat", json=payload, timeout=timeout)
         response.raise_for_status()
         data = response.json()
         if response_format == "json":
@@ -1330,6 +1343,7 @@ async def manage_materials_page(request: Request, user: dict = Depends(get_curre
             "offerings": [dict(row) for row in offerings],
             "material_stats": stats,
             "type_registry": type_registry,
+            "material_ai_import_registry": get_material_ai_import_registry(),
         },
     )
 
@@ -1490,6 +1504,294 @@ async def auto_bind_repository_readmes(
         user=user,
         auto_discover_classrooms=True,
     )
+
+
+def _normalize_uploaded_filename(filename: str | None, fallback: str = "material") -> str:
+    raw_name = str(filename or "").replace("\\", "/").strip()
+    name = raw_name.rsplit("/", 1)[-1].strip()
+    return name or fallback
+
+
+def _insert_material_folder_row(
+    conn,
+    *,
+    user: dict,
+    name: str,
+    material_path: str,
+    parent_id: int | None,
+    inherited_root_id: int | None,
+    owner_scope: dict,
+    now: str,
+) -> tuple[int, int]:
+    cursor = conn.execute(
+        """
+        INSERT INTO course_materials
+        (teacher_id, parent_id, root_id, material_path, name, node_type, mime_type,
+         preview_type, ai_capability, file_ext, file_hash, file_size,
+         ai_parse_status, ai_optimize_status, owner_role, owner_user_pk, scope_level,
+         school_code, school_name, college, department, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'folder', 'inode/directory', 'folder', 'none', '', NULL, 0,
+                'idle', 'idle', 'teacher', ?, 'private', ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            user["id"],
+            parent_id,
+            inherited_root_id,
+            material_path,
+            name,
+            user["id"],
+            owner_scope["school_code"],
+            owner_scope["school_name"],
+            owner_scope["college"],
+            owner_scope["department"],
+            now,
+            now,
+        ),
+    )
+    folder_id = int(cursor.lastrowid)
+    actual_root_id = int(inherited_root_id or folder_id)
+    if inherited_root_id is None:
+        conn.execute("UPDATE course_materials SET root_id = ? WHERE id = ?", (actual_root_id, folder_id))
+    return folder_id, actual_root_id
+
+
+def _insert_material_file_row(
+    conn,
+    *,
+    user: dict,
+    name: str,
+    material_path: str,
+    parent_id: int,
+    root_id: int,
+    file_profile: dict,
+    file_hash: str,
+    file_size: int,
+    owner_scope: dict,
+    now: str,
+    ai_parse_status: str = "idle",
+    ai_parse_result_json: str | None = None,
+) -> int:
+    cursor = conn.execute(
+        """
+        INSERT INTO course_materials
+        (teacher_id, parent_id, root_id, material_path, name, node_type, mime_type,
+         preview_type, ai_capability, file_ext, file_hash, file_size,
+         ai_parse_status, ai_parse_result_json, ai_optimize_status, owner_role, owner_user_pk, scope_level,
+         school_code, school_name, college, department, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'file', ?, ?, ?, ?, ?, ?, ?, ?, 'idle',
+                'teacher', ?, 'private', ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            user["id"],
+            parent_id,
+            root_id,
+            material_path,
+            name,
+            file_profile["mime_type"],
+            file_profile["preview_type"],
+            file_profile["ai_capability"],
+            file_profile["file_ext"],
+            file_hash,
+            file_size,
+            ai_parse_status,
+            ai_parse_result_json,
+            user["id"],
+            owner_scope["school_code"],
+            owner_scope["school_name"],
+            owner_scope["college"],
+            owner_scope["department"],
+            now,
+            now,
+        ),
+    )
+    return int(cursor.lastrowid)
+
+
+def _fetch_material_response_item(conn, material_id: int, user: dict) -> dict | None:
+    row = conn.execute(
+        """
+        SELECT m.*,
+               (SELECT COUNT(*) FROM course_materials child WHERE child.parent_id = m.id AND child.name != '.git') AS child_count,
+               (SELECT COUNT(*) FROM course_material_assignments a WHERE a.material_id = m.id) AS assignment_count
+        FROM course_materials m
+        WHERE m.id = ?
+        """,
+        (material_id,),
+    ).fetchone()
+    if not row:
+        return None
+    item = _serialize_material_items(conn, [row], user=user)[0]
+    return _decorate_learning_document_item(item)
+
+
+def _build_material_ai_parse_payload(parse_result) -> dict:
+    return {
+        "metadata": parse_result.metadata,
+        "content_markdown": parse_result.content_markdown,
+        "tables": parse_result.tables,
+        "warnings": parse_result.warnings,
+        "export_payload": parse_result.export_payload,
+        "document_group": parse_result.document_group,
+        "document_type": parse_result.document_type,
+        "document_type_label": parse_result.document_type_label,
+        "extraction_method": parse_result.extraction_method,
+        "ai_used": parse_result.ai_used,
+    }
+
+
+@router.post("/api/materials/ai-import", response_class=JSONResponse)
+async def ai_import_material(
+    file: UploadFile = File(...),
+    document_group: str = Form(...),
+    document_type: str = Form(...),
+    parent_id: int | None = Form(default=None),
+    user: dict = Depends(get_current_teacher),
+):
+    original_name = _normalize_uploaded_filename(file.filename)
+    type_meta = resolve_material_ai_import_type(document_group, document_type)
+
+    if parent_id is not None:
+        with get_db_connection() as conn:
+            base_parent = ensure_teacher_material_owner(conn, parent_id, user["id"])
+            if base_parent["node_type"] != "folder":
+                raise HTTPException(400, "只能导入到文件夹中")
+
+    payload_bytes = await file.read()
+    if not payload_bytes:
+        raise HTTPException(400, "请选择非空材料文件")
+
+    file_hash = hashlib.sha256(payload_bytes).hexdigest()
+    stored_path = await _write_material_file(file_hash, payload_bytes)
+    parse_result = await parse_material_document(
+        file_path=stored_path,
+        original_name=original_name,
+        document_group=type_meta["group_key"],
+        document_type=type_meta["key"],
+        ai_chat=_call_ai_chat,
+    )
+
+    readme_content = build_import_readme(result=parse_result, original_name=original_name)
+    readme_bytes = readme_content.encode("utf-8")
+    readme_hash = hashlib.sha256(readme_bytes).hexdigest()
+    await _write_material_file(readme_hash, readme_bytes)
+
+    file_profile = infer_material_profile(original_name, file.content_type)
+    readme_profile = infer_material_profile("readme.md", "text/markdown")
+    parse_payload = _build_material_ai_parse_payload(parse_result)
+    parse_payload_json = json.dumps(parse_payload, ensure_ascii=False)
+    metadata_json = json.dumps(parse_result.metadata, ensure_ascii=False)
+    export_payload_json = json.dumps(parse_result.export_payload, ensure_ascii=False)
+    warnings_json = json.dumps(parse_result.warnings, ensure_ascii=False)
+
+    with get_db_connection() as conn:
+        base_parent = None
+        base_prefix = ""
+        inherited_root_id = None
+        if parent_id is not None:
+            base_parent = ensure_teacher_material_owner(conn, parent_id, user["id"])
+            if base_parent["node_type"] != "folder":
+                raise HTTPException(400, "只能导入到文件夹中")
+            base_prefix = str(base_parent["material_path"])
+            inherited_root_id = int(base_parent["root_id"])
+
+        owner_scope = load_teacher_org_scope(conn, int(user["id"]))
+        now = datetime.now().isoformat()
+        package_base_name = f"AI解析-{Path(original_name).stem or type_meta['label']}"
+        package_name = make_unique_material_name(conn, user["id"], parent_id, package_base_name)
+        package_path = normalize_material_path(f"{base_prefix}/{package_name}" if base_prefix else package_name)
+
+        package_id, package_root_id = _insert_material_folder_row(
+            conn,
+            user=user,
+            name=package_name,
+            material_path=package_path,
+            parent_id=base_parent["id"] if base_parent else None,
+            inherited_root_id=inherited_root_id,
+            owner_scope=owner_scope,
+            now=now,
+        )
+
+        source_name = original_name
+        if source_name.strip().lower() == "readme.md":
+            source_name = "source-readme.md"
+        source_path = normalize_material_path(f"{package_path}/{source_name}")
+        source_id = _insert_material_file_row(
+            conn,
+            user=user,
+            name=source_name,
+            material_path=source_path,
+            parent_id=package_id,
+            root_id=package_root_id,
+            file_profile=file_profile,
+            file_hash=file_hash,
+            file_size=len(payload_bytes),
+            owner_scope=owner_scope,
+            now=now,
+        )
+
+        parsed_name = "readme.md"
+        parsed_path = normalize_material_path(f"{package_path}/{parsed_name}")
+        parsed_id = _insert_material_file_row(
+            conn,
+            user=user,
+            name=parsed_name,
+            material_path=parsed_path,
+            parent_id=package_id,
+            root_id=package_root_id,
+            file_profile=readme_profile,
+            file_hash=readme_hash,
+            file_size=len(readme_bytes),
+            owner_scope=owner_scope,
+            now=now,
+            ai_parse_status="completed",
+            ai_parse_result_json=parse_payload_json,
+        )
+
+        conn.execute(
+            """
+            INSERT INTO material_ai_import_records
+            (teacher_id, package_material_id, source_material_id, parsed_material_id,
+             document_group, document_type, document_type_label, parse_status, parse_mode,
+             extraction_method, source_file_name, metadata_json, content_markdown,
+             export_payload_json, warnings_json, created_at, updated_at, completed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user["id"],
+                package_id,
+                source_id,
+                parsed_id,
+                parse_result.document_group,
+                parse_result.document_type,
+                parse_result.document_type_label,
+                "ai" if parse_result.ai_used else "local_fallback",
+                parse_result.extraction_method,
+                original_name,
+                metadata_json,
+                parse_result.content_markdown,
+                export_payload_json,
+                warnings_json,
+                now,
+                now,
+                now,
+            ),
+        )
+
+        refresh_root_git_metadata(conn, package_root_id)
+        conn.commit()
+
+        package_item = _fetch_material_response_item(conn, package_id, user)
+        source_item = _fetch_material_response_item(conn, source_id, user)
+        parsed_item = _fetch_material_response_item(conn, parsed_id, user)
+
+    return {
+        "status": "success",
+        "message": f"已完成《{original_name}》AI 解析导入",
+        "package_item": package_item,
+        "source_item": source_item,
+        "parsed_item": parsed_item,
+        "parse_result": parse_payload,
+    }
 
 
 @router.post("/api/materials/upload", response_class=JSONResponse)

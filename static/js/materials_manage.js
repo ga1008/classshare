@@ -121,6 +121,10 @@ const state = {
     stats: null,
     searchTimer: null,
     _aiAssignBusy: false,
+    aiImport: {
+        busy: false,
+        file: null,
+    },
     repository: {
         materialId: null,
         detail: null,
@@ -135,7 +139,7 @@ const state = {
     },
 };
 
-const config = window.MATERIALS_MANAGE_CONFIG || { offerings: [], canAssign: false };
+const config = window.MATERIALS_MANAGE_CONFIG || { offerings: [], canAssign: false, materialAiImportRegistry: [] };
 
 const refs = {
     listBody: document.getElementById('materials-list-body'),
@@ -151,10 +155,22 @@ const refs = {
     upBtn: document.getElementById('materials-up-btn'),
     refreshBtn: document.getElementById('materials-refresh-btn'),
     repositoryBtn: document.getElementById('materials-repository-btn'),
-    fileBtn: document.getElementById('materials-upload-file-btn'),
+    uploadMenu: document.getElementById('materials-upload-menu'),
+    uploadMenuBtn: document.getElementById('materials-upload-menu-btn'),
+    uploadDropdown: document.getElementById('materials-upload-dropdown'),
+    directUploadBtn: document.getElementById('materials-upload-direct-btn'),
+    aiImportOpenBtn: document.getElementById('materials-ai-import-open-btn'),
     folderBtn: document.getElementById('materials-upload-folder-btn'),
     fileInput: document.getElementById('materials-file-input'),
     folderInput: document.getElementById('materials-folder-input'),
+    aiImportModal: document.getElementById('materials-ai-import-modal'),
+    aiImportGroup: document.getElementById('materials-ai-import-group'),
+    aiImportType: document.getElementById('materials-ai-import-type'),
+    aiImportFileInput: document.getElementById('materials-ai-import-file-input'),
+    aiImportChooseFileBtn: document.getElementById('materials-ai-import-choose-file-btn'),
+    aiImportFileName: document.getElementById('materials-ai-import-file-name'),
+    aiImportStatus: document.getElementById('materials-ai-import-status'),
+    aiImportSubmitBtn: document.getElementById('materials-ai-import-submit-btn'),
     searchInput: document.getElementById('materials-search-input'),
     searchClearBtn: document.getElementById('materials-search-clear-btn'),
     sortBy: document.getElementById('materials-sort-by'),
@@ -785,6 +801,122 @@ async function uploadFiles(fileList) {
     await loadLibrary(state.currentParentId);
 }
 
+function getAiImportRegistry() {
+    return Array.isArray(config.materialAiImportRegistry) ? config.materialAiImportRegistry : [];
+}
+
+function setUploadMenuOpen(open) {
+    if (!refs.uploadDropdown || !refs.uploadMenuBtn) return;
+    refs.uploadDropdown.hidden = !open;
+    refs.uploadMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function renderAiImportGroups() {
+    const registry = getAiImportRegistry();
+    if (!refs.aiImportGroup) return;
+    refs.aiImportGroup.innerHTML = registry.map((group) => (
+        `<option value="${escapeHtml(group.key)}">${escapeHtml(group.label)}</option>`
+    )).join('');
+    renderAiImportTypes();
+}
+
+function getSelectedAiImportGroup() {
+    const registry = getAiImportRegistry();
+    const selectedKey = refs.aiImportGroup?.value || registry[0]?.key || '';
+    return registry.find((group) => group.key === selectedKey) || registry[0] || null;
+}
+
+function renderAiImportTypes() {
+    const group = getSelectedAiImportGroup();
+    const types = Array.isArray(group?.types) ? group.types : [];
+    if (!refs.aiImportType) return;
+    refs.aiImportType.innerHTML = types.map((docType) => (
+        `<option value="${escapeHtml(docType.key)}">${escapeHtml(docType.label)}</option>`
+    )).join('');
+}
+
+function updateAiImportFileLabel() {
+    if (!refs.aiImportFileName) return;
+    refs.aiImportFileName.textContent = state.aiImport.file ? state.aiImport.file.name : '未选择文件';
+}
+
+function setAiImportStatus(message = '', type = 'info') {
+    if (!refs.aiImportStatus) return;
+    const normalizedMessage = String(message || '').trim();
+    refs.aiImportStatus.hidden = !normalizedMessage;
+    refs.aiImportStatus.className = `materials-ai-import-status materials-ai-import-status--${type}`;
+    refs.aiImportStatus.textContent = normalizedMessage;
+}
+
+function setAiImportBusy(busy) {
+    state.aiImport.busy = busy;
+    if (refs.aiImportSubmitBtn) {
+        refs.aiImportSubmitBtn.disabled = busy;
+        refs.aiImportSubmitBtn.textContent = busy ? '解析中...' : '开始解析';
+    }
+    if (refs.aiImportChooseFileBtn) refs.aiImportChooseFileBtn.disabled = busy;
+    if (refs.aiImportGroup) refs.aiImportGroup.disabled = busy;
+    if (refs.aiImportType) refs.aiImportType.disabled = busy;
+}
+
+function openAiImportModal() {
+    if (!getAiImportRegistry().length) {
+        showToast('材料解析类型暂未加载', 'error');
+        return;
+    }
+    state.aiImport.file = null;
+    if (refs.aiImportFileInput) refs.aiImportFileInput.value = '';
+    renderAiImportGroups();
+    updateAiImportFileLabel();
+    setAiImportStatus('', 'info');
+    setAiImportBusy(false);
+    openModal('materials-ai-import-modal');
+}
+
+async function submitAiImport() {
+    if (state.aiImport.busy) return;
+    const groupKey = refs.aiImportGroup?.value || '';
+    const typeKey = refs.aiImportType?.value || '';
+    if (!groupKey || !typeKey) {
+        showToast('请选择材料类型', 'warning');
+        return;
+    }
+    if (!state.aiImport.file) {
+        showToast('请选择要解析的文件', 'warning');
+        refs.aiImportFileInput?.click();
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', state.aiImport.file, state.aiImport.file.name);
+    formData.append('document_group', groupKey);
+    formData.append('document_type', typeKey);
+    if (state.currentParentId) {
+        formData.append('parent_id', String(state.currentParentId));
+    }
+
+    setAiImportBusy(true);
+    setAiImportStatus('正在解析并导入材料...', 'info');
+    try {
+        const result = await apiFetch('/api/materials/ai-import', {
+            method: 'POST',
+            body: formData,
+        });
+        closeModal('materials-ai-import-modal');
+        showToast(result.message || 'AI 解析导入完成', 'success', 4200);
+        await loadLibrary(state.currentParentId);
+        const packageId = Number(result.package_item?.id || 0);
+        if (packageId) {
+            await openMaterialDetail(packageId);
+        }
+    } catch (error) {
+        setAiImportStatus(error.message || 'AI 解析导入失败', 'error');
+        throw error;
+    } finally {
+        setAiImportBusy(false);
+    }
+}
+
 function toggleSelection(materialId, checked) {
     const normalizedId = Number(materialId);
     if (checked) {
@@ -1318,6 +1450,33 @@ async function saveRepositoryCredential() {
 }
 
 function bindEvents() {
+    document.addEventListener('click', (event) => {
+        const uploadTrigger = event.target.closest('#materials-upload-menu-btn');
+        if (uploadTrigger) {
+            event.preventDefault();
+            event.stopPropagation();
+            setUploadMenuOpen(refs.uploadDropdown?.hidden !== false);
+            return;
+        }
+
+        const directUpload = event.target.closest('#materials-upload-direct-btn');
+        if (directUpload) {
+            event.preventDefault();
+            event.stopPropagation();
+            setUploadMenuOpen(false);
+            refs.fileInput?.click();
+            return;
+        }
+
+        const aiImportOpen = event.target.closest('#materials-ai-import-open-btn');
+        if (aiImportOpen) {
+            event.preventDefault();
+            event.stopPropagation();
+            setUploadMenuOpen(false);
+            openAiImportModal();
+        }
+    }, true);
+
     refs.refreshBtn?.addEventListener('click', () => {
         loadLibrary(state.currentParentId, false).catch((error) => {
             showToast(error.message || '刷新材料失败', 'error');
@@ -1347,7 +1506,18 @@ function bindEvents() {
         });
     });
 
-    refs.fileBtn?.addEventListener('click', () => refs.fileInput?.click());
+    refs.uploadMenuBtn?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setUploadMenuOpen(refs.uploadDropdown?.hidden !== false);
+    });
+    refs.directUploadBtn?.addEventListener('click', () => {
+        setUploadMenuOpen(false);
+        refs.fileInput?.click();
+    });
+    refs.aiImportOpenBtn?.addEventListener('click', () => {
+        setUploadMenuOpen(false);
+        openAiImportModal();
+    });
     refs.folderBtn?.addEventListener('click', () => refs.folderInput?.click());
 
     refs.fileInput?.addEventListener('change', async () => {
@@ -1498,6 +1668,28 @@ function bindEvents() {
             });
         }
     });
+
+    refs.aiImportGroup?.addEventListener('change', () => {
+        renderAiImportTypes();
+    });
+
+    refs.aiImportChooseFileBtn?.addEventListener('click', () => {
+        if (!state.aiImport.busy) {
+            refs.aiImportFileInput?.click();
+        }
+    });
+
+    refs.aiImportFileInput?.addEventListener('change', () => {
+        state.aiImport.file = refs.aiImportFileInput.files?.[0] || null;
+        updateAiImportFileLabel();
+        setAiImportStatus('', 'info');
+    });
+
+    refs.aiImportSubmitBtn?.addEventListener('click', () => {
+        submitAiImport().catch((error) => {
+            showToast(error.message || 'AI 解析导入失败', 'error');
+        });
+    });
     refs.detail?.addEventListener('change', (event) => {
         const select = event.target.closest('[data-material-scope-select]');
         if (!select) return;
@@ -1632,8 +1824,17 @@ function bindEvents() {
     });
 
     document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            setUploadMenuOpen(false);
+        }
         if (event.key === 'Escape' && isDetailModalOpen()) {
             closeDetailModal();
+        }
+    });
+
+    document.addEventListener('click', (event) => {
+        if (refs.uploadMenu && !refs.uploadMenu.contains(event.target)) {
+            setUploadMenuOpen(false);
         }
     });
 }
