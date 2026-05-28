@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from .blog_service import POST_STATUS_DRAFT, VISIBILITY_CLASS, create_post
 from .file_service import resolve_global_file_path
 from .message_center_service import create_collaboration_notification
+from .resource_access_service import ensure_classroom_access as ensure_scoped_classroom_access
 
 
 GROUP_STATUS_ACTIVE = "active"
@@ -97,42 +98,7 @@ def _actor_name(user: dict[str, Any]) -> str:
 
 
 def ensure_classroom_access(conn, class_offering_id: int, user: dict[str, Any]) -> dict[str, Any]:
-    user_id = _user_pk(user)
-    offering = conn.execute(
-        """
-        SELECT o.id, o.class_id, o.teacher_id, c.name AS course_name, cl.name AS class_name
-        FROM class_offerings o
-        JOIN courses c ON c.id = o.course_id
-        JOIN classes cl ON cl.id = o.class_id
-        WHERE o.id = ?
-        LIMIT 1
-        """,
-        (int(class_offering_id),),
-    ).fetchone()
-    if offering is None:
-        raise HTTPException(404, "课堂不存在")
-
-    if _is_teacher(user):
-        if int(offering["teacher_id"]) != user_id:
-            raise HTTPException(403, "无权访问该课堂协作区")
-        return dict(offering)
-
-    if _is_student(user):
-        row = conn.execute(
-            """
-            SELECT 1
-            FROM students
-            WHERE id = ?
-              AND class_id = ?
-              AND COALESCE(enrollment_status, 'active') = 'active'
-            LIMIT 1
-            """,
-            (user_id, int(offering["class_id"])),
-        ).fetchone()
-        if row is not None:
-            return dict(offering)
-
-    raise HTTPException(403, "无权访问该课堂协作区")
+    return dict(ensure_scoped_classroom_access(conn, class_offering_id, user))
 
 
 def _load_assignment(conn, class_offering_id: int, assignment_id: Any) -> Optional[dict[str, Any]]:

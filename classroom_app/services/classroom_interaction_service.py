@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Iterable, Optional
 
 from fastapi import HTTPException
+from .resource_access_service import ensure_classroom_access as ensure_scoped_classroom_access
 
 
 ACTIVITY_KIND_POLL = "poll"
@@ -130,42 +131,7 @@ def ensure_classroom_interaction_access(
     class_offering_id: int,
     user: dict[str, Any],
 ) -> dict[str, Any]:
-    user_id = _user_pk(user)
-    offering = conn.execute(
-        """
-        SELECT o.id, o.class_id, o.teacher_id, c.name AS course_name, cl.name AS class_name
-        FROM class_offerings o
-        JOIN courses c ON c.id = o.course_id
-        JOIN classes cl ON cl.id = o.class_id
-        WHERE o.id = ?
-        LIMIT 1
-        """,
-        (int(class_offering_id),),
-    ).fetchone()
-    if offering is None:
-        raise HTTPException(404, "课堂不存在")
-
-    if _is_teacher(user):
-        if int(offering["teacher_id"]) != user_id:
-            raise HTTPException(403, "无权访问该课堂互动区")
-        return dict(offering)
-
-    if _is_student(user):
-        row = conn.execute(
-            """
-            SELECT 1
-            FROM students
-            WHERE id = ?
-              AND class_id = ?
-              AND COALESCE(enrollment_status, 'active') = 'active'
-            LIMIT 1
-            """,
-            (user_id, int(offering["class_id"])),
-        ).fetchone()
-        if row is not None:
-            return dict(offering)
-
-    raise HTTPException(403, "无权访问该课堂互动区")
+    return dict(ensure_scoped_classroom_access(conn, class_offering_id, user))
 
 
 def _load_activity(conn: sqlite3.Connection, activity_id: int) -> dict[str, Any]:

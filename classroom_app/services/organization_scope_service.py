@@ -36,9 +36,13 @@ def build_org_scope(
     college: Any = "",
     department: Any = "",
 ) -> dict[str, str]:
+    normalized_school_name = normalize_school_name(school_name)
+    normalized_school_code_source = normalize_org_text(school_code)
+    if not normalized_school_code_source and normalized_school_name != DEFAULT_SCHOOL_NAME:
+        normalized_school_code_source = normalized_school_name
     return {
-        "school_code": normalize_school_code(school_code),
-        "school_name": normalize_school_name(school_name),
+        "school_code": normalize_school_code(normalized_school_code_source),
+        "school_name": normalized_school_name,
         "college": normalize_college(college),
         "department": normalize_department(department),
     }
@@ -70,6 +74,103 @@ def _first_nonempty(conn: sqlite3.Connection, sql: str, params: tuple[Any, ...])
     return ""
 
 
+def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+            (table_name,),
+        ).fetchone()
+    except sqlite3.Error:
+        return False
+    return row is not None
+
+
+def _teacher_membership_rows(
+    conn: sqlite3.Connection,
+    teacher_id: int,
+    *,
+    include_inactive: bool = False,
+):
+    if not _table_exists(conn, "teacher_organization_memberships"):
+        return []
+    where = ["teacher_id = ?"]
+    params: list[Any] = [int(teacher_id)]
+    if not include_inactive:
+        where.append("COALESCE(is_active, 1) = 1")
+    return conn.execute(
+        f"""
+        SELECT *
+        FROM teacher_organization_memberships
+        WHERE {' AND '.join(where)}
+        ORDER BY COALESCE(is_primary, 0) DESC,
+                 COALESCE(is_active, 1) DESC,
+                 updated_at DESC,
+                 id DESC
+        """,
+        params,
+    ).fetchall()
+
+
+def load_teacher_org_memberships(
+    conn: sqlite3.Connection,
+    teacher_id: int | str,
+    *,
+    include_inactive: bool = False,
+) -> list[dict[str, str]]:
+    """Return all school memberships for a teacher.
+
+    The legacy teachers.school_* columns remain the compatibility source when
+    the membership table has not been created yet or is empty.
+    """
+    teacher_id_int = int(teacher_id)
+    rows = _teacher_membership_rows(conn, teacher_id_int, include_inactive=include_inactive)
+    memberships: list[dict[str, str]] = []
+    seen_school_codes: set[str] = set()
+    for row in rows:
+        scope = build_org_scope(
+            school_code=row["school_code"],
+            school_name=row["school_name"],
+            college=row["college"],
+            department=row["department"],
+        )
+        school_code = scope["school_code"]
+        if not school_code or school_code in seen_school_codes:
+            continue
+        seen_school_codes.add(school_code)
+        memberships.append(
+            {
+                **scope,
+                "membership_id": str(row["id"]),
+                "is_primary": "1" if int(row["is_primary"] or 0) else "0",
+                "is_active": "1" if int(row["is_active"] or 0) else "0",
+            }
+        )
+
+    if memberships:
+        return memberships
+
+    row = conn.execute(
+        """
+        SELECT id, school_code, school_name, college, department
+        FROM teachers
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (teacher_id_int,),
+    ).fetchone()
+    if not row:
+        return []
+    scope = org_scope_from_row(row)
+    return [
+        {
+            **scope,
+            "membership_id": "",
+            "is_primary": "1",
+            "is_active": "1",
+        }
+    ]
+
+
 def _most_used_department(conn: sqlite3.Connection, teacher_id: int) -> str:
     department = _first_nonempty(
         conn,
@@ -98,6 +199,16 @@ def _most_used_department(conn: sqlite3.Connection, teacher_id: int) -> str:
 
 def load_teacher_org_scope(conn: sqlite3.Connection, teacher_id: int | str) -> dict[str, str]:
     teacher_id_int = int(teacher_id)
+    memberships = load_teacher_org_memberships(conn, teacher_id_int)
+    if memberships:
+        primary = next((item for item in memberships if item.get("is_primary") == "1"), memberships[0])
+        return build_org_scope(
+            school_code=primary.get("school_code"),
+            school_name=primary.get("school_name"),
+            college=primary.get("college"),
+            department=primary.get("department"),
+        )
+
     row = conn.execute(
         """
         SELECT id, school_code, school_name, college, department
@@ -181,6 +292,31 @@ def is_same_department(row: Any, teacher_scope: dict[str, str]) -> bool:
     if row_scope["school_code"] != normalize_school_code(teacher_scope.get("school_code")):
         return False
     return normalize_department(row_scope.get("department")) == teacher_department
+
+
+def teacher_has_school_scope(conn: sqlite3.Connection, teacher_id: int | str, row: Any) -> bool:
+    row_scope = org_scope_from_row(row)
+    row_school = normalize_school_code(row_scope.get("school_code"))
+    if not row_school:
+        return False
+    return any(
+        normalize_school_code(scope.get("school_code")) == row_school
+        for scope in load_teacher_org_memberships(conn, int(teacher_id))
+    )
+
+
+def teacher_has_department_scope(conn: sqlite3.Connection, teacher_id: int | str, row: Any) -> bool:
+    row_scope = org_scope_from_row(row)
+    row_school = normalize_school_code(row_scope.get("school_code"))
+    row_department = normalize_department(row_scope.get("department"))
+    if not row_school or not row_department:
+        return False
+    for scope in load_teacher_org_memberships(conn, int(teacher_id)):
+        if normalize_school_code(scope.get("school_code")) != row_school:
+            continue
+        if normalize_department(scope.get("department")) == row_department:
+            return True
+    return False
 
 
 def organization_label(scope: dict[str, str]) -> str:

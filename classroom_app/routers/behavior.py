@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from ..database import get_db_connection
 from ..dependencies import get_current_user
 from ..services.behavior_tracking_service import record_behavior_batch
+from ..services.resource_access_service import ensure_classroom_access
 
 router = APIRouter(prefix="/api/classrooms", tags=["behavior"])
 
@@ -25,31 +26,7 @@ class BehaviorBatchRequest(BaseModel):
 
 
 def _ensure_behavior_access(conn, class_offering_id: int, user_pk: int, user_role: str) -> None:
-    if user_role == "teacher":
-        offering = conn.execute(
-            """
-            SELECT id
-            FROM class_offerings
-            WHERE id = ? AND teacher_id = ?
-            LIMIT 1
-            """,
-            (class_offering_id, user_pk),
-        ).fetchone()
-    else:
-        offering = conn.execute(
-            """
-            SELECT o.id
-        FROM class_offerings o
-        JOIN students s ON s.class_id = o.class_id
-        WHERE o.id = ? AND s.id = ?
-          AND COALESCE(s.enrollment_status, 'active') = 'active'
-        LIMIT 1
-            """,
-            (class_offering_id, user_pk),
-        ).fetchone()
-
-    if not offering:
-        raise HTTPException(status_code=403, detail="无权访问该课堂")
+    ensure_classroom_access(conn, class_offering_id, {"id": user_pk, "role": user_role})
 
 
 @router.post("/{class_offering_id}/behavior/batch")

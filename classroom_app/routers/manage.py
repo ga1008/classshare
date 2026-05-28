@@ -114,10 +114,14 @@ from ..services.teacher_account_service import (
     TEACHER_PASSWORD_HINT,
     create_teacher_account,
     deactivate_teacher_account,
+    deactivate_teacher_membership,
+    get_teacher_account,
     grant_teacher_super_admin,
     reset_teacher_password,
     revoke_teacher_super_admin,
+    set_teacher_primary_membership,
     update_teacher_account,
+    upsert_teacher_membership,
 )
 from ..services.academic_integration_service import (
     build_saved_credential_verification_payload,
@@ -3866,6 +3870,82 @@ async def api_update_teacher_account(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         conn.commit()
     return {"status": "success", "message": "教师资料已更新。", "teacher": teacher}
+
+
+@router.post("/system/teachers/{teacher_id}/memberships", response_class=JSONResponse)
+async def api_upsert_teacher_membership(
+    teacher_id: int,
+    school_code: str = Form(default=""),
+    school_name: str = Form(default=""),
+    college: str = Form(default=""),
+    department: str = Form(default=""),
+    is_primary: str = Form(default=""),
+    user: dict = Depends(get_current_teacher),
+):
+    """为教师新增或恢复一个学校任教归属；同一学校只保留一个系部归属。"""
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            membership = upsert_teacher_membership(
+                conn,
+                teacher_id=teacher_id,
+                school_code=school_code,
+                school_name=school_name,
+                college=college,
+                department=department,
+                is_primary=_form_bool(is_primary),
+                actor_teacher_id=int(user["id"]),
+            )
+            teacher = get_teacher_account(conn, teacher_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": "任教归属已保存。", "membership": membership, "teacher": teacher}
+
+
+@router.post("/system/teachers/{teacher_id}/memberships/{membership_id}/primary", response_class=JSONResponse)
+async def api_set_teacher_primary_membership(
+    teacher_id: int,
+    membership_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    """设置教师默认任教归属，并同步教师主档案上的组织字段。"""
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            membership = set_teacher_primary_membership(
+                conn,
+                teacher_id=teacher_id,
+                membership_id=membership_id,
+            )
+            teacher = get_teacher_account(conn, teacher_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": "默认任教归属已更新。", "membership": membership, "teacher": teacher}
+
+
+@router.delete("/system/teachers/{teacher_id}/memberships/{membership_id}", response_class=JSONResponse)
+async def api_deactivate_teacher_membership(
+    teacher_id: int,
+    membership_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    """停用教师的一个任教归属；至少保留一个启用归属。"""
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            membership = deactivate_teacher_membership(
+                conn,
+                teacher_id=teacher_id,
+                membership_id=membership_id,
+                actor_teacher_id=int(user["id"]),
+            )
+            teacher = get_teacher_account(conn, teacher_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": "任教归属已停用。", "membership": membership, "teacher": teacher}
 
 
 @router.post("/system/teachers/{teacher_id}/reset-password", response_class=JSONResponse)

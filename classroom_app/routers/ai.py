@@ -62,6 +62,7 @@ from ..services.prompt_utils import (
     build_system_info_text,
     should_enable_web_search,
 )
+from ..services.resource_access_service import ensure_classroom_access as ensure_scoped_classroom_access
 
 router = APIRouter(prefix="/api")
 
@@ -668,31 +669,7 @@ async def _parse_exam_generation_request(request: Request) -> tuple[dict[str, An
 
 
 def _ensure_classroom_access(conn, class_offering_id: int, user_pk: int, user_role: str) -> sqlite3.Row:
-    """统一校验课堂访问权限，防止通过 API 直接越权访问他人课堂。"""
-    if user_role == 'teacher':
-        offering = conn.execute(
-            """
-            SELECT id, class_id, course_id, teacher_id
-            FROM class_offerings
-            WHERE id = ? AND teacher_id = ?
-            """,
-            (class_offering_id, user_pk)
-        ).fetchone()
-    else:
-        offering = conn.execute(
-            """
-            SELECT o.id, o.class_id, o.course_id, o.teacher_id
-            FROM class_offerings o
-            JOIN students s ON s.class_id = o.class_id
-            WHERE o.id = ? AND s.id = ?
-              AND COALESCE(s.enrollment_status, 'active') = 'active'
-            """,
-            (class_offering_id, user_pk)
-        ).fetchone()
-
-    if not offering:
-        raise HTTPException(status_code=403, detail="无权访问此课堂")
-    return offering
+    return ensure_scoped_classroom_access(conn, class_offering_id, {"id": user_pk, "role": user_role})
 
 
 def _load_ai_class_config(conn, class_offering_id: int) -> Dict[str, str]:

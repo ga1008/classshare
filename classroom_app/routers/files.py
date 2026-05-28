@@ -58,6 +58,13 @@ from ..services.file_service import (
     stream_file,
 )
 from ..services.download_policy import apply_download_policy, ensure_download_allowed
+from ..services.resource_access_service import (
+    build_course_file_scope,
+    can_manage_scoped_resource,
+    ensure_classroom_access as ensure_scoped_classroom_access,
+    ensure_scoped_resource_access,
+    is_super_admin_teacher,
+)
 from ..services.message_center_service import create_discussion_mention_notifications
 from ..services.runtime_metrics_service import (
     record_websocket_connect,
@@ -86,40 +93,7 @@ DISCUSSION_MESSAGE_RATE_WINDOW_SECONDS = 60
 
 
 def _ensure_classroom_access_for_user(conn, class_offering_id: int, user: Optional[dict]):
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    try:
-        user_pk = int(user.get("id"))
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=403, detail="Invalid user")
-
-    offering = conn.execute(
-        "SELECT id, class_id, teacher_id FROM class_offerings WHERE id = ?",
-        (class_offering_id,),
-    ).fetchone()
-    if not offering:
-        raise HTTPException(status_code=404, detail="Classroom not found")
-
-    if user.get("role") == "teacher":
-        if int(offering["teacher_id"]) != user_pk:
-            raise HTTPException(status_code=403, detail="Permission denied")
-    elif user.get("role") == "student":
-        student_class = conn.execute(
-            """
-            SELECT class_id
-            FROM students
-            WHERE id = ?
-              AND COALESCE(enrollment_status, 'active') = 'active'
-            """,
-            (user_pk,),
-        ).fetchone()
-        if not student_class or int(student_class["class_id"]) != int(offering["class_id"]):
-            raise HTTPException(status_code=403, detail="Permission denied")
-    else:
-        raise HTTPException(status_code=403, detail="Permission denied")
-
-    return offering
+    return ensure_scoped_classroom_access(conn, class_offering_id, user)
 
 
 def _load_discussion_mood_for_user(class_offering_id: int, user: dict) -> dict:
@@ -129,41 +103,7 @@ def _load_discussion_mood_for_user(class_offering_id: int, user: dict) -> dict:
 
 
 def _ensure_course_file_access(conn, file_row, user: Optional[dict]):
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    try:
-        user_pk = int(user.get("id"))
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=403, detail="Invalid user")
-
-    if user.get("role") == "teacher":
-        if int(file_row["created_by_teacher_id"]) != user_pk:
-            raise HTTPException(status_code=403, detail="Permission denied")
-        return
-
-    if user.get("role") != "student":
-        raise HTTPException(status_code=403, detail="Permission denied")
-
-    if int(file_row["is_teacher_resource"] or 0):
-        raise HTTPException(status_code=403, detail="无权访问教师资源")
-    if not int(file_row["is_public"] or 0):
-        raise HTTPException(status_code=403, detail="当前文件未对学生开放")
-
-    classroom = conn.execute(
-        """
-        SELECT o.id
-        FROM class_offerings o
-        JOIN students s ON s.class_id = o.class_id
-        WHERE o.course_id = ?
-          AND s.id = ?
-          AND COALESCE(s.enrollment_status, 'active') = 'active'
-        LIMIT 1
-        """,
-        (file_row["course_id"], user_pk),
-    ).fetchone()
-    if classroom is None:
-        raise HTTPException(status_code=403, detail="Permission denied")
+    ensure_scoped_resource_access(conn, file_row, user)
 
 
 def _normalize_shared_file_description(raw_description: object) -> str:
@@ -777,6 +717,10 @@ async def check_file_exists(
     req: FileCheckRequest,
     user: dict = Depends(get_current_teacher)
 ):
+    with get_db_connection() as conn:
+        course_context = resolve_teacher_course_context(conn, req.course_id, user['id'])
+    req.course_id = course_context["course_id"]
+
     """预上传去重检查 — 全局统一文件库：按文件名+大小在所有课程中查找"""
     with get_db_connection() as conn:
         # 全局查找：不限 course_id
@@ -811,14 +755,30 @@ async def check_file_exists(
             else:
                 # 其他课程有此文件 — 自动关联到当前课程
                 try:
+                    scope_payload = build_course_file_scope(
+                        conn,
+                        user=user,
+                        course_id=req.course_id,
+                        class_offering_id=course_context["class_offering_id"],
+                        is_public=True,
+                        is_teacher_resource=False,
+                    )
+                    timestamp = datetime.now().isoformat()
                     conn.execute("""
                                  INSERT INTO course_files
                                  (course_id, file_name, file_hash, file_size, is_public, is_teacher_resource,
-                                  description, original_link, uploaded_by_teacher_id)
-                                 VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?)
+                                  description, original_link, uploaded_by_teacher_id,
+                                  owner_role, owner_user_pk, scope_level, class_offering_id, class_id,
+                                  school_code, school_name, college, department, published_at, updated_at)
+                                 VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                  """, (req.course_id, existing["file_name"], existing["file_hash"],
                                        existing["file_size"], existing["description"],
-                                       existing["original_link"], user['id']))
+                                       existing["original_link"], user['id'],
+                                       scope_payload["owner_role"], scope_payload["owner_user_pk"],
+                                       scope_payload["scope_level"], scope_payload["class_offering_id"],
+                                       scope_payload["class_id"], scope_payload["school_code"],
+                                       scope_payload["school_name"], scope_payload["college"],
+                                       scope_payload["department"], timestamp, timestamp))
                     conn.commit()
                     new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
                 except Exception as e:
@@ -846,15 +806,19 @@ async def init_chunked_upload(
     req: UploadInitRequest,
     user: dict = Depends(get_current_teacher)
 ):
+    with get_db_connection() as conn:
+        course_context = resolve_teacher_course_context(conn, req.course_id, user['id'])
+    req.course_id = course_context["course_id"]
+
     """初始化分块上传会话"""
-    # 验证课程权限
+    # 验证课程存在；权限已由 resolve_teacher_course_context 统一处理。
     with get_db_connection() as conn:
         course = conn.execute(
-            "SELECT id FROM courses WHERE id = ? AND created_by_teacher_id = ?",
-            (req.course_id, user['id'])
+            "SELECT id FROM courses WHERE id = ?",
+            (req.course_id,)
         ).fetchone()
         if not course:
-            raise HTTPException(403, "无权操作此课程")
+            raise HTTPException(404, "课程不存在")
     upload_id = str(uuid.uuid4())
     chunk_size = UPLOAD_CHUNK_SIZE_BYTES
     total_chunks = max(1, math.ceil(req.file_size / chunk_size))
@@ -868,12 +832,13 @@ async def init_chunked_upload(
             INSERT INTO chunked_uploads
             (upload_id, course_id, teacher_id, file_name, file_size,
              chunk_size, total_chunks, temp_dir, description,
-             is_public, is_teacher_resource)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             is_public, is_teacher_resource, class_offering_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             upload_id, req.course_id, user['id'], req.file_name,
             req.file_size, chunk_size, total_chunks, str(temp_dir),
-            req.description, req.is_public, req.is_teacher_resource
+            req.description, req.is_public, req.is_teacher_resource,
+            course_context["class_offering_id"],
         ))
         conn.commit()
 
@@ -976,15 +941,32 @@ async def complete_chunked_upload(
 
         # 阶段 2：写入数据库
         with get_db_connection() as conn:
+            scope_payload = build_course_file_scope(
+                conn,
+                user=user,
+                course_id=int(upload['course_id']),
+                class_offering_id=upload['class_offering_id'],
+                is_public=bool(upload['is_public']),
+                is_teacher_resource=bool(upload['is_teacher_resource']),
+            )
+            timestamp = datetime.now().isoformat()
             cursor = conn.execute("""
                 INSERT INTO course_files
                 (course_id, file_name, file_hash, file_size,
-                 is_public, is_teacher_resource, description, original_link, uploaded_by_teacher_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 is_public, is_teacher_resource, description, original_link, uploaded_by_teacher_id,
+                 owner_role, owner_user_pk, scope_level, class_offering_id, class_id,
+                 school_code, school_name, college, department, published_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 upload['course_id'], upload['file_name'], file_hash, total_size,
                 upload['is_public'], upload['is_teacher_resource'],
-                upload['description'], '', upload['teacher_id']
+                upload['description'], '', upload['teacher_id'],
+                scope_payload["owner_role"], scope_payload["owner_user_pk"], scope_payload["scope_level"],
+                scope_payload["class_offering_id"], scope_payload["class_id"],
+                scope_payload["school_code"], scope_payload["school_name"],
+                scope_payload["college"], scope_payload["department"],
+                timestamp if upload['is_public'] else None,
+                timestamp,
             ))
             file_id = cursor.lastrowid
             conn.execute(
@@ -1203,23 +1185,46 @@ async def ai_enrich_file_metadata(
 
 # ==================== 原有端点 (保留) ====================
 
-def resolve_teacher_course_id(conn, course_or_offering_id: int, teacher_id: int) -> int:
-    """兼容旧前端把 class_offering_id 当作 course_id 传入的情况。"""
+def resolve_teacher_course_context(conn, course_or_offering_id: int, teacher_id: int) -> dict:
+    if is_super_admin_teacher(conn, teacher_id):
+        offering = conn.execute(
+            "SELECT id, course_id FROM class_offerings WHERE id = ?",
+            (course_or_offering_id,),
+        ).fetchone()
+        if offering:
+            return {
+                "course_id": int(offering["course_id"]),
+                "class_offering_id": int(offering["id"]),
+            }
+        course = conn.execute(
+            "SELECT id FROM courses WHERE id = ?",
+            (course_or_offering_id,),
+        ).fetchone()
+        if course:
+            return {"course_id": int(course["id"]), "class_offering_id": None}
+
     offering = conn.execute(
-        "SELECT course_id FROM class_offerings WHERE id = ? AND teacher_id = ?",
+        "SELECT id, course_id FROM class_offerings WHERE id = ? AND teacher_id = ?",
         (course_or_offering_id, teacher_id)
     ).fetchone()
     if offering:
-        return int(offering['course_id'])
+        return {
+            "course_id": int(offering["course_id"]),
+            "class_offering_id": int(offering["id"]),
+        }
 
     course = conn.execute(
         "SELECT id FROM courses WHERE id = ? AND created_by_teacher_id = ?",
         (course_or_offering_id, teacher_id)
     ).fetchone()
     if course:
-        return int(course['id'])
+        return {"course_id": int(course["id"]), "class_offering_id": None}
 
-    raise HTTPException(403, "无权操作当前课堂资源")
+    raise HTTPException(403, "鏃犳潈鎿嶄綔褰撳墠璇惧爞璧勬簮")
+
+
+def resolve_teacher_course_id(conn, course_or_offering_id: int, teacher_id: int) -> int:
+    return resolve_teacher_course_context(conn, course_or_offering_id, teacher_id)["course_id"]
 
 
 @router.post("/api/courses/{course_id}/files/upload")
@@ -1233,8 +1238,9 @@ async def upload_course_file(
     """上传课程资源文件(教师) — 兼容旧版小文件直传"""
     # 检查课程权限
     with get_db_connection() as conn:
-        resolved_course_id = resolve_teacher_course_id(conn, course_id, user['id'])
-        # Permission already validated by resolve_teacher_course_id.
+        course_context = resolve_teacher_course_context(conn, course_id, user['id'])
+        resolved_course_id = course_context["course_id"]
+        # Permission already validated by resolve_teacher_course_context.
 
         # 全局保存文件
         file_info = await save_file_globally(file)
@@ -1242,10 +1248,21 @@ async def upload_course_file(
             raise HTTPException(500, "文件保存失败")
 
         try:
+            scope_payload = build_course_file_scope(
+                conn,
+                user=user,
+                course_id=resolved_course_id,
+                class_offering_id=course_context["class_offering_id"],
+                is_public=is_public,
+                is_teacher_resource=is_teacher_resource,
+            )
+            timestamp = datetime.now().isoformat()
             conn.execute("""
                          INSERT INTO course_files
-                         (course_id, file_name, file_hash, file_size, is_public, is_teacher_resource, uploaded_by_teacher_id)
-                         VALUES (?, ?, ?, ?, ?, ?, ?)
+                         (course_id, file_name, file_hash, file_size, is_public, is_teacher_resource, uploaded_by_teacher_id,
+                          owner_role, owner_user_pk, scope_level, class_offering_id, class_id,
+                          school_code, school_name, college, department, published_at, updated_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                          """, (
                              resolved_course_id,
                              file.filename,
@@ -1253,7 +1270,18 @@ async def upload_course_file(
                              file_info["size"],
                              is_public,
                              is_teacher_resource,
-                             user['id']
+                             user['id'],
+                             scope_payload["owner_role"],
+                             scope_payload["owner_user_pk"],
+                             scope_payload["scope_level"],
+                             scope_payload["class_offering_id"],
+                             scope_payload["class_id"],
+                             scope_payload["school_code"],
+                             scope_payload["school_name"],
+                             scope_payload["college"],
+                             scope_payload["department"],
+                             timestamp if is_public else None,
+                             timestamp,
                          ))
             conn.commit()
 
@@ -1285,13 +1313,16 @@ async def delete_course_file(
 
         # 获取文件信息
         file_data = conn.execute(
-            "SELECT file_name, file_hash FROM course_files WHERE id = ? AND course_id = ?",
+            "SELECT * FROM course_files WHERE id = ? AND course_id = ?",
             (file_id, resolved_course_id)
         ).fetchone()
         if not file_data:
             raise HTTPException(404, "文件不存在")
 
         # 检查是否有其他课程引用同一物理文件
+        if not can_manage_scoped_resource(conn, file_data, user):
+            raise HTTPException(403, "Permission denied")
+
         ref_count = conn.execute(
             "SELECT COUNT(*) FROM course_files WHERE file_hash = ?",
             (file_data['file_hash'],)
@@ -1388,13 +1419,11 @@ async def get_classroom_files(
         course_id = offering['course_id']
 
         # 2. 根据用户角色获取文件列表（含新字段）
-        query = """SELECT id, file_name, file_size, description, original_link, uploaded_at, uploaded_by_teacher_id
+        query = """SELECT *
                    FROM course_files WHERE course_id = ?"""
         params = [course_id]
 
-        # 学生看不到教师资源
-        if user['role'] != 'teacher':
-            query += " AND is_public = 1 AND is_teacher_resource = 0"
+        # Student visibility is now decided by the unified resource scope gate below.
 
         query += " ORDER BY uploaded_at DESC"
         files = conn.execute(query, params).fetchall()
@@ -1407,6 +1436,10 @@ async def get_classroom_files(
     # 将 sqlite3.Row 转换为字典列表
     payload_files = []
     for row in files:
+        try:
+            ensure_scoped_resource_access(conn, row, user)
+        except HTTPException:
+            continue
         item = dict(row)
         item["download_url"] = f"/download/course_file/{item['id']}"
         payload_files.append(apply_download_policy(item, resource_label="共享文件"))

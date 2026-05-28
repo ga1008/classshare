@@ -454,12 +454,301 @@ def _ensure_organization_catalog_schema(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _ensure_teacher_organization_memberships_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS teacher_organization_memberships (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            teacher_id INTEGER NOT NULL,
+            school_code TEXT NOT NULL,
+            school_name TEXT NOT NULL,
+            college TEXT NOT NULL DEFAULT '',
+            department TEXT NOT NULL DEFAULT '',
+            is_primary INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            source TEXT NOT NULL DEFAULT 'manual',
+            created_by_teacher_id INTEGER,
+            updated_by_teacher_id INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            deactivated_at TEXT,
+            FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+            UNIQUE (teacher_id, school_code)
+        )
+        """
+    )
+    for column_name, column_def in {
+        "school_name": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_NAME}'",
+        "college": "TEXT NOT NULL DEFAULT ''",
+        "department": "TEXT NOT NULL DEFAULT ''",
+        "is_primary": "INTEGER NOT NULL DEFAULT 0",
+        "is_active": "INTEGER NOT NULL DEFAULT 1",
+        "source": "TEXT NOT NULL DEFAULT 'manual'",
+        "created_by_teacher_id": "INTEGER",
+        "updated_by_teacher_id": "INTEGER",
+        "updated_at": "TEXT DEFAULT CURRENT_TIMESTAMP",
+        "deactivated_at": "TEXT",
+    }.items():
+        try:
+            conn.execute(f"ALTER TABLE teacher_organization_memberships ADD COLUMN {column_name} {column_def}")
+        except sqlite3.OperationalError:
+            pass
+
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_teacher_org_memberships_one_school "
+        "ON teacher_organization_memberships (teacher_id, school_code)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_teacher_org_memberships_teacher "
+        "ON teacher_organization_memberships (teacher_id, is_active, is_primary DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_teacher_org_memberships_org "
+        "ON teacher_organization_memberships (school_code COLLATE NOCASE, department COLLATE NOCASE, is_active)"
+    )
+
+    rows = conn.execute(
+        """
+        SELECT id, school_code, school_name, college, department, created_by_teacher_id
+        FROM teachers
+        """
+    ).fetchall()
+    for row in rows:
+        scope = build_org_scope(
+            school_code=row["school_code"],
+            school_name=row["school_name"],
+            college=row["college"],
+            department=row["department"],
+        )
+        conn.execute(
+            """
+            INSERT INTO teacher_organization_memberships (
+                teacher_id, school_code, school_name, college, department,
+                is_primary, is_active, source, created_by_teacher_id, updated_by_teacher_id, updated_at, deactivated_at
+            )
+            VALUES (?, ?, ?, ?, ?, 1, 1, 'legacy_primary', ?, ?, CURRENT_TIMESTAMP, NULL)
+            ON CONFLICT(teacher_id, school_code) DO UPDATE SET
+                school_name = CASE
+                    WHEN teacher_organization_memberships.source = 'legacy_primary' THEN excluded.school_name
+                    ELSE teacher_organization_memberships.school_name
+                END,
+                college = CASE
+                    WHEN teacher_organization_memberships.source = 'legacy_primary' THEN excluded.college
+                    ELSE teacher_organization_memberships.college
+                END,
+                department = CASE
+                    WHEN teacher_organization_memberships.source = 'legacy_primary' THEN excluded.department
+                    ELSE teacher_organization_memberships.department
+                END,
+                is_primary = CASE
+                    WHEN teacher_organization_memberships.is_primary = 1 THEN 1
+                    ELSE excluded.is_primary
+                END,
+                is_active = 1,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                int(row["id"]),
+                scope["school_code"],
+                scope["school_name"],
+                scope["college"],
+                scope["department"],
+                row["created_by_teacher_id"],
+                row["created_by_teacher_id"],
+            ),
+        )
+
+    conn.execute(
+        """
+        UPDATE teacher_organization_memberships
+        SET is_primary = 1
+        WHERE id IN (
+            SELECT MIN(id)
+            FROM teacher_organization_memberships
+            WHERE COALESCE(is_active, 1) = 1
+            GROUP BY teacher_id
+        )
+          AND teacher_id NOT IN (
+            SELECT teacher_id
+            FROM teacher_organization_memberships
+            WHERE COALESCE(is_active, 1) = 1 AND COALESCE(is_primary, 0) = 1
+        )
+        """
+    )
+
+
 def _source_table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     row = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
         (table_name,),
     ).fetchone()
     return row is not None
+
+
+def _add_column_if_missing(conn: sqlite3.Connection, table_name: str, column_name: str, column_def: str) -> None:
+    try:
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+    except sqlite3.OperationalError:
+        pass
+
+
+def _ensure_resource_scope_schema(conn: sqlite3.Connection) -> None:
+    if _source_table_exists(conn, "chunked_uploads"):
+        _add_column_if_missing(conn, "chunked_uploads", "class_offering_id", "INTEGER")
+
+    if _source_table_exists(conn, "course_files"):
+        for column_name, column_def in {
+            "owner_role": "TEXT NOT NULL DEFAULT 'teacher'",
+            "owner_user_pk": "INTEGER",
+            "scope_level": "TEXT NOT NULL DEFAULT 'department'",
+            "class_offering_id": "INTEGER",
+            "class_id": "INTEGER",
+            "school_code": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_CODE}'",
+            "school_name": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_NAME}'",
+            "college": "TEXT NOT NULL DEFAULT ''",
+            "department": "TEXT NOT NULL DEFAULT ''",
+            "published_at": "TEXT",
+            "updated_at": "TEXT",
+        }.items():
+            _add_column_if_missing(conn, "course_files", column_name, column_def)
+
+        conn.execute(
+            """
+            UPDATE course_files
+            SET owner_role = COALESCE(NULLIF(TRIM(owner_role), ''), 'teacher'),
+                owner_user_pk = COALESCE(owner_user_pk, uploaded_by_teacher_id, (
+                    SELECT created_by_teacher_id FROM courses c WHERE c.id = course_files.course_id
+                )),
+                school_code = COALESCE(NULLIF(TRIM(school_code), ''), (
+                    SELECT NULLIF(TRIM(c.school_code), '') FROM courses c WHERE c.id = course_files.course_id
+                ), ?),
+                school_name = COALESCE(NULLIF(TRIM(school_name), ''), (
+                    SELECT NULLIF(TRIM(c.school_name), '') FROM courses c WHERE c.id = course_files.course_id
+                ), ?),
+                college = COALESCE(NULLIF(TRIM(college), ''), (
+                    SELECT NULLIF(TRIM(c.college), '') FROM courses c WHERE c.id = course_files.course_id
+                ), ''),
+                department = COALESCE(NULLIF(TRIM(department), ''), (
+                    SELECT NULLIF(TRIM(c.department), '') FROM courses c WHERE c.id = course_files.course_id
+                ), ''),
+                scope_level = CASE
+                    WHEN COALESCE(is_public, 1) = 0 OR COALESCE(is_teacher_resource, 0) = 1 THEN 'private'
+                    WHEN TRIM(COALESCE(scope_level, '')) = '' THEN 'department'
+                    ELSE scope_level
+                END,
+                published_at = CASE
+                    WHEN published_at IS NULL AND COALESCE(is_public, 1) = 1 THEN uploaded_at
+                    ELSE published_at
+                END,
+                updated_at = COALESCE(updated_at, uploaded_at, CURRENT_TIMESTAMP)
+            """,
+            (DEFAULT_SCHOOL_CODE, DEFAULT_SCHOOL_NAME),
+        )
+        for statement in (
+            "CREATE INDEX IF NOT EXISTS idx_course_files_owner_scope "
+            "ON course_files (owner_role, owner_user_pk, scope_level, uploaded_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_course_files_scope_org "
+            "ON course_files (scope_level, school_code COLLATE NOCASE, department COLLATE NOCASE, class_offering_id)",
+            "CREATE INDEX IF NOT EXISTS idx_course_files_course_scope "
+            "ON course_files (course_id, scope_level, is_public, is_teacher_resource, uploaded_at DESC)",
+        ):
+            conn.execute(statement)
+
+    if _source_table_exists(conn, "course_materials"):
+        for column_name, column_def in {
+            "owner_role": "TEXT NOT NULL DEFAULT 'teacher'",
+            "owner_user_pk": "INTEGER",
+            "scope_level": "TEXT NOT NULL DEFAULT 'private'",
+            "school_code": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_CODE}'",
+            "school_name": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_NAME}'",
+            "college": "TEXT NOT NULL DEFAULT ''",
+            "department": "TEXT NOT NULL DEFAULT ''",
+            "published_at": "TEXT",
+        }.items():
+            _add_column_if_missing(conn, "course_materials", column_name, column_def)
+        conn.execute(
+            """
+            UPDATE course_materials
+            SET owner_role = COALESCE(NULLIF(TRIM(owner_role), ''), 'teacher'),
+                owner_user_pk = COALESCE(owner_user_pk, teacher_id),
+                school_code = COALESCE(NULLIF(TRIM(school_code), ''), (
+                    SELECT NULLIF(TRIM(t.school_code), '') FROM teachers t WHERE t.id = course_materials.teacher_id
+                ), ?),
+                school_name = COALESCE(NULLIF(TRIM(school_name), ''), (
+                    SELECT NULLIF(TRIM(t.school_name), '') FROM teachers t WHERE t.id = course_materials.teacher_id
+                ), ?),
+                college = COALESCE(NULLIF(TRIM(college), ''), (
+                    SELECT NULLIF(TRIM(t.college), '') FROM teachers t WHERE t.id = course_materials.teacher_id
+                ), ''),
+                department = COALESCE(NULLIF(TRIM(department), ''), (
+                    SELECT NULLIF(TRIM(t.department), '') FROM teachers t WHERE t.id = course_materials.teacher_id
+                ), ''),
+                scope_level = COALESCE(NULLIF(TRIM(scope_level), ''), 'private')
+            """,
+            (DEFAULT_SCHOOL_CODE, DEFAULT_SCHOOL_NAME),
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_course_materials_scope_owner "
+            "ON course_materials (owner_role, owner_user_pk, scope_level, updated_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_course_materials_scope_org "
+            "ON course_materials (scope_level, school_code COLLATE NOCASE, department COLLATE NOCASE)"
+        )
+
+    if _source_table_exists(conn, "blog_posts"):
+        for column_name, column_def in {
+            "scope_level": "TEXT NOT NULL DEFAULT 'public'",
+            "school_code": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_CODE}'",
+            "school_name": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_NAME}'",
+            "college": "TEXT NOT NULL DEFAULT ''",
+            "department": "TEXT NOT NULL DEFAULT ''",
+        }.items():
+            _add_column_if_missing(conn, "blog_posts", column_name, column_def)
+        conn.execute(
+            """
+            UPDATE blog_posts
+            SET scope_level = CASE
+                    WHEN visibility = 'class' OR visible_class_id IS NOT NULL THEN 'class'
+                    WHEN visibility = 'private' THEN 'private'
+                    WHEN TRIM(COALESCE(scope_level, '')) = '' THEN 'public'
+                    ELSE scope_level
+                END,
+                school_code = COALESCE(NULLIF(TRIM(school_code), ''), (
+                    SELECT NULLIF(TRIM(t.school_code), '') FROM teachers t
+                    WHERE blog_posts.author_role = 'teacher' AND t.id = blog_posts.author_user_pk
+                ), (
+                    SELECT NULLIF(TRIM(s.school_code), '') FROM students s
+                    WHERE blog_posts.author_role = 'student' AND s.id = blog_posts.author_user_pk
+                ), ?),
+                school_name = COALESCE(NULLIF(TRIM(school_name), ''), (
+                    SELECT NULLIF(TRIM(t.school_name), '') FROM teachers t
+                    WHERE blog_posts.author_role = 'teacher' AND t.id = blog_posts.author_user_pk
+                ), (
+                    SELECT NULLIF(TRIM(s.school_name), '') FROM students s
+                    WHERE blog_posts.author_role = 'student' AND s.id = blog_posts.author_user_pk
+                ), ?),
+                college = COALESCE(NULLIF(TRIM(college), ''), (
+                    SELECT NULLIF(TRIM(t.college), '') FROM teachers t
+                    WHERE blog_posts.author_role = 'teacher' AND t.id = blog_posts.author_user_pk
+                ), (
+                    SELECT NULLIF(TRIM(s.college), '') FROM students s
+                    WHERE blog_posts.author_role = 'student' AND s.id = blog_posts.author_user_pk
+                ), ''),
+                department = COALESCE(NULLIF(TRIM(department), ''), (
+                    SELECT NULLIF(TRIM(t.department), '') FROM teachers t
+                    WHERE blog_posts.author_role = 'teacher' AND t.id = blog_posts.author_user_pk
+                ), (
+                    SELECT NULLIF(TRIM(s.department), '') FROM students s
+                    WHERE blog_posts.author_role = 'student' AND s.id = blog_posts.author_user_pk
+                ), '')
+            """,
+            (DEFAULT_SCHOOL_CODE, DEFAULT_SCHOOL_NAME),
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_blog_posts_scope_org "
+            "ON blog_posts (scope_level, school_code COLLATE NOCASE, department COLLATE NOCASE, visible_class_id)"
+        )
 
 
 def _sync_organization_catalog_from_existing(conn: sqlite3.Connection) -> None:
@@ -4737,6 +5026,7 @@ def init_database():
                 pass
 
             _backfill_organization_scopes(conn)
+            _ensure_teacher_organization_memberships_schema(conn)
 
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_academic_semesters_teacher_period "
@@ -5829,6 +6119,7 @@ def init_database():
             ):
                 conn.execute(statement)
 
+            _ensure_resource_scope_schema(conn)
             _sync_organization_catalog_from_existing(conn)
 
             # App Feedback System

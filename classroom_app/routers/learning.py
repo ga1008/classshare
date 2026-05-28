@@ -24,6 +24,7 @@ from ..services.todo_service import (
     delete_manual_todo,
     update_manual_todo,
 )
+from ..services.resource_access_service import ensure_classroom_access as ensure_scoped_classroom_access
 
 router = APIRouter(prefix="/api")
 
@@ -53,39 +54,7 @@ def _payload_to_dict(payload: BaseModel) -> dict:
 
 
 def _ensure_classroom_access(conn, class_offering_id: int, user: dict) -> dict:
-    row = conn.execute(
-        """
-        SELECT o.*, c.name AS course_name, cl.name AS class_name
-        FROM class_offerings o
-        JOIN courses c ON c.id = o.course_id
-        JOIN classes cl ON cl.id = o.class_id
-        WHERE o.id = ?
-        LIMIT 1
-        """,
-        (class_offering_id,),
-    ).fetchone()
-    if not row:
-        raise HTTPException(404, "课堂不存在")
-    offering = dict(row)
-    role = str(user.get("role") or "").lower()
-    if role == "teacher":
-        if int(offering["teacher_id"]) != int(user["id"]):
-            raise HTTPException(403, "无权访问该课堂")
-        return offering
-    if role == "student":
-        student = conn.execute(
-            """
-            SELECT class_id
-            FROM students
-            WHERE id = ?
-              AND COALESCE(enrollment_status, 'active') = 'active'
-            """,
-            (user["id"],),
-        ).fetchone()
-        if not student or int(student["class_id"]) != int(offering["class_id"]):
-            raise HTTPException(403, "您未加入此课堂")
-        return offering
-    raise HTTPException(403, "无权访问该课堂")
+    return dict(ensure_scoped_classroom_access(conn, class_offering_id, user))
 
 
 def _ensure_material_in_classroom(conn, class_offering_id: int, material_id: int, user: dict) -> None:

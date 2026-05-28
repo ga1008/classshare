@@ -42,6 +42,19 @@ def _count(conn: sqlite3.Connection, table: str, where_sql: str, params: tuple[A
     return int((row["cnt"] if row else 0) or 0)
 
 
+def _count_distinct(
+    conn: sqlite3.Connection,
+    table: str,
+    column: str,
+    where_sql: str,
+    params: tuple[Any, ...],
+) -> int:
+    if not _table_exists(conn, table):
+        return 0
+    row = conn.execute(f"SELECT COUNT(DISTINCT {column}) AS cnt FROM {table} WHERE {where_sql}", params).fetchone()
+    return int((row["cnt"] if row else 0) or 0)
+
+
 def _resource_counts(
     conn: sqlite3.Connection,
     *,
@@ -64,11 +77,26 @@ def _resource_counts(
         params.append(department_name)
     where_sql = " AND ".join(where)
 
+    membership_where = where + ["COALESCE(is_active, 1) = 1"]
+    membership_params = tuple(params)
+    teacher_count = _count_distinct(
+        conn,
+        "teacher_organization_memberships",
+        "teacher_id",
+        " AND ".join(membership_where),
+        membership_params,
+    )
+    if teacher_count <= 0:
+        teacher_count = _count(conn, "teachers", where_sql, tuple(params))
+
     counts = {
-        "teachers": _count(conn, "teachers", where_sql, tuple(params)),
+        "teachers": teacher_count,
         "students": _count(conn, "students", where_sql, tuple(params)),
         "classes": _count(conn, "classes", where_sql, tuple(params)),
         "courses": _count(conn, "courses", where_sql, tuple(params)),
+        "course_files": _count(conn, "course_files", where_sql, tuple(params)),
+        "course_materials": _count(conn, "course_materials", where_sql, tuple(params)),
+        "blog_posts": _count(conn, "blog_posts", where_sql, tuple(params)),
         "signatures": _count(conn, "electronic_signatures", where_sql, tuple(params)),
     }
     if not filter_college and not filter_department:

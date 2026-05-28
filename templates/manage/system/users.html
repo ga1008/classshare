@@ -191,6 +191,45 @@
         background: rgba(239, 68, 68, 0.11);
     }
 
+    .um-membership-list {
+        display: grid;
+        gap: 10px;
+    }
+
+    .um-membership-item {
+        display: grid;
+        gap: 8px;
+        padding: 10px 12px;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        background: rgba(248, 250, 252, 0.86);
+    }
+
+    .um-membership-item header {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: flex-start;
+    }
+
+    .um-membership-item strong {
+        color: var(--text-primary);
+        line-height: 1.45;
+    }
+
+    .um-membership-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .um-membership-form {
+        display: grid;
+        gap: var(--spacing-sm);
+        padding-top: var(--spacing-sm);
+        border-top: 1px solid var(--border-color);
+    }
+
     .um-actions {
         display: flex;
         justify-content: flex-end;
@@ -349,8 +388,8 @@
                 <input class="form-control" id="create-password" name="password" type="password" minlength="8" required placeholder="{{ teacher_password_hint }}">
             </div>
             <div class="form-group">
-                <label class="form-label" for="create-school-name">学校</label>
-                <input class="form-control" id="create-school-name" name="school_name" type="text" placeholder="默认：广西外国语学院">
+                <label class="form-label required" for="create-school-name">学校</label>
+                <input class="form-control" id="create-school-name" name="school_name" type="text" required placeholder="默认：广西外国语学院">
             </div>
             <div class="grid grid-cols-2 gap-3">
                 <div class="form-group">
@@ -358,8 +397,8 @@
                     <input class="form-control" id="create-college" name="college" type="text" placeholder="例如：信息工程学院">
                 </div>
                 <div class="form-group">
-                    <label class="form-label" for="create-department">系别</label>
-                    <input class="form-control" id="create-department" name="department" type="text" placeholder="例如：软件工程系">
+                    <label class="form-label required" for="create-department">系别</label>
+                    <input class="form-control" id="create-department" name="department" type="text" required placeholder="例如：软件工程系">
                 </div>
             </div>
             <label class="form-check">
@@ -415,9 +454,10 @@
                     data-school-name="{{ teacher.school_name|e }}"
                     data-college="{{ teacher.college|e }}"
                     data-department="{{ teacher.department|e }}"
+                    data-memberships='{{ teacher.memberships|tojson|forceescape }}'
                     data-active="{{ 1 if teacher.is_active else 0 }}"
                     data-super="{{ 1 if teacher.is_super_admin else 0 }}"
-                    data-search="{{ (teacher.name ~ ' ' ~ teacher.email ~ ' ' ~ teacher.phone ~ ' ' ~ teacher.wechat ~ ' ' ~ teacher.qq ~ ' ' ~ teacher.organization_label)|lower|e }}"
+                    data-search="{{ (teacher.name ~ ' ' ~ teacher.email ~ ' ' ~ teacher.phone ~ ' ' ~ teacher.wechat ~ ' ' ~ teacher.qq ~ ' ' ~ teacher.organization_label ~ ' ' ~ (teacher.membership_labels|join(' ')))|lower|e }}"
                 >
                     <td>
                         <strong>{{ teacher.name }}</strong>
@@ -426,7 +466,11 @@
                             {% if teacher.phone %}<span>{{ teacher.phone }}</span>{% endif %}
                             {% if teacher.wechat %}<span>微信 {{ teacher.wechat }}</span>{% endif %}
                             {% if teacher.qq %}<span>QQ {{ teacher.qq }}</span>{% endif %}
-                            {% if teacher.organization_label %}<span>{{ teacher.organization_label }}</span>{% endif %}
+                            {% for membership_label in teacher.membership_labels %}
+                                {% if loop.index <= 3 %}<span>{{ membership_label }}</span>{% endif %}
+                            {% endfor %}
+                            {% if teacher.membership_count > 3 %}<span>另 {{ teacher.membership_count - 3 }} 个归属</span>{% endif %}
+                            {% if not teacher.membership_labels and teacher.organization_label %}<span>{{ teacher.organization_label }}</span>{% endif %}
                         </div>
                     </td>
                     <td>
@@ -456,6 +500,7 @@
                     <td>
                         <div class="um-actions">
                             <button class="btn btn-outline btn-sm" type="button" data-action="edit" {% if not teacher.is_active %}disabled{% endif %}>修改</button>
+                            <button class="btn btn-outline btn-sm" type="button" data-action="memberships" {% if not teacher.is_active %}disabled{% endif %}>任教归属</button>
                             <button class="btn btn-secondary btn-sm" type="button" data-action="reset" {% if not teacher.is_active %}disabled{% endif %}>重置密码</button>
                             {% if teacher.is_super_admin %}
                             <button class="btn btn-outline btn-sm" type="button" data-action="revoke" {% if not teacher.is_active %}disabled{% endif %}>撤销超管</button>
@@ -511,8 +556,8 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label" for="edit-school-name">学校</label>
-                    <input class="form-control" id="edit-school-name" name="school_name" type="text">
+                    <label class="form-label required" for="edit-school-name">学校</label>
+                    <input class="form-control" id="edit-school-name" name="school_name" type="text" required>
                     <input id="edit-school-code" name="school_code" type="hidden">
                 </div>
                 <div class="grid grid-cols-2 gap-3">
@@ -521,8 +566,8 @@
                         <input class="form-control" id="edit-college" name="college" type="text">
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="edit-department">系别</label>
-                        <input class="form-control" id="edit-department" name="department" type="text">
+                        <label class="form-label required" for="edit-department">系别</label>
+                        <input class="form-control" id="edit-department" name="department" type="text" required>
                     </div>
                 </div>
                 <div class="form-group">
@@ -535,6 +580,46 @@
                 <button class="btn btn-success" type="submit">保存修改</button>
             </div>
         </form>
+    </div>
+</div>
+
+<div class="um-modal-backdrop" id="teacher-membership-modal" hidden>
+    <div class="um-modal" role="dialog" aria-modal="true" aria-labelledby="teacher-membership-title">
+        <div class="um-modal-header">
+            <div>
+                <h3 id="teacher-membership-title">任教归属</h3>
+                <p class="text-muted text-sm mb-0" id="membership-target-label"></p>
+            </div>
+            <button class="btn btn-ghost btn-icon" type="button" data-close-modal="teacher-membership-modal" aria-label="关闭">
+                <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+        </div>
+        <div class="um-modal-body">
+            <div class="um-membership-list" id="teacher-membership-list"></div>
+            <form class="um-membership-form" id="teacher-membership-form">
+                <input type="hidden" id="membership-teacher-id">
+                <input type="hidden" id="membership-school-code" name="school_code">
+                <div class="form-group">
+                    <label class="form-label required" for="membership-school-name">学校</label>
+                    <input class="form-control" id="membership-school-name" name="school_name" type="text" required>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="form-group">
+                        <label class="form-label" for="membership-college">学院</label>
+                        <input class="form-control" id="membership-college" name="college" type="text">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label required" for="membership-department">系别</label>
+                        <input class="form-control" id="membership-department" name="department" type="text" required>
+                    </div>
+                </div>
+                <label class="form-check">
+                    <input class="form-check-input" type="checkbox" name="is_primary" value="1">
+                    <span>设为默认任教归属</span>
+                </label>
+                <button class="btn btn-success" type="submit">保存任教归属</button>
+            </form>
+        </div>
     </div>
 </div>
 
@@ -634,6 +719,53 @@
         }
     };
 
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+    }[char]));
+
+    const parseMemberships = (row) => {
+        try {
+            return JSON.parse(row.dataset.memberships || '[]') || [];
+        } catch (error) {
+            return [];
+        }
+    };
+
+    const renderMembershipList = (row) => {
+        const teacherId = Number(row.dataset.id || 0);
+        const memberships = parseMemberships(row);
+        const list = document.getElementById('teacher-membership-list');
+        const activeMemberships = memberships.filter((item) => item.is_active);
+        document.getElementById('membership-teacher-id').value = String(teacherId || '');
+        document.getElementById('membership-target-label').textContent = `${row.dataset.name || '该教师'} 可在多个学校任教；同一学校只保留一个系部归属。`;
+        if (!list) return;
+        if (!memberships.length) {
+            list.innerHTML = '<p class="text-muted mb-0">暂无任教归属。</p>';
+            return;
+        }
+        list.innerHTML = memberships.map((item) => {
+            const isActive = Boolean(item.is_active);
+            const canDeactivate = isActive && activeMemberships.length > 1;
+            const label = item.organization_label || [item.school_name, item.college, item.department].filter(Boolean).join(' / ') || '未命名归属';
+            return `
+                <article class="um-membership-item ${item.is_primary ? 'is-primary' : ''}">
+                    <header>
+                        <strong>${escapeHtml(label)}</strong>
+                        <span class="um-badge ${isActive ? 'is-super' : 'is-inactive'}">${isActive ? (item.is_primary ? '默认' : '启用') : '已停用'}</span>
+                    </header>
+                    <div class="um-membership-actions">
+                        <button class="btn btn-outline btn-sm" type="button" data-membership-action="primary" data-teacher-id="${teacherId}" data-membership-id="${item.id}" ${(!isActive || item.is_primary) ? 'disabled' : ''}>设为默认</button>
+                        <button class="btn btn-danger btn-sm" type="button" data-membership-action="delete" data-teacher-id="${teacherId}" data-membership-id="${item.id}" ${canDeactivate ? '' : 'disabled'}>停用</button>
+                    </div>
+                </article>
+            `;
+        }).join('');
+    };
+
     document.getElementById('teacher-create-form')?.addEventListener('submit', async (event) => {
         event.preventDefault();
         const form = event.currentTarget;
@@ -665,6 +797,45 @@
         document.getElementById('edit-college').value = row.dataset.college || '';
         document.getElementById('edit-department').value = row.dataset.department || '';
     };
+
+    document.getElementById('teacher-membership-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const teacherId = document.getElementById('membership-teacher-id').value;
+        await submitWithLock(form, async () => {
+            try {
+                const result = await window.apiFetch(`/api/manage/system/teachers/${teacherId}/memberships`, {
+                    method: 'POST',
+                    body: new FormData(form),
+                });
+                showMessage(result.message || '任教归属已保存。', 'success');
+                window.setTimeout(() => window.location.reload(), 500);
+            } catch (error) {
+                showMessage(error.message || '保存任教归属失败。', 'error');
+            }
+        });
+    });
+
+    document.getElementById('teacher-membership-list')?.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-membership-action]');
+        if (!button || button.disabled) return;
+        const teacherId = Number(button.dataset.teacherId || 0);
+        const membershipId = Number(button.dataset.membershipId || 0);
+        if (!teacherId || !membershipId) return;
+        const isDelete = button.dataset.membershipAction === 'delete';
+        const message = isDelete ? '确认停用该任教归属？' : '确认设为默认任教归属？';
+        if (!window.confirm(message)) return;
+        try {
+            const url = isDelete
+                ? `/api/manage/system/teachers/${teacherId}/memberships/${membershipId}`
+                : `/api/manage/system/teachers/${teacherId}/memberships/${membershipId}/primary`;
+            const result = await window.apiFetch(url, { method: isDelete ? 'DELETE' : 'POST' });
+            showMessage(result.message || '任教归属已更新。', 'success');
+            window.setTimeout(() => window.location.reload(), 500);
+        } catch (error) {
+            showMessage(error.message || '任教归属更新失败。', 'error');
+        }
+    });
 
     document.getElementById('teacher-edit-form')?.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -709,6 +880,15 @@
         if (action === 'edit') {
             fillEditForm(row);
             openModal('teacher-edit-modal');
+            return;
+        }
+        if (action === 'memberships') {
+            renderMembershipList(row);
+            document.getElementById('membership-school-name').value = row.dataset.schoolName || '';
+            document.getElementById('membership-college').value = row.dataset.college || '';
+            document.getElementById('membership-department').value = '';
+            document.querySelector('#teacher-membership-form [name="is_primary"]').checked = false;
+            openModal('teacher-membership-modal');
             return;
         }
         if (action === 'reset') {

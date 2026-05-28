@@ -16,6 +16,11 @@ from .file_preview_service import (
     is_preview_supported as _is_preview_supported,
     is_text_preview_type as _is_text_preview_type,
 )
+from .resource_access_service import (
+    can_read_scoped_resource,
+    ensure_classroom_access as ensure_scoped_classroom_access,
+    is_super_admin_teacher,
+)
 
 
 LEARNING_DOCUMENT_NAME = "readme.md"
@@ -483,44 +488,15 @@ def make_unique_material_name(conn, teacher_id: int, parent_id: int | None, desi
 
 
 def ensure_classroom_access(conn, class_offering_id: int, user: dict):
-    offering = conn.execute(
-        """
-        SELECT o.*, c.name AS course_name, cl.name AS class_name
-        FROM class_offerings o
-        JOIN courses c ON o.course_id = c.id
-        JOIN classes cl ON o.class_id = cl.id
-        WHERE o.id = ?
-        """,
-        (class_offering_id,),
-    ).fetchone()
-    if not offering:
-        raise HTTPException(404, "课堂不存在")
-
-    if user["role"] == "teacher":
-        if int(offering["teacher_id"]) != int(user["id"]):
-            raise HTTPException(403, "无权访问当前课堂")
-        return offering
-
-    student = conn.execute(
-        """
-        SELECT class_id
-        FROM students
-        WHERE id = ?
-          AND COALESCE(enrollment_status, 'active') = 'active'
-        """,
-        (user["id"],),
-    ).fetchone()
-    if not student or int(student["class_id"]) != int(offering["class_id"]):
-        raise HTTPException(403, "无权访问当前课堂")
-    return offering
+    return ensure_scoped_classroom_access(conn, class_offering_id, user)
 
 
 def ensure_teacher_material_owner(conn, material_id: int, teacher_id: int):
     row = conn.execute(
-        "SELECT * FROM course_materials WHERE id = ? AND teacher_id = ?",
-        (material_id, teacher_id),
+        "SELECT * FROM course_materials WHERE id = ?",
+        (material_id,),
     ).fetchone()
-    if not row:
+    if not row or (int(row["teacher_id"]) != int(teacher_id) and not is_super_admin_teacher(conn, teacher_id)):
         raise HTTPException(404, "材料不存在或无权操作")
     if is_git_internal_material_path(row["material_path"]):
         raise HTTPException(404, "材料不存在或无权操作")
@@ -559,7 +535,7 @@ def ensure_user_material_access(conn, material_id: int, user: dict):
         raise HTTPException(404, "材料不存在")
 
     if user["role"] == "teacher":
-        if int(material["teacher_id"]) != int(user["id"]):
+        if int(material["teacher_id"]) != int(user["id"]) and not can_read_scoped_resource(conn, material, user):
             raise HTTPException(403, "无权访问该材料")
         return material
 

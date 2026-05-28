@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from ..dependencies import get_password_hash
-from .organization_scope_service import build_org_scope, normalize_org_text
+from .organization_scope_service import build_org_scope, normalize_org_text, organization_label
 
 TEACHER_PASSWORD_MIN_LENGTH = 8
 TEACHER_PASSWORD_HINT = "密码至少 8 位。"
@@ -117,6 +117,356 @@ def _serialize_teacher_account(row) -> dict[str, Any]:
     }
 
 
+def _serialize_teacher_membership(row) -> dict[str, Any]:
+    scope = build_org_scope(
+        school_code=row["school_code"],
+        school_name=row["school_name"],
+        college=row["college"],
+        department=row["department"],
+    )
+    return {
+        "id": int(row["id"]),
+        "teacher_id": int(row["teacher_id"]),
+        **scope,
+        "organization_label": organization_label(scope),
+        "is_primary": bool(row["is_primary"]),
+        "is_active": bool(row["is_active"]),
+        "source": str(row["source"] or ""),
+        "updated_at": str(row["updated_at"] or ""),
+        "deactivated_at": str(row["deactivated_at"] or ""),
+    }
+
+
+def list_teacher_memberships(
+    conn: sqlite3.Connection,
+    teacher_id: int | str,
+    *,
+    include_inactive: bool = False,
+) -> list[dict[str, Any]]:
+    where = ["teacher_id = ?"]
+    params: list[Any] = [int(teacher_id)]
+    if not include_inactive:
+        where.append("COALESCE(is_active, 1) = 1")
+    rows = conn.execute(
+        f"""
+        SELECT *
+        FROM teacher_organization_memberships
+        WHERE {' AND '.join(where)}
+        ORDER BY COALESCE(is_primary, 0) DESC,
+                 COALESCE(is_active, 1) DESC,
+                 school_name COLLATE NOCASE,
+                 department COLLATE NOCASE,
+                 id DESC
+        """,
+        params,
+    ).fetchall()
+    return [_serialize_teacher_membership(row) for row in rows]
+
+
+def _sync_teacher_primary_scope(conn: sqlite3.Connection, teacher_id: int) -> None:
+    primary = conn.execute(
+        """
+        SELECT *
+        FROM teacher_organization_memberships
+        WHERE teacher_id = ?
+          AND COALESCE(is_active, 1) = 1
+          AND COALESCE(is_primary, 0) = 1
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1
+        """,
+        (int(teacher_id),),
+    ).fetchone()
+    if not primary:
+        primary = conn.execute(
+            """
+            SELECT *
+            FROM teacher_organization_memberships
+            WHERE teacher_id = ?
+              AND COALESCE(is_active, 1) = 1
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (int(teacher_id),),
+        ).fetchone()
+        if primary:
+            conn.execute(
+                "UPDATE teacher_organization_memberships SET is_primary = 1, updated_at = ? WHERE id = ?",
+                (_now_iso(), int(primary["id"])),
+            )
+    if not primary:
+        return
+    scope = build_org_scope(
+        school_code=primary["school_code"],
+        school_name=primary["school_name"],
+        college=primary["college"],
+        department=primary["department"],
+    )
+    conn.execute(
+        """
+        UPDATE teachers
+        SET school_code = ?,
+            school_name = ?,
+            college = ?,
+            department = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            scope["school_code"],
+            scope["school_name"],
+            scope["college"],
+            scope["department"],
+            _now_iso(),
+            int(teacher_id),
+        ),
+    )
+
+
+def _ensure_membership_catalog_scope(
+    conn: sqlite3.Connection,
+    scope: dict[str, str],
+    *,
+    actor_teacher_id: int | None = None,
+) -> None:
+    timestamp = _now_iso()
+    conn.execute(
+        """
+        INSERT INTO organization_schools (
+            school_code, school_name, source, created_by_teacher_id,
+            updated_by_teacher_id, updated_at, deactivated_at
+        )
+        VALUES (?, ?, 'teacher_membership', ?, ?, ?, NULL)
+        ON CONFLICT(school_code) DO UPDATE SET
+            school_name = excluded.school_name,
+            is_active = 1,
+            updated_by_teacher_id = excluded.updated_by_teacher_id,
+            updated_at = excluded.updated_at,
+            deactivated_at = NULL
+        """,
+        (
+            scope["school_code"],
+            scope["school_name"],
+            actor_teacher_id,
+            actor_teacher_id,
+            timestamp,
+        ),
+    )
+    if scope["college"]:
+        conn.execute(
+            """
+            INSERT INTO organization_colleges (
+                school_code, college_name, source, created_by_teacher_id,
+                updated_by_teacher_id, updated_at, deactivated_at
+            )
+            VALUES (?, ?, 'teacher_membership', ?, ?, ?, NULL)
+            ON CONFLICT(school_code, college_name) DO UPDATE SET
+                is_active = 1,
+                updated_by_teacher_id = excluded.updated_by_teacher_id,
+                updated_at = excluded.updated_at,
+                deactivated_at = NULL
+            """,
+            (
+                scope["school_code"],
+                scope["college"],
+                actor_teacher_id,
+                actor_teacher_id,
+                timestamp,
+            ),
+        )
+    if scope["department"]:
+        conn.execute(
+            """
+            INSERT INTO organization_departments (
+                school_code, college_name, department_name, source, created_by_teacher_id,
+                updated_by_teacher_id, updated_at, deactivated_at
+            )
+            VALUES (?, ?, ?, 'teacher_membership', ?, ?, ?, NULL)
+            ON CONFLICT(school_code, college_name, department_name) DO UPDATE SET
+                is_active = 1,
+                updated_by_teacher_id = excluded.updated_by_teacher_id,
+                updated_at = excluded.updated_at,
+                deactivated_at = NULL
+            """,
+            (
+                scope["school_code"],
+                scope["college"],
+                scope["department"],
+                actor_teacher_id,
+                actor_teacher_id,
+                timestamp,
+            ),
+        )
+
+
+def upsert_teacher_membership(
+    conn: sqlite3.Connection,
+    *,
+    teacher_id: int,
+    school_code: str = "",
+    school_name: str = "",
+    college: str = "",
+    department: str = "",
+    is_primary: bool = False,
+    actor_teacher_id: int | None = None,
+    source: str = "manual",
+) -> dict[str, Any]:
+    target = _get_teacher_account_row(conn, teacher_id)
+    if not target or not bool(target["is_active"]):
+        raise ValueError("教师账号不存在或已停用。")
+    requested_school_name = normalize_org_text(school_name)
+    requested_school_code = normalize_org_text(school_code)
+    scope = build_org_scope(
+        school_code=requested_school_code or ("" if requested_school_name else target["school_code"]),
+        school_name=requested_school_name or target["school_name"],
+        college=college if normalize_org_text(college) else target["college"],
+        department=department if normalize_org_text(department) else target["department"],
+    )
+    if not scope["department"]:
+        raise ValueError("教师任教归属必须包含系部。")
+    timestamp = _now_iso()
+    _ensure_membership_catalog_scope(conn, scope, actor_teacher_id=actor_teacher_id)
+    if is_primary:
+        conn.execute(
+            "UPDATE teacher_organization_memberships SET is_primary = 0, updated_at = ? WHERE teacher_id = ?",
+            (timestamp, int(teacher_id)),
+        )
+    conn.execute(
+        """
+        INSERT INTO teacher_organization_memberships (
+            teacher_id, school_code, school_name, college, department,
+            is_primary, is_active, source, created_by_teacher_id, updated_by_teacher_id, updated_at, deactivated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, NULL)
+        ON CONFLICT(teacher_id, school_code) DO UPDATE SET
+            school_name = excluded.school_name,
+            college = excluded.college,
+            department = excluded.department,
+            is_primary = CASE WHEN excluded.is_primary = 1 THEN 1 ELSE teacher_organization_memberships.is_primary END,
+            is_active = 1,
+            source = excluded.source,
+            updated_by_teacher_id = excluded.updated_by_teacher_id,
+            updated_at = excluded.updated_at,
+            deactivated_at = NULL
+        """,
+        (
+            int(teacher_id),
+            scope["school_code"],
+            scope["school_name"],
+            scope["college"],
+            scope["department"],
+            1 if is_primary else 0,
+            str(source or "manual"),
+            actor_teacher_id,
+            actor_teacher_id,
+            timestamp,
+        ),
+    )
+    _sync_teacher_primary_scope(conn, int(teacher_id))
+    row = conn.execute(
+        """
+        SELECT *
+        FROM teacher_organization_memberships
+        WHERE teacher_id = ? AND school_code = ?
+        LIMIT 1
+        """,
+        (int(teacher_id), scope["school_code"]),
+    ).fetchone()
+    return _serialize_teacher_membership(row)
+
+
+def set_teacher_primary_membership(
+    conn: sqlite3.Connection,
+    *,
+    teacher_id: int,
+    membership_id: int,
+) -> dict[str, Any]:
+    row = conn.execute(
+        """
+        SELECT *
+        FROM teacher_organization_memberships
+        WHERE id = ? AND teacher_id = ? AND COALESCE(is_active, 1) = 1
+        LIMIT 1
+        """,
+        (int(membership_id), int(teacher_id)),
+    ).fetchone()
+    if not row:
+        raise ValueError("教师任教归属不存在或已停用。")
+    timestamp = _now_iso()
+    conn.execute(
+        "UPDATE teacher_organization_memberships SET is_primary = 0, updated_at = ? WHERE teacher_id = ?",
+        (timestamp, int(teacher_id)),
+    )
+    conn.execute(
+        "UPDATE teacher_organization_memberships SET is_primary = 1, updated_at = ? WHERE id = ?",
+        (timestamp, int(membership_id)),
+    )
+    _sync_teacher_primary_scope(conn, int(teacher_id))
+    return _serialize_teacher_membership(conn.execute(
+        "SELECT * FROM teacher_organization_memberships WHERE id = ?",
+        (int(membership_id),),
+    ).fetchone())
+
+
+def deactivate_teacher_membership(
+    conn: sqlite3.Connection,
+    *,
+    teacher_id: int,
+    membership_id: int,
+    actor_teacher_id: int | None = None,
+) -> dict[str, Any]:
+    active_count = conn.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM teacher_organization_memberships
+        WHERE teacher_id = ? AND COALESCE(is_active, 1) = 1
+        """,
+        (int(teacher_id),),
+    ).fetchone()
+    if int((active_count["cnt"] if active_count else 0) or 0) <= 1:
+        raise ValueError("至少需要保留一个启用状态的教师任教归属。")
+    row = conn.execute(
+        """
+        SELECT *
+        FROM teacher_organization_memberships
+        WHERE id = ? AND teacher_id = ?
+        LIMIT 1
+        """,
+        (int(membership_id), int(teacher_id)),
+    ).fetchone()
+    if not row:
+        raise ValueError("教师任教归属不存在。")
+    timestamp = _now_iso()
+    conn.execute(
+        """
+        UPDATE teacher_organization_memberships
+        SET is_active = 0,
+            is_primary = 0,
+            updated_by_teacher_id = ?,
+            updated_at = ?,
+            deactivated_at = COALESCE(deactivated_at, ?)
+        WHERE id = ?
+        """,
+        (actor_teacher_id, timestamp, timestamp, int(membership_id)),
+    )
+    _sync_teacher_primary_scope(conn, int(teacher_id))
+    return _serialize_teacher_membership(conn.execute(
+        "SELECT * FROM teacher_organization_memberships WHERE id = ?",
+        (int(membership_id),),
+    ).fetchone())
+
+
+def _attach_teacher_memberships(conn: sqlite3.Connection, teacher: dict[str, Any]) -> dict[str, Any]:
+    memberships = list_teacher_memberships(conn, teacher["id"], include_inactive=True)
+    active_memberships = [item for item in memberships if item["is_active"]]
+    teacher["memberships"] = memberships
+    teacher["active_memberships"] = active_memberships
+    teacher["membership_count"] = len(active_memberships)
+    teacher["membership_labels"] = [item["organization_label"] for item in active_memberships if item["organization_label"]]
+    if teacher["membership_labels"]:
+        teacher["organization_label"] = teacher["membership_labels"][0]
+    return teacher
+
+
 def list_teacher_accounts(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
@@ -144,7 +494,7 @@ def list_teacher_accounts(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                  t.id DESC
         """
     ).fetchall()
-    return [_serialize_teacher_account(row) for row in rows]
+    return [_attach_teacher_memberships(conn, _serialize_teacher_account(row)) for row in rows]
 
 
 def build_teacher_account_summary(conn: sqlite3.Connection) -> dict[str, int]:
@@ -256,6 +606,17 @@ def create_teacher_account(
         )
         teacher_id = int(cursor.lastrowid)
 
+    upsert_teacher_membership(
+        conn,
+        teacher_id=teacher_id,
+        school_code=org_scope["school_code"],
+        school_name=org_scope["school_name"],
+        college=org_scope["college"],
+        department=org_scope["department"],
+        is_primary=True,
+        actor_teacher_id=actor_teacher_id,
+        source="account_primary",
+    )
     return get_teacher_account(conn, teacher_id)
 
 
@@ -263,7 +624,7 @@ def get_teacher_account(conn: sqlite3.Connection, teacher_id: int | str) -> dict
     row = _get_teacher_account_row(conn, teacher_id)
     if not row:
         raise ValueError("教师账号不存在。")
-    return _serialize_teacher_account(row)
+    return _attach_teacher_memberships(conn, _serialize_teacher_account(row))
 
 
 def update_teacher_account(
@@ -337,6 +698,16 @@ def update_teacher_account(
             _now_iso(),
             int(teacher_id),
         ),
+    )
+    upsert_teacher_membership(
+        conn,
+        teacher_id=teacher_id,
+        school_code=org_scope["school_code"],
+        school_name=org_scope["school_name"],
+        college=org_scope["college"],
+        department=org_scope["department"],
+        is_primary=True,
+        source="account_primary",
     )
     return get_teacher_account(conn, teacher_id)
 
@@ -426,5 +797,17 @@ def deactivate_teacher_account(
         WHERE id = ?
         """,
         (timestamp, int(actor_teacher_id), timestamp, int(teacher_id)),
+    )
+    conn.execute(
+        """
+        UPDATE teacher_organization_memberships
+        SET is_active = 0,
+            is_primary = 0,
+            updated_by_teacher_id = ?,
+            updated_at = ?,
+            deactivated_at = COALESCE(deactivated_at, ?)
+        WHERE teacher_id = ?
+        """,
+        (int(actor_teacher_id), timestamp, timestamp, int(teacher_id)),
     )
     return get_teacher_account(conn, teacher_id)
