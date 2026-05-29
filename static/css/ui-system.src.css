@@ -22766,6 +22766,13 @@ body.has-chat-image-preview-open {
     line-height: 1.65;
 }
 
+.dashboard-list-item p {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
 .dashboard-list-item__tone {
     width: 8px;
     flex: 0 0 8px;
@@ -23855,7 +23862,9 @@ body.has-chat-image-preview-open {
 }
 
 .semester-calendar-todo-bar.is-assignment,
-.semester-calendar-todo-bar.is-exam {
+.semester-calendar-todo-bar.is-exam,
+.semester-calendar-todo-bar.is-academic_exam,
+.semester-calendar-todo-bar.is-academic_course_exam {
     border-color: rgba(180, 83, 9, 0.2);
     background: rgba(255, 251, 235, 0.86);
     color: #92400e;
@@ -23873,10 +23882,17 @@ body.has-chat-image-preview-open {
     color: #0f766e;
 }
 
-.semester-calendar-todo-bar.is-invigilation {
+.semester-calendar-todo-bar.is-invigilation,
+.semester-calendar-todo-bar.is-academic_invigilation {
     border-color: rgba(220, 38, 38, 0.2);
     background: rgba(254, 242, 242, 0.9);
     color: #b91c1c;
+}
+
+.semester-calendar-todo-bar.is-compact-academic {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 100%;
+    overflow: hidden;
 }
 
 .semester-calendar-todo-bar.is-completed {
@@ -23889,6 +23905,36 @@ body.has-chat-image-preview-open {
     text-overflow: ellipsis;
     white-space: nowrap;
     font-weight: 750;
+}
+
+.semester-calendar-todo-bar__label.is-compact-event {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+}
+
+.semester-calendar-todo-bar__event-type,
+.semester-calendar-todo-bar__event-location {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.semester-calendar-todo-bar__event-type {
+    font-weight: 850;
+}
+
+.semester-calendar-todo-bar__event-course {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.semester-calendar-todo-bar__event-location {
+    opacity: 0.82;
+    font-weight: 760;
 }
 
 .semester-calendar-todo-bar small {

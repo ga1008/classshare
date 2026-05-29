@@ -96,17 +96,17 @@ def _dashboard_datetime_label(value: datetime | None, *, with_time: bool = True)
     return base
 
 
-def _dashboard_relative_event_label(starts_at: datetime | None, now: datetime) -> str:
+def _dashboard_relative_event_label(starts_at: datetime | None, now: datetime, *, label: str = "监考") -> str:
     if starts_at is None:
         return "时间待确认"
     delta_days = (starts_at.date() - now.date()).days
     if delta_days < 0:
         return "已结束"
     if delta_days == 0:
-        return "今天监考"
+        return f"今天{label}"
     if delta_days == 1:
-        return "明天监考"
-    return f"{delta_days} 天后监考"
+        return f"明天{label}"
+    return f"{delta_days} 天后{label}"
 
 
 def _dashboard_bar_position(start_date: date, end_date: date, week_start: date) -> dict[str, float]:
@@ -152,7 +152,8 @@ def _teacher_calendar_event_todo(row: Any, *, now: datetime) -> dict[str, Any] |
     end_date = ends_at.date()
     metadata = _dashboard_safe_json(item.get("metadata_json"))
     source_id = _dashboard_int(item.get("id"))
-    status_label = _dashboard_relative_event_label(starts_at, now)
+    event_label = "考试" if is_course_exam else "监考"
+    status_label = _dashboard_relative_event_label(starts_at, now, label=event_label)
     is_completed = bool(ends_at < now)
     duration_label = (
         f"{_dashboard_datetime_label(starts_at)} - {ends_at.hour:02d}:{ends_at.minute:02d}"
@@ -163,8 +164,8 @@ def _teacher_calendar_event_todo(row: Any, *, now: datetime) -> dict[str, Any] |
         "id": f"{source_type}:{source_id}",
         "source_type": source_type,
         "source_id": source_id,
-        "title": str(item.get("title") or "监考安排"),
-        "subtitle": str(item.get("subtitle") or "教务系统监考"),
+        "title": str(item.get("title") or f"{event_label}安排"),
+        "subtitle": str(item.get("subtitle") or f"教务系统{event_label}"),
         "notes": str(item.get("notes") or ""),
         "link_url": str(item.get("link_url") or "/dashboard#dashboard-semester"),
         "status": "completed" if is_completed else "upcoming",
@@ -192,6 +193,105 @@ def _teacher_calendar_event_todo(row: Any, *, now: datetime) -> dict[str, Any] |
         "location": str(item.get("location") or ""),
         "metadata": metadata,
     }
+
+
+ACADEMIC_IMPORTANT_SOURCES = {"academic_exam", "academic_course_exam", "academic_invigilation"}
+
+
+def _dashboard_academic_event_label(item: dict[str, Any]) -> str:
+    source_type = str(item.get("source_type") or "")
+    if source_type in {"academic_exam", "academic_course_exam"}:
+        return "考试"
+    if source_type == "academic_invigilation":
+        return "监考"
+    return "教务"
+
+
+def _dashboard_academic_focus_tone(item: dict[str, Any], *, now: datetime) -> str:
+    starts_at = _dashboard_parse_datetime(item.get("effective_start_at") or item.get("start_at") or item.get("due_at"))
+    if starts_at and starts_at.date() <= now.date() + timedelta(days=1):
+        return "danger"
+    return "warning"
+
+
+def _dashboard_academic_focus_items(
+    items: list[dict[str, Any]],
+    *,
+    now: datetime | None = None,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
+    now_dt = now or china_now().replace(tzinfo=None)
+    candidates = []
+    for item in items:
+        if str(item.get("source_type") or "") not in ACADEMIC_IMPORTANT_SOURCES:
+            continue
+        if item.get("is_completed"):
+            continue
+        starts_at = _dashboard_parse_datetime(item.get("effective_start_at") or item.get("start_at") or item.get("due_at"))
+        if starts_at and starts_at < now_dt - timedelta(hours=2):
+            continue
+        candidates.append(item)
+
+    candidates.sort(
+        key=lambda value: (
+            str(value.get("effective_start_at") or value.get("start_at") or value.get("due_at") or "9999-12-31"),
+            str(value.get("course_name") or value.get("title") or ""),
+        )
+    )
+    focus_items = []
+    for item in candidates[: max(0, int(limit or 0))]:
+        label = _dashboard_academic_event_label(item)
+        title_text = re.sub(r"^教务(?:考试|监考)[：:]\s*", "", str(item.get("title") or "")).strip()
+        course_name = str(item.get("course_name") or title_text or label).strip()
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        location = str(item.get("location") or metadata.get("location") or "").strip()
+        fragments = [
+            str(item.get("duration_label") or item.get("deadline_label") or "").strip(),
+            location,
+            str(item.get("class_name") or "").strip(),
+            str(item.get("status_label") or item.get("relative_due_label") or "").strip(),
+        ]
+        focus_items.append(
+            {
+                "title": f"{label}提醒：{course_name}",
+                "description": " · ".join(part for part in fragments if part) or "教务系统已同步，请及时查看安排。",
+                "href": str(item.get("link_url") or item.get("href") or "/dashboard#dashboard-semester"),
+                "tone": _dashboard_academic_focus_tone(item, now=now_dt),
+            }
+        )
+    return focus_items
+
+
+def _load_teacher_academic_focus_items(
+    conn: sqlite3.Connection,
+    *,
+    teacher_id: int,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
+    now_dt = china_now().replace(tzinfo=None)
+    try:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM teacher_calendar_events
+            WHERE teacher_id = ?
+              AND source_type IN ('academic_invigilation', 'academic_course_exam')
+              AND status = 'active'
+              AND deleted_at IS NULL
+              AND COALESCE(starts_at, due_at, created_at) >= ?
+            ORDER BY COALESCE(starts_at, due_at, created_at), id
+            LIMIT ?
+            """,
+            (int(teacher_id), (now_dt - timedelta(hours=2)).isoformat(timespec="minutes"), max(1, int(limit or 1)) * 2),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    todos = [
+        todo
+        for row in rows
+        if (todo := _teacher_calendar_event_todo(row, now=now_dt))
+    ]
+    return _dashboard_academic_focus_items(todos, now=now_dt, limit=limit)
 
 
 def _attach_teacher_calendar_events_to_buckets(
@@ -1039,7 +1139,7 @@ def _build_teacher_dashboard_context(
         },
     ]
 
-    focus_items = []
+    focus_items = _load_teacher_academic_focus_items(conn, teacher_id=teacher_id, limit=3)
     if pending_reset_count > 0:
         focus_items.append({
             "title": "学生找回密码审核",
@@ -1077,7 +1177,7 @@ def _build_teacher_dashboard_context(
             "href": f"/classroom/{offering['id']}",
             "tone": "warning",
         })
-        if len(focus_items) >= 4:
+        if len(focus_items) >= 5:
             break
 
     if not focus_items:
@@ -1144,7 +1244,7 @@ def _build_teacher_dashboard_context(
         "dashboard_focus": {
             "title": ui_copy["focus_title"],
             "subtitle": ui_copy["focus_subtitle"],
-            "items": focus_items,
+            "items": focus_items[:5],
         },
         "dashboard_activity": {
             "title": ui_copy["activity_title"],
@@ -1944,6 +2044,23 @@ def _build_student_dashboard_context(
             "href": "/message-center",
             "tone": "primary",
         })
+
+    todo_overviews, dashboard_todo_items = _load_student_dashboard_todo_overviews(
+        conn,
+        enriched_offerings,
+        user,
+    )
+    academic_priority_items = _dashboard_academic_focus_items(dashboard_todo_items, limit=3)
+    if academic_priority_items:
+        seen_focus_keys = {
+            (str(item.get("title") or ""), str(item.get("href") or ""))
+            for item in academic_priority_items
+        }
+        priority_items = academic_priority_items + [
+            item
+            for item in priority_items
+            if (str(item.get("title") or ""), str(item.get("href") or "")) not in seen_focus_keys
+        ]
     if not priority_items:
         fallback_href = f"/classroom/{offerings[0]['id']}" if offerings else "/message-center"
         priority_items.append({
@@ -1952,12 +2069,6 @@ def _build_student_dashboard_context(
             "href": fallback_href,
             "tone": "neutral",
         })
-
-    todo_overviews, dashboard_todo_items = _load_student_dashboard_todo_overviews(
-        conn,
-        enriched_offerings,
-        user,
-    )
     continue_material = _load_student_continue_material(
         conn,
         student_id=student_id,

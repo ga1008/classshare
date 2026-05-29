@@ -1252,6 +1252,7 @@ def _serialize_course_exam_row(row: sqlite3.Row | dict[str, Any]) -> dict[str, A
 
     return {
         "id": int(item.get("id") or 0),
+        "semester_id": _optional_int(item.get("semester_id")),
         "class_offering_id": _optional_int(item.get("class_offering_id")),
         "course_id": _optional_int(item.get("course_id")),
         "class_id": _optional_int(item.get("class_id")),
@@ -1296,6 +1297,122 @@ def _serialize_course_exam_row(row: sqlite3.Row | dict[str, Any]) -> dict[str, A
     }
 
 
+def _same_course_identity(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_code = _normalize_key(left.get("course_code"))
+    right_code = _normalize_key(right.get("course_code"))
+    if left_code and right_code and left_code == right_code:
+        return True
+
+    left_names = {
+        _normalize_key(left.get("course_name")),
+        _normalize_key(left.get("course_display_name")),
+    } - {""}
+    right_names = {
+        _normalize_key(right.get("course_name")),
+        _normalize_key(right.get("course_display_name")),
+    } - {""}
+    if left_names & right_names:
+        return True
+    for left_name in left_names:
+        for right_name in right_names:
+            if len(left_name) >= 4 and len(right_name) >= 4 and (left_name in right_name or right_name in left_name):
+                return True
+    return False
+
+
+def _serialize_related_invigilation(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    item = dict(row)
+    starts_at = str(item.get("starts_at") or "")
+    ends_at = str(item.get("ends_at") or "")
+    now = china_now().replace(tzinfo=None)
+    status_label = "待监考"
+    try:
+        start_dt = datetime.fromisoformat(starts_at) if starts_at else None
+        end_dt = datetime.fromisoformat(ends_at) if ends_at else start_dt
+    except ValueError:
+        start_dt = None
+        end_dt = None
+    if end_dt and end_dt < now:
+        status_label = "已结束"
+    elif start_dt and start_dt.date() == now.date():
+        status_label = "今天监考"
+    return {
+        "id": int(item.get("id") or 0),
+        "source_key": f"gxufl:{item.get('academic_year') or ''}:{item.get('academic_term') or ''}:{item.get('invigilation_key') or ''}",
+        "academic_year": str(item.get("academic_year") or ""),
+        "academic_term": str(item.get("academic_term") or ""),
+        "exam_name": str(item.get("exam_name") or ""),
+        "course_code": str(item.get("course_code") or ""),
+        "course_name": str(item.get("course_name") or ""),
+        "course_display_name": str(item.get("course_display_name") or ""),
+        "teaching_class_name": str(item.get("teaching_class_name") or ""),
+        "class_composition": str(item.get("class_composition") or ""),
+        "invigilation_role": str(item.get("invigilation_role") or "监考"),
+        "invigilation_teachers": str(item.get("invigilation_teachers") or ""),
+        "campus": str(item.get("campus") or ""),
+        "building": str(item.get("building") or ""),
+        "location": str(item.get("location") or item.get("location_short_name") or ""),
+        "location_short_name": str(item.get("location_short_name") or ""),
+        "exam_time_text": str(item.get("exam_time_text") or ""),
+        "exam_date": str(item.get("exam_date") or ""),
+        "starts_at": starts_at,
+        "ends_at": ends_at,
+        "note": str(item.get("note") or ""),
+        "status_label": status_label,
+    }
+
+
+def _attach_related_invigilations(
+    conn: sqlite3.Connection,
+    *,
+    teacher_id: int,
+    items: list[dict[str, Any]],
+) -> None:
+    if not items:
+        return
+    semester_ids = sorted({int(item.get("semester_id") or 0) for item in items if item.get("semester_id")})
+    term_pairs = sorted({
+        (str(item.get("academic_year") or ""), str(item.get("academic_term") or ""))
+        for item in items
+        if item.get("academic_year") or item.get("academic_term")
+    })
+    params: list[Any] = [int(teacher_id)]
+    clauses = ["teacher_id = ?", "sync_status = 'active'"]
+    semester_term_clauses: list[str] = []
+    if semester_ids:
+        placeholders = ",".join("?" for _ in semester_ids)
+        semester_term_clauses.append(f"semester_id IN ({placeholders})")
+        params.extend(semester_ids)
+    for academic_year, academic_term in term_pairs:
+        semester_term_clauses.append("(academic_year = ? AND academic_term = ?)")
+        params.extend([academic_year, academic_term])
+    if semester_term_clauses:
+        clauses.append("(" + " OR ".join(semester_term_clauses) + ")")
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT *
+            FROM teacher_academic_invigilation_items
+            WHERE {' AND '.join(clauses)}
+            ORDER BY COALESCE(starts_at, exam_date, synced_at), id
+            """,
+            tuple(params),
+        ).fetchall()
+    except sqlite3.Error:
+        return
+
+    invigilations = [_serialize_related_invigilation(row) for row in rows]
+    for item in items:
+        related = [
+            invigilation
+            for invigilation in invigilations
+            if _same_course_identity(item, invigilation)
+        ]
+        related.sort(key=lambda value: (str(value.get("starts_at") or value.get("exam_date") or ""), int(value.get("id") or 0)))
+        item["related_invigilations"] = related
+        item["related_invigilation_count"] = len(related)
+
+
 def load_classroom_course_exam_status(
     teacher_id: int,
     class_offering_id: int,
@@ -1314,6 +1431,7 @@ def load_classroom_course_exam_status(
             (int(teacher_id), int(class_offering_id)),
         ).fetchall()
         items = [_serialize_course_exam_row(row) for row in rows]
+        _attach_related_invigilations(conn, teacher_id=int(teacher_id), items=items)
     return {
         "status": "success",
         "class_offering_id": int(class_offering_id),
@@ -1351,6 +1469,8 @@ def load_classroom_course_exam_status_for_user(
         params,
     ).fetchall()
     items = [_serialize_course_exam_row(row) for row in rows]
+    if role == "teacher":
+        _attach_related_invigilations(conn, teacher_id=int(user["id"]), items=items)
     return {
         "status": "success",
         "class_offering_id": int(class_offering_id),
@@ -1413,6 +1533,24 @@ def build_course_exam_timeline_entry(item: dict[str, Any]) -> dict[str, Any]:
         item.get("teaching_class_name") or item.get("class_composition") or "",
         f"座位 {item.get('seat_count')} / 考生 {item.get('exam_student_count')}" if item.get("seat_count") or item.get("exam_student_count") else "",
     ]
+    related_invigilations = [
+        value for value in (item.get("related_invigilations") or []) if isinstance(value, dict)
+    ]
+    if related_invigilations:
+        detail_lines.append("监考安排")
+        for invigilation in related_invigilations[:3]:
+            detail_lines.append(
+                " · ".join(
+                    part
+                    for part in [
+                        invigilation.get("invigilation_role") or "监考",
+                        invigilation.get("exam_time_text") or "",
+                        invigilation.get("location") or "",
+                        invigilation.get("teaching_class_name") or invigilation.get("class_composition") or "",
+                    ]
+                    if part
+                )
+            )
     detail_content = "\n".join(part for part in detail_lines if part)
     return {
         "id": f"academic-exam-{item.get('id')}",
@@ -1458,6 +1596,8 @@ def build_course_exam_timeline_entry(item: dict[str, Any]) -> dict[str, Any]:
         "exam_time_text": item.get("exam_time_text") or "",
         "exam_location": item.get("location") or "",
         "exam_status_label": status_label,
+        "related_invigilations": related_invigilations,
+        "related_invigilation_count": len(related_invigilations),
         "starts_at": starts_at,
         "ends_at": ends_at,
     }
@@ -1613,9 +1753,21 @@ async def sync_classroom_course_exams_from_academic_system(
         raise PermissionError("当前教师无权同步该课堂的教务考试。")
 
     result = await sync_current_teacher_course_exams_from_academic_system(int(teacher_id))
+    related_invigilation_sync: dict[str, Any] = {"status": "skipped"}
+    if result.get("status") == "success":
+        try:
+            from .academic_invigilation_sync_service import sync_current_teacher_invigilations_from_academic_system
+
+            related_invigilation_sync = await sync_current_teacher_invigilations_from_academic_system(int(teacher_id))
+        except Exception as exc:
+            related_invigilation_sync = {
+                "status": "failed",
+                "message": f"任课考试已同步，监考安排刷新失败：{str(exc)[:120]}",
+            }
     status = load_classroom_course_exam_status(int(teacher_id), int(class_offering_id))
     return {
         **result,
         "class_offering_id": int(class_offering_id),
         "classroom_exam_status": status,
+        "related_invigilation_sync": related_invigilation_sync,
     }

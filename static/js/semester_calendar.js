@@ -293,6 +293,8 @@ function sourceLabel(todo) {
         assignment: '作业',
         stage_exam: '试炼',
         manual: '我的待办',
+        academic_exam: '考试',
+        academic_course_exam: '考试',
         academic_invigilation: '监考',
     };
     return labels[todo?.source_type] || todo?.subtitle || '待办';
@@ -304,6 +306,43 @@ function sourceTone(todo) {
 
 function manualTodoId(todo) {
     return Number(todo?.source_id || String(todo?.id || '').split(':').pop() || 0);
+}
+
+function isAcademicCalendarEvent(todo) {
+    return ['academic_exam', 'academic_course_exam', 'academic_invigilation'].includes(String(todo?.source_type || ''));
+}
+
+function compactCourseName(value) {
+    return String(value || '')
+        .replace(/^教务(?:考试|监考)[：:]\s*/, '')
+        .replace(/考试安排$/, '')
+        .trim();
+}
+
+function shortLocation(value) {
+    const text = String(value || '').trim();
+    const roomMatch = text.match(/([A-Za-z]\d{3,4}[A-Za-z]?|[A-Za-z]-?\d{3,4}[A-Za-z]?|\d{3,4})$/);
+    if (roomMatch) return roomMatch[1].replace('-', '');
+    const embedded = text.match(/([A-Za-z]\d{3,4}[A-Za-z]?)/);
+    if (embedded) return embedded[1];
+    return text;
+}
+
+function academicEventParts(todo) {
+    const label = String(todo?.source_type || '') === 'academic_invigilation' ? '监考' : '考试';
+    const metadata = todo?.metadata || {};
+    const course = compactCourseName(
+        todo?.course_name
+        || metadata.course_name
+        || todo?.title
+        || label,
+    );
+    const location = shortLocation(todo?.location || metadata.location || '');
+    return {
+        label,
+        course: course || label,
+        location: location || '',
+    };
 }
 
 function findTodoById(semester, todoId) {
@@ -1037,22 +1076,50 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         const button = document.createElement('button');
         button.type = 'button';
         const isActive = String(todo.id || '') === String(activeTodoId || '');
-        button.className = `semester-calendar-todo-bar is-${sourceTone(todo)}${todo.is_completed ? ' is-completed' : ''}${isActive ? ' is-active' : ''}`;
+        const compactEvent = isAcademicCalendarEvent(todo);
+        button.className = `semester-calendar-todo-bar is-${sourceTone(todo)}${compactEvent ? ' is-compact-academic' : ''}${todo.is_completed ? ' is-completed' : ''}${isActive ? ' is-active' : ''}`;
         button.dataset.semesterTodoId = String(todo.id || '');
         button.style.setProperty('--todo-left', `${Number(todo.bar_left || 0).toFixed(3)}%`);
         button.style.setProperty('--todo-width', `${Math.max(8, Number(todo.bar_width || 0)).toFixed(3)}%`);
-        button.title = [todo.title || '待办', todo.duration_label, todo.offering_label].filter(Boolean).join(' · ');
+        button.title = [
+            todo.title || '待办',
+            todo.duration_label,
+            todo.location || todo?.metadata?.location,
+            todo.offering_label,
+            todo.notes,
+        ].filter(Boolean).join(' · ');
 
         const label = document.createElement('span');
-        label.className = 'semester-calendar-todo-bar__label';
-        label.textContent = todo.title || '待办';
+        label.className = compactEvent
+            ? 'semester-calendar-todo-bar__label is-compact-event'
+            : 'semester-calendar-todo-bar__label';
+        if (compactEvent) {
+            const parts = academicEventParts(todo);
+            const eventType = document.createElement('span');
+            eventType.className = 'semester-calendar-todo-bar__event-type';
+            eventType.textContent = parts.label;
+            const course = document.createElement('span');
+            course.className = 'semester-calendar-todo-bar__event-course';
+            course.textContent = parts.course;
+            label.append(eventType, course);
+            if (parts.location) {
+                const location = document.createElement('span');
+                location.className = 'semester-calendar-todo-bar__event-location';
+                location.textContent = parts.location;
+                label.appendChild(location);
+            }
+        } else {
+            label.textContent = todo.title || '待办';
+        }
         button.appendChild(label);
 
-        const meta = document.createElement('small');
-        meta.textContent = todo.no_deadline
-            ? '无截止'
-            : (todo.due_time_label ? `${todo.due_time_label}截止` : sourceLabel(todo));
-        button.appendChild(meta);
+        if (!compactEvent) {
+            const meta = document.createElement('small');
+            meta.textContent = todo.no_deadline
+                ? '无截止'
+                : (todo.due_time_label ? `${todo.due_time_label}截止` : sourceLabel(todo));
+            button.appendChild(meta);
+        }
         return button;
     }
 

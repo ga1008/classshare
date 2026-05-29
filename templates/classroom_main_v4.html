@@ -544,7 +544,7 @@
                                         <h3 id="teachingTimelineDetailTitle">{{ selected_session.detail_title }}</h3>
                                     </div>
                                     {% if user_info.role == 'teacher' %}
-                                    <div class="teaching-timeline-detail-actions" id="teachingTimelineDetailActions">
+                                    <div class="teaching-timeline-detail-actions" id="teachingTimelineDetailActions" {% if selected_session.is_academic_exam %}hidden{% endif %}>
                                         <button type="button" class="btn btn-outline btn-sm" id="teachingTimelineSelectHomeMaterialBtn">
                                             {% if teaching_plan.has_home_material %}更换首页{% else %}设置首页{% endif %}
                                         </button>
@@ -606,7 +606,7 @@
                                             type="button"
                                             class="teaching-timeline-open-material-btn teaching-timeline-open-home-btn"
                                             id="teachingTimelineOpenHomeMaterialBtn"
-                                            {% if not teaching_plan.has_home_material or selected_session.is_home_entry %}hidden{% endif %}
+                                            {% if not teaching_plan.has_home_material or selected_session.is_home_entry or selected_session.is_academic_exam %}hidden{% endif %}
                                         >
                                             <span class="teaching-timeline-open-material-copy">
                                                 <span>首页</span>
@@ -618,6 +618,7 @@
                                             type="button"
                                             class="teaching-timeline-open-material-btn"
                                             id="teachingTimelineOpenMaterialBtn"
+                                            {% if selected_session.is_academic_exam %}hidden{% endif %}
                                             {% if not selected_session.has_learning_material %}disabled{% endif %}
                                         >
                                             <span class="teaching-timeline-open-material-copy">
@@ -696,7 +697,7 @@
                     </div>
                     <div class="teaching-session-modal-body">
                         <div class="teaching-session-modal-summary" id="teachingSessionModalSummary"></div>
-                        <div class="teaching-session-modal-actions">
+                        <div class="teaching-session-modal-actions" id="teachingSessionModalActions">
                             <button type="button" class="teaching-session-action" id="teachingSessionOpenHomeBtn">
                                 <span>文档首页</span>
                                 <small>课程目录与入口</small>

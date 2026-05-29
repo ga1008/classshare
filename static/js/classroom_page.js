@@ -881,6 +881,7 @@ function initTeachingTimelineLegacy() {
     const detailStatus = document.getElementById('teachingTimelineDetailStatus');
     const detailSummary = document.getElementById('teachingTimelineDetailSummary');
     const detailMeta = document.getElementById('teachingTimelineDetailMeta');
+    const detailActions = document.getElementById('teachingTimelineDetailActions');
     const materialPanel = document.getElementById('teachingTimelineMaterialPanel');
     const materialName = document.getElementById('teachingTimelineMaterialName');
     const materialPath = document.getElementById('teachingTimelineMaterialPath');
@@ -921,6 +922,16 @@ function initTeachingTimelineLegacy() {
     const hasHomeMaterial = () => Boolean(getHomeMaterial()?.id && getHomeMaterial()?.viewer_url);
     const isHomeEntry = (session) => Boolean(session?.is_home_entry || session?.entry_type === 'home');
     const isAcademicExamEntry = (session) => Boolean(session?.is_academic_exam || session?.entry_type === 'academic_exam');
+    const getRelatedInvigilations = (session) => {
+        const direct = Array.isArray(session?.related_invigilations) ? session.related_invigilations : [];
+        const nested = Array.isArray(session?.exam_item?.related_invigilations) ? session.exam_item.related_invigilations : [];
+        return direct.length ? direct : nested;
+    };
+    const formatInvigilationBrief = (item = {}) => [
+        item.invigilation_role || '监考',
+        item.exam_time_text || '',
+        item.location || item.location_short_name || '',
+    ].filter(Boolean).join(' · ');
     const getSessionViewerUrl = (session) => String(
         isHomeEntry(session)
             ? session?.home_learning_material_viewer_url || session?.learning_material_viewer_url || ''
@@ -1045,7 +1056,7 @@ function initTeachingTimelineLegacy() {
         const examEntry = isAcademicExamEntry(session);
         const hasMaterial = getSessionMaterialReady(session);
         const homeReady = hasHomeMaterial();
-        materialPanel.classList.toggle('is-empty', !hasMaterial);
+        materialPanel.classList.toggle('is-empty', !hasMaterial && !examEntry);
         materialPanel.dataset.materialReady = hasMaterial ? 'true' : 'false';
         materialPanel.dataset.entryType = examEntry ? 'academic_exam' : (homeEntry ? 'home' : 'lesson');
 
@@ -1059,8 +1070,12 @@ function initTeachingTimelineLegacy() {
         }
 
         if (examEntry) {
+            const invigilationBriefs = getRelatedInvigilations(session).map(formatInvigilationBrief).filter(Boolean);
             materialName.textContent = session.exam_name || session.detail_title || '教务系统考试安排';
-            materialPath.textContent = [session.exam_time_text, session.exam_location].filter(Boolean).join(' · ') || '考试时间与地点以教务系统为准';
+            materialPath.textContent = [
+                [session.exam_time_text, session.exam_location].filter(Boolean).join(' · ') || '考试时间与地点以教务系统为准',
+                invigilationBriefs.length ? `本人监考：${invigilationBriefs.slice(0, 2).join('；')}` : '',
+            ].filter(Boolean).join(' · ');
             if (openMaterialHint) {
                 openMaterialHint.textContent = '点击卡片可查看考试详情；重新同步会刷新时间和地点。';
             }
@@ -1518,6 +1533,8 @@ function initTeachingTimeline() {
     const sessionModalTitle = document.getElementById('teachingSessionModalTitle');
     const sessionModalMeta = document.getElementById('teachingSessionModalMeta');
     const sessionModalSummary = document.getElementById('teachingSessionModalSummary');
+    const sessionModalActions = document.getElementById('teachingSessionModalActions');
+    const detailActions = document.getElementById('teachingTimelineDetailActions');
     const sessionModalOpenHomeBtn = document.getElementById('teachingSessionOpenHomeBtn');
     const sessionModalOpenMaterialBtn = document.getElementById('teachingSessionOpenMaterialBtn');
     const sessionModalCheckinBtn = document.getElementById('teachingSessionCheckinBtn');
@@ -1568,6 +1585,16 @@ function initTeachingTimeline() {
     const hasHomeMaterial = () => Boolean(getHomeMaterial()?.id && getHomeMaterial()?.viewer_url);
     const isHomeEntry = (session) => Boolean(session?.is_home_entry || session?.entry_type === 'home');
     const isAcademicExamEntry = (session) => Boolean(session?.is_academic_exam || session?.entry_type === 'academic_exam');
+    const getRelatedInvigilations = (session) => {
+        const direct = Array.isArray(session?.related_invigilations) ? session.related_invigilations : [];
+        const nested = Array.isArray(session?.exam_item?.related_invigilations) ? session.exam_item.related_invigilations : [];
+        return direct.length ? direct : nested;
+    };
+    const formatInvigilationBrief = (item = {}) => [
+        item.invigilation_role || '监考',
+        item.exam_time_text || '',
+        item.location || item.location_short_name || '',
+    ].filter(Boolean).join(' · ');
     const getSessionViewerUrl = (session) => String(
         isHomeEntry(session)
             ? session?.home_learning_material_viewer_url || session?.learning_material_viewer_url || ''
@@ -1695,19 +1722,26 @@ function initTeachingTimeline() {
         if (sessionModalMeta) sessionModalMeta.textContent = session.detail_meta || session.date_label || '';
         if (sessionModalSummary) {
             const text = String(session.detail_content || session.detail_summary || '').trim();
+            const lineLimit = isExam ? 8 : 4;
             sessionModalSummary.innerHTML = text
-                ? text.split(/\r?\n/).filter(Boolean).slice(0, 4).map((line) => `<p>${escapeHtml(line)}</p>`).join('')
-                : '<p>本次课暂未填写详细说明。</p>';
+                ? text.split(/\r?\n/).filter(Boolean).slice(0, lineLimit).map((line) => `<p>${escapeHtml(line)}</p>`).join('')
+                : `<p>${isExam ? '考试时间、地点和监考信息以教务系统同步结果为准。' : '本次课暂未填写详细说明。'}</p>`;
+        }
+        if (sessionModalActions) {
+            sessionModalActions.hidden = isExam;
         }
         if (sessionModalOpenHomeBtn) {
+            sessionModalOpenHomeBtn.hidden = isExam;
             sessionModalOpenHomeBtn.disabled = !hasHomeMaterial();
         }
         if (sessionModalOpenMaterialBtn) {
+            sessionModalOpenMaterialBtn.hidden = isExam;
             sessionModalOpenMaterialBtn.disabled = isExam || !getSessionMaterialReady(session);
             const label = sessionModalOpenMaterialBtn.querySelector('small');
             if (label) label.textContent = isExam ? '教务考试无学习文档' : (isHome ? '打开课程首页' : '进入本次课材料');
         }
         if (sessionModalCheckinBtn) {
+            sessionModalCheckinBtn.hidden = isExam;
             sessionModalCheckinBtn.disabled = isHome || isExam;
         }
         renderCheckinEmpty(isExam ? '考试卡片不关联课堂点名记录。' : (isHome ? '课程首页没有点名记录。' : '点击“点名统计”读取本次课签到情况。'));
@@ -1973,6 +2007,7 @@ function initTeachingTimeline() {
         }
 
         if (openMaterialBtn) {
+            openMaterialBtn.hidden = examEntry;
             openMaterialBtn.disabled = examEntry || !hasMaterial;
             openMaterialBtn.dataset.materialReady = hasMaterial ? 'true' : 'false';
         }
@@ -1990,7 +2025,12 @@ function initTeachingTimeline() {
             aiMaterialBtn.disabled = homeEntry || examEntry || Boolean(session?.material_generation_task?.is_active);
         }
         if (selectHomeMaterialBtn) {
+            selectHomeMaterialBtn.hidden = examEntry;
+            selectHomeMaterialBtn.disabled = examEntry;
             selectHomeMaterialBtn.textContent = hasHomeMaterial() ? '更换首页' : '设置首页';
+        }
+        if (detailActions) {
+            detailActions.hidden = examEntry;
         }
     };
 
@@ -2164,7 +2204,9 @@ function initTeachingTimeline() {
         const currentSession = getSessionByOrder(selectedOrder);
         syncTeacherActionState(currentSession);
         renderMaterialPanel(currentSession);
-        sessionMaterialAssistant?.syncSelectedSession(isHomeEntry(currentSession) ? null : currentSession);
+        sessionMaterialAssistant?.syncSelectedSession(
+            currentSession && !isHomeEntry(currentSession) && !isAcademicExamEntry(currentSession) ? currentSession : null,
+        );
         scheduleProjectionSync();
         scheduleCardMotionSync();
     };
@@ -2571,6 +2613,7 @@ const TODO_TONE_LABELS = {
     assignment: '作业',
     exam: '考试',
     academic_exam: '教务考试',
+    academic_invigilation: '教务监考',
     stage: '试炼',
     manual: '自定义',
     neutral: '待办',
@@ -2659,6 +2702,20 @@ function initSemesterTodoBoard(config = window.APP_CONFIG || {}) {
     let selectedRole = 'due';
 
     const sourceLabel = (todo) => TODO_TONE_LABELS[todo?.tone] || TODO_TONE_LABELS[todo?.source_type] || '待办';
+    const isAcademicExamTodo = (todo) => String(todo?.source_type || todo?.tone || '') === 'academic_exam';
+    const shortTodoLocation = (value) => {
+        const text = String(value || '').trim();
+        const room = text.match(/([A-Za-z]\d{3,4}[A-Za-z]?|\d{3,4})$/) || text.match(/([A-Za-z]\d{3,4}[A-Za-z]?)/);
+        return room ? room[1] : text;
+    };
+    const compactAcademicExamTitle = (todo) => {
+        const metadata = todo?.metadata || {};
+        const course = String(todo?.course_name || metadata.course_name || todo?.title || '考试')
+            .replace(/^教务考试[：:]\s*/, '')
+            .trim();
+        const place = shortTodoLocation(todo?.location || metadata.location || '');
+        return ['考试', course, place].filter(Boolean).join(' · ');
+    };
     const manualTodoId = (todo) => Number(todo?.source_id || String(todo?.id || '').split(':').pop() || 0);
     const cssEscapeValue = (value) => (
         window.CSS && typeof window.CSS.escape === 'function'
@@ -2722,15 +2779,16 @@ function initSemesterTodoBoard(config = window.APP_CONFIG || {}) {
         const width = Math.max(7, Number(todo.bar_width || 0)).toFixed(3);
         const tone = escapeHtml(todo.tone || 'neutral');
         const completedClass = todo.is_completed ? ' is-completed' : '';
-        const timeChip = todo.due_time_label && !todo.no_deadline
+        const academicExam = isAcademicExamTodo(todo);
+        const timeChip = !academicExam && todo.due_time_label && !todo.no_deadline
             ? `<span class="semester-gantt-time">${escapeHtml(todo.due_time_label)}</span>`
             : '';
         return `
-            <button type="button" class="semester-gantt-row is-${tone}${completedClass}" data-todo-focus="${escapeHtml(todo.id)}">
+            <button type="button" class="semester-gantt-row is-${tone}${completedClass}" data-todo-focus="${escapeHtml(todo.id)}" title="${escapeHtml([todo.title, todo.duration_label, todo.location || todo?.metadata?.location].filter(Boolean).join(' · '))}">
                 <span class="semester-gantt-lane" aria-hidden="true">
                     <span class="semester-gantt-bar" style="left:${left}%;width:${width}%"></span>
                 </span>
-                <span class="semester-gantt-title">${escapeHtml(todo.title)}</span>
+                <span class="semester-gantt-title">${escapeHtml(academicExam ? compactAcademicExamTitle(todo) : todo.title)}</span>
                 ${timeChip}
             </button>
         `;
