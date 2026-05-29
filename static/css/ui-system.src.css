@@ -8056,7 +8056,9 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
 }
 
 #materials-assign-modal,
-#materials-repository-modal {
+#materials-repository-modal,
+#materials-ai-generate-modal,
+#materials-ai-rewrite-modal {
     z-index: 1100;
 }
 
@@ -8526,6 +8528,248 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
 .materials-section-header h3 {
     margin: 0;
     font-size: 1rem;
+}
+
+.materials-card,
+.materials-row,
+.materials-row-time,
+.materials-section,
+.materials-detail-hero,
+.materials-detail-note,
+.materials-assignment-item,
+.materials-outline-item,
+.materials-modal-option,
+.materials-search-box,
+.materials-upload-dropdown,
+.materials-ai-task-card,
+.materials-repo-card,
+.materials-repo-detail-item {
+    border-radius: 8px;
+}
+
+.materials-list-body {
+    gap: 14px;
+    padding: 18px;
+}
+
+.materials-row {
+    padding: 16px 18px;
+}
+
+.materials-name-copy {
+    display: grid;
+    gap: 4px;
+}
+
+.materials-row-actions {
+    gap: 9px;
+    row-gap: 10px;
+}
+
+.materials-row-actions .btn,
+.materials-detail-actions .btn {
+    min-height: 34px;
+    line-height: 1.15;
+}
+
+.materials-detail-actions {
+    gap: 9px;
+    row-gap: 10px;
+}
+
+.materials-detail-meta .meta-chip {
+    border-radius: 8px;
+    line-height: 1.45;
+}
+
+.materials-empty--compact {
+    padding: 12px;
+    text-align: left;
+}
+
+.materials-ai-generate-dialog {
+    width: min(1080px, calc(100vw - 2rem));
+    max-width: min(1080px, calc(100vw - 2rem));
+}
+
+.materials-ai-generate-content {
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.materials-ai-generate-body {
+    display: grid;
+    gap: 16px;
+}
+
+.materials-ai-generate-prompt-field {
+    display: grid;
+    gap: 8px;
+}
+
+.materials-ai-generate-prompt-field textarea,
+#materials-ai-rewrite-prompt {
+    line-height: 1.65;
+}
+
+.materials-ai-generate-selected-panel {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid rgba(20, 184, 166, 0.2);
+    border-radius: 8px;
+    background: rgba(240, 253, 250, 0.62);
+}
+
+.materials-ai-generate-selected {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 38px;
+}
+
+.materials-ai-generate-chip {
+    display: inline-grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 7px;
+    max-width: min(100%, 360px);
+    min-height: 34px;
+    padding: 5px 8px 5px 10px;
+    border: 1px solid rgba(20, 184, 166, 0.22);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.94);
+    color: var(--text-primary);
+    font-size: 0.82rem;
+}
+
+.materials-ai-generate-chip strong {
+    color: #047857;
+    font-size: 0.72rem;
+}
+
+.materials-ai-generate-chip span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.materials-ai-generate-chip button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.06);
+    color: #475569;
+    cursor: pointer;
+}
+
+.materials-ai-generate-chip button:hover,
+.materials-ai-generate-chip button:focus-visible {
+    background: rgba(239, 68, 68, 0.12);
+    color: #b91c1c;
+    outline: none;
+}
+
+.materials-ai-generate-source-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.materials-ai-generate-source {
+    display: grid;
+    gap: 10px;
+    align-content: start;
+    min-height: 320px;
+}
+
+.materials-ai-generate-source .materials-section-header {
+    margin-bottom: 0;
+}
+
+.materials-ai-generate-source-list {
+    display: grid;
+    gap: 8px;
+    max-height: 280px;
+    overflow: auto;
+    padding-right: 2px;
+}
+
+.materials-ai-generate-candidate {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.materials-ai-generate-candidate:hover:not(:disabled),
+.materials-ai-generate-candidate:focus-visible:not(:disabled) {
+    border-color: rgba(20, 184, 166, 0.36);
+    background: #ffffff;
+    box-shadow: 0 10px 24px rgba(15, 118, 110, 0.08);
+    transform: translateY(-1px);
+    outline: none;
+}
+
+.materials-ai-generate-candidate:disabled {
+    cursor: default;
+    opacity: 0.66;
+}
+
+.materials-ai-generate-candidate.is-selected {
+    border-color: rgba(20, 184, 166, 0.34);
+    background: rgba(240, 253, 250, 0.82);
+}
+
+.materials-ai-generate-candidate div {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+}
+
+.materials-ai-generate-candidate strong,
+.materials-ai-generate-candidate span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.materials-ai-generate-candidate strong {
+    font-size: 0.88rem;
+}
+
+.materials-ai-generate-candidate span,
+.materials-ai-generate-candidate em,
+.materials-ai-generate-empty {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
+.materials-ai-generate-candidate em {
+    font-style: normal;
+    white-space: nowrap;
+}
+
+.materials-ai-generate-empty {
+    padding: 10px;
+    border: 1px dashed rgba(148, 163, 184, 0.24);
+    border-radius: 8px;
+    background: rgba(248, 250, 252, 0.72);
 }
 
 .materials-repo-summary {
@@ -9285,7 +9529,8 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     .materials-repo-summary,
     .materials-repo-detail-grid,
     .materials-repo-command-line,
-    .materials-ai-import-grid {
+    .materials-ai-import-grid,
+    .materials-ai-generate-source-grid {
         grid-template-columns: 1fr;
     }
 
@@ -9303,6 +9548,14 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     .materials-ai-import-file {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .materials-ai-generate-source {
+        min-height: auto;
+    }
+
+    .materials-ai-generate-source-list {
+        max-height: 220px;
     }
 
     .materials-detail-meta {

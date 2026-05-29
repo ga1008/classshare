@@ -26,6 +26,7 @@ from ..services.file_preview_service import TEXT_CONTENT_ENCODINGS
 from ..services.material_ai_import_service import (
     MaterialExtraction,
     build_import_readme,
+    extract_material_content,
     get_material_ai_import_registry,
     normalize_ai_parse_result,
     parse_material_document,
@@ -165,6 +166,11 @@ class ClassroomFinalMaterialGenerateRequest(BaseModel):
     parent_id: int | None = None
 
 
+class MaterialAiRewriteRequest(BaseModel):
+    mode: str = "optimize"
+    prompt: str = ""
+
+
 MATERIAL_LIBRARY_SORT_LABELS = {
     "name": "名称",
     "created_at": "创建时间",
@@ -174,6 +180,10 @@ MATERIAL_LIBRARY_DEFAULT_SORT_BY = "name"
 MATERIAL_LIBRARY_DEFAULT_SORT_ORDER = "asc"
 MATERIAL_LIBRARY_ALLOWED_SORT_ORDERS = {"asc", "desc"}
 README_SNIPPET_LINE_LIMIT = 10
+MATERIAL_AI_CONTEXT_MAX_ATTACHMENTS = 10
+MATERIAL_AI_CONTEXT_MAX_CHARS = 42000
+MATERIAL_AI_CONTEXT_SINGLE_CHARS = 9000
+MATERIAL_AI_CONTEXT_UPLOAD_MAX_BYTES = 18 * 1024 * 1024
 
 
 def _row_value(row, key: str, default=None):
@@ -1462,6 +1472,213 @@ async def get_teacher_material_library(
     }
 
 
+@router.get("/api/materials/ai-generation/candidates", response_class=JSONResponse)
+async def list_material_ai_generation_candidates(
+    query: str = Query(default=""),
+    limit: int = Query(default=30, ge=1, le=80),
+    user: dict = Depends(get_current_teacher),
+):
+    normalized_query = _normalize_material_keyword(query)
+    with get_db_connection() as conn:
+        rows = _list_material_rows_for_parent(
+            conn,
+            int(user["id"]),
+            None,
+            keyword=normalized_query,
+            sort_by="updated_at",
+            sort_order="desc",
+        )[: int(limit)]
+        items = [
+            _decorate_learning_document_item(item)
+            for item in _serialize_material_items(conn, rows, user=user)
+        ]
+    return {"status": "success", "items": items}
+
+
+@router.get("/api/materials/ai-generation/assignments", response_class=JSONResponse)
+async def list_material_ai_generation_assignment_candidates(
+    query: str = Query(default=""),
+    limit: int = Query(default=30, ge=1, le=80),
+    user: dict = Depends(get_current_teacher),
+):
+    normalized_query = _normalize_material_keyword(query)
+    conditions = ["(o.teacher_id = ? OR co.created_by_teacher_id = ?)"]
+    params: list[object] = [int(user["id"]), int(user["id"])]
+    if normalized_query:
+        keyword_pattern = f"%{normalized_query}%"
+        conditions.append(
+            """
+            (
+                a.title LIKE ? COLLATE NOCASE
+                OR a.requirements_md LIKE ? COLLATE NOCASE
+                OR co.name LIKE ? COLLATE NOCASE
+                OR cl.name LIKE ? COLLATE NOCASE
+            )
+            """
+        )
+        params.extend([keyword_pattern, keyword_pattern, keyword_pattern, keyword_pattern])
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT a.id, a.title, a.status, a.created_at, a.requirements_md,
+                   a.exam_paper_id, a.class_offering_id,
+                   co.name AS course_name,
+                   cl.name AS class_name,
+                   o.semester,
+                   ep.questions_json AS exam_questions_json
+            FROM assignments a
+            JOIN courses co ON co.id = a.course_id
+            LEFT JOIN class_offerings o ON o.id = a.class_offering_id
+            LEFT JOIN classes cl ON cl.id = o.class_id
+            LEFT JOIN exam_papers ep ON ep.id = a.exam_paper_id
+            WHERE {' AND '.join(conditions)}
+            ORDER BY a.created_at DESC, a.id DESC
+            LIMIT ?
+            """,
+            params + [int(limit)],
+        ).fetchall()
+    items = []
+    for row in rows:
+        row_dict = dict(row)
+        questions = _iter_exam_question_texts(row_dict.get("exam_questions_json")) if row_dict.get("exam_questions_json") else []
+        if not questions:
+            questions = _extract_assignment_question_lines(row_dict.get("requirements_md") or "")
+        excerpt = "；".join(questions[:2])
+        items.append(
+            {
+                "id": int(row_dict["id"]),
+                "title": row_dict.get("title") or "",
+                "status": row_dict.get("status") or "",
+                "course_name": row_dict.get("course_name") or "",
+                "class_name": row_dict.get("class_name") or "",
+                "semester": row_dict.get("semester") or "",
+                "created_at": row_dict.get("created_at") or "",
+                "question_count": len(questions),
+                "question_excerpt": excerpt[:220],
+            }
+        )
+    return {"status": "success", "items": items}
+
+
+@router.post("/api/materials/ai-generate", response_class=JSONResponse)
+async def ai_generate_material_from_context(
+    prompt: str = Form(default=""),
+    parent_id: int | None = Form(default=None),
+    existing_material_ids: str = Form(default="[]"),
+    assignment_ids: str = Form(default="[]"),
+    new_files: list[UploadFile] | None = File(default=None),
+    user: dict = Depends(get_current_teacher),
+):
+    material_ids = _parse_material_ai_id_list(existing_material_ids)
+    selected_assignment_ids = _parse_material_ai_id_list(assignment_ids)
+    upload_files = list(new_files or [])
+    total_attachments = len(material_ids) + len(selected_assignment_ids) + len(upload_files)
+    if total_attachments > MATERIAL_AI_CONTEXT_MAX_ATTACHMENTS:
+        raise HTTPException(400, f"关联附件最多支持 {MATERIAL_AI_CONTEXT_MAX_ATTACHMENTS} 份")
+    if not prompt.strip() and total_attachments <= 0:
+        raise HTTPException(400, "请填写提示语，或至少选择一份关联附件")
+
+    material_context_specs: list[tuple[dict, list[dict]]] = []
+    assignment_rows: list[dict] = []
+    parent_context: dict[str, Any] | None = None
+    with get_db_connection() as conn:
+        if parent_id is not None:
+            parent = ensure_teacher_material_owner(conn, parent_id, user["id"])
+            if parent["node_type"] != "folder":
+                raise HTTPException(400, "只能生成到文件夹中")
+            parent_context = {
+                "id": int(parent["id"]),
+                "name": parent["name"],
+                "material_path": parent["material_path"],
+            }
+        for material_id in material_ids:
+            material = dict(ensure_user_material_access(conn, material_id, user))
+            material_context_specs.append((material, _collect_material_context_rows(conn, material)))
+
+        if selected_assignment_ids:
+            placeholders = ",".join("?" for _ in selected_assignment_ids)
+            rows = conn.execute(
+                f"""
+                SELECT a.id, a.title, a.status, a.created_at, a.requirements_md,
+                       a.exam_paper_id, a.class_offering_id,
+                       co.name AS course_name,
+                       cl.name AS class_name,
+                       o.semester,
+                       ep.questions_json AS exam_questions_json
+                FROM assignments a
+                JOIN courses co ON co.id = a.course_id
+                LEFT JOIN class_offerings o ON o.id = a.class_offering_id
+                LEFT JOIN classes cl ON cl.id = o.class_id
+                LEFT JOIN exam_papers ep ON ep.id = a.exam_paper_id
+                WHERE a.id IN ({placeholders})
+                  AND (o.teacher_id = ? OR co.created_by_teacher_id = ?)
+                ORDER BY a.created_at DESC, a.id DESC
+                """,
+                selected_assignment_ids + [int(user["id"]), int(user["id"])],
+            ).fetchall()
+            found_ids = {int(row["id"]) for row in rows}
+            missing_ids = [item_id for item_id in selected_assignment_ids if item_id not in found_ids]
+            if missing_ids:
+                raise HTTPException(403, "存在无权使用的作业题目")
+            assignment_rows = [dict(row) for row in rows]
+
+    attachments: list[dict[str, Any]] = []
+    for file in upload_files:
+        attachments.append(await _build_uploaded_context_attachment(file))
+    for material, context_rows in material_context_specs:
+        attachments.append(await _build_material_context_attachment(material, context_rows))
+    for assignment_row in assignment_rows:
+        attachments.append(_build_assignment_context_attachment(assignment_row))
+    attachments = _limit_ai_context_attachments(attachments)
+
+    file_texts = [
+        {"name": item.get("title") or f"attachment-{index + 1}", "content": item.get("content") or ""}
+        for index, item in enumerate(attachments)
+        if str(item.get("content") or "").strip()
+    ]
+    raw_result = await _call_ai_chat(
+        _build_ai_material_generation_system_prompt(),
+        _build_ai_material_generation_user_prompt(
+            prompt=prompt,
+            parent_context=parent_context,
+            attachments=attachments,
+        ),
+        capability="thinking",
+        response_format="json",
+        file_texts=file_texts,
+        task_type="material_ai_generate",
+        task_label="materials:ai-generate",
+        timeout=300.0,
+    )
+    fallback_title = prompt.strip().splitlines()[0][:42] if prompt.strip() else "AI生成材料"
+    parse_result = _build_generic_material_parse_result(
+        raw_result=raw_result,
+        fallback_title=fallback_title,
+        attachments=attachments,
+        ai_used=True,
+    )
+    markdown_content = build_import_readme(
+        result=parse_result,
+        original_name=f"{parse_result.metadata.get('title') or fallback_title}.md",
+    )
+    parse_payload_json = json.dumps(_build_material_ai_parse_payload(parse_result), ensure_ascii=False)
+    material = await _create_generated_markdown_material(
+        user=user,
+        parent_id=parent_id,
+        title=str(parse_result.metadata.get("title") or fallback_title),
+        markdown_content=markdown_content,
+        parse_payload_json=parse_payload_json,
+        name_prefix="AI生成",
+    )
+    return {
+        "status": "success",
+        "message": "AI 已生成材料并保存到材料库",
+        "material": material,
+        "viewer_url": f"/materials/view/{material['id']}",
+        "attachment_count": len(attachments),
+    }
+
+
 @router.get("/api/materials/{material_id}", response_class=JSONResponse)
 async def get_material_detail(material_id: int, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
@@ -1694,6 +1911,527 @@ def _fetch_material_response_item(conn, material_id: int, user: dict) -> dict | 
         return None
     item = _serialize_material_items(conn, [row], user=user)[0]
     return _decorate_learning_document_item(item)
+
+
+def _parse_material_ai_id_list(raw_value: Any) -> list[int]:
+    if raw_value in (None, ""):
+        return []
+    value = raw_value
+    if isinstance(raw_value, str):
+        try:
+            value = json.loads(raw_value)
+        except json.JSONDecodeError:
+            value = [item.strip() for item in raw_value.split(",") if item.strip()]
+    if not isinstance(value, list):
+        return []
+    return _normalize_positive_id_list(value)
+
+
+def _safe_generated_material_base_name(raw_title: str | None, fallback: str = "AI生成材料") -> str:
+    text = str(raw_title or "").strip() or fallback
+    text = re.sub(r"[\\/:*?\"<>|]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip(" .")
+    return (text or fallback)[:80]
+
+
+def _truncate_ai_context_text(text: str, limit: int = MATERIAL_AI_CONTEXT_SINGLE_CHARS) -> tuple[str, bool]:
+    content = str(text or "").strip()
+    if len(content) <= limit:
+        return content, False
+    return content[:limit].rstrip() + "\n\n[内容过长，已截断]", True
+
+
+def _make_ai_context_attachment(
+    *,
+    source_type: str,
+    title: str,
+    content: str,
+    metadata: dict[str, Any] | None = None,
+    warnings: list[str] | None = None,
+) -> dict[str, Any]:
+    truncated_content, truncated = _truncate_ai_context_text(content)
+    return {
+        "source_type": source_type,
+        "title": str(title or source_type).strip()[:160],
+        "content": truncated_content,
+        "metadata": metadata or {},
+        "warnings": warnings or [],
+        "truncated": truncated,
+    }
+
+
+def _limit_ai_context_attachments(attachments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    limited: list[dict[str, Any]] = []
+    used_chars = 0
+    for attachment in attachments[:MATERIAL_AI_CONTEXT_MAX_ATTACHMENTS]:
+        content = str(attachment.get("content") or "")
+        remaining = MATERIAL_AI_CONTEXT_MAX_CHARS - used_chars
+        if remaining <= 0:
+            break
+        if len(content) > remaining:
+            attachment = {
+                **attachment,
+                "content": content[:remaining].rstrip() + "\n\n[总上下文过长，已截断]",
+                "truncated": True,
+            }
+            content = str(attachment.get("content") or "")
+        used_chars += len(content)
+        limited.append(attachment)
+    return limited
+
+
+async def _extract_file_row_for_ai_context(file_row: dict) -> tuple[str, list[str], str]:
+    warnings: list[str] = []
+    if not file_row.get("file_hash"):
+        return "", ["材料文件缺少存储内容。"], "missing"
+    try:
+        file_path = _load_material_storage_path(file_row)
+        extraction = await asyncio.to_thread(extract_material_content, file_path, str(file_row.get("name") or "material"))
+        warnings.extend(str(item) for item in extraction.warnings if item)
+        return str(extraction.text or "").strip(), warnings, extraction.method or "extract"
+    except Exception as exc:
+        message = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        return "", [f"材料正文抽取失败：{message}"], "failed"
+
+
+def _collect_material_context_rows(conn, material_row: dict) -> list[dict]:
+    if material_row["node_type"] == "file":
+        return [dict(material_row)]
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM course_materials
+        WHERE root_id = ?
+          AND (material_path = ? OR material_path LIKE ?)
+        ORDER BY material_path
+        """,
+        (
+            int(material_row["root_id"]),
+            material_row["material_path"],
+            f"{material_row['material_path']}/%",
+        ),
+    ).fetchall()
+    return [dict(row) for row in rows if not is_git_internal_material_path(row["material_path"])]
+
+
+def _is_good_ai_context_file(row: dict) -> bool:
+    if row.get("node_type") != "file":
+        return False
+    if not row.get("file_hash"):
+        return False
+    capability = str(row.get("ai_capability") or "").strip().lower()
+    preview = str(row.get("preview_type") or "").strip().lower()
+    return capability not in {"", "none"} or preview in {"markdown", "text"}
+
+
+async def _build_material_context_attachment(material_row: dict, context_rows: list[dict]) -> dict[str, Any]:
+    if material_row["node_type"] == "file":
+        text, warnings, method = await _extract_file_row_for_ai_context(dict(material_row))
+        content = text or f"材料名称：{material_row['name']}\n材料路径：{material_row['material_path']}\n（无法抽取正文）"
+        return _make_ai_context_attachment(
+            source_type="material",
+            title=f"站内材料：{material_row['name']}",
+            content=content,
+            metadata={
+                "material_id": int(material_row["id"]),
+                "material_path": material_row["material_path"],
+                "node_type": "file",
+                "extract_method": method,
+            },
+            warnings=warnings,
+        )
+
+    tree_text = _build_directory_tree_text(context_rows, material_row["material_path"])
+    file_rows = [row for row in context_rows if _is_good_ai_context_file(row)]
+    file_rows.sort(
+        key=lambda row: (
+            0 if str(row.get("name") or "").strip().lower() == "readme.md" else 1,
+            0 if str(row.get("preview_type") or "") in {"markdown", "text"} else 1,
+            str(row.get("material_path") or ""),
+        )
+    )
+    parts = [f"目录结构：\n{tree_text}"]
+    warnings: list[str] = []
+    for row in file_rows[:8]:
+        text, row_warnings, method = await _extract_file_row_for_ai_context(row)
+        warnings.extend(f"{row.get('material_path')}: {item}" for item in row_warnings if item)
+        if not text:
+            continue
+        snippet, _truncated = _truncate_ai_context_text(text, 3600)
+        parts.append(
+            "\n".join(
+                [
+                    f"文件：{row.get('material_path')}",
+                    f"抽取方式：{method}",
+                    snippet,
+                ]
+            )
+        )
+    return _make_ai_context_attachment(
+        source_type="material",
+        title=f"站内材料目录：{material_row['name']}",
+        content="\n\n---\n\n".join(parts),
+        metadata={
+            "material_id": int(material_row["id"]),
+            "material_path": material_row["material_path"],
+            "node_type": "folder",
+            "file_count": len(file_rows),
+        },
+        warnings=warnings[:8],
+    )
+
+
+async def _build_uploaded_context_attachment(file: UploadFile) -> dict[str, Any]:
+    original_name = _normalize_uploaded_filename(file.filename, fallback="attachment")
+    payload_bytes = await file.read()
+    if not payload_bytes:
+        raise HTTPException(400, f"关联附件《{original_name}》为空")
+    if len(payload_bytes) > MATERIAL_AI_CONTEXT_UPLOAD_MAX_BYTES:
+        raise HTTPException(413, f"关联附件《{original_name}》超过 18MB 限制")
+
+    suffix = Path(original_name).suffix
+    fd, temp_path_value = tempfile.mkstemp(prefix="material-ai-context-", suffix=suffix)
+    os.close(fd)
+    temp_path = Path(temp_path_value)
+    try:
+        await asyncio.to_thread(temp_path.write_bytes, payload_bytes)
+        extraction = await asyncio.to_thread(extract_material_content, temp_path, original_name)
+        content = str(extraction.text or "").strip()
+        warnings = [str(item) for item in extraction.warnings if item]
+        if not content:
+            content = f"附件名称：{original_name}\n（无法抽取正文，请仅作为材料线索参考。）"
+        return _make_ai_context_attachment(
+            source_type="upload",
+            title=f"上传附件：{original_name}",
+            content=content,
+            metadata={
+                "filename": original_name,
+                "file_size": len(payload_bytes),
+                "content_type": file.content_type or "",
+                "extract_method": extraction.method or "extract",
+            },
+            warnings=warnings,
+        )
+    finally:
+        _cleanup_temp_file(str(temp_path))
+
+
+def _iter_exam_question_texts(payload: Any) -> list[str]:
+    data = _parse_json_object(payload)
+    pages = data.get("pages")
+    if not isinstance(pages, list):
+        pages = [data] if data else []
+    questions: list[str] = []
+    for page_index, page in enumerate(pages, start=1):
+        if not isinstance(page, dict):
+            continue
+        page_title = str(page.get("title") or page.get("name") or f"第 {page_index} 页").strip()
+        raw_questions = page.get("questions")
+        if not isinstance(raw_questions, list):
+            raw_questions = []
+        for question_index, question in enumerate(raw_questions, start=1):
+            if not isinstance(question, dict):
+                continue
+            text = str(
+                question.get("text")
+                or question.get("question")
+                or question.get("title")
+                or question.get("stem")
+                or ""
+            ).strip()
+            if not text:
+                continue
+            score = question.get("score") or question.get("points") or question.get("point")
+            prefix = f"{page_title} / 第 {question_index} 题"
+            if score not in (None, ""):
+                prefix += f"（{score} 分）"
+            options = question.get("options")
+            option_text = ""
+            if isinstance(options, list) and options:
+                option_lines = []
+                for option in options:
+                    if isinstance(option, dict):
+                        label = str(option.get("label") or option.get("key") or "").strip()
+                        value = str(option.get("text") or option.get("value") or "").strip()
+                        option_lines.append(f"{label}. {value}".strip(". "))
+                    else:
+                        option_lines.append(str(option).strip())
+                option_text = "\n选项：" + "；".join(item for item in option_lines if item)
+            questions.append(f"{prefix}：{text}{option_text}")
+    return questions
+
+
+def _extract_assignment_question_lines(requirements_md: str) -> list[str]:
+    lines = str(requirements_md or "").splitlines()
+    results: list[str] = []
+    stop_section = False
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+        heading = re.sub(r"^#+\s*", "", line).strip()
+        if re.search(r"(评分|批改|提交|截止|附件|命名|格式|说明|要求)", heading) and not re.search(r"(题|任务|实验|练习|问题)", heading):
+            if results and raw_line.lstrip().startswith("#"):
+                stop_section = True
+            if stop_section:
+                continue
+        if re.match(r"^(?:#{1,4}\s*)?(?:第\s*\d+\s*[题问]|题目\s*\d+|任务\s*\d+|实验\s*\d+|问题\s*\d+)", line):
+            results.append(re.sub(r"^#+\s*", "", line))
+            continue
+        if re.match(r"^(?:[-*]\s*)?\d+[\.、)]\s*\S+", line) and len(line) >= 8:
+            results.append(re.sub(r"^[-*]\s*", "", line))
+            continue
+        if re.search(r"[？?]$", line) and len(line) >= 6:
+            results.append(re.sub(r"^[-*]\s*", "", line))
+    if results:
+        return results[:60]
+    fallback, _truncated = _truncate_ai_context_text(requirements_md, 7000)
+    return [fallback] if fallback else []
+
+
+def _build_assignment_context_attachment(row: dict) -> dict[str, Any]:
+    exam_questions = _iter_exam_question_texts(row.get("exam_questions_json")) if row.get("exam_questions_json") else []
+    question_lines = exam_questions or _extract_assignment_question_lines(row.get("requirements_md") or "")
+    classroom = " / ".join(
+        item
+        for item in [
+            str(row.get("course_name") or "").strip(),
+            str(row.get("class_name") or "").strip(),
+        ]
+        if item
+    )
+    content = "\n".join(
+        [
+            f"作业标题：{row.get('title') or ''}",
+            f"关联课堂：{classroom or '未绑定课堂'}",
+            "题目：",
+            "\n".join(f"{index + 1}. {text}" for index, text in enumerate(question_lines)) or "（未识别到题目正文）",
+        ]
+    )
+    return _make_ai_context_attachment(
+        source_type="assignment",
+        title=f"已生成作业：{row.get('title') or row.get('id')}",
+        content=content,
+        metadata={
+            "assignment_id": int(row["id"]),
+            "course_name": row.get("course_name") or "",
+            "class_name": row.get("class_name") or "",
+            "status": row.get("status") or "",
+            "question_count": len(question_lines),
+        },
+    )
+
+
+def _normalize_generated_ai_payload(raw_result: Any, *, fallback_title: str, fallback_content: str = "") -> dict[str, Any]:
+    payload = raw_result if isinstance(raw_result, dict) else {}
+    payload = dict(payload)
+    content = str(
+        payload.get("content_markdown")
+        or payload.get("markdown")
+        or payload.get("content")
+        or payload.get("text")
+        or fallback_content
+        or ""
+    ).strip()
+    if not content:
+        raise HTTPException(422, "AI 未返回可保存的材料正文")
+    title = str(payload.get("title") or payload.get("name") or fallback_title or "AI生成材料").strip()
+    metadata = _parse_json_object(payload.get("metadata"))
+    metadata.setdefault("title", title)
+    if payload.get("summary"):
+        metadata.setdefault("summary", str(payload.get("summary") or "").strip())
+    payload["metadata"] = metadata
+    payload["content_markdown"] = content
+    payload.setdefault("tables", [])
+    payload.setdefault("warnings", [])
+    payload.setdefault(
+        "export_payload",
+        {
+            "document_group": "teaching_material",
+            "document_type": "teaching_document",
+            "document_type_label": "教学文档",
+            "template_key": "teaching_document",
+            "fields": metadata,
+        },
+    )
+    return payload
+
+
+def _build_generic_material_parse_result(
+    *,
+    raw_result: Any,
+    fallback_title: str,
+    fallback_content: str = "",
+    attachments: list[dict[str, Any]] | None = None,
+    ai_used: bool = True,
+):
+    normalized = _normalize_generated_ai_payload(
+        raw_result,
+        fallback_title=fallback_title,
+        fallback_content=fallback_content,
+    )
+    type_meta = resolve_material_ai_import_type("teaching_material", "teaching_document")
+    attachment_text = "\n\n".join(str(item.get("content") or "") for item in attachments or [])
+    extraction = MaterialExtraction(
+        text=attachment_text or normalized["content_markdown"],
+        method="ai_material_context",
+        source_kind="mixed_context",
+        warnings=[],
+        quality={"usable": True, "status": "ok"},
+    )
+    parse_result = normalize_ai_parse_result(
+        normalized,
+        original_name=f"{normalized['metadata'].get('title') or fallback_title}.json",
+        type_meta=type_meta,
+        extraction=extraction,
+        extra_warnings=[],
+        ai_used=ai_used,
+    )
+    parse_result.parsed_payload["context_sources"] = [
+        {
+            "source_type": item.get("source_type"),
+            "title": item.get("title"),
+            "metadata": item.get("metadata") or {},
+            "truncated": bool(item.get("truncated")),
+        }
+        for item in attachments or []
+    ]
+    return parse_result
+
+
+async def _create_generated_markdown_material(
+    *,
+    user: dict,
+    parent_id: int | None,
+    title: str,
+    markdown_content: str,
+    parse_payload_json: str | None,
+    name_prefix: str = "AI生成",
+) -> dict:
+    base_name = _safe_generated_material_base_name(title)
+    if not base_name.lower().endswith((".md", ".markdown")):
+        desired_name = f"{name_prefix}-{base_name}.md" if name_prefix else f"{base_name}.md"
+    else:
+        desired_name = f"{name_prefix}-{base_name}" if name_prefix else base_name
+    payload_bytes = markdown_content.encode("utf-8")
+    file_hash = hashlib.sha256(payload_bytes).hexdigest()
+    await _write_material_file(file_hash, payload_bytes)
+
+    with get_db_connection() as conn:
+        base_parent = None
+        base_prefix = ""
+        inherited_root_id = None
+        parent_key = None
+        if parent_id is not None:
+            base_parent = ensure_teacher_material_owner(conn, parent_id, user["id"])
+            if base_parent["node_type"] != "folder":
+                raise HTTPException(400, "只能生成到文件夹中")
+            base_prefix = str(base_parent["material_path"])
+            inherited_root_id = int(base_parent["root_id"])
+            parent_key = int(base_parent["id"])
+        owner_scope = load_teacher_org_scope(conn, int(user["id"]))
+        now = datetime.now().isoformat()
+        material_name = make_unique_material_name(conn, int(user["id"]), parent_key, desired_name)
+        material_path = normalize_material_path(f"{base_prefix}/{material_name}" if base_prefix else material_name)
+        file_profile = infer_material_profile(material_name, "text/markdown")
+        material_id = _insert_material_file_row(
+            conn,
+            user=user,
+            name=material_name,
+            material_path=material_path,
+            parent_id=parent_key,
+            root_id=inherited_root_id or 0,
+            file_profile=file_profile,
+            file_hash=file_hash,
+            file_size=len(payload_bytes),
+            owner_scope=owner_scope,
+            now=now,
+            ai_parse_status="completed",
+            ai_parse_result_json=parse_payload_json,
+        )
+        actual_root_id = inherited_root_id or material_id
+        if inherited_root_id is None:
+            conn.execute("UPDATE course_materials SET root_id = ? WHERE id = ?", (actual_root_id, material_id))
+        refresh_root_git_metadata(conn, int(actual_root_id))
+        conn.commit()
+        item = _fetch_material_response_item(conn, material_id, user)
+    if not item:
+        raise HTTPException(500, "AI 材料已保存，但无法读取详情")
+    return item
+
+
+def _build_ai_material_generation_system_prompt() -> str:
+    return (
+        "你是一名深度思考型教学材料生成助手。"
+        "请严格返回 JSON 对象，不要输出 Markdown 代码块或解释。"
+        "JSON 必须包含 title、summary、content_markdown、metadata、outline、keywords、teaching_value、cautions、warnings。"
+        "content_markdown 要是可直接保存为课程材料的完整 Markdown 正文，标题、层级、表格、清单要规整。"
+        "如果有关联附件，只提炼与教师目标相关的题目、知识点、流程和约束，避免抄入无关内容。"
+        "不得编造真实成绩、学生隐私或未提供的事实；不确定处写成待确认字段。"
+    )
+
+
+def _build_ai_material_generation_user_prompt(
+    *,
+    prompt: str,
+    parent_context: dict[str, Any] | None,
+    attachments: list[dict[str, Any]],
+) -> str:
+    source_manifest = [
+        {
+            "index": index + 1,
+            "source_type": item.get("source_type"),
+            "title": item.get("title"),
+            "metadata": item.get("metadata") or {},
+            "truncated": bool(item.get("truncated")),
+            "warnings": item.get("warnings") or [],
+        }
+        for index, item in enumerate(attachments)
+    ]
+    return "\n\n".join(
+        [
+            "请生成一份新的课程材料，并让后端可以直接解析保存。",
+            f"教师提示语：\n{prompt.strip() or '请根据关联附件生成一份结构清晰、可直接用于教学的课程材料。'}",
+            f"目标目录：\n{json.dumps(parent_context or {'name': '材料库根目录', 'material_path': '/'}, ensure_ascii=False, indent=2)}",
+            f"关联附件清单：\n{json.dumps(source_manifest, ensure_ascii=False, indent=2)}",
+            "输出要求：title 简洁明确；summary 1-3 句；content_markdown 内容完整，适合直接在材料库阅读或继续编辑。",
+        ]
+    )
+
+
+def _build_ai_material_rewrite_system_prompt(mode: str) -> str:
+    if mode == "regenerate":
+        return (
+            "你是一名深度思考型教学材料重生成助手。"
+            "请严格返回 JSON 对象，不要 Markdown 代码块。"
+            "JSON 必须包含 title、summary、content_markdown、metadata、outline、keywords、teaching_value、cautions、warnings。"
+            "请基于原材料重新组织内容，回应教师调整提示；可以重写结构，但不得丢失原材料的关键事实。"
+        )
+    return (
+        "你是一名深度思考型教学材料优化助手。"
+        "请严格返回 JSON 对象，不要 Markdown 代码块。"
+        "JSON 必须包含 title、summary、content_markdown、metadata、outline、keywords、teaching_value、cautions、warnings。"
+        "请优化原材料表达、层次、标题和课堂可读性，保留关键事实与操作步骤，修正明显乱码、重复和格式混乱。"
+    )
+
+
+def _build_ai_material_rewrite_user_prompt(
+    *,
+    mode: str,
+    material: dict,
+    prompt: str,
+    attachment: dict[str, Any],
+) -> str:
+    return "\n\n".join(
+        [
+            "请处理下面这份课程材料。",
+            f"处理模式：{'重新生成' if mode == 'regenerate' else '优化'}",
+            f"材料信息：\n{json.dumps({'id': material.get('id'), 'name': material.get('name'), 'material_path': material.get('material_path'), 'node_type': material.get('node_type'), 'preview_type': material.get('preview_type')}, ensure_ascii=False, indent=2)}",
+            f"教师调整提示：\n{prompt.strip() or '无补充要求，请按教学材料质量标准处理。'}",
+            f"可用原始内容来源：{attachment.get('title')}",
+            "输出 content_markdown 时请给出完整正文，不要只给建议。",
+        ]
+    )
 
 
 def _build_material_ai_parse_payload(parse_result) -> dict:
@@ -4015,6 +4753,133 @@ async def batch_download_materials(payload: MaterialBatchDownloadRequest, user: 
     )
 
 
+async def _run_ai_material_rewrite(
+    *,
+    material_id: int,
+    mode: str,
+    prompt: str,
+    user: dict,
+) -> dict[str, Any]:
+    normalized_mode = "regenerate" if str(mode or "").strip().lower() == "regenerate" else "optimize"
+    with get_db_connection() as conn:
+        material = dict(ensure_teacher_material_owner(conn, material_id, user["id"]))
+        context_rows = _collect_material_context_rows(conn, material)
+        conn.execute(
+            "UPDATE course_materials SET ai_optimize_status = 'running', updated_at = ? WHERE id = ?",
+            (datetime.now().isoformat(), material_id),
+        )
+        conn.commit()
+
+    try:
+        attachment = await _build_material_context_attachment(material, context_rows)
+        raw_result = await _call_ai_chat(
+            _build_ai_material_rewrite_system_prompt(normalized_mode),
+            _build_ai_material_rewrite_user_prompt(
+                mode=normalized_mode,
+                material=material,
+                prompt=prompt,
+                attachment=attachment,
+            ),
+            capability="thinking",
+            response_format="json",
+            file_texts=[{"name": attachment.get("title") or material["name"], "content": attachment.get("content") or ""}],
+            task_type="material_ai_regenerate" if normalized_mode == "regenerate" else "material_ai_optimize",
+            task_label=f"materials:ai-{normalized_mode}",
+            timeout=300.0,
+        )
+        fallback_title = str(material.get("name") or "课程材料")
+        parse_result = _build_generic_material_parse_result(
+            raw_result=raw_result,
+            fallback_title=fallback_title,
+            attachments=[attachment],
+            ai_used=True,
+        )
+        markdown_content = build_import_readme(
+            result=parse_result,
+            original_name=f"{parse_result.metadata.get('title') or fallback_title}.md",
+        )
+        parse_payload_json = json.dumps(_build_material_ai_parse_payload(parse_result), ensure_ascii=False)
+
+        if (
+            normalized_mode == "optimize"
+            and material["node_type"] == "file"
+            and str(material.get("preview_type") or "") == "markdown"
+        ):
+            with get_db_connection() as conn:
+                conn.execute(
+                    """
+                    UPDATE course_materials
+                    SET ai_optimize_status = 'completed',
+                        ai_optimized_markdown = ?,
+                        ai_parse_status = 'completed',
+                        ai_parse_result_json = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (markdown_content, parse_payload_json, datetime.now().isoformat(), material_id),
+                )
+                conn.commit()
+                item = _fetch_material_response_item(conn, material_id, user)
+            return {
+                "status": "success",
+                "message": "AI 已优化材料，并生成可查看优化稿",
+                "mode": normalized_mode,
+                "material": item,
+                "viewer_url": f"/materials/view/{material_id}?variant=optimized",
+                "updated_existing": True,
+            }
+
+        target_parent_id = int(material["id"]) if material["node_type"] == "folder" else (
+            int(material["parent_id"]) if material.get("parent_id") is not None else None
+        )
+        generated = await _create_generated_markdown_material(
+            user=user,
+            parent_id=target_parent_id,
+            title=str(parse_result.metadata.get("title") or fallback_title),
+            markdown_content=markdown_content,
+            parse_payload_json=parse_payload_json,
+            name_prefix="AI重生成" if normalized_mode == "regenerate" else "AI优化",
+        )
+        with get_db_connection() as conn:
+            conn.execute(
+                "UPDATE course_materials SET ai_optimize_status = 'completed', updated_at = ? WHERE id = ?",
+                (datetime.now().isoformat(), material_id),
+            )
+            conn.commit()
+        return {
+            "status": "success",
+            "message": "AI 已生成新的 Markdown 材料",
+            "mode": normalized_mode,
+            "material": generated,
+            "viewer_url": f"/materials/view/{generated['id']}",
+            "updated_existing": False,
+        }
+    except Exception as exc:
+        with get_db_connection() as conn:
+            conn.execute(
+                "UPDATE course_materials SET ai_optimize_status = 'failed', updated_at = ? WHERE id = ?",
+                (datetime.now().isoformat(), material_id),
+            )
+            conn.commit()
+        if isinstance(exc, HTTPException):
+            raise exc
+        raise HTTPException(500, f"AI 材料处理失败: {exc}")
+
+
+@router.post("/api/materials/{material_id}/ai-rewrite", response_class=JSONResponse)
+async def ai_rewrite_material(
+    material_id: int,
+    payload: MaterialAiRewriteRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    return await _run_ai_material_rewrite(
+        material_id=material_id,
+        mode=payload.mode,
+        prompt=payload.prompt,
+        user=user,
+    )
+
+
 @router.get("/api/materials/{material_id}/content", response_class=JSONResponse)
 async def get_material_content(material_id: int, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
@@ -4163,59 +5028,9 @@ async def ai_parse_material(material_id: int, user: dict = Depends(get_current_t
 
 @router.post("/api/materials/{material_id}/ai-optimize", response_class=JSONResponse)
 async def ai_optimize_material(material_id: int, user: dict = Depends(get_current_teacher)):
-    with get_db_connection() as conn:
-        material = ensure_teacher_material_owner(conn, material_id, user["id"])
-        if material["node_type"] != "file" or material["ai_capability"] != "markdown":
-            raise HTTPException(400, "当前仅支持对 Markdown 材料执行 AI 优化")
-        conn.execute(
-            "UPDATE course_materials SET ai_optimize_status = 'running', updated_at = ? WHERE id = ?",
-            (datetime.now().isoformat(), material_id),
-        )
-        conn.commit()
-
-    try:
-        markdown_content = await _load_material_markdown(material, prefer_optimized=False)
-        system_prompt = (
-            "你是一名教学材料润色助手。"
-            "请保留 Markdown 结构，优化措辞、层次和课堂可读性。"
-            "不要省略原始关键信息，不要输出解释，只返回优化后的 Markdown 正文。"
-        )
-        user_prompt = (
-            f"请优化下面这份课程材料《{material['name']}》的 Markdown 内容：\n\n"
-            f"{markdown_content}"
-        )
-        response_text = await _call_ai_chat(system_prompt, user_prompt, capability="thinking")
-        optimized_markdown = _strip_code_fence(response_text)
-        if not optimized_markdown.strip():
-            raise HTTPException(500, "AI 未返回有效的优化内容")
-
-        with get_db_connection() as conn:
-            conn.execute(
-                """
-                UPDATE course_materials
-                SET ai_optimize_status = 'completed',
-                    ai_optimized_markdown = ?,
-                    updated_at = ?
-                WHERE id = ?
-                """,
-                (optimized_markdown, datetime.now().isoformat(), material_id),
-            )
-            conn.commit()
-
-        return {
-            "status": "success",
-            "message": "AI 优化完成",
-            "optimized_markdown": optimized_markdown,
-            "viewer_url": f"/materials/view/{material_id}?variant=optimized",
-        }
-    except Exception as exc:
-        error_message = exc.detail if isinstance(exc, HTTPException) else str(exc)
-        with get_db_connection() as conn:
-            conn.execute(
-                "UPDATE course_materials SET ai_optimize_status = 'failed', updated_at = ? WHERE id = ?",
-                (datetime.now().isoformat(), material_id),
-            )
-            conn.commit()
-        if isinstance(exc, HTTPException):
-            raise exc
-        raise HTTPException(500, f"AI 优化失败: {error_message}")
+    return await _run_ai_material_rewrite(
+        material_id=material_id,
+        mode="optimize",
+        prompt="",
+        user=user,
+    )

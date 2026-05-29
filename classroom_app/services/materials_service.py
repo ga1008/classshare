@@ -236,7 +236,8 @@ def serialize_material_row(row, extra: dict | None = None) -> dict:
     item["is_folder"] = item.get("node_type") == "folder"
     item["preview_supported"] = is_preview_supported(preview_type)
     item["can_ai_parse"] = item.get("ai_capability") == "markdown"
-    item["can_ai_optimize"] = item.get("ai_capability") == "markdown"
+    item["can_ai_optimize"] = item.get("node_type") in {"file", "folder"}
+    item["can_ai_regenerate"] = item["can_ai_optimize"]
     item["is_markdown"] = preview_type == "markdown"
     item["is_text"] = is_text_preview_type(preview_type)
     item["is_image"] = preview_type == "image"

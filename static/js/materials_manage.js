@@ -26,6 +26,8 @@ const SEARCH_DEBOUNCE_MS = 280;
 const AI_IMPORT_POLL_INTERVAL_MS = 3500;
 const AI_IMPORT_ACTIVE_STATUSES = new Set(['queued', 'running']);
 const AI_IMPORT_TERMINAL_STATUSES = new Set(['completed', 'failed', 'ai_failed', 'quality_failed', 'unsupported']);
+const AI_GENERATE_MAX_ATTACHMENTS = 10;
+const AI_GENERATE_SEARCH_DEBOUNCE_MS = 260;
 
 function normalizeKeyword(value) {
     return String(value || '')
@@ -133,6 +135,23 @@ const state = {
         pollTimer: 0,
         loadRequestId: 0,
     },
+    aiGenerate: {
+        busy: false,
+        files: [],
+        selectedMaterials: new Map(),
+        selectedAssignments: new Map(),
+        materialCandidates: [],
+        assignmentCandidates: [],
+        materialSearchTimer: 0,
+        assignmentSearchTimer: 0,
+        materialRequestId: 0,
+        assignmentRequestId: 0,
+    },
+    aiRewrite: {
+        busy: false,
+        mode: 'regenerate',
+        materialId: null,
+    },
     repository: {
         materialId: null,
         detail: null,
@@ -179,6 +198,26 @@ const refs = {
     aiImportFileName: document.getElementById('materials-ai-import-file-name'),
     aiImportStatus: document.getElementById('materials-ai-import-status'),
     aiImportSubmitBtn: document.getElementById('materials-ai-import-submit-btn'),
+    aiGenerateOpenBtn: document.getElementById('materials-ai-generate-open-btn'),
+    aiGenerateModal: document.getElementById('materials-ai-generate-modal'),
+    aiGeneratePrompt: document.getElementById('materials-ai-generate-prompt'),
+    aiGenerateFileInput: document.getElementById('materials-ai-generate-file-input'),
+    aiGenerateUploadBtn: document.getElementById('materials-ai-generate-upload-btn'),
+    aiGenerateUploadList: document.getElementById('materials-ai-generate-upload-list'),
+    aiGenerateMaterialQuery: document.getElementById('materials-ai-generate-material-query'),
+    aiGenerateMaterialList: document.getElementById('materials-ai-generate-material-list'),
+    aiGenerateAssignmentQuery: document.getElementById('materials-ai-generate-assignment-query'),
+    aiGenerateAssignmentList: document.getElementById('materials-ai-generate-assignment-list'),
+    aiGenerateSelected: document.getElementById('materials-ai-generate-selected'),
+    aiGenerateCount: document.getElementById('materials-ai-generate-count'),
+    aiGenerateStatus: document.getElementById('materials-ai-generate-status'),
+    aiGenerateSubmitBtn: document.getElementById('materials-ai-generate-submit-btn'),
+    aiRewriteModal: document.getElementById('materials-ai-rewrite-modal'),
+    aiRewriteTitle: document.getElementById('materials-ai-rewrite-title'),
+    aiRewriteSubtitle: document.getElementById('materials-ai-rewrite-subtitle'),
+    aiRewritePrompt: document.getElementById('materials-ai-rewrite-prompt'),
+    aiRewriteStatus: document.getElementById('materials-ai-rewrite-status'),
+    aiRewriteSubmitBtn: document.getElementById('materials-ai-rewrite-submit-btn'),
     searchInput: document.getElementById('materials-search-input'),
     searchClearBtn: document.getElementById('materials-search-clear-btn'),
     sortBy: document.getElementById('materials-sort-by'),
@@ -571,6 +610,7 @@ function renderDetail(detail) {
                         <button type="button" class="btn btn-outline" data-detail-action="assign" ${config.canAssign ? '' : 'disabled'}>分配课堂</button>
                         <button type="button" class="btn btn-outline" data-detail-action="ai-parse" ${canManage && detail.can_ai_parse ? '' : 'disabled'}>AI 解析</button>
                         <button type="button" class="btn btn-outline" data-detail-action="ai-optimize" ${canManage && detail.can_ai_optimize ? '' : 'disabled'}>AI 优化</button>
+                        <button type="button" class="btn btn-outline" data-detail-action="ai-regenerate" ${canManage && detail.can_ai_regenerate ? '' : 'disabled'}>AI 重新生成</button>
                         ${canManage ? '<button type="button" class="btn btn-danger" data-detail-action="delete">删除</button>' : ''}
                     </div>
                 </div>
@@ -1160,6 +1200,354 @@ async function submitAiImport() {
     }
 }
 
+function getAiGenerateAttachmentCount() {
+    return state.aiGenerate.files.length
+        + state.aiGenerate.selectedMaterials.size
+        + state.aiGenerate.selectedAssignments.size;
+}
+
+function canAddAiGenerateAttachment() {
+    return getAiGenerateAttachmentCount() < AI_GENERATE_MAX_ATTACHMENTS;
+}
+
+function setAiGenerateStatus(message = '', type = 'info') {
+    if (!refs.aiGenerateStatus) return;
+    const normalizedMessage = String(message || '').trim();
+    refs.aiGenerateStatus.hidden = !normalizedMessage;
+    refs.aiGenerateStatus.className = `materials-ai-import-status materials-ai-import-status--${type}`;
+    refs.aiGenerateStatus.textContent = normalizedMessage;
+}
+
+function setAiGenerateBusy(busy) {
+    state.aiGenerate.busy = busy;
+    if (refs.aiGenerateSubmitBtn) {
+        refs.aiGenerateSubmitBtn.disabled = busy;
+        refs.aiGenerateSubmitBtn.textContent = busy ? '深度思考中...' : '生成并保存';
+    }
+    [
+        refs.aiGeneratePrompt,
+        refs.aiGenerateUploadBtn,
+        refs.aiGenerateMaterialQuery,
+        refs.aiGenerateAssignmentQuery,
+    ].forEach((element) => {
+        if (element) element.disabled = busy;
+    });
+}
+
+function resetAiGenerateState() {
+    state.aiGenerate.files = [];
+    state.aiGenerate.selectedMaterials = new Map();
+    state.aiGenerate.selectedAssignments = new Map();
+    state.aiGenerate.materialCandidates = [];
+    state.aiGenerate.assignmentCandidates = [];
+    if (refs.aiGenerateFileInput) refs.aiGenerateFileInput.value = '';
+    if (refs.aiGeneratePrompt) refs.aiGeneratePrompt.value = '';
+    if (refs.aiGenerateMaterialQuery) refs.aiGenerateMaterialQuery.value = '';
+    if (refs.aiGenerateAssignmentQuery) refs.aiGenerateAssignmentQuery.value = '';
+    setAiGenerateStatus('', 'info');
+}
+
+function renderAiGenerateSelected() {
+    const count = getAiGenerateAttachmentCount();
+    if (refs.aiGenerateCount) {
+        refs.aiGenerateCount.textContent = `${count} / ${AI_GENERATE_MAX_ATTACHMENTS}`;
+    }
+    if (!refs.aiGenerateSelected) return;
+    const selected = [
+        ...state.aiGenerate.files.map((entry) => ({
+            kind: 'file',
+            id: entry.id,
+            title: entry.file.name,
+            meta: formatSize(entry.file.size || 0),
+        })),
+        ...Array.from(state.aiGenerate.selectedMaterials.values()).map((item) => ({
+            kind: 'material',
+            id: item.id,
+            title: item.name,
+            meta: item.material_path || '站内材料',
+        })),
+        ...Array.from(state.aiGenerate.selectedAssignments.values()).map((item) => ({
+            kind: 'assignment',
+            id: item.id,
+            title: item.title,
+            meta: [item.course_name, item.class_name].filter(Boolean).join(' / ') || '已生成作业',
+        })),
+    ];
+    if (!selected.length) {
+        refs.aiGenerateSelected.innerHTML = '<div class="materials-empty materials-empty--compact">还没有关联附件。</div>';
+        return;
+    }
+    refs.aiGenerateSelected.innerHTML = selected.map((item) => `
+        <span class="materials-ai-generate-chip" title="${escapeHtml(item.meta)}">
+            <strong>${escapeHtml(item.kind === 'file' ? '上传' : (item.kind === 'assignment' ? '作业' : '材料'))}</strong>
+            <span>${escapeHtml(item.title)}</span>
+            <button type="button" data-ai-generate-remove="${escapeHtml(item.kind)}" data-id="${escapeHtml(String(item.id))}" aria-label="移除 ${escapeHtml(item.title)}">&times;</button>
+        </span>
+    `).join('');
+}
+
+function renderAiGenerateUploadList() {
+    if (!refs.aiGenerateUploadList) return;
+    if (!state.aiGenerate.files.length) {
+        refs.aiGenerateUploadList.innerHTML = '<div class="materials-ai-generate-empty">未选择新文件。</div>';
+        return;
+    }
+    refs.aiGenerateUploadList.innerHTML = state.aiGenerate.files.map((entry) => `
+        <div class="materials-ai-generate-candidate is-selected">
+            <div>
+                <strong title="${escapeHtml(entry.file.name)}">${escapeHtml(entry.file.name)}</strong>
+                <span>${escapeHtml(formatSize(entry.file.size || 0))}</span>
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" data-ai-generate-remove="file" data-id="${escapeHtml(entry.id)}">移除</button>
+        </div>
+    `).join('');
+}
+
+function renderAiGenerateCandidateList(kind) {
+    const isMaterial = kind === 'material';
+    const listEl = isMaterial ? refs.aiGenerateMaterialList : refs.aiGenerateAssignmentList;
+    if (!listEl) return;
+    const items = isMaterial ? state.aiGenerate.materialCandidates : state.aiGenerate.assignmentCandidates;
+    const selectedMap = isMaterial ? state.aiGenerate.selectedMaterials : state.aiGenerate.selectedAssignments;
+    if (!items.length) {
+        listEl.innerHTML = `<div class="materials-ai-generate-empty">暂无可选${isMaterial ? '材料' : '作业'}。</div>`;
+        return;
+    }
+    const reachedLimit = !canAddAiGenerateAttachment();
+    listEl.innerHTML = items.map((item) => {
+        const selected = selectedMap.has(Number(item.id));
+        const title = isMaterial ? item.name : item.title;
+        const subtitle = isMaterial
+            ? (item.material_path || getMaterialTypeLabel(item))
+            : ([item.course_name, item.class_name].filter(Boolean).join(' / ') || item.question_excerpt || '作业题目');
+        const meta = isMaterial
+            ? [getMaterialTypeLabel(item), item.node_type === 'folder' ? `${item.child_count || 0} 项` : formatSize(item.file_size || 0)].filter(Boolean).join(' · ')
+            : [`${item.question_count || 0} 题`, item.status || ''].filter(Boolean).join(' · ');
+        return `
+            <button type="button"
+                class="materials-ai-generate-candidate ${selected ? 'is-selected' : ''}"
+                data-ai-generate-add="${escapeHtml(kind)}"
+                data-id="${escapeHtml(String(item.id))}"
+                ${selected || reachedLimit ? 'disabled' : ''}
+            >
+                <div>
+                    <strong title="${escapeHtml(title)}">${escapeHtml(title)}</strong>
+                    <span title="${escapeHtml(subtitle)}">${escapeHtml(subtitle)}</span>
+                </div>
+                <em>${escapeHtml(selected ? '已选' : meta)}</em>
+            </button>
+        `;
+    }).join('');
+}
+
+function renderAiGenerateModal() {
+    renderAiGenerateSelected();
+    renderAiGenerateUploadList();
+    renderAiGenerateCandidateList('material');
+    renderAiGenerateCandidateList('assignment');
+}
+
+function addAiGenerateFiles(fileList) {
+    if (!fileList || !fileList.length) return;
+    const files = Array.from(fileList);
+    for (const file of files) {
+        if (!canAddAiGenerateAttachment()) {
+            showToast(`关联附件最多支持 ${AI_GENERATE_MAX_ATTACHMENTS} 份`, 'warning');
+            break;
+        }
+        const duplicate = state.aiGenerate.files.some((entry) => (
+            entry.file.name === file.name && entry.file.size === file.size && entry.file.lastModified === file.lastModified
+        ));
+        if (duplicate) continue;
+        state.aiGenerate.files.push({
+            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            file,
+        });
+    }
+    renderAiGenerateModal();
+}
+
+function removeAiGenerateAttachment(kind, idValue) {
+    if (kind === 'file') {
+        state.aiGenerate.files = state.aiGenerate.files.filter((entry) => entry.id !== idValue);
+    } else if (kind === 'material') {
+        state.aiGenerate.selectedMaterials.delete(Number(idValue));
+    } else if (kind === 'assignment') {
+        state.aiGenerate.selectedAssignments.delete(Number(idValue));
+    }
+    renderAiGenerateModal();
+}
+
+async function loadAiGenerateCandidates(kind, query = '') {
+    const isMaterial = kind === 'material';
+    const requestIdKey = isMaterial ? 'materialRequestId' : 'assignmentRequestId';
+    const requestId = ++state.aiGenerate[requestIdKey];
+    const params = new URLSearchParams();
+    if (query) params.set('query', query);
+    params.set('limit', '32');
+    const endpoint = isMaterial ? '/api/materials/ai-generation/candidates' : '/api/materials/ai-generation/assignments';
+    const result = await apiFetch(`${endpoint}?${params.toString()}`, { method: 'GET', silent: true });
+    if (requestId !== state.aiGenerate[requestIdKey]) return;
+    if (isMaterial) {
+        state.aiGenerate.materialCandidates = result.items || [];
+    } else {
+        state.aiGenerate.assignmentCandidates = result.items || [];
+    }
+    renderAiGenerateCandidateList(kind);
+}
+
+function triggerAiGenerateCandidateSearch(kind) {
+    const isMaterial = kind === 'material';
+    const timerKey = isMaterial ? 'materialSearchTimer' : 'assignmentSearchTimer';
+    const queryEl = isMaterial ? refs.aiGenerateMaterialQuery : refs.aiGenerateAssignmentQuery;
+    window.clearTimeout(state.aiGenerate[timerKey]);
+    state.aiGenerate[timerKey] = window.setTimeout(() => {
+        loadAiGenerateCandidates(kind, normalizeKeyword(queryEl?.value || '')).catch((error) => {
+            showToast(error.message || `加载${isMaterial ? '材料' : '作业'}候选失败`, 'error');
+        });
+    }, AI_GENERATE_SEARCH_DEBOUNCE_MS);
+}
+
+function selectAiGenerateCandidate(kind, idValue) {
+    if (!canAddAiGenerateAttachment()) {
+        showToast(`关联附件最多支持 ${AI_GENERATE_MAX_ATTACHMENTS} 份`, 'warning');
+        return;
+    }
+    const id = Number(idValue);
+    if (kind === 'material') {
+        const item = state.aiGenerate.materialCandidates.find((entry) => Number(entry.id) === id);
+        if (item) state.aiGenerate.selectedMaterials.set(id, item);
+    } else if (kind === 'assignment') {
+        const item = state.aiGenerate.assignmentCandidates.find((entry) => Number(entry.id) === id);
+        if (item) state.aiGenerate.selectedAssignments.set(id, item);
+    }
+    renderAiGenerateModal();
+}
+
+function openAiGenerateModal() {
+    resetAiGenerateState();
+    setAiGenerateBusy(false);
+    renderAiGenerateModal();
+    openModal('materials-ai-generate-modal');
+    Promise.all([
+        loadAiGenerateCandidates('material', ''),
+        loadAiGenerateCandidates('assignment', ''),
+    ]).catch((error) => {
+        setAiGenerateStatus(error.message || '候选上下文加载失败', 'error');
+    });
+    window.setTimeout(() => refs.aiGeneratePrompt?.focus(), 50);
+}
+
+async function submitAiGenerate() {
+    if (state.aiGenerate.busy) return;
+    const count = getAiGenerateAttachmentCount();
+    const prompt = refs.aiGeneratePrompt?.value?.trim() || '';
+    if (!prompt && count <= 0) {
+        showToast('请填写提示语，或至少关联一份附件', 'warning');
+        refs.aiGeneratePrompt?.focus();
+        return;
+    }
+    const formData = new FormData();
+    formData.append('prompt', prompt);
+    formData.append('existing_material_ids', JSON.stringify(Array.from(state.aiGenerate.selectedMaterials.keys())));
+    formData.append('assignment_ids', JSON.stringify(Array.from(state.aiGenerate.selectedAssignments.keys())));
+    state.aiGenerate.files.forEach((entry) => {
+        formData.append('new_files', entry.file, entry.file.name);
+    });
+    if (state.currentParentId) {
+        formData.append('parent_id', String(state.currentParentId));
+    }
+
+    setAiGenerateBusy(true);
+    setAiGenerateStatus('AI 正在深度整理提示与关联附件，完成后会保存成新材料...', 'info');
+    try {
+        const result = await apiFetch('/api/materials/ai-generate', {
+            method: 'POST',
+            body: formData,
+        });
+        closeModal('materials-ai-generate-modal');
+        showToast(result.message || 'AI 材料已生成', 'success', 5200);
+        await loadLibrary(state.currentParentId, false);
+        if (result.material?.id) {
+            await loadMaterialDetail(result.material.id);
+            openDetailModal();
+        }
+        if (result.viewer_url) {
+            window.open(result.viewer_url, '_blank', 'noopener');
+        }
+    } catch (error) {
+        setAiGenerateStatus(error.message || 'AI 材料生成失败', 'error');
+        throw error;
+    } finally {
+        setAiGenerateBusy(false);
+    }
+}
+
+function setAiRewriteStatus(message = '', type = 'info') {
+    if (!refs.aiRewriteStatus) return;
+    const normalizedMessage = String(message || '').trim();
+    refs.aiRewriteStatus.hidden = !normalizedMessage;
+    refs.aiRewriteStatus.className = `materials-ai-import-status materials-ai-import-status--${type}`;
+    refs.aiRewriteStatus.textContent = normalizedMessage;
+}
+
+function setAiRewriteBusy(busy) {
+    state.aiRewrite.busy = busy;
+    if (refs.aiRewriteSubmitBtn) {
+        refs.aiRewriteSubmitBtn.disabled = busy;
+        refs.aiRewriteSubmitBtn.textContent = busy ? '处理中...' : '开始处理';
+    }
+    if (refs.aiRewritePrompt) refs.aiRewritePrompt.disabled = busy;
+}
+
+function openAiRewriteModal(mode = 'regenerate') {
+    if (!state.activeDetail) return;
+    state.aiRewrite.mode = mode;
+    state.aiRewrite.materialId = state.activeDetail.id;
+    if (refs.aiRewriteTitle) {
+        refs.aiRewriteTitle.textContent = mode === 'regenerate' ? 'AI重新生成材料' : 'AI优化材料';
+    }
+    if (refs.aiRewriteSubtitle) {
+        refs.aiRewriteSubtitle.textContent = mode === 'regenerate'
+            ? '写下希望调整的方向；留空则基于原材料重新组织并生成新材料。'
+            : '留空则保留关键信息并优化表达、层级和格式。';
+    }
+    if (refs.aiRewritePrompt) refs.aiRewritePrompt.value = '';
+    setAiRewriteStatus('', 'info');
+    setAiRewriteBusy(false);
+    openModal('materials-ai-rewrite-modal');
+    window.setTimeout(() => refs.aiRewritePrompt?.focus(), 50);
+}
+
+async function submitAiRewrite() {
+    if (state.aiRewrite.busy || !state.aiRewrite.materialId) return;
+    const materialId = state.aiRewrite.materialId;
+    const mode = state.aiRewrite.mode || 'regenerate';
+    const prompt = refs.aiRewritePrompt?.value || '';
+    setAiRewriteBusy(true);
+    setAiRewriteStatus(mode === 'regenerate' ? 'AI 正在重新生成材料...' : 'AI 正在优化材料...', 'info');
+    try {
+        const result = await apiFetch(`/api/materials/${materialId}/ai-rewrite`, {
+            method: 'POST',
+            body: { mode, prompt },
+        });
+        closeModal('materials-ai-rewrite-modal');
+        showToast(result.message || 'AI 处理完成', 'success', 5200);
+        await loadLibrary(state.currentParentId, false);
+        const nextMaterialId = result.material?.id || materialId;
+        await loadMaterialDetail(nextMaterialId);
+        openDetailModal();
+        if (result.viewer_url) {
+            window.open(result.viewer_url, '_blank', 'noopener');
+        }
+    } catch (error) {
+        setAiRewriteStatus(error.message || 'AI 处理失败', 'error');
+        throw error;
+    } finally {
+        setAiRewriteBusy(false);
+    }
+}
+
 function toggleSelection(materialId, checked) {
     const normalizedId = Number(materialId);
     if (checked) {
@@ -1319,7 +1707,7 @@ async function runAiOptimize() {
     const result = await apiFetch(`/api/materials/${materialId}/ai-optimize`, { method: 'POST' });
     showToast(result.message || 'AI 优化完成', 'success');
     await loadLibrary(state.currentParentId);
-    await loadMaterialDetail(materialId);
+    await loadMaterialDetail(result.material?.id || materialId);
     if (result.viewer_url) {
         window.open(result.viewer_url, '_blank', 'noopener');
     }
@@ -1761,6 +2149,9 @@ function bindEvents() {
         setUploadMenuOpen(false);
         openAiImportModal();
     });
+    refs.aiGenerateOpenBtn?.addEventListener('click', () => {
+        openAiGenerateModal();
+    });
     refs.folderBtn?.addEventListener('click', () => refs.folderInput?.click());
 
     refs.fileInput?.addEventListener('change', async () => {
@@ -1905,6 +2296,10 @@ function bindEvents() {
             });
             return;
         }
+        if (action === 'ai-regenerate') {
+            openAiRewriteModal('regenerate');
+            return;
+        }
         if (action === 'delete') {
             deleteActiveMaterial().catch((error) => {
                 showToast(error.message || '删除材料失败', 'error');
@@ -1933,6 +2328,55 @@ function bindEvents() {
             showToast(error.message || 'AI 解析导入失败', 'error');
         });
     });
+
+    refs.aiGenerateUploadBtn?.addEventListener('click', () => {
+        if (!state.aiGenerate.busy) refs.aiGenerateFileInput?.click();
+    });
+
+    refs.aiGenerateFileInput?.addEventListener('change', () => {
+        addAiGenerateFiles(refs.aiGenerateFileInput.files);
+        refs.aiGenerateFileInput.value = '';
+    });
+
+    refs.aiGenerateSelected?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-ai-generate-remove]');
+        if (!button) return;
+        removeAiGenerateAttachment(button.dataset.aiGenerateRemove, button.dataset.id);
+    });
+
+    refs.aiGenerateUploadList?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-ai-generate-remove]');
+        if (!button) return;
+        removeAiGenerateAttachment(button.dataset.aiGenerateRemove, button.dataset.id);
+    });
+
+    refs.aiGenerateMaterialList?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-ai-generate-add="material"]');
+        if (!button) return;
+        selectAiGenerateCandidate('material', button.dataset.id);
+    });
+
+    refs.aiGenerateAssignmentList?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-ai-generate-add="assignment"]');
+        if (!button) return;
+        selectAiGenerateCandidate('assignment', button.dataset.id);
+    });
+
+    refs.aiGenerateMaterialQuery?.addEventListener('input', () => triggerAiGenerateCandidateSearch('material'));
+    refs.aiGenerateAssignmentQuery?.addEventListener('input', () => triggerAiGenerateCandidateSearch('assignment'));
+
+    refs.aiGenerateSubmitBtn?.addEventListener('click', () => {
+        submitAiGenerate().catch((error) => {
+            showToast(error.message || 'AI 材料生成失败', 'error');
+        });
+    });
+
+    refs.aiRewriteSubmitBtn?.addEventListener('click', () => {
+        submitAiRewrite().catch((error) => {
+            showToast(error.message || 'AI 材料处理失败', 'error');
+        });
+    });
+
     refs.detail?.addEventListener('change', (event) => {
         const select = event.target.closest('[data-material-scope-select]');
         if (!select) return;

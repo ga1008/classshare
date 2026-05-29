@@ -8,6 +8,7 @@
 {% block header_actions %}
 {% from "macros/app_topbar.html" import app_topbar_icon, topbar_action %}
 <div class="materials-toolbar-group materials-header-actions">
+    {{ topbar_action('AI生成材料', '提示与附件', 'robot', button_id='materials-ai-generate-open-btn', variant='solid', tone='teal') }}
     {{ topbar_action('上传文件夹', '批量资料', 'folder-up', button_id='materials-upload-folder-btn', variant='solid', tone='cyan') }}
     <div class="materials-upload-menu" id="materials-upload-menu">
         <button
@@ -190,6 +191,103 @@
     class="hidden"
     accept=".doc,.docx,.xls,.xlsx,.pdf,.txt,.md,.markdown,.csv,.png,.jpg,.jpeg,.webp,.bmp,.gif"
 >
+<input
+    type="file"
+    id="materials-ai-generate-file-input"
+    class="hidden"
+    multiple
+    accept=".doc,.docx,.xls,.xlsx,.pdf,.txt,.md,.markdown,.csv,.json,.png,.jpg,.jpeg,.webp,.bmp,.gif,.ppt,.pptx"
+>
+
+<div id="materials-ai-generate-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable modal-xl materials-ai-generate-dialog">
+        <div class="modal-content materials-ai-generate-content">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">AI生成课程材料</h3>
+                    <p class="modal-subtitle">填写生成目标，可关联上传文件、站内材料或已生成作业题目，最多 10 份上下文。</p>
+                </div>
+                <button class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body materials-ai-generate-body">
+                <label class="materials-form-field materials-ai-generate-prompt-field">
+                    <span>提示话语</span>
+                    <textarea id="materials-ai-generate-prompt" class="form-control" rows="5" placeholder="例如：根据这些作业题目生成一份期末复习提纲，包含知识点、易错点和课堂练习安排。"></textarea>
+                </label>
+
+                <div class="materials-ai-generate-selected-panel">
+                    <div class="materials-section-header">
+                        <h3>已关联附件</h3>
+                        <span class="text-muted text-sm" id="materials-ai-generate-count">0 / 10</span>
+                    </div>
+                    <div id="materials-ai-generate-selected" class="materials-ai-generate-selected">
+                        <div class="materials-empty materials-empty--compact">还没有关联附件。</div>
+                    </div>
+                </div>
+
+                <div class="materials-ai-generate-source-grid">
+                    <section class="materials-section materials-ai-generate-source">
+                        <div class="materials-section-header">
+                            <h3>上传新文件</h3>
+                            <button type="button" class="btn btn-outline btn-sm" id="materials-ai-generate-upload-btn">选择文件</button>
+                        </div>
+                        <div class="text-muted text-sm">支持 Word、Excel、PDF、Markdown、图片等，文件只作为本次生成上下文。</div>
+                        <div class="materials-ai-generate-source-list" id="materials-ai-generate-upload-list"></div>
+                    </section>
+
+                    <section class="materials-section materials-ai-generate-source">
+                        <div class="materials-section-header">
+                            <h3>站内材料</h3>
+                            <span class="text-muted text-sm">可搜索全库</span>
+                        </div>
+                        <input type="search" id="materials-ai-generate-material-query" class="form-control" placeholder="搜索材料名称或路径">
+                        <div class="materials-ai-generate-source-list" id="materials-ai-generate-material-list"></div>
+                    </section>
+
+                    <section class="materials-section materials-ai-generate-source">
+                        <div class="materials-section-header">
+                            <h3>已生成作业</h3>
+                            <span class="text-muted text-sm">仅使用题目</span>
+                        </div>
+                        <input type="search" id="materials-ai-generate-assignment-query" class="form-control" placeholder="搜索作业、课程或班级">
+                        <div class="materials-ai-generate-source-list" id="materials-ai-generate-assignment-list"></div>
+                    </section>
+                </div>
+
+                <div class="materials-ai-import-status" id="materials-ai-generate-status" hidden></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="materials-ai-generate-submit-btn">生成并保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="materials-ai-rewrite-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title" id="materials-ai-rewrite-title">AI重新生成</h3>
+                    <p class="modal-subtitle" id="materials-ai-rewrite-subtitle">可写入需要调整的提示语，留空则由 AI 按材料质量标准处理。</p>
+                </div>
+                <button class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <label class="materials-form-field">
+                    <span>调整提示语</span>
+                    <textarea id="materials-ai-rewrite-prompt" class="form-control" rows="5" placeholder="例如：更适合软件工程专业学生；增加表格；减少铺垫，突出课堂可执行步骤。"></textarea>
+                </label>
+                <div class="materials-ai-import-status" id="materials-ai-rewrite-status" hidden></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="materials-ai-rewrite-submit-btn">开始处理</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <div id="materials-ai-import-modal" class="modal-backdrop" style="display:none;">
     <div class="modal-dialog modal-dialog-scrollable">
