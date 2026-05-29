@@ -13790,6 +13790,271 @@ body.has-chat-image-preview-open {
 
 #materials-panel .materials-row {
     background: rgba(255, 255, 255, 0.56);
+    cursor: pointer;
+}
+
+#materials-panel .materials-row:hover {
+    background: rgba(248, 250, 252, 0.9);
+}
+
+#materials-panel .classroom-materials-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.85rem;
+    padding-left: 0;
+    padding-right: 0;
+    border: 0;
+    background: transparent;
+}
+
+#materials-panel .materials-path-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-shrink: 0;
+    padding: 0.25rem;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.78);
+}
+
+.classroom-material-modal-backdrop {
+    align-items: center;
+    justify-content: center;
+    padding: clamp(1rem, 3vw, 2rem);
+}
+
+.classroom-material-modal {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.classroom-material-detail-path {
+    margin: 0.35rem 0 0;
+    max-width: min(68vw, 52rem);
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.classroom-material-detail-body {
+    display: grid;
+    gap: 1rem;
+    background: rgba(248, 250, 252, 0.68);
+}
+
+.classroom-material-detail-loading {
+    padding: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--color-text-muted);
+}
+
+.classroom-material-detail-section {
+    display: grid;
+    gap: 0.85rem;
+    padding: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.classroom-material-detail-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.classroom-material-detail-section-head span {
+    color: var(--color-text-muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.classroom-material-detail-section-head strong {
+    color: #0f172a;
+    font-size: 0.95rem;
+}
+
+.classroom-material-meta-grid,
+.classroom-material-field-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 0.7rem;
+}
+
+.classroom-material-meta-grid > div,
+.classroom-material-field {
+    min-width: 0;
+    padding: 0.72rem 0.78rem;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: 8px;
+    background: rgba(248, 250, 252, 0.74);
+}
+
+.classroom-material-meta-grid span,
+.classroom-material-field span {
+    display: block;
+    margin-bottom: 0.28rem;
+    color: var(--color-text-muted);
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.classroom-material-meta-grid strong,
+.classroom-material-field strong {
+    display: block;
+    min-width: 0;
+    color: #111827;
+    font-size: 0.92rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.classroom-material-preview-list {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.classroom-material-preview-list > div {
+    display: grid;
+    grid-template-columns: minmax(7rem, 0.8fr) minmax(0, 1.8fr) auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.72rem 0.78rem;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.92);
+}
+
+.classroom-material-preview-list strong,
+.classroom-material-preview-list span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.classroom-material-preview-list em {
+    justify-self: end;
+    color: #0f766e;
+    font-style: normal;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.classroom-material-markdown-preview {
+    border-top: 1px solid rgba(226, 232, 240, 0.9);
+    padding-top: 0.75rem;
+}
+
+.classroom-material-markdown-preview summary {
+    cursor: pointer;
+    color: #2563eb;
+    font-weight: 700;
+}
+
+.classroom-material-markdown-preview pre {
+    max-height: 18rem;
+    margin: 0.75rem 0 0;
+    padding: 0.9rem;
+    border-radius: 8px;
+    background: #0f172a;
+    color: #e5e7eb;
+    font-size: 0.82rem;
+    line-height: 1.65;
+    overflow: auto;
+    white-space: pre-wrap;
+}
+
+.classroom-material-empty-hint {
+    display: grid;
+    gap: 0.35rem;
+    color: var(--color-text-muted);
+}
+
+.classroom-material-empty-hint strong {
+    color: #111827;
+}
+
+.classroom-material-ai-prompt,
+.classroom-final-material-form textarea,
+.classroom-final-material-form select {
+    width: 100%;
+    border: 1px solid rgba(148, 163, 184, 0.32);
+    border-radius: 8px;
+    background: #fff;
+    padding: 0.75rem 0.85rem;
+    color: #111827;
+}
+
+.classroom-material-inline-actions,
+.classroom-material-detail-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+}
+
+.classroom-material-detail-footer .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.48;
+    filter: grayscale(0.2);
+}
+
+.classroom-final-material-form {
+    display: grid;
+    gap: 1rem;
+}
+
+.classroom-final-material-form .form-group {
+    display: grid;
+    gap: 0.45rem;
+}
+
+.classroom-final-material-form .form-group > span {
+    color: var(--color-text-muted);
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
+.classroom-final-material-status {
+    padding: 0.75rem 0.85rem;
+    border: 1px solid rgba(59, 130, 246, 0.22);
+    border-radius: 8px;
+    background: rgba(239, 246, 255, 0.9);
+    color: #1d4ed8;
+}
+
+@media (max-width: 720px) {
+    #materials-panel .classroom-materials-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    #materials-panel .materials-path-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .classroom-material-detail-path {
+        max-width: 100%;
+    }
+
+    .classroom-material-preview-list > div {
+        grid-template-columns: 1fr;
+        gap: 0.35rem;
+    }
+
+    .classroom-material-preview-list em {
+        justify-self: start;
+    }
 }
 
 #file-list-container {

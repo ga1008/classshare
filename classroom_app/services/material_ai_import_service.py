@@ -15,6 +15,11 @@ from typing import Any, Awaitable, Callable
 from fastapi import HTTPException
 
 from .file_preview_service import TEXT_CONTENT_ENCODINGS
+from .material_final_document_service import (
+    FINAL_MATERIAL_TYPES,
+    extract_markdown_tables,
+    normalize_final_material_payload,
+)
 
 try:
     from ai_assistant_doc_extract import extract_document_text, render_pdf_pages_to_data_urls
@@ -328,6 +333,8 @@ def normalize_ai_parse_result(
     _normalize_academic_period(metadata)
 
     tables = _coerce_tables(parsed.get("tables"))
+    if not tables:
+        tables = extract_markdown_tables(content_markdown)
     warnings = _merge_warnings(extra_warnings, parsed.get("warnings"))
     export_payload = _coerce_dict(parsed.get("export_payload"))
     if not export_payload:
@@ -344,6 +351,21 @@ def normalize_ai_parse_result(
         export_payload.setdefault("document_type", type_meta["key"])
         export_payload.setdefault("document_type_label", type_meta["label"])
         export_payload.setdefault("template_key", type_meta.get("template_key", type_meta["key"]))
+    if type_meta["key"] in FINAL_MATERIAL_TYPES:
+        export_payload = normalize_final_material_payload(
+            document_type=type_meta["key"],
+            metadata=metadata,
+            content_markdown=content_markdown,
+            tables=tables,
+            export_payload=export_payload,
+        )
+        metadata.update(
+            {
+                key: value
+                for key, value in _coerce_dict(export_payload.get("fields")).items()
+                if key not in metadata and value not in (None, "", [], {})
+            }
+        )
 
     content_quality = _assess_text_quality(content_markdown, method="parsed_markdown")
     raw_result_dict = parsed if isinstance(parsed, dict) else {}
@@ -403,7 +425,7 @@ def build_material_export_payload(
     content_markdown: str,
     tables: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "document_group": document_group,
         "document_type": document_type,
         "document_type_label": type_meta.get("label", document_type),
@@ -417,6 +439,15 @@ def build_material_export_payload(
             "layout_source": "parsed_content",
         },
     }
+    if document_type in FINAL_MATERIAL_TYPES:
+        payload = normalize_final_material_payload(
+            document_type=document_type,
+            metadata=metadata,
+            content_markdown=content_markdown,
+            tables=tables,
+            export_payload=payload,
+        )
+    return payload
 
 
 def _extract_text_like(file_path: Path, ext: str) -> MaterialExtraction:
@@ -755,15 +786,32 @@ def _render_office_pages_to_images(file_path: Path, ext: str, warnings: list[str
 
 
 def _docx_table_to_markdown(table) -> str:
-    rows = []
-    for row in table.rows:
-        values = []
-        for cell in row.cells:
-            text = "\n".join(part.strip() for part in cell.text.splitlines() if part.strip())
-            values.append(text)
-        if any(values):
+    return _rows_to_markdown(_docx_table_to_rows(table))
+
+
+def _docx_table_to_rows(table) -> list[list[str]]:
+    rows: list[list[str]] = []
+    for row in table._tbl.tr_lst:
+        values: list[str] = []
+        for cell in row.tc_lst:
+            cell_text = "\n".join(
+                text.strip()
+                for text in cell.xpath(".//w:t/text()")
+                if str(text or "").strip()
+            )
+            grid_span = 1
+            tc_pr = cell.tcPr
+            if tc_pr is not None and tc_pr.gridSpan is not None:
+                try:
+                    grid_span = max(1, int(tc_pr.gridSpan.val))
+                except (TypeError, ValueError):
+                    grid_span = 1
+            values.append(cell_text)
+            for _ in range(grid_span - 1):
+                values.append("")
+        if any(value.strip() for value in values):
             rows.append(values)
-    return _rows_to_markdown(rows)
+    return rows
 
 
 def _extract_docx_zip_text(file_path: Path) -> str:
@@ -863,7 +911,8 @@ def _schema_hint(type_meta: dict[str, Any]) -> str:
     key = type_meta["key"]
     common = (
         "通用字段建议：school, college, department, course_name, course_code, class_name, "
-        "teacher_name, academic_year, semester, date, source_filename。"
+        "teacher_name, examiner_name, reviewer_name, leader_name, academic_year, semester, "
+        "date, source_filename。所有能从表格标题、合并单元格、勾选项中读出的字段都要进入 metadata 和 export_payload.fields。"
     )
     specific = {
         "lesson_plan": "教案应抽取：课程性质、学分/学时、教材、章节、教学目标、重点难点、教学方法、教学过程、时间分配、课堂活动、板书/图示说明。",
@@ -872,12 +921,19 @@ def _schema_hint(type_meta: dict[str, Any]) -> str:
         "evaluation_sheet": "评学表应抽取：课程、班级、教师、评价维度、分项结果、意见建议、统计信息。",
         "teaching_document": "教学文档应抽取：标题、适用课程、章节/主题、知识点、操作步骤、课堂任务、附件或图片说明。",
         "syllabus": "教学大纲应抽取：课程基本信息、课程性质、目标、内容模块、学时分配、教学方法、考核方式、教材与参考资料。",
-        "assessment_plan": "考核计划表应抽取：考核形式、考核技能/内容、分值、命题/审核/审批信息、考核时间、考核方式勾选项。",
-        "grading_rubric": "评分细则应抽取：评分项目、评分标准、分值、扣分点、等级描述、签字或审批信息。",
-        "exam_paper": "考核试卷应抽取：密封线字段、课程信息、考试方式勾选、题号、题型、题干、分值、评分点、总分。",
+        "assessment_plan": "考核计划表应抽取：assessment_type, assessment_method, assessment_items(assessment_form/content/score), total_score, examiner_name, reviewer_name, date, notes。",
+        "grading_rubric": "评分细则应抽取：rubric_items(title/score/criteria), deduction_points, screenshot_requirements, examiner_name, reviewer_name, date, total_score，正文不能丢失扣分例外情况。",
+        "exam_paper": "考核试卷应抽取：exam_flags, education_level, paper_type, exam_duration, score_table, paper_sections(title/score/content/tasks), student_fields, command_blocks, screenshot_requirements, total_score。",
         "final_teaching_summary": "教学工作总结应抽取：课程/班级/教师/日期、教学任务完成情况、考核与成绩分析、问题、改进建议。",
     }.get(key, "")
-    return f"{common}{specific}"
+    final_schema = ""
+    if key in FINAL_MATERIAL_TYPES:
+        final_schema = (
+            " export_payload.structured 必须包含与材料类型匹配的结构："
+            "考核计划表包含 assessment_items；评分细则包含 rubric_items；试卷包含 paper_sections。"
+            "表格请保留为 tables.rows，合并单元格不要重复造值，空占位可保留为空字符串。"
+        )
+    return f"{common}{specific}{final_schema}"
 
 
 def _sample_knowledge(type_meta: dict[str, Any]) -> str:

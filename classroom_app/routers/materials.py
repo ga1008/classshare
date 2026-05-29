@@ -24,12 +24,20 @@ from ..services.file_service import delete_global_file, global_file_write_path, 
 from ..services.download_policy import apply_download_policy, ensure_download_allowed
 from ..services.file_preview_service import TEXT_CONTENT_ENCODINGS
 from ..services.material_ai_import_service import (
+    MaterialExtraction,
     build_import_readme,
     get_material_ai_import_registry,
+    normalize_ai_parse_result,
     parse_material_document,
     resolve_material_ai_import_type,
 )
 from ..services.material_export_template_service import build_material_export_artifact
+from ..services.material_final_document_service import (
+    FINAL_MATERIAL_TYPES,
+    build_final_material_generation_seed,
+    final_material_label,
+    normalize_final_material_payload,
+)
 from ..services.materials_service import (
     MATERIAL_TYPE_REGISTRY,
     attach_home_learning_material_briefs,
@@ -144,6 +152,17 @@ class ClassroomLearningMaterialUpdateRequest(BaseModel):
 
 class ClassroomHomeLearningMaterialUpdateRequest(BaseModel):
     learning_material_id: int | None = None
+
+
+class MaterialAiImportOptimizeRequest(BaseModel):
+    prompt: str = ""
+    class_offering_id: int | None = None
+
+
+class ClassroomFinalMaterialGenerateRequest(BaseModel):
+    document_type: str = "exam_paper"
+    prompt: str = ""
+    parent_id: int | None = None
 
 
 MATERIAL_LIBRARY_SORT_LABELS = {
@@ -1479,6 +1498,23 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
             detail = attach_learning_document_metadata(conn, [detail])[0]
             detail = _decorate_learning_document_item(detail)
         detail = _decorate_material_download_policy(detail)
+        ai_import_record = _find_material_ai_import_record(conn, material_id, user["id"])
+        if ai_import_record:
+            task = _serialize_material_ai_import_task(conn, ai_import_record, user)
+            detail["ai_import_record"] = {
+                "id": task["id"],
+                "document_group": task["document_group"],
+                "document_type": task["document_type"],
+                "document_type_label": task["document_type_label"],
+                "parse_status": task["parse_status"],
+                "parse_mode": task["parse_mode"],
+                "updated_at": task["updated_at"],
+                "completed_at": task["completed_at"],
+                "export_url": f"/api/materials/ai-import-records/{task['id']}/export?format=docx",
+                "preview_url": f"/api/materials/{material_id}/ai-import/preview",
+            }
+        else:
+            detail["ai_import_record"] = None
 
     return {"status": "success", "material": detail}
 
@@ -2101,6 +2137,391 @@ def _build_ai_import_payload_from_record(row) -> dict:
     }
 
 
+def _find_material_ai_import_record(conn, material_id: int, teacher_id: int, *, completed_only: bool = False):
+    status_clause = "AND parse_status = 'completed'" if completed_only else ""
+    return conn.execute(
+        f"""
+        SELECT *
+        FROM material_ai_import_records
+        WHERE teacher_id = ?
+          AND (
+                parsed_material_id = ?
+                OR package_material_id = ?
+                OR source_material_id = ?
+          )
+          {status_clause}
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1
+        """,
+        (int(teacher_id), int(material_id), int(material_id), int(material_id)),
+    ).fetchone()
+
+
+def _build_ai_import_preview(record, *, content_limit: int = 8000) -> dict:
+    payload = _build_ai_import_payload_from_record(record)
+    export_payload = _parse_json_object(payload.get("export_payload")) or _parse_json_object(record["export_payload_json"])
+    fields = _parse_json_object(export_payload.get("fields"))
+    structured = _parse_json_object(export_payload.get("structured"))
+    content_markdown = str(payload.get("content_markdown") or record["content_markdown"] or "")
+    warnings = payload.get("warnings") if isinstance(payload.get("warnings"), list) else _parse_json_array(record["warnings_json"])
+    return {
+        "id": int(record["id"]),
+        "document_group": record["document_group"] or "",
+        "document_type": record["document_type"] or "",
+        "document_type_label": record["document_type_label"] or "",
+        "parse_mode": record["parse_mode"] or "",
+        "extraction_method": record["extraction_method"] or "",
+        "updated_at": record["updated_at"] or "",
+        "completed_at": record["completed_at"] or "",
+        "metadata": _parse_json_object(payload.get("metadata")) or _parse_json_object(record["metadata_json"]),
+        "fields": fields,
+        "structured": structured,
+        "tables": payload.get("tables") if isinstance(payload.get("tables"), list) else [],
+        "warnings": warnings,
+        "content_markdown": content_markdown[:content_limit],
+        "content_truncated": len(content_markdown) > content_limit,
+        "export_url": f"/api/materials/ai-import-records/{int(record['id'])}/export?format=docx",
+    }
+
+
+def _load_final_material_classroom_context(conn, class_offering_id: int, user: dict) -> dict[str, Any]:
+    ensure_classroom_access(conn, class_offering_id, user)
+    row = conn.execute(
+        """
+        SELECT o.id AS class_offering_id,
+               o.semester,
+               o.schedule_info,
+               o.teacher_id,
+               o.course_id,
+               o.class_id,
+               co.name AS course_name,
+               co.description AS course_description,
+               co.sect_name AS course_section,
+               co.school_code AS course_school_code,
+               co.school_name AS course_school_name,
+               co.college AS course_college,
+               co.department AS course_department,
+               cl.name AS class_name,
+               cl.school_code AS class_school_code,
+               cl.school_name AS class_school_name,
+               cl.college AS class_college,
+               cl.department AS class_department,
+               t.name AS teacher_name,
+               t.school_code AS teacher_school_code,
+               t.school_name AS teacher_school_name,
+               t.college AS teacher_college,
+               t.department AS teacher_department
+        FROM class_offerings o
+        JOIN courses co ON co.id = o.course_id
+        JOIN classes cl ON cl.id = o.class_id
+        JOIN teachers t ON t.id = o.teacher_id
+        WHERE o.id = ?
+        LIMIT 1
+        """,
+        (int(class_offering_id),),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "课堂不存在")
+    data = dict(row)
+    semester_text = str(data.get("semester") or "")
+    academic_year = ""
+    semester_label = semester_text
+    year_match = re.search(r"(20\d{2})\s*[-—－]\s*(20\d{2})", semester_text)
+    if year_match:
+        academic_year = f"{year_match.group(1)}-{year_match.group(2)}"
+    if re.search(r"(?:^|[-_])1(?:$|[-_])|第一|一", semester_text):
+        semester_label = "第一学期"
+    elif re.search(r"(?:^|[-_])2(?:$|[-_])|第二|二", semester_text):
+        semester_label = "第二学期"
+    return {
+        "class_offering_id": int(data["class_offering_id"]),
+        "course_id": int(data["course_id"]),
+        "class_id": int(data["class_id"]),
+        "course_name": data.get("course_name") or "",
+        "course_description": data.get("course_description") or "",
+        "course_section": data.get("course_section") or "",
+        "class_name": data.get("class_name") or "",
+        "teacher_name": data.get("teacher_name") or "",
+        "academic_year": academic_year,
+        "semester": semester_label,
+        "raw_semester": semester_text,
+        "school_code": data.get("course_school_code") or data.get("class_school_code") or data.get("teacher_school_code") or "gxufl",
+        "school_name": data.get("course_school_name") or data.get("class_school_name") or data.get("teacher_school_name") or "广西外国语学院",
+        "college": data.get("course_college") or data.get("class_college") or data.get("teacher_college") or "",
+        "department": data.get("course_department") or data.get("class_department") or data.get("teacher_department") or "",
+        "schedule_info": data.get("schedule_info") or "",
+    }
+
+
+def _load_final_material_examples(conn, *, teacher_id: int, document_type: str, course_name: str, limit: int = 2) -> list[dict[str, str]]:
+    rows = conn.execute(
+        """
+        SELECT document_type_label, content_markdown, export_payload_json, updated_at
+        FROM material_ai_import_records
+        WHERE teacher_id = ?
+          AND document_group = 'final_material'
+          AND document_type = ?
+          AND parse_status = 'completed'
+        ORDER BY
+          CASE WHEN content_markdown LIKE ? THEN 0 ELSE 1 END,
+          updated_at DESC,
+          id DESC
+        LIMIT ?
+        """,
+        (int(teacher_id), document_type, f"%{course_name}%", int(limit)),
+    ).fetchall()
+    examples: list[dict[str, str]] = []
+    for row in rows:
+        content = str(row["content_markdown"] or "").strip()
+        if len(content) > 2600:
+            content = content[:2600] + "\n..."
+        examples.append(
+            {
+                "document_type_label": row["document_type_label"] or final_material_label(document_type),
+                "updated_at": row["updated_at"] or "",
+                "content_markdown": content,
+            }
+        )
+    return examples
+
+
+def _build_final_material_ai_system_prompt(document_type: str) -> str:
+    label = final_material_label(document_type)
+    return (
+        f"你是一名熟悉广西外国语学院期末材料格式的教务文档助手，正在生成《{label}》。"
+        "请严格返回 JSON 对象，不要 Markdown 代码块。"
+        "JSON 必须包含 metadata、content_markdown、tables、warnings、export_payload。"
+        "metadata 和 export_payload.fields 要包含可替换字段：course_name、class_name、teacher_name、examiner_name、"
+        "reviewer_name、leader_name、academic_year、semester、assessment_type、assessment_method、date、total_score。"
+        "考核计划表必须给出 export_payload.structured.assessment_items；"
+        "评分细则必须给出 export_payload.structured.rubric_items 和完整扣分/例外规则；"
+        "课程考核试卷必须给出 export_payload.structured.paper_sections，题目、任务、截图/提交要求要完整。"
+        "所有分值合计应为 100 分，内容要可直接导出为正式文档。"
+    )
+
+
+def _build_final_material_ai_user_prompt(
+    *,
+    document_type: str,
+    classroom_context: dict[str, Any],
+    prompt: str,
+    examples: list[dict[str, str]],
+) -> str:
+    return "\n\n".join(
+        [
+            "请根据课堂信息生成期末材料。",
+            f"材料类型：{final_material_label(document_type)}",
+            f"课堂信息 JSON：\n{json.dumps(classroom_context, ensure_ascii=False, indent=2)}",
+            f"教师补充要求：\n{prompt.strip() or '无'}",
+            "可参考的历史材料片段：\n"
+            + (json.dumps(examples, ensure_ascii=False, indent=2) if examples else "暂无，请按课堂信息生成完整材料。"),
+        ]
+    )
+
+
+async def _persist_final_material_record_update(record_id: int, record, parse_result, user: dict) -> dict:
+    readme_content = build_import_readme(result=parse_result, original_name=record["source_file_name"] or parse_result.document_type_label)
+    readme_bytes = readme_content.encode("utf-8")
+    readme_hash = hashlib.sha256(readme_bytes).hexdigest()
+    await _write_material_file(readme_hash, readme_bytes)
+
+    parse_payload = _build_material_ai_parse_payload(parse_result)
+    parse_payload_json = json.dumps(parse_payload, ensure_ascii=False)
+    metadata_json = json.dumps(parse_result.metadata, ensure_ascii=False)
+    export_payload_json = json.dumps(parse_result.export_payload, ensure_ascii=False)
+    warnings_json = json.dumps(parse_result.warnings, ensure_ascii=False)
+    content_quality_json = json.dumps(parse_result.content_quality, ensure_ascii=False)
+    now = datetime.now().isoformat()
+    parsed_id = int(record["parsed_material_id"] or 0) or None
+    package_id = int(record["package_material_id"] or 0) or None
+
+    with get_db_connection() as conn:
+        current = conn.execute(
+            "SELECT * FROM material_ai_import_records WHERE id = ? AND teacher_id = ?",
+            (int(record_id), user["id"]),
+        ).fetchone()
+        if not current:
+            raise HTTPException(404, "未找到可更新的解析记录")
+        if parsed_id:
+            material = ensure_teacher_material_owner(conn, parsed_id, user["id"])
+            conn.execute(
+                """
+                UPDATE course_materials
+                SET file_hash = ?,
+                    file_size = ?,
+                    ai_parse_status = 'completed',
+                    ai_parse_result_json = ?,
+                    ai_optimize_status = 'completed',
+                    ai_optimized_markdown = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (readme_hash, len(readme_bytes), parse_payload_json, now, parsed_id),
+            )
+            refresh_root_git_metadata(conn, int(material["root_id"]))
+        elif package_id:
+            material = ensure_teacher_material_owner(conn, package_id, user["id"])
+            refresh_root_git_metadata(conn, int(material["root_id"]))
+        conn.execute(
+            """
+            UPDATE material_ai_import_records
+            SET parse_status = 'completed',
+                parse_mode = ?,
+                extraction_method = ?,
+                metadata_json = ?,
+                content_markdown = ?,
+                parsed_payload_json = ?,
+                export_payload_json = ?,
+                warnings_json = ?,
+                content_quality_status = ?,
+                content_quality_json = ?,
+                error_message = '',
+                updated_at = ?,
+                completed_at = ?
+            WHERE id = ?
+            """,
+            (
+                "ai_optimized" if parse_result.ai_used else "local_fallback",
+                parse_result.extraction_method,
+                metadata_json,
+                parse_result.content_markdown,
+                parse_payload_json,
+                export_payload_json,
+                warnings_json,
+                parse_result.content_quality.get("status", "ok"),
+                content_quality_json,
+                now,
+                now,
+                int(record_id),
+            ),
+        )
+        conn.commit()
+        refreshed = conn.execute(
+            "SELECT * FROM material_ai_import_records WHERE id = ?",
+            (int(record_id),),
+        ).fetchone()
+        return _serialize_material_ai_import_task(conn, refreshed, user)
+
+
+async def _create_generated_final_material_package(
+    *,
+    class_offering_id: int,
+    parent_id: int | None,
+    parse_result,
+    user: dict,
+) -> dict:
+    readme_content = build_import_readme(result=parse_result, original_name=f"{parse_result.document_type_label}.md")
+    readme_bytes = readme_content.encode("utf-8")
+    readme_hash = hashlib.sha256(readme_bytes).hexdigest()
+    await _write_material_file(readme_hash, readme_bytes)
+
+    readme_profile = infer_material_profile("readme.md", "text/markdown")
+    parse_payload = _build_material_ai_parse_payload(parse_result)
+    parse_payload_json = json.dumps(parse_payload, ensure_ascii=False)
+    metadata_json = json.dumps(parse_result.metadata, ensure_ascii=False)
+    export_payload_json = json.dumps(parse_result.export_payload, ensure_ascii=False)
+    warnings_json = json.dumps(parse_result.warnings, ensure_ascii=False)
+    content_quality_json = json.dumps(parse_result.content_quality, ensure_ascii=False)
+
+    with get_db_connection() as conn:
+        classroom_context = _load_final_material_classroom_context(conn, class_offering_id, user)
+        base_parent = None
+        base_prefix = ""
+        inherited_root_id = None
+        if parent_id is not None:
+            base_parent = ensure_teacher_material_owner(conn, parent_id, user["id"])
+            if base_parent["node_type"] != "folder":
+                raise HTTPException(400, "只能生成到文件夹中")
+            base_prefix = str(base_parent["material_path"])
+            inherited_root_id = int(base_parent["root_id"])
+
+        owner_scope = load_teacher_org_scope(conn, user["id"])
+        now = datetime.now().isoformat()
+        course_name = str(classroom_context.get("course_name") or "").strip()
+        package_base_name = f"AI生成-{parse_result.document_type_label}-{course_name or '期末材料'}"
+        package_name = make_unique_material_name(conn, user["id"], parent_id, package_base_name)
+        package_path = normalize_material_path(f"{base_prefix}/{package_name}" if base_prefix else package_name)
+        package_id, package_root_id = _insert_material_folder_row(
+            conn,
+            user=user,
+            name=package_name,
+            material_path=package_path,
+            parent_id=base_parent["id"] if base_parent else None,
+            inherited_root_id=inherited_root_id,
+            owner_scope=owner_scope,
+            now=now,
+        )
+
+        parsed_name = "readme.md"
+        parsed_path = normalize_material_path(f"{package_path}/{parsed_name}")
+        parsed_id = _insert_material_file_row(
+            conn,
+            user=user,
+            name=parsed_name,
+            material_path=parsed_path,
+            parent_id=package_id,
+            root_id=package_root_id,
+            file_profile=readme_profile,
+            file_hash=readme_hash,
+            file_size=len(readme_bytes),
+            owner_scope=owner_scope,
+            now=now,
+            ai_parse_status="completed",
+            ai_parse_result_json=parse_payload_json,
+        )
+        cursor = conn.execute(
+            """
+            INSERT INTO material_ai_import_records
+            (teacher_id, package_material_id, source_material_id, parsed_material_id,
+             parent_material_id, document_group, document_type, document_type_label,
+             parse_status, parse_mode, extraction_method, source_file_name,
+             source_file_hash, source_file_size, source_mime_type, metadata_json, content_markdown,
+             parsed_payload_json, export_payload_json, warnings_json, content_quality_status,
+             content_quality_json, error_message, created_at, updated_at, completed_at)
+            VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, '', 0, 'application/json',
+                    ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)
+            """,
+            (
+                user["id"],
+                package_id,
+                parsed_id,
+                base_parent["id"] if base_parent else None,
+                parse_result.document_group,
+                parse_result.document_type,
+                parse_result.document_type_label,
+                "ai_generated" if parse_result.ai_used else "local_fallback",
+                parse_result.extraction_method,
+                f"{parse_result.document_type_label}-{course_name or '期末材料'}.json",
+                metadata_json,
+                parse_result.content_markdown,
+                parse_payload_json,
+                export_payload_json,
+                warnings_json,
+                parse_result.content_quality.get("status", "ok"),
+                content_quality_json,
+                now,
+                now,
+                now,
+            ),
+        )
+        record_id = int(cursor.lastrowid)
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO course_material_assignments
+            (material_id, class_offering_id, assigned_by_teacher_id, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (package_id, int(class_offering_id), user["id"], now),
+        )
+        refresh_root_git_metadata(conn, package_root_id)
+        conn.commit()
+        record = conn.execute(
+            "SELECT * FROM material_ai_import_records WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+        return _serialize_material_ai_import_task(conn, record, user)
+
+
 @router.post("/api/materials/ai-import", response_class=JSONResponse)
 async def ai_import_material(
     file: UploadFile = File(...),
@@ -2336,16 +2757,120 @@ async def export_ai_import_material(
             """
             SELECT *
             FROM material_ai_import_records
-            WHERE parsed_material_id = ? OR package_material_id = ?
+            WHERE teacher_id = ?
+              AND (
+                    parsed_material_id = ?
+                    OR package_material_id = ?
+                    OR source_material_id = ?
+              )
             ORDER BY updated_at DESC, id DESC
             LIMIT 1
             """,
-            (material["id"], material["id"]),
+            (user["id"], material["id"], material["id"], material["id"]),
         ).fetchone()
         if not row:
             raise HTTPException(404, "该材料没有关联的 AI 解析导出记录")
         record_id = int(row["id"])
     return await export_ai_import_record(record_id=record_id, format=format, user=user)
+
+
+@router.get("/api/materials/{material_id}/ai-import/preview", response_class=JSONResponse)
+async def preview_ai_import_material(
+    material_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        ensure_teacher_material_owner(conn, material_id, user["id"])
+        record = _find_material_ai_import_record(conn, material_id, user["id"], completed_only=True)
+        if not record:
+            raise HTTPException(404, "该材料没有可预览的期末材料解析结果")
+        task = _serialize_material_ai_import_task(conn, record, user)
+        preview = _build_ai_import_preview(record)
+    return {
+        "status": "success",
+        "task": task,
+        "preview": preview,
+    }
+
+
+@router.post("/api/materials/{material_id}/ai-import/optimize", response_class=JSONResponse)
+async def optimize_ai_import_material(
+    material_id: int,
+    payload: MaterialAiImportOptimizeRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        ensure_teacher_material_owner(conn, material_id, user["id"])
+        record = _find_material_ai_import_record(conn, material_id, user["id"], completed_only=True)
+        if not record:
+            raise HTTPException(404, "该材料没有可优化的 AI 解析结果")
+        if str(record["document_type"] or "") not in FINAL_MATERIAL_TYPES:
+            raise HTTPException(400, "当前仅支持对期末材料执行结构化优化")
+        classroom_context: dict[str, Any] = {}
+        if payload.class_offering_id:
+            classroom_context = _load_final_material_classroom_context(conn, int(payload.class_offering_id), user)
+        current_payload = _build_ai_import_payload_from_record(record)
+
+    system_prompt = _build_final_material_ai_system_prompt(str(record["document_type"]))
+    user_prompt = "\n\n".join(
+        [
+            "请优化这份已经解析入库的期末材料，修正字段缺漏、结构层次和导出字段，但不要删除原有关键内容。",
+            f"教师优化要求：\n{payload.prompt.strip() or '请提升结构化完整性、导出可用性和表述规范性。'}",
+            f"课堂关联信息：\n{json.dumps(classroom_context, ensure_ascii=False, indent=2) if classroom_context else '未提供'}",
+            f"当前材料 JSON：\n{json.dumps(current_payload, ensure_ascii=False, indent=2)[:30000]}",
+        ]
+    )
+    raw_result = await _call_ai_chat(
+        system_prompt,
+        user_prompt,
+        capability="thinking",
+        response_format="json",
+        task_type="material_final_optimize",
+        task_label="materials:final-optimize",
+        timeout=240.0,
+    )
+    extraction = MaterialExtraction(
+        text=str(raw_result.get("content_markdown") or current_payload.get("content_markdown") or ""),
+        method="ai_optimize",
+        source_kind="ai_generated",
+        warnings=[],
+        quality={"usable": True},
+    )
+    type_meta = resolve_material_ai_import_type("final_material", str(record["document_type"]))
+    parse_result = normalize_ai_parse_result(
+        raw_result,
+        original_name=record["source_file_name"] or type_meta["label"],
+        type_meta=type_meta,
+        extraction=extraction,
+        extra_warnings=[],
+        ai_used=True,
+    )
+    if classroom_context:
+        parse_result.export_payload = normalize_final_material_payload(
+            document_type=parse_result.document_type,
+            metadata=parse_result.metadata,
+            content_markdown=parse_result.content_markdown,
+            tables=parse_result.tables,
+            export_payload=parse_result.export_payload,
+            classroom_context=classroom_context,
+        )
+        parse_result.metadata.update(parse_result.export_payload.get("fields") or {})
+        parse_result.parsed_payload["metadata"] = parse_result.metadata
+        parse_result.parsed_payload["export_payload"] = parse_result.export_payload
+
+    task = await _persist_final_material_record_update(int(record["id"]), record, parse_result, user)
+    with get_db_connection() as conn:
+        refreshed_record = conn.execute(
+            "SELECT * FROM material_ai_import_records WHERE id = ? AND teacher_id = ?",
+            (int(record["id"]), user["id"]),
+        ).fetchone()
+        preview = _build_ai_import_preview(refreshed_record) if refreshed_record else None
+    return {
+        "status": "success",
+        "message": "期末材料已优化并更新导出字段",
+        "task": task,
+        "preview": preview,
+    }
 
 
 @router.post("/api/materials/upload", response_class=JSONResponse)
@@ -3200,6 +3725,103 @@ async def delete_material(material_id: int, user: dict = Depends(get_current_tea
         "status": "success",
         "message": f"《{material['name']}》已删除",
         "removed_file_count": removed_files,
+    }
+
+
+@router.post("/api/classrooms/{class_offering_id}/final-materials/generate", response_class=JSONResponse)
+async def generate_classroom_final_material(
+    class_offering_id: int,
+    payload: ClassroomFinalMaterialGenerateRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    document_type = str(payload.document_type or "").strip()
+    if document_type not in FINAL_MATERIAL_TYPES:
+        raise HTTPException(400, "期末材料类型不受支持")
+    type_meta = resolve_material_ai_import_type("final_material", document_type)
+
+    with get_db_connection() as conn:
+        classroom_context = _load_final_material_classroom_context(conn, class_offering_id, user)
+        if payload.parent_id is not None:
+            parent = ensure_teacher_material_owner(conn, payload.parent_id, user["id"])
+            if parent["node_type"] != "folder":
+                raise HTTPException(400, "只能生成到文件夹中")
+        examples = _load_final_material_examples(
+            conn,
+            teacher_id=user["id"],
+            document_type=document_type,
+            course_name=str(classroom_context.get("course_name") or ""),
+        )
+
+    ai_used = True
+    raw_result: dict[str, Any]
+    try:
+        raw_response = await _call_ai_chat(
+            _build_final_material_ai_system_prompt(document_type),
+            _build_final_material_ai_user_prompt(
+                document_type=document_type,
+                classroom_context=classroom_context,
+                prompt=payload.prompt,
+                examples=examples,
+            ),
+            capability="thinking",
+            response_format="json",
+            task_type="material_final_generate",
+            task_label="materials:final-generate",
+            timeout=300.0,
+        )
+        raw_result = raw_response if isinstance(raw_response, dict) else {}
+        if not raw_result:
+            raise HTTPException(500, "AI 未返回有效 JSON")
+    except Exception as exc:
+        ai_used = False
+        raw_result = build_final_material_generation_seed(
+            document_type=document_type,
+            classroom_context=classroom_context,
+            prompt=payload.prompt,
+        )
+        warning = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        raw_result.setdefault("warnings", [])
+        if isinstance(raw_result["warnings"], list):
+            raw_result["warnings"].append(f"AI 生成不可用，已使用本地草稿模板：{warning}")
+
+    extraction = MaterialExtraction(
+        text=str(raw_result.get("content_markdown") or ""),
+        method="ai_generate" if ai_used else "local_generation_seed",
+        source_kind="ai_generated" if ai_used else "local_generated",
+        warnings=[],
+        quality={"usable": True},
+    )
+    parse_result = normalize_ai_parse_result(
+        raw_result,
+        original_name=f"{type_meta['label']}-{classroom_context.get('course_name') or '期末材料'}.json",
+        type_meta=type_meta,
+        extraction=extraction,
+        extra_warnings=[],
+        ai_used=ai_used,
+    )
+    parse_result.export_payload = normalize_final_material_payload(
+        document_type=document_type,
+        metadata=parse_result.metadata,
+        content_markdown=parse_result.content_markdown,
+        tables=parse_result.tables,
+        export_payload=parse_result.export_payload,
+        classroom_context=classroom_context,
+    )
+    parse_result.metadata.update(parse_result.export_payload.get("fields") or {})
+    parse_result.parsed_payload["metadata"] = parse_result.metadata
+    parse_result.parsed_payload["export_payload"] = parse_result.export_payload
+
+    task = await _create_generated_final_material_package(
+        class_offering_id=class_offering_id,
+        parent_id=payload.parent_id,
+        parse_result=parse_result,
+        user=user,
+    )
+    return {
+        "status": "success",
+        "message": f"{'AI' if ai_used else '本地草稿'}已生成{type_meta['label']}，并保存到课程材料。",
+        "task": task,
+        "ai_used": ai_used,
     }
 
 
