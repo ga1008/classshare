@@ -164,6 +164,8 @@ class ClassroomFinalMaterialGenerateRequest(BaseModel):
     document_type: str = "exam_paper"
     prompt: str = ""
     parent_id: int | None = None
+    assessment_mode: str = ""
+    assessment_method: str = ""
 
 
 class MaterialAiRewriteRequest(BaseModel):
@@ -2932,9 +2934,12 @@ def _load_final_material_classroom_context(conn, class_offering_id: int, user: d
                o.teacher_id,
                o.course_id,
                o.class_id,
+               o.semester_id,
+               o.academic_teaching_class_name,
                co.name AS course_name,
                co.description AS course_description,
                co.sect_name AS course_section,
+               co.academic_course_code,
                co.school_code AS course_school_code,
                co.school_name AS course_school_name,
                co.college AS course_college,
@@ -2971,6 +2976,42 @@ def _load_final_material_classroom_context(conn, class_offering_id: int, user: d
         semester_label = "第一学期"
     elif re.search(r"(?:^|[-_])2(?:$|[-_])|第二|二", semester_text):
         semester_label = "第二学期"
+    academic_course = conn.execute(
+        """
+        SELECT course_nature, exam_method, exam_mode, teaching_class_name, class_composition, synced_at
+        FROM teacher_academic_course_sync_items
+        WHERE teacher_id = ?
+          AND (? IS NULL OR semester_id = ? OR semester_id IS NULL)
+          AND (
+                course_id = ?
+                OR TRIM(course_name) = TRIM(?)
+                OR (? != '' AND TRIM(course_code) = TRIM(?))
+          )
+        ORDER BY
+          CASE
+            WHEN ? != '' AND TRIM(teaching_class_name) = TRIM(?) THEN 0
+            WHEN ? != '' AND teaching_class_name LIKE ? THEN 1
+            ELSE 2
+          END,
+          synced_at DESC,
+          id DESC
+        LIMIT 1
+        """,
+        (
+            int(data["teacher_id"]),
+            data.get("semester_id"),
+            data.get("semester_id"),
+            int(data["course_id"]),
+            data.get("course_name") or "",
+            data.get("academic_course_code") or "",
+            data.get("academic_course_code") or "",
+            data.get("academic_teaching_class_name") or "",
+            data.get("academic_teaching_class_name") or "",
+            data.get("class_name") or "",
+            f"%{data.get('class_name') or ''}%",
+        ),
+    ).fetchone()
+    academic_course_data = dict(academic_course) if academic_course else {}
     return {
         "class_offering_id": int(data["class_offering_id"]),
         "course_id": int(data["course_id"]),
@@ -2983,11 +3024,16 @@ def _load_final_material_classroom_context(conn, class_offering_id: int, user: d
         "academic_year": academic_year,
         "semester": semester_label,
         "raw_semester": semester_text,
+        "academic_teaching_class_name": data.get("academic_teaching_class_name") or "",
         "school_code": data.get("course_school_code") or data.get("class_school_code") or data.get("teacher_school_code") or "gxufl",
         "school_name": data.get("course_school_name") or data.get("class_school_name") or data.get("teacher_school_name") or "广西外国语学院",
         "college": data.get("course_college") or data.get("class_college") or data.get("teacher_college") or "",
         "department": data.get("course_department") or data.get("class_department") or data.get("teacher_department") or "",
         "schedule_info": data.get("schedule_info") or "",
+        "course_nature": academic_course_data.get("course_nature") or "",
+        "academic_exam_method": academic_course_data.get("exam_method") or "",
+        "academic_exam_mode": academic_course_data.get("exam_mode") or "",
+        "academic_course_synced_at": academic_course_data.get("synced_at") or "",
     }
 
 
@@ -3025,6 +3071,26 @@ def _load_final_material_examples(conn, *, teacher_id: int, document_type: str, 
 
 def _build_final_material_ai_system_prompt(document_type: str) -> str:
     label = final_material_label(document_type)
+    if str(document_type or "").strip() == "assessment_plan":
+        return (
+            "你是广西外国语学院课程考核计划表模板填写助手。你的任务不是自由撰写材料，而是只为固定模板补齐字段和考核项目。"
+            "必须严格返回 JSON 对象，不要 Markdown 代码块。"
+            "JSON 必须包含 metadata、content_markdown、tables、warnings、export_payload。"
+            "export_payload.template_key 必须为 assessment_plan，document_group 必须为 final_material，document_type 必须为 assessment_plan。"
+            "metadata 和 export_payload.fields 必须包含 school、course_name、class_name、teacher_name、examiner_name、reviewer_name、"
+            "academic_year、semester、date、assessment_type、assessment_mode、assessment_mode_label、assessment_method、total_score。"
+            "assessment_type 只能是“考查”或“考试”。如果教务或课堂信息显示考查，assessment_mode 必须是 non_written、"
+            "assessment_mode_label 必须是“非笔试考核”。如果是考试，优先服从教师补充的笔试/非笔试；教师未说明时生成非笔试草稿，"
+            "并在 warnings 中提醒教师确认。assessment_method 写具体形式，例如“机试”“闭卷笔试”“项目实操”。"
+            "export_payload.structured.assessment_items 必须是数组，每项包含 assessment_form、content、score，分值合计必须为100。"
+            "export_payload.structured.notes 必须原样包含：注：；1．课程名称必须与教学计划上的名称一致。；"
+            "2．考核类型：考查、考试（按教学计划填写）。；"
+            "3．命题教师：务必输入命题教师名字，打印纸质版后再手写签名；系（教研室）主任审核签字：须手写签名。；"
+            "4．各专业根据教学大纲自行拟定考核形式、考核技能/内容、分值。；"
+            "5. 该表文字部分均用五号宋体，使用A4纸双面打印。；"
+            "6. 命题完成后将该表与评分细则（电子版及纸质版）交到二级学院（部），并装入试卷袋存档。"
+            "content_markdown 只写模板字段摘要和考核项目表，不要添加模板之外的新段落。"
+        )
     return (
         f"你是一名熟悉广西外国语学院期末材料格式的教务文档助手，正在生成《{label}》。"
         "请严格返回 JSON 对象，不要 Markdown 代码块。"
@@ -3045,6 +3111,18 @@ def _build_final_material_ai_user_prompt(
     prompt: str,
     examples: list[dict[str, str]],
 ) -> str:
+    if str(document_type or "").strip() == "assessment_plan":
+        return "\n\n".join(
+            [
+                "请根据课堂信息生成《广西外国语学院课程考核计划表》的结构化填表数据。",
+                "固定模板要求：标题为“广西外国语学院课程考核计划表”；学年学期行由导出模板渲染下划线；基础信息表包含课程名称、专业年级班级、考核类型、命题教师、系主任审核签字、命题日期；考核信息表列为考核形式、考核技能/内容、分值；表后注释必须原样保留。",
+                "不要输出自由发挥的长文。只给模板字段、考核项目和必要提醒。",
+                f"课堂与教务上下文 JSON：\n{json.dumps(classroom_context, ensure_ascii=False, indent=2)}",
+                f"教师补充要求：\n{prompt.strip() or '无'}",
+                "历史材料片段仅用于学习考核项目拆分粒度，不可覆盖本课堂字段：\n"
+                + (json.dumps(examples, ensure_ascii=False, indent=2) if examples else "暂无历史材料。"),
+            ]
+        )
     return "\n\n".join(
         [
             "请根据课堂信息生成期末材料。",
@@ -4479,6 +4557,14 @@ async def generate_classroom_final_material(
 
     with get_db_connection() as conn:
         classroom_context = _load_final_material_classroom_context(conn, class_offering_id, user)
+        if document_type == "assessment_plan":
+            assessment_mode = str(payload.assessment_mode or "").strip()
+            assessment_method = str(payload.assessment_method or "").strip()
+            if assessment_mode:
+                classroom_context["assessment_mode"] = assessment_mode
+                classroom_context["assessment_mode_label"] = "笔试考核" if assessment_mode == "written" else "非笔试考核"
+            if assessment_method:
+                classroom_context["assessment_method"] = assessment_method
         if payload.parent_id is not None:
             parent = ensure_teacher_material_owner(conn, payload.parent_id, user["id"])
             if parent["node_type"] != "folder":

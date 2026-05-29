@@ -58,6 +58,9 @@ function refs() {
         detailExportBtn: document.getElementById('classroom-material-detail-export-btn'),
         finalMaterialModal: document.getElementById('classroom-final-material-modal'),
         finalMaterialType: document.getElementById('classroom-final-material-type'),
+        assessmentPlanOptions: document.getElementById('classroom-assessment-plan-options'),
+        finalMaterialAssessmentMode: document.getElementById('classroom-final-material-assessment-mode'),
+        finalMaterialAssessmentMethod: document.getElementById('classroom-final-material-assessment-method'),
         finalMaterialPrompt: document.getElementById('classroom-final-material-prompt'),
         finalMaterialSubmitBtn: document.getElementById('classroom-final-material-submit-btn'),
         finalMaterialStatus: document.getElementById('classroom-final-material-status'),
@@ -229,6 +232,7 @@ function renderFields(fields = {}) {
         academic_year: '学年',
         semester: '学期',
         assessment_type: '考核类型',
+        assessment_mode_label: '笔试/非笔试',
         assessment_method: '考核形式',
         exam_duration: '考试时间',
         total_score: '总分',
@@ -414,6 +418,25 @@ async function openMaterialDetail(materialId) {
     }
 }
 
+function updateFinalMaterialTemplateOptions() {
+    const dom = refs();
+    const isAssessmentPlan = dom.finalMaterialType?.value === 'assessment_plan';
+    if (dom.assessmentPlanOptions) {
+        dom.assessmentPlanOptions.hidden = !isAssessmentPlan;
+    }
+    if (isAssessmentPlan && dom.finalMaterialAssessmentMethod && !dom.finalMaterialAssessmentMethod.value.trim()) {
+        dom.finalMaterialAssessmentMethod.value = dom.finalMaterialAssessmentMode?.value === 'written' ? '闭卷笔试' : '机试';
+    }
+}
+
+function updateAssessmentMethodDefault() {
+    const dom = refs();
+    if (!dom.finalMaterialAssessmentMethod) return;
+    const current = dom.finalMaterialAssessmentMethod.value.trim();
+    if (current && current !== '机试' && current !== '闭卷笔试') return;
+    dom.finalMaterialAssessmentMethod.value = dom.finalMaterialAssessmentMode?.value === 'written' ? '闭卷笔试' : '机试';
+}
+
 async function submitFinalMaterialGeneration() {
     const dom = refs();
     if (!dom.finalMaterialSubmitBtn) return;
@@ -432,6 +455,8 @@ async function submitFinalMaterialGeneration() {
                 document_type: documentType,
                 prompt,
                 parent_id: state.currentParentId,
+                assessment_mode: documentType === 'assessment_plan' ? (dom.finalMaterialAssessmentMode?.value || '') : '',
+                assessment_method: documentType === 'assessment_plan' ? (dom.finalMaterialAssessmentMethod?.value || '') : '',
             },
         });
         showToast(data.message || '期末材料已生成', 'success');
@@ -545,8 +570,12 @@ export function init(appConfig) {
             dom.finalMaterialStatus.hidden = true;
             dom.finalMaterialStatus.textContent = '';
         }
+        updateFinalMaterialTemplateOptions();
         openModal(dom.finalMaterialModal);
     });
+
+    dom.finalMaterialType?.addEventListener('change', updateFinalMaterialTemplateOptions);
+    dom.finalMaterialAssessmentMode?.addEventListener('change', updateAssessmentMethodDefault);
 
     dom.finalMaterialSubmitBtn?.addEventListener('click', () => {
         submitFinalMaterialGeneration();

@@ -921,7 +921,7 @@ def _schema_hint(type_meta: dict[str, Any]) -> str:
         "evaluation_sheet": "评学表应抽取：课程、班级、教师、评价维度、分项结果、意见建议、统计信息。",
         "teaching_document": "教学文档应抽取：标题、适用课程、章节/主题、知识点、操作步骤、课堂任务、附件或图片说明。",
         "syllabus": "教学大纲应抽取：课程基本信息、课程性质、目标、内容模块、学时分配、教学方法、考核方式、教材与参考资料。",
-        "assessment_plan": "考核计划表应抽取：assessment_type, assessment_method, assessment_items(assessment_form/content/score), total_score, examiner_name, reviewer_name, date, notes。",
+        "assessment_plan": "考核计划表应抽取：school, academic_year, semester, course_name, class_name, assessment_type(考查/考试), assessment_mode(non_written/written), assessment_mode_label(非笔试考核/笔试考核), assessment_method, assessment_items(assessment_form/content/score), total_score, examiner_name, examiner_signature, reviewer_name, reviewer_signature, date, notes；表后注释必须原样保留。",
         "grading_rubric": "评分细则应抽取：rubric_items(title/score/criteria), deduction_points, screenshot_requirements, examiner_name, reviewer_name, date, total_score，正文不能丢失扣分例外情况。",
         "exam_paper": "考核试卷应抽取：exam_flags, education_level, paper_type, exam_duration, score_table, paper_sections(title/score/content/tasks), student_fields, command_blocks, screenshot_requirements, total_score。",
         "final_teaching_summary": "教学工作总结应抽取：课程/班级/教师/日期、教学任务完成情况、考核与成绩分析、问题、改进建议。",
@@ -933,6 +933,12 @@ def _schema_hint(type_meta: dict[str, Any]) -> str:
             "考核计划表包含 assessment_items；评分细则包含 rubric_items；试卷包含 paper_sections。"
             "表格请保留为 tables.rows，合并单元格不要重复造值，空占位可保留为空字符串。"
         )
+        if key == "assessment_plan":
+            final_schema += (
+                " 考核计划表不是自由文档，必须按广西外国语学院课程考核计划表模板填字段；"
+                "若考核类型为考查，assessment_mode 固定 non_written；若为考试但无法从原文判断笔试/非笔试，"
+                "保留识别到的原值并在 warnings 中提示教师确认。"
+            )
     return f"{common}{specific}{final_schema}"
 
 

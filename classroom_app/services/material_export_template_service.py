@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from .material_final_document_service import (
+    ASSESSMENT_PLAN_NOTES,
     FINAL_MATERIAL_TYPES,
     final_material_label,
     normalize_final_material_payload,
@@ -187,7 +188,10 @@ def _build_final_material_docx_export(payload: dict[str, Any], *, title: str, te
     if template_key == "exam_paper":
         _add_exam_student_line(document)
 
-    _add_final_title_block(document, template_key, fields)
+    if template_key == "assessment_plan":
+        _add_assessment_plan_title_block(document, fields)
+    else:
+        _add_final_title_block(document, template_key, fields)
     if template_key == "assessment_plan":
         _add_assessment_plan_export_body(document, fields, structured)
     elif template_key == "grading_rubric":
@@ -197,6 +201,11 @@ def _build_final_material_docx_export(payload: dict[str, Any], *, title: str, te
 
     footer = document.sections[0].footer.paragraphs[0]
     footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if template_key == "assessment_plan":
+        _add_docx_field(footer, "PAGE", size=9, color="000000")
+        buffer = io.BytesIO()
+        document.save(buffer)
+        return buffer.getvalue()
     footer_label = "课程考核试卷" if template_key == "exam_paper" else final_material_label(template_key)
     _set_run_songti(footer.add_run(f"广西外国语学院{footer_label}       第 "), 9, color="808080")
     _add_docx_field(footer, "PAGE", size=9, color="808080")
@@ -237,9 +246,34 @@ def _add_final_title_block(document: Any, template_key: str, fields: dict[str, A
         _set_run_songti(flags.add_run(_exam_flags_text(fields)), 12, bold=True)
 
 
+def _add_assessment_plan_title_block(document: Any, fields: dict[str, Any]) -> None:
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Pt
+
+    title = document.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title.paragraph_format.space_before = Pt(34)
+    title.paragraph_format.space_after = Pt(12)
+    _set_run_songti(title.add_run("广西外国语学院课程考核计划表"), 18, bold=True)
+
+    period = document.add_paragraph()
+    period.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    period.paragraph_format.space_after = Pt(4)
+    _add_assessment_period_runs(period, fields)
+
+    subtitle = document.add_paragraph()
+    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    subtitle.paragraph_format.space_after = Pt(2)
+    _set_run_songti(subtitle.add_run(f"（{_assessment_mode_label(fields)}）"), 12)
+
+
 def _add_assessment_plan_export_body(document: Any, fields: dict[str, Any], structured: dict[str, Any]) -> None:
+    from docx.shared import Pt
+
     _add_plan_meta_table(document, fields)
-    document.add_paragraph()
+    gap = document.add_paragraph()
+    gap.paragraph_format.space_before = Pt(10)
+    gap.paragraph_format.space_after = Pt(0)
     items = structured.get("assessment_items") if isinstance(structured.get("assessment_items"), list) else []
     _add_assessment_items_table(document, items)
     _add_plan_notes(document)
@@ -303,23 +337,27 @@ def _add_exam_paper_export_body(document: Any, fields: dict[str, Any], structure
 
 
 def _add_plan_meta_table(document: Any, fields: dict[str, Any]) -> None:
+    from docx.enum.table import WD_ROW_HEIGHT_RULE
+
     rows = [
         ["课程名称", _field(fields, "course_name"), "", ""],
         ["专业年级班级", _field(fields, "class_name"), "考核类型", _checked_pair("考查", "考试", _field(fields, "assessment_type") or "考试")],
-        ["命题教师", _field(fields, "examiner_name", "teacher_name"), "系（教研室）主任审核签字", _field(fields, "reviewer_name")],
+        ["命题教师", _signature_value(fields, "examiner_name", "teacher_name", signature_key="examiner_signature"), "系（教研室）主任审核签字", _signature_value(fields, "reviewer_name", signature_key="reviewer_signature")],
         ["命题日期", _field(fields, "date"), "", ""],
     ]
     table = document.add_table(rows=len(rows), cols=4)
     table.style = "Table Grid"
     table.alignment = 1
-    widths = [3.45, 3.95, 3.45, 4.35]
+    table.autofit = False
+    _set_table_borders(table)
+    widths = [4.45, 4.15, 4.05, 4.85]
     for row_index, row_values in enumerate(rows):
         row = table.rows[row_index]
-        row.height_rule = 1
-        row.height = _cm(1.0)
+        row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+        row.height = _cm(1.12)
         for col_index, value in enumerate(row_values):
             cell = row.cells[col_index]
-            _set_cell_text(cell, value, bold=col_index in {0, 2}, align=1)
+            _set_cell_text(cell, value, bold=True, align=1)
             _set_cell_width(cell, widths[col_index])
         if row_index in {0, 3}:
             row.cells[1].merge(row.cells[3])
@@ -373,16 +411,25 @@ def _add_exam_meta_table(document: Any, fields: dict[str, Any]) -> None:
 
 
 def _add_assessment_items_table(document: Any, items: list[dict[str, Any]]) -> None:
+    from docx.enum.table import WD_ROW_HEIGHT_RULE
+
     table = document.add_table(rows=1, cols=3)
     table.style = "Table Grid"
     table.alignment = 1
+    table.autofit = False
+    _set_table_borders(table)
     headers = ["考核形式", "考核技能/内容", "分 值"]
-    widths = [3.4, 9.4, 2.7]
+    widths = [4.45, 9.65, 3.35]
+    table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+    table.rows[0].height = _cm(1.0)
     for index, header in enumerate(headers):
         _set_cell_text(table.rows[0].cells[index], header, bold=True, align=1)
         _set_cell_width(table.rows[0].cells[index], widths[index])
     for item in items:
-        cells = table.add_row().cells
+        row = table.add_row()
+        row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+        row.height = _cm(1.75)
+        cells = row.cells
         values = [
             item.get("assessment_form") or item.get("form") or "机试",
             item.get("content") or item.get("assessment_content") or "",
@@ -435,17 +482,11 @@ def _add_exam_student_line(document: Any) -> None:
 
 
 def _add_plan_notes(document: Any) -> None:
-    notes = [
-        "注：",
-        "1．课程名称必须与教学计划上的名称一致。",
-        "2．考核类型：考查、考试（按教学计划填写）。",
-        "3．命题教师：务必输入命题教师名字，打印纸质版后再手写签名；系（教研室）主任审核签字：须手写签名。",
-        "4．各专业根据教学大纲自行拟定考核形式、考核技能/内容、分值。",
-        "5. 该表文字部分均用五号宋体，使用A4纸双面打印。",
-        "6. 命题完成后将该表与评分细则（电子版及纸质版）交到二级学院（部），并装入试卷袋存档。",
-    ]
-    for line in notes:
+    for line in ASSESSMENT_PLAN_NOTES:
         p = document.add_paragraph()
+        p.paragraph_format.space_before = _pt(0)
+        p.paragraph_format.space_after = _pt(0)
+        p.paragraph_format.line_spacing = 1.08
         _set_run_songti(p.add_run(line), 10.5)
 
 
@@ -508,6 +549,43 @@ def _format_period_line(fields: dict[str, Any]) -> str:
     return f"（{start[:2]} {start[2:]}  —  {end[:2]} {end[2:]}  学年度第 {sem} 学期）"
 
 
+def _add_assessment_period_runs(paragraph: Any, fields: dict[str, Any]) -> None:
+    start, end, semester = _assessment_period_parts(fields)
+    _set_run_songti(paragraph.add_run("（"), 14, bold=True)
+    _set_run_songti(paragraph.add_run(start[:2]), 14, bold=True)
+    _set_run_songti(paragraph.add_run(start[2:] or "__"), 14, bold=True, underline=True)
+    _set_run_songti(paragraph.add_run("  —  "), 14, bold=True)
+    _set_run_songti(paragraph.add_run(end[:2]), 14, bold=True)
+    _set_run_songti(paragraph.add_run(end[2:] or "__"), 14, bold=True, underline=True)
+    _set_run_songti(paragraph.add_run("  学年度第"), 14, bold=True)
+    _set_run_songti(paragraph.add_run(semester or "    "), 14, bold=True, underline=True)
+    _set_run_songti(paragraph.add_run("学期）"), 14, bold=True)
+
+
+def _assessment_period_parts(fields: dict[str, Any]) -> tuple[str, str, str]:
+    academic_year = str(_field(fields, "academic_year") or "").strip()
+    start = "20__"
+    end = "20__"
+    match = re.search(r"(20\d{2}).*?(20\d{2})", academic_year)
+    if match:
+        start, end = match.group(1), match.group(2)
+    semester = str(_field(fields, "semester") or "").strip()
+    if "一" in semester or semester == "1":
+        sem = "一"
+    elif "二" in semester or semester == "2":
+        sem = "二"
+    else:
+        sem = semester.replace("第", "").replace("学期", "").strip()
+    return start, end, sem
+
+
+def _assessment_mode_label(fields: dict[str, Any]) -> str:
+    raw = str(_field(fields, "assessment_mode_label", "assessment_mode", "academic_exam_mode") or "")
+    if "笔试" in raw and "非笔试" not in raw:
+        return "笔试考核"
+    return "非笔试考核"
+
+
 def _exam_flags_text(fields: dict[str, Any]) -> str:
     text = str(fields.get("exam_flags") or fields.get("exam_kind") or "期末考试").strip()
     return f"期末考试（ {'√' if '期末' in text else ' '} ）    补考（ {'√' if '补考' in text else ' '} ）    重新学习考试（ {'√' if '重新' in text else ' '} ）"
@@ -526,6 +604,14 @@ def _field(fields: dict[str, Any], *keys: str) -> str:
         if value not in (None, "", [], {}):
             return _stringify(value)
     return ""
+
+
+def _signature_value(fields: dict[str, Any], *keys: str, signature_key: str) -> str:
+    name = _field(fields, *keys)
+    signature = _field(fields, signature_key)
+    if signature and signature != name:
+        return f"{name}    {signature}".strip()
+    return name
 
 
 def _set_cell_text(cell: Any, text: Any, *, bold: bool = False, align: int = 0, size: float = 10.5) -> None:
@@ -557,6 +643,27 @@ def _set_cell_width(cell: Any, width_cm: float) -> None:
     tc_w.set(qn("w:type"), "dxa")
 
 
+def _set_table_borders(table: Any, *, color: str = "000000", size: int = 8) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    tbl_pr = table._tbl.tblPr
+    borders = tbl_pr.first_child_found_in("w:tblBorders")
+    if borders is None:
+        borders = OxmlElement("w:tblBorders")
+        tbl_pr.append(borders)
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        tag = f"w:{edge}"
+        element = borders.find(qn(tag))
+        if element is None:
+            element = OxmlElement(tag)
+            borders.append(element)
+        element.set(qn("w:val"), "single")
+        element.set(qn("w:sz"), str(size))
+        element.set(qn("w:space"), "0")
+        element.set(qn("w:color"), color)
+
+
 def _set_cell_margins(cell: Any, *, top: int = 80, bottom: int = 80, left: int = 100, right: int = 100) -> None:
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
@@ -576,7 +683,15 @@ def _set_cell_margins(cell: Any, *, top: int = 80, bottom: int = 80, left: int =
         node.set(qn("w:type"), "dxa")
 
 
-def _set_run_songti(run: Any, size: float, *, bold: bool = False, color: str = "000000", font_name: str = "宋体") -> None:
+def _set_run_songti(
+    run: Any,
+    size: float,
+    *,
+    bold: bool = False,
+    color: str = "000000",
+    font_name: str = "宋体",
+    underline: bool = False,
+) -> None:
     from docx.oxml.ns import qn
     from docx.shared import Pt, RGBColor
 
@@ -584,6 +699,7 @@ def _set_run_songti(run: Any, size: float, *, bold: bool = False, color: str = "
     run._element.rPr.rFonts.set(qn("w:eastAsia"), font_name)
     run.font.size = Pt(size)
     run.font.bold = bold
+    run.font.underline = underline
     run.font.color.rgb = RGBColor.from_string(color)
 
 

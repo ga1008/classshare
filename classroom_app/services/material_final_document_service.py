@@ -17,12 +17,15 @@ FINAL_MATERIAL_LABELS = {
 FINAL_MATERIAL_LAYOUTS: dict[str, dict[str, Any]] = {
     "assessment_plan": {
         "page": "A4 portrait",
-        "margins_cm": {"top": 1.5, "bottom": 1.5, "left": 1.5, "right": 1.25, "footer": 1.75},
+        "margins_cm": {"top": 1.15, "bottom": 1.0, "left": 1.6, "right": 1.45, "footer": 0.55},
         "title_font": {"name": "宋体", "size_pt": 18, "bold": True},
         "period_font": {"name": "宋体", "size_pt": 14, "bold": True},
         "body_font": {"name": "宋体", "size_pt": 10.5},
-        "metadata_table_widths_cm": [3.45, 3.95, 3.45, 4.35],
-        "assessment_table_widths_cm": [3.4, 9.4, 2.7],
+        "metadata_table_widths_cm": [4.45, 4.15, 4.05, 4.85],
+        "assessment_table_widths_cm": [4.45, 9.65, 3.35],
+        "metadata_row_height_cm": 1.12,
+        "assessment_header_height_cm": 1.0,
+        "assessment_body_min_height_cm": 1.75,
     },
     "grading_rubric": {
         "page": "A4 portrait",
@@ -43,6 +46,47 @@ FINAL_MATERIAL_LAYOUTS: dict[str, dict[str, Any]] = {
 }
 
 
+ASSESSMENT_PLAN_SCHEMA_VERSION = "gxufl-assessment-plan-v2"
+
+ASSESSMENT_PLAN_NOTES = [
+    "注：",
+    "1．课程名称必须与教学计划上的名称一致。",
+    "2．考核类型：考查、考试（按教学计划填写）。",
+    "3．命题教师：务必输入命题教师名字，打印纸质版后再手写签名；系（教研室）主任审核签字：须手写签名。",
+    "4．各专业根据教学大纲自行拟定考核形式、考核技能/内容、分值。",
+    "5. 该表文字部分均用五号宋体，使用A4纸双面打印。",
+    "6. 命题完成后将该表与评分细则（电子版及纸质版）交到二级学院（部），并装入试卷袋存档。",
+]
+
+ASSESSMENT_PLAN_DEFAULT_ITEMS = [
+    {
+        "assessment_form": "机试",
+        "content": "Linux 用户与目录管理（创建用户组 / 用户、设置密码、创建多级目录、修改归属与权限，执行 id/grep/ls 命令查询信息）",
+        "score": "24",
+    },
+    {
+        "assessment_form": "机试",
+        "content": "Shell 脚本编写（创建系统巡检、自动化备份脚本，编写指定命令与输出，添加可执行权限并执行）",
+        "score": "14",
+    },
+    {
+        "assessment_form": "机试",
+        "content": "Web 服务部署与配置（安装 httpd、启停服务并设开机自启，配置 SELinux 权限与用户家目录网页访问，访问测试页面）",
+        "score": "25",
+    },
+    {
+        "assessment_form": "机试",
+        "content": "数据库服务管理（安装 mariadb-server、启停服务并设开机自启，初始化数据库，创建数据库 / 用户及授权，查询用户权限）",
+        "score": "27",
+    },
+    {
+        "assessment_form": "机试",
+        "content": "服务与系统状态查询（执行 systemctl/getsebool 命令查看 httpd 服务、SELinux 状态，执行数据库权限查询命令）",
+        "score": "10",
+    },
+]
+
+
 FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "title": ("标题", "材料标题", "title"),
     "school": ("学校", "school"),
@@ -60,6 +104,12 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "date": ("日期", "命题日期", "date"),
     "assessment_type": ("考核类型", "考查考试", "assessment_type"),
     "assessment_method": ("考核形式", "考核方式", "考试形式", "assessment_method"),
+    "assessment_mode": ("笔试考核", "非笔试考核", "考核方式类型", "考核形态", "assessment_mode", "exam_work_mode"),
+    "assessment_mode_label": ("考核方式标注", "考核计划类型", "assessment_mode_label"),
+    "examiner_signature": ("命题教师签名", "命题教师签字", "examiner_signature"),
+    "reviewer_signature": ("系主任签名", "审核签名", "系（教研室）主任签名", "reviewer_signature"),
+    "academic_exam_method": ("教务考核方式", "教务考核类型", "academic_exam_method"),
+    "academic_exam_mode": ("教务考试方式", "教务考试形式", "academic_exam_mode"),
     "paper_type": ("试卷类型", "开闭卷", "paper_type"),
     "education_level": ("学历层次", "education_level"),
     "exam_duration": ("考试时间", "考试时长", "exam_duration"),
@@ -91,6 +141,8 @@ def normalize_final_material_payload(
 
     normalized_tables = normalize_table_payloads(tables or [])
     fields = _normalize_field_map(metadata or {})
+    if export_payload:
+        fields.update({k: v for k, v in _normalize_field_map(_as_dict(export_payload.get("fields"))).items() if _is_blank(fields.get(k))})
     fields.update({k: v for k, v in _fields_from_markdown_tables(normalized_tables).items() if _is_blank(fields.get(k))})
     fields.update({k: v for k, v in _fields_from_text(content_markdown).items() if _is_blank(fields.get(k))})
     if classroom_context:
@@ -98,7 +150,13 @@ def normalize_final_material_payload(
 
     sections = split_markdown_sections(content_markdown)
     if key == "assessment_plan":
-        structured = _assessment_plan_payload(fields, normalized_tables, sections)
+        fields = _normalize_assessment_plan_fields(fields)
+        structured = _assessment_plan_payload(
+            fields,
+            normalized_tables,
+            sections,
+            seed_items=_assessment_items_from_export_payload(export_payload),
+        )
     elif key == "grading_rubric":
         structured = _grading_rubric_payload(fields, normalized_tables, sections, content_markdown)
     else:
@@ -118,8 +176,9 @@ def normalize_final_material_payload(
     base["compatibility"] = {
         **_as_dict(base.get("compatibility")),
         "source_format_preserved": True,
-        "requires_template_confirmation": False,
+        "requires_template_confirmation": bool(structured.get("requires_teacher_confirmation")),
         "layout_source": "guangwai_final_material_samples",
+        "template_schema_version": structured.get("template_schema_version") or "",
     }
     return base
 
@@ -224,6 +283,8 @@ def build_final_material_generation_seed(
     fields.setdefault("title", final_material_label(key))
     fields.setdefault("assessment_type", "考试")
     fields.setdefault("assessment_method", "机试")
+    fields.setdefault("assessment_mode", "non_written")
+    fields.setdefault("assessment_mode_label", "非笔试考核")
     fields.setdefault("exam_duration", "90")
     fields.setdefault("total_score", "100")
     sections: list[dict[str, Any]]
@@ -234,12 +295,14 @@ def build_final_material_generation_seed(
                 "title": "考核技能/内容",
                 "rows": [
                     ["考核形式", "考核技能/内容", "分值"],
-                    ["机试", "基础环境配置与命令操作", "30"],
-                    ["机试", "综合服务部署与验证", "70"],
+                    *[
+                        [item["assessment_form"], item["content"], item["score"]]
+                        for item in ASSESSMENT_PLAN_DEFAULT_ITEMS
+                    ],
                 ],
             }
         ]
-        sections = [{"title": "说明", "content": _default_generation_note(prompt)}]
+        sections = [{"title": "注", "content": "\n".join(ASSESSMENT_PLAN_NOTES)}]
     elif key == "grading_rubric":
         tables = []
         sections = [
@@ -269,16 +332,28 @@ def build_final_material_generation_seed(
     }
 
 
-def _assessment_plan_payload(fields: dict[str, Any], tables: list[dict[str, Any]], sections: list[dict[str, Any]]) -> dict[str, Any]:
-    items = _assessment_items_from_tables(tables)
+def _assessment_plan_payload(
+    fields: dict[str, Any],
+    tables: list[dict[str, Any]],
+    sections: list[dict[str, Any]],
+    *,
+    seed_items: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    items = seed_items or _assessment_items_from_tables(tables)
     if not items:
-        items = [{"assessment_form": fields.get("assessment_method") or "机试", "content": "请补充考核技能/内容", "score": fields.get("total_score") or "100"}]
+        items = _default_assessment_items(fields)
     total = _sum_score(item.get("score") for item in items) or _to_number(fields.get("total_score")) or 100
+    fields["total_score"] = _score_to_text(total)
     return {
         "fields": fields,
         "assessment_items": items,
         "total_score": total,
-        "sections": sections or [{"title": "说明", "content": ""}],
+        "notes": list(ASSESSMENT_PLAN_NOTES),
+        "assessment_mode": fields.get("assessment_mode") or "non_written",
+        "assessment_mode_label": fields.get("assessment_mode_label") or "非笔试考核",
+        "requires_teacher_confirmation": bool(fields.get("requires_teacher_confirmation")),
+        "template_schema_version": ASSESSMENT_PLAN_SCHEMA_VERSION,
+        "sections": sections or [{"title": "注", "content": "\n".join(ASSESSMENT_PLAN_NOTES)}],
     }
 
 
@@ -315,6 +390,73 @@ def _exam_paper_payload(
     }
 
 
+def _normalize_assessment_plan_fields(fields: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(fields)
+    normalized.setdefault("school", "广西外国语学院")
+    normalized["title"] = "课程考核计划表"
+    assessment_type = _normalize_assessment_type(
+        normalized.get("assessment_type")
+        or normalized.get("academic_exam_method")
+        or normalized.get("exam_method")
+        or normalized.get("course_nature")
+    )
+    normalized["assessment_type"] = assessment_type
+
+    mode_code, mode_label, inferred_from_teacher = _normalize_assessment_mode(
+        normalized.get("assessment_mode")
+        or normalized.get("assessment_mode_label")
+        or normalized.get("assessment_method")
+        or normalized.get("academic_exam_mode")
+        or normalized.get("exam_mode"),
+        assessment_type=assessment_type,
+    )
+    normalized["assessment_mode"] = mode_code
+    normalized["assessment_mode_label"] = mode_label
+    if not inferred_from_teacher and assessment_type == "考试":
+        normalized["requires_teacher_confirmation"] = True
+    normalized.setdefault("assessment_method", "机试" if mode_code == "non_written" else "闭卷笔试")
+    normalized.setdefault("examiner_name", normalized.get("teacher_name") or "")
+    normalized.setdefault("date", datetime.now().strftime("%Y年%m月%d日"))
+    return normalized
+
+
+def _normalize_assessment_type(value: Any) -> str:
+    raw = _stringify(value)
+    if "考查" in raw or "考察" in raw:
+        return "考查"
+    if "考试" in raw:
+        return "考试"
+    return "考试"
+
+
+def _normalize_assessment_mode(value: Any, *, assessment_type: str) -> tuple[str, str, bool]:
+    raw = _stringify(value)
+    if assessment_type == "考查":
+        return "non_written", "非笔试考核", bool(raw)
+    if "非笔试" in raw or "非 笔试" in raw or "机试" in raw or "实操" in raw or "作品" in raw or "项目" in raw:
+        return "non_written", "非笔试考核", True
+    if "笔试" in raw or "闭卷" in raw or "开卷" in raw:
+        return "written", "笔试考核", True
+    if str(raw).strip().lower() in {"written", "paper", "笔试考核"}:
+        return "written", "笔试考核", True
+    if str(raw).strip().lower() in {"non_written", "non-written", "practical", "非笔试考核"}:
+        return "non_written", "非笔试考核", True
+    return "non_written", "非笔试考核", False
+
+
+def _default_assessment_items(fields: dict[str, Any]) -> list[dict[str, str]]:
+    if _stringify(fields.get("course_name")).strip() == "服务器配置与管理":
+        return [dict(item) for item in ASSESSMENT_PLAN_DEFAULT_ITEMS]
+    method = _stringify(fields.get("assessment_method") or "机试") or "机试"
+    course = _stringify(fields.get("course_name") or "本课程")
+    return [
+        {"assessment_form": method, "content": f"{course}基础知识、基本概念与核心工具使用", "score": "20"},
+        {"assessment_form": method, "content": f"{course}核心技能/内容的独立完成与过程规范", "score": "35"},
+        {"assessment_form": method, "content": f"{course}综合任务、案例分析或实践成果质量", "score": "35"},
+        {"assessment_form": method, "content": "答题/提交规范、结果可复核性与材料完整性", "score": "10"},
+    ]
+
+
 def _assessment_items_from_tables(tables: list[dict[str, Any]]) -> list[dict[str, str]]:
     for table in tables:
         rows = table.get("rows") or []
@@ -335,6 +477,28 @@ def _assessment_items_from_tables(tables: list[dict[str, Any]]) -> list[dict[str
                 )
             return items
     return []
+
+
+def _assessment_items_from_export_payload(export_payload: dict[str, Any] | None) -> list[dict[str, str]]:
+    payload = _as_dict(export_payload)
+    structured = _as_dict(payload.get("structured"))
+    raw_items = structured.get("assessment_items") if isinstance(structured.get("assessment_items"), list) else []
+    items: list[dict[str, str]] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        content = _stringify(item.get("content") or item.get("assessment_content") or "")
+        score = _stringify(item.get("score") or "")
+        if not content and not score:
+            continue
+        items.append(
+            {
+                "assessment_form": _stringify(item.get("assessment_form") or item.get("form") or "机试"),
+                "content": content,
+                "score": score,
+            }
+        )
+    return items
 
 
 def _rubric_items_from_text(content: str) -> list[dict[str, Any]]:
@@ -422,6 +586,12 @@ def _fields_from_classroom_context(context: dict[str, Any]) -> dict[str, Any]:
         "semester": raw.get("semester") or "",
         "college": raw.get("college") or "",
         "department": raw.get("department") or "",
+        "assessment_type": raw.get("assessment_type") or raw.get("academic_exam_method") or "",
+        "assessment_method": raw.get("assessment_method") or "",
+        "assessment_mode": raw.get("assessment_mode") or "",
+        "assessment_mode_label": raw.get("assessment_mode_label") or "",
+        "academic_exam_method": raw.get("academic_exam_method") or "",
+        "academic_exam_mode": raw.get("academic_exam_mode") or "",
     }
     return {key: value for key, value in fields.items() if not _is_blank(value)}
 
@@ -564,6 +734,13 @@ def _sum_score(values: Any) -> float:
 def _to_number(value: Any) -> float | None:
     match = re.search(r"\d+(?:\.\d+)?", str(value or ""))
     return float(match.group(0)) if match else None
+
+
+def _score_to_text(value: Any) -> str:
+    number = _to_number(value)
+    if number is None:
+        return _stringify(value)
+    return str(int(number)) if float(number).is_integer() else str(number)
 
 
 def _first_non_empty(*values: Any) -> str:

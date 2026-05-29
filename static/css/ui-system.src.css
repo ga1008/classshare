@@ -14238,13 +14238,28 @@ body.has-chat-image-preview-open {
 
 .classroom-material-ai-prompt,
 .classroom-final-material-form textarea,
-.classroom-final-material-form select {
+.classroom-final-material-form select,
+.classroom-final-material-form input {
     width: 100%;
     border: 1px solid rgba(148, 163, 184, 0.32);
     border-radius: 8px;
     background: #fff;
     padding: 0.75rem 0.85rem;
     color: #111827;
+}
+
+.classroom-final-material-template-options {
+    display: grid;
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    gap: 0.8rem;
+    padding: 0.82rem;
+    border: 1px solid rgba(37, 99, 235, 0.14);
+    border-radius: 8px;
+    background: rgba(239, 246, 255, 0.68);
+}
+
+.classroom-final-material-template-options[hidden] {
+    display: none;
 }
 
 .classroom-material-inline-actions,
@@ -14307,6 +14322,10 @@ body.has-chat-image-preview-open {
 
     .classroom-material-preview-list em {
         justify-self: start;
+    }
+
+    .classroom-final-material-template-options {
+        grid-template-columns: 1fr;
     }
 }
 

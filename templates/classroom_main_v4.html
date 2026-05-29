@@ -1392,6 +1392,19 @@
                             <option value="grading_rubric">评分细则</option>
                         </select>
                     </label>
+                    <div class="classroom-final-material-template-options" id="classroom-assessment-plan-options" hidden>
+                        <label class="form-group">
+                            <span>考核形态</span>
+                            <select id="classroom-final-material-assessment-mode">
+                                <option value="non_written">非笔试考核</option>
+                                <option value="written">笔试考核</option>
+                            </select>
+                        </label>
+                        <label class="form-group">
+                            <span>考核形式</span>
+                            <input id="classroom-final-material-assessment-method" type="text" value="机试" placeholder="机试 / 闭卷笔试 / 项目实操">
+                        </label>
+                    </div>
                     <label class="form-group">
                         <span>生成要求</span>
                         <textarea id="classroom-final-material-prompt" rows="6" placeholder="例如：围绕本课堂的 Linux 服务部署、数据库授权、脚本备份设计机试任务，难度适中，适合专升本班级。"></textarea>
@@ -2261,7 +2274,7 @@
     import { ClassroomChat } from '/static/js/chat.js?v=chat-image-derivatives-20260515';
     import { ClassroomPrivateMessages } from '/static/js/classroom_private_messages.js?v=chat-image-derivatives-20260515';
     import * as fileApp from '/static/js/app_files.js';
-    import * as materialsApp from '/static/js/classroom_materials.js?v=final-materials-20260529';
+    import * as materialsApp from '/static/js/classroom_materials.js?v=assessment-plan-template-20260529';
     import * as examApp from '/static/js/app_exams.js';
     import { initClassroomPage } from '/static/js/classroom_page.js?v=smart-attendance-ai-advice-20260527';
     import { initLearningProgress } from '/static/js/learning_progress.js?v=exam-roster-place-picker-20260519';
