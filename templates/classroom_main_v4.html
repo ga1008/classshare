@@ -90,6 +90,88 @@
         flex-wrap: wrap;
     }
 
+    .classroom-page .teaching-timeline-segment.is-academic-exam {
+        border-color: rgba(217, 119, 6, 0.42);
+        background: linear-gradient(135deg, rgba(255, 251, 235, 0.96), rgba(240, 253, 250, 0.9));
+    }
+
+    .classroom-page .teaching-timeline-segment.is-academic-exam.is-selected {
+        box-shadow: 0 18px 42px -30px rgba(180, 83, 9, 0.8), inset 0 0 0 1px rgba(217, 119, 6, 0.28);
+    }
+
+    .classroom-page .teaching-timeline-segment-doc.is-exam {
+        background: rgba(245, 158, 11, 0.16);
+        color: #92400e;
+    }
+
+    .academic-course-exam-section {
+        display: grid;
+        gap: 12px;
+    }
+
+    .academic-course-exam-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .academic-course-exam-kicker {
+        display: inline-flex;
+        width: fit-content;
+        padding: 4px 9px;
+        border-radius: 999px;
+        background: rgba(245, 158, 11, 0.14);
+        color: #92400e;
+        font-size: 0.72rem;
+        font-weight: 850;
+    }
+
+    .academic-course-exam-head h4 {
+        margin-top: 6px;
+    }
+
+    .academic-course-exam-message {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 0.86rem;
+        line-height: 1.55;
+    }
+
+    .academic-course-exam-list {
+        display: grid;
+        gap: 10px;
+    }
+
+    .academic-course-exam-card {
+        display: grid;
+        gap: 8px;
+        padding: 12px;
+        border: 1px solid rgba(245, 158, 11, 0.22);
+        border-radius: 8px;
+        background: linear-gradient(135deg, rgba(255, 251, 235, 0.92), rgba(255, 255, 255, 0.92));
+    }
+
+    .academic-course-exam-card strong {
+        color: var(--text-primary);
+    }
+
+    .academic-course-exam-card small,
+    .academic-course-exam-card span {
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        line-height: 1.45;
+    }
+
+    .classroom-page .semester-gantt-row.is-academic_exam .semester-gantt-bar {
+        background: linear-gradient(90deg, #f59e0b, #14b8a6);
+    }
+
+    .classroom-page .semester-todo-item.is-academic_exam .semester-todo-source-dot {
+        background: rgba(245, 158, 11, 0.18);
+        box-shadow: inset 0 0 0 6px #d97706;
+    }
+
     .assignment-time-strip {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -198,6 +280,7 @@
         classOfferingId: {{ classroom.id }},
         courseId: {{ classroom.course_id }},
         teachingPlan: {{ classroom_page.teaching_plan | tojson }},
+        academicCourseExams: {{ classroom_page.academic_course_exams | default({}) | tojson }},
         learningProgress: {{ classroom_page.learning_progress | default(none) | tojson }},
         learningOverview: {{ classroom_page.learning_overview | default(none) | tojson }}
     };
@@ -402,7 +485,7 @@
                                     {% for session in timeline_entries %}
                                     <button
                                         type="button"
-                                        class="teaching-timeline-segment is-{{ session.progress_state }}{% if session.is_home_entry %} is-home-entry{% endif %}{% if session.is_academic_schedule %} is-academic-schedule{% endif %}{% if session.is_non_periodic %} is-non-periodic{% endif %}{% if session.is_anchor %} is-anchor{% endif %}{% if session.order_index == selected_session.order_index %} is-selected{% endif %}"
+                                        class="teaching-timeline-segment is-{{ session.progress_state }}{% if session.is_home_entry %} is-home-entry{% endif %}{% if session.is_academic_exam %} is-academic-exam{% endif %}{% if session.is_academic_schedule %} is-academic-schedule{% endif %}{% if session.is_non_periodic %} is-non-periodic{% endif %}{% if session.is_anchor %} is-anchor{% endif %}{% if session.order_index == selected_session.order_index %} is-selected{% endif %}"
                                         data-session-order="{{ session.order_index }}"
                                         data-session-id="{{ session.id }}"
                                         data-entry-type="{{ session.entry_type or 'lesson' }}"
@@ -427,6 +510,9 @@
                                             </span>
                                             {% if session.is_academic_schedule %}
                                             <span class="teaching-timeline-segment-doc is-academic">教务</span>
+                                            {% endif %}
+                                            {% if session.is_academic_exam %}
+                                            <span class="teaching-timeline-segment-doc is-exam">考试</span>
                                             {% endif %}
                                             {% if session.is_non_periodic %}
                                             <span class="teaching-timeline-segment-doc is-shifted">变动</span>
@@ -2044,13 +2130,26 @@
                     </div>
                 </div>
                 {% endif %}
+                <div class="course-popover-section academic-course-exam-section" id="academicCourseExamPanel" data-role="{{ user_info.role }}">
+                    <div class="academic-course-exam-head">
+                        <div>
+                            <span class="academic-course-exam-kicker">教务考试</span>
+                            <h4>任课考试安排</h4>
+                        </div>
+                        {% if user_info.role == 'teacher' %}
+                        <button type="button" class="btn btn-outline btn-sm" id="academicCourseExamSyncBtn">同步教务考试</button>
+                        {% endif %}
+                    </div>
+                    <p class="academic-course-exam-message" id="academicCourseExamMessage">正在读取本地考试同步状态。</p>
+                    <div class="academic-course-exam-list" id="academicCourseExamList"></div>
+                </div>
                 {% if classroom.class_description %}
                 <div class="course-popover-section">
                     <h4>班级说明</h4>
                     <p>{{ classroom.class_description }}</p>
                 </div>
                 {% endif %}
-                {% if not classroom.course_description and not hero.secondary_meta and not classroom.class_description %}
+                {% if not classroom.course_description and not hero.secondary_meta and not classroom.class_description and not classroom_page.academic_course_exams.has_synced %}
                 <p class="course-popover-empty">暂未填写更多课程信息。</p>
                 {% endif %}
             </section>

@@ -5,7 +5,7 @@ import os
 import re
 import tempfile
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -71,6 +71,37 @@ from ..services.session_material_generation_service import (
 )
 
 router = APIRouter()
+
+
+def _read_material_ai_import_int_env(name: str, default: int, minimum: int = 1) -> int:
+    raw_value = os.getenv(name)
+    if raw_value in (None, ""):
+        return max(minimum, int(default))
+    try:
+        return max(minimum, int(raw_value))
+    except (TypeError, ValueError):
+        return max(minimum, int(default))
+
+
+MATERIAL_AI_IMPORT_STATUS_LABELS = {
+    "queued": "排队中",
+    "running": "正在解析",
+    "completed": "解析完成",
+    "failed": "解析失败",
+    "ai_failed": "AI 识别失败",
+    "quality_failed": "疑似乱码",
+    "unsupported": "格式不支持",
+}
+MATERIAL_AI_IMPORT_ACTIVE_STATUSES = {"queued", "running"}
+MATERIAL_AI_IMPORT_FINAL_STATUSES = {"completed", "failed", "ai_failed", "quality_failed", "unsupported"}
+MATERIAL_AI_IMPORT_WORKER_COUNT = _read_material_ai_import_int_env("MATERIAL_AI_IMPORT_WORKER_COUNT", 1)
+MATERIAL_AI_IMPORT_QUEUE_MAX_PENDING = _read_material_ai_import_int_env("MATERIAL_AI_IMPORT_QUEUE_MAX_PENDING", 30)
+MATERIAL_AI_IMPORT_STALE_MINUTES = _read_material_ai_import_int_env("MATERIAL_AI_IMPORT_STALE_MINUTES", 45, minimum=5)
+MATERIAL_AI_IMPORT_RECENT_MINUTES = _read_material_ai_import_int_env("MATERIAL_AI_IMPORT_RECENT_MINUTES", 30, minimum=5)
+
+_material_ai_import_queue: asyncio.Queue[int] | None = None
+_material_ai_import_worker_tasks: list[asyncio.Task] = []
+_material_ai_import_enqueued_ids: set[int] = set()
 
 
 class MaterialAssignRequest(BaseModel):
@@ -267,6 +298,8 @@ async def _call_ai_chat(
     image_inputs: list[dict[str, Any]] | None = None,
     file_texts: list[dict[str, str]] | None = None,
     task_type: str | None = None,
+    task_priority: str = "default",
+    task_label: str | None = None,
     timeout: float = 180.0,
 ):
     payload = {
@@ -280,6 +313,8 @@ async def _call_ai_chat(
         "task_type": task_type or ("deep_text_reasoning" if capability == "thinking" else "fast_text_response"),
         "web_search_enabled": False,
         "response_format": response_format,
+        "task_priority": task_priority,
+        "task_label": task_label or f"materials:{task_type or capability}",
     }
     try:
         response = await ai_client.post("/api/ai/chat", json=payload, timeout=timeout)
@@ -1655,6 +1690,400 @@ def _parse_json_array(value: Any) -> list:
     return loaded if isinstance(loaded, list) else []
 
 
+def _material_ai_import_status_message(row: dict, *, queue_position: int | None = None) -> str:
+    status = str(row.get("parse_status") or "queued").strip().lower()
+    source_name = row.get("source_file_name") or "材料文件"
+    if status == "queued":
+        if queue_position and queue_position > 1:
+            return f"《{source_name}》已进入 AI 解析队列，当前约第 {queue_position} 位。"
+        return f"《{source_name}》已进入 AI 解析队列，系统会按顺序处理。"
+    if status == "running":
+        return f"AI 正在解析《{source_name}》，会先校验乱码和结构，再生成可保存的材料内容。"
+    if status == "completed":
+        return f"《{source_name}》解析完成，已生成材料包和结构化内容。"
+
+    error_message = str(row.get("error_message") or "").strip()
+    if error_message:
+        return error_message
+    if status == "ai_failed":
+        return "AI 服务未能返回有效识别结果，请稍后重试或换用更清晰的 PDF/Word 文件。"
+    if status == "quality_failed":
+        return "解析内容疑似乱码或质量不足，系统已阻止保存无效正文。"
+    if status == "unsupported":
+        return "当前文档格式暂不支持自动解析，请先转换为 docx、xlsx 或 PDF 后重试。"
+    return "解析未完成，请稍后重试。"
+
+
+def _material_ai_import_queue_position(conn, record_id: int) -> int | None:
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS queue_position
+        FROM material_ai_import_records
+        WHERE parse_status = 'queued'
+          AND id <= ?
+        """,
+        (int(record_id),),
+    ).fetchone()
+    if not row:
+        return None
+    return int(row["queue_position"] or 0) or None
+
+
+def _serialize_material_ai_import_task(conn, row, user: dict) -> dict:
+    item = dict(row)
+    status = str(item.get("parse_status") or "queued").strip().lower()
+    record_id = int(item.get("id") or 0)
+    queue_position = _material_ai_import_queue_position(conn, record_id) if status == "queued" else None
+
+    package_id = int(item.get("package_material_id") or 0) or None
+    source_id = int(item.get("source_material_id") or 0) or None
+    parsed_id = int(item.get("parsed_material_id") or 0) or None
+
+    package_item = _fetch_material_response_item(conn, package_id, user) if package_id else None
+    source_item = _fetch_material_response_item(conn, source_id, user) if source_id else None
+    parsed_item = _fetch_material_response_item(conn, parsed_id, user) if parsed_id else None
+
+    return {
+        "id": record_id,
+        "teacher_id": int(item.get("teacher_id") or 0),
+        "parent_material_id": int(item.get("parent_material_id") or 0) or None,
+        "package_material_id": package_id,
+        "source_material_id": source_id,
+        "parsed_material_id": parsed_id,
+        "document_group": item.get("document_group") or "",
+        "document_type": item.get("document_type") or "",
+        "document_type_label": item.get("document_type_label") or "",
+        "parse_status": status,
+        "status": status,
+        "status_label": MATERIAL_AI_IMPORT_STATUS_LABELS.get(status, "处理中"),
+        "is_active": status in MATERIAL_AI_IMPORT_ACTIVE_STATUSES,
+        "is_terminal": status in MATERIAL_AI_IMPORT_FINAL_STATUSES,
+        "parse_mode": item.get("parse_mode") or "ai",
+        "extraction_method": item.get("extraction_method") or "",
+        "source_file_name": item.get("source_file_name") or "",
+        "source_file_size": int(item.get("source_file_size") or 0),
+        "source_mime_type": item.get("source_mime_type") or "",
+        "content_quality_status": item.get("content_quality_status") or "unchecked",
+        "error_message": item.get("error_message") or "",
+        "message": _material_ai_import_status_message(item, queue_position=queue_position),
+        "queue_position": queue_position,
+        "created_at": item.get("created_at") or "",
+        "started_at": item.get("started_at") or "",
+        "updated_at": item.get("updated_at") or "",
+        "completed_at": item.get("completed_at") or "",
+        "failed_at": item.get("failed_at") or "",
+        "package_item": package_item,
+        "source_item": source_item,
+        "parsed_item": parsed_item,
+    }
+
+
+def _ensure_material_ai_import_workers() -> asyncio.Queue[int]:
+    global _material_ai_import_queue, _material_ai_import_worker_tasks
+    if _material_ai_import_queue is None:
+        _material_ai_import_queue = asyncio.Queue(maxsize=MATERIAL_AI_IMPORT_QUEUE_MAX_PENDING)
+
+    live_tasks = [task for task in _material_ai_import_worker_tasks if not task.done()]
+    _material_ai_import_worker_tasks = live_tasks
+    while len(_material_ai_import_worker_tasks) < MATERIAL_AI_IMPORT_WORKER_COUNT:
+        worker_no = len(_material_ai_import_worker_tasks) + 1
+        _material_ai_import_worker_tasks.append(asyncio.create_task(_material_ai_import_worker_loop(worker_no)))
+    return _material_ai_import_queue
+
+
+def _enqueue_material_ai_import_task(record_id: int) -> bool:
+    record_id = int(record_id)
+    if record_id <= 0:
+        return False
+    if record_id in _material_ai_import_enqueued_ids:
+        return True
+
+    queue = _ensure_material_ai_import_workers()
+    try:
+        queue.put_nowait(record_id)
+    except asyncio.QueueFull:
+        return False
+    _material_ai_import_enqueued_ids.add(record_id)
+    return True
+
+
+def _recover_stale_material_ai_import_tasks(conn) -> int:
+    cutoff = (datetime.now() - timedelta(minutes=MATERIAL_AI_IMPORT_STALE_MINUTES)).isoformat()
+    now = datetime.now().isoformat()
+    cursor = conn.execute(
+        """
+        UPDATE material_ai_import_records
+        SET parse_status = 'queued',
+            started_at = NULL,
+            error_message = CASE
+                WHEN TRIM(COALESCE(error_message, '')) = '' THEN '上次解析进程中断，系统已重新排队。'
+                ELSE error_message
+            END,
+            updated_at = ?
+        WHERE parse_status = 'running'
+          AND COALESCE(started_at, updated_at, created_at) < ?
+        """,
+        (now, cutoff),
+    )
+    return int(cursor.rowcount or 0)
+
+
+def _classify_material_ai_import_error(exc: Exception) -> tuple[str, str]:
+    if isinstance(exc, HTTPException):
+        status_code = int(exc.status_code or 500)
+        message = str(exc.detail or "").strip() or "解析失败"
+    else:
+        status_code = 500
+        message = str(exc).strip() or "解析失败"
+
+    lowered = message.lower()
+    if status_code in {400, 415} and ("不受支持" in message or "格式" in message or "unsupported" in lowered):
+        return "unsupported", message
+    if "乱码" in message or "质量校验" in message or "质量不足" in message or "quality" in lowered or "garbled" in lowered:
+        return "quality_failed", message
+    if "可解析内容" in message or "无法从该材料中抽取" in message:
+        return "quality_failed", message
+    if "AI 未返回" in message or "AI 服务" in message or "AI 助手" in message:
+        return "ai_failed", message
+    if status_code in {429, 502, 503, 504}:
+        return "ai_failed", message
+    return "failed", message
+
+
+def _mark_material_ai_import_failed(record_id: int, status: str, message: str) -> None:
+    now = datetime.now().isoformat()
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            UPDATE material_ai_import_records
+            SET parse_status = ?,
+                error_message = ?,
+                updated_at = ?,
+                completed_at = COALESCE(completed_at, ?),
+                failed_at = COALESCE(failed_at, ?)
+            WHERE id = ?
+            """,
+            (status, message[:500], now, now, now, int(record_id)),
+        )
+        conn.commit()
+
+
+async def _material_ai_import_worker_loop(worker_no: int) -> None:
+    while True:
+        queue = _ensure_material_ai_import_workers()
+        record_id = await queue.get()
+        _material_ai_import_enqueued_ids.discard(int(record_id))
+        try:
+            await _run_material_ai_import_record(int(record_id))
+        except Exception as exc:  # pragma: no cover - worker must not die on one bad record
+            status, message = _classify_material_ai_import_error(exc)
+            _mark_material_ai_import_failed(int(record_id), status, message)
+            print(f"[MATERIAL_AI_IMPORT] worker {worker_no} failed record {record_id}: {message}")
+        finally:
+            queue.task_done()
+
+
+async def _run_material_ai_import_record(record_id: int) -> None:
+    record_id = int(record_id)
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM material_ai_import_records WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+        if not row:
+            return
+        if str(row["parse_status"] or "").lower() not in MATERIAL_AI_IMPORT_ACTIVE_STATUSES:
+            return
+        now = datetime.now().isoformat()
+        conn.execute(
+            """
+            UPDATE material_ai_import_records
+            SET parse_status = 'running',
+                started_at = COALESCE(started_at, ?),
+                updated_at = ?,
+                error_message = ''
+            WHERE id = ?
+            """,
+            (now, now, record_id),
+        )
+        conn.commit()
+        record = dict(row)
+        record["parse_status"] = "running"
+        record["started_at"] = record.get("started_at") or now
+        record["updated_at"] = now
+
+    try:
+        file_hash = str(record.get("source_file_hash") or "").strip()
+        if not file_hash:
+            metadata = _parse_json_object(record.get("metadata_json"))
+            file_hash = str(metadata.get("source_file_hash") or metadata.get("file_hash") or "").strip()
+        stored_path = resolve_global_file_path(file_hash)
+        if not stored_path:
+            raise HTTPException(410, "源文件缓存已不存在，无法继续解析，请重新上传。")
+
+        parse_result = await parse_material_document(
+            file_path=stored_path,
+            original_name=record.get("source_file_name") or stored_path.name,
+            document_group=record.get("document_group") or "",
+            document_type=record.get("document_type") or "",
+            ai_chat=_call_ai_chat,
+        )
+        await _persist_material_ai_import_success(record_id, record, parse_result)
+    except Exception as exc:
+        status, message = _classify_material_ai_import_error(exc)
+        _mark_material_ai_import_failed(record_id, status, message)
+        print(f"[MATERIAL_AI_IMPORT] failed record {record_id}: {message}")
+
+
+async def _persist_material_ai_import_success(record_id: int, record: dict, parse_result) -> None:
+    teacher_id = int(record.get("teacher_id") or 0)
+    parent_id = int(record.get("parent_material_id") or 0) or None
+    user = {"id": teacher_id, "role": "teacher"}
+    original_name = record.get("source_file_name") or "material"
+    source_file_hash = str(record.get("source_file_hash") or "").strip()
+    source_file_size = int(record.get("source_file_size") or 0)
+    source_mime_type = str(record.get("source_mime_type") or "").strip()
+
+    readme_content = build_import_readme(result=parse_result, original_name=original_name)
+    readme_bytes = readme_content.encode("utf-8")
+    readme_hash = hashlib.sha256(readme_bytes).hexdigest()
+    await _write_material_file(readme_hash, readme_bytes)
+
+    source_path = resolve_global_file_path(source_file_hash)
+    if source_path and source_file_size <= 0:
+        source_file_size = source_path.stat().st_size
+
+    file_profile = infer_material_profile(original_name, source_mime_type or None)
+    readme_profile = infer_material_profile("readme.md", "text/markdown")
+    parse_payload = _build_material_ai_parse_payload(parse_result)
+    parse_payload_json = json.dumps(parse_payload, ensure_ascii=False)
+    metadata_json = json.dumps(parse_result.metadata, ensure_ascii=False)
+    export_payload_json = json.dumps(parse_result.export_payload, ensure_ascii=False)
+    warnings_json = json.dumps(parse_result.warnings, ensure_ascii=False)
+    content_quality_json = json.dumps(parse_result.content_quality, ensure_ascii=False)
+
+    with get_db_connection() as conn:
+        current = conn.execute(
+            "SELECT * FROM material_ai_import_records WHERE id = ?",
+            (int(record_id),),
+        ).fetchone()
+        if not current:
+            return
+        if str(current["parse_status"] or "").lower() not in MATERIAL_AI_IMPORT_ACTIVE_STATUSES:
+            return
+
+        base_parent = None
+        base_prefix = ""
+        inherited_root_id = None
+        if parent_id is not None:
+            base_parent = ensure_teacher_material_owner(conn, parent_id, teacher_id)
+            if base_parent["node_type"] != "folder":
+                raise HTTPException(400, "只能导入到文件夹中")
+            base_prefix = str(base_parent["material_path"])
+            inherited_root_id = int(base_parent["root_id"])
+
+        owner_scope = load_teacher_org_scope(conn, teacher_id)
+        now = datetime.now().isoformat()
+        package_base_name = f"AI解析-{Path(original_name).stem or parse_result.document_type_label}"
+        package_name = make_unique_material_name(conn, teacher_id, parent_id, package_base_name)
+        package_path = normalize_material_path(f"{base_prefix}/{package_name}" if base_prefix else package_name)
+
+        package_id, package_root_id = _insert_material_folder_row(
+            conn,
+            user=user,
+            name=package_name,
+            material_path=package_path,
+            parent_id=base_parent["id"] if base_parent else None,
+            inherited_root_id=inherited_root_id,
+            owner_scope=owner_scope,
+            now=now,
+        )
+
+        source_name = original_name
+        if source_name.strip().lower() == "readme.md":
+            source_name = "source-readme.md"
+        material_source_path = normalize_material_path(f"{package_path}/{source_name}")
+        source_id = _insert_material_file_row(
+            conn,
+            user=user,
+            name=source_name,
+            material_path=material_source_path,
+            parent_id=package_id,
+            root_id=package_root_id,
+            file_profile=file_profile,
+            file_hash=source_file_hash,
+            file_size=source_file_size,
+            owner_scope=owner_scope,
+            now=now,
+        )
+
+        parsed_name = "readme.md"
+        parsed_path = normalize_material_path(f"{package_path}/{parsed_name}")
+        parsed_id = _insert_material_file_row(
+            conn,
+            user=user,
+            name=parsed_name,
+            material_path=parsed_path,
+            parent_id=package_id,
+            root_id=package_root_id,
+            file_profile=readme_profile,
+            file_hash=readme_hash,
+            file_size=len(readme_bytes),
+            owner_scope=owner_scope,
+            now=now,
+            ai_parse_status="completed",
+            ai_parse_result_json=parse_payload_json,
+        )
+
+        conn.execute(
+            """
+            UPDATE material_ai_import_records
+            SET package_material_id = ?,
+                source_material_id = ?,
+                parsed_material_id = ?,
+                document_group = ?,
+                document_type = ?,
+                document_type_label = ?,
+                parse_status = 'completed',
+                parse_mode = ?,
+                extraction_method = ?,
+                metadata_json = ?,
+                content_markdown = ?,
+                parsed_payload_json = ?,
+                export_payload_json = ?,
+                warnings_json = ?,
+                content_quality_status = ?,
+                content_quality_json = ?,
+                error_message = '',
+                updated_at = ?,
+                completed_at = ?
+            WHERE id = ?
+            """,
+            (
+                package_id,
+                source_id,
+                parsed_id,
+                parse_result.document_group,
+                parse_result.document_type,
+                parse_result.document_type_label,
+                "ai" if parse_result.ai_used else "local_fallback",
+                parse_result.extraction_method,
+                metadata_json,
+                parse_result.content_markdown,
+                parse_payload_json,
+                export_payload_json,
+                warnings_json,
+                parse_result.content_quality.get("status", "ok"),
+                content_quality_json,
+                now,
+                now,
+                int(record_id),
+            ),
+        )
+        refresh_root_git_metadata(conn, package_root_id)
+        conn.commit()
+
+
 def _build_ai_import_payload_from_record(row) -> dict:
     payload = _parse_json_object(row["parsed_payload_json"])
     if payload:
@@ -1695,142 +2124,166 @@ async def ai_import_material(
 
     file_hash = hashlib.sha256(payload_bytes).hexdigest()
     stored_path = await _write_material_file(file_hash, payload_bytes)
-    parse_result = await parse_material_document(
-        file_path=stored_path,
-        original_name=original_name,
-        document_group=type_meta["group_key"],
-        document_type=type_meta["key"],
-        ai_chat=_call_ai_chat,
-    )
-
-    readme_content = build_import_readme(result=parse_result, original_name=original_name)
-    readme_bytes = readme_content.encode("utf-8")
-    readme_hash = hashlib.sha256(readme_bytes).hexdigest()
-    await _write_material_file(readme_hash, readme_bytes)
-
-    file_profile = infer_material_profile(original_name, file.content_type)
-    readme_profile = infer_material_profile("readme.md", "text/markdown")
-    parse_payload = _build_material_ai_parse_payload(parse_result)
-    parse_payload_json = json.dumps(parse_payload, ensure_ascii=False)
-    metadata_json = json.dumps(parse_result.metadata, ensure_ascii=False)
-    export_payload_json = json.dumps(parse_result.export_payload, ensure_ascii=False)
-    warnings_json = json.dumps(parse_result.warnings, ensure_ascii=False)
-    content_quality_json = json.dumps(parse_result.content_quality, ensure_ascii=False)
+    source_file_size = len(payload_bytes)
+    source_mime_type = str(file.content_type or "").strip()
+    initial_metadata = {
+        "source_file_hash": file_hash,
+        "source_file_size": source_file_size,
+        "source_mime_type": source_mime_type,
+        "source_filename": original_name,
+        "document_group": type_meta["group_label"],
+        "document_type": type_meta["label"],
+        "parent_material_id": parent_id,
+        "storage_path": str(stored_path),
+    }
 
     with get_db_connection() as conn:
+        _recover_stale_material_ai_import_tasks(conn)
+        active_count = conn.execute(
+            """
+            SELECT COUNT(*) AS active_count
+            FROM material_ai_import_records
+            WHERE parse_status IN ('queued', 'running')
+            """,
+        ).fetchone()["active_count"]
+        if int(active_count or 0) >= MATERIAL_AI_IMPORT_QUEUE_MAX_PENDING:
+            raise HTTPException(429, "当前 AI 材料解析任务较多，请稍后再试。")
+
         base_parent = None
-        base_prefix = ""
-        inherited_root_id = None
         if parent_id is not None:
             base_parent = ensure_teacher_material_owner(conn, parent_id, user["id"])
             if base_parent["node_type"] != "folder":
                 raise HTTPException(400, "只能导入到文件夹中")
-            base_prefix = str(base_parent["material_path"])
-            inherited_root_id = int(base_parent["root_id"])
-
-        owner_scope = load_teacher_org_scope(conn, int(user["id"]))
         now = datetime.now().isoformat()
-        package_base_name = f"AI解析-{Path(original_name).stem or type_meta['label']}"
-        package_name = make_unique_material_name(conn, user["id"], parent_id, package_base_name)
-        package_path = normalize_material_path(f"{base_prefix}/{package_name}" if base_prefix else package_name)
-
-        package_id, package_root_id = _insert_material_folder_row(
-            conn,
-            user=user,
-            name=package_name,
-            material_path=package_path,
-            parent_id=base_parent["id"] if base_parent else None,
-            inherited_root_id=inherited_root_id,
-            owner_scope=owner_scope,
-            now=now,
-        )
-
-        source_name = original_name
-        if source_name.strip().lower() == "readme.md":
-            source_name = "source-readme.md"
-        source_path = normalize_material_path(f"{package_path}/{source_name}")
-        source_id = _insert_material_file_row(
-            conn,
-            user=user,
-            name=source_name,
-            material_path=source_path,
-            parent_id=package_id,
-            root_id=package_root_id,
-            file_profile=file_profile,
-            file_hash=file_hash,
-            file_size=len(payload_bytes),
-            owner_scope=owner_scope,
-            now=now,
-        )
-
-        parsed_name = "readme.md"
-        parsed_path = normalize_material_path(f"{package_path}/{parsed_name}")
-        parsed_id = _insert_material_file_row(
-            conn,
-            user=user,
-            name=parsed_name,
-            material_path=parsed_path,
-            parent_id=package_id,
-            root_id=package_root_id,
-            file_profile=readme_profile,
-            file_hash=readme_hash,
-            file_size=len(readme_bytes),
-            owner_scope=owner_scope,
-            now=now,
-            ai_parse_status="completed",
-            ai_parse_result_json=parse_payload_json,
-        )
-
         record_cursor = conn.execute(
             """
             INSERT INTO material_ai_import_records
             (teacher_id, package_material_id, source_material_id, parsed_material_id,
-             document_group, document_type, document_type_label, parse_status, parse_mode,
-             extraction_method, source_file_name, metadata_json, content_markdown,
+             parent_material_id, document_group, document_type, document_type_label,
+             parse_status, parse_mode, extraction_method, source_file_name,
+             source_file_hash, source_file_size, source_mime_type, metadata_json, content_markdown,
              parsed_payload_json, export_payload_json, warnings_json, content_quality_status,
-             content_quality_json, created_at, updated_at, completed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             content_quality_json, error_message, created_at, updated_at, completed_at)
+            VALUES (?, NULL, NULL, NULL, ?, ?, ?, ?, 'queued', 'ai', '', ?, ?, ?, ?, ?, '',
+                    NULL, NULL, '[]', 'unchecked', '{}', '', ?, ?, NULL)
             """,
             (
                 user["id"],
-                package_id,
-                source_id,
-                parsed_id,
-                parse_result.document_group,
-                parse_result.document_type,
-                parse_result.document_type_label,
-                "ai" if parse_result.ai_used else "local_fallback",
-                parse_result.extraction_method,
+                base_parent["id"] if base_parent else None,
+                type_meta["group_key"],
+                type_meta["key"],
+                type_meta["label"],
                 original_name,
-                metadata_json,
-                parse_result.content_markdown,
-                parse_payload_json,
-                export_payload_json,
-                warnings_json,
-                parse_result.content_quality.get("status", "ok"),
-                content_quality_json,
-                now,
+                file_hash,
+                source_file_size,
+                source_mime_type,
+                json.dumps(initial_metadata, ensure_ascii=False),
                 now,
                 now,
             ),
         )
         import_record_id = int(record_cursor.lastrowid)
-
-        refresh_root_git_metadata(conn, package_root_id)
         conn.commit()
+        row = conn.execute(
+            "SELECT * FROM material_ai_import_records WHERE id = ?",
+            (import_record_id,),
+        ).fetchone()
+        task = _serialize_material_ai_import_task(conn, row, user)
 
-        package_item = _fetch_material_response_item(conn, package_id, user)
-        source_item = _fetch_material_response_item(conn, source_id, user)
-        parsed_item = _fetch_material_response_item(conn, parsed_id, user)
+    if not _enqueue_material_ai_import_task(import_record_id):
+        _mark_material_ai_import_failed(
+            import_record_id,
+            "failed",
+            "当前 AI 材料解析队列已满，请稍后重新发起。",
+        )
+        raise HTTPException(429, "当前 AI 材料解析队列已满，请稍后重新发起。")
+
+    return {
+        "status": "queued",
+        "message": f"《{original_name}》已加入 AI 解析队列，完成后会自动出现在当前材料列表。",
+        "import_record_id": import_record_id,
+        "task": task,
+    }
+
+
+@router.get("/api/materials/ai-import-records/active", response_class=JSONResponse)
+async def list_ai_import_records(
+    parent_id: int | None = Query(default=None),
+    recent_minutes: int = Query(default=MATERIAL_AI_IMPORT_RECENT_MINUTES, ge=1, le=1440),
+    user: dict = Depends(get_current_teacher),
+):
+    cutoff = (datetime.now() - timedelta(minutes=max(1, recent_minutes))).isoformat()
+    params: list[Any] = [user["id"]]
+    parent_clause = "parent_material_id IS NULL"
+    if parent_id is not None:
+        with get_db_connection() as conn:
+            parent_row = ensure_teacher_material_owner(conn, parent_id, user["id"])
+            if parent_row["node_type"] != "folder":
+                raise HTTPException(400, "只能查看文件夹下的解析任务")
+        parent_clause = "parent_material_id = ?"
+        params.append(int(parent_id))
+
+    params.append(cutoff)
+    with get_db_connection() as conn:
+        _recover_stale_material_ai_import_tasks(conn)
+        rows = conn.execute(
+            f"""
+            SELECT *
+            FROM material_ai_import_records
+            WHERE teacher_id = ?
+              AND {parent_clause}
+              AND (
+                    parse_status IN ('queued', 'running')
+                    OR updated_at >= ?
+              )
+            ORDER BY
+                CASE WHEN parse_status IN ('queued', 'running') THEN 0 ELSE 1 END,
+                updated_at DESC,
+                id DESC
+            LIMIT 20
+            """,
+            params,
+        ).fetchall()
+        conn.commit()
+        tasks = [_serialize_material_ai_import_task(conn, row, user) for row in rows]
+
+    for task in tasks:
+        if task["parse_status"] == "queued":
+            _enqueue_material_ai_import_task(int(task["id"]))
 
     return {
         "status": "success",
-        "message": f"已完成《{original_name}》AI 解析导入",
-        "package_item": package_item,
-        "source_item": source_item,
-        "parsed_item": parsed_item,
-        "import_record_id": import_record_id,
-        "parse_result": parse_payload,
+        "tasks": tasks,
+        "poll_interval_ms": 3500,
+    }
+
+
+@router.get("/api/materials/ai-import-records/{record_id}/status", response_class=JSONResponse)
+async def get_ai_import_record_status(
+    record_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        _recover_stale_material_ai_import_tasks(conn)
+        row = conn.execute(
+            """
+            SELECT *
+            FROM material_ai_import_records
+            WHERE id = ? AND teacher_id = ?
+            """,
+            (int(record_id), user["id"]),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "未找到该 AI 解析任务")
+        conn.commit()
+        task = _serialize_material_ai_import_task(conn, row, user)
+
+    if task["parse_status"] == "queued":
+        _enqueue_material_ai_import_task(int(task["id"]))
+
+    return {
+        "status": "success",
+        "task": task,
     }
 
 

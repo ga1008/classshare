@@ -6,6 +6,10 @@ from typing import Any, Awaitable, Callable
 from .academic_service import china_now
 from .academic_course_sync_service import sync_current_teacher_courses_from_academic_system
 from .academic_classroom_sync_service import sync_teaching_places_from_academic_system
+from .academic_course_exam_sync_service import (
+    ensure_course_exam_schema,
+    sync_current_teacher_course_exams_from_academic_system,
+)
 from .academic_invigilation_sync_service import sync_current_teacher_invigilations_from_academic_system
 from .academic_roster_sync_service import sync_current_teacher_rosters_from_academic_system
 
@@ -58,6 +62,19 @@ def _compact_invigilation_counts(result: dict[str, Any]) -> dict[str, int]:
         "event_created_count": _int_value(result, "event_created_count"),
         "event_updated_count": _int_value(result, "event_updated_count"),
         "notification_count": _int_value(result, "notification_count"),
+        "stale_count": _int_value(result, "stale_count"),
+    }
+
+
+def _compact_course_exam_counts(result: dict[str, Any]) -> dict[str, int]:
+    return {
+        "course_exam_count": _int_value(result, "course_exam_count"),
+        "created_count": _int_value(result, "created_count"),
+        "updated_count": _int_value(result, "updated_count"),
+        "matched_offering_count": _int_value(result, "matched_offering_count"),
+        "event_created_count": _int_value(result, "event_created_count"),
+        "event_updated_count": _int_value(result, "event_updated_count"),
+        "student_notification_count": _int_value(result, "student_notification_count"),
         "stale_count": _int_value(result, "stale_count"),
     }
 
@@ -132,6 +149,7 @@ def _sync_stat(conn, table_name: str, teacher_id: int, *, time_column: str = "sy
         "teacher_academic_roster_sync_items",
         "teacher_academic_roster_memberships",
         "teacher_academic_invigilation_items",
+        "teacher_academic_course_exam_items",
         "teacher_academic_teaching_places",
         "academic_semesters",
     }
@@ -154,6 +172,7 @@ def _sync_stat(conn, table_name: str, teacher_id: int, *, time_column: str = "sy
 
 
 def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, Any]]:
+    ensure_course_exam_schema(conn)
     term_params = _current_term_params()
     common_query_params = {"gnmkdm": "N2150"}
     timetable_body: dict[str, Any] = {
@@ -192,6 +211,7 @@ def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, An
     roster_stat = _sync_stat(conn, "teacher_academic_roster_sync_items", int(teacher_id))
     membership_stat = _sync_stat(conn, "teacher_academic_roster_memberships", int(teacher_id))
     invigilation_stat = _sync_stat(conn, "teacher_academic_invigilation_items", int(teacher_id))
+    course_exam_stat = _sync_stat(conn, "teacher_academic_course_exam_items", int(teacher_id))
     place_stat = _sync_stat(conn, "teacher_academic_teaching_places", int(teacher_id))
     semester_stat = _sync_stat(conn, "academic_semesters", int(teacher_id), time_column="calendar_sync_at")
 
@@ -315,6 +335,43 @@ def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, An
                 ),
             ),
             "safe_note": "只读取监考安排，日历和待办只写入本系统。",
+        },
+        {
+            "key": "course_exams",
+            "label": "任课考试",
+            "description": "同步当前教师任课课程的考试安排，匹配本地课堂后写入课堂时间轴、日程和学生重要通知。",
+            "endpoint": "/api/manage/system/academic-course-exams/sync-current",
+            "method": "POST",
+            "parameters": [
+                {"name": "xnm/xqm", "value": "自动识别当前学年学期"},
+                {"name": "任课教师考试查询", "value": "教师当前账号可见任课考试安排"},
+            ],
+            "last_synced_at": course_exam_stat["last_synced_at"],
+            "has_synced": course_exam_stat["count"] > 0,
+            "status_text": f"已同步 {course_exam_stat['count']} 条任课考试安排",
+            "counts": {"course_exam_count": course_exam_stat["count"]},
+            "stats": [
+                {"label": "任课考试", "value": course_exam_stat["count"]},
+            ],
+            "request_template": _request_template(
+                url="https://jwxt.gxufl.com/kwgl/rkjskscx_cxRkjsksIndex.html",
+                params={"doType": "query", "gnmkdm": "N358126"},
+                referer="https://jwxt.gxufl.com/kwgl/rkjskscx_cxRkjsksIndex.html?gnmkdm=N358126&layout=default",
+                body=_jqgrid_probe_body(
+                    term_params=term_params,
+                    show_count=10,
+                    sort_name="kssj ",
+                    extra={
+                        "ksmcdmb_id": "",
+                        "ksrq": "",
+                        "sjbh": "",
+                        "kc": "",
+                        "jkjs": "",
+                        "kch": "",
+                    },
+                ),
+            ),
+            "safe_note": "只读取教务系统任课考试安排；课堂时间轴、日程和通知只写入本地系统。",
         },
         {
             "key": "teaching_places",
@@ -450,6 +507,13 @@ async def sync_teacher_academic_data_after_credential_verified(teacher_id: int) 
         ),
         await _run_stage(
             teacher_id=teacher_id,
+            key="course_exams",
+            label="任课考试",
+            runner=sync_current_teacher_course_exams_from_academic_system,
+            count_builder=_compact_course_exam_counts,
+        ),
+        await _run_stage(
+            teacher_id=teacher_id,
             key="teaching_places",
             label="教学场地",
             runner=sync_teaching_places_from_academic_system,
@@ -457,6 +521,9 @@ async def sync_teacher_academic_data_after_credential_verified(teacher_id: int) 
         ),
     ]
     status, message = _summarize_auto_sync(stages)
+    course_exam_counts = next((item.get("counts") or {} for item in stages if item.get("key") == "course_exams"), {})
+    if status == "success":
+        message = f"{message} 任课考试 {course_exam_counts.get('course_exam_count', 0)} 条。"
     warnings: list[str] = []
     follow_up_items: list[str] = []
     for stage in stages:

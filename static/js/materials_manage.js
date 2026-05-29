@@ -23,6 +23,9 @@ const DEFAULT_SORT_ORDERS = {
 };
 
 const SEARCH_DEBOUNCE_MS = 280;
+const AI_IMPORT_POLL_INTERVAL_MS = 3500;
+const AI_IMPORT_ACTIVE_STATUSES = new Set(['queued', 'running']);
+const AI_IMPORT_TERMINAL_STATUSES = new Set(['completed', 'failed', 'ai_failed', 'quality_failed', 'unsupported']);
 
 function normalizeKeyword(value) {
     return String(value || '')
@@ -124,6 +127,11 @@ const state = {
     aiImport: {
         busy: false,
         file: null,
+        tasks: new Map(),
+        dismissedTaskIds: new Set(),
+        knownTaskStates: new Map(),
+        pollTimer: 0,
+        loadRequestId: 0,
     },
     repository: {
         materialId: null,
@@ -354,7 +362,8 @@ function closeDetailModal() {
 }
 
 function renderList() {
-    if (!state.items.length) {
+    const aiTaskCards = renderAiImportTaskCards();
+    if (!state.items.length && !aiTaskCards) {
         const emptyText = state.filters.keyword
             ? `未找到与“${escapeHtml(state.filters.keyword)}”匹配的材料，请尝试简化关键词或清空搜索。`
             : '当前目录暂无材料。';
@@ -363,7 +372,7 @@ function renderList() {
         return;
     }
 
-    refs.listBody.innerHTML = state.items.map((item) => {
+    const rowsHtml = state.items.map((item) => {
         const visualMeta = getVisualMeta(item);
         const activeClass = Number(item.id) === Number(state.activeMaterialId) ? 'is-active' : '';
         const selectedClass = state.selectedIds.has(Number(item.id)) ? 'is-selected' : '';
@@ -420,6 +429,10 @@ function renderList() {
             </div>
         `;
     }).join('');
+    const emptyHtml = !state.items.length
+        ? '<div class="materials-empty">材料正在生成中，完成后会自动刷新到列表。</div>'
+        : '';
+    refs.listBody.innerHTML = `${aiTaskCards}${emptyHtml}${rowsHtml}`;
 
     updateSelectionBar();
 }
@@ -697,6 +710,7 @@ async function loadLibrary(parentId = null, trackHistory = false) {
     renderList();
     renderDetail(state.activeDetail);
     syncLibraryUrl();
+    refreshAiImportTasksForCurrentFolder().catch(() => {});
 }
 
 function getCurrentItem(materialId) {
@@ -859,6 +873,234 @@ function setAiImportBusy(busy) {
     if (refs.aiImportType) refs.aiImportType.disabled = busy;
 }
 
+function normalizeAiImportTask(rawTask) {
+    if (!rawTask || !rawTask.id) return null;
+    const status = String(rawTask.parse_status || rawTask.status || 'queued').trim().toLowerCase();
+    return {
+        ...rawTask,
+        id: Number(rawTask.id),
+        parent_material_id: rawTask.parent_material_id ? Number(rawTask.parent_material_id) : null,
+        package_material_id: rawTask.package_material_id ? Number(rawTask.package_material_id) : null,
+        source_material_id: rawTask.source_material_id ? Number(rawTask.source_material_id) : null,
+        parsed_material_id: rawTask.parsed_material_id ? Number(rawTask.parsed_material_id) : null,
+        source_file_name: String(rawTask.source_file_name || '材料文件'),
+        document_type_label: String(rawTask.document_type_label || rawTask.document_type || '材料'),
+        parse_status: status,
+        status,
+        status_label: String(rawTask.status_label || ''),
+        message: String(rawTask.message || rawTask.error_message || ''),
+        updated_at: String(rawTask.updated_at || ''),
+    };
+}
+
+function getAiImportTaskStateKey(task) {
+    return `${task.id}:${task.parse_status}:${task.updated_at || ''}`;
+}
+
+function isAiImportTaskActive(task) {
+    return AI_IMPORT_ACTIVE_STATUSES.has(task?.parse_status);
+}
+
+function isAiImportTaskTerminal(task) {
+    return AI_IMPORT_TERMINAL_STATUSES.has(task?.parse_status);
+}
+
+function isAiImportTaskVisible(task) {
+    const currentParentId = state.currentParentId ? Number(state.currentParentId) : null;
+    return (task?.parent_material_id || null) === currentParentId;
+}
+
+function upsertAiImportTask(rawTask) {
+    const task = normalizeAiImportTask(rawTask);
+    if (!task) return null;
+    if (state.aiImport.dismissedTaskIds.has(task.id) && isAiImportTaskTerminal(task)) {
+        return task;
+    }
+    state.aiImport.tasks.set(task.id, task);
+    if (!state.aiImport.knownTaskStates.has(task.id)) {
+        state.aiImport.knownTaskStates.set(task.id, getAiImportTaskStateKey(task));
+    }
+    return task;
+}
+
+function removeAiImportTask(taskId) {
+    const normalizedId = Number(taskId);
+    state.aiImport.dismissedTaskIds.add(normalizedId);
+    state.aiImport.tasks.delete(normalizedId);
+    state.aiImport.knownTaskStates.delete(normalizedId);
+    renderList();
+    startAiImportPolling();
+}
+
+function getVisibleAiImportTasks() {
+    return Array.from(state.aiImport.tasks.values())
+        .filter(isAiImportTaskVisible)
+        .sort((left, right) => {
+            const leftActive = isAiImportTaskActive(left) ? 0 : 1;
+            const rightActive = isAiImportTaskActive(right) ? 0 : 1;
+            if (leftActive !== rightActive) return leftActive - rightActive;
+            return Number(right.id || 0) - Number(left.id || 0);
+        });
+}
+
+function getAiImportTaskTone(task) {
+    if (!task) return 'info';
+    if (task.parse_status === 'completed') return 'success';
+    if (task.parse_status === 'quality_failed' || task.parse_status === 'unsupported') return 'warning';
+    if (['failed', 'ai_failed'].includes(task.parse_status)) return 'danger';
+    return 'info';
+}
+
+function getAiImportTaskTitle(task) {
+    const fileName = task?.source_file_name || '材料文件';
+    if (task.parse_status === 'queued') return `AI 正在等待解析《${fileName}》`;
+    if (task.parse_status === 'running') return `AI 正在解析《${fileName}》`;
+    if (task.parse_status === 'completed') return `AI 已完成《${fileName}》解析`;
+    if (task.parse_status === 'quality_failed') return `《${fileName}》疑似乱码`;
+    if (task.parse_status === 'unsupported') return `《${fileName}》暂不支持解析`;
+    if (task.parse_status === 'ai_failed') return `AI 未能识别《${fileName}》`;
+    return `《${fileName}》解析失败`;
+}
+
+function getAiImportTaskMessage(task) {
+    if (task?.message) return task.message;
+    if (task?.parse_status === 'queued') return '任务已进入后台队列，会按顺序调用 AI，避免影响平台其他 AI 功能。';
+    if (task?.parse_status === 'running') return '系统正在抽取正文、校验乱码并调用 AI 识别，完成后会自动刷新材料列表。';
+    if (task?.parse_status === 'completed') return '已生成可阅读正文和结构化 JSON，后续可按同类模板导出。';
+    if (task?.parse_status === 'quality_failed') return '系统检测到解析结果质量不足，已阻止保存无效内容。';
+    if (task?.parse_status === 'unsupported') return '请先转换为 docx、xlsx 或 PDF 后重试。';
+    if (task?.parse_status === 'ai_failed') return 'AI 服务未返回可用结果，请稍后重试。';
+    return '解析未完成，请稍后重试。';
+}
+
+function renderAiImportTaskCards() {
+    const tasks = getVisibleAiImportTasks();
+    if (!tasks.length) return '';
+    return tasks.map((task) => {
+        const tone = getAiImportTaskTone(task);
+        const active = isAiImportTaskActive(task);
+        const completed = task.parse_status === 'completed';
+        const packageAction = completed && task.package_material_id
+            ? `<button type="button" class="btn btn-primary btn-sm" data-ai-import-action="open-package" data-ai-import-task-id="${task.id}">打开材料包</button>`
+            : '';
+        const viewAction = completed && task.parsed_material_id
+            ? `<button type="button" class="btn btn-outline btn-sm" data-ai-import-action="view-doc" data-ai-import-task-id="${task.id}">查看正文</button>`
+            : '';
+        const dismissAction = isAiImportTaskTerminal(task)
+            ? `<button type="button" class="btn btn-ghost btn-sm" data-ai-import-action="dismiss" data-ai-import-task-id="${task.id}">关闭</button>`
+            : '';
+        const queueText = task.queue_position && task.parse_status === 'queued'
+            ? `<span>队列第 ${escapeHtml(String(task.queue_position))} 位</span>`
+            : '';
+
+        return `
+            <section class="materials-ai-task-card is-${tone}" data-ai-import-task-id="${task.id}">
+                <div class="materials-ai-task-indicator" aria-hidden="true">${active ? '<span></span>' : ''}</div>
+                <div class="materials-ai-task-main">
+                    <div class="materials-ai-task-head">
+                        <span class="materials-ai-task-status">${escapeHtml(task.status_label || '处理中')}</span>
+                        <strong>${escapeHtml(getAiImportTaskTitle(task))}</strong>
+                    </div>
+                    <p>${escapeHtml(getAiImportTaskMessage(task))}</p>
+                    <div class="materials-ai-task-meta">
+                        <span>${escapeHtml(task.document_type_label || '材料')}</span>
+                        ${queueText}
+                        ${task.updated_at ? `<span>更新 ${escapeHtml(formatDateLabel(task.updated_at))}</span>` : ''}
+                    </div>
+                </div>
+                <div class="materials-ai-task-actions">
+                    ${packageAction}
+                    ${viewAction}
+                    ${dismissAction}
+                </div>
+            </section>
+        `;
+    }).join('');
+}
+
+function hasActiveAiImportTasks() {
+    return Array.from(state.aiImport.tasks.values()).some(isAiImportTaskActive);
+}
+
+function buildAiImportActiveTasksUrl() {
+    const params = new URLSearchParams();
+    if (state.currentParentId) {
+        params.set('parent_id', String(state.currentParentId));
+    }
+    return `/api/materials/ai-import-records/active${params.toString() ? `?${params.toString()}` : ''}`;
+}
+
+async function refreshAiImportTasksForCurrentFolder() {
+    const requestId = ++state.aiImport.loadRequestId;
+    try {
+        const result = await apiFetch(buildAiImportActiveTasksUrl(), { method: 'GET', silent: true });
+        if (requestId !== state.aiImport.loadRequestId) return;
+        (result.tasks || []).forEach((task) => upsertAiImportTask(task));
+        renderList();
+        startAiImportPolling();
+    } catch (_error) {
+        startAiImportPolling();
+    }
+}
+
+async function pollAiImportTasks() {
+    window.clearTimeout(state.aiImport.pollTimer);
+    state.aiImport.pollTimer = 0;
+
+    const activeTasks = Array.from(state.aiImport.tasks.values()).filter(isAiImportTaskActive);
+    if (!activeTasks.length) return;
+
+    let shouldRefreshLibrary = false;
+    await Promise.all(activeTasks.map(async (task) => {
+        try {
+            const result = await apiFetch(`/api/materials/ai-import-records/${task.id}/status`, {
+                method: 'GET',
+                silent: true,
+            });
+            const nextTask = upsertAiImportTask(result.task);
+            if (!nextTask) return;
+
+            const previousStateKey = state.aiImport.knownTaskStates.get(nextTask.id);
+            const nextStateKey = getAiImportTaskStateKey(nextTask);
+            state.aiImport.knownTaskStates.set(nextTask.id, nextStateKey);
+
+            if (previousStateKey !== nextStateKey && isAiImportTaskTerminal(nextTask)) {
+                if (nextTask.parse_status === 'completed') {
+                    showToast(`《${nextTask.source_file_name}》AI 解析完成`, 'success', 4200);
+                } else {
+                    const toastType = ['quality_failed', 'unsupported'].includes(nextTask.parse_status) ? 'warning' : 'error';
+                    showToast(nextTask.message || `《${nextTask.source_file_name}》解析未完成`, toastType, 5200);
+                }
+                if (isAiImportTaskVisible(nextTask)) {
+                    shouldRefreshLibrary = true;
+                }
+            }
+        } catch (_error) {
+            // 单个状态轮询失败不打断其他任务；下一轮继续尝试。
+        }
+    }));
+
+    if (shouldRefreshLibrary) {
+        await loadLibrary(state.currentParentId, false);
+    } else {
+        renderList();
+    }
+    startAiImportPolling();
+}
+
+function startAiImportPolling() {
+    window.clearTimeout(state.aiImport.pollTimer);
+    if (!hasActiveAiImportTasks()) {
+        state.aiImport.pollTimer = 0;
+        return;
+    }
+    state.aiImport.pollTimer = window.setTimeout(() => {
+        pollAiImportTasks().catch(() => {
+            startAiImportPolling();
+        });
+    }, AI_IMPORT_POLL_INTERVAL_MS);
+}
+
 function openAiImportModal() {
     if (!getAiImportRegistry().length) {
         showToast('材料解析类型暂未加载', 'error');
@@ -896,19 +1138,20 @@ async function submitAiImport() {
     }
 
     setAiImportBusy(true);
-    setAiImportStatus('正在解析并导入材料...', 'info');
+    setAiImportStatus('正在上传并加入后台解析队列...', 'info');
     try {
         const result = await apiFetch('/api/materials/ai-import', {
             method: 'POST',
             body: formData,
         });
+        const task = upsertAiImportTask(result.task || { id: result.import_record_id, source_file_name: state.aiImport.file.name, parse_status: 'queued' });
         closeModal('materials-ai-import-modal');
-        showToast(result.message || 'AI 解析导入完成', 'success', 4200);
-        await loadLibrary(state.currentParentId);
-        const packageId = Number(result.package_item?.id || 0);
-        if (packageId) {
-            await openMaterialDetail(packageId);
-        }
+        state.aiImport.file = null;
+        if (refs.aiImportFileInput) refs.aiImportFileInput.value = '';
+        updateAiImportFileLabel();
+        renderList();
+        startAiImportPolling();
+        showToast(result.message || `《${task?.source_file_name || '材料文件'}》已加入 AI 解析队列`, 'success', 4200);
     } catch (error) {
         setAiImportStatus(error.message || 'AI 解析导入失败', 'error');
         throw error;
@@ -1708,6 +1951,29 @@ function bindEvents() {
     });
 
     refs.listBody?.addEventListener('click', (event) => {
+        const taskActionButton = event.target.closest('[data-ai-import-action]');
+        if (taskActionButton) {
+            event.preventDefault();
+            event.stopPropagation();
+            const taskId = Number(taskActionButton.dataset.aiImportTaskId || 0);
+            const task = state.aiImport.tasks.get(taskId);
+            const action = taskActionButton.dataset.aiImportAction;
+            if (action === 'dismiss') {
+                removeAiImportTask(taskId);
+                return;
+            }
+            if (action === 'open-package' && task?.package_material_id) {
+                openMaterialDetail(task.package_material_id).catch((error) => {
+                    showToast(error.message || '加载材料包失败', 'error');
+                });
+                return;
+            }
+            if (action === 'view-doc' && task?.parsed_material_id) {
+                window.open(`/materials/view/${task.parsed_material_id}`, '_blank', 'noopener');
+            }
+            return;
+        }
+
         const row = event.target.closest('.materials-row');
         if (!row) return;
 

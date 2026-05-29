@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from .academic_service import china_now, parse_date_input
+from .academic_course_exam_sync_service import ensure_course_exam_schema
 from .assignment_lifecycle_service import submission_effective_status, submission_resubmission_accepts
 from .course_planning_service import weekday_label
 from .learning_progress_service import get_learning_level, personal_stage_assignment_filter_sql, public_level_payload
@@ -15,6 +16,7 @@ TODO_SOURCE_LESSON = "lesson"
 TODO_SOURCE_ASSIGNMENT = "assignment"
 TODO_SOURCE_STAGE = "stage_exam"
 TODO_SOURCE_MANUAL = "manual"
+TODO_SOURCE_ACADEMIC_EXAM = "academic_exam"
 
 TODO_MAX_TITLE_LENGTH = 120
 TODO_MAX_NOTES_LENGTH = 1200
@@ -521,6 +523,96 @@ def _stage_items(conn: sqlite3.Connection, *, class_offering_id: int, student_id
     return items
 
 
+def _academic_exam_items(
+    conn: sqlite3.Connection,
+    *,
+    class_offering_id: int,
+    now: datetime,
+) -> list[dict[str, Any]]:
+    ensure_course_exam_schema(conn)
+    rows = conn.execute(
+        """
+        SELECT id,
+               exam_name,
+               course_name,
+               teaching_class_name,
+               class_composition,
+               location,
+               exam_time_text,
+               exam_date,
+               starts_at,
+               ends_at,
+               exam_student_count,
+               seat_count,
+               synced_at
+        FROM teacher_academic_course_exam_items
+        WHERE class_offering_id = ?
+          AND sync_status = 'active'
+        ORDER BY COALESCE(starts_at, exam_date, synced_at), id
+        """,
+        (int(class_offering_id),),
+    ).fetchall()
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        start_at = parse_datetime_input(row["starts_at"] or row["exam_date"], "考试时间")
+        due_at = parse_datetime_input(row["ends_at"] or row["starts_at"] or row["exam_date"], "考试结束时间")
+        created_at = parse_datetime_input(row["synced_at"], "同步时间")
+        if start_at is None:
+            continue
+        if due_at is None or due_at < start_at:
+            due_at = start_at
+        title = str(row["course_name"] or row["exam_name"] or "教务考试").strip()
+        status = "upcoming"
+        status_label = "待考试"
+        if due_at < now:
+            status = "completed"
+            status_label = "已结束"
+        elif start_at.date() == now.date():
+            status = "current"
+            status_label = "今天考试"
+        notes = " | ".join(
+            part
+            for part in [
+                str(row["exam_time_text"] or ""),
+                str(row["location"] or ""),
+                str(row["teaching_class_name"] or row["class_composition"] or ""),
+                f"座位 {int(row['seat_count'] or 0)}" if row["seat_count"] else "",
+            ]
+            if part
+        )
+        item = _normalize_item(
+            source_type=TODO_SOURCE_ACADEMIC_EXAM,
+            source_id=row["id"],
+            title=f"教务考试：{title}",
+            subtitle=str(row["exam_name"] or "任课考试安排"),
+            notes=notes,
+            start_at=start_at,
+            due_at=due_at,
+            created_at=created_at,
+            link_url=f"/classroom/{int(class_offering_id)}#timeline-panel",
+            status=status,
+            status_label=status_label,
+            tone="academic_exam",
+            is_completed=due_at < now,
+            metadata={
+                "academic_exam_item_id": row["id"],
+                "exam_name": row["exam_name"],
+                "location": row["location"],
+                "exam_time_text": row["exam_time_text"],
+            },
+            now=now,
+        )
+        item["relative_due_label"] = status_label
+        item["deadline_label"] = _datetime_label(start_at)
+        item["duration_label"] = (
+            f"{_datetime_label(start_at)} - {_minute_label(due_at)}"
+            if start_at.date() == due_at.date() and start_at.time() != due_at.time()
+            else _datetime_label(start_at)
+        )
+        items.append(item)
+    return items
+
+
 def _manual_items(rows: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
     items = []
     for row in rows:
@@ -650,6 +742,7 @@ def build_classroom_todo_overview(
     items: list[dict[str, Any]] = []
     items.extend(_lesson_items(plan, now))
     items.extend(_assignment_items(conn, class_offering_id=int(class_offering_id), user=user, now=now))
+    items.extend(_academic_exam_items(conn, class_offering_id=int(class_offering_id), now=now))
     if str(user.get("role") or "").strip().lower() == "student":
         items.extend(_stage_items(conn, class_offering_id=int(class_offering_id), student_id=int(user["id"]), now=now))
     items.extend(_manual_items(_load_manual_todos(conn, class_offering_id=int(class_offering_id), user=user), now))

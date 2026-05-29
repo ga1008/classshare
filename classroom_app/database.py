@@ -2004,6 +2004,66 @@ def init_database():
 
             conn.execute(
                 '''
+                CREATE TABLE IF NOT EXISTS teacher_academic_course_exam_items
+                (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    teacher_id INTEGER NOT NULL,
+                    semester_id INTEGER,
+                    class_offering_id INTEGER,
+                    course_id INTEGER,
+                    class_id INTEGER,
+                    school_code TEXT NOT NULL DEFAULT 'gxufl',
+                    academic_year TEXT NOT NULL DEFAULT '',
+                    academic_year_name TEXT NOT NULL DEFAULT '',
+                    academic_term TEXT NOT NULL DEFAULT '',
+                    academic_term_name TEXT NOT NULL DEFAULT '',
+                    exam_key TEXT NOT NULL,
+                    exam_batch_id TEXT NOT NULL DEFAULT '',
+                    exam_name TEXT NOT NULL DEFAULT '',
+                    exam_paper_id TEXT NOT NULL DEFAULT '',
+                    exam_paper_code TEXT NOT NULL DEFAULT '',
+                    course_code TEXT NOT NULL DEFAULT '',
+                    course_name TEXT NOT NULL DEFAULT '',
+                    course_display_name TEXT NOT NULL DEFAULT '',
+                    teaching_class_name TEXT NOT NULL DEFAULT '',
+                    class_composition TEXT NOT NULL DEFAULT '',
+                    teacher_name TEXT NOT NULL DEFAULT '',
+                    chief_invigilator TEXT NOT NULL DEFAULT '',
+                    assistant_invigilator TEXT NOT NULL DEFAULT '',
+                    course_college TEXT NOT NULL DEFAULT '',
+                    campus TEXT NOT NULL DEFAULT '',
+                    campus_id TEXT NOT NULL DEFAULT '',
+                    building TEXT NOT NULL DEFAULT '',
+                    location TEXT NOT NULL DEFAULT '',
+                    location_type TEXT NOT NULL DEFAULT '',
+                    location_type_id TEXT NOT NULL DEFAULT '',
+                    exam_student_count INTEGER NOT NULL DEFAULT 0,
+                    seat_count INTEGER NOT NULL DEFAULT 0,
+                    credits REAL,
+                    course_nature TEXT NOT NULL DEFAULT '',
+                    exam_time_text TEXT NOT NULL DEFAULT '',
+                    exam_date TEXT NOT NULL DEFAULT '',
+                    starts_at TEXT,
+                    ends_at TEXT,
+                    note TEXT NOT NULL DEFAULT '',
+                    raw_json TEXT NOT NULL DEFAULT '{}',
+                    source_url TEXT NOT NULL DEFAULT '',
+                    sync_status TEXT NOT NULL DEFAULT 'active',
+                    synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                    FOREIGN KEY (semester_id) REFERENCES academic_semesters (id) ON DELETE SET NULL,
+                    FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL,
+                    FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE SET NULL,
+                    FOREIGN KEY (class_id) REFERENCES classes (id) ON DELETE SET NULL,
+                    UNIQUE (teacher_id, school_code, academic_year, academic_term, exam_key)
+                )
+                '''
+            )
+
+            conn.execute(
+                '''
                 CREATE TABLE IF NOT EXISTS teacher_academic_exam_roster_items
                 (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4771,6 +4831,7 @@ def init_database():
                             package_material_id INTEGER REFERENCES course_materials (id) ON DELETE SET NULL,
                             source_material_id INTEGER REFERENCES course_materials (id) ON DELETE SET NULL,
                             parsed_material_id INTEGER REFERENCES course_materials (id) ON DELETE SET NULL,
+                            parent_material_id INTEGER REFERENCES course_materials (id) ON DELETE SET NULL,
                             document_group TEXT NOT NULL,
                             document_type TEXT NOT NULL,
                             document_type_label TEXT NOT NULL DEFAULT '',
@@ -4778,6 +4839,9 @@ def init_database():
                             parse_mode TEXT NOT NULL DEFAULT 'ai',
                             extraction_method TEXT NOT NULL DEFAULT '',
                             source_file_name TEXT NOT NULL DEFAULT '',
+                            source_file_hash TEXT DEFAULT '',
+                            source_file_size INTEGER NOT NULL DEFAULT 0,
+                            source_mime_type TEXT DEFAULT '',
                             metadata_json TEXT,
                             content_markdown TEXT,
                             parsed_payload_json TEXT,
@@ -4787,8 +4851,10 @@ def init_database():
                             content_quality_json TEXT NOT NULL DEFAULT '{}',
                             error_message TEXT DEFAULT '',
                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                            started_at TEXT,
                             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
                             completed_at TEXT,
+                            failed_at TEXT,
                             FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE
                         )
                          ''')
@@ -5098,9 +5164,15 @@ def init_database():
                 pass
 
             for column_name, column_def in (
+                ("parent_material_id", "INTEGER REFERENCES course_materials (id) ON DELETE SET NULL"),
+                ("source_file_hash", "TEXT DEFAULT ''"),
+                ("source_file_size", "INTEGER NOT NULL DEFAULT 0"),
+                ("source_mime_type", "TEXT DEFAULT ''"),
                 ("parsed_payload_json", "TEXT"),
                 ("content_quality_status", "TEXT NOT NULL DEFAULT 'unchecked'"),
                 ("content_quality_json", "TEXT NOT NULL DEFAULT '{}'"),
+                ("started_at", "TEXT"),
+                ("failed_at", "TEXT"),
             ):
                 try:
                     conn.execute(f"ALTER TABLE material_ai_import_records ADD COLUMN {column_name} {column_def}")
@@ -5273,6 +5345,18 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_teacher_academic_invigilation_items_term "
                 "ON teacher_academic_invigilation_items (teacher_id, academic_year, academic_term, sync_status)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_course_exam_items_teacher_semester "
+                "ON teacher_academic_course_exam_items (teacher_id, semester_id, starts_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_course_exam_items_offering "
+                "ON teacher_academic_course_exam_items (teacher_id, class_offering_id, starts_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_teacher_academic_course_exam_items_term "
+                "ON teacher_academic_course_exam_items (teacher_id, academic_year, academic_term, sync_status)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_teacher_academic_exam_roster_items_offering "
@@ -5489,6 +5573,10 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_material_ai_import_source "
                 "ON material_ai_import_records (source_material_id, parsed_material_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_material_ai_import_teacher_parent_status "
+                "ON material_ai_import_records (teacher_id, parent_material_id, parse_status, updated_at DESC)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_course_material_assignments_offering ON course_material_assignments (class_offering_id, material_id)"

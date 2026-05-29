@@ -50,6 +50,7 @@ IMPORTANT_NOTIFICATION_CATEGORIES = {
     "grading_result",
     "learning_progress",
     "attendance_alert",
+    "academic_exam",
 }
 
 SYSTEM_NOTIFICATION_CATEGORIES = {
@@ -64,6 +65,7 @@ EMAIL_ELIGIBLE_CATEGORIES = {
     "submission",
     "grading_result",
     "learning_progress",
+    "academic_exam",
     "ai_feedback",
     "app_feedback",
     "password_reset_request",

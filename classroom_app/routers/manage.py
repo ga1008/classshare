@@ -161,6 +161,11 @@ from ..services.academic_exam_roster_sync_service import (
     load_classroom_exam_roster_status,
     sync_classroom_exam_roster_from_academic_system,
 )
+from ..services.academic_course_exam_sync_service import (
+    load_classroom_course_exam_status,
+    sync_classroom_course_exams_from_academic_system,
+    sync_current_teacher_course_exams_from_academic_system,
+)
 from ..services.academic_invigilation_sync_service import sync_current_teacher_invigilations_from_academic_system
 from ..services.academic_roster_sync_service import sync_current_teacher_rosters_from_academic_system
 from ..services.smart_classroom_checkin_sync_service import (
@@ -1341,6 +1346,40 @@ async def api_sync_classroom_exam_roster(
         return result
     if status != "success":
         raise HTTPException(502, result.get("message") or "未能从教务系统同步考试名单。")
+    return result
+
+
+@router.get("/classrooms/{class_offering_id}/academic-exams", response_class=JSONResponse)
+async def api_get_classroom_academic_exams(
+    class_offering_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        _ensure_teacher_owned_offering(conn, class_offering_id, int(user["id"]))
+    return load_classroom_course_exam_status(int(user["id"]), int(class_offering_id))
+
+
+@router.post("/classrooms/{class_offering_id}/academic-exams/sync", response_class=JSONResponse)
+async def api_sync_classroom_academic_exams(
+    class_offering_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        _ensure_teacher_owned_offering(conn, class_offering_id, int(user["id"]))
+    try:
+        result = await sync_classroom_course_exams_from_academic_system(
+            int(user["id"]),
+            int(class_offering_id),
+        )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    status = result.get("status")
+    if status == "missing_credential":
+        raise HTTPException(400, result.get("message") or "请先配置教务系统账号。")
+    if status == "no_current_semester":
+        raise HTTPException(400, result.get("message") or "请先同步当前学期。")
+    if status != "success":
+        raise HTTPException(502, result.get("message") or "未能从教务系统同步任课考试。")
     return result
 
 
@@ -3175,6 +3214,17 @@ async def api_sync_academic_invigilations(user: dict = Depends(get_current_teach
     return {
         "status": result.get("status") or "unknown",
         "message": result.get("message") or "监考安排同步已完成。",
+        "result": result,
+    }
+
+
+@router.post("/system/academic-course-exams/sync-current", response_class=JSONResponse)
+async def api_sync_academic_course_exams(user: dict = Depends(get_current_teacher)):
+    """Manually sync current-term course exam assignments into local classroom schedules."""
+    result = await sync_current_teacher_course_exams_from_academic_system(int(user["id"]))
+    return {
+        "status": result.get("status") or "unknown",
+        "message": result.get("message") or "任课考试安排同步已完成。",
         "result": result,
     }
 

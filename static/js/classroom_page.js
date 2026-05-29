@@ -920,18 +920,20 @@ function initTeachingTimelineLegacy() {
     const getHomeMaterial = () => teachingPlan.home_material || null;
     const hasHomeMaterial = () => Boolean(getHomeMaterial()?.id && getHomeMaterial()?.viewer_url);
     const isHomeEntry = (session) => Boolean(session?.is_home_entry || session?.entry_type === 'home');
+    const isAcademicExamEntry = (session) => Boolean(session?.is_academic_exam || session?.entry_type === 'academic_exam');
     const getSessionViewerUrl = (session) => String(
         isHomeEntry(session)
             ? session?.home_learning_material_viewer_url || session?.learning_material_viewer_url || ''
             : session?.learning_material_viewer_url || '',
     ).trim();
-    const getSessionMaterialReady = (session) => (
-        isHomeEntry(session)
+    const getSessionMaterialReady = (session) => {
+        if (isAcademicExamEntry(session)) return false;
+        return isHomeEntry(session)
             ? Boolean(session?.home_learning_material_id && session?.home_learning_material_viewer_url)
-            : Boolean(session?.learning_material_id && session?.learning_material_viewer_url)
-    );
+            : Boolean(session?.learning_material_id && session?.learning_material_viewer_url);
+    };
     const publishSelectedSessionContext = (session) => {
-        if (!session || isHomeEntry(session)) {
+        if (!session || isHomeEntry(session) || isAcademicExamEntry(session)) {
             window.LANSHARE_SELECTED_CLASSROOM_SESSION = null;
             return;
         }
@@ -1040,22 +1042,29 @@ function initTeachingTimelineLegacy() {
     const renderMaterialPanel = (session) => {
         if (!materialPanel || !materialName || !materialPath) return;
         const homeEntry = isHomeEntry(session);
+        const examEntry = isAcademicExamEntry(session);
         const hasMaterial = getSessionMaterialReady(session);
         const homeReady = hasHomeMaterial();
         materialPanel.classList.toggle('is-empty', !hasMaterial);
         materialPanel.dataset.materialReady = hasMaterial ? 'true' : 'false';
-        materialPanel.dataset.entryType = homeEntry ? 'home' : 'lesson';
+        materialPanel.dataset.entryType = examEntry ? 'academic_exam' : (homeEntry ? 'home' : 'lesson');
 
         if (openMaterialLabel) {
-            openMaterialLabel.textContent = homeEntry ? '首页' : '学习文档';
+            openMaterialLabel.textContent = examEntry ? '教务考试' : (homeEntry ? '首页' : '学习文档');
         }
         if (openHomeMaterialBtn) {
-            openHomeMaterialBtn.hidden = !homeReady || homeEntry;
-            openHomeMaterialBtn.disabled = !homeReady || homeEntry;
+            openHomeMaterialBtn.hidden = !homeReady || homeEntry || examEntry;
+            openHomeMaterialBtn.disabled = !homeReady || homeEntry || examEntry;
             openHomeMaterialBtn.dataset.materialReady = homeReady ? 'true' : 'false';
         }
 
-        if (homeEntry && hasMaterial) {
+        if (examEntry) {
+            materialName.textContent = session.exam_name || session.detail_title || '教务系统考试安排';
+            materialPath.textContent = [session.exam_time_text, session.exam_location].filter(Boolean).join(' · ') || '考试时间与地点以教务系统为准';
+            if (openMaterialHint) {
+                openMaterialHint.textContent = '点击卡片可查看考试详情；重新同步会刷新时间和地点。';
+            }
+        } else if (homeEntry && hasMaterial) {
             materialName.textContent = session.home_learning_material_name || session.learning_material_name || '课程学习首页';
             materialPath.textContent = session.home_learning_material_path || session.learning_material_path || '';
             if (openMaterialHint) {
@@ -1104,13 +1113,14 @@ function initTeachingTimelineLegacy() {
 
     const syncTeacherActionState = (session) => {
         const homeEntry = isHomeEntry(session);
+        const examEntry = isAcademicExamEntry(session);
         if (selectMaterialBtn) {
-            selectMaterialBtn.hidden = homeEntry;
-            selectMaterialBtn.disabled = homeEntry;
+            selectMaterialBtn.hidden = homeEntry || examEntry;
+            selectMaterialBtn.disabled = homeEntry || examEntry;
         }
         if (aiMaterialBtn) {
-            aiMaterialBtn.hidden = homeEntry;
-            aiMaterialBtn.disabled = homeEntry || Boolean(session?.material_generation_task?.is_active);
+            aiMaterialBtn.hidden = homeEntry || examEntry;
+            aiMaterialBtn.disabled = homeEntry || examEntry || Boolean(session?.material_generation_task?.is_active);
         }
         if (selectHomeMaterialBtn) {
             selectHomeMaterialBtn.textContent = hasHomeMaterial() ? '更换首页' : '设置首页';
@@ -1557,18 +1567,20 @@ function initTeachingTimeline() {
     const getHomeMaterial = () => teachingPlan.home_material || null;
     const hasHomeMaterial = () => Boolean(getHomeMaterial()?.id && getHomeMaterial()?.viewer_url);
     const isHomeEntry = (session) => Boolean(session?.is_home_entry || session?.entry_type === 'home');
+    const isAcademicExamEntry = (session) => Boolean(session?.is_academic_exam || session?.entry_type === 'academic_exam');
     const getSessionViewerUrl = (session) => String(
         isHomeEntry(session)
             ? session?.home_learning_material_viewer_url || session?.learning_material_viewer_url || ''
             : session?.learning_material_viewer_url || '',
     ).trim();
-    const getSessionMaterialReady = (session) => (
-        isHomeEntry(session)
+    const getSessionMaterialReady = (session) => {
+        if (isAcademicExamEntry(session)) return false;
+        return isHomeEntry(session)
             ? Boolean(session?.home_learning_material_id && session?.home_learning_material_viewer_url)
-            : Boolean(session?.learning_material_id && session?.learning_material_viewer_url)
-    );
+            : Boolean(session?.learning_material_id && session?.learning_material_viewer_url);
+    };
     const publishSelectedSessionContext = (session) => {
-        if (!session || isHomeEntry(session)) {
+        if (!session || isHomeEntry(session) || isAcademicExamEntry(session)) {
             window.LANSHARE_SELECTED_CLASSROOM_SESSION = null;
             return;
         }
@@ -1676,8 +1688,9 @@ function initTeachingTimeline() {
     const renderSessionModal = (session) => {
         if (!sessionModal || !session) return;
         const isHome = isHomeEntry(session);
+        const isExam = isAcademicExamEntry(session);
         activeModalSession = session;
-        if (sessionModalKicker) sessionModalKicker.textContent = session.session_number_label || (isHome ? '首页' : '课次');
+        if (sessionModalKicker) sessionModalKicker.textContent = isExam ? '教务考试' : (session.session_number_label || (isHome ? '首页' : '课次'));
         if (sessionModalTitle) sessionModalTitle.textContent = session.detail_title || session.title || '';
         if (sessionModalMeta) sessionModalMeta.textContent = session.detail_meta || session.date_label || '';
         if (sessionModalSummary) {
@@ -1690,14 +1703,14 @@ function initTeachingTimeline() {
             sessionModalOpenHomeBtn.disabled = !hasHomeMaterial();
         }
         if (sessionModalOpenMaterialBtn) {
-            sessionModalOpenMaterialBtn.disabled = !getSessionMaterialReady(session);
+            sessionModalOpenMaterialBtn.disabled = isExam || !getSessionMaterialReady(session);
             const label = sessionModalOpenMaterialBtn.querySelector('small');
-            if (label) label.textContent = isHome ? '打开课程首页' : '进入本次课材料';
+            if (label) label.textContent = isExam ? '教务考试无学习文档' : (isHome ? '打开课程首页' : '进入本次课材料');
         }
         if (sessionModalCheckinBtn) {
-            sessionModalCheckinBtn.disabled = isHome;
+            sessionModalCheckinBtn.disabled = isHome || isExam;
         }
-        renderCheckinEmpty(isHome ? '课程首页没有点名记录。' : '点击“点名统计”读取本次课签到情况。');
+        renderCheckinEmpty(isExam ? '考试卡片不关联课堂点名记录。' : (isHome ? '课程首页没有点名记录。' : '点击“点名统计”读取本次课签到情况。'));
         if (sessionCheckinPanel) sessionCheckinPanel.hidden = true;
     };
     const openSessionModal = (session) => {
@@ -1899,22 +1912,29 @@ function initTeachingTimeline() {
     const renderMaterialPanel = (session) => {
         if (!materialPanel || !materialName || !materialPath) return;
         const homeEntry = isHomeEntry(session);
+        const examEntry = isAcademicExamEntry(session);
         const hasMaterial = getSessionMaterialReady(session);
         const homeReady = hasHomeMaterial();
         materialPanel.classList.toggle('is-empty', !hasMaterial);
         materialPanel.dataset.materialReady = hasMaterial ? 'true' : 'false';
-        materialPanel.dataset.entryType = homeEntry ? 'home' : 'lesson';
+        materialPanel.dataset.entryType = examEntry ? 'academic_exam' : (homeEntry ? 'home' : 'lesson');
 
         if (openMaterialLabel) {
-            openMaterialLabel.textContent = homeEntry ? '首页' : '学习文档';
+            openMaterialLabel.textContent = examEntry ? '教务考试' : (homeEntry ? '首页' : '学习文档');
         }
         if (openHomeMaterialBtn) {
-            openHomeMaterialBtn.hidden = !homeReady || homeEntry;
-            openHomeMaterialBtn.disabled = !homeReady || homeEntry;
+            openHomeMaterialBtn.hidden = !homeReady || homeEntry || examEntry;
+            openHomeMaterialBtn.disabled = !homeReady || homeEntry || examEntry;
             openHomeMaterialBtn.dataset.materialReady = homeReady ? 'true' : 'false';
         }
 
-        if (homeEntry && hasMaterial) {
+        if (examEntry) {
+            materialName.textContent = session.exam_name || session.detail_title || '教务系统考试安排';
+            materialPath.textContent = [session.exam_time_text, session.exam_location].filter(Boolean).join(' · ') || '考试时间与地点以教务系统为准';
+            if (openMaterialHint) {
+                openMaterialHint.textContent = '点击卡片可查看考试详情；重新同步会刷新时间和地点。';
+            }
+        } else if (homeEntry && hasMaterial) {
             materialName.textContent = session.home_learning_material_name || session.learning_material_name || '课程学习首页';
             materialPath.textContent = session.home_learning_material_path || session.learning_material_path || '';
             if (openMaterialHint) {
@@ -1953,20 +1973,21 @@ function initTeachingTimeline() {
         }
 
         if (openMaterialBtn) {
-            openMaterialBtn.disabled = !hasMaterial;
+            openMaterialBtn.disabled = examEntry || !hasMaterial;
             openMaterialBtn.dataset.materialReady = hasMaterial ? 'true' : 'false';
         }
     };
 
     const syncTeacherActionState = (session) => {
         const homeEntry = isHomeEntry(session);
+        const examEntry = isAcademicExamEntry(session);
         if (selectMaterialBtn) {
-            selectMaterialBtn.hidden = homeEntry;
-            selectMaterialBtn.disabled = homeEntry;
+            selectMaterialBtn.hidden = homeEntry || examEntry;
+            selectMaterialBtn.disabled = homeEntry || examEntry;
         }
         if (aiMaterialBtn) {
-            aiMaterialBtn.hidden = homeEntry;
-            aiMaterialBtn.disabled = homeEntry || Boolean(session?.material_generation_task?.is_active);
+            aiMaterialBtn.hidden = homeEntry || examEntry;
+            aiMaterialBtn.disabled = homeEntry || examEntry || Boolean(session?.material_generation_task?.is_active);
         }
         if (selectHomeMaterialBtn) {
             selectHomeMaterialBtn.textContent = hasHomeMaterial() ? '更换首页' : '设置首页';
@@ -2062,7 +2083,7 @@ function initTeachingTimeline() {
         renderDetailMeta(session);
         renderMaterialPanel(session);
         syncTeacherActionState(session);
-        if (isHomeEntry(session)) {
+        if (isHomeEntry(session) || isAcademicExamEntry(session)) {
             sessionMaterialAssistant?.syncSelectedSession(null);
         } else {
             sessionMaterialAssistant?.syncSelectedSession(session);
@@ -2539,7 +2560,7 @@ function initTeachingTimeline() {
             forceCenter: true,
         });
         const selectedSession = getSessionByOrder(selectedOrder);
-        sessionMaterialAssistant?.syncSelectedSession(isHomeEntry(selectedSession) ? null : selectedSession);
+        sessionMaterialAssistant?.syncSelectedSession((isHomeEntry(selectedSession) || isAcademicExamEntry(selectedSession)) ? null : selectedSession);
         sessionMaterialAssistant?.startPolling();
         window.requestAnimationFrame(scheduleProjectionSync);
     });
@@ -2549,6 +2570,7 @@ const TODO_TONE_LABELS = {
     lesson: '课程',
     assignment: '作业',
     exam: '考试',
+    academic_exam: '教务考试',
     stage: '试炼',
     manual: '自定义',
     neutral: '待办',
@@ -3228,12 +3250,88 @@ function initClassroomActivitySidebar() {
     setTotal();
 }
 
+function initAcademicCourseExamPanel(config = window.APP_CONFIG || {}) {
+    const panel = document.getElementById('academicCourseExamPanel');
+    const messageEl = document.getElementById('academicCourseExamMessage');
+    const listEl = document.getElementById('academicCourseExamList');
+    const syncBtn = document.getElementById('academicCourseExamSyncBtn');
+    if (!panel || !messageEl || !listEl) return;
+
+    let state = config.academicCourseExams || { items: [] };
+    const isTeacher = String(config.userInfo?.role || '').trim() === 'teacher';
+    const classOfferingId = Number(config.classOfferingId || 0);
+
+    const formatSyncedAt = (value) => {
+        const text = String(value || '').replace('T', ' ').slice(0, 16);
+        return text || '';
+    };
+
+    const render = () => {
+        const items = Array.isArray(state.items) ? state.items : [];
+        const lastSyncedAt = state.last_synced_at || items.map((item) => item.synced_at || '').sort().pop() || '';
+        if (!items.length) {
+            messageEl.textContent = isTeacher
+                ? '本课堂尚未同步到教务考试。点击同步后，会按课程、教学班和班级组成自动匹配。'
+                : '本课堂尚未同步到教务考试。同步后会在这里和时间轴中显示。';
+            listEl.innerHTML = '<div class="academic-course-exam-card"><span>暂无本课程考试安排。</span></div>';
+            return;
+        }
+        messageEl.textContent = `已识别 ${items.length} 条考试安排${lastSyncedAt ? `，最近同步 ${formatSyncedAt(lastSyncedAt)}` : ''}。`;
+        listEl.innerHTML = items.map((item) => {
+            const title = item.course_name || item.course_display_name || item.exam_name || '课程考试';
+            const meta = [item.exam_time_text || item.starts_at, item.location, item.teaching_class_name || item.class_composition]
+                .filter(Boolean)
+                .join(' · ');
+            const note = [item.exam_name, item.seat_count ? `座位 ${item.seat_count}` : '', item.exam_student_count ? `考生 ${item.exam_student_count}` : '']
+                .filter(Boolean)
+                .join(' · ');
+            return `
+                <article class="academic-course-exam-card">
+                    <strong>${escapeHtml(title)}</strong>
+                    <span>${escapeHtml(meta || '考试时间地点待教务系统确认')}</span>
+                    <small>${escapeHtml(note || '来自教务系统任课教师考试查询')}</small>
+                </article>
+            `;
+        }).join('');
+    };
+
+    syncBtn?.addEventListener('click', async () => {
+        if (!isTeacher || !classOfferingId) return;
+        syncBtn.disabled = true;
+        syncBtn.dataset.originalText = syncBtn.dataset.originalText || syncBtn.textContent;
+        syncBtn.textContent = '同步中...';
+        messageEl.textContent = '正在连接教务系统并同步任课考试安排...';
+        try {
+            const result = await apiFetch(`/api/manage/classrooms/${classOfferingId}/academic-exams/sync`, {
+                method: 'POST',
+                silent: true,
+            });
+            state = result.classroom_exam_status || result.classroomExamStatus || state;
+            config.academicCourseExams = state;
+            render();
+            showToast(result.message || '教务考试信息已同步。', 'success');
+            if (Array.isArray(state.items) && state.items.length) {
+                window.setTimeout(() => window.location.reload(), 700);
+            }
+        } catch (error) {
+            messageEl.textContent = error.message || '同步教务考试失败，请稍后重试。';
+            showToast(error.message || '同步教务考试失败', 'error');
+        } finally {
+            syncBtn.disabled = false;
+            syncBtn.textContent = syncBtn.dataset.originalText || '同步教务考试';
+        }
+    });
+
+    render();
+}
+
 export function initClassroomPage() {
     initCoursePopover();
     initClassroomTopbarMenus();
     initWorkspaceNav();
     initClassroomActivitySidebar();
     initTeachingTimeline();
+    initAcademicCourseExamPanel();
     initAssignmentClocks();
     personalizeClassroomCopy();
     document.addEventListener('classroom:alias-change', (event) => {

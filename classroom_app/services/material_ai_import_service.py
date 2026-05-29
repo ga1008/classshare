@@ -211,6 +211,8 @@ async def parse_material_document(
                 response_format="json",
                 file_texts=[{"name": original_name, "content": text_for_ai}],
                 task_type="deep_text_reasoning",
+                task_priority="background",
+                task_label="material_ai_import:text",
                 timeout=240.0,
             )
             ai_used = True
@@ -233,6 +235,8 @@ async def parse_material_document(
                     response_format="json",
                     base64_urls=[item["data_url"] for item in image_inputs if item.get("data_url")],
                     task_type="deep_multimodal_reasoning",
+                    task_priority="background",
+                    task_label="material_ai_import:vision",
                     timeout=300.0,
                 )
                 ai_used = True
@@ -240,6 +244,8 @@ async def parse_material_document(
                 warnings.append(f"视觉 AI 兜底失败: {_format_exception(exc)}")
 
     if not raw_ai_result:
+        if extraction.method == "unsupported":
+            raise HTTPException(415, "当前文件格式暂不支持自动解析，请先转换为 docx、xlsx 或 PDF 后重试。")
         if not extraction.text.strip() or not extraction.quality.get("usable", False):
             raise HTTPException(422, "无法从该材料中抽取可解析内容，请更换文件或先转为 PDF/Word/Excel 后重试。")
         raw_ai_result = _build_local_fallback_result(

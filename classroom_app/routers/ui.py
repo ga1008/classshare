@@ -37,6 +37,10 @@ from ..services.ai_grading_attachments import AI_GRADING_UPLOAD_EXTENSIONS, AI_G
 from ..services.dashboard_service import build_dashboard_context
 from ..services.exam_json_service import strip_exam_scoring_for_student
 from ..services.classroom_page_service import build_classroom_page_context
+from ..services.academic_course_exam_sync_service import (
+    load_classroom_course_exam_status_for_user,
+    merge_course_exams_into_teaching_plan,
+)
 from ..services.assignment_lifecycle_service import (
     assignment_accepts_submissions,
     close_overdue_assignments,
@@ -1210,6 +1214,15 @@ def classroom_main(
             home_material=offering_data.get("home_learning_material"),
             include_home_placeholder=user["role"] == "teacher",
         )
+        academic_course_exams = load_classroom_course_exam_status_for_user(
+            conn,
+            class_offering_id=class_offering_id,
+            user=user,
+        )
+        teaching_plan = merge_course_exams_into_teaching_plan(
+            teaching_plan,
+            academic_course_exams,
+        )
         if teaching_plan.get("schedule_summary") and not offering_data.get("schedule_info"):
             offering_data["schedule_info"] = teaching_plan["schedule_summary"]
 
@@ -1221,6 +1234,7 @@ def classroom_main(
             shared_files=files_info,
         )
         classroom_page["teaching_plan"] = teaching_plan
+        classroom_page["academic_course_exams"] = academic_course_exams
         if user["role"] == "student":
             try:
                 classroom_page["learning_progress"] = serialize_student_learning_progress(

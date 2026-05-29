@@ -139,6 +139,8 @@ def _dashboard_safe_json(raw_value: Any) -> dict[str, Any]:
 
 def _teacher_calendar_event_todo(row: Any, *, now: datetime) -> dict[str, Any] | None:
     item = dict(row)
+    source_type = str(item.get("source_type") or "academic_invigilation")
+    is_course_exam = source_type == "academic_course_exam"
     starts_at = _dashboard_parse_datetime(item.get("starts_at") or item.get("due_at"))
     ends_at = _dashboard_parse_datetime(item.get("ends_at") or item.get("due_at")) or starts_at
     created_at = _dashboard_parse_datetime(item.get("created_at")) or starts_at or now
@@ -158,8 +160,8 @@ def _teacher_calendar_event_todo(row: Any, *, now: datetime) -> dict[str, Any] |
         else _dashboard_datetime_label(starts_at)
     )
     return {
-        "id": f"academic_invigilation:{source_id}",
-        "source_type": "academic_invigilation",
+        "id": f"{source_type}:{source_id}",
+        "source_type": source_type,
         "source_id": source_id,
         "title": str(item.get("title") or "监考安排"),
         "subtitle": str(item.get("subtitle") or "教务系统监考"),
@@ -184,7 +186,7 @@ def _teacher_calendar_event_todo(row: Any, *, now: datetime) -> dict[str, Any] |
         "relative_due_label": status_label,
         "duration_label": duration_label,
         "due_time_label": f"{starts_at.hour:02d}:{starts_at.minute:02d}",
-        "offering_label": "教务监考",
+        "offering_label": "教务考试" if is_course_exam else "教务监考",
         "course_name": str(metadata.get("course_name") or ""),
         "class_name": str(metadata.get("teaching_class_name") or ""),
         "location": str(item.get("location") or ""),
@@ -212,7 +214,7 @@ def _attach_teacher_calendar_events_to_buckets(
         FROM teacher_calendar_events
         WHERE teacher_id = ?
           AND semester_id IN ({placeholders})
-          AND source_type = 'academic_invigilation'
+          AND source_type IN ('academic_invigilation', 'academic_course_exam')
           AND status = 'active'
           AND deleted_at IS NULL
         ORDER BY COALESCE(starts_at, due_at, created_at), id

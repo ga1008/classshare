@@ -56,6 +56,7 @@ MESSAGE_CATEGORY_PASSWORD_RESET = "password_reset_request"
 MESSAGE_CATEGORY_TODO = "todo"
 MESSAGE_CATEGORY_COLLABORATION = "collaboration"
 MESSAGE_CATEGORY_ATTENDANCE_ALERT = "attendance_alert"
+MESSAGE_CATEGORY_ACADEMIC_EXAM = "academic_exam"
 
 AI_ASSISTANT_ROLE = "assistant"
 AI_ASSISTANT_LABEL = "AI助教"
@@ -126,6 +127,7 @@ ALL_NOTIFICATION_CATEGORIES = (
     MESSAGE_CATEGORY_TODO,
     MESSAGE_CATEGORY_COLLABORATION,
     MESSAGE_CATEGORY_ATTENDANCE_ALERT,
+    MESSAGE_CATEGORY_ACADEMIC_EXAM,
 )
 
 VISIBLE_NOTIFICATION_CATEGORIES = {
@@ -141,6 +143,7 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_TODO,
         MESSAGE_CATEGORY_COLLABORATION,
         MESSAGE_CATEGORY_ATTENDANCE_ALERT,
+        MESSAGE_CATEGORY_ACADEMIC_EXAM,
     ),
     "teacher": (
         "all",
@@ -156,6 +159,7 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_TODO,
         MESSAGE_CATEGORY_COLLABORATION,
         MESSAGE_CATEGORY_ATTENDANCE_ALERT,
+        MESSAGE_CATEGORY_ACADEMIC_EXAM,
     ),
 }
 
@@ -175,6 +179,7 @@ CATEGORY_LABELS = {
     MESSAGE_CATEGORY_TODO: "待办提醒",
     MESSAGE_CATEGORY_COLLABORATION: "小组协作",
     MESSAGE_CATEGORY_ATTENDANCE_ALERT: "考勤提醒",
+    MESSAGE_CATEGORY_ACADEMIC_EXAM: "教务考试",
 }
 
 APP_FEEDBACK_TYPE_LABELS = {
@@ -3724,6 +3729,41 @@ def create_todo_notification(
         class_offering_id=_safe_int(class_offering_id),
         ref_type=MESSAGE_CATEGORY_TODO,
         ref_id=ref_id or f"todo:{recipient_role}:{recipient_user_pk}:{timestamp}",
+        metadata=metadata or {},
+        created_at=timestamp,
+    )
+    return 1 if _insert_notification_if_allowed(conn, payload, allow_duplicates=allow_duplicates) else 0
+
+
+def create_academic_exam_notification(
+    conn,
+    *,
+    recipient_role: str,
+    recipient_user_pk: int,
+    title: str,
+    body_preview: str = "",
+    link_url: str = "",
+    class_offering_id: Optional[int] = None,
+    ref_id: str = "",
+    actor_display_name: str = "",
+    metadata: Optional[dict[str, Any]] = None,
+    allow_duplicates: bool = False,
+) -> int:
+    timestamp = _now_iso()
+    payload = _build_notification_payload(
+        recipient_role=str(recipient_role or "").strip().lower(),
+        recipient_user_pk=int(recipient_user_pk),
+        category=MESSAGE_CATEGORY_ACADEMIC_EXAM,
+        severity="important",
+        title=_truncate_text(title, 80),
+        body_preview=_truncate_text(body_preview, 140),
+        actor_role="",
+        actor_user_pk=None,
+        actor_display_name=str(actor_display_name or "").strip(),
+        link_url=link_url,
+        class_offering_id=_safe_int(class_offering_id),
+        ref_type=MESSAGE_CATEGORY_ACADEMIC_EXAM,
+        ref_id=ref_id or f"academic-exam:{recipient_role}:{recipient_user_pk}:{timestamp}",
         metadata=metadata or {},
         created_at=timestamp,
     )
