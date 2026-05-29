@@ -27,6 +27,7 @@ MAX_EXTRACT_TEXT_BYTES = 900_000
 MAX_AI_TEXT_CHARS = 120_000
 MAX_VISION_IMAGES = 8
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
+MIN_USABLE_TEXT_CHARS = 40
 
 MaterialAiChat = Callable[..., Awaitable[Any]]
 
@@ -126,6 +127,7 @@ class MaterialExtraction:
     warnings: list[str] = field(default_factory=list)
     images: list[dict[str, str]] = field(default_factory=list)
     truncated: bool = False
+    quality: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -136,6 +138,8 @@ class MaterialParseResult:
     warnings: list[str]
     export_payload: dict[str, Any]
     raw_ai_result: dict[str, Any]
+    parsed_payload: dict[str, Any]
+    content_quality: dict[str, Any]
     extraction_method: str
     document_group: str
     document_type: str
@@ -182,14 +186,17 @@ async def parse_material_document(
 ) -> MaterialParseResult:
     type_meta = resolve_material_ai_import_type(document_group, document_type)
     extraction = await asyncio.to_thread(extract_material_content, file_path, original_name)
+    extraction.quality = _assess_text_quality(extraction.text, method=extraction.method)
     warnings = list(extraction.warnings)
     ai_used = False
     raw_ai_result: dict[str, Any] | None = None
 
     if extraction.truncated:
         warnings.append("本地抽取内容较长，已截断后交给 AI 解析。")
+    if extraction.text.strip() and not extraction.quality.get("usable", False):
+        warnings.extend(str(reason) for reason in extraction.quality.get("reasons", []) if reason)
 
-    text_for_ai = _limit_text_for_ai(extraction.text)
+    text_for_ai = _limit_text_for_ai(extraction.text) if extraction.quality.get("usable", False) else ""
     if text_for_ai.strip():
         try:
             raw_ai_result = await ai_chat(
@@ -233,7 +240,7 @@ async def parse_material_document(
                 warnings.append(f"视觉 AI 兜底失败: {_format_exception(exc)}")
 
     if not raw_ai_result:
-        if not extraction.text.strip():
+        if not extraction.text.strip() or not extraction.quality.get("usable", False):
             raise HTTPException(422, "无法从该材料中抽取可解析内容，请更换文件或先转为 PDF/Word/Excel 后重试。")
         raw_ai_result = _build_local_fallback_result(
             original_name=original_name,
@@ -251,6 +258,8 @@ async def parse_material_document(
         extra_warnings=warnings,
         ai_used=ai_used,
     )
+    if not result.content_quality.get("usable", False):
+        raise HTTPException(422, "解析结果质量校验未通过，系统已阻止保存乱码内容。请将文件另存为 docx/PDF 后重试，或稍后使用视觉解析兜底。")
     return result
 
 
@@ -303,9 +312,9 @@ def normalize_ai_parse_result(
     metadata = _coerce_dict(parsed.get("metadata"))
     content_markdown = str(parsed.get("content_markdown") or parsed.get("content") or "").strip()
     if not content_markdown:
-        content_markdown = extraction.text.strip()
+        content_markdown = extraction.text.strip() if extraction.quality.get("usable", False) else ""
     if not content_markdown:
-        content_markdown = f"未能从《{original_name}》中抽取正文内容。"
+        raise HTTPException(422, "AI 未返回有效正文，系统已取消保存该解析结果。")
 
     metadata.setdefault("source_filename", original_name)
     metadata.setdefault("document_group", type_meta["group_label"])
@@ -330,7 +339,26 @@ def normalize_ai_parse_result(
         export_payload.setdefault("document_type_label", type_meta["label"])
         export_payload.setdefault("template_key", type_meta.get("template_key", type_meta["key"]))
 
+    content_quality = _assess_text_quality(content_markdown, method="parsed_markdown")
     raw_result_dict = parsed if isinstance(parsed, dict) else {}
+    parsed_payload = {
+        "metadata": metadata,
+        "content_markdown": content_markdown,
+        "tables": tables,
+        "warnings": warnings,
+        "export_payload": export_payload,
+        "document_group": type_meta["group_key"],
+        "document_type": type_meta["key"],
+        "document_type_label": type_meta["label"],
+        "extraction": {
+            "method": extraction.method or "unknown",
+            "source_kind": extraction.source_kind,
+            "truncated": extraction.truncated,
+            "quality": extraction.quality,
+        },
+        "content_quality": content_quality,
+        "ai_used": ai_used,
+    }
     return MaterialParseResult(
         metadata=metadata,
         content_markdown=content_markdown,
@@ -338,6 +366,8 @@ def normalize_ai_parse_result(
         warnings=warnings,
         export_payload=export_payload,
         raw_ai_result=raw_result_dict,
+        parsed_payload=parsed_payload,
+        content_quality=content_quality,
         extraction_method=extraction.method or "unknown",
         document_group=type_meta["group_key"],
         document_type=type_meta["key"],
@@ -352,40 +382,10 @@ def build_import_readme(
     original_name: str,
 ) -> str:
     title = _metadata_title(result.metadata, original_name, result.document_type_label)
-    lines = [
-        f"# {title}",
-        "",
-        "## 解析信息",
-        "",
-        "| 字段 | 内容 |",
-        "| --- | --- |",
-        f"| 原始文件 | `{_escape_markdown_cell(original_name)}` |",
-        f"| 材料类型 | {result.document_type_label} |",
-        f"| 抽取方式 | {result.extraction_method} |",
-        f"| AI 参与 | {'是' if result.ai_used else '否'} |",
-    ]
-
-    for key, value in result.metadata.items():
-        if key in {"source_filename", "document_group", "document_type"}:
-            continue
-        if value in (None, "", [], {}):
-            continue
-        lines.append(f"| {_escape_markdown_cell(_metadata_key_label(key))} | {_escape_markdown_cell(_stringify_cell(value))} |")
-
-    if result.warnings:
-        lines.extend(["", "## 兼容提示", ""])
-        lines.extend(f"- {warning}" for warning in result.warnings if warning)
-
-    lines.extend(["", "## 解析正文", "", result.content_markdown.strip()])
-
-    if result.tables:
-        lines.extend(["", "## 表格索引", ""])
-        for index, table in enumerate(result.tables[:20], start=1):
-            title_text = table.get("title") or f"表格 {index}"
-            row_count = len(table.get("rows") or [])
-            lines.append(f"- {title_text}（{row_count} 行）")
-
-    return "\n".join(lines).strip() + "\n"
+    content = _strip_duplicate_title(result.content_markdown.strip(), title)
+    if re.match(r"^#\s+", content):
+        return content.strip() + "\n"
+    return f"# {title}\n\n{content}".strip() + "\n"
 
 
 def build_material_export_payload(
@@ -488,21 +488,114 @@ def _extract_docx(file_path: Path) -> MaterialExtraction:
 
 
 def _extract_legacy_document(file_path: Path, ext: str) -> MaterialExtraction:
-    warnings = ["旧版 Word 文档按兼容模式抽取，若内容缺失可先另存为 docx 或 PDF 后重试。"]
+    warnings = ["旧版 Word 文档按兼容模式抽取，系统会优先使用 antiword/LibreOffice，避免保存二进制乱码。"]
+    antiword_text = _extract_doc_with_antiword(file_path, warnings)
+    if _assess_text_quality(antiword_text, method="antiword_doc_extract").get("usable", False):
+        text, truncated = _truncate_by_bytes(antiword_text, MAX_EXTRACT_TEXT_BYTES)
+        return MaterialExtraction(
+            text=text,
+            method="antiword_doc_extract",
+            source_kind=ext.lstrip("."),
+            warnings=warnings,
+            truncated=truncated,
+        )
+
+    converted = _extract_legacy_doc_via_libreoffice(file_path, warnings)
+    if converted.text.strip() or converted.images:
+        converted.warnings = _merge_warnings(warnings, converted.warnings)
+        converted.source_kind = ext.lstrip(".")
+        return converted
+
     if extract_document_text:
         extracted = extract_document_text(file_path, ext, max_bytes=MAX_EXTRACT_TEXT_BYTES)
         images = list(extracted.images or [])[:MAX_VISION_IMAGES]
         if len(str(extracted.text or "").strip()) < 800 and not images:
             images.extend(_render_office_pages_to_images(file_path, ext, warnings))
+        binary_quality = _assess_text_quality(extracted.text, method="legacy_doc_binary_extract")
+        text = extracted.text if binary_quality.get("usable", False) else ""
+        if extracted.text and not text:
+            warnings.extend(binary_quality.get("reasons", []))
+            warnings.append("已丢弃旧版 Word 二进制兜底文本，防止乱码进入材料库。")
         return MaterialExtraction(
-            text=extracted.text,
-            method="legacy_doc_binary_extract",
+            text=text,
+            method="legacy_doc_binary_extract" if text else "legacy_doc_unreadable",
             source_kind=ext.lstrip("."),
             warnings=warnings,
             images=images[:MAX_VISION_IMAGES],
             truncated=bool(extracted.truncated),
         )
     return MaterialExtraction(method="legacy_doc_unavailable", source_kind=ext.lstrip("."), warnings=warnings)
+
+
+def _extract_doc_with_antiword(file_path: Path, warnings: list[str]) -> str:
+    antiword = shutil.which("antiword")
+    if not antiword:
+        warnings.append("未检测到 antiword，已跳过旧版 Word 纯文本抽取。")
+        return ""
+    try:
+        completed = subprocess.run(
+            [antiword, "-m", "UTF-8.txt", str(file_path)],
+            check=False,
+            capture_output=True,
+            timeout=45,
+        )
+    except subprocess.TimeoutExpired:
+        warnings.append("antiword 抽取超时，已尝试其他兼容方案。")
+        return ""
+    except Exception as exc:
+        warnings.append(f"antiword 抽取异常: {_format_exception(exc)}")
+        return ""
+
+    stdout = completed.stdout.decode("utf-8", errors="ignore").strip()
+    if completed.returncode != 0:
+        stderr = completed.stderr.decode("utf-8", errors="ignore").strip()
+        warnings.append(f"antiword 抽取失败: {stderr[:160] or '无法读取旧版 Word'}")
+        return ""
+    if stdout:
+        warnings.append("已使用 antiword 抽取旧版 Word 正文。")
+    return stdout
+
+
+def _extract_legacy_doc_via_libreoffice(file_path: Path, warnings: list[str]) -> MaterialExtraction:
+    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    if not soffice:
+        warnings.append("未检测到 LibreOffice，无法将旧版 Word 转换为 docx/PDF 兜底。")
+        return MaterialExtraction(method="legacy_doc_libreoffice_unavailable", source_kind="doc", warnings=warnings)
+    try:
+        with tempfile.TemporaryDirectory(prefix="material-ai-doc-convert-") as temp_dir:
+            temp_path = Path(temp_dir)
+            completed = subprocess.run(
+                [
+                    soffice,
+                    "--headless",
+                    "--convert-to",
+                    "docx",
+                    "--outdir",
+                    str(temp_path),
+                    str(file_path),
+                ],
+                check=False,
+                capture_output=True,
+                timeout=90,
+            )
+            if completed.returncode != 0:
+                stderr = completed.stderr.decode("utf-8", errors="ignore").strip()
+                warnings.append(f"LibreOffice 转 docx 失败: {stderr[:160] or '转换失败'}")
+                return MaterialExtraction(method="legacy_doc_libreoffice_convert_failed", source_kind="doc", warnings=warnings)
+            docx_files = sorted(temp_path.glob("*.docx"))
+            if not docx_files:
+                warnings.append("LibreOffice 转换未生成 docx，已尝试其他兜底。")
+                return MaterialExtraction(method="legacy_doc_libreoffice_no_docx", source_kind="doc", warnings=warnings)
+            extracted = _extract_docx(docx_files[0])
+            extracted.method = "libreoffice_doc_to_docx_extract"
+            if extracted.text.strip():
+                warnings.append("已使用 LibreOffice 转换旧版 Word 后抽取正文。")
+            return extracted
+    except subprocess.TimeoutExpired:
+        warnings.append("LibreOffice 转换旧版 Word 超时，已尝试其他兜底。")
+    except Exception as exc:
+        warnings.append(f"LibreOffice 转换旧版 Word 异常: {_format_exception(exc)}")
+    return MaterialExtraction(method="legacy_doc_libreoffice_exception", source_kind="doc", warnings=warnings)
 
 
 def _extract_xlsx(file_path: Path) -> MaterialExtraction:
@@ -919,6 +1012,8 @@ def _infer_export_sections(document_type: str, content_markdown: str) -> list[di
 
 
 def _needs_vision_fallback(extraction: MaterialExtraction) -> bool:
+    if extraction.images and not extraction.quality.get("usable", False):
+        return True
     if extraction.images and not extraction.text.strip():
         return True
     if extraction.images and len(extraction.text.strip()) < 1200:
@@ -931,6 +1026,90 @@ def _limit_text_for_ai(text: str) -> str:
     if len(text) <= MAX_AI_TEXT_CHARS:
         return text
     return text[:MAX_AI_TEXT_CHARS] + "\n\n[内容过长，后续文本已截断]"
+
+
+def _assess_text_quality(text: str, *, method: str = "") -> dict[str, Any]:
+    sample = str(text or "")
+    stripped = sample.strip()
+    if not stripped:
+        return {
+            "status": "empty",
+            "usable": False,
+            "score": 0.0,
+            "reasons": ["未抽取到可读文本。"],
+        }
+
+    quality_source = re.sub(
+        r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$",
+        "",
+        stripped[:12000],
+        flags=re.M,
+    )
+    compact = re.sub(r"\s+", "", quality_source)
+    if len(compact) < MIN_USABLE_TEXT_CHARS:
+        return {
+            "status": "too_short",
+            "usable": False,
+            "score": 0.2,
+            "reasons": ["抽取文本过短，无法作为可靠解析结果。"],
+        }
+
+    control_count = sum(1 for ch in compact if ord(ch) < 32 and ch not in "\t\n\r")
+    replacement_count = compact.count("\ufffd")
+    question_ratio = compact.count("?") / max(1, len(compact))
+    cjk_count = sum(1 for ch in compact if "\u4e00" <= ch <= "\u9fff")
+    ascii_word_count = sum(1 for ch in compact if ch.isascii() and (ch.isalnum() or ch.isspace()))
+    common_punctuation = set("，。！？；：、“”‘’（）()[]{}《》<>-—_.,:/\\%+&=*@#|·~`'\" \n\r\t")
+    readable_count = sum(
+        1
+        for ch in compact
+        if ("\u4e00" <= ch <= "\u9fff")
+        or ch.isalnum()
+        or ch.isspace()
+        or ch in common_punctuation
+    )
+    readable_ratio = readable_count / max(1, len(compact))
+    cjk_ratio = cjk_count / max(1, len(compact))
+    ascii_word_ratio = ascii_word_count / max(1, len(compact))
+    long_symbol_runs = len(re.findall(r"[^\w\s\u4e00-\u9fff]{18,}", compact))
+    binary_markers = any(marker in stripped[:20000] for marker in ("WordDocument", "Microsoft Word", "\x00", "\x01"))
+
+    reasons: list[str] = []
+    if control_count:
+        reasons.append("文本包含不可见控制字符，疑似二进制内容。")
+    if replacement_count:
+        reasons.append("文本包含替换字符，疑似编码损坏。")
+    if binary_markers:
+        reasons.append("文本包含 Word 二进制结构标记。")
+    if question_ratio > 0.08:
+        reasons.append("文本中问号占比异常，疑似乱码。")
+    if readable_ratio < 0.72:
+        reasons.append("可读字符占比过低。")
+    table_heavy_method = method in {"python_docx_tables", "openpyxl_tables", "xlrd_tables", "parsed_markdown"}
+    if long_symbol_runs >= 2 and not (table_heavy_method and cjk_ratio >= 0.04):
+        reasons.append("存在连续异常符号片段。")
+    if len(compact) > 500 and cjk_ratio < 0.01 and ascii_word_ratio < 0.38:
+        reasons.append("中文/英文正文特征不足，疑似从旧版 Office 中抽取到了底层结构。")
+
+    status = "ok" if not reasons else "suspect"
+    score = max(0.0, min(1.0, readable_ratio - (0.35 if reasons else 0.0)))
+    usable = not reasons or (score >= 0.7 and not binary_markers and question_ratio <= 0.08)
+    if method == "parsed_markdown" and len(compact) >= MIN_USABLE_TEXT_CHARS and readable_ratio >= 0.62 and not binary_markers:
+        usable = True
+        if not reasons:
+            status = "ok"
+
+    return {
+        "status": status if usable else "failed",
+        "usable": usable,
+        "score": round(score, 3),
+        "length": len(stripped),
+        "readable_ratio": round(readable_ratio, 3),
+        "cjk_ratio": round(cjk_ratio, 3),
+        "question_ratio": round(question_ratio, 3),
+        "method": method,
+        "reasons": reasons,
+    }
 
 
 def _truncate_by_bytes(text: str, max_bytes: int) -> tuple[str, bool]:
@@ -957,6 +1136,19 @@ def _stringify_cell(value: Any) -> str:
     if isinstance(value, (list, dict)):
         return json.dumps(value, ensure_ascii=False)
     return str(value)
+
+
+def _strip_duplicate_title(content: str, title: str) -> str:
+    lines = content.splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    if not lines:
+        return content
+    first = lines[0].strip()
+    normalized_first = first.lstrip("#").strip()
+    if normalized_first == str(title or "").strip():
+        return "\n".join(lines[1:]).strip()
+    return content
 
 
 def _metadata_key_label(key: str) -> str:

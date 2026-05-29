@@ -29,6 +29,7 @@ from ..services.material_ai_import_service import (
     parse_material_document,
     resolve_material_ai_import_type,
 )
+from ..services.material_export_template_service import build_material_export_artifact
 from ..services.materials_service import (
     MATERIAL_TYPE_REGISTRY,
     attach_home_learning_material_briefs,
@@ -1625,17 +1626,49 @@ def _fetch_material_response_item(conn, material_id: int, user: dict) -> dict | 
 
 
 def _build_material_ai_parse_payload(parse_result) -> dict:
+    return dict(parse_result.parsed_payload)
+
+
+def _parse_json_object(value: Any) -> dict:
+    if isinstance(value, dict):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return {}
+    try:
+        loaded = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _parse_json_array(value: Any) -> list:
+    if isinstance(value, list):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return []
+    try:
+        loaded = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    return loaded if isinstance(loaded, list) else []
+
+
+def _build_ai_import_payload_from_record(row) -> dict:
+    payload = _parse_json_object(row["parsed_payload_json"])
+    if payload:
+        return payload
     return {
-        "metadata": parse_result.metadata,
-        "content_markdown": parse_result.content_markdown,
-        "tables": parse_result.tables,
-        "warnings": parse_result.warnings,
-        "export_payload": parse_result.export_payload,
-        "document_group": parse_result.document_group,
-        "document_type": parse_result.document_type,
-        "document_type_label": parse_result.document_type_label,
-        "extraction_method": parse_result.extraction_method,
-        "ai_used": parse_result.ai_used,
+        "metadata": _parse_json_object(row["metadata_json"]),
+        "content_markdown": row["content_markdown"] or "",
+        "tables": [],
+        "warnings": _parse_json_array(row["warnings_json"]),
+        "export_payload": _parse_json_object(row["export_payload_json"]),
+        "document_group": row["document_group"],
+        "document_type": row["document_type"],
+        "document_type_label": row["document_type_label"],
+        "extraction_method": row["extraction_method"],
     }
 
 
@@ -1682,6 +1715,7 @@ async def ai_import_material(
     metadata_json = json.dumps(parse_result.metadata, ensure_ascii=False)
     export_payload_json = json.dumps(parse_result.export_payload, ensure_ascii=False)
     warnings_json = json.dumps(parse_result.warnings, ensure_ascii=False)
+    content_quality_json = json.dumps(parse_result.content_quality, ensure_ascii=False)
 
     with get_db_connection() as conn:
         base_parent = None
@@ -1747,14 +1781,15 @@ async def ai_import_material(
             ai_parse_result_json=parse_payload_json,
         )
 
-        conn.execute(
+        record_cursor = conn.execute(
             """
             INSERT INTO material_ai_import_records
             (teacher_id, package_material_id, source_material_id, parsed_material_id,
              document_group, document_type, document_type_label, parse_status, parse_mode,
              extraction_method, source_file_name, metadata_json, content_markdown,
-             export_payload_json, warnings_json, created_at, updated_at, completed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             parsed_payload_json, export_payload_json, warnings_json, content_quality_status,
+             content_quality_json, created_at, updated_at, completed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user["id"],
@@ -1769,13 +1804,17 @@ async def ai_import_material(
                 original_name,
                 metadata_json,
                 parse_result.content_markdown,
+                parse_payload_json,
                 export_payload_json,
                 warnings_json,
+                parse_result.content_quality.get("status", "ok"),
+                content_quality_json,
                 now,
                 now,
                 now,
             ),
         )
+        import_record_id = int(record_cursor.lastrowid)
 
         refresh_root_git_metadata(conn, package_root_id)
         conn.commit()
@@ -1790,8 +1829,70 @@ async def ai_import_material(
         "package_item": package_item,
         "source_item": source_item,
         "parsed_item": parsed_item,
+        "import_record_id": import_record_id,
         "parse_result": parse_payload,
     }
+
+
+@router.get("/api/materials/ai-import-records/{record_id}/export", response_class=FileResponse)
+async def export_ai_import_record(
+    record_id: int,
+    format: str = Query(default=""),
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM material_ai_import_records
+            WHERE id = ? AND teacher_id = ?
+            """,
+            (record_id, user["id"]),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "未找到可导出的解析记录")
+        payload = _build_ai_import_payload_from_record(row)
+        fallback_filename = row["source_file_name"] or f"材料解析-{record_id}"
+
+    artifact = build_material_export_artifact(
+        payload,
+        fallback_filename=fallback_filename,
+        requested_format=format,
+    )
+    suffix = Path(artifact.filename).suffix or ".docx"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+        temp_file.write(artifact.content)
+        temp_path = temp_file.name
+    return FileResponse(
+        temp_path,
+        media_type=artifact.media_type,
+        filename=artifact.filename,
+        background=BackgroundTask(_cleanup_temp_file, temp_path),
+    )
+
+
+@router.get("/api/materials/{material_id}/ai-import/export", response_class=FileResponse)
+async def export_ai_import_material(
+    material_id: int,
+    format: str = Query(default=""),
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        row = conn.execute(
+            """
+            SELECT *
+            FROM material_ai_import_records
+            WHERE parsed_material_id = ? OR package_material_id = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (material["id"], material["id"]),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "该材料没有关联的 AI 解析导出记录")
+        record_id = int(row["id"])
+    return await export_ai_import_record(record_id=record_id, format=format, user=user)
 
 
 @router.post("/api/materials/upload", response_class=JSONResponse)

@@ -26,7 +26,14 @@ RUN sed -i 's/\r$//' /usr/local/bin/lanshare-entrypoint \
 
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git tzdata fonts-arphic-uming \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        git \
+        tzdata \
+        fonts-arphic-uming \
+        antiword \
+        libreoffice-calc \
+        libreoffice-impress \
+        libreoffice-writer \
     && ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime \
     && echo "${TZ}" > /etc/timezone \
     && apt-get clean \

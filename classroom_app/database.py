@@ -4780,8 +4780,11 @@ def init_database():
                             source_file_name TEXT NOT NULL DEFAULT '',
                             metadata_json TEXT,
                             content_markdown TEXT,
+                            parsed_payload_json TEXT,
                             export_payload_json TEXT,
                             warnings_json TEXT,
+                            content_quality_status TEXT NOT NULL DEFAULT 'unchecked',
+                            content_quality_json TEXT NOT NULL DEFAULT '{}',
                             error_message TEXT DEFAULT '',
                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -5093,6 +5096,16 @@ def init_database():
                 conn.execute("ALTER TABLE course_materials ADD COLUMN git_detected_at TEXT")
             except sqlite3.OperationalError:
                 pass
+
+            for column_name, column_def in (
+                ("parsed_payload_json", "TEXT"),
+                ("content_quality_status", "TEXT NOT NULL DEFAULT 'unchecked'"),
+                ("content_quality_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ):
+                try:
+                    conn.execute(f"ALTER TABLE material_ai_import_records ADD COLUMN {column_name} {column_def}")
+                except sqlite3.OperationalError:
+                    pass
 
             _backfill_organization_scopes(conn)
             _ensure_teacher_organization_memberships_schema(conn)
@@ -5468,6 +5481,10 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_material_ai_import_teacher_updated "
                 "ON material_ai_import_records (teacher_id, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_material_ai_import_teacher_type "
+                "ON material_ai_import_records (teacher_id, document_group, document_type, updated_at DESC)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_material_ai_import_source "
