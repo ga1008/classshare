@@ -29,11 +29,13 @@ FINAL_MATERIAL_LAYOUTS: dict[str, dict[str, Any]] = {
     },
     "grading_rubric": {
         "page": "A4 portrait",
-        "margins_cm": {"top": 1.5, "bottom": 1.5, "left": 1.5, "right": 1.5, "footer": 1.75},
+        "margins_cm": {"top": 1.2, "bottom": 1.0, "left": 1.65, "right": 1.65, "footer": 0.55},
         "title_font": {"name": "宋体", "size_pt": 18, "bold": True},
         "period_font": {"name": "宋体", "size_pt": 14, "bold": True},
         "body_font": {"name": "宋体", "size_pt": 10.5},
-        "metadata_table_widths_cm": [3.2, 4.0, 3.0, 4.8],
+        "metadata_table_widths_cm": [3.75, 4.75, 3.65, 5.25],
+        "metadata_row_height_cm": 0.9,
+        "rubric_body_width_cm": 17.4,
     },
     "exam_paper": {
         "page": "A4 portrait",
@@ -47,6 +49,7 @@ FINAL_MATERIAL_LAYOUTS: dict[str, dict[str, Any]] = {
 
 
 ASSESSMENT_PLAN_SCHEMA_VERSION = "gxufl-assessment-plan-v2"
+SCORING_RUBRIC_SCHEMA_VERSION = "gxufl-grading-rubric-v2"
 
 ASSESSMENT_PLAN_NOTES = [
     "注：",
@@ -86,6 +89,14 @@ ASSESSMENT_PLAN_DEFAULT_ITEMS = [
     },
 ]
 
+SCORING_RUBRIC_NOTES = [
+    "注：",
+    "1．课程名称必须与教学计划上的名称一致。",
+    "2．命题教师：务必输入命题教师名字，打印纸质版后再手写签名；系（教研室）主任审核签字：须手写签名。",
+    "3．该表文字部分均用五号宋体，使用A4纸双面打印。",
+    "4．命题完成后将该表与命题计划表（电子版及纸质版）交到二级学院（部），并装入试卷袋存档。",
+]
+
 
 FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "title": ("标题", "材料标题", "title"),
@@ -114,6 +125,9 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "education_level": ("学历层次", "education_level"),
     "exam_duration": ("考试时间", "考试时长", "exam_duration"),
     "total_score": ("总分", "满分", "total_score"),
+    "source_exam_paper_record_id": ("来源试卷记录", "试卷解析记录", "source_exam_paper_record_id"),
+    "source_exam_paper_title": ("来源试卷", "关联试卷", "source_exam_paper_title"),
+    "source_exam_paper_updated_at": ("来源试卷更新时间", "试卷更新时间", "source_exam_paper_updated_at"),
 }
 
 
@@ -158,7 +172,17 @@ def normalize_final_material_payload(
             seed_items=_assessment_items_from_export_payload(export_payload),
         )
     elif key == "grading_rubric":
-        structured = _grading_rubric_payload(fields, normalized_tables, sections, content_markdown)
+        fields = _normalize_grading_rubric_fields(fields)
+        structured = _grading_rubric_payload(
+            fields,
+            normalized_tables,
+            sections,
+            content_markdown,
+            seed_items=(
+                _rubric_items_from_export_payload(export_payload)
+                or _rubric_items_from_exam_paper_context(classroom_context or {}, fields)
+            ),
+        )
     else:
         structured = _exam_paper_payload(fields, normalized_tables, sections, content_markdown)
 
@@ -279,7 +303,8 @@ def build_final_material_generation_seed(
     key = str(document_type or "").strip()
     fields = _fields_from_classroom_context(classroom_context)
     now = datetime.now()
-    fields.setdefault("date", now.strftime("%Y年%m月%d日"))
+    default_date = now.strftime("%Y.%m.%d") if key == "grading_rubric" else now.strftime("%Y年%m月%d日")
+    fields.setdefault("date", default_date)
     fields.setdefault("title", final_material_label(key))
     fields.setdefault("assessment_type", "考试")
     fields.setdefault("assessment_method", "机试")
@@ -304,9 +329,12 @@ def build_final_material_generation_seed(
         ]
         sections = [{"title": "注", "content": "\n".join(ASSESSMENT_PLAN_NOTES)}]
     elif key == "grading_rubric":
+        source_items = _rubric_items_from_exam_paper_context(classroom_context, fields)
+        if not source_items:
+            source_items = _default_rubric_items(fields, prompt)
         tables = []
         sections = [
-            {"title": "评分细则", "content": _default_rubric_content(fields, prompt)},
+            {"title": "评分细则", "content": _rubric_content_from_items(fields, source_items, prompt)},
         ]
     else:
         tables = []
@@ -362,14 +390,35 @@ def _grading_rubric_payload(
     tables: list[dict[str, Any]],
     sections: list[dict[str, Any]],
     content: str,
+    *,
+    seed_items: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    rubric_items = _rubric_items_from_text(content)
-    total = _sum_score(item.get("score") for item in rubric_items) or _to_number(fields.get("total_score")) or 100
+    rubric_items = seed_items or _rubric_items_from_tables(tables) or _rubric_items_from_text(content)
+    if not rubric_items:
+        rubric_items = _default_rubric_items(fields, "")
+    total = _sum_rubric_score(rubric_items) or _to_number(fields.get("total_score")) or 100
+    fields["total_score"] = _score_to_text(total)
+    body_markdown = _rubric_body_markdown(sections, content, rubric_items)
+    source_exam = {
+        key: fields.get(key)
+        for key in ("source_exam_paper_record_id", "source_exam_paper_title", "source_exam_paper_updated_at")
+        if not _is_blank(fields.get(key))
+    }
+    deduction_points = _extract_keyword_lines(body_markdown, ("扣", "不计分", "不给分", "一半", "酌情", "否则"))
+    screenshot_requirements = _extract_keyword_lines(body_markdown, ("截图", ".png", "图片", "对应截图", "screenshot"))
     return {
         "fields": fields,
         "rubric_items": rubric_items,
+        "rubric_body_markdown": body_markdown,
+        "deduction_points": deduction_points,
+        "screenshot_requirements": screenshot_requirements,
         "total_score": total,
-        "sections": sections or [{"title": "评分细则", "content": content.strip()}],
+        "notes": list(SCORING_RUBRIC_NOTES),
+        "source_exam_paper": source_exam,
+        "requires_exam_paper_confirmation": not bool(source_exam),
+        "requires_teacher_confirmation": bool(fields.get("requires_teacher_confirmation")) or not bool(source_exam),
+        "template_schema_version": SCORING_RUBRIC_SCHEMA_VERSION,
+        "sections": sections or [{"title": "评分细则", "content": body_markdown.strip()}],
     }
 
 
@@ -417,6 +466,35 @@ def _normalize_assessment_plan_fields(fields: dict[str, Any]) -> dict[str, Any]:
     normalized.setdefault("assessment_method", "机试" if mode_code == "non_written" else "闭卷笔试")
     normalized.setdefault("examiner_name", normalized.get("teacher_name") or "")
     normalized.setdefault("date", datetime.now().strftime("%Y年%m月%d日"))
+    return normalized
+
+
+def _normalize_grading_rubric_fields(fields: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(fields)
+    normalized.setdefault("school", "广西外国语学院")
+    normalized["title"] = "课程考核评分细则"
+    assessment_type = _normalize_assessment_type(
+        normalized.get("assessment_type")
+        or normalized.get("academic_exam_method")
+        or normalized.get("exam_method")
+        or normalized.get("course_nature")
+    )
+    normalized["assessment_type"] = assessment_type
+    mode_code, mode_label, inferred_from_teacher = _normalize_assessment_mode(
+        normalized.get("assessment_mode")
+        or normalized.get("assessment_mode_label")
+        or normalized.get("assessment_method")
+        or normalized.get("academic_exam_mode")
+        or normalized.get("exam_mode"),
+        assessment_type=assessment_type,
+    )
+    normalized["assessment_mode"] = mode_code
+    normalized["assessment_mode_label"] = mode_label
+    if not inferred_from_teacher and assessment_type == "考试":
+        normalized["requires_teacher_confirmation"] = True
+    normalized.setdefault("assessment_method", "机试" if mode_code == "non_written" else "闭卷笔试")
+    normalized.setdefault("examiner_name", normalized.get("teacher_name") or "")
+    normalized.setdefault("date", datetime.now().strftime("%Y.%m.%d"))
     return normalized
 
 
@@ -501,6 +579,64 @@ def _assessment_items_from_export_payload(export_payload: dict[str, Any] | None)
     return items
 
 
+def _rubric_items_from_export_payload(export_payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+    payload = _as_dict(export_payload)
+    structured = _as_dict(payload.get("structured"))
+    raw_items = structured.get("rubric_items") if isinstance(structured.get("rubric_items"), list) else []
+    items: list[dict[str, Any]] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        title = _stringify(item.get("title") or item.get("name") or "").strip()
+        criteria = item.get("criteria") if isinstance(item.get("criteria"), list) else []
+        normalized_criteria = []
+        for criterion in criteria:
+            if isinstance(criterion, dict):
+                text = _stringify(criterion.get("text") or criterion.get("criterion") or criterion.get("content") or "").strip()
+                score = _score_to_text(criterion.get("score") or "")
+            else:
+                text = _stringify(criterion).strip()
+                score = ""
+            if text or score:
+                normalized_criteria.append({"score": score, "text": text})
+        if title or normalized_criteria:
+            items.append(
+                {
+                    "title": title or "评分项目",
+                    "score": _score_to_text(item.get("score") or ""),
+                    "criteria": normalized_criteria,
+                }
+            )
+    return items
+
+
+def _rubric_items_from_tables(tables: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for table in tables:
+        rows = table.get("rows") or []
+        if len(rows) < 2:
+            continue
+        header = [str(cell).replace(" ", "") for cell in rows[0]]
+        if not (any("评分" in cell or "给分" in cell or "标准" in cell for cell in header) and any("分" in cell for cell in header)):
+            continue
+        for row in rows[1:]:
+            clean = [_stringify(cell).strip() for cell in row]
+            if not any(clean):
+                continue
+            score = ""
+            title = clean[0] if clean else "评分项"
+            content = "；".join(cell for cell in clean[1:] if cell)
+            for cell in clean:
+                match = re.search(r"(\d+(?:\.\d+)?)\s*分", cell)
+                if match:
+                    score = match.group(1)
+                    break
+            if not content and len(clean) == 1:
+                content = clean[0]
+            items.append({"title": title or "评分项", "score": score, "criteria": [{"score": score, "text": content}]})
+    return items
+
+
 def _rubric_items_from_text(content: str) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
@@ -539,6 +675,156 @@ def _paper_sections_from_sections(sections: list[dict[str, Any]], content: str) 
     if not result and content.strip():
         result.append({"title": "试卷正文", "score": "", "content": content.strip()})
     return result
+
+
+def _rubric_items_from_exam_paper_context(context: dict[str, Any], fields: dict[str, Any]) -> list[dict[str, Any]]:
+    source = _as_dict(_as_dict(context).get("source_exam_paper"))
+    structured = _as_dict(source.get("structured"))
+    paper_sections = structured.get("paper_sections") if isinstance(structured.get("paper_sections"), list) else []
+    if not paper_sections:
+        paper_sections = source.get("paper_sections") if isinstance(source.get("paper_sections"), list) else []
+    items: list[dict[str, Any]] = []
+    for index, section in enumerate(paper_sections, start=1):
+        if not isinstance(section, dict):
+            continue
+        title = _stringify(section.get("title") or f"第{index}题").strip()
+        score = _score_to_text(section.get("score") or "")
+        content = _stringify(section.get("content") or "")
+        screenshot = _first_screenshot_reference(content)
+        criteria = [
+            {
+                "score": score,
+                "text": _rubric_text_for_paper_section(title=title, score=score, content=content, screenshot=screenshot),
+            }
+        ]
+        items.append({"title": title, "score": score, "criteria": criteria})
+    if items:
+        fields.setdefault("source_exam_paper_record_id", source.get("record_id") or source.get("id") or "")
+        fields.setdefault("source_exam_paper_title", source.get("title") or source.get("document_type_label") or "课程考核试卷")
+        fields.setdefault("source_exam_paper_updated_at", source.get("updated_at") or "")
+    return items
+
+
+def _default_rubric_items(fields: dict[str, Any], prompt: str = "") -> list[dict[str, Any]]:
+    course = _stringify(fields.get("course_name") or "本课程")
+    method = _stringify(fields.get("assessment_method") or "机试") or "机试"
+    if course == "服务器配置与管理":
+        return [
+            {
+                "title": "一、第一大题：基础环境配置（共30分）",
+                "score": "30",
+                "criteria": [
+                    {"score": "10", "text": "运维账户创建与权限配置正确，关键命令截图清晰，命名符合试卷要求。"},
+                    {"score": "10", "text": "日志备份目录归属、权限和路径配置正确，截图能证明最终状态。"},
+                    {"score": "10", "text": "巡检脚本具有可执行权限，输出包含磁盘和内存使用情况，脚本第一行含学生姓名。"},
+                ],
+            },
+            {
+                "title": "二、第二大题：Staging 环境部署（共70分）",
+                "score": "70",
+                "criteria": [
+                    {"score": "30", "text": "Web 服务部署、状态、自启、SELinux 或访问验证完整，截图与页面结果一致。"},
+                    {"score": "25", "text": "数据库初始化、授权与权限验证符合题目限制，未出现禁止权限。"},
+                    {"score": "15", "text": "自动化备份脚本能成功运行，生成数据库与 Web 压缩包，路径和命名规范。"},
+                ],
+            },
+        ]
+    return [
+        {
+            "title": f"一、{course}基础任务（共30分）",
+            "score": "30",
+            "criteria": [
+                {"score": "10", "text": f"{method}基础步骤完整，关键过程可复核。"},
+                {"score": "10", "text": "关键结果、截图或答案与试卷要求一致。"},
+                {"score": "10", "text": "提交命名、目录结构和说明材料规范。"},
+            ],
+        },
+        {
+            "title": f"二、{course}综合任务（共70分）",
+            "score": "70",
+            "criteria": [
+                {"score": "30", "text": "核心任务完成度高，结果能证明掌握课程核心技能。"},
+                {"score": "25", "text": "综合配置、分析或实现过程准确，边界条件处理合理。"},
+                {"score": "15", "text": "最终材料完整、可复现，异常说明清楚。"},
+            ],
+        },
+    ]
+
+
+def _rubric_content_from_items(fields: dict[str, Any], items: list[dict[str, Any]], prompt: str = "") -> str:
+    method = _stringify(fields.get("assessment_method") or "机试") or "机试"
+    lines = [
+        f"{method}扣分项与给分原则",
+        "1．文件命名与组织：",
+        "（1）未按班级-学号-姓名规范命名或提交结构混乱，按影响程度扣分。",
+        "2．关键信息一致性：",
+        "（1）截图、代码、脚本或答案中的姓名、学号必须与考生本人一致，否则对应项不计分。",
+        "3．给分原则：",
+        "（1）优先依据试卷要求的最终结果、关键过程证据和可复现材料评分；因环境差异导致非核心报错，可酌情给分。",
+    ]
+    for item in items:
+        title = _stringify(item.get("title") or "评分项目")
+        score = _score_to_text(item.get("score") or "")
+        lines.append("")
+        lines.append(title if not score or score in title else f"{title}（共{score}分）")
+        for index, criterion in enumerate(item.get("criteria") or [], start=1):
+            c_score = _score_to_text(_as_dict(criterion).get("score") if isinstance(criterion, dict) else "")
+            text = _stringify(_as_dict(criterion).get("text") if isinstance(criterion, dict) else criterion).strip()
+            if not text:
+                continue
+            prefix = f"【{c_score}分】" if c_score else f"（{index}）"
+            lines.append(f"{prefix} {text}")
+    if str(prompt or "").strip():
+        lines.extend(["", f"教师补充要求：{prompt.strip()}"])
+    return "\n".join(lines).strip()
+
+
+def _rubric_body_markdown(sections: list[dict[str, Any]], content: str, rubric_items: list[dict[str, Any]]) -> str:
+    if sections:
+        parts: list[str] = []
+        for section in sections:
+            title = _stringify(section.get("title") or "").strip()
+            body = _stringify(section.get("content") or "").strip()
+            if not title and not body:
+                continue
+            if title.startswith("注"):
+                continue
+            if title and title not in {"正文", "评分细则"}:
+                parts.append(title)
+            if body:
+                parts.append(body)
+        if parts:
+            return "\n".join(parts).strip()
+    text = str(content or "").strip()
+    if text:
+        return text
+    return _rubric_content_from_items({}, rubric_items)
+
+
+def _rubric_text_for_paper_section(*, title: str, score: str, content: str, screenshot: str) -> str:
+    compact = " ".join(str(content or "").split())
+    if len(compact) > 120:
+        compact = compact[:120].rstrip() + "..."
+    target = f"对应{('截图' + screenshot) if screenshot else '试卷要求'}"
+    if score:
+        return f"{target}；围绕“{title}”按完成度、关键证据和结果正确性给分（本项{score}分）。试题摘要：{compact}"
+    return f"{target}；围绕“{title}”按完成度、关键证据和结果正确性给分。试题摘要：{compact}"
+
+
+def _first_screenshot_reference(content: str) -> str:
+    match = re.search(r"(?:截图|图片)?\s*([A-Za-z0-9_-]+\.(?:png|jpg|jpeg|webp))", str(content or ""), flags=re.IGNORECASE)
+    return match.group(1) if match else ""
+
+
+def _extract_keyword_lines(text: str, keywords: tuple[str, ...]) -> list[str]:
+    results: list[str] = []
+    for raw_line in str(text or "").splitlines():
+        line = _clean_line(raw_line)
+        if not line:
+            continue
+        if any(keyword.lower() in line.lower() for keyword in keywords):
+            results.append(line)
+    return results[:80]
 
 
 def _fields_from_markdown_tables(tables: list[dict[str, Any]]) -> dict[str, Any]:
@@ -592,6 +878,9 @@ def _fields_from_classroom_context(context: dict[str, Any]) -> dict[str, Any]:
         "assessment_mode_label": raw.get("assessment_mode_label") or "",
         "academic_exam_method": raw.get("academic_exam_method") or "",
         "academic_exam_mode": raw.get("academic_exam_mode") or "",
+        "source_exam_paper_record_id": _as_dict(raw.get("source_exam_paper")).get("record_id") or "",
+        "source_exam_paper_title": _as_dict(raw.get("source_exam_paper")).get("title") or "",
+        "source_exam_paper_updated_at": _as_dict(raw.get("source_exam_paper")).get("updated_at") or "",
     }
     return {key: value for key, value in fields.items() if not _is_blank(value)}
 
@@ -658,7 +947,15 @@ def _queryable_fields(fields: dict[str, Any], structured: dict[str, Any]) -> dic
         for key, value in fields.items()
         if key in FIELD_ALIASES or key in {"source_filename", "document_type_label"}
     }
-    for key in ("assessment_items", "rubric_items", "paper_sections", "total_score"):
+    for key in (
+        "assessment_items",
+        "rubric_items",
+        "paper_sections",
+        "deduction_points",
+        "screenshot_requirements",
+        "source_exam_paper",
+        "total_score",
+    ):
         if key in structured:
             queryable[key] = structured[key]
     return queryable
@@ -729,6 +1026,20 @@ def _sum_score(values: Any) -> float:
         if number is not None:
             total += number
     return total
+
+
+def _sum_rubric_score(items: list[dict[str, Any]]) -> float:
+    item_total = _sum_score(item.get("score") for item in items or [] if isinstance(item, dict))
+    if item_total:
+        return item_total
+    criteria_scores: list[Any] = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        for criterion in item.get("criteria") or []:
+            if isinstance(criterion, dict):
+                criteria_scores.append(criterion.get("score"))
+    return _sum_score(criteria_scores)
 
 
 def _to_number(value: Any) -> float | None:

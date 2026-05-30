@@ -1565,6 +1565,8 @@ async def list_material_ai_generation_assignment_candidates(
 @router.post("/api/materials/ai-generate", response_class=JSONResponse)
 async def ai_generate_material_from_context(
     prompt: str = Form(default=""),
+    document_group: str = Form(default="teaching_material"),
+    document_type: str = Form(default="teaching_document"),
     parent_id: int | None = Form(default=None),
     existing_material_ids: str = Form(default="[]"),
     assignment_ids: str = Form(default="[]"),
@@ -1632,6 +1634,16 @@ async def ai_generate_material_from_context(
     for assignment_row in assignment_rows:
         attachments.append(_build_assignment_context_attachment(assignment_row))
     attachments = _limit_ai_context_attachments(attachments)
+
+    if str(document_group or "").strip() == "final_material" and str(document_type or "").strip() in FINAL_MATERIAL_TYPES:
+        return await _generate_final_material_from_manage_context(
+            document_type=str(document_type or "").strip(),
+            prompt=prompt,
+            parent_id=parent_id,
+            parent_context=parent_context,
+            attachments=attachments,
+            user=user,
+        )
 
     file_texts = [
         {"name": item.get("title") or f"attachment-{index + 1}", "content": item.get("content") or ""}
@@ -2299,6 +2311,176 @@ def _build_generic_material_parse_result(
         for item in attachments or []
     ]
     return parse_result
+
+
+def _build_manage_final_material_context(
+    *,
+    document_type: str,
+    prompt: str,
+    parent_context: dict[str, Any] | None,
+    attachments: list[dict[str, Any]],
+) -> dict[str, Any]:
+    context: dict[str, Any] = {
+        "course_name": "",
+        "class_name": "",
+        "teacher_name": "",
+        "academic_year": "",
+        "semester": "",
+        "parent_context": parent_context or {},
+        "manage_generation": True,
+    }
+    for attachment in attachments:
+        metadata = _parse_json_object(attachment.get("metadata"))
+        for key in ("course_name", "class_name", "semester"):
+            if not context.get(key) and metadata.get(key):
+                context[key] = metadata.get(key)
+
+    attachment_text = "\n\n".join(
+        f"【{item.get('title') or '关联附件'}】\n{item.get('content') or ''}"
+        for item in attachments
+        if str(item.get("content") or "").strip()
+    )
+    if document_type == "grading_rubric" and _has_concrete_exam_questions(attachments, attachment_text):
+        exam_payload = normalize_final_material_payload(
+            document_type="exam_paper",
+            metadata={},
+            content_markdown=attachment_text,
+            tables=[],
+            export_payload={},
+        )
+        structured = _parse_json_object(exam_payload.get("structured"))
+        context["source_exam_paper"] = {
+            "record_id": "",
+            "title": "管理中心关联附件中的试卷/题目",
+            "updated_at": "",
+            "fields": _parse_json_object(exam_payload.get("fields")),
+            "structured": structured,
+            "paper_sections": structured.get("paper_sections") if isinstance(structured.get("paper_sections"), list) else [],
+            "content_markdown": attachment_text[:18000],
+            "source": "manage_ai_generation_attachments",
+        }
+    if attachment_text:
+        context["attachment_context"] = attachment_text[:18000]
+    if str(prompt or "").strip():
+        context["teacher_prompt"] = str(prompt or "").strip()
+    return context
+
+
+def _has_concrete_exam_questions(attachments: list[dict[str, Any]], attachment_text: str) -> bool:
+    for attachment in attachments:
+        if str(attachment.get("source_type") or "") == "assignment" and int(_parse_json_object(attachment.get("metadata")).get("question_count") or 0) > 0:
+            return True
+    text = str(attachment_text or "")
+    return bool(
+        re.search(
+            r"课程考核试卷|paper_sections|"
+            r"第\s*[一二三四五六七八九十\d]+\s*[大小]?[题问]|"
+            r"[一二三四五六七八九十]+[、.．].{0,48}(?:共\s*\d+(?:\.\d+)?\s*分)|"
+            r"题目\s*\d+|任务\s*\d+|截图\s*[A-Za-z0-9_-]*\.(?:png|jpg|jpeg|webp)",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
+async def _generate_final_material_from_manage_context(
+    *,
+    document_type: str,
+    prompt: str,
+    parent_id: int | None,
+    parent_context: dict[str, Any] | None,
+    attachments: list[dict[str, Any]],
+    user: dict,
+) -> dict[str, Any]:
+    type_meta = resolve_material_ai_import_type("final_material", document_type)
+    classroom_context = _build_manage_final_material_context(
+        document_type=document_type,
+        prompt=prompt,
+        parent_context=parent_context,
+        attachments=attachments,
+    )
+    if document_type == "grading_rubric" and not classroom_context.get("source_exam_paper"):
+        raise HTTPException(409, "生成评分细则前，请先关联具体试卷或题目附件，例如上传课程考核试卷、选择已解析试卷材料，或选择已生成作业题目。")
+
+    file_texts = [
+        {"name": item.get("title") or f"attachment-{index + 1}", "content": item.get("content") or ""}
+        for index, item in enumerate(attachments)
+        if str(item.get("content") or "").strip()
+    ]
+    ai_used = True
+    try:
+        raw_response = await _call_ai_chat(
+            _build_final_material_ai_system_prompt(document_type),
+            _build_final_material_ai_user_prompt(
+                document_type=document_type,
+                classroom_context=classroom_context,
+                prompt=prompt,
+                examples=[],
+            ),
+            capability="thinking",
+            response_format="json",
+            file_texts=file_texts,
+            task_type="material_final_manage_generate",
+            task_label="materials:final-manage-generate",
+            timeout=300.0,
+        )
+        raw_result = raw_response if isinstance(raw_response, dict) else {}
+        if not raw_result:
+            raise HTTPException(500, "AI 未返回有效 JSON")
+    except Exception as exc:
+        ai_used = False
+        raw_result = build_final_material_generation_seed(
+            document_type=document_type,
+            classroom_context=classroom_context,
+            prompt=prompt,
+        )
+        warning = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        raw_result.setdefault("warnings", [])
+        if isinstance(raw_result["warnings"], list):
+            raw_result["warnings"].append(f"AI 生成不可用，已使用本地草稿模板：{warning}")
+
+    extraction = MaterialExtraction(
+        text=str(raw_result.get("content_markdown") or ""),
+        method="ai_manage_generate" if ai_used else "local_generation_seed",
+        source_kind="ai_generated" if ai_used else "local_generated",
+        warnings=[],
+        quality={"usable": True},
+    )
+    parse_result = normalize_ai_parse_result(
+        raw_result,
+        original_name=f"{type_meta['label']}-管理中心生成.json",
+        type_meta=type_meta,
+        extraction=extraction,
+        extra_warnings=[],
+        ai_used=ai_used,
+    )
+    parse_result.export_payload = normalize_final_material_payload(
+        document_type=document_type,
+        metadata=parse_result.metadata,
+        content_markdown=parse_result.content_markdown,
+        tables=parse_result.tables,
+        export_payload=parse_result.export_payload,
+        classroom_context=classroom_context,
+    )
+    parse_result.metadata.update(parse_result.export_payload.get("fields") or {})
+    parse_result.parsed_payload["metadata"] = parse_result.metadata
+    parse_result.parsed_payload["export_payload"] = parse_result.export_payload
+    task = await _create_generated_final_material_library_package(
+        parent_id=parent_id,
+        parse_result=parse_result,
+        user=user,
+    )
+    material = task.get("package_item") or task.get("parsed_item")
+    viewer_item = task.get("parsed_item") or material
+    return {
+        "status": "success",
+        "message": f"{'AI' if ai_used else '本地草稿'}已按模板生成{type_meta['label']}，并保存到材料库。",
+        "material": material,
+        "task": task,
+        "viewer_url": f"/materials/view/{viewer_item['id']}" if viewer_item else "",
+        "attachment_count": len(attachments),
+        "ai_used": ai_used,
+    }
 
 
 async def _create_generated_markdown_material(
@@ -3037,6 +3219,64 @@ def _load_final_material_classroom_context(conn, class_offering_id: int, user: d
     }
 
 
+def _load_latest_final_material_record_for_classroom(
+    conn,
+    *,
+    class_offering_id: int,
+    teacher_id: int,
+    document_type: str,
+):
+    return conn.execute(
+        """
+        SELECT r.*
+        FROM material_ai_import_records r
+        WHERE r.teacher_id = ?
+          AND r.document_group = 'final_material'
+          AND r.document_type = ?
+          AND r.parse_status = 'completed'
+          AND EXISTS (
+                SELECT 1
+                FROM course_material_assignments a
+                WHERE a.class_offering_id = ?
+                  AND a.material_id IN (
+                        COALESCE(r.package_material_id, -1),
+                        COALESCE(r.parsed_material_id, -1),
+                        COALESCE(r.source_material_id, -1)
+                  )
+          )
+        ORDER BY r.updated_at DESC, r.id DESC
+        LIMIT 1
+        """,
+        (int(teacher_id), str(document_type or "").strip(), int(class_offering_id)),
+    ).fetchone()
+
+
+def _final_material_record_context(record) -> dict[str, Any]:
+    payload = _build_ai_import_payload_from_record(record)
+    export_payload = _parse_json_object(payload.get("export_payload")) or _parse_json_object(record["export_payload_json"])
+    fields = _parse_json_object(export_payload.get("fields")) or _parse_json_object(payload.get("metadata"))
+    structured = _parse_json_object(export_payload.get("structured"))
+    paper_sections = structured.get("paper_sections") if isinstance(structured.get("paper_sections"), list) else []
+    title = (
+        fields.get("title")
+        or fields.get("course_name")
+        or record["document_type_label"]
+        or final_material_label(record["document_type"])
+    )
+    content_markdown = str(payload.get("content_markdown") or record["content_markdown"] or "")
+    return {
+        "record_id": int(record["id"]),
+        "document_type": record["document_type"] or "",
+        "document_type_label": record["document_type_label"] or "",
+        "title": title,
+        "updated_at": record["updated_at"] or "",
+        "fields": fields,
+        "structured": structured,
+        "paper_sections": paper_sections,
+        "content_markdown": content_markdown[:18000],
+    }
+
+
 def _load_final_material_examples(conn, *, teacher_id: int, document_type: str, course_name: str, limit: int = 2) -> list[dict[str, str]]:
     rows = conn.execute(
         """
@@ -3091,6 +3331,25 @@ def _build_final_material_ai_system_prompt(document_type: str) -> str:
             "6. 命题完成后将该表与评分细则（电子版及纸质版）交到二级学院（部），并装入试卷袋存档。"
             "content_markdown 只写模板字段摘要和考核项目表，不要添加模板之外的新段落。"
         )
+    if str(document_type or "").strip() == "grading_rubric":
+        return (
+            "你是广西外国语学院课程考核评分细则模板填写助手。你的任务不是自由撰写材料，而是根据已存在的课程考核试卷生成固定模板的数据。"
+            "必须严格返回 JSON 对象，不要 Markdown 代码块。"
+            "JSON 必须包含 metadata、content_markdown、tables、warnings、export_payload。"
+            "export_payload.template_key 必须为 grading_rubric，document_group 必须为 final_material，document_type 必须为 grading_rubric。"
+            "metadata 和 export_payload.fields 必须包含 school、course_name、class_name、teacher_name、examiner_name、reviewer_name、"
+            "academic_year、semester、date、assessment_type、assessment_mode、assessment_mode_label、assessment_method、total_score、"
+            "source_exam_paper_record_id、source_exam_paper_title。"
+            "评分细则必须依赖课堂上下文里的 source_exam_paper，逐题对应试卷 paper_sections 或试题正文；不得脱离试卷另起评分体系。"
+            "export_payload.structured.rubric_items 必须是数组，每项包含 title、score、criteria；criteria 每项包含 score、text。"
+            "rubric_items 分值合计必须为100，并尽量与试卷题目/任务的分值一致。"
+            "content_markdown 必须包含：通用扣分项与给分原则、按试卷顺序展开的各大题/任务评分标准、例外情况、截图或提交材料要求。"
+            "评分标准要能被教师直接用于批改，不能只写泛泛建议；如果试卷没有足够细节，warnings 中说明需要教师补充。"
+            "export_payload.structured.notes 必须原样包含：注：；1．课程名称必须与教学计划上的名称一致。；"
+            "2．命题教师：务必输入命题教师名字，打印纸质版后再手写签名；系（教研室）主任审核签字：须手写签名。；"
+            "3．该表文字部分均用五号宋体，使用A4纸双面打印。；"
+            "4．命题完成后将该表与命题计划表（电子版及纸质版）交到二级学院（部），并装入试卷袋存档。"
+        )
     return (
         f"你是一名熟悉广西外国语学院期末材料格式的教务文档助手，正在生成《{label}》。"
         "请严格返回 JSON 对象，不要 Markdown 代码块。"
@@ -3120,6 +3379,18 @@ def _build_final_material_ai_user_prompt(
                 f"课堂与教务上下文 JSON：\n{json.dumps(classroom_context, ensure_ascii=False, indent=2)}",
                 f"教师补充要求：\n{prompt.strip() or '无'}",
                 "历史材料片段仅用于学习考核项目拆分粒度，不可覆盖本课堂字段：\n"
+                + (json.dumps(examples, ensure_ascii=False, indent=2) if examples else "暂无历史材料。"),
+            ]
+        )
+    if str(document_type or "").strip() == "grading_rubric":
+        return "\n\n".join(
+            [
+                "请根据课堂信息和已生成的课程考核试卷，生成《广西外国语学院课程考核评分细则》的结构化模板数据。",
+                "固定模板要求：标题为“广西外国语学院课程考核评分细则”；学年学期行由导出模板渲染下划线；基础信息表包含课程名称、专业年级班级、考核形式、命题日期、命题教师、系主任审核签字；正文标题为“评分细则”，正文放在单列表格框内；表后注释必须原样保留。",
+                "业务要求：评分细则必须先对应具体试卷。请按 source_exam_paper 中的 paper_sections/试题正文逐题给出评分标准、分值、扣分项、例外情况和截图/提交物要求。",
+                f"课堂、教务与来源试卷上下文 JSON：\n{json.dumps(classroom_context, ensure_ascii=False, indent=2)}",
+                f"教师补充要求：\n{prompt.strip() or '无'}",
+                "历史评分细则片段仅用于学习表达粒度，不可覆盖本课堂字段和本次来源试卷：\n"
                 + (json.dumps(examples, ensure_ascii=False, indent=2) if examples else "暂无历史材料。"),
             ]
         )
@@ -3329,6 +3600,114 @@ async def _create_generated_final_material_package(
             """,
             (package_id, int(class_offering_id), user["id"], now),
         )
+        refresh_root_git_metadata(conn, package_root_id)
+        conn.commit()
+        record = conn.execute(
+            "SELECT * FROM material_ai_import_records WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+        return _serialize_material_ai_import_task(conn, record, user)
+
+
+async def _create_generated_final_material_library_package(
+    *,
+    parent_id: int | None,
+    parse_result,
+    user: dict,
+) -> dict:
+    readme_content = build_import_readme(result=parse_result, original_name=f"{parse_result.document_type_label}.md")
+    readme_bytes = readme_content.encode("utf-8")
+    readme_hash = hashlib.sha256(readme_bytes).hexdigest()
+    await _write_material_file(readme_hash, readme_bytes)
+
+    readme_profile = infer_material_profile("readme.md", "text/markdown")
+    parse_payload = _build_material_ai_parse_payload(parse_result)
+    parse_payload_json = json.dumps(parse_payload, ensure_ascii=False)
+    metadata_json = json.dumps(parse_result.metadata, ensure_ascii=False)
+    export_payload_json = json.dumps(parse_result.export_payload, ensure_ascii=False)
+    warnings_json = json.dumps(parse_result.warnings, ensure_ascii=False)
+    content_quality_json = json.dumps(parse_result.content_quality, ensure_ascii=False)
+
+    with get_db_connection() as conn:
+        base_parent = None
+        base_prefix = ""
+        inherited_root_id = None
+        if parent_id is not None:
+            base_parent = ensure_teacher_material_owner(conn, parent_id, user["id"])
+            if base_parent["node_type"] != "folder":
+                raise HTTPException(400, "只能生成到文件夹中")
+            base_prefix = str(base_parent["material_path"])
+            inherited_root_id = int(base_parent["root_id"])
+
+        owner_scope = load_teacher_org_scope(conn, user["id"])
+        now = datetime.now().isoformat()
+        course_name = str(parse_result.metadata.get("course_name") or "").strip()
+        package_base_name = f"AI生成-{parse_result.document_type_label}-{course_name or '期末材料'}"
+        package_name = make_unique_material_name(conn, user["id"], parent_id, package_base_name)
+        package_path = normalize_material_path(f"{base_prefix}/{package_name}" if base_prefix else package_name)
+        package_id, package_root_id = _insert_material_folder_row(
+            conn,
+            user=user,
+            name=package_name,
+            material_path=package_path,
+            parent_id=base_parent["id"] if base_parent else None,
+            inherited_root_id=inherited_root_id,
+            owner_scope=owner_scope,
+            now=now,
+        )
+        parsed_name = "readme.md"
+        parsed_path = normalize_material_path(f"{package_path}/{parsed_name}")
+        parsed_id = _insert_material_file_row(
+            conn,
+            user=user,
+            name=parsed_name,
+            material_path=parsed_path,
+            parent_id=package_id,
+            root_id=package_root_id,
+            file_profile=readme_profile,
+            file_hash=readme_hash,
+            file_size=len(readme_bytes),
+            owner_scope=owner_scope,
+            now=now,
+            ai_parse_status="completed",
+            ai_parse_result_json=parse_payload_json,
+        )
+        cursor = conn.execute(
+            """
+            INSERT INTO material_ai_import_records
+            (teacher_id, package_material_id, source_material_id, parsed_material_id,
+             parent_material_id, document_group, document_type, document_type_label,
+             parse_status, parse_mode, extraction_method, source_file_name,
+             source_file_hash, source_file_size, source_mime_type, metadata_json, content_markdown,
+             parsed_payload_json, export_payload_json, warnings_json, content_quality_status,
+             content_quality_json, error_message, created_at, updated_at, completed_at)
+            VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, '', 0, 'application/json',
+                    ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)
+            """,
+            (
+                user["id"],
+                package_id,
+                parsed_id,
+                base_parent["id"] if base_parent else None,
+                parse_result.document_group,
+                parse_result.document_type,
+                parse_result.document_type_label,
+                "ai_generated" if parse_result.ai_used else "local_fallback",
+                parse_result.extraction_method,
+                f"{parse_result.document_type_label}-{course_name or '期末材料'}.json",
+                metadata_json,
+                parse_result.content_markdown,
+                parse_payload_json,
+                export_payload_json,
+                warnings_json,
+                parse_result.content_quality.get("status", "ok"),
+                content_quality_json,
+                now,
+                now,
+                now,
+            ),
+        )
+        record_id = int(cursor.lastrowid)
         refresh_root_git_metadata(conn, package_root_id)
         conn.commit()
         record = conn.execute(
@@ -4565,6 +4944,16 @@ async def generate_classroom_final_material(
                 classroom_context["assessment_mode_label"] = "笔试考核" if assessment_mode == "written" else "非笔试考核"
             if assessment_method:
                 classroom_context["assessment_method"] = assessment_method
+        elif document_type == "grading_rubric":
+            exam_paper_record = _load_latest_final_material_record_for_classroom(
+                conn,
+                class_offering_id=class_offering_id,
+                teacher_id=user["id"],
+                document_type="exam_paper",
+            )
+            if not exam_paper_record:
+                raise HTTPException(409, "请先在本课堂导入或生成“课程考核试卷”，再根据具体试题生成评分细则。")
+            classroom_context["source_exam_paper"] = _final_material_record_context(exam_paper_record)
         if payload.parent_id is not None:
             parent = ensure_teacher_material_owner(conn, payload.parent_id, user["id"])
             if parent["node_type"] != "folder":

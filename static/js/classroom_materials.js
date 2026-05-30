@@ -59,6 +59,7 @@ function refs() {
         finalMaterialModal: document.getElementById('classroom-final-material-modal'),
         finalMaterialType: document.getElementById('classroom-final-material-type'),
         assessmentPlanOptions: document.getElementById('classroom-assessment-plan-options'),
+        gradingRubricOptions: document.getElementById('classroom-grading-rubric-options'),
         finalMaterialAssessmentMode: document.getElementById('classroom-final-material-assessment-mode'),
         finalMaterialAssessmentMethod: document.getElementById('classroom-final-material-assessment-method'),
         finalMaterialPrompt: document.getElementById('classroom-final-material-prompt'),
@@ -234,6 +235,7 @@ function renderFields(fields = {}) {
         assessment_type: '考核类型',
         assessment_mode_label: '笔试/非笔试',
         assessment_method: '考核形式',
+        source_exam_paper_title: '来源试卷',
         exam_duration: '考试时间',
         total_score: '总分',
         date: '日期',
@@ -420,12 +422,26 @@ async function openMaterialDetail(materialId) {
 
 function updateFinalMaterialTemplateOptions() {
     const dom = refs();
-    const isAssessmentPlan = dom.finalMaterialType?.value === 'assessment_plan';
+    const selectedType = dom.finalMaterialType?.value || '';
+    const isAssessmentPlan = selectedType === 'assessment_plan';
+    const isGradingRubric = selectedType === 'grading_rubric';
     if (dom.assessmentPlanOptions) {
         dom.assessmentPlanOptions.hidden = !isAssessmentPlan;
     }
+    if (dom.gradingRubricOptions) {
+        dom.gradingRubricOptions.hidden = !isGradingRubric;
+    }
     if (isAssessmentPlan && dom.finalMaterialAssessmentMethod && !dom.finalMaterialAssessmentMethod.value.trim()) {
         dom.finalMaterialAssessmentMethod.value = dom.finalMaterialAssessmentMode?.value === 'written' ? '闭卷笔试' : '机试';
+    }
+    if (dom.finalMaterialPrompt) {
+        if (isGradingRubric) {
+            dom.finalMaterialPrompt.placeholder = '例如：评分时突出脚本可执行性、截图编号一致性和例外情况；每个任务写清楚可给一半分的情形。';
+        } else if (isAssessmentPlan) {
+            dom.finalMaterialPrompt.placeholder = '例如：按机试方式拆分 Linux 服务部署、数据库授权、脚本备份等考核技能，分值合计100。';
+        } else {
+            dom.finalMaterialPrompt.placeholder = '例如：围绕本课堂的 Linux 服务部署、数据库授权、脚本备份设计机试任务，难度适中，适合专升本班级。';
+        }
     }
 }
 

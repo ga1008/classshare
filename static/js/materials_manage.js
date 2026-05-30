@@ -200,6 +200,8 @@ const refs = {
     aiImportSubmitBtn: document.getElementById('materials-ai-import-submit-btn'),
     aiGenerateOpenBtn: document.getElementById('materials-ai-generate-open-btn'),
     aiGenerateModal: document.getElementById('materials-ai-generate-modal'),
+    aiGenerateGroup: document.getElementById('materials-ai-generate-group'),
+    aiGenerateType: document.getElementById('materials-ai-generate-type'),
     aiGeneratePrompt: document.getElementById('materials-ai-generate-prompt'),
     aiGenerateFileInput: document.getElementById('materials-ai-generate-file-input'),
     aiGenerateUploadBtn: document.getElementById('materials-ai-generate-upload-btn'),
@@ -550,6 +552,7 @@ function renderDetail(detail) {
 
     const previewUrl = getMaterialPreviewUrl(detail);
     const optimizedUrl = detail.has_optimized_version ? `/materials/view/${detail.id}?variant=optimized` : '';
+    const exportUrl = detail.ai_import_record?.export_url || '';
     const aiSummary = detail.ai_parse_result?.summary || '尚未执行 AI 解析。';
     const assignmentCount = Array.isArray(detail.assignments) ? detail.assignments.length : 0;
     const canManage = detail.can_manage !== false;
@@ -605,6 +608,7 @@ function renderDetail(detail) {
                     <div class="materials-detail-actions">
                         ${previewUrl ? `<a href="${previewUrl}" class="btn btn-primary" target="_blank" rel="noopener">${previewLabel}</a>` : ''}
                         ${optimizedUrl ? `<a href="${optimizedUrl}" class="btn btn-outline" target="_blank" rel="noopener">查看优化稿</a>` : ''}
+                        ${exportUrl ? `<a href="${exportUrl}" class="btn btn-outline">导出Word</a>` : ''}
                         ${detail.node_type === 'file' ? `<a href="/materials/download/${detail.id}" class="btn btn-outline">下载</a>` : ''}
                         ${isGitRepository(detail) && canManage ? '<button type="button" class="btn btn-outline" data-detail-action="repository">仓库</button>' : ''}
                         <button type="button" class="btn btn-outline" data-detail-action="assign" ${config.canAssign ? '' : 'disabled'}>分配课堂</button>
@@ -1241,10 +1245,45 @@ function resetAiGenerateState() {
     state.aiGenerate.materialCandidates = [];
     state.aiGenerate.assignmentCandidates = [];
     if (refs.aiGenerateFileInput) refs.aiGenerateFileInput.value = '';
+    if (refs.aiGenerateGroup) refs.aiGenerateGroup.value = 'teaching_material';
+    updateAiGenerateTypeOptions();
     if (refs.aiGeneratePrompt) refs.aiGeneratePrompt.value = '';
     if (refs.aiGenerateMaterialQuery) refs.aiGenerateMaterialQuery.value = '';
     if (refs.aiGenerateAssignmentQuery) refs.aiGenerateAssignmentQuery.value = '';
     setAiGenerateStatus('', 'info');
+}
+
+function updateAiGenerateTypeOptions() {
+    if (!refs.aiGenerateGroup || !refs.aiGenerateType) return;
+    const group = refs.aiGenerateGroup.value || 'teaching_material';
+    let firstVisible = '';
+    Array.from(refs.aiGenerateType.options || []).forEach((option) => {
+        const visible = (option.dataset.group || 'teaching_material') === group;
+        option.hidden = !visible;
+        option.disabled = !visible;
+        if (visible && !firstVisible) {
+            firstVisible = option.value;
+        }
+    });
+    const selected = refs.aiGenerateType.selectedOptions?.[0];
+    if (!selected || selected.hidden || selected.disabled) {
+        refs.aiGenerateType.value = firstVisible;
+    }
+    updateAiGeneratePromptPlaceholder();
+}
+
+function updateAiGeneratePromptPlaceholder() {
+    if (!refs.aiGeneratePrompt || !refs.aiGenerateType) return;
+    const type = refs.aiGenerateType.value || 'teaching_document';
+    if (type === 'grading_rubric') {
+        refs.aiGeneratePrompt.placeholder = '例如：根据关联试卷逐题生成评分细则，写清每题给分点、扣分项、例外情况和截图要求。';
+    } else if (type === 'assessment_plan') {
+        refs.aiGeneratePrompt.placeholder = '例如：按机试/项目实操拆分考核技能与分值，补齐课程、班级、命题教师等字段。';
+    } else if (type === 'exam_paper') {
+        refs.aiGeneratePrompt.placeholder = '例如：围绕课程核心能力生成一份期末机试试卷，包含任务、截图和提交要求，分值合计100。';
+    } else {
+        refs.aiGeneratePrompt.placeholder = '例如：根据这些作业题目生成一份期末复习提纲，包含知识点、易错点和课堂练习安排。';
+    }
 }
 
 function renderAiGenerateSelected() {
@@ -1449,6 +1488,8 @@ async function submitAiGenerate() {
     }
     const formData = new FormData();
     formData.append('prompt', prompt);
+    formData.append('document_group', refs.aiGenerateGroup?.value || 'teaching_material');
+    formData.append('document_type', refs.aiGenerateType?.value || 'teaching_document');
     formData.append('existing_material_ids', JSON.stringify(Array.from(state.aiGenerate.selectedMaterials.keys())));
     formData.append('assignment_ids', JSON.stringify(Array.from(state.aiGenerate.selectedAssignments.keys())));
     state.aiGenerate.files.forEach((entry) => {
@@ -2364,6 +2405,14 @@ function bindEvents() {
 
     refs.aiGenerateMaterialQuery?.addEventListener('input', () => triggerAiGenerateCandidateSearch('material'));
     refs.aiGenerateAssignmentQuery?.addEventListener('input', () => triggerAiGenerateCandidateSearch('assignment'));
+
+    refs.aiGenerateGroup?.addEventListener('change', () => {
+        updateAiGenerateTypeOptions();
+    });
+
+    refs.aiGenerateType?.addEventListener('change', () => {
+        updateAiGeneratePromptPlaceholder();
+    });
 
     refs.aiGenerateSubmitBtn?.addEventListener('click', () => {
         submitAiGenerate().catch((error) => {

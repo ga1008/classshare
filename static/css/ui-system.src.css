@@ -14262,6 +14262,29 @@ body.has-chat-image-preview-open {
     display: none;
 }
 
+.classroom-final-material-template-options--notice {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+    border-color: rgba(217, 119, 6, 0.24);
+    background: rgba(255, 251, 235, 0.78);
+    color: #92400e;
+}
+
+.classroom-final-material-template-options--notice strong,
+.classroom-final-material-template-options--notice span {
+    overflow-wrap: anywhere;
+}
+
+.classroom-final-material-template-options--notice strong {
+    color: #78350f;
+}
+
+.classroom-final-material-template-options--notice span {
+    color: #92400e;
+    font-size: 0.86rem;
+    line-height: 1.55;
+}
+
 .classroom-material-inline-actions,
 .classroom-material-detail-footer {
     display: flex;

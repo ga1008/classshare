@@ -8,6 +8,7 @@ from typing import Any
 from .material_final_document_service import (
     ASSESSMENT_PLAN_NOTES,
     FINAL_MATERIAL_TYPES,
+    SCORING_RUBRIC_NOTES,
     final_material_label,
     normalize_final_material_payload,
 )
@@ -190,6 +191,8 @@ def _build_final_material_docx_export(payload: dict[str, Any], *, title: str, te
 
     if template_key == "assessment_plan":
         _add_assessment_plan_title_block(document, fields)
+    elif template_key == "grading_rubric":
+        _add_grading_rubric_title_block(document, fields)
     else:
         _add_final_title_block(document, template_key, fields)
     if template_key == "assessment_plan":
@@ -201,7 +204,7 @@ def _build_final_material_docx_export(payload: dict[str, Any], *, title: str, te
 
     footer = document.sections[0].footer.paragraphs[0]
     footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    if template_key == "assessment_plan":
+    if template_key in {"assessment_plan", "grading_rubric"}:
         _add_docx_field(footer, "PAGE", size=9, color="000000")
         buffer = io.BytesIO()
         document.save(buffer)
@@ -267,6 +270,27 @@ def _add_assessment_plan_title_block(document: Any, fields: dict[str, Any]) -> N
     _set_run_songti(subtitle.add_run(f"（{_assessment_mode_label(fields)}）"), 12)
 
 
+def _add_grading_rubric_title_block(document: Any, fields: dict[str, Any]) -> None:
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Pt
+
+    title = document.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title.paragraph_format.space_before = Pt(34)
+    title.paragraph_format.space_after = Pt(12)
+    _set_run_songti(title.add_run("广西外国语学院课程考核评分细则"), 18, bold=True)
+
+    period = document.add_paragraph()
+    period.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    period.paragraph_format.space_after = Pt(4)
+    _add_assessment_period_runs(period, fields)
+
+    subtitle = document.add_paragraph()
+    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    subtitle.paragraph_format.space_after = Pt(2)
+    _set_run_songti(subtitle.add_run(f"（{_assessment_mode_label(fields)}）"), 12)
+
+
 def _add_assessment_plan_export_body(document: Any, fields: dict[str, Any], structured: dict[str, Any]) -> None:
     from docx.shared import Pt
 
@@ -280,41 +304,27 @@ def _add_assessment_plan_export_body(document: Any, fields: dict[str, Any], stru
 
 
 def _add_grading_rubric_export_body(document: Any, fields: dict[str, Any], structured: dict[str, Any]) -> None:
+    from docx.shared import Pt
+
     _add_rubric_meta_table(document, fields)
     heading = document.add_paragraph()
+    heading.paragraph_format.space_before = Pt(18)
+    heading.paragraph_format.space_after = Pt(4)
     _set_run_songti(heading.add_run("评分细则"), 10.5, bold=True)
-    body_table = document.add_table(rows=1, cols=1)
-    body_table.style = "Table Grid"
-    body_table.alignment = 1
-    cell = body_table.rows[0].cells[0]
-    _set_cell_margins(cell, top=90, bottom=90, left=120, right=120)
-    cell.text = ""
+    body_table, cell = _add_rubric_body_table(document)
     rubric_items = structured.get("rubric_items") if isinstance(structured.get("rubric_items"), list) else []
-    if rubric_items:
-        for item in rubric_items:
-            p = cell.add_paragraph()
-            _set_run_songti(p.add_run(str(item.get("title") or "评分项目")), 10.5, bold=True)
-            for criterion in item.get("criteria") or []:
-                score = str(criterion.get("score") or "").strip()
-                text = str(criterion.get("text") or "").strip()
-                chunks = _split_rubric_paragraphs(f"【{score}分】{text}" if score else text)
-                for chunk in chunks:
-                    cp = cell.add_paragraph()
-                    cp.paragraph_format.left_indent = _cm(0.35)
-                    cp.paragraph_format.line_spacing = 1.18
-                    _set_run_songti(
-                        cp.add_run(chunk),
-                        10.5,
-                        bold=bool(re.match(r"^[一二三四五六七八九十]+[、.．]|任务\s*\d+|[0-9](?:\.[0-9])?\s", chunk)),
-                    )
+    body_markdown = str(structured.get("rubric_body_markdown") or "").strip()
+    if body_markdown:
+        _add_rubric_body_text_to_cell(cell, body_markdown)
+    elif rubric_items:
+        _add_rubric_items_to_cell(cell, rubric_items)
     else:
         for section in structured.get("sections") or []:
             title = str(section.get("title") or "").strip()
             content = str(section.get("content") or "").strip()
             if title:
-                p = cell.add_paragraph()
-                _set_run_songti(p.add_run(title), 10.5, bold=True)
-            _add_text_blocks_to_cell(cell, content)
+                _add_rubric_line_to_cell(cell, title, force_bold=True)
+            _add_rubric_body_text_to_cell(cell, content)
     _add_rubric_notes(document)
 
 
@@ -342,7 +352,7 @@ def _add_plan_meta_table(document: Any, fields: dict[str, Any]) -> None:
     rows = [
         ["课程名称", _field(fields, "course_name"), "", ""],
         ["专业年级班级", _field(fields, "class_name"), "考核类型", _checked_pair("考查", "考试", _field(fields, "assessment_type") or "考试")],
-        ["命题教师", _signature_value(fields, "examiner_name", "teacher_name", signature_key="examiner_signature"), "系（教研室）主任审核签字", _signature_value(fields, "reviewer_name", signature_key="reviewer_signature")],
+        ["命题教师", _signature_value(fields, "examiner_name", "teacher_name", signature_key="examiner_signature"), "系（教研室）主任\n审核签字", _signature_value(fields, "reviewer_name", signature_key="reviewer_signature")],
         ["命题日期", _field(fields, "date"), "", ""],
     ]
     table = document.add_table(rows=len(rows), cols=4)
@@ -364,23 +374,27 @@ def _add_plan_meta_table(document: Any, fields: dict[str, Any]) -> None:
 
 
 def _add_rubric_meta_table(document: Any, fields: dict[str, Any]) -> None:
+    from docx.enum.table import WD_ROW_HEIGHT_RULE
+
     rows = [
         ["课程名称", _field(fields, "course_name"), "", ""],
         ["专业年级班级", _field(fields, "class_name"), "", ""],
-        ["考核形式", _field(fields, "assessment_method") or _field(fields, "assessment_type") or "考试", "命题日期", _field(fields, "date")],
-        ["命题教师", _field(fields, "examiner_name", "teacher_name"), "系（教研室）主任审核签字", _field(fields, "reviewer_name")],
+        ["考核形式", _field(fields, "assessment_type") or _field(fields, "assessment_method") or "考试", "命题日期", _field(fields, "date")],
+        ["命题教师", _signature_value(fields, "examiner_name", "teacher_name", signature_key="examiner_signature"), "系（教研室）主任\n审核签字", _signature_value(fields, "reviewer_name", signature_key="reviewer_signature")],
     ]
     table = document.add_table(rows=len(rows), cols=4)
     table.style = "Table Grid"
     table.alignment = 1
-    widths = [3.2, 4.0, 3.0, 4.8]
+    table.autofit = False
+    _set_table_borders(table)
+    widths = [3.75, 4.75, 3.65, 5.25]
     for row_index, row_values in enumerate(rows):
         row = table.rows[row_index]
-        row.height_rule = 1
+        row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
         row.height = _cm(0.9)
         for col_index, value in enumerate(row_values):
             cell = row.cells[col_index]
-            _set_cell_text(cell, value, bold=col_index in {0, 2}, align=1)
+            _set_cell_text(cell, value, bold=True, align=1)
             _set_cell_width(cell, widths[col_index])
         if row_index in {0, 1}:
             row.cells[1].merge(row.cells[3])
@@ -491,15 +505,11 @@ def _add_plan_notes(document: Any) -> None:
 
 
 def _add_rubric_notes(document: Any) -> None:
-    notes = [
-        "注：",
-        "1．课程名称必须与教学计划上的名称一致。",
-        "2. 命题教师：务必输入命题教师名字，打印纸质版后再手写签名；系（教研室）主任审核签字：须手写签名。",
-        "3. 该表文字部分均用五号宋体，使用A4纸双面打印。",
-        "4. 命题完成后将该表与命题计划表（电子版及纸质版）交到二级学院（部），并装入试卷袋存档。",
-    ]
-    for line in notes:
+    for line in SCORING_RUBRIC_NOTES:
         p = document.add_paragraph()
+        p.paragraph_format.space_before = _pt(0)
+        p.paragraph_format.space_after = _pt(0)
+        p.paragraph_format.line_spacing = 1.08
         _set_run_songti(p.add_run(line), 10.5)
 
 
@@ -530,6 +540,82 @@ def _split_rubric_paragraphs(text: str) -> list[str]:
             if cleaned:
                 expanded.append(cleaned)
     return expanded or [raw]
+
+
+def _add_rubric_body_table(document: Any) -> tuple[Any, Any]:
+    table = document.add_table(rows=1, cols=1)
+    table.style = "Table Grid"
+    table.alignment = 1
+    table.autofit = False
+    _set_table_borders(table)
+    cell = table.rows[0].cells[0]
+    _set_cell_width(cell, 17.4)
+    _set_cell_margins(cell, top=92, bottom=92, left=132, right=132)
+    cell.text = ""
+    return table, cell
+
+
+def _add_rubric_body_text_to_cell(cell: Any, text: str) -> None:
+    for line in _rubric_body_lines(text):
+        _add_rubric_line_to_cell(cell, line)
+
+
+def _add_rubric_items_to_cell(cell: Any, rubric_items: list[dict[str, Any]]) -> None:
+    for item in rubric_items:
+        title = str(item.get("title") or "评分项目").strip()
+        score = str(item.get("score") or "").strip()
+        _add_rubric_line_to_cell(cell, title if not score or score in title else f"{title}（共{score}分）", force_bold=True)
+        for criterion in item.get("criteria") or []:
+            score_text = str(criterion.get("score") or "").strip()
+            text = str(criterion.get("text") or "").strip()
+            if not text and not score_text:
+                continue
+            _add_rubric_line_to_cell(cell, f"【{score_text}分】 {text}" if score_text else text)
+
+
+def _rubric_body_lines(text: str) -> list[str]:
+    lines: list[str] = []
+    for raw_line in str(text or "").replace("\r\n", "\n").replace("\r", "\n").splitlines():
+        cleaned = raw_line.strip()
+        if not cleaned:
+            lines.append("")
+            continue
+        cleaned = re.sub(r"^#{1,4}\s*", "", cleaned)
+        chunks = _split_rubric_paragraphs(cleaned)
+        lines.extend(chunks if chunks else [cleaned])
+    while lines and not lines[0]:
+        lines.pop(0)
+    while lines and not lines[-1]:
+        lines.pop()
+    return lines
+
+
+def _add_rubric_line_to_cell(cell: Any, line: str, *, force_bold: bool = False) -> None:
+    p = cell.add_paragraph()
+    text = str(line or "").strip()
+    if not text:
+        p.paragraph_format.space_after = _pt(3)
+        return
+    p.paragraph_format.space_before = _pt(0)
+    p.paragraph_format.space_after = _pt(2)
+    p.paragraph_format.line_spacing = 1.18
+    if re.match(r"^【\d+(?:\.\d+)?分】", text):
+        p.paragraph_format.left_indent = _cm(1.05)
+    elif re.match(r"^[（(]\d+[）)]", text):
+        p.paragraph_format.left_indent = _cm(0.65)
+    elif re.match(r"^\d+(?:\.\d+)?[\.、．]", text):
+        p.paragraph_format.left_indent = _cm(0.35)
+    else:
+        p.paragraph_format.left_indent = _cm(0)
+    bold = force_bold or bool(
+        re.match(r"^[一二三四五六七八九十]+[、.．]|任务\s*\d+[:：]?|.*扣分项与给分原则$", text)
+    )
+    match = re.match(r"^(【\d+(?:\.\d+)?分】)(.*)$", text)
+    if match:
+        _set_run_songti(p.add_run(match.group(1)), 10.5, bold=True)
+        _set_run_songti(p.add_run(match.group(2)), 10.5, bold=bold)
+    else:
+        _set_run_songti(p.add_run(text), 10.5, bold=bold)
 
 
 def _format_period_line(fields: dict[str, Any]) -> str:

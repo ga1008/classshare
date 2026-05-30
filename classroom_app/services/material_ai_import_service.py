@@ -922,7 +922,7 @@ def _schema_hint(type_meta: dict[str, Any]) -> str:
         "teaching_document": "教学文档应抽取：标题、适用课程、章节/主题、知识点、操作步骤、课堂任务、附件或图片说明。",
         "syllabus": "教学大纲应抽取：课程基本信息、课程性质、目标、内容模块、学时分配、教学方法、考核方式、教材与参考资料。",
         "assessment_plan": "考核计划表应抽取：school, academic_year, semester, course_name, class_name, assessment_type(考查/考试), assessment_mode(non_written/written), assessment_mode_label(非笔试考核/笔试考核), assessment_method, assessment_items(assessment_form/content/score), total_score, examiner_name, examiner_signature, reviewer_name, reviewer_signature, date, notes；表后注释必须原样保留。",
-        "grading_rubric": "评分细则应抽取：rubric_items(title/score/criteria), deduction_points, screenshot_requirements, examiner_name, reviewer_name, date, total_score，正文不能丢失扣分例外情况。",
+        "grading_rubric": "评分细则应抽取：school, academic_year, semester, course_name, class_name, assessment_type(考查/考试), assessment_mode(non_written/written), assessment_mode_label(非笔试考核/笔试考核), assessment_method, examiner_name, examiner_signature, reviewer_name, reviewer_signature, date, source_exam_paper_title, rubric_items(title/score/criteria), deduction_points, screenshot_requirements, total_score, notes；正文不能丢失扣分原则、例外情况、截图/提交物要求，表后注释必须原样保留。",
         "exam_paper": "考核试卷应抽取：exam_flags, education_level, paper_type, exam_duration, score_table, paper_sections(title/score/content/tasks), student_fields, command_blocks, screenshot_requirements, total_score。",
         "final_teaching_summary": "教学工作总结应抽取：课程/班级/教师/日期、教学任务完成情况、考核与成绩分析、问题、改进建议。",
     }.get(key, "")
@@ -939,6 +939,12 @@ def _schema_hint(type_meta: dict[str, Any]) -> str:
                 "若考核类型为考查，assessment_mode 固定 non_written；若为考试但无法从原文判断笔试/非笔试，"
                 "保留识别到的原值并在 warnings 中提示教师确认。"
             )
+        if key == "grading_rubric":
+            final_schema += (
+                " 评分细则不是自由文档，必须按广西外国语学院课程考核评分细则模板填字段；"
+                "rubric_items 要尽量与试卷题目、任务、截图编号和分值一一对应；如果来源材料没有明确试卷题目，"
+                "保留原文评分正文并在 warnings 中提示教师先关联或补充课程考核试卷。"
+            )
     return f"{common}{specific}{final_schema}"
 
 
@@ -947,7 +953,7 @@ def _sample_knowledge(type_meta: dict[str, Any]) -> str:
     if key == "assessment_plan":
         return "样例特征：标题通常为“广西外国语学院课程考核计划表”，有学年学期、课程/班级/考核性质/教师/日期等表格字段，核心表格列为考核形式、考核技能或内容、分值。"
     if key == "grading_rubric":
-        return "样例特征：标题通常为“广西外国语学院课程考核评分细则”，前部为课程元数据表，后部为评分细则正文或表格，签名可能以图片覆盖在表格附近。"
+        return "样例特征：标题通常为“广西外国语学院课程考核评分细则”，有学年学期与“非笔试考核/笔试考核”标注，前部为课程名称、专业年级班级、考核形式、命题日期、命题教师、系主任审核签字等元数据表；正文为带边框的“评分细则”大文本框，按试卷大题、任务、截图编号和分值列出给分标准、扣分原则和例外情况；末尾有固定注释。"
     if key == "exam_paper":
         return "样例特征：标题通常为“广西外国语学院课程考核试卷”，包含密封线、学生信息栏、考核方式勾选、成绩表和分题正文。"
     if key == "lesson_plan":

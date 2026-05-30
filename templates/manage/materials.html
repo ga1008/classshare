@@ -210,6 +210,24 @@
                 <button class="modal-close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body materials-ai-generate-body">
+                <div class="materials-ai-import-grid">
+                    <label class="materials-form-field">
+                        <span>生成模板</span>
+                        <select id="materials-ai-generate-group" class="form-control">
+                            <option value="teaching_material">普通课程材料</option>
+                            <option value="final_material">期末归档材料</option>
+                        </select>
+                    </label>
+                    <label class="materials-form-field">
+                        <span>材料类型</span>
+                        <select id="materials-ai-generate-type" class="form-control">
+                            <option value="teaching_document" data-group="teaching_material">教学文档</option>
+                            <option value="exam_paper" data-group="final_material">课程考核试卷</option>
+                            <option value="assessment_plan" data-group="final_material">课程考核计划表</option>
+                            <option value="grading_rubric" data-group="final_material">评分细则</option>
+                        </select>
+                    </label>
+                </div>
                 <label class="materials-form-field materials-ai-generate-prompt-field">
                     <span>提示话语</span>
                     <textarea id="materials-ai-generate-prompt" class="form-control" rows="5" placeholder="例如：根据这些作业题目生成一份期末复习提纲，包含知识点、易错点和课堂练习安排。"></textarea>
