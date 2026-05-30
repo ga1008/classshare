@@ -6,7 +6,7 @@ import mimetypes
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence
 
 import aiofiles
 from fastapi import HTTPException, UploadFile
@@ -400,6 +400,8 @@ async def store_submission_files(
     submission_dir: Path,
     prepared_entries: Sequence[PreparedUploadEntry],
     allowed_file_types: Sequence[str],
+    *,
+    is_allowed_file: Callable[[PreparedUploadEntry], bool] | None = None,
 ) -> SubmissionStorageResult:
     result = SubmissionStorageResult()
     if not prepared_entries:
@@ -409,7 +411,12 @@ async def store_submission_files(
     normalized_allowed_types = normalize_allowed_file_types(list(allowed_file_types))
 
     for entry in prepared_entries:
-        if not is_allowed_submission_file(entry.relative_path, entry.content_type, normalized_allowed_types):
+        allowed = (
+            bool(is_allowed_file(entry))
+            if is_allowed_file is not None
+            else is_allowed_submission_file(entry.relative_path, entry.content_type, normalized_allowed_types)
+        )
+        if not allowed:
             await entry.file.close()
             result.dropped_files.append(
                 {

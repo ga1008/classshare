@@ -154,6 +154,47 @@ def _get_allowed_file_types(data: dict, assignment_row=None) -> list[str]:
     return []
 
 
+def _question_id_from_submission_relative_path(relative_path: str) -> str | None:
+    normalized = str(relative_path or "").replace("\\", "/").strip().strip("/")
+    if not normalized:
+        return None
+    parts = PurePosixPath(normalized).parts
+    if len(parts) >= 3 and parts[0] == "exam_question_files":
+        return str(parts[1] or "").strip() or None
+    return None
+
+
+def _allowed_file_types_for_submission_path(
+    relative_path: str,
+    assignment_allowed_file_types: list[str],
+    attachment_policies: dict[str, dict[str, Any]] | None,
+) -> list[str]:
+    question_id = _question_id_from_submission_relative_path(relative_path)
+    if question_id and attachment_policies:
+        policy = attachment_policies.get(question_id) or {}
+        policy_allowed = policy.get("allowed_file_types") or []
+        if policy_allowed:
+            return normalize_allowed_file_types(policy_allowed)
+    return normalize_allowed_file_types(assignment_allowed_file_types)
+
+
+def _is_allowed_assignment_submission_file(
+    relative_path: str,
+    content_type: str | None,
+    assignment_allowed_file_types: list[str],
+    attachment_policies: dict[str, dict[str, Any]] | None,
+) -> bool:
+    return is_allowed_submission_file(
+        relative_path,
+        content_type,
+        _allowed_file_types_for_submission_path(
+            relative_path,
+            assignment_allowed_file_types,
+            attachment_policies,
+        ),
+    )
+
+
 def _get_learning_stage_key(data: dict, *, class_offering_id: Any = None) -> str | None:
     raw_stage_key = data.get("learning_stage_key", data.get("stage_key"))
     try:
@@ -699,6 +740,7 @@ def _copy_submission_draft_files_to_staging(
     submission_dir: Path,
     existing_relative_paths: set[str],
     allowed_file_types: list[str],
+    attachment_policies: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[list[StoredSubmissionFile], int]:
     draft = _load_submission_draft(conn, str(assignment["id"]), int(student_pk_id))
     if not draft:
@@ -714,7 +756,12 @@ def _copy_submission_draft_files_to_staging(
         if path_key in existing_relative_paths:
             continue
         mime_type = str(row.get("mime_type") or "")
-        if not is_allowed_submission_file(relative_path, mime_type, allowed_file_types):
+        if not _is_allowed_assignment_submission_file(
+            relative_path,
+            mime_type,
+            allowed_file_types,
+            attachment_policies,
+        ):
             dropped_count += 1
             continue
         source_path = resolve_submission_file_path(str(row.get("stored_path") or "")) or Path(str(row.get("stored_path") or ""))
@@ -1029,11 +1076,17 @@ async def _save_submission_payload(
     answers_payload = _parse_answers_payload(answers_json)
     has_answer_content_before_storage = answers_have_content(answers_payload)
     allowed_file_types = decode_allowed_file_types_json(assignment.get("allowed_file_types_json"))
+    attachment_policies = _load_exam_attachment_policies(conn, assignment)
     student_pk_id = int(student["id"])
     draft = _load_submission_draft(conn, str(assignment["id"]), student_pk_id) if use_server_draft_files else None
     has_server_draft_files = bool(draft and _load_submission_draft_files(conn, int(draft["id"])))
     has_allowed_uploads = any(
-        is_allowed_submission_file(entry.relative_path, entry.content_type, allowed_file_types)
+        _is_allowed_assignment_submission_file(
+            entry.relative_path,
+            entry.content_type,
+            allowed_file_types,
+            attachment_policies,
+        )
         for entry in prepared_entries
     )
 
@@ -1050,7 +1103,17 @@ async def _save_submission_payload(
     is_replacement = bool(existing_submission)
 
     try:
-        storage_result = await store_submission_files(staging_dir, prepared_entries, allowed_file_types)
+        storage_result = await store_submission_files(
+            staging_dir,
+            prepared_entries,
+            allowed_file_types,
+            is_allowed_file=lambda entry: _is_allowed_assignment_submission_file(
+                entry.relative_path,
+                entry.content_type,
+                allowed_file_types,
+                attachment_policies,
+            ),
+        )
         if not storage_result.stored_files and not has_answer_content_before_storage:
             if not has_server_draft_files:
                 expected_types = summarize_allowed_file_types(allowed_file_types)
@@ -1067,6 +1130,7 @@ async def _save_submission_payload(
                 submission_dir=submission_dir,
                 existing_relative_paths=existing_paths,
                 allowed_file_types=allowed_file_types,
+                attachment_policies=attachment_policies,
             )
             storage_result.stored_files.extend(draft_files)
             storage_result.dropped_files.extend(
@@ -1082,7 +1146,7 @@ async def _save_submission_payload(
     try:
         _validate_exam_answer_attachment_policies(
             answers_payload,
-            _load_exam_attachment_policies(conn, assignment),
+            attachment_policies,
         )
     except Exception:
         delete_storage_tree(staging_dir)
@@ -2615,10 +2679,21 @@ async def save_assignment_draft(
 
         prepared_entries = _validate_upload_entries(upload_files, manifest)
         allowed_file_types = decode_allowed_file_types_json(assignment.get("allowed_file_types_json"))
+        attachment_policies = _load_exam_attachment_policies(conn, assignment)
         draft_dir = _build_submission_draft_storage_dir(assignment["course_id"], assignment["id"], int(user["id"]))
         staging_dir = draft_dir.with_name(f"{draft_dir.name}.__staging__{uuid.uuid4().hex}")
         try:
-            storage_result = await store_submission_files(staging_dir, prepared_entries, allowed_file_types)
+            storage_result = await store_submission_files(
+                staging_dir,
+                prepared_entries,
+                allowed_file_types,
+                is_allowed_file=lambda entry: _is_allowed_assignment_submission_file(
+                    entry.relative_path,
+                    entry.content_type,
+                    allowed_file_types,
+                    attachment_policies,
+                ),
+            )
 
             if storage_result.stored_files:
                 remaining_rows = conn.execute(
