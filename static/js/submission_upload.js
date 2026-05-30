@@ -89,6 +89,23 @@ function formatBytes(bytes) {
     return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function formatAllowedFileTypesLabel(allowedFileTypes) {
+    return allowedFileTypes.length ? allowedFileTypes.join(', ') : '任意类型';
+}
+
+function formatFileSampleSuffix(paths, maxCount = 3) {
+    const names = (paths || [])
+        .map((path) => {
+            const value = String(path || '').replace(/\\/g, '/').trim();
+            return value.split('/').filter(Boolean).pop() || value;
+        })
+        .filter(Boolean);
+    if (!names.length) return '';
+    const preview = names.slice(0, maxCount).join('、');
+    const remaining = names.length - maxCount;
+    return remaining > 0 ? `：${preview} 等 ${names.length} 个文件` : `：${preview}`;
+}
+
 function readFileEntry(entry, currentPath = '') {
     return new Promise((resolve, reject) => {
         entry.file(
@@ -283,35 +300,47 @@ export class SubmissionUploadManager {
         let oversizedCount = 0;
         let typeFilteredCount = 0;
         let totalOverCount = 0;
+        const skippedFiles = [];
+        const oversizedFiles = [];
+        const typeFilteredFiles = [];
+        const totalOverFiles = [];
 
         rawEntries.forEach((rawEntry) => {
             const file = rawEntry.file;
             if (!file) return;
+            const candidatePath = normalizeRelativePath(
+                rawEntry.relativePath || file.webkitRelativePath || file.name,
+                file.name,
+            );
 
             if (this.maxFiles && nextEntries.length >= this.maxFiles) {
                 totalOverCount++;
+                totalOverFiles.push(candidatePath);
                 return;
             }
 
             const normalizedPath = dedupeRelativePath(
-                normalizeRelativePath(rawEntry.relativePath || file.webkitRelativePath || file.name, file.name),
+                candidatePath,
                 usedPaths,
             );
 
             if (!matchesAllowedFileTypes(normalizedPath, file.type, this.allowedFileTypes)) {
                 typeFilteredCount++;
+                typeFilteredFiles.push(normalizedPath);
                 return;
             }
 
             // Per-file size check
             if (this.maxPerFileBytes && file.size > this.maxPerFileBytes) {
                 oversizedCount++;
+                oversizedFiles.push(normalizedPath);
                 return;
             }
 
             // Total size check
             if (this.maxBytes && totalBytes + file.size > this.maxBytes) {
                 skippedCount++;
+                skippedFiles.push(normalizedPath);
                 return;
             }
 
@@ -336,17 +365,18 @@ export class SubmissionUploadManager {
         // Show aggregated feedback instead of per-file toasts
         if (oversizedCount > 0) {
             const perFileMB = this.maxPerFileBytes ? (this.maxPerFileBytes / 1024 / 1024).toFixed(0) : '?';
-            this.notify(`${oversizedCount} 个文件超过单文件大小限制（${perFileMB}MB），已跳过`, 'warning');
+            this.notify(`${oversizedCount} 个文件超过单文件大小限制（${perFileMB}MB），已跳过${formatFileSampleSuffix(oversizedFiles)}。请压缩或拆分后重新上传。`, 'warning');
         }
         if (skippedCount > 0) {
             const totalMB = this.maxBytes ? (this.maxBytes / 1024 / 1024).toFixed(0) : '?';
-            this.notify(`${skippedCount} 个文件因总大小超过限制（${totalMB}MB）而跳过`, 'warning');
+            this.notify(`${skippedCount} 个文件因总大小超过限制（${totalMB}MB）而跳过${formatFileSampleSuffix(skippedFiles)}。请删除不必要文件或压缩后再上传。`, 'warning');
         }
         if (typeFilteredCount > 0) {
-            this.notify(`${typeFilteredCount} 个文件类型不符合要求，已跳过`, 'warning');
+            const allowedLabel = formatAllowedFileTypesLabel(this.allowedFileTypes);
+            this.notify(`${typeFilteredCount} 个文件类型不符合要求，已跳过${formatFileSampleSuffix(typeFilteredFiles)}。允许类型：${allowedLabel}。请转换格式后重新选择；若题目有单独附件要求，请上传到对应题目的附件区域。`, 'warning');
         }
         if (totalOverCount > 0) {
-            this.notify(`${totalOverCount} 个文件因数量超限而跳过（最多 ${this.maxFiles} 个）`, 'warning');
+            this.notify(`${totalOverCount} 个文件因数量超限而跳过${formatFileSampleSuffix(totalOverFiles)}。最多允许 ${this.maxFiles} 个文件，请删减后重新上传。`, 'warning');
         }
 
         this.entries = nextEntries;

@@ -25,6 +25,32 @@ function normalizeErrorMessage(rawMessage) {
     return message.length > 220 ? `${message.slice(0, 220)}...` : message;
 }
 
+function extractStructuredDetailMessage(detail) {
+    if (!detail || typeof detail !== 'object') return null;
+    const candidates = [
+        detail.message,
+        detail.error,
+        detail.reason,
+        detail.detail,
+    ];
+    for (const candidate of candidates) {
+        if (typeof candidate === 'string' && candidate.trim()) {
+            return candidate;
+        }
+    }
+    if (Array.isArray(detail.dropped_files) && detail.dropped_files.length > 0) {
+        const messages = detail.dropped_files
+            .map((item) => item && typeof item.message === 'string' ? item.message.trim() : '')
+            .filter(Boolean);
+        if (messages.length > 0) {
+            const preview = messages.slice(0, 3).join('；');
+            const remaining = messages.length - 3;
+            return remaining > 0 ? `${preview}；还有 ${remaining} 个文件也不符合要求。` : preview;
+        }
+    }
+    return null;
+}
+
 async function parseResponseData(response) {
     const contentType = response.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
@@ -35,6 +61,10 @@ async function parseResponseData(response) {
 
 function extractErrorMessage(response, data) {
     if (data && typeof data === 'object' && data.detail) {
+        const structuredMessage = extractStructuredDetailMessage(data.detail);
+        if (structuredMessage) {
+            return normalizeErrorMessage(structuredMessage);
+        }
         return normalizeErrorMessage(
             typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)
         );

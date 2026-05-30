@@ -1972,6 +1972,43 @@
         elements.saveStatus.innerHTML = text;
     }
 
+    function escapeStatusText(value) {
+        const div = document.createElement('div');
+        div.textContent = String(value ?? '');
+        return div.innerHTML;
+    }
+
+    function collectDroppedFileMessages(files) {
+        if (!Array.isArray(files) || files.length === 0) return '';
+        const messages = files
+            .map((item) => item && typeof item.message === 'string' ? item.message.trim() : '')
+            .filter(Boolean);
+        if (!messages.length) return '';
+        const preview = messages.slice(0, 3).join('；');
+        const remaining = messages.length - 3;
+        return remaining > 0 ? `${preview}；还有 ${remaining} 个文件也不符合要求。` : preview;
+    }
+
+    function collectUploadIssueMessage(source, fallback = '') {
+        if (!source) return fallback;
+        if (typeof source === 'string') return source || fallback;
+        if (source.detail) {
+            return collectUploadIssueMessage(source.detail, fallback);
+        }
+        if (typeof source.message === 'string' && source.message.trim()) {
+            return source.message.trim();
+        }
+        if (typeof source.dropped_file_message === 'string' && source.dropped_file_message.trim()) {
+            return source.dropped_file_message.trim();
+        }
+        const droppedMessage = collectDroppedFileMessages(source.dropped_files);
+        return droppedMessage || fallback;
+    }
+
+    function getApiFailureMessage(error, fallback) {
+        return collectUploadIssueMessage(error?.data, error?.message || fallback) || fallback;
+    }
+
     function buildAnswersListForDraft(extraAttachments = [], replaceQuestionIds = []) {
         const replaceSet = new Set((replaceQuestionIds || []).map(value => String(value)));
         const attachmentMap = new Map();
@@ -2175,8 +2212,9 @@
             }, 2000);
             return resp;
         } catch (error) {
-            setSaveStatus('error', '服务器保存失败，本地草稿仍在');
-            throw error;
+            const message = getApiFailureMessage(error, '服务器保存失败，本地草稿仍在。请按提示调整后重新保存。');
+            setSaveStatus('error', escapeStatusText(message));
+            throw new Error(message);
         } finally {
             serverDraftInFlight = null;
         }
@@ -3272,7 +3310,10 @@
                     replaceQuestionIds: [question.id],
                 });
                 if (Number(resp?.dropped_file_count || 0) > 0) {
-                    showMessage('部分题目附件没有保存到服务器草稿，请检查文件类型或大小。', 'warning');
+                    showMessage(
+                        collectUploadIssueMessage(resp, '部分题目附件没有保存到服务器草稿，请检查文件类型、大小和题目附件要求。'),
+                        'warning',
+                    );
                 }
                 markQuestionDraftClean(question.id, dirtyVersion);
                 updateQuestionAttachmentStatus(question.id);
@@ -3394,7 +3435,11 @@
                 markPendingQuestionDraftsClean(pendingPayload);
                 useServerDraftFiles = Boolean(draftResp);
                 if (Number(draftResp?.dropped_file_count || 0) > 0) {
-                    throw new Error('部分题目附件没有保存到服务器草稿，请检查文件类型或大小后重新提交。');
+                    const message = collectUploadIssueMessage(
+                        draftResp,
+                        '部分题目附件没有保存到服务器草稿，请检查文件类型、大小和题目附件要求后重新提交。',
+                    );
+                    throw new Error(message);
                 }
                 const unsyncedQuestion = useServerDraftFiles ? findUnsyncedQuestionDraft(allQuestions) : null;
                 if (unsyncedQuestion) {
@@ -3404,7 +3449,11 @@
                 console.warn('Final draft sync failed before submit:', draftError);
                 const hasServerDraftFiles = Object.values(state.serverQuestionFiles || {}).some((files) => Array.isArray(files) && files.length > 0);
                 if (hasServerDraftFiles) {
-                    throw new Error('服务器草稿同步失败，已暂停提交，避免旧附件被误交。请检查网络后重新提交。');
+                    const message = getApiFailureMessage(
+                        draftError,
+                        '服务器草稿同步失败，已暂停提交，避免旧附件被误交。请检查网络后重新提交。',
+                    );
+                    throw new Error(`${message} 已暂停提交，避免旧附件被误交。请按提示调整后重新提交。`);
                 }
                 showMessage('服务器草稿同步失败，将继续使用当前页面内容提交。', 'warning');
             }
@@ -3465,7 +3514,7 @@
             const droppedCount = Number(resp?.dropped_file_count || 0);
             showMessage(
                 droppedCount > 0
-                    ? `交卷成功，${droppedCount} 个不符合要求的文件已被过滤。`
+                    ? collectUploadIssueMessage(resp, `交卷成功，但 ${droppedCount} 个不符合要求的文件已被过滤。`)
                     : (resp?.is_late_submission ? '交卷成功，已按补交规则记录，批改后会自动扣分。' : '交卷成功！'),
                 droppedCount > 0 ? 'warning' : 'success'
             );
@@ -3475,7 +3524,7 @@
             setTimeout(() => location.reload(), 1500);
 
         } catch(e) {
-            showMessage(e.message || '提交失败，请重试', 'error');
+            showMessage(getApiFailureMessage(e, '提交失败，请按提示调整后重试。'), 'error');
             setSubmitBusy(false);
         }
     }

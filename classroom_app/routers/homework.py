@@ -195,6 +195,101 @@ def _is_allowed_assignment_submission_file(
     )
 
 
+def _display_submission_file_name(relative_path: str) -> str:
+    normalized = str(relative_path or "").replace("\\", "/").strip().strip("/")
+    if not normalized:
+        return "附件"
+    return PurePosixPath(normalized).name or normalized or "附件"
+
+
+def _allowed_file_types_label_for_submission_path(
+    relative_path: str,
+    assignment_allowed_file_types: list[str],
+    attachment_policies: dict[str, dict[str, Any]] | None,
+) -> str:
+    allowed_types = _allowed_file_types_for_submission_path(
+        relative_path,
+        assignment_allowed_file_types,
+        attachment_policies,
+    )
+    label = summarize_allowed_file_types(allowed_types)
+    return "任意类型" if label == "all" else label
+
+
+def _dropped_file_user_message(detail: dict[str, Any]) -> str:
+    file_name = str(detail.get("file_name") or "附件")
+    reason = str(detail.get("reason") or "")
+    allowed_label = str(detail.get("allowed_file_types_label") or "任意类型")
+    if reason == "type_not_allowed":
+        return f"文件“{file_name}”类型不符合要求。当前允许类型：{allowed_label}。请转换为允许格式后重新上传。"
+    if reason == "draft_file_unavailable":
+        return f"服务器草稿中的文件“{file_name}”已丢失或无法读取。请重新选择该文件，等待同步成功后再提交。"
+    if reason == "missing_relative_path":
+        return f"文件“{file_name}”路径信息无效。请重新选择文件后再提交。"
+    return f"文件“{file_name}”未能保存。请重新上传，或联系老师确认作业附件设置。"
+
+
+def _enrich_dropped_file_details(
+    dropped_files: list[dict[str, Any]],
+    assignment_allowed_file_types: list[str],
+    attachment_policies: dict[str, dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    for item in dropped_files or []:
+        relative_path = str(
+            item.get("relative_path")
+            or item.get("original_filename")
+            or item.get("file_name")
+            or ""
+        ).replace("\\", "/").strip()
+        detail = {
+            "relative_path": relative_path,
+            "file_name": _display_submission_file_name(relative_path),
+            "reason": str(item.get("reason") or "unknown"),
+            "content_type": str(item.get("content_type") or item.get("mime_type") or ""),
+            "allowed_file_types_label": _allowed_file_types_label_for_submission_path(
+                relative_path,
+                assignment_allowed_file_types,
+                attachment_policies,
+            ),
+        }
+        detail["message"] = _dropped_file_user_message(detail)
+        enriched.append(detail)
+    return enriched
+
+
+def _format_dropped_files_error(dropped_files: list[dict[str, Any]], *, action_label: str) -> str:
+    messages = [str(item.get("message") or "").strip() for item in dropped_files or []]
+    messages = [message for message in messages if message]
+    if not messages:
+        return f"{action_label}失败：有文件不符合要求，请检查文件类型、大小和作业附件设置。"
+    preview = "；".join(messages[:3])
+    remaining = len(messages) - 3
+    if remaining > 0:
+        preview = f"{preview}；还有 {remaining} 个文件也不符合要求。"
+    return f"{action_label}失败：{preview}"
+
+
+def _dropped_files_error_detail(dropped_files: list[dict[str, Any]], *, action_label: str) -> dict[str, Any]:
+    return {
+        "message": _format_dropped_files_error(dropped_files, action_label=action_label),
+        "dropped_file_count": len(dropped_files or []),
+        "dropped_files": dropped_files or [],
+    }
+
+
+def _dropped_files_response_fields(dropped_files: list[dict[str, Any]], *, action_label: str) -> dict[str, Any]:
+    return {
+        "dropped_file_count": len(dropped_files or []),
+        "dropped_files": dropped_files or [],
+        "dropped_file_message": (
+            _format_dropped_files_error(dropped_files, action_label=action_label)
+            if dropped_files
+            else ""
+        ),
+    }
+
+
 def _get_learning_stage_key(data: dict, *, class_offering_id: Any = None) -> str | None:
     raw_stage_key = data.get("learning_stage_key", data.get("stage_key"))
     try:
@@ -673,7 +768,7 @@ def _save_assignment_draft_without_files_sync(
         {
             "status": "success",
             "stored_file_count": 0,
-            "dropped_file_count": 0,
+            **_dropped_files_response_fields([], action_label="保存到服务器草稿"),
         }
     )
     return payload
@@ -741,33 +836,51 @@ def _copy_submission_draft_files_to_staging(
     existing_relative_paths: set[str],
     allowed_file_types: list[str],
     attachment_policies: dict[str, dict[str, Any]] | None = None,
-) -> tuple[list[StoredSubmissionFile], int]:
+) -> tuple[list[StoredSubmissionFile], list[dict[str, Any]]]:
     draft = _load_submission_draft(conn, str(assignment["id"]), int(student_pk_id))
     if not draft:
-        return [], 0
+        return [], []
     copied_files: list[StoredSubmissionFile] = []
-    dropped_count = 0
+    dropped_files: list[dict[str, Any]] = []
     for row in _load_submission_draft_files(conn, int(draft["id"])):
         relative_path = str(row.get("relative_path") or "").replace("\\", "/").strip()
+        mime_type = str(row.get("mime_type") or "")
         if not relative_path:
-            dropped_count += 1
+            dropped_files.append(
+                {
+                    "relative_path": str(row.get("original_filename") or "服务器草稿附件"),
+                    "reason": "missing_relative_path",
+                    "content_type": mime_type,
+                }
+            )
             continue
         path_key = relative_path.lower()
         if path_key in existing_relative_paths:
             continue
-        mime_type = str(row.get("mime_type") or "")
         if not _is_allowed_assignment_submission_file(
             relative_path,
             mime_type,
             allowed_file_types,
             attachment_policies,
         ):
-            dropped_count += 1
+            dropped_files.append(
+                {
+                    "relative_path": relative_path,
+                    "reason": "type_not_allowed",
+                    "content_type": mime_type,
+                }
+            )
             continue
         source_path = resolve_submission_file_path(str(row.get("stored_path") or "")) or Path(str(row.get("stored_path") or ""))
         source_path = Path(source_path)
         if not source_path.exists() or not source_path.is_file():
-            dropped_count += 1
+            dropped_files.append(
+                {
+                    "relative_path": relative_path,
+                    "reason": "draft_file_unavailable",
+                    "content_type": mime_type,
+                }
+            )
             continue
         target = _build_submission_file_path(staging_dir, relative_path)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -784,7 +897,7 @@ def _copy_submission_draft_files_to_staging(
                 file_hash=str(row.get("file_hash") or ""),
             )
         )
-    return copied_files, dropped_count
+    return copied_files, dropped_files
 
 
 def _ensure_student_can_save_assignment_draft(
@@ -1092,6 +1205,31 @@ async def _save_submission_payload(
 
     if not has_answer_content_before_storage and not prepared_entries and not has_server_draft_files:
         raise HTTPException(400, "请至少填写答案或上传一个文件")
+    if (
+        not has_answer_content_before_storage
+        and prepared_entries
+        and not has_allowed_uploads
+        and not has_server_draft_files
+    ):
+        dropped_files = _enrich_dropped_file_details(
+            [
+                {
+                    "relative_path": entry.relative_path,
+                    "reason": "type_not_allowed",
+                    "content_type": entry.content_type,
+                }
+                for entry in prepared_entries
+            ],
+            allowed_file_types,
+            attachment_policies,
+        )
+        if dropped_files:
+            for entry in prepared_entries:
+                await entry.file.close()
+            raise HTTPException(
+                status_code=400,
+                detail=_dropped_files_error_detail(dropped_files, action_label="提交"),
+            )
     if not has_answer_content_before_storage and not has_allowed_uploads and not has_server_draft_files:
         expected_types = summarize_allowed_file_types(allowed_file_types)
         raise HTTPException(400, f"没有符合要求的文件可提交，允许类型: {expected_types}")
@@ -1114,6 +1252,16 @@ async def _save_submission_payload(
                 attachment_policies,
             ),
         )
+        storage_result.dropped_files = _enrich_dropped_file_details(
+            storage_result.dropped_files,
+            allowed_file_types,
+            attachment_policies,
+        )
+        if storage_result.dropped_files:
+            raise HTTPException(
+                status_code=400,
+                detail=_dropped_files_error_detail(storage_result.dropped_files, action_label="提交"),
+            )
         if not storage_result.stored_files and not has_answer_content_before_storage:
             if not has_server_draft_files:
                 expected_types = summarize_allowed_file_types(allowed_file_types)
@@ -1122,7 +1270,7 @@ async def _save_submission_payload(
             file_info.stored_path = str(_build_submission_file_path(submission_dir, file_info.relative_path))
         if use_server_draft_files:
             existing_paths = {file_info.relative_path.lower() for file_info in storage_result.stored_files}
-            draft_files, draft_dropped_count = _copy_submission_draft_files_to_staging(
+            draft_files, draft_dropped_files = _copy_submission_draft_files_to_staging(
                 conn,
                 assignment=assignment,
                 student_pk_id=student_pk_id,
@@ -1134,9 +1282,17 @@ async def _save_submission_payload(
             )
             storage_result.stored_files.extend(draft_files)
             storage_result.dropped_files.extend(
-                {"relative_path": "server_draft", "reason": "draft_file_unavailable_or_filtered"}
-                for _ in range(draft_dropped_count)
+                _enrich_dropped_file_details(
+                    draft_dropped_files,
+                    allowed_file_types,
+                    attachment_policies,
+                )
             )
+            if storage_result.dropped_files:
+                raise HTTPException(
+                    status_code=400,
+                    detail=_dropped_files_error_detail(storage_result.dropped_files, action_label="提交"),
+                )
         _validate_combined_stored_file_limits(storage_result.stored_files)
     except Exception:
         delete_storage_tree(staging_dir)
@@ -1330,7 +1486,7 @@ async def _save_submission_payload(
     return {
         "submission_id": int(submission_id),
         "stored_file_count": len(storage_result.stored_files),
-        "dropped_file_count": len(storage_result.dropped_files),
+        **_dropped_files_response_fields(storage_result.dropped_files, action_label="提交"),
         "has_text_answers": bool(has_answer_content),
         "is_replacement": is_replacement,
         "is_late_submission": bool(is_late_submission),
@@ -2223,6 +2379,16 @@ async def add_submission_files(
 
     try:
         storage_result = await store_submission_files(staging_dir, prepared_entries, allowed_file_types)
+        storage_result.dropped_files = _enrich_dropped_file_details(
+            storage_result.dropped_files,
+            allowed_file_types,
+            None,
+        )
+        if storage_result.dropped_files:
+            raise HTTPException(
+                status_code=400,
+                detail=_dropped_files_error_detail(storage_result.dropped_files, action_label="添加附件"),
+            )
         if not storage_result.stored_files:
             expected_types = summarize_allowed_file_types(allowed_file_types)
             raise HTTPException(400, f"没有符合要求的文件可添加，允许类型: {expected_types}")
@@ -2324,7 +2490,7 @@ async def add_submission_files(
         "status": "success",
         "submission_id": int(submission_id),
         "added_count": len(storage_result.stored_files),
-        "dropped_file_count": len(storage_result.dropped_files),
+        **_dropped_files_response_fields(storage_result.dropped_files, action_label="添加附件"),
         "ai_queue_result": ai_queue_result,
     }
 
@@ -2694,6 +2860,19 @@ async def save_assignment_draft(
                     attachment_policies,
                 ),
             )
+            storage_result.dropped_files = _enrich_dropped_file_details(
+                storage_result.dropped_files,
+                allowed_file_types,
+                attachment_policies,
+            )
+            if storage_result.dropped_files:
+                raise HTTPException(
+                    status_code=400,
+                    detail=_dropped_files_error_detail(
+                        storage_result.dropped_files,
+                        action_label="保存到服务器草稿",
+                    ),
+                )
 
             if storage_result.stored_files:
                 remaining_rows = conn.execute(
@@ -2815,7 +2994,10 @@ async def save_assignment_draft(
             {
                 "status": "success",
                 "stored_file_count": len(storage_result.stored_files),
-                "dropped_file_count": len(storage_result.dropped_files),
+                **_dropped_files_response_fields(
+                    storage_result.dropped_files,
+                    action_label="保存到服务器草稿",
+                ),
             }
         )
         return payload
@@ -2958,6 +3140,8 @@ async def submit_assignment(assignment_id: str,
         "submission_id": result["submission_id"],
         "stored_file_count": result["stored_file_count"],
         "dropped_file_count": result["dropped_file_count"],
+        "dropped_files": result.get("dropped_files", []),
+        "dropped_file_message": result.get("dropped_file_message", ""),
         "is_resubmission": result["is_replacement"],
         "auto_ai_grading_scheduled": auto_ai_grading_scheduled,
         "grading_status": grading_status,
@@ -3146,6 +3330,8 @@ async def teacher_offline_submit_assignment(
         "submission_id": result["submission_id"],
         "stored_file_count": result["stored_file_count"],
         "dropped_file_count": result["dropped_file_count"],
+        "dropped_files": result.get("dropped_files", []),
+        "dropped_file_message": result.get("dropped_file_message", ""),
         "is_replacement": result["is_replacement"],
         "auto_ai_grading_scheduled": auto_ai_grading_scheduled,
     }

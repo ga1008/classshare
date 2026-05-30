@@ -2,6 +2,8 @@ import unittest
 
 from classroom_app.routers.homework import (
     _allowed_file_types_for_submission_path,
+    _dropped_files_error_detail,
+    _enrich_dropped_file_details,
     _is_allowed_assignment_submission_file,
     _question_id_from_submission_relative_path,
 )
@@ -56,6 +58,32 @@ class SubmissionQuestionFilePolicyTests(unittest.TestCase):
                 policies,
             )
         )
+
+    def test_dropped_file_message_uses_question_policy_and_action_hint(self):
+        assignment_allowed = [".png", ".jpg", ".java", ".xml"]
+        policies = {"exam_p3_q1": {"allowed_file_types": [".zip", ".rar", ".7z"]}}
+
+        details = _enrich_dropped_file_details(
+            [
+                {
+                    "relative_path": "exam_question_files/exam_p3_q1/source.exe",
+                    "reason": "type_not_allowed",
+                    "content_type": "application/octet-stream",
+                }
+            ],
+            assignment_allowed,
+            policies,
+        )
+
+        self.assertEqual(details[0]["file_name"], "source.exe")
+        self.assertEqual(details[0]["allowed_file_types_label"], ".zip, .rar, .7z")
+        self.assertIn("source.exe", details[0]["message"])
+        self.assertIn(".zip, .rar, .7z", details[0]["message"])
+        self.assertIn("重新上传", details[0]["message"])
+
+        error_detail = _dropped_files_error_detail(details, action_label="提交")
+        self.assertEqual(error_detail["dropped_file_count"], 1)
+        self.assertIn("提交失败", error_detail["message"])
 
 
 if __name__ == "__main__":
