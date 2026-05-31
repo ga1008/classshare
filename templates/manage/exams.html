@@ -310,6 +310,33 @@
         user-select: none;
     }
 
+    .exam-tag-filter-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+    }
+
+    .exam-tag-filter-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 32px;
+        padding: 5px 10px;
+        border: 1px solid #c7d2fe;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #4338ca;
+        font-size: 0.78rem;
+        cursor: pointer;
+    }
+
+    .exam-tag-filter-btn.is-active {
+        background: #4338ca;
+        color: #fff;
+        border-color: #4338ca;
+    }
+
     .filter-chip:hover {
         border-color: var(--primary-color);
         color: var(--primary-color);
@@ -821,11 +848,11 @@
     }
 
     .exam-control-row.primary {
-        grid-template-columns: minmax(260px, 1.4fr) repeat(4, minmax(150px, 1fr));
+        grid-template-columns: minmax(260px, 1.4fr) repeat(5, minmax(140px, 1fr));
     }
 
     .exam-control-row.secondary {
-        grid-template-columns: minmax(160px, 0.8fr) minmax(160px, 0.8fr) minmax(0, 1fr) auto auto;
+        grid-template-columns: repeat(4, minmax(150px, 0.8fr)) minmax(0, 1fr) auto auto;
         align-items: center;
     }
 
@@ -1163,7 +1190,7 @@
         background: #fff;
     }
 
-    @media (max-width: 1180px) {
+    @media (max-width: 1480px) {
         .exam-control-row.primary,
         .exam-control-row.secondary {
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1351,8 +1378,31 @@
                     <option value="empty">未设置题目</option>
                 </select>
             </div>
+            <div class="exam-filter-field">
+                <label for="scopeFilter">开放</label>
+                <select id="scopeFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <option value="all">全部范围</option>
+                    <option value="owned">我管理的</option>
+                    <option value="shared">共享给我的</option>
+                    <option value="private">私有</option>
+                    <option value="department">本系部开放</option>
+                    <option value="school">全校开放</option>
+                </select>
+            </div>
         </div>
         <div class="exam-control-row secondary">
+            <div class="exam-filter-field">
+                <label for="schoolFilter">学校</label>
+                <select id="schoolFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <option value="all">全部学校</option>
+                </select>
+            </div>
+            <div class="exam-filter-field">
+                <label for="departmentFilter">系部</label>
+                <select id="departmentFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <option value="all">全部系部</option>
+                </select>
+            </div>
             <div class="exam-filter-field">
                 <label for="sortSelect">排序</label>
                 <select id="sortSelect" class="exam-filter-select" onchange="onSortChange()">
@@ -1395,6 +1445,7 @@
                 清除筛选
             </button>
         </div>
+        <div class="exam-tag-filter-strip" id="tagFilterStrip"></div>
         <div class="exam-active-pills" id="activeFilterPills"></div>
     </section>
 
@@ -1427,6 +1478,9 @@
          data-created-at="{{ paper.created_at or '' }}"
          data-updated-at="{{ paper.updated_at or '' }}"
          data-primary-tag="{{ tags[0] if tags else '' }}"
+         data-scope-level="{{ paper.scope_level or 'private' }}"
+         data-school-name="{{ paper.school_name or '' }}"
+         data-department="{{ paper.department or '' }}"
          data-ai-gen-status="{{ paper.ai_gen_status or '' }}"
          data-task-id="{{ paper.ai_gen_task_id or '' }}">
         <div class="card-body exam-card-body">
@@ -1470,6 +1524,13 @@
                 {% endif %}
             </div>
             {% endif %}
+
+            <div class="exam-tags">
+                <span class="exam-tag-pill">{{ paper.scope_label or '私有' }}</span>
+                {% if paper.school_name %}<span class="exam-tag-pill exam-tag-more">{{ paper.school_name }}</span>{% endif %}
+                {% if paper.department %}<span class="exam-tag-pill exam-tag-more">{{ paper.department }}</span>{% endif %}
+                {% if paper.is_shared_paper %}<span class="exam-tag-pill exam-tag-more">共享试卷</span>{% endif %}
+            </div>
 
             <!-- AI生成进度显示 -->
             {% if is_ai_active %}
@@ -1525,19 +1586,29 @@
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
                 {% elif is_ai_failed %}
+                {% if paper.can_manage %}
                 <button class="btn btn-outline btn-sm" onclick='deletePaper({{ paper.id|tojson }}, {{ paper.title|tojson }})' style="color: #dc2626;">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                     删除
                 </button>
-                <a href="/exam/new" class="btn btn-primary btn-sm">
+                <a href="/exam/new?retry_from={{ paper.id }}" class="btn btn-primary btn-sm">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
                     重新生成
                 </a>
                 {% else %}
+                <button class="btn btn-outline btn-sm" disabled style="opacity: 0.58; cursor: not-allowed;">共享失败记录</button>
+                {% endif %}
+                {% else %}
+                {% if paper.can_manage %}
                 <a href="/exam/{{ paper.id }}/edit" class="btn btn-outline btn-sm">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                     编辑
                 </a>
+                {% else %}
+                <button class="btn btn-outline btn-sm" disabled style="opacity: 0.58; cursor: not-allowed;">
+                    只读共享
+                </button>
+                {% endif %}
                 <button class="btn btn-outline btn-sm" onclick='openPaperPreview({{ paper.id|tojson }})'>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><path d="M8 7h8"></path><path d="M8 11h8"></path></svg>
                     查看
@@ -1546,12 +1617,14 @@
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                     分配
                 </button>
+                {% if paper.can_manage %}
                 <button class="btn btn-ghost btn-sm" style="flex: 0 0 auto; padding: 0 8px; color: #6366f1;" onclick="openTagPopover('{{ paper.id }}', this)" title="管理标签">
                     <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
                 </button>
                 <button class="btn btn-ghost btn-sm text-danger" style="flex: 0 0 auto; padding: 0 8px;" onclick='deletePaper({{ paper.id|tojson }}, {{ paper.title|tojson }})' title="删除试卷">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 </button>
+                {% endif %}
                 {% endif %}
             </div>
         </div>
@@ -1709,6 +1782,11 @@
             aiStatus: "{{ paper.ai_gen_status or '' }}",
             status: "{{ paper.status or '' }}",
             sourceType: "{{ paper.source_type or 'manual' }}",
+            scopeLevel: "{{ paper.scope_level or 'private' }}",
+            scopeLabel: {{ (paper.scope_label or '私有') | tojson }},
+            schoolName: {{ (paper.school_name or '') | tojson }},
+            department: {{ (paper.department or '') | tojson }},
+            isOwned: {{ 'true' if paper.is_owned else 'false' }},
             questionProfile: "{{ paper.question_profile or 'empty' }}",
             pageCount: {{ paper.page_count | default(0) | int }},
             questionCount: {{ paper.question_count | default(0) | int }},
@@ -1743,6 +1821,13 @@
         mixed: '混合题型',
         empty: '未设置题目'
     };
+    const SCOPE_LABELS = {
+        private: '私有',
+        department: '本系部开放',
+        school: '全校开放',
+        owned: '我管理的',
+        shared: '共享给我的'
+    };
     const SORT_LABELS = {
         'updated-desc': '最近更新',
         'created-desc': '最新创建',
@@ -1769,6 +1854,9 @@
     let assignmentFilter = 'all';
     let sourceFilter = 'all';
     let structureFilter = 'all';
+    let scopeFilter = 'all';
+    let schoolFilter = 'all';
+    let departmentFilter = 'all';
     let sortMode = 'updated-desc';
     let groupMode = 'none';
     let collapsedExamGroups = loadCollapsedExamGroups();
@@ -1777,7 +1865,24 @@
     let currentTagPaperId = null;
 
     // ===== Computed: all unique tags & available question types =====
-    const allTags = [...new Set(papersData.flatMap(p => p.tags))].sort();
+    function collectTagsByRecentPapers() {
+        const seen = new Set();
+        const timeValue = value => {
+            const parsed = Date.parse(value || '');
+            return Number.isFinite(parsed) ? parsed : 0;
+        };
+        return [...papersData]
+            .sort((a, b) => (timeValue(b.updatedAt || b.createdAt) - timeValue(a.updatedAt || a.createdAt)))
+            .flatMap(p => p.tags || [])
+            .filter(tag => {
+                if (!tag || seen.has(tag)) return false;
+                seen.add(tag);
+                return true;
+            });
+    }
+    const allTags = collectTagsByRecentPapers();
+    const allSchools = [...new Set(papersData.map(p => p.schoolName).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+    const allDepartments = [...new Set(papersData.map(p => p.department).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
     const availableTypes = new Set();
     papersData.forEach(p => p.questionTypes.forEach(t => availableTypes.add(t)));
     papersData.forEach(refreshPaperDerivedFields);
@@ -1816,6 +1921,7 @@
         paper.statusKey = resolveStatusKey(paper);
         paper.statusLabel = STATUS_LABELS[paper.statusKey] || paper.status || '未知状态';
         paper.sourceLabel = SOURCE_LABELS[paper.sourceType] || '手动 / 导入';
+        paper.scopeLabel = paper.scopeLabel || SCOPE_LABELS[paper.scopeLevel] || '私有';
         paper.profileLabel = PROFILE_LABELS[paper.questionProfile] || '未设置题目';
         paper.questionTypeText = paper.questionTypes.map(t => QT_LABELS[t] || t).join(' ');
     }
@@ -1873,6 +1979,37 @@
         });
     }
 
+    function buildTagFilterStrip() {
+        const strip = document.getElementById('tagFilterStrip');
+        if (!strip) return;
+        if (allTags.length === 0) {
+            strip.innerHTML = '';
+            return;
+        }
+        strip.innerHTML = allTags.map((tag, index) => `
+            <button type="button" class="exam-tag-filter-btn ${selectedFilterTags.has(tag) ? 'is-active' : ''}" onclick="toggleFilterTagByIndex(${index})">
+                # ${escapeHtml(tag)}
+            </button>
+        `).join('');
+    }
+
+    function toggleFilterTagByIndex(index) {
+        const tag = allTags[Number(index)];
+        if (!tag) return;
+        toggleFilterTag(tag, !selectedFilterTags.has(tag));
+    }
+
+    function buildOrgFilterOptions() {
+        const schoolSelect = document.getElementById('schoolFilter');
+        const departmentSelect = document.getElementById('departmentFilter');
+        if (schoolSelect) {
+            schoolSelect.innerHTML = '<option value="all">全部学校</option>' + allSchools.map(item => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('');
+        }
+        if (departmentSelect) {
+            departmentSelect.innerHTML = '<option value="all">全部系部</option>' + allDepartments.map(item => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('');
+        }
+    }
+
     // ===== Search =====
     function onSearchInput(el) {
         searchQuery = el.value.trim().toLowerCase();
@@ -1895,6 +2032,9 @@
         assignmentFilter = document.getElementById('assignmentFilter')?.value || 'all';
         sourceFilter = document.getElementById('sourceFilter')?.value || 'all';
         structureFilter = document.getElementById('structureFilter')?.value || 'all';
+        scopeFilter = document.getElementById('scopeFilter')?.value || 'all';
+        schoolFilter = document.getElementById('schoolFilter')?.value || 'all';
+        departmentFilter = document.getElementById('departmentFilter')?.value || 'all';
         sortMode = document.getElementById('sortSelect')?.value || 'updated-desc';
         groupMode = document.getElementById('groupModeSelect')?.value || 'none';
     }
@@ -1940,6 +2080,7 @@
             selectedFilterTags.delete(tag);
         }
         updateTagDropdownUI();
+        buildTagFilterStrip();
         applyFilters();
     }
 
@@ -1970,8 +2111,9 @@
         selectedFilterTags.clear();
         document.querySelectorAll('#tagDropdownMenu input[type="checkbox"]').forEach(cb => cb.checked = false);
         updateTagDropdownUI();
+        buildTagFilterStrip();
 
-        ['statusFilter', 'assignmentFilter', 'sourceFilter', 'structureFilter'].forEach(id => {
+        ['statusFilter', 'assignmentFilter', 'sourceFilter', 'structureFilter', 'scopeFilter', 'schoolFilter', 'departmentFilter'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = 'all';
         });
@@ -2009,6 +2151,9 @@
                 paper.tagText,
                 paper.statusLabel,
                 paper.sourceLabel,
+                paper.scopeLabel,
+                paper.schoolName,
+                paper.department,
                 paper.profileLabel,
                 paper.questionTypeText
             ].join(' ').toLowerCase();
@@ -2020,6 +2165,11 @@
         if (assignmentFilter === 'unassigned' && paper.assignedCount > 0) return false;
         if (sourceFilter !== 'all' && paper.sourceType !== sourceFilter) return false;
         if (structureFilter !== 'all' && paper.questionProfile !== structureFilter) return false;
+        if (scopeFilter === 'owned' && !paper.isOwned) return false;
+        if (scopeFilter === 'shared' && paper.isOwned) return false;
+        if (['private', 'department', 'school'].includes(scopeFilter) && paper.scopeLevel !== scopeFilter) return false;
+        if (schoolFilter !== 'all' && paper.schoolName !== schoolFilter) return false;
+        if (departmentFilter !== 'all' && paper.department !== departmentFilter) return false;
 
         for (const filter of activeFilters) {
             if (filter === 'unassigned') {
@@ -2212,6 +2362,9 @@
         if (assignmentFilter !== 'all') pills.push(`分配：${assignmentFilter === 'assigned' ? '已分配' : '未分配'}`);
         if (sourceFilter !== 'all') pills.push(`来源：${SOURCE_LABELS[sourceFilter] || sourceFilter}`);
         if (structureFilter !== 'all') pills.push(`结构：${PROFILE_LABELS[structureFilter] || structureFilter}`);
+        if (scopeFilter !== 'all') pills.push(`开放：${SCOPE_LABELS[scopeFilter] || scopeFilter}`);
+        if (schoolFilter !== 'all') pills.push(`学校：${schoolFilter}`);
+        if (departmentFilter !== 'all') pills.push(`系部：${departmentFilter}`);
         activeFilters.forEach(filter => pills.push(filter === 'unassigned' ? '快速：未分配' : `题型：${QT_LABELS[filter] || filter}`));
         selectedFilterTags.forEach(tag => pills.push(`标签：${tag}`));
         if (sortMode !== 'updated-desc') pills.push(`排序：${SORT_LABELS[sortMode] || sortMode}`);
@@ -2228,7 +2381,10 @@
             statusFilter !== 'all' ||
             assignmentFilter !== 'all' ||
             sourceFilter !== 'all' ||
-            structureFilter !== 'all'
+            structureFilter !== 'all' ||
+            scopeFilter !== 'all' ||
+            schoolFilter !== 'all' ||
+            departmentFilter !== 'all'
         );
     }
 
@@ -2357,9 +2513,10 @@
 
             // Rebuild allTags
             allTags.length = 0;
-            allTags.push(...[...new Set(papersData.flatMap(p => p.tags))].sort());
+            allTags.push(...collectTagsByRecentPapers());
             selectedFilterTags = new Set([...selectedFilterTags].filter(tag => allTags.includes(tag)));
             buildTagDropdown();
+            buildTagFilterStrip();
             updateTagDropdownUI();
 
             // Update card tag display
@@ -2813,6 +2970,8 @@
         // Build filter UI
         buildFilterChips();
         buildTagDropdown();
+        buildTagFilterStrip();
+        buildOrgFilterOptions();
         readFilterControls();
         applyFilters();
 

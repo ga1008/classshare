@@ -930,12 +930,15 @@ class GenerationRequest(BaseModel):
 
 class ExamGenerationRequest(BaseModel):
     prompt: str
-    model_type: Literal["standard", "thinking"] = "thinking"
+    model_type: Literal["standard", "thinking", "vision"] = "thinking"
     task_type: str = "exam_generation"
     teacher_id: Optional[int] = None
     class_offering_id: Optional[int] = None
     source_type: Literal["manual", "document", "learning_stage"] = "manual"
     force_platform: Optional[Literal["volcengine"]] = None
+    image_inputs: List[Dict[str, Any]] = Field(default_factory=list)
+    base64_urls: List[str] = Field(default_factory=list)
+    file_texts: List[Dict[str, str]] = Field(default_factory=list)
 
 
 class GradingFile(BaseModel):
@@ -3518,21 +3521,26 @@ async def generate_exam_task(req: ExamGenerationRequest):
     if req.class_offering_id:
         user_prompt = f"课堂ID: {req.class_offering_id}\n{user_prompt}"
 
+    image_inputs = _normalize_request_image_inputs(req)
+    user_message_content = _build_user_message_content(user_prompt, image_inputs, req.file_texts)
+    capability: Literal["standard", "thinking", "vision"] = "vision" if image_inputs else req.model_type
+    task_type = AI_TASK_DEEP_MULTIMODAL if capability == "vision" else AI_TASK_DEEP_TEXT
+
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt}
+        {"role": "user", "content": user_message_content}
     ]
 
     # 使用thinking模型（高级模型）生成试卷
     result = await _call_ai_platform(
         messages,
-        capability=req.model_type,  # 使用thinking模型
+        capability=capability,
         require_json_output=True,
         allow_json_array=True,
         task_priority="default",
         task_label="generate_exam",
-        preferred_platform=req.force_platform if req.source_type == "document" else None,
-        task_type=AI_TASK_DEEP_TEXT,
+        preferred_platform=req.force_platform,
+        task_type=task_type,
     )
 
     result = _normalize_exam_generation_result(result)

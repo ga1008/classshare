@@ -122,6 +122,32 @@
 
             <div class="materials-sort-controls">
                 <label class="materials-inline-field">
+                    <span>开放范围</span>
+                    <select id="materials-scope-filter" class="form-control">
+                        <option value="all">全部范围</option>
+                        <option value="owned">我管理的</option>
+                        <option value="shared">共享给我的</option>
+                        <option value="private">私有</option>
+                        <option value="department">本系部开放</option>
+                        <option value="school">全校开放</option>
+                    </select>
+                </label>
+                <label class="materials-inline-field">
+                    <span>学校</span>
+                    <select id="materials-school-filter" class="form-control">
+                        <option value="">全部学校</option>
+                    </select>
+                </label>
+                <label class="materials-inline-field">
+                    <span>系部</span>
+                    <select id="materials-department-filter" class="form-control">
+                        <option value="">全部系部</option>
+                    </select>
+                </label>
+            </div>
+
+            <div class="materials-sort-controls">
+                <label class="materials-inline-field">
                     <span>排序字段</span>
                     <select id="materials-sort-by" class="form-control">
                         <option value="name">名称</option>

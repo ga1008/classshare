@@ -46,6 +46,11 @@ function normalizeSortOrder(value, sortBy = 'name') {
     return String(value || fallback).trim().toLowerCase() === 'desc' ? 'desc' : 'asc';
 }
 
+function normalizeScopeFilter(value) {
+    const scope = String(value || 'all').trim().toLowerCase();
+    return ['all', 'owned', 'shared', 'private', 'department', 'school'].includes(scope) ? scope : 'all';
+}
+
 function parsePositiveInt(value) {
     const parsed = Number(value);
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
@@ -74,6 +79,9 @@ function getInitialLibraryState() {
     return {
         parentId: parsePositiveInt(params.get('parent_id')),
         keyword: shouldIgnoreInitialKeyword(initialKeyword) ? '' : initialKeyword,
+        scopeLevel: normalizeScopeFilter(params.get('scope_level')),
+        school: normalizeKeyword(params.get('school')),
+        department: normalizeKeyword(params.get('department')),
         sortBy,
         sortOrder: normalizeSortOrder(params.get('sort_order'), sortBy),
     };
@@ -119,9 +127,13 @@ const state = {
     currentBreadcrumbs: [],
     filters: {
         keyword: initialLibraryState.keyword,
+        scopeLevel: initialLibraryState.scopeLevel,
+        school: initialLibraryState.school,
+        department: initialLibraryState.department,
         sortBy: initialLibraryState.sortBy,
         sortOrder: initialLibraryState.sortOrder,
     },
+    facets: null,
     overview: null,
     stats: null,
     searchTimer: null,
@@ -222,6 +234,9 @@ const refs = {
     aiRewriteSubmitBtn: document.getElementById('materials-ai-rewrite-submit-btn'),
     searchInput: document.getElementById('materials-search-input'),
     searchClearBtn: document.getElementById('materials-search-clear-btn'),
+    scopeFilter: document.getElementById('materials-scope-filter'),
+    schoolFilter: document.getElementById('materials-school-filter'),
+    departmentFilter: document.getElementById('materials-department-filter'),
     sortBy: document.getElementById('materials-sort-by'),
     sortOrder: document.getElementById('materials-sort-order'),
     scopeName: document.getElementById('materials-scope-name'),
@@ -311,8 +326,22 @@ function getVisualMeta(item) {
 function updateFilterControls() {
     refs.searchInput.value = state.filters.keyword;
     refs.searchClearBtn.hidden = !state.filters.keyword;
+    if (refs.scopeFilter) refs.scopeFilter.value = state.filters.scopeLevel;
+    renderMaterialFacetOptions(refs.schoolFilter, state.facets?.schools || [], state.filters.school, '全部学校');
+    renderMaterialFacetOptions(refs.departmentFilter, state.facets?.departments || [], state.filters.department, '全部系部');
     refs.sortBy.value = state.filters.sortBy;
     refs.sortOrder.value = state.filters.sortOrder;
+}
+
+function renderMaterialFacetOptions(select, options, selectedValue, emptyLabel) {
+    if (!select) return;
+    const current = normalizeKeyword(selectedValue);
+    const uniqueOptions = [...new Set((options || []).map(item => normalizeKeyword(item)).filter(Boolean))];
+    const optionHtml = uniqueOptions
+        .map(item => `<option value="${escapeHtml(item)}" ${item === current ? 'selected' : ''}>${escapeHtml(item)}</option>`)
+        .join('');
+    select.innerHTML = `<option value="">${escapeHtml(emptyLabel)}</option>${optionHtml}`;
+    select.value = uniqueOptions.includes(current) ? current : '';
 }
 
 function renderStats() {
@@ -705,6 +734,15 @@ function buildLibraryQuery(parentId) {
     if (state.filters.keyword) {
         params.set('keyword', state.filters.keyword);
     }
+    if (state.filters.scopeLevel && state.filters.scopeLevel !== 'all') {
+        params.set('scope_level', state.filters.scopeLevel);
+    }
+    if (state.filters.school) {
+        params.set('school', state.filters.school);
+    }
+    if (state.filters.department) {
+        params.set('department', state.filters.department);
+    }
     params.set('sort_by', state.filters.sortBy);
     params.set('sort_order', state.filters.sortOrder);
     return params.toString();
@@ -732,9 +770,13 @@ async function loadLibrary(parentId = null, trackHistory = false) {
     state.currentFolder = data.current_folder || null;
     state.currentBreadcrumbs = data.breadcrumbs || [];
     state.filters.keyword = normalizeKeyword(data.filters?.keyword ?? state.filters.keyword);
+    state.filters.scopeLevel = normalizeScopeFilter(data.filters?.scope_level ?? state.filters.scopeLevel);
+    state.filters.school = normalizeKeyword(data.filters?.school ?? state.filters.school);
+    state.filters.department = normalizeKeyword(data.filters?.department ?? state.filters.department);
     state.filters.sortBy = normalizeSortBy(data.filters?.sort_by ?? state.filters.sortBy);
     state.filters.sortOrder = normalizeSortOrder(data.filters?.sort_order ?? state.filters.sortOrder, state.filters.sortBy);
     state.overview = data.overview || null;
+    state.facets = data.facets || null;
     state.stats = data.stats || null;
 
     const activeStillVisible = state.items.some((item) => Number(item.id) === Number(previousActiveId));
@@ -2239,6 +2281,27 @@ function bindEvents() {
         loadLibrary(state.currentParentId, false).catch((error) => {
             showToast(error.message || '刷新搜索失败', 'error');
         });
+    });
+
+    const reloadForLibraryFilter = (message) => {
+        loadLibrary(state.currentParentId, false).catch((error) => {
+            showToast(error.message || message, 'error');
+        });
+    };
+
+    refs.scopeFilter?.addEventListener('change', () => {
+        state.filters.scopeLevel = normalizeScopeFilter(refs.scopeFilter.value);
+        reloadForLibraryFilter('筛选材料失败');
+    });
+
+    refs.schoolFilter?.addEventListener('change', () => {
+        state.filters.school = normalizeKeyword(refs.schoolFilter.value);
+        reloadForLibraryFilter('筛选材料失败');
+    });
+
+    refs.departmentFilter?.addEventListener('change', () => {
+        state.filters.department = normalizeKeyword(refs.departmentFilter.value);
+        reloadForLibraryFilter('筛选材料失败');
     });
 
     refs.sortBy?.addEventListener('change', () => {

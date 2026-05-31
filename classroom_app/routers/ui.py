@@ -128,6 +128,14 @@ from ..services.smart_classroom_integration_service import (
 )
 from ..services.signature_service import build_signature_dashboard_context
 from ..services.organization_management_service import list_organization_tree
+from ..services.resource_access_service import (
+    SCOPE_DEPARTMENT,
+    SCOPE_PRIVATE,
+    SCOPE_SCHOOL,
+    normalize_scope_level,
+    teacher_can_manage_exam_paper,
+    teacher_can_use_exam_paper,
+)
 from ..services.smart_attendance_entry_service import (
     maybe_enqueue_teacher_daily_checkin_sync,
     maybe_send_student_attendance_alert,
@@ -3329,6 +3337,23 @@ async def get_manage_system_password_resets_page(request: Request, user: dict = 
 # V4.5: 试卷库管理路由
 # ============================
 
+EXAM_OPEN_SCOPES = {SCOPE_PRIVATE, SCOPE_DEPARTMENT, SCOPE_SCHOOL}
+EXAM_SCOPE_LABELS = {
+    SCOPE_PRIVATE: "私有",
+    SCOPE_DEPARTMENT: "本系部开放",
+    SCOPE_SCHOOL: "全校开放",
+}
+
+
+def _normalize_exam_open_scope(value: Any, default: str = SCOPE_DEPARTMENT) -> str:
+    scope = normalize_scope_level(value, default=default)
+    return scope if scope in EXAM_OPEN_SCOPES else default
+
+
+def _exam_scope_label(scope_level: Any) -> str:
+    return EXAM_SCOPE_LABELS.get(_normalize_exam_open_scope(scope_level, default=SCOPE_PRIVATE), "私有")
+
+
 @router.get("/manage/exams", response_class=HTMLResponse)
 async def manage_exams_page(request: Request, user: dict = Depends(get_current_teacher)):
     """试卷库管理页面"""
@@ -3398,8 +3423,10 @@ async def manage_exams_page(request: Request, user: dict = Depends(get_current_t
         )
         conn.commit()
 
+        current_teacher_is_super_admin = is_super_admin_teacher(conn, user.get("id"))
         papers_cursor = conn.execute(
             """SELECT ep.*,
+                      t.name AS owner_teacher_name,
                       (SELECT COUNT(*)
                        FROM assignments a
                        WHERE a.exam_paper_id = ep.id
@@ -3408,17 +3435,25 @@ async def manage_exams_page(request: Request, user: dict = Depends(get_current_t
                              WHERE lsea.assignment_id = a.id
                          )) as assigned_count
                FROM exam_papers ep
-               WHERE ep.teacher_id = ?
+               LEFT JOIN teachers t ON t.id = ep.teacher_id
+               WHERE (? = 1 OR ep.teacher_id = ? OR COALESCE(ep.scope_level, 'private') != 'private')
                  AND NOT EXISTS (
                      SELECT 1 FROM learning_stage_exam_attempts lsea
                      WHERE lsea.exam_paper_id = ep.id
                  )
                ORDER BY ep.updated_at DESC""",
-            (user['id'],)
+            (1 if current_teacher_is_super_admin else 0, user['id'])
         )
         papers = []
         for row in papers_cursor:
             paper = dict(row)
+            if not teacher_can_use_exam_paper(conn, int(user["id"]), paper):
+                continue
+            paper["is_owned"] = int(paper.get("teacher_id") or 0) == int(user["id"])
+            paper["can_manage"] = teacher_can_manage_exam_paper(conn, int(user["id"]), paper)
+            paper["is_shared_paper"] = not paper["is_owned"]
+            paper["scope_level"] = _normalize_exam_open_scope(paper.get("scope_level"), default=SCOPE_PRIVATE)
+            paper["scope_label"] = _exam_scope_label(paper["scope_level"])
             # 解析 questions_json
             if paper.get('questions_json'):
                 try:

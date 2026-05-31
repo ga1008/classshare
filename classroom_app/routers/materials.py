@@ -395,6 +395,60 @@ def _normalize_material_sort(sort_by: str | None, sort_order: str | None) -> tup
     return normalized_sort_by, normalized_sort_order
 
 
+def _normalize_material_scope_filter(value: str | None) -> str:
+    scope = str(value or "all").strip().lower()
+    return scope if scope in {"all", "private", "department", "school", "shared", "owned"} else "all"
+
+
+def _normalize_material_org_filter(value: str | None) -> str:
+    return " ".join(str(value or "").split())[:80]
+
+
+def _build_material_filter_facets(rows, teacher_id: int) -> dict[str, Any]:
+    scopes: dict[str, int] = {}
+    schools: dict[str, str] = {}
+    departments: dict[str, str] = {}
+    for row in rows:
+        row_dict = dict(row)
+        scope = str(row_dict.get("scope_level") or "private").strip().lower() or "private"
+        scopes[scope] = scopes.get(scope, 0) + 1
+        school_label = str(row_dict.get("school_name") or row_dict.get("school_code") or "").strip()
+        if school_label:
+            schools.setdefault(school_label.lower(), school_label)
+        department_label = str(row_dict.get("department") or "").strip()
+        if department_label:
+            departments.setdefault(department_label.lower(), department_label)
+    return {
+        "scopes": scopes,
+        "schools": sorted(schools.values(), key=lambda item: item.lower()),
+        "departments": sorted(departments.values(), key=lambda item: item.lower()),
+    }
+
+
+def _apply_material_library_filters(rows, *, teacher_id: int, scope_filter: str, school: str, department: str) -> list:
+    scope_filter = _normalize_material_scope_filter(scope_filter)
+    school_filter = _normalize_material_org_filter(school).lower()
+    department_filter = _normalize_material_org_filter(department).lower()
+    filtered = []
+    for row in rows:
+        row_scope = str(row["scope_level"] or "private").strip().lower() or "private"
+        owned = int(row["teacher_id"] or 0) == int(teacher_id)
+        if scope_filter == "owned" and not owned:
+            continue
+        if scope_filter == "shared" and owned:
+            continue
+        if scope_filter in {"private", "department", "school"} and row_scope != scope_filter:
+            continue
+        row_school = str(row["school_name"] or row["school_code"] or "").strip().lower()
+        if school_filter and row_school != school_filter:
+            continue
+        row_department = str(row["department"] or "").strip().lower()
+        if department_filter and row_department != department_filter:
+            continue
+        filtered.append(row)
+    return filtered
+
+
 def _build_material_order_clause(sort_by: str, sort_order: str) -> str:
     direction = "ASC" if sort_order == "asc" else "DESC"
     name_fallback = "m.name COLLATE NOCASE ASC, m.id DESC"
@@ -1419,11 +1473,17 @@ async def manage_materials_page(request: Request, user: dict = Depends(get_curre
 async def get_teacher_material_library(
     parent_id: int | None = Query(default=None),
     keyword: str = Query(default=""),
+    scope_level: str = Query(default="all"),
+    school: str = Query(default=""),
+    department: str = Query(default=""),
     sort_by: str = Query(default=MATERIAL_LIBRARY_DEFAULT_SORT_BY),
     sort_order: str = Query(default=MATERIAL_LIBRARY_DEFAULT_SORT_ORDER),
     user: dict = Depends(get_current_teacher),
 ):
     normalized_keyword = _normalize_material_keyword(keyword)
+    normalized_scope_filter = _normalize_material_scope_filter(scope_level)
+    normalized_school_filter = _normalize_material_org_filter(school)
+    normalized_department_filter = _normalize_material_org_filter(department)
     normalized_sort_by, normalized_sort_order = _normalize_material_sort(sort_by, sort_order)
 
     with get_db_connection() as conn:
@@ -1435,13 +1495,21 @@ async def get_teacher_material_library(
                 raise HTTPException(400, "只能打开文件夹")
             breadcrumbs = get_material_breadcrumbs(conn, parent_id)
 
-        rows = _list_material_rows_for_parent(
+        all_rows = _list_material_rows_for_parent(
             conn,
             user["id"],
             current_folder,
             keyword=normalized_keyword,
             sort_by=normalized_sort_by,
             sort_order=normalized_sort_order,
+        )
+        facets = _build_material_filter_facets(all_rows, int(user["id"]))
+        rows = _apply_material_library_filters(
+            all_rows,
+            teacher_id=int(user["id"]),
+            scope_filter=normalized_scope_filter,
+            school=normalized_school_filter,
+            department=normalized_department_filter,
         )
         items = [_decorate_learning_document_item(item) for item in _serialize_material_items(conn, rows, user=user)]
         current_folder_item = None
@@ -1467,9 +1535,13 @@ async def get_teacher_material_library(
         "stats": stats,
         "filters": {
             "keyword": normalized_keyword,
+            "scope_level": normalized_scope_filter,
+            "school": normalized_school_filter,
+            "department": normalized_department_filter,
             "sort_by": normalized_sort_by,
             "sort_order": normalized_sort_order,
         },
+        "facets": facets,
         "overview": overview,
     }
 
@@ -4938,7 +5010,7 @@ async def update_material_scope(
         raise HTTPException(400, "Invalid material scope")
     now_text = datetime.now().isoformat()
     with get_db_connection() as conn:
-        material = ensure_user_material_access(conn, material_id, user)
+        material = ensure_teacher_material_owner(conn, material_id, user["id"])
         owner_scope = load_teacher_org_scope(conn, int(material["teacher_id"]))
         conn.execute(
             """

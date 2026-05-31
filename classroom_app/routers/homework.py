@@ -94,7 +94,13 @@ from ..services.learning_progress_service import (
     submit_stage_exam_for_ai_grading,
 )
 from ..services.organization_scope_service import load_teacher_org_scope
+from ..services.file_service import resolve_global_file_path
+from ..services.materials_service import ensure_user_material_access
 from ..services.resource_access_service import (
+    SCOPE_DEPARTMENT,
+    SCOPE_PRIVATE,
+    SCOPE_SCHOOL,
+    normalize_scope_level,
     teacher_can_manage_exam_paper,
     teacher_can_use_exam_paper,
 )
@@ -335,6 +341,23 @@ def _teacher_can_access_assignment(assignment: dict[str, Any], teacher_id: int) 
 
 def _hide_personal_stage_asset() -> None:
     raise HTTPException(404, PERSONAL_STAGE_TEACHER_HIDDEN_MESSAGE)
+
+
+EXAM_OPEN_SCOPES = {SCOPE_PRIVATE, SCOPE_DEPARTMENT, SCOPE_SCHOOL}
+EXAM_SCOPE_LABELS = {
+    SCOPE_PRIVATE: "私有",
+    SCOPE_DEPARTMENT: "本系部开放",
+    SCOPE_SCHOOL: "全校开放",
+}
+
+
+def _normalize_exam_open_scope(value: Any, default: str = SCOPE_DEPARTMENT) -> str:
+    scope = normalize_scope_level(value, default=default)
+    return scope if scope in EXAM_OPEN_SCOPES else default
+
+
+def _exam_scope_label(scope_level: Any) -> str:
+    return EXAM_SCOPE_LABELS.get(_normalize_exam_open_scope(scope_level, default=SCOPE_PRIVATE), "私有")
 
 
 def _get_exam_paper_for_teacher(conn, paper_id: str, teacher_id: int, *, manage: bool = False) -> dict[str, Any]:
@@ -3416,7 +3439,6 @@ async def withdraw_submission(assignment_id: str, user: dict = Depends(get_curre
 async def list_exam_papers(user: dict = Depends(get_current_teacher)):
     """获取当前教师的所有试卷"""
     with get_db_connection() as conn:
-        teacher_scope = load_teacher_org_scope(conn, int(user["id"]))
         super_row = conn.execute(
             "SELECT COALESCE(is_super_admin, 0) AS is_super_admin FROM teachers WHERE id = ?",
             (int(user["id"]),),
@@ -3434,14 +3456,7 @@ async def list_exam_papers(user: dict = Depends(get_current_teacher)):
                          )) as assigned_count
                FROM exam_papers ep
                LEFT JOIN teachers t ON t.id = ep.teacher_id
-               WHERE (
-                    ? = 1
-                    OR ep.teacher_id = ?
-                    OR (
-                        lower(TRIM(COALESCE(ep.school_code, ?))) = lower(TRIM(?))
-                        AND lower(TRIM(COALESCE(ep.department, ''))) = lower(TRIM(?))
-                    )
-               )
+               WHERE (? = 1 OR ep.teacher_id = ? OR COALESCE(ep.scope_level, 'private') != 'private')
                  AND NOT EXISTS (
                      SELECT 1 FROM learning_stage_exam_attempts lsea
                      WHERE lsea.exam_paper_id = ep.id
@@ -3450,17 +3465,18 @@ async def list_exam_papers(user: dict = Depends(get_current_teacher)):
             (
                 1 if is_super_admin else 0,
                 user["id"],
-                teacher_scope["school_code"],
-                teacher_scope["school_code"],
-                teacher_scope["department"],
             )
         )
         papers = []
         for row in cursor:
             item = dict(row)
+            if not teacher_can_use_exam_paper(conn, int(user["id"]), item):
+                continue
             item["is_owned"] = int(item.get("teacher_id") or 0) == int(user["id"])
             item["can_manage"] = item["is_owned"] or is_super_admin
             item["is_shared_paper"] = not item["is_owned"]
+            item["scope_level"] = _normalize_exam_open_scope(item.get("scope_level"), default=SCOPE_PRIVATE)
+            item["scope_label"] = _exam_scope_label(item["scope_level"])
             papers.append(item)
     return {"status": "success", "papers": papers}
 
@@ -3500,13 +3516,39 @@ async def download_exam_json_template(user: dict = Depends(get_current_teacher))
 
 
 @router.post("/exam-papers/import-json", response_class=JSONResponse)
-async def import_exam_paper_json(file: UploadFile = File(...), user: dict = Depends(get_current_teacher)):
+async def import_exam_paper_json(
+    file: UploadFile | None = File(default=None),
+    material_id: int | None = Form(default=None),
+    user: dict = Depends(get_current_teacher),
+):
     """解析原生 JSON 试卷文件，不调用内置 AI。"""
-    filename = Path(str(file.filename or "exam.json")).name
-    if Path(filename).suffix.lower() != ".json":
-        raise HTTPException(400, "请上传 .json 文件")
+    has_upload = bool(file and str(file.filename or "").strip())
+    has_material = material_id is not None
+    if has_upload == has_material:
+        raise HTTPException(400, "请上传 1 份 JSON 文件，或从本站材料中选择 1 份 JSON，不能同时选择。")
 
-    raw = await file.read()
+    if has_material:
+        with get_db_connection() as conn:
+            material = ensure_user_material_access(conn, int(material_id), user)
+            if str(material["node_type"] or "") != "file":
+                raise HTTPException(400, "只能选择 JSON 文件材料")
+            filename = Path(str(material["name"] or material["material_path"] or "exam.json")).name
+            file_hash = str(material["file_hash"] or "").strip()
+        if Path(filename).suffix.lower() != ".json":
+            raise HTTPException(400, "请选择 .json 材料")
+        source_path = resolve_global_file_path(file_hash)
+        if source_path is None:
+            raise HTTPException(404, "材料文件不存在或尚未完成存储")
+        if source_path.stat().st_size > EXAM_JSON_MAX_BYTES:
+            raise HTTPException(413, "JSON 文件不能超过 2MB")
+        raw = source_path.read_bytes()
+    else:
+        assert file is not None
+        filename = Path(str(file.filename or "exam.json")).name
+        if Path(filename).suffix.lower() != ".json":
+            raise HTTPException(400, "请上传 .json 文件")
+        raw = await file.read()
+
     if not raw:
         raise HTTPException(400, "JSON 文件为空")
     if len(raw) > EXAM_JSON_MAX_BYTES:
@@ -3532,6 +3574,7 @@ async def create_exam_paper(request: Request, user: dict = Depends(get_current_t
     data = await request.json()
     paper_id = data.get('id') or str(uuid.uuid4())
     now = datetime.now().isoformat()
+    scope_level = _normalize_exam_open_scope(data.get("scope_level"), default=SCOPE_DEPARTMENT)
     try:
         questions_payload = normalize_exam_scoring_payload(data.get('questions', {"pages": []}))
     except ValueError as exc:
@@ -3545,12 +3588,13 @@ async def create_exam_paper(request: Request, user: dict = Depends(get_current_t
                     owner_role, owner_user_pk, scope_level, school_code, school_name, college, department,
                     created_at, updated_at
                )
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'teacher', ?, 'department', ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'teacher', ?, ?, ?, ?, ?, ?, ?, ?)""",
             (paper_id, user['id'], data['title'], data.get('description', ''),
              json.dumps(questions_payload, ensure_ascii=False),
              json.dumps(data.get('config', {}), ensure_ascii=False),
              data.get('status', 'draft'),
              user["id"],
+             scope_level,
              teacher_scope["school_code"],
              teacher_scope["school_name"],
              teacher_scope["college"],
@@ -3583,6 +3627,10 @@ async def get_exam_paper(paper_id: str, user: dict = Depends(get_current_user)):
             (paper_id,)
         ).fetchall()
         result['assignments'] = [dict(row) for row in assignments]
+        result["is_owned"] = int(result.get("teacher_id") or 0) == int(user["id"])
+        result["can_manage"] = teacher_can_manage_exam_paper(conn, int(user["id"]), result)
+        result["scope_level"] = _normalize_exam_open_scope(result.get("scope_level"), default=SCOPE_PRIVATE)
+        result["scope_label"] = _exam_scope_label(result["scope_level"])
     return {"status": "success", "paper": result}
 
 
@@ -3591,22 +3639,39 @@ async def update_exam_paper(paper_id: str, request: Request, user: dict = Depend
     """更新试卷"""
     data = await request.json()
     now = datetime.now().isoformat()
+    requested_scope = _normalize_exam_open_scope(data.get("scope_level"), default=SCOPE_DEPARTMENT)
     try:
         questions_payload = normalize_exam_scoring_payload(data.get('questions', {"pages": []}))
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
     with get_db_connection() as conn:
-        _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]), manage=True)
+        paper = _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]), manage=True)
+        owner_scope = load_teacher_org_scope(conn, int(paper.get("teacher_id") or user["id"]))
 
         conn.execute(
             """UPDATE exam_papers
-               SET title = ?, description = ?, questions_json = ?, exam_config_json = ?, status = ?, updated_at = ?
+               SET title = ?, description = ?, questions_json = ?, exam_config_json = ?, status = ?,
+                   owner_role = 'teacher',
+                   owner_user_pk = ?,
+                   scope_level = ?,
+                   school_code = ?,
+                   school_name = ?,
+                   college = ?,
+                   department = ?,
+                   updated_at = ?
                WHERE id = ?""",
             (data['title'], data.get('description', ''),
              json.dumps(questions_payload, ensure_ascii=False),
              json.dumps(data.get('config', {}), ensure_ascii=False),
-             data.get('status', 'draft'), now, paper_id)
+             data.get('status', 'draft'),
+             int(paper.get("teacher_id") or user["id"]),
+             requested_scope,
+             owner_scope["school_code"],
+             owner_scope["school_name"],
+             owner_scope["college"],
+             owner_scope["department"],
+             now, paper_id)
         )
         conn.commit()
     return {"status": "success", "paper_id": paper_id}

@@ -691,6 +691,50 @@
             background: #f8fafc;
             padding: 14px;
         }
+        .source-picker {
+            display: grid;
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .source-picker-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
+            align-items: center;
+        }
+        .source-candidate-list {
+            display: grid;
+            gap: 8px;
+            max-height: 180px;
+            overflow-y: auto;
+        }
+        .source-candidate-btn {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
+            padding: 9px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            background: #fff;
+            color: var(--text-primary);
+            text-align: left;
+            cursor: pointer;
+        }
+        .source-candidate-btn.is-selected {
+            border-color: #6366f1;
+            background: #eef2ff;
+        }
+        .source-candidate-btn strong,
+        .source-candidate-btn small {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .source-candidate-btn small,
+        .source-selected-summary {
+            color: var(--text-muted);
+            font-size: 0.78rem;
+        }
         .json-dropzone {
             display: grid;
             place-items: center;
@@ -1060,6 +1104,14 @@
                     <label class="form-label text-xs text-muted mb-1">试卷说明</label>
                     <textarea id="exam-desc" class="form-control form-control-sm" rows="3" placeholder="填写注意事项或考试说明...">{{ paper.description if paper and paper.description else '' }}</textarea>
                 </div>
+                <div class="form-group mt-3 mb-0">
+                    <label class="form-label text-xs text-muted mb-1">开放范围</label>
+                    <select id="exam-scope-level" class="form-control form-control-sm">
+                        <option value="private" {% if paper and paper.scope_level == 'private' %}selected{% endif %}>仅自己可见</option>
+                        <option value="department" {% if not paper or not paper.scope_level or paper.scope_level == 'department' %}selected{% endif %}>本系部开放</option>
+                        <option value="school" {% if paper and paper.scope_level == 'school' %}selected{% endif %}>全校开放</option>
+                    </select>
+                </div>
                 <div class="exam-ai-policy-card">
                     <label class="exam-ai-policy-toggle">
                         <input type="checkbox" id="exam-allow-student-ai">
@@ -1238,8 +1290,18 @@
                         </div>
                         <div class="source-lane">
                             <label class="form-label">参考文件（由内置 AI 解析）</label>
-                            <input type="file" id="ai-exam-files" class="form-control" multiple accept=".pdf,.txt,.md,.markdown,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx">
-                            <div class="text-xs text-muted mt-1">支持 PDF、TXT、Markdown、Word、Excel、PPT 等格式，最多 5 个文件。</div>
+                            <input type="file" id="ai-exam-files" class="form-control" multiple accept=".pdf,.txt,.md,.markdown,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.json,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.svg">
+                            <div class="text-xs text-muted mt-1">支持 PDF、TXT、Markdown、Word、Excel、PPT、JSON、图片等格式；本站材料和本地上传合计最多 10 份。</div>
+                            <div class="source-picker">
+                                <div class="source-picker-row">
+                                    <input type="search" id="ai-exam-material-query" class="form-control form-control-sm" placeholder="搜索本人可访问的本站材料">
+                                    <button type="button" class="btn btn-outline btn-sm" onclick="searchExamSourceMaterials()">搜索</button>
+                                </div>
+                                <div class="source-candidate-list" id="ai-exam-material-list">
+                                    <div class="text-xs text-muted">输入关键词或打开弹窗后会列出最近可用材料。</div>
+                                </div>
+                                <div class="source-selected-summary" id="ai-exam-selected-materials">未选择本站材料</div>
+                            </div>
                         </div>
                     </div>
 
@@ -1349,6 +1411,15 @@
                     </div>
                 </div>
                 <div class="json-file-chip" id="json-file-chip"></div>
+                <div class="source-picker">
+                    <div class="source-picker-row">
+                        <input type="search" id="json-material-query" class="form-control form-control-sm" placeholder="搜索本站 JSON 材料">
+                        <button type="button" class="btn btn-outline btn-sm" onclick="searchJsonSourceMaterials()">搜索</button>
+                    </div>
+                    <div class="source-candidate-list" id="json-material-list">
+                        <div class="text-xs text-muted">可选择本人可访问的 .json 材料，且只能选择一份。</div>
+                    </div>
+                </div>
                 <div class="import-summary" id="json-import-summary"></div>
 
                 <div class="json-template-actions">
@@ -1400,6 +1471,9 @@
         let examConfig = {};
         let currentPageIdx = -1;
         let nativeJsonFile = null;
+        let nativeJsonMaterial = null;
+        let redirectAfterSaveToList = false;
+        const selectedExamSourceMaterials = new Map();
         let scoringSaveAfterApply = false;
         let activeScoringIndex = 0;
 
@@ -1460,6 +1534,14 @@
             }
 
             initNativeJsonImport();
+            document.getElementById('ai-exam-files')?.addEventListener('change', (event) => {
+                const fileCount = event.target.files?.length || 0;
+                if (fileCount + selectedExamSourceMaterials.size > 10) {
+                    showToast('本站材料和本地上传合计最多 10 份', 'warning');
+                    event.target.value = '';
+                }
+            });
+            restoreRetryExamGeneration();
         });
 
         function hasExistingQuestions() {
@@ -2309,6 +2391,7 @@
             const payload = {
                 title: title,
                 description: document.getElementById('exam-desc').value,
+                scope_level: document.getElementById('exam-scope-level')?.value || 'department',
                 questions: examData,
                 config: {
                     ...examConfig,
@@ -2328,7 +2411,9 @@
                 const data = await resp.json();
                 if (resp.ok) {
                     showToast('试卷保存成功', 'success');
-                    if (!EXAM_ID && data.paper_id) {
+                    if (redirectAfterSaveToList) {
+                        setTimeout(() => window.location.href = '/manage/exams', 650);
+                    } else if (!EXAM_ID && data.paper_id) {
                         setTimeout(() => window.location.href = `/exam/${data.paper_id}/edit`, 800);
                     }
                 } else {
@@ -2429,8 +2514,187 @@
             });
         }
 
+        function formatSourceSize(bytes) {
+            const size = Number(bytes || 0);
+            if (!Number.isFinite(size) || size <= 0) return '';
+            if (size < 1024) return `${size} B`;
+            if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+            return `${(size / 1024 / 1024).toFixed(1)} MB`;
+        }
+
+        function renderSourceCandidateList(containerId, items, selectedMap, onClickName) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            if (!items.length) {
+                container.innerHTML = '<div class="text-xs text-muted">没有找到可用材料。</div>';
+                return;
+            }
+            container.innerHTML = items.map(item => {
+                const selected = selectedMap.has(Number(item.id));
+                const meta = [item.file_ext, formatSourceSize(item.file_size), item.scope_label].filter(Boolean).join(' · ');
+                return `
+                    <button type="button" class="source-candidate-btn ${selected ? 'is-selected' : ''}" onclick="${onClickName}(${Number(item.id)})" data-source-id="${Number(item.id)}">
+                        <span>
+                            <strong>${escapeHtml(item.name)}</strong>
+                            <small>${escapeHtml(item.material_path || '')}</small>
+                        </span>
+                        <small>${escapeHtml(meta)}</small>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        async function fetchExamSourceMaterials({ query = '', jsonOnly = false } = {}) {
+            const params = new URLSearchParams();
+            if (query) params.set('keyword', query);
+            if (jsonOnly) params.set('json_only', 'true');
+            params.set('limit', jsonOnly ? '40' : '60');
+            const response = await fetch(`/api/ai/exam/source-materials?${params.toString()}`);
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || '加载本站材料失败');
+            return data.items || [];
+        }
+
+        function updateSelectedExamSourceMaterials() {
+            const target = document.getElementById('ai-exam-selected-materials');
+            if (!target) return;
+            const names = [...selectedExamSourceMaterials.values()].map(item => item.name);
+            target.textContent = names.length ? `已选择 ${names.length} 份本站材料：${names.join('、')}` : '未选择本站材料';
+        }
+
+        function parseExamConfigValue(rawValue) {
+            if (!rawValue) return {};
+            if (typeof rawValue === 'object') return rawValue;
+            try {
+                const parsed = JSON.parse(rawValue);
+                return parsed && typeof parsed === 'object' ? parsed : {};
+            } catch (error) {
+                return {};
+            }
+        }
+
+        function setFieldValue(id, value) {
+            const field = document.getElementById(id);
+            if (!field) return;
+            field.value = value === undefined || value === null ? '' : String(value);
+        }
+
+        function applyRetryExamConfig(paper) {
+            const config = parseExamConfigValue(paper?.exam_config_json);
+            const questionTypes = config.question_types && typeof config.question_types === 'object'
+                ? config.question_types
+                : {};
+            setFieldValue('ai-exam-title', paper?.title || '');
+            setFieldValue('ai-exam-scope', config.scope || '');
+            setFieldValue('ai-exam-difficulty', config.difficulty || 'medium');
+            setFieldValue('ai-exam-total', config.total_questions || '');
+            setFieldValue('ai-exam-offering', config.class_offering_id || '');
+            setFieldValue('ai-exam-radio', questionTypes.radio || '');
+            setFieldValue('ai-exam-checkbox', questionTypes.checkbox || '');
+            setFieldValue('ai-exam-text', questionTypes.text || '');
+            setFieldValue('ai-exam-textarea', questionTypes.textarea || '');
+
+            selectedExamSourceMaterials.clear();
+            const sourceItems = Array.isArray(config.source_files) ? config.source_files : [];
+            sourceItems.forEach(item => {
+                if ((item?.source_kind || '') !== 'material' || !item.source_id) return;
+                const id = Number(item.source_id);
+                if (!Number.isFinite(id) || id <= 0) return;
+                selectedExamSourceMaterials.set(id, {
+                    id,
+                    name: item.name || `材料 #${id}`,
+                    file_ext: item.file_ext || '',
+                    scope_label: item.scope_label || '',
+                });
+            });
+            updateSelectedExamSourceMaterials();
+
+            const lostUploadCount = sourceItems.filter(item => (item?.source_kind || '') === 'upload').length;
+            if (lostUploadCount > 0) {
+                showToast('上次本地上传的文件无法自动带回，请按需重新选择。', 'info');
+            }
+        }
+
+        async function restoreRetryExamGeneration() {
+            const retryFrom = new URLSearchParams(window.location.search).get('retry_from');
+            if (!retryFrom) return;
+            try {
+                const response = await fetch(`/api/homework/exam-papers/${encodeURIComponent(retryFrom)}`);
+                const data = await response.json();
+                if (!response.ok || data.status !== 'success') {
+                    throw new Error(data.detail || '加载失败试卷配置失败');
+                }
+                window.openAIGenerateModal();
+                applyRetryExamConfig(data.paper || {});
+                showToast('已带回上次失败任务的生成配置，可编辑后重新生成。', 'info');
+            } catch (error) {
+                showToast(error.message || '加载失败试卷配置失败', 'error');
+            }
+        }
+
+        window.searchExamSourceMaterials = async function() {
+            const query = document.getElementById('ai-exam-material-query')?.value.trim() || '';
+            const list = document.getElementById('ai-exam-material-list');
+            if (list) list.innerHTML = '<div class="text-xs text-muted">正在加载本站材料...</div>';
+            try {
+                const items = await fetchExamSourceMaterials({ query });
+                window._lastExamSourceMaterials = items;
+                renderSourceCandidateList('ai-exam-material-list', items, selectedExamSourceMaterials, 'toggleExamSourceMaterial');
+            } catch (error) {
+                if (list) list.innerHTML = `<div class="text-xs text-danger">${escapeHtml(error.message)}</div>`;
+            }
+        };
+
+        window.toggleExamSourceMaterial = function(materialId) {
+            const id = Number(materialId);
+            if (selectedExamSourceMaterials.has(id)) {
+                selectedExamSourceMaterials.delete(id);
+            } else {
+                const localFileCount = document.getElementById('ai-exam-files')?.files?.length || 0;
+                if (localFileCount + selectedExamSourceMaterials.size >= 10) {
+                    showToast('本站材料和本地上传合计最多 10 份', 'warning');
+                    return;
+                }
+                const item = (window._lastExamSourceMaterials || []).find(entry => Number(entry.id) === id);
+                if (item) selectedExamSourceMaterials.set(id, item);
+            }
+            updateSelectedExamSourceMaterials();
+            renderSourceCandidateList('ai-exam-material-list', window._lastExamSourceMaterials || [], selectedExamSourceMaterials, 'toggleExamSourceMaterial');
+        };
+
+        window.searchJsonSourceMaterials = async function() {
+            const query = document.getElementById('json-material-query')?.value.trim() || '';
+            const list = document.getElementById('json-material-list');
+            if (list) list.innerHTML = '<div class="text-xs text-muted">正在加载 JSON 材料...</div>';
+            try {
+                const items = await fetchExamSourceMaterials({ query, jsonOnly: true });
+                window._lastJsonSourceMaterials = items;
+                const selected = new Map();
+                if (nativeJsonMaterial) selected.set(Number(nativeJsonMaterial.id), nativeJsonMaterial);
+                renderSourceCandidateList('json-material-list', items, selected, 'selectJsonSourceMaterial');
+            } catch (error) {
+                if (list) list.innerHTML = `<div class="text-xs text-danger">${escapeHtml(error.message)}</div>`;
+            }
+        };
+
+        window.selectJsonSourceMaterial = function(materialId) {
+            const id = Number(materialId);
+            const item = (window._lastJsonSourceMaterials || []).find(entry => Number(entry.id) === id);
+            nativeJsonMaterial = nativeJsonMaterial && Number(nativeJsonMaterial.id) === id ? null : (item || null);
+            if (nativeJsonMaterial) {
+                nativeJsonFile = null;
+                const fileInput = document.getElementById('json-exam-file');
+                if (fileInput) fileInput.value = '';
+            }
+            setNativeJsonFile(nativeJsonFile);
+            const selected = new Map();
+            if (nativeJsonMaterial) selected.set(Number(nativeJsonMaterial.id), nativeJsonMaterial);
+            renderSourceCandidateList('json-material-list', window._lastJsonSourceMaterials || [], selected, 'selectJsonSourceMaterial');
+        };
+
         function setNativeJsonFile(file) {
             nativeJsonFile = file;
+            if (file) nativeJsonMaterial = null;
             const chip = document.getElementById('json-file-chip');
             const summary = document.getElementById('json-import-summary');
             const importBtn = document.getElementById('import-json-btn');
@@ -2448,7 +2712,7 @@
                     chip.textContent = '';
                 }
             }
-            if (importBtn) importBtn.disabled = !file;
+            if (importBtn) importBtn.disabled = !file && !nativeJsonMaterial;
         }
 
         function showJsonImportSummary(message, type = 'success') {
@@ -2464,9 +2728,11 @@
             if (!modal) return;
             modal.style.display = 'flex';
             setTimeout(() => modal.classList.add('active'), 10);
+            nativeJsonMaterial = null;
             setNativeJsonFile(null);
             const fileInput = document.getElementById('json-exam-file');
             if (fileInput) fileInput.value = '';
+            window.searchJsonSourceMaterials();
         };
 
         window.closeNativeJsonImportModal = function() {
@@ -2481,8 +2747,8 @@
         };
 
         window.importNativeJsonExam = async function() {
-            if (!nativeJsonFile) {
-                showToast('请先选择 JSON 文件', 'warning');
+            if (!nativeJsonFile && !nativeJsonMaterial) {
+                showToast('请先选择 JSON 文件或本站 JSON 材料', 'warning');
                 return;
             }
 
@@ -2493,7 +2759,11 @@
 
             try {
                 const formData = new FormData();
-                formData.append('file', nativeJsonFile, nativeJsonFile.name);
+                if (nativeJsonMaterial) {
+                    formData.append('material_id', String(nativeJsonMaterial.id));
+                } else {
+                    formData.append('file', nativeJsonFile, nativeJsonFile.name);
+                }
                 const response = await fetch('/api/exam-papers/import-json', {
                     method: 'POST',
                     body: formData
@@ -2508,6 +2778,7 @@
                 showJsonImportSummary(statsText ? `解析完成：${statsText}` : '解析完成');
                 const applied = applyImportedExamToEditor(imported, '原生 JSON');
                 if (applied) {
+                    redirectAfterSaveToList = true;
                     window.closeNativeJsonImportModal();
                 }
             } catch (error) {
@@ -2515,7 +2786,7 @@
                 showJsonImportSummary(error.message, 'error');
                 showToast(`导入失败: ${error.message}`, 'error');
             } finally {
-                importBtn.disabled = !nativeJsonFile;
+                importBtn.disabled = !nativeJsonFile && !nativeJsonMaterial;
                 importBtn.textContent = originalText;
             }
         };
@@ -2533,6 +2804,9 @@
                 // 重置表单
                 document.getElementById('ai-exam-form').reset();
                 document.getElementById('ai-exam-title').value = document.getElementById('exam-title').value || '';
+                selectedExamSourceMaterials.clear();
+                updateSelectedExamSourceMaterials();
+                window.searchExamSourceMaterials();
                 // 隐藏任务状态区域
                 document.getElementById('ai-task-status').classList.add('hidden');
                 // 重置按钮状态
@@ -2633,13 +2907,18 @@
             const difficulty = document.getElementById('ai-exam-difficulty').value;
             const filesInput = document.getElementById('ai-exam-files');
             const sourceFiles = Array.from(filesInput?.files || []);
+            const selectedMaterialIds = [...selectedExamSourceMaterials.keys()];
             const totalRaw = document.getElementById('ai-exam-total').value.trim();
             const totalQuestions = totalRaw ? parseInt(totalRaw, 10) : null;
             const offeringSelect = document.getElementById('ai-exam-offering');
             const classOfferingId = offeringSelect.value ? parseInt(offeringSelect.value) : null;
 
-            if (!scope && sourceFiles.length === 0) {
-                showToast('请填写出题范围，或上传一份出题参考文件', 'warning');
+            if (!scope && sourceFiles.length === 0 && selectedMaterialIds.length === 0) {
+                showToast('请填写出题范围，或选择/上传一份出题参考文件', 'warning');
+                return;
+            }
+            if (sourceFiles.length + selectedMaterialIds.length > 10) {
+                showToast('本站材料和本地上传合计最多 10 份', 'warning');
                 return;
             }
             if (totalRaw && (!Number.isInteger(totalQuestions) || totalQuestions < 1 || totalQuestions > 50)) {
@@ -2700,6 +2979,7 @@
                     payload.append('class_offering_id', String(classOfferingId));
                 }
                 payload.append('question_types', JSON.stringify(questionTypes));
+                payload.append('source_material_ids', JSON.stringify(selectedMaterialIds));
                 sourceFiles.forEach(file => payload.append('source_files', file));
 
                 const response = await fetch('/api/ai/exam/generate', {

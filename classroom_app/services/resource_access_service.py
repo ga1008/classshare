@@ -190,11 +190,9 @@ def teacher_can_use_exam_paper(conn: sqlite3.Connection, teacher_id: int | str, 
     teacher_pk = _safe_int(teacher_id)
     if teacher_pk is None:
         return False
-    return teacher_can_manage_owned_row(conn, teacher_pk, paper_row, owner_key="teacher_id") or _teacher_matches_department(
-        conn,
-        teacher_pk,
-        paper_row,
-    )
+    if teacher_can_manage_owned_row(conn, teacher_pk, paper_row, owner_key="teacher_id"):
+        return True
+    return can_read_scoped_resource(conn, paper_row, {"role": "teacher", "id": teacher_pk})
 
 
 def teacher_can_manage_exam_paper(conn: sqlite3.Connection, teacher_id: int | str, paper_row: Any) -> bool:
