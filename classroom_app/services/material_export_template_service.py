@@ -1,8 +1,12 @@
 import io
 import json
 import re
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from .material_final_document_service import (
@@ -23,6 +27,7 @@ class MaterialExportArtifact:
 
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+PDF_MEDIA_TYPE = "application/pdf"
 
 
 TEMPLATE_CONFIGS: dict[str, dict[str, str]] = {
@@ -60,15 +65,33 @@ def build_material_export_artifact(
     requested_format: str | None = None,
 ) -> MaterialExportArtifact:
     payload = _coerce_payload(parse_payload)
+    if "export_payload" not in payload and str(payload.get("template_key") or "").strip():
+        template_key = str(payload.get("template_key") or "").strip()
+        payload = {
+            "document_group": payload.get("document_group") or ("final_material" if template_key in FINAL_MATERIAL_TYPES else ""),
+            "document_type": payload.get("document_type") or template_key,
+            "document_type_label": payload.get("document_type_label") or final_material_label(template_key),
+            "metadata": payload.get("fields") if isinstance(payload.get("fields"), dict) else {},
+            "content_markdown": payload.get("content_markdown") or _as_dict(payload.get("structured")).get("rubric_body_markdown") or "",
+            "tables": payload.get("tables") if isinstance(payload.get("tables"), list) else [],
+            "export_payload": payload,
+        }
     export_payload = _as_dict(payload.get("export_payload"))
     template_key = str(export_payload.get("template_key") or payload.get("document_type") or "teaching_document")
     config = TEMPLATE_CONFIGS.get(template_key, TEMPLATE_CONFIGS.get(str(payload.get("document_type")), {}))
     output_format = (requested_format or config.get("preferred_format") or "docx").strip().lower()
-    if output_format not in {"docx", "xlsx"}:
+    if output_format not in {"docx", "xlsx", "pdf"}:
         output_format = "docx"
 
     title = _resolve_title(payload, config, fallback_filename)
     base_name = _safe_filename(title or fallback_filename or "材料导出")
+    if output_format == "pdf":
+        docx_content = _build_docx_export(payload, title=title)
+        return MaterialExportArtifact(
+            content=_convert_docx_bytes_to_pdf(docx_content, base_name=base_name),
+            filename=f"{base_name}.pdf",
+            media_type=PDF_MEDIA_TYPE,
+        )
     if output_format == "xlsx":
         return MaterialExportArtifact(
             content=_build_xlsx_export(payload, title=title),
@@ -80,6 +103,36 @@ def build_material_export_artifact(
         filename=f"{base_name}.docx",
         media_type=DOCX_MEDIA_TYPE,
     )
+
+
+def _convert_docx_bytes_to_pdf(docx_content: bytes, *, base_name: str) -> bytes:
+    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    if not soffice:
+        raise RuntimeError("当前服务器未安装 LibreOffice，无法导出 PDF；请先导出 Word 或安装 LibreOffice。")
+    with tempfile.TemporaryDirectory(prefix="lanshare-material-export-") as temp_dir:
+        work_dir = Path(temp_dir)
+        docx_path = work_dir / f"{base_name or 'material'}.docx"
+        docx_path.write_bytes(docx_content)
+        command = [
+            soffice,
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            str(work_dir),
+            str(docx_path),
+        ]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=90)
+        if result.returncode != 0:
+            stderr = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(f"LibreOffice PDF 转换失败：{stderr[:240] or '未知错误'}")
+        pdf_path = docx_path.with_suffix(".pdf")
+        if not pdf_path.exists():
+            pdf_files = sorted(work_dir.glob("*.pdf"))
+            pdf_path = pdf_files[0] if pdf_files else pdf_path
+        if not pdf_path.exists():
+            raise RuntimeError("LibreOffice PDF 转换未生成文件。")
+        return pdf_path.read_bytes()
 
 
 def _build_docx_export(payload: dict[str, Any], *, title: str) -> bytes:
@@ -186,13 +239,12 @@ def _build_final_material_docx_export(payload: dict[str, Any], *, title: str, te
     styles["Normal"].font.size = Pt(10.5)
     styles["Normal"]._element.rPr.rFonts.set(qn("w:eastAsia"), "宋体")
 
-    if template_key == "exam_paper":
-        _add_exam_student_line(document)
-
     if template_key == "assessment_plan":
         _add_assessment_plan_title_block(document, fields)
     elif template_key == "grading_rubric":
         _add_grading_rubric_title_block(document, fields)
+    elif template_key == "exam_paper":
+        _add_exam_paper_title_block(document, fields)
     else:
         _add_final_title_block(document, template_key, fields)
     if template_key == "assessment_plan":
@@ -209,15 +261,17 @@ def _build_final_material_docx_export(payload: dict[str, Any], *, title: str, te
         buffer = io.BytesIO()
         document.save(buffer)
         return buffer.getvalue()
-    footer_label = "课程考核试卷" if template_key == "exam_paper" else final_material_label(template_key)
+    if template_key == "exam_paper":
+        _add_exam_paper_footer(footer)
+        buffer = io.BytesIO()
+        document.save(buffer)
+        return buffer.getvalue()
+    footer_label = final_material_label(template_key)
     _set_run_songti(footer.add_run(f"广西外国语学院{footer_label}       第 "), 9, color="808080")
     _add_docx_field(footer, "PAGE", size=9, color="808080")
     _set_run_songti(footer.add_run(" 页 共 "), 9, color="808080")
     _add_docx_field(footer, "NUMPAGES", size=9, color="808080")
-    if template_key == "exam_paper":
-        _set_run_songti(footer.add_run(" 页 考试过程中不得将试卷拆开"), 9, color="808080")
-    else:
-        _set_run_songti(footer.add_run(" 页"), 9, color="808080")
+    _set_run_songti(footer.add_run(" 页"), 9, color="808080")
 
     buffer = io.BytesIO()
     document.save(buffer)
@@ -291,6 +345,28 @@ def _add_grading_rubric_title_block(document: Any, fields: dict[str, Any]) -> No
     _set_run_songti(subtitle.add_run(f"（{_assessment_mode_label(fields)}）"), 12)
 
 
+def _add_exam_paper_title_block(document: Any, fields: dict[str, Any]) -> None:
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Pt
+
+    title = document.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title.paragraph_format.space_before = Pt(34)
+    title.paragraph_format.space_after = Pt(12)
+    _set_run_songti(title.add_run("广西外国语学院课程考核试卷"), 18, bold=True)
+
+    period = document.add_paragraph()
+    period.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    period.paragraph_format.space_after = Pt(12)
+    _add_assessment_period_runs(period, fields)
+
+    flags = document.add_paragraph()
+    flags.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    flags.paragraph_format.space_after = Pt(12)
+    _set_run_songti(flags.add_run(_exam_flags_text(fields)), 12, bold=True)
+    _add_exam_student_line(document)
+
+
 def _add_assessment_plan_export_body(document: Any, fields: dict[str, Any], structured: dict[str, Any]) -> None:
     from docx.shared import Pt
 
@@ -335,15 +411,11 @@ def _add_exam_paper_export_body(document: Any, fields: dict[str, Any], structure
     if not paper_sections:
         paper_sections = structured.get("sections") if isinstance(structured.get("sections"), list) else []
     for index, section in enumerate(paper_sections, start=1):
-        _add_exam_score_box(document)
         title = str(section.get("title") or f"第{index}题").strip()
         score = str(section.get("score") or "").strip()
-        p = document.add_paragraph()
-        p.paragraph_format.space_before = _pt(6)
-        p.paragraph_format.space_after = _pt(4)
         heading_text = title if not score or score in title else f"{title}（共 {score} 分）"
-        _set_run_songti(p.add_run(heading_text), 12, bold=True)
-        _add_markdown_like_blocks(document, str(section.get("content") or ""))
+        _add_exam_section_heading(document, heading_text)
+        _add_exam_content_blocks(document, str(section.get("content") or ""))
 
 
 def _add_plan_meta_table(document: Any, fields: dict[str, Any]) -> None:
@@ -401,27 +473,55 @@ def _add_rubric_meta_table(document: Any, fields: dict[str, Any]) -> None:
 
 
 def _add_exam_meta_table(document: Any, fields: dict[str, Any]) -> None:
+    from docx.enum.table import WD_ROW_HEIGHT_RULE
+
     rows = [
-        ["课程名称", _field(fields, "course_name"), "", "", "", "", "", ""],
-        ["学历层次", _checked_pair("本科", "专科", _field(fields, "education_level") or "本科"), "", "", "考核类型", _checked_pair("考查", "考试", _field(fields, "assessment_type") or "考试"), "", ""],
-        ["专业年级班级", _field(fields, "class_name"), "", "", "考试时间", f"（ {_field(fields, 'exam_duration') or '90'} ）分钟", "", ""],
-        ["试卷类型", _checked_pair("开卷", "闭卷", _field(fields, "paper_type") or "开卷"), "", "", "命题教师", _field(fields, "examiner_name", "teacher_name"), "", ""],
-        ["系（教研室）主任", _field(fields, "reviewer_name"), "", "", "二级学院（部）\n主管教学领导", _field(fields, "leader_name"), "", ""],
+        [(0, 1, "课程名称"), (2, 10, _field(fields, "course_name"))],
+        [
+            (0, 1, "学历层次"),
+            (2, 5, _checked_pair("本科", "专科", _field(fields, "education_level") or "本科")),
+            (6, 7, "考核类型"),
+            (8, 10, _checked_pair("考查", "考试", _field(fields, "assessment_type") or "考试")),
+        ],
+        [
+            (0, 1, "专业年级班级"),
+            (2, 5, _field(fields, "class_name")),
+            (6, 7, "考试时间"),
+            (8, 10, f"（ {_field(fields, 'exam_duration') or '120'} ）分钟"),
+        ],
+        [
+            (0, 1, "试卷类型"),
+            (2, 5, _checked_pair("开卷", "闭卷", _field(fields, "paper_type") or "开卷")),
+            (6, 7, "命题教师"),
+            (8, 10, _field(fields, "examiner_name", "teacher_name")),
+        ],
+        [
+            (0, 1, "系（教研室）\n主任"),
+            (2, 5, _field(fields, "reviewer_name")),
+            (6, 9, "二级学院（部）\n主管教学领导"),
+            (10, 10, _field(fields, "leader_name")),
+        ],
     ]
-    table = document.add_table(rows=len(rows), cols=8)
+    grid_widths = [1.76, 0.93, 0.75, 1.75, 1.75, 0.69, 1.06, 1.0, 0.75, 1.75, 2.5]
+    table = document.add_table(rows=len(rows), cols=len(grid_widths))
     table.style = "Table Grid"
     table.alignment = 1
-    for row_index, values in enumerate(rows):
+    table.autofit = False
+    _set_table_borders(table)
+    for row_index, spans in enumerate(rows):
         row = table.rows[row_index]
-        row.height_rule = 1
-        row.height = _cm(0.65)
-        for col_index, value in enumerate(values):
-            _set_cell_text(row.cells[col_index], value, bold=col_index in {0, 4}, align=1, size=10)
-        if row_index == 0:
-            row.cells[1].merge(row.cells[7])
-        else:
-            row.cells[1].merge(row.cells[3])
-            row.cells[5].merge(row.cells[7])
+        row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+        row.height = _cm(0.73 if row_index < 4 else 0.86)
+        for col_index, width in enumerate(grid_widths):
+            _set_cell_width(row.cells[col_index], width)
+        for start, end, value in spans:
+            cell = row.cells[start]
+            if end > start:
+                cell = cell.merge(row.cells[end])
+            _set_cell_width(cell, sum(grid_widths[start:end + 1]))
+            _set_cell_text(cell, value, bold=start in {0, 6}, align=1, size=10)
+    gap = document.add_paragraph()
+    gap.paragraph_format.space_after = _pt(8)
 
 
 def _add_assessment_items_table(document: Any, items: list[dict[str, Any]]) -> None:
@@ -455,33 +555,209 @@ def _add_assessment_items_table(document: Any, items: list[dict[str, Any]]) -> N
 
 
 def _add_exam_score_summary_table(document: Any, structured: dict[str, Any]) -> None:
+    from docx.enum.table import WD_ROW_HEIGHT_RULE
+
     sections = structured.get("paper_sections") if isinstance(structured.get("paper_sections"), list) else []
     scores = [str(item.get("score") or "").strip() for item in sections if str(item.get("score") or "").strip()]
     if not scores:
-        scores = ["30", "70"]
+        scores = ["100"]
+    scores = scores[:5]
     total = structured.get("total_score") or "100"
-    table = document.add_table(rows=3, cols=max(4, len(scores) + 3))
+    section_labels = [_exam_section_number_label(index) for index in range(1, len(scores) + 1)]
+    table = document.add_table(rows=3, cols=8)
     table.style = "Table Grid"
     table.alignment = 1
-    headers = ["题号"] + [str(index + 1) for index in range(len(scores))] + ["总分", "核分人"]
-    full = ["满分"] + scores + [str(int(float(total)) if isinstance(total, float) and total.is_integer() else total), ""]
-    actual = ["实得分"] + [""] * len(scores) + ["", ""]
+    table.autofit = False
+    _set_table_borders(table)
+    widths = [1.76, 1.68, 1.75, 1.75, 1.75, 1.75, 1.75, 2.5]
+    headers = ["题号", *section_labels, *[""] * (5 - len(section_labels)), "总分", "核分人"]
+    full = ["满分", *scores, *[""] * (5 - len(scores)), _score_text(total), ""]
+    actual = ["实得分", *[""] * 5, "", ""]
     for row_index, row_values in enumerate([headers, full, actual]):
+        row = table.rows[row_index]
+        row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+        row.height = _cm(0.72 if row_index else 0.86)
         for col_index, value in enumerate(row_values):
-            _set_cell_text(table.rows[row_index].cells[col_index], value, bold=row_index != 2, align=1, size=10)
+            _set_cell_width(row.cells[col_index], widths[col_index])
+            _set_cell_text(row.cells[col_index], value, bold=row_index != 2, align=1, size=10)
+    gap = document.add_paragraph()
+    gap.paragraph_format.space_after = _pt(8)
 
 
 def _add_exam_score_box(document: Any) -> None:
     table = document.add_table(rows=2, cols=2)
     table.style = "Table Grid"
     table.alignment = 0
+    table.autofit = False
+    _set_table_borders(table)
+    widths = [1.44, 2.25]
     for row in table.rows:
         row.height_rule = 1
-        row.height = _cm(0.55)
-    _set_cell_text(table.rows[0].cells[0], "得分", bold=True, align=1)
-    _set_cell_text(table.rows[0].cells[1], "评卷人", bold=True, align=1)
-    _set_cell_text(table.rows[1].cells[0], "", align=1)
-    _set_cell_text(table.rows[1].cells[1], "", align=1)
+        row.height = _cm(0.65)
+        for index, cell in enumerate(row.cells):
+            _set_cell_width(cell, widths[index])
+    _set_cell_text(table.rows[0].cells[0], "得分", bold=True, align=1, size=11)
+    _set_cell_text(table.rows[0].cells[1], "评卷人", bold=True, align=1, size=11)
+    _set_cell_text(table.rows[1].cells[0], "", align=1, size=11)
+    _set_cell_text(table.rows[1].cells[1], "", align=1, size=11)
+
+
+def _add_exam_section_heading(document: Any, heading_text: str) -> None:
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    layout = document.add_table(rows=2, cols=3)
+    layout.alignment = 0
+    layout.autofit = False
+    _set_table_borders(layout, color="FFFFFF", size=0)
+    widths = [1.44, 2.25, 10.64]
+    for index, width in enumerate(widths):
+        layout.columns[index].width = _cm(width)
+    for row in layout.rows:
+        row.height_rule = 1
+        row.height = _cm(0.65)
+        for index, cell in enumerate(row.cells):
+            _set_cell_width(cell, widths[index])
+            _set_cell_borders(cell, size=0)
+    _set_cell_text(layout.rows[0].cells[0], "得分", bold=True, align=1, size=11)
+    _set_cell_text(layout.rows[0].cells[1], "评卷人", bold=True, align=1, size=11)
+    _set_cell_text(layout.rows[1].cells[0], "", align=1, size=11)
+    _set_cell_text(layout.rows[1].cells[1], "", align=1, size=11)
+    for cell in (layout.rows[0].cells[0], layout.rows[0].cells[1], layout.rows[1].cells[0], layout.rows[1].cells[1]):
+        _set_cell_borders(cell)
+    right = layout.rows[0].cells[2].merge(layout.rows[1].cells[2])
+    _set_cell_borders(right, size=0)
+    _clear_cell(right)
+    p = right.paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p.paragraph_format.space_before = _pt(6)
+    p.paragraph_format.space_after = _pt(2)
+    _set_run_songti(p.add_run(str(heading_text or "试题")), 12, bold=True, font_name="黑体")
+
+
+def _add_exam_score_box_to_cell(cell: Any) -> None:
+    table = cell.add_table(rows=2, cols=2)
+    table.style = "Table Grid"
+    table.autofit = False
+    _set_table_borders(table)
+    widths = [1.44, 2.25]
+    for row in table.rows:
+        row.height_rule = 1
+        row.height = _cm(0.65)
+        for index, item_cell in enumerate(row.cells):
+            _set_cell_width(item_cell, widths[index])
+    _set_cell_text(table.rows[0].cells[0], "得分", bold=True, align=1, size=11)
+    _set_cell_text(table.rows[0].cells[1], "评卷人", bold=True, align=1, size=11)
+    _set_cell_text(table.rows[1].cells[0], "", align=1, size=11)
+    _set_cell_text(table.rows[1].cells[1], "", align=1, size=11)
+
+
+def _add_exam_content_blocks(document: Any, content: str) -> None:
+    lines = str(content or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    paragraph_buffer: list[str] = []
+    code_buffer: list[str] = []
+    in_fence = False
+
+    def flush_paragraph() -> None:
+        nonlocal paragraph_buffer
+        if not paragraph_buffer:
+            return
+        text = " ".join(part.strip() for part in paragraph_buffer if part.strip())
+        _add_exam_body_line(document, text)
+        paragraph_buffer = []
+
+    def flush_code() -> None:
+        nonlocal code_buffer
+        if code_buffer:
+            _add_exam_code_block(document, "\n".join(code_buffer).strip())
+        code_buffer = []
+
+    for raw_line in lines:
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            if in_fence:
+                flush_code()
+                in_fence = False
+            else:
+                flush_paragraph()
+                in_fence = True
+            continue
+        if in_fence:
+            code_buffer.append(line)
+            continue
+        if not stripped:
+            flush_paragraph()
+            continue
+        if _looks_like_exam_code_line(stripped):
+            flush_paragraph()
+            _add_exam_code_block(document, stripped)
+            continue
+        if _starts_new_exam_line(stripped):
+            flush_paragraph()
+            _add_exam_body_line(document, stripped)
+            continue
+        paragraph_buffer.append(stripped)
+    flush_paragraph()
+    flush_code()
+
+
+def _add_exam_body_line(document: Any, text: str) -> None:
+    p = document.add_paragraph()
+    p.paragraph_format.space_before = _pt(0)
+    p.paragraph_format.space_after = _pt(3)
+    p.paragraph_format.line_spacing = 1.18
+    stripped = str(text or "").strip()
+    if re.match(r"^[0-9]+[\.、．]", stripped):
+        p.paragraph_format.left_indent = _cm(0.55)
+        p.paragraph_format.first_line_indent = _cm(-0.35)
+        bold = False
+    elif re.match(r"^[a-zA-Z][\.、．]", stripped):
+        p.paragraph_format.left_indent = _cm(0.78)
+        p.paragraph_format.first_line_indent = _cm(-0.28)
+        bold = False
+    elif stripped.startswith("•") or stripped.startswith("·"):
+        p.paragraph_format.left_indent = _cm(0.9)
+        p.paragraph_format.first_line_indent = _cm(-0.28)
+        bold = False
+    else:
+        p.paragraph_format.left_indent = _cm(0.55)
+        bold = bool(re.match(r"^[一二三四五六七八九十]+[、.．]|任务\s*\d+[:：]", stripped))
+    _set_run_songti(p.add_run(stripped), 10.5, bold=bold)
+
+
+def _add_exam_code_block(document: Any, text: str) -> None:
+    if not str(text or "").strip():
+        return
+    table = document.add_table(rows=1, cols=1)
+    table.style = "Table Grid"
+    table.alignment = 1
+    table.autofit = False
+    _set_table_borders(table, color="E5E7EB", size=4)
+    cell = table.rows[0].cells[0]
+    _set_cell_width(cell, 13.9)
+    _set_cell_margins(cell, top=70, bottom=70, left=100, right=100)
+    _shade_docx_cell(cell, "F5F6F8")
+    cell.text = ""
+    for raw in str(text).splitlines():
+        p = cell.add_paragraph()
+        p.paragraph_format.space_before = _pt(0)
+        p.paragraph_format.space_after = _pt(0)
+        _set_run_songti(p.add_run(raw), 10, font_name="Consolas")
+
+
+def _starts_new_exam_line(text: str) -> bool:
+    return bool(
+        re.match(r"^(?:[0-9]+[\.、．]|[a-zA-Z][\.、．]|[（(][0-9]+[）)]|[•·]|任务\s*\d+[:：]|[一二三四五六七八九十]+[、.．])", str(text or "").strip())
+    )
+
+
+def _looks_like_exam_code_line(text: str) -> bool:
+    stripped = str(text or "").strip()
+    if not stripped:
+        return False
+    if re.match(r"^\(?['\"]?[A-Za-z0-9_@./:-]+['\"]?\s*,", stripped):
+        return True
+    return bool(re.search(r"\b(?:SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|JOIN|VALUES|mysql|jdbc:|http://|https://)\b", stripped, flags=re.IGNORECASE))
 
 
 def _add_exam_student_line(document: Any) -> None:
@@ -714,6 +990,12 @@ def _set_cell_text(cell: Any, text: Any, *, bold: bool = False, align: int = 0, 
     _set_cell_margins(cell, top=70, bottom=70, left=90, right=90)
 
 
+def _clear_cell(cell: Any) -> None:
+    cell.text = ""
+    if not cell.paragraphs:
+        cell.add_paragraph()
+
+
 def _set_cell_width(cell: Any, width_cm: float) -> None:
     cell.width = _cm(width_cm)
     tc_pr = cell._tc.get_or_add_tcPr()
@@ -744,8 +1026,29 @@ def _set_table_borders(table: Any, *, color: str = "000000", size: int = 8) -> N
         if element is None:
             element = OxmlElement(tag)
             borders.append(element)
-        element.set(qn("w:val"), "single")
-        element.set(qn("w:sz"), str(size))
+        element.set(qn("w:val"), "nil" if int(size) <= 0 else "single")
+        element.set(qn("w:sz"), str(max(0, int(size))))
+        element.set(qn("w:space"), "0")
+        element.set(qn("w:color"), color)
+
+
+def _set_cell_borders(cell: Any, *, color: str = "000000", size: int = 8) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    tc_pr = cell._tc.get_or_add_tcPr()
+    borders = tc_pr.first_child_found_in("w:tcBorders")
+    if borders is None:
+        borders = OxmlElement("w:tcBorders")
+        tc_pr.append(borders)
+    for edge in ("top", "left", "bottom", "right"):
+        tag = f"w:{edge}"
+        element = borders.find(qn(tag))
+        if element is None:
+            element = OxmlElement(tag)
+            borders.append(element)
+        element.set(qn("w:val"), "nil" if int(size) <= 0 else "single")
+        element.set(qn("w:sz"), str(max(0, int(size))))
         element.set(qn("w:space"), "0")
         element.set(qn("w:color"), color)
 
@@ -811,6 +1114,35 @@ def _cm(value: float):
     from docx.shared import Cm
 
     return Cm(float(value))
+
+
+def _score_text(value: Any) -> str:
+    match = re.search(r"\d+(?:\.\d+)?", str(value or ""))
+    if not match:
+        return _stringify(value)
+    number = float(match.group(0))
+    return str(int(number)) if number.is_integer() else str(number)
+
+
+def _chinese_index(index: int) -> str:
+    labels = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]
+    if 0 <= int(index) < len(labels):
+        return labels[int(index)]
+    return str(index)
+
+
+def _exam_section_number_label(index: int) -> str:
+    return _chinese_index(index) if int(index) <= 10 else str(index)
+
+
+def _add_exam_paper_footer(footer: Any) -> None:
+    paragraph = footer
+    paragraph.alignment = 1
+    _set_run_songti(paragraph.add_run("广西外国语学院课程考核试卷          第 "), 9, color="000000")
+    _add_docx_field(paragraph, "PAGE", size=9, color="000000")
+    _set_run_songti(paragraph.add_run(" 页 共 "), 9, color="000000")
+    _add_docx_field(paragraph, "NUMPAGES", size=9, color="000000")
+    _set_run_songti(paragraph.add_run(" 页考试过程中不得将试卷拆开"), 9, color="000000")
 
 
 def _build_xlsx_export(payload: dict[str, Any], *, title: str) -> bytes:

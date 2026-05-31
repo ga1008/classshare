@@ -1364,6 +1364,7 @@
                     <button type="button" class="btn btn-outline" id="classroom-material-detail-download-btn">下载</button>
                     {% if user_info.role == 'teacher' %}
                     <button type="button" class="btn btn-primary" id="classroom-material-detail-export-btn">导出Word</button>
+                    <button type="button" class="btn btn-outline" id="classroom-material-detail-export-pdf-btn">导出PDF</button>
                     {% endif %}
                     <button type="button" class="btn btn-ghost" data-classroom-material-modal-close>关闭</button>
                 </div>
@@ -1408,6 +1409,10 @@
                     <div class="classroom-final-material-template-options classroom-final-material-template-options--notice" id="classroom-grading-rubric-options" hidden>
                         <strong>生成评分细则前，请先在本课堂导入或生成课程考核试卷。</strong>
                         <span>系统会读取最新试卷的题目、任务、截图要求和分值，并据此生成逐题对应的评分标准。</span>
+                    </div>
+                    <div class="classroom-final-material-template-options classroom-final-material-template-options--notice" id="classroom-exam-paper-options" hidden>
+                        <strong>生成试卷前，请先在本课堂导入或生成课程考核计划表。</strong>
+                        <span>系统会继承最新考核计划表中的考核形式、分值分布和课程字段，再结合课堂材料与提示生成题目。</span>
                     </div>
                     <label class="form-group">
                         <span>生成要求</span>
@@ -2278,7 +2283,7 @@
     import { ClassroomChat } from '/static/js/chat.js?v=chat-image-derivatives-20260515';
     import { ClassroomPrivateMessages } from '/static/js/classroom_private_messages.js?v=chat-image-derivatives-20260515';
     import * as fileApp from '/static/js/app_files.js';
-    import * as materialsApp from '/static/js/classroom_materials.js?v=grading-rubric-template-20260531';
+    import * as materialsApp from '/static/js/classroom_materials.js?v=exam-paper-template-20260531';
     import * as examApp from '/static/js/app_exams.js';
     import { initClassroomPage } from '/static/js/classroom_page.js?v=smart-attendance-ai-advice-20260527';
     import { initLearningProgress } from '/static/js/learning_progress.js?v=exam-roster-place-picker-20260519';

@@ -553,6 +553,7 @@ function renderDetail(detail) {
     const previewUrl = getMaterialPreviewUrl(detail);
     const optimizedUrl = detail.has_optimized_version ? `/materials/view/${detail.id}?variant=optimized` : '';
     const exportUrl = detail.ai_import_record?.export_url || '';
+    const exportPdfUrl = detail.ai_import_record?.export_pdf_url || '';
     const aiSummary = detail.ai_parse_result?.summary || '尚未执行 AI 解析。';
     const assignmentCount = Array.isArray(detail.assignments) ? detail.assignments.length : 0;
     const canManage = detail.can_manage !== false;
@@ -609,6 +610,7 @@ function renderDetail(detail) {
                         ${previewUrl ? `<a href="${previewUrl}" class="btn btn-primary" target="_blank" rel="noopener">${previewLabel}</a>` : ''}
                         ${optimizedUrl ? `<a href="${optimizedUrl}" class="btn btn-outline" target="_blank" rel="noopener">查看优化稿</a>` : ''}
                         ${exportUrl ? `<a href="${exportUrl}" class="btn btn-outline">导出Word</a>` : ''}
+                        ${exportPdfUrl ? `<a href="${exportPdfUrl}" class="btn btn-outline">导出PDF</a>` : ''}
                         ${detail.node_type === 'file' ? `<a href="/materials/download/${detail.id}" class="btn btn-outline">下载</a>` : ''}
                         ${isGitRepository(detail) && canManage ? '<button type="button" class="btn btn-outline" data-detail-action="repository">仓库</button>' : ''}
                         <button type="button" class="btn btn-outline" data-detail-action="assign" ${config.canAssign ? '' : 'disabled'}>分配课堂</button>
@@ -1280,7 +1282,7 @@ function updateAiGeneratePromptPlaceholder() {
     } else if (type === 'assessment_plan') {
         refs.aiGeneratePrompt.placeholder = '例如：按机试/项目实操拆分考核技能与分值，补齐课程、班级、命题教师等字段。';
     } else if (type === 'exam_paper') {
-        refs.aiGeneratePrompt.placeholder = '例如：围绕课程核心能力生成一份期末机试试卷，包含任务、截图和提交要求，分值合计100。';
+        refs.aiGeneratePrompt.placeholder = '例如：优先关联考核计划表，再围绕课程核心能力生成期末机试试卷，包含任务、截图编号、提交要求和考试时长，分值严格继承计划表。';
     } else {
         refs.aiGeneratePrompt.placeholder = '例如：根据这些作业题目生成一份期末复习提纲，包含知识点、易错点和课堂练习安排。';
     }

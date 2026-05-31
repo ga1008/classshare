@@ -1742,6 +1742,7 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
                 "updated_at": task["updated_at"],
                 "completed_at": task["completed_at"],
                 "export_url": f"/api/materials/ai-import-records/{task['id']}/export?format=docx",
+                "export_pdf_url": f"/api/materials/ai-import-records/{task['id']}/export?format=pdf" if task["document_type"] == "exam_paper" else "",
                 "preview_url": f"/api/materials/{material_id}/ai-import/preview",
             }
         else:
@@ -2340,6 +2341,25 @@ def _build_manage_final_material_context(
         for item in attachments
         if str(item.get("content") or "").strip()
     )
+    if document_type == "exam_paper" and _has_assessment_plan_data(attachments, attachment_text):
+        plan_payload = normalize_final_material_payload(
+            document_type="assessment_plan",
+            metadata={},
+            content_markdown=attachment_text,
+            tables=[],
+            export_payload={},
+        )
+        structured = _parse_json_object(plan_payload.get("structured"))
+        context["source_assessment_plan"] = {
+            "record_id": "",
+            "title": "管理中心关联附件中的考核计划表",
+            "updated_at": "",
+            "fields": _parse_json_object(plan_payload.get("fields")),
+            "structured": structured,
+            "assessment_items": structured.get("assessment_items") if isinstance(structured.get("assessment_items"), list) else [],
+            "content_markdown": attachment_text[:18000],
+            "source": "manage_ai_generation_attachments",
+        }
     if document_type == "grading_rubric" and _has_concrete_exam_questions(attachments, attachment_text):
         exam_payload = normalize_final_material_payload(
             document_type="exam_paper",
@@ -2361,6 +2381,9 @@ def _build_manage_final_material_context(
         }
     if attachment_text:
         context["attachment_context"] = attachment_text[:18000]
+        if document_type == "exam_paper" and not context.get("source_assessment_plan"):
+            context["requires_assessment_plan_confirmation"] = True
+            context["generation_warnings"] = ["未在关联附件中识别到考核计划表，生成后需要教师确认分值分布、考试时长、开闭卷和命题信息。"]
     if str(prompt or "").strip():
         context["teacher_prompt"] = str(prompt or "").strip()
     return context
@@ -2377,6 +2400,21 @@ def _has_concrete_exam_questions(attachments: list[dict[str, Any]], attachment_t
             r"第\s*[一二三四五六七八九十\d]+\s*[大小]?[题问]|"
             r"[一二三四五六七八九十]+[、.．].{0,48}(?:共\s*\d+(?:\.\d+)?\s*分)|"
             r"题目\s*\d+|任务\s*\d+|截图\s*[A-Za-z0-9_-]*\.(?:png|jpg|jpeg|webp)",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _has_assessment_plan_data(attachments: list[dict[str, Any]], attachment_text: str) -> bool:
+    text = str(attachment_text or "")
+    for attachment in attachments:
+        metadata = _parse_json_object(attachment.get("metadata"))
+        if str(metadata.get("document_type") or "").strip() in {"考核计划表", "assessment_plan"}:
+            return True
+    return bool(
+        re.search(
+            r"课程考核计划表|assessment_items|考核技能/内容|考核技能|考核内容|命题日期|命题教师|考核形式.{0,20}分值",
             text,
             re.IGNORECASE,
         )
@@ -2401,6 +2439,8 @@ async def _generate_final_material_from_manage_context(
     )
     if document_type == "grading_rubric" and not classroom_context.get("source_exam_paper"):
         raise HTTPException(409, "生成评分细则前，请先关联具体试卷或题目附件，例如上传课程考核试卷、选择已解析试卷材料，或选择已生成作业题目。")
+    if document_type == "exam_paper" and not attachments and not classroom_context.get("source_assessment_plan"):
+        raise HTTPException(409, "生成课程考核试卷前，请先关联考核计划表或课程材料附件；试卷需要明确分值分布、考试形式和题目依据。")
 
     file_texts = [
         {"name": item.get("title") or f"attachment-{index + 1}", "content": item.get("content") or ""}
@@ -2438,6 +2478,10 @@ async def _generate_final_material_from_manage_context(
         raw_result.setdefault("warnings", [])
         if isinstance(raw_result["warnings"], list):
             raw_result["warnings"].append(f"AI 生成不可用，已使用本地草稿模板：{warning}")
+    if isinstance(classroom_context.get("generation_warnings"), list):
+        raw_result.setdefault("warnings", [])
+        if isinstance(raw_result["warnings"], list):
+            raw_result["warnings"].extend(str(item) for item in classroom_context["generation_warnings"] if str(item).strip())
 
     extraction = MaterialExtraction(
         text=str(raw_result.get("content_markdown") or ""),
@@ -3103,6 +3147,7 @@ def _build_ai_import_preview(record, *, content_limit: int = 8000) -> dict:
         "content_markdown": content_markdown[:content_limit],
         "content_truncated": len(content_markdown) > content_limit,
         "export_url": f"/api/materials/ai-import-records/{int(record['id'])}/export?format=docx",
+        "export_pdf_url": f"/api/materials/ai-import-records/{int(record['id'])}/export?format=pdf" if record["document_type"] == "exam_paper" else "",
     }
 
 
@@ -3257,6 +3302,7 @@ def _final_material_record_context(record) -> dict[str, Any]:
     fields = _parse_json_object(export_payload.get("fields")) or _parse_json_object(payload.get("metadata"))
     structured = _parse_json_object(export_payload.get("structured"))
     paper_sections = structured.get("paper_sections") if isinstance(structured.get("paper_sections"), list) else []
+    assessment_items = structured.get("assessment_items") if isinstance(structured.get("assessment_items"), list) else []
     title = (
         fields.get("title")
         or fields.get("course_name")
@@ -3273,6 +3319,7 @@ def _final_material_record_context(record) -> dict[str, Any]:
         "fields": fields,
         "structured": structured,
         "paper_sections": paper_sections,
+        "assessment_items": assessment_items,
         "content_markdown": content_markdown[:18000],
     }
 
@@ -3350,6 +3397,22 @@ def _build_final_material_ai_system_prompt(document_type: str) -> str:
             "3．该表文字部分均用五号宋体，使用A4纸双面打印。；"
             "4．命题完成后将该表与命题计划表（电子版及纸质版）交到二级学院（部），并装入试卷袋存档。"
         )
+    if str(document_type or "").strip() == "exam_paper":
+        return (
+            "你是广西外国语学院课程考核试卷模板填写助手。你的任务不是自由撰写材料，而是根据考核计划表和课程材料生成固定模板的数据。"
+            "必须严格返回 JSON 对象，不要 Markdown 代码块。"
+            "JSON 必须包含 metadata、content_markdown、tables、warnings、export_payload。"
+            "export_payload.template_key 必须为 exam_paper，document_group 必须为 final_material，document_type 必须为 exam_paper。"
+            "metadata 和 export_payload.fields 必须包含 school、course_name、class_name、teacher_name、examiner_name、reviewer_name、leader_name、"
+            "academic_year、semester、exam_flags、education_level、assessment_type、assessment_mode、assessment_mode_label、assessment_method、"
+            "paper_type、exam_duration、total_score、source_assessment_plan_record_id、source_assessment_plan_title。"
+            "试卷必须优先继承 source_assessment_plan 中的 assessment_items 分值分布、考核形式和课程字段；不得脱离计划表另起分值体系。"
+            "export_payload.structured.paper_sections 必须是数组，每项包含 title、score、content、tasks、screenshot_requirements、submission_requirements、command_blocks。"
+            "paper_sections 分值合计必须为100；如计划表有多行考核项目，试题大题应尽量与计划表行一一对应。"
+            "content_markdown 只写试卷正文题目，不要写导出模板已经负责的标题、元信息表、成绩表、页脚。"
+            "题干要完整、可执行、可评分，明确考生需要做什么、交什么、截图/文件命名/压缩包要求是什么。"
+            "如果来源材料不足以生成严谨试题，warnings 中说明教师需要补充的字段或题目依据。"
+        )
     return (
         f"你是一名熟悉广西外国语学院期末材料格式的教务文档助手，正在生成《{label}》。"
         "请严格返回 JSON 对象，不要 Markdown 代码块。"
@@ -3391,6 +3454,19 @@ def _build_final_material_ai_user_prompt(
                 f"课堂、教务与来源试卷上下文 JSON：\n{json.dumps(classroom_context, ensure_ascii=False, indent=2)}",
                 f"教师补充要求：\n{prompt.strip() or '无'}",
                 "历史评分细则片段仅用于学习表达粒度，不可覆盖本课堂字段和本次来源试卷：\n"
+                + (json.dumps(examples, ensure_ascii=False, indent=2) if examples else "暂无历史材料。"),
+            ]
+        )
+    if str(document_type or "").strip() == "exam_paper":
+        return "\n\n".join(
+            [
+                "请根据课堂信息、考核计划表和可用课程材料，生成《广西外国语学院课程考核试卷》的结构化模板数据。",
+                "固定模板要求：标题为“广西外国语学院课程考核试卷”；学年学期行由导出模板渲染下划线；顶部包含期末考试/补考/重新学习考试勾选；学生信息和密封线、元信息表、题号/满分/实得分表、每题得分/评卷人小表、页脚由导出模板渲染。",
+                "业务要求：试卷通常先由考核计划表生成。请优先按 source_assessment_plan.structured.assessment_items 拆分大题，继承分值与考核形式；再结合关联课程材料或教师提示补齐具体题干、任务步骤、截图编号、命名规则、压缩包或提交要求。",
+                "输出限制：content_markdown 只写试卷正文题目；不要重复写标题、学年学期、元信息表、成绩表、页码。题目必须能直接用于考试，不得只给命题建议。",
+                f"课堂、教务与来源考核计划上下文 JSON：\n{json.dumps(classroom_context, ensure_ascii=False, indent=2)}",
+                f"教师补充要求：\n{prompt.strip() or '无'}",
+                "历史试卷片段仅用于学习题干粒度和版式，不可覆盖本课堂字段和本次考核计划：\n"
                 + (json.dumps(examples, ensure_ascii=False, indent=2) if examples else "暂无历史材料。"),
             ]
         )
@@ -4944,6 +5020,16 @@ async def generate_classroom_final_material(
                 classroom_context["assessment_mode_label"] = "笔试考核" if assessment_mode == "written" else "非笔试考核"
             if assessment_method:
                 classroom_context["assessment_method"] = assessment_method
+        elif document_type == "exam_paper":
+            assessment_plan_record = _load_latest_final_material_record_for_classroom(
+                conn,
+                class_offering_id=class_offering_id,
+                teacher_id=user["id"],
+                document_type="assessment_plan",
+            )
+            if not assessment_plan_record:
+                raise HTTPException(409, "请先在本课堂导入或生成“课程考核计划表”，再根据计划表生成课程考核试卷。")
+            classroom_context["source_assessment_plan"] = _final_material_record_context(assessment_plan_record)
         elif document_type == "grading_rubric":
             exam_paper_record = _load_latest_final_material_record_for_classroom(
                 conn,

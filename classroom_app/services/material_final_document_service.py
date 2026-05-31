@@ -39,17 +39,22 @@ FINAL_MATERIAL_LAYOUTS: dict[str, dict[str, Any]] = {
     },
     "exam_paper": {
         "page": "A4 portrait",
-        "margins_cm": {"top": 1.5, "bottom": 1.5, "left": 3.0, "right": 2.0, "footer": 1.5},
+        "margins_cm": {"top": 1.5, "bottom": 2.2, "left": 3.0, "right": 2.0, "footer": 1.2},
         "title_font": {"name": "宋体", "size_pt": 18, "bold": True},
         "period_font": {"name": "宋体", "size_pt": 14, "bold": True},
         "body_font": {"name": "宋体", "size_pt": 10.5},
-        "metadata_table_widths_cm": [1.95, 2.75, 1.65, 2.85, 1.6, 2.85, 1.5, 2.2],
+        "metadata_table_grid_cm": [1.76, 0.93, 0.75, 1.75, 1.75, 0.69, 1.06, 1.0, 0.75, 1.75, 2.5],
+        "metadata_row_height_cm": 0.73,
+        "score_table_grid_cm": [1.76, 1.68, 1.75, 1.75, 1.75, 1.75, 1.75, 2.5],
+        "score_box_widths_cm": [1.44, 2.25],
+        "body_indent_cm": 0.72,
     },
 }
 
 
 ASSESSMENT_PLAN_SCHEMA_VERSION = "gxufl-assessment-plan-v2"
 SCORING_RUBRIC_SCHEMA_VERSION = "gxufl-grading-rubric-v2"
+EXAM_PAPER_SCHEMA_VERSION = "gxufl-exam-paper-v2"
 
 ASSESSMENT_PLAN_NOTES = [
     "注：",
@@ -122,9 +127,13 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "academic_exam_method": ("教务考核方式", "教务考核类型", "academic_exam_method"),
     "academic_exam_mode": ("教务考试方式", "教务考试形式", "academic_exam_mode"),
     "paper_type": ("试卷类型", "开闭卷", "paper_type"),
+    "exam_flags": ("考试类别", "考试标记", "期末考试", "补考", "重新学习考试", "exam_flags", "exam_kind"),
     "education_level": ("学历层次", "education_level"),
     "exam_duration": ("考试时间", "考试时长", "exam_duration"),
     "total_score": ("总分", "满分", "total_score"),
+    "source_assessment_plan_record_id": ("来源考核计划记录", "考核计划解析记录", "source_assessment_plan_record_id"),
+    "source_assessment_plan_title": ("来源考核计划表", "关联考核计划表", "source_assessment_plan_title"),
+    "source_assessment_plan_updated_at": ("来源考核计划更新时间", "考核计划更新时间", "source_assessment_plan_updated_at"),
     "source_exam_paper_record_id": ("来源试卷记录", "试卷解析记录", "source_exam_paper_record_id"),
     "source_exam_paper_title": ("来源试卷", "关联试卷", "source_exam_paper_title"),
     "source_exam_paper_updated_at": ("来源试卷更新时间", "试卷更新时间", "source_exam_paper_updated_at"),
@@ -184,7 +193,17 @@ def normalize_final_material_payload(
             ),
         )
     else:
-        structured = _exam_paper_payload(fields, normalized_tables, sections, content_markdown)
+        fields = _normalize_exam_paper_fields(fields)
+        structured = _exam_paper_payload(
+            fields,
+            normalized_tables,
+            sections,
+            content_markdown,
+            seed_items=(
+                _paper_sections_from_export_payload(export_payload)
+                or _paper_sections_from_assessment_plan_context(classroom_context or {}, fields)
+            ),
+        )
 
     base = deepcopy(export_payload or {})
     base.setdefault("document_group", "final_material")
@@ -277,7 +296,7 @@ def split_markdown_sections(content: str) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
     current_title = "正文"
     current_lines: list[str] = []
-    heading_pattern = re.compile(r"^\s*(?:#{1,4}\s*)?([一二三四五六七八九十]+[、.．].+|任务\s*\d+[:：].+|评分细则|注[:：]?)\s*$")
+    heading_pattern = re.compile(r"^\s*(?:#{1,4}\s*)?([一二三四五六七八九十]+[、.．].+|第\s*[一二三四五六七八九十\d]+\s*[大小]?题.+|任务\s*\d+[:：].+|评分细则|注[:：]?)\s*$")
     for raw_line in text.splitlines():
         line = raw_line.strip()
         heading = re.match(r"^(#{1,4})\s+(.+)$", line)
@@ -310,7 +329,7 @@ def build_final_material_generation_seed(
     fields.setdefault("assessment_method", "机试")
     fields.setdefault("assessment_mode", "non_written")
     fields.setdefault("assessment_mode_label", "非笔试考核")
-    fields.setdefault("exam_duration", "90")
+    fields.setdefault("exam_duration", "120" if key == "exam_paper" else "90")
     fields.setdefault("total_score", "100")
     sections: list[dict[str, Any]]
     tables: list[dict[str, Any]]
@@ -337,11 +356,16 @@ def build_final_material_generation_seed(
             {"title": "评分细则", "content": _rubric_content_from_items(fields, source_items, prompt)},
         ]
     else:
+        source_sections = _paper_sections_from_assessment_plan_context(classroom_context, fields)
+        if source_sections:
+            sections = source_sections
+            tables = []
+        else:
+            sections = [
+                {"title": "一、基础环境配置（共30分）", "content": _default_exam_section_one(prompt)},
+                {"title": "二、综合服务部署（共70分）", "content": _default_exam_section_two(prompt)},
+            ]
         tables = []
-        sections = [
-            {"title": "一、基础环境配置（共30分）", "content": _default_exam_section_one(prompt)},
-            {"title": "二、综合服务部署（共70分）", "content": _default_exam_section_two(prompt)},
-        ]
     content = "\n\n".join(f"## {item['title']}\n{item['content']}" for item in sections)
     export_payload = normalize_final_material_payload(
         document_type=key,
@@ -427,14 +451,37 @@ def _exam_paper_payload(
     tables: list[dict[str, Any]],
     sections: list[dict[str, Any]],
     content: str,
+    *,
+    seed_items: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    paper_sections = _paper_sections_from_sections(sections, content)
+    paper_sections = seed_items or _paper_sections_from_sections(sections, content)
     total = _sum_score(item.get("score") for item in paper_sections) or _to_number(fields.get("total_score")) or 100
+    fields["total_score"] = _score_to_text(total)
+    source_plan = {
+        key: fields.get(key)
+        for key in ("source_assessment_plan_record_id", "source_assessment_plan_title", "source_assessment_plan_updated_at")
+        if not _is_blank(fields.get(key))
+    }
+    score_table = _exam_score_table_payload(paper_sections, total)
+    command_blocks = _extract_command_blocks(content, paper_sections)
+    screenshot_requirements = _extract_keyword_lines(_paper_sections_text(paper_sections) or content, ("截图", ".png", ".jpg", ".jpeg", ".webp", "screenshot"))
+    submission_requirements = _extract_keyword_lines(
+        _paper_sections_text(paper_sections) or content,
+        ("提交", "压缩", ".zip", "命名", "附件", "上传", "文件夹"),
+    )
     return {
         "fields": fields,
         "paper_sections": paper_sections,
         "total_score": total,
+        "score_table": score_table,
         "student_fields": ["姓名", "学号", "年级、专业、班级", "座位号"],
+        "command_blocks": command_blocks,
+        "screenshot_requirements": screenshot_requirements,
+        "submission_requirements": submission_requirements,
+        "source_assessment_plan": source_plan,
+        "requires_assessment_plan_confirmation": not bool(source_plan),
+        "requires_teacher_confirmation": bool(fields.get("requires_teacher_confirmation")) or not bool(source_plan),
+        "template_schema_version": EXAM_PAPER_SCHEMA_VERSION,
         "sections": sections or [{"title": "试卷正文", "content": content.strip()}],
     }
 
@@ -495,6 +542,39 @@ def _normalize_grading_rubric_fields(fields: dict[str, Any]) -> dict[str, Any]:
     normalized.setdefault("assessment_method", "机试" if mode_code == "non_written" else "闭卷笔试")
     normalized.setdefault("examiner_name", normalized.get("teacher_name") or "")
     normalized.setdefault("date", datetime.now().strftime("%Y.%m.%d"))
+    return normalized
+
+
+def _normalize_exam_paper_fields(fields: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(fields)
+    normalized.setdefault("school", "广西外国语学院")
+    normalized["title"] = "课程考核试卷"
+    assessment_type = _normalize_assessment_type(
+        normalized.get("assessment_type")
+        or normalized.get("academic_exam_method")
+        or normalized.get("exam_method")
+        or normalized.get("course_nature")
+    )
+    normalized["assessment_type"] = assessment_type
+    mode_code, mode_label, inferred_from_teacher = _normalize_assessment_mode(
+        normalized.get("assessment_mode")
+        or normalized.get("assessment_mode_label")
+        or normalized.get("assessment_method")
+        or normalized.get("academic_exam_mode")
+        or normalized.get("exam_mode"),
+        assessment_type=assessment_type,
+    )
+    normalized["assessment_mode"] = mode_code
+    normalized["assessment_mode_label"] = mode_label
+    if not inferred_from_teacher and assessment_type == "考试":
+        normalized["requires_teacher_confirmation"] = True
+    normalized.setdefault("assessment_method", "机试" if mode_code == "non_written" else "闭卷笔试")
+    normalized.setdefault("education_level", "本科")
+    normalized.setdefault("paper_type", "开卷" if mode_code == "non_written" else "闭卷")
+    normalized.setdefault("exam_flags", "期末考试")
+    normalized.setdefault("exam_duration", "120" if mode_code == "non_written" else "90")
+    normalized.setdefault("examiner_name", normalized.get("teacher_name") or "")
+    normalized.setdefault("date", datetime.now().strftime("%Y年%m月%d日"))
     return normalized
 
 
@@ -671,10 +751,176 @@ def _paper_sections_from_sections(sections: list[dict[str, Any]], content: str) 
         if match:
             score = match.group(1)
         if re.match(r"^[一二三四五六七八九十]+[、.．]", title) or "任务" in title or score:
-            result.append({"title": title or "试题", "score": score, "content": body})
+            result.append(_normalize_paper_section({"title": title or "试题", "score": score, "content": body}))
     if not result and content.strip():
-        result.append({"title": "试卷正文", "score": "", "content": content.strip()})
+        result.append(_normalize_paper_section({"title": "试卷正文", "score": "", "content": content.strip()}))
     return result
+
+
+def _paper_sections_from_export_payload(export_payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+    payload = _as_dict(export_payload)
+    structured = _as_dict(payload.get("structured"))
+    raw_sections = structured.get("paper_sections") if isinstance(structured.get("paper_sections"), list) else []
+    result: list[dict[str, Any]] = []
+    for index, section in enumerate(raw_sections, start=1):
+        if not isinstance(section, dict):
+            continue
+        normalized = _normalize_paper_section(
+            {
+                "title": section.get("title") or section.get("name") or f"第{index}题",
+                "score": section.get("score") or "",
+                "content": section.get("content") or section.get("body") or "",
+                "tasks": section.get("tasks") if isinstance(section.get("tasks"), list) else [],
+                "screenshot_requirements": section.get("screenshot_requirements") if isinstance(section.get("screenshot_requirements"), list) else [],
+                "submission_requirements": section.get("submission_requirements") if isinstance(section.get("submission_requirements"), list) else [],
+            }
+        )
+        if normalized.get("title") or normalized.get("content"):
+            result.append(normalized)
+    return result
+
+
+def _paper_sections_from_assessment_plan_context(context: dict[str, Any], fields: dict[str, Any]) -> list[dict[str, Any]]:
+    source = _as_dict(_as_dict(context).get("source_assessment_plan"))
+    structured = _as_dict(source.get("structured"))
+    items = structured.get("assessment_items") if isinstance(structured.get("assessment_items"), list) else []
+    if not items:
+        items = source.get("assessment_items") if isinstance(source.get("assessment_items"), list) else []
+    sections: list[dict[str, Any]] = []
+    for index, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            continue
+        score = _score_to_text(item.get("score") or "")
+        form = _stringify(item.get("assessment_form") or item.get("form") or fields.get("assessment_method") or "考核")
+        content = _stringify(item.get("content") or item.get("assessment_content") or "").strip()
+        if not content and not score:
+            continue
+        title = f"{_chinese_index(index)}、{form}任务{index}"
+        if score:
+            title = f"{title}（共{score}分）"
+        section_body = _exam_section_body_from_plan_item(
+            course=_stringify(fields.get("course_name") or "本课程"),
+            form=form,
+            content=content,
+            score=score,
+        )
+        sections.append(_normalize_paper_section({"title": title, "score": score, "content": section_body}))
+    if sections:
+        fields.setdefault("source_assessment_plan_record_id", source.get("record_id") or source.get("id") or "")
+        fields.setdefault("source_assessment_plan_title", source.get("title") or source.get("document_type_label") or "课程考核计划表")
+        fields.setdefault("source_assessment_plan_updated_at", source.get("updated_at") or "")
+    return sections
+
+
+def _normalize_paper_section(section: dict[str, Any]) -> dict[str, Any]:
+    title = _stringify(section.get("title") or "试题").strip()
+    content = _stringify(section.get("content") or "").strip()
+    score = _score_to_text(section.get("score") or "")
+    if not score:
+        match = re.search(r"(?:共\s*|\(|（)(\d+(?:\.\d+)?)\s*分", title + "\n" + content[:200])
+        if match:
+            score = match.group(1)
+    tasks = section.get("tasks") if isinstance(section.get("tasks"), list) else _extract_task_lines(content)
+    screenshot_requirements = (
+        section.get("screenshot_requirements")
+        if isinstance(section.get("screenshot_requirements"), list)
+        else _extract_keyword_lines(content, ("截图", ".png", ".jpg", ".jpeg", ".webp", "screenshot"))
+    )
+    submission_requirements = (
+        section.get("submission_requirements")
+        if isinstance(section.get("submission_requirements"), list)
+        else _extract_keyword_lines(content, ("提交", "压缩", ".zip", "命名", "附件", "上传", "文件夹"))
+    )
+    command_blocks = section.get("command_blocks") if isinstance(section.get("command_blocks"), list) else _extract_command_blocks(content, [])
+    return {
+        "title": title,
+        "score": score,
+        "content": content,
+        "tasks": [_stringify(item).strip() for item in tasks if _stringify(item).strip()][:80],
+        "screenshot_requirements": screenshot_requirements[:40],
+        "submission_requirements": submission_requirements[:40],
+        "command_blocks": command_blocks[:40],
+    }
+
+
+def _exam_section_body_from_plan_item(*, course: str, form: str, content: str, score: str) -> str:
+    summary = content or f"{course}核心技能考核"
+    lines = [
+        f"请围绕“{summary}”完成{form}任务。",
+        "1. 根据题目要求完成环境准备、操作实施、结果验证和必要记录。",
+        "2. 操作过程中的关键命令、页面、配置文件或运行结果需要截图或保留可复核证据。",
+        "3. 按教师要求整理最终提交文件，提交结构和命名必须清晰规范。",
+    ]
+    if score:
+        lines.append(f"本题满分 {score} 分，评分时以任务完成度、关键证据和结果正确性为主要依据。")
+    return "\n".join(lines)
+
+
+def _exam_score_table_payload(sections: list[dict[str, Any]], total: Any) -> dict[str, Any]:
+    labels = [_exam_section_number_label(index) for index, _ in enumerate(sections or [], start=1)]
+    scores = [_score_to_text(section.get("score") or "") for section in sections or []]
+    return {
+        "labels": labels,
+        "scores": scores,
+        "total_score": _score_to_text(total),
+        "columns": ["题号", *labels, "总分", "核分人"],
+    }
+
+
+def _paper_sections_text(sections: list[dict[str, Any]]) -> str:
+    return "\n".join(f"{item.get('title') or ''}\n{item.get('content') or ''}" for item in sections or [])
+
+
+def _extract_task_lines(text: str) -> list[str]:
+    tasks: list[str] = []
+    for raw_line in str(text or "").splitlines():
+        line = _clean_line(raw_line)
+        if not line:
+            continue
+        if re.match(r"^(?:[a-zA-Z][\.、．]|[0-9]+[\.、．]|[（(][0-9]+[）)]|任务\s*\d+[:：])", line):
+            tasks.append(line)
+    return tasks[:80]
+
+
+def _extract_command_blocks(content: str, sections: list[dict[str, Any]] | None = None) -> list[str]:
+    text = content if content else _paper_sections_text(sections or [])
+    blocks: list[str] = []
+    in_block = False
+    current: list[str] = []
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.rstrip()
+        if line.strip().startswith("```"):
+            if in_block and current:
+                blocks.append("\n".join(current).strip())
+                current = []
+            in_block = not in_block
+            continue
+        if in_block:
+            current.append(line)
+            continue
+        if re.search(r"\b(?:SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|JOIN|systemctl|chmod|chown|grep|ls|df|free|mysql|javac|java)\b", line, flags=re.IGNORECASE):
+            blocks.append(line.strip())
+    if current:
+        blocks.append("\n".join(current).strip())
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for block in blocks:
+        key = block.strip()
+        if key and key not in seen:
+            deduped.append(key)
+            seen.add(key)
+    return deduped[:80]
+
+
+def _chinese_index(index: int) -> str:
+    labels = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]
+    if 0 <= index < len(labels):
+        return labels[index]
+    return str(index)
+
+
+def _exam_section_number_label(index: int) -> str:
+    return _chinese_index(index) if index <= 10 else str(index)
 
 
 def _rubric_items_from_exam_paper_context(context: dict[str, Any], fields: dict[str, Any]) -> list[dict[str, Any]]:
@@ -857,6 +1103,33 @@ def _fields_from_text(content: str) -> dict[str, Any]:
     total_match = re.search(r"总分\s*(?:[:：])?\s*(\d+(?:\.\d+)?)", text)
     if total_match:
         fields["total_score"] = total_match.group(1)
+    course_match = re.search(r"课程名称\s*([^\s|]{2,40}(?:\s*[A-Za-z0-9]+)?(?:\s*程序设计|\s*管理|\s*开发|\s*实验)?)", text)
+    if course_match:
+        fields["course_name"] = course_match.group(1).strip()
+    class_match = re.search(r"专业年级班级\s*([^\s|]{2,80}?班(?:（[^）]+）)?)", text)
+    if class_match:
+        fields["class_name"] = class_match.group(1).strip()
+    duration_match = re.search(r"(?:考试时间|考试时长)\s*[（(]?\s*(\d{2,3})\s*[）)]?\s*分钟", text)
+    if duration_match:
+        fields["exam_duration"] = duration_match.group(1)
+    if "期末考试" in text:
+        fields["exam_flags"] = "期末考试"
+    elif "补考" in text:
+        fields["exam_flags"] = "补考"
+    elif "重新学习考试" in text:
+        fields["exam_flags"] = "重新学习考试"
+    if re.search(r"本科\s*[（(]\s*√", text):
+        fields["education_level"] = "本科"
+    elif re.search(r"专科\s*[（(]\s*√", text):
+        fields["education_level"] = "专科"
+    if re.search(r"考查\s*[（(]\s*√", text):
+        fields["assessment_type"] = "考查"
+    elif re.search(r"考试\s*[（(]\s*√", text):
+        fields["assessment_type"] = "考试"
+    if re.search(r"开卷\s*[（(]\s*√", text):
+        fields["paper_type"] = "开卷"
+    elif re.search(r"闭\s*卷\s*[（(]\s*√", text):
+        fields["paper_type"] = "闭卷"
     return fields
 
 
@@ -878,6 +1151,9 @@ def _fields_from_classroom_context(context: dict[str, Any]) -> dict[str, Any]:
         "assessment_mode_label": raw.get("assessment_mode_label") or "",
         "academic_exam_method": raw.get("academic_exam_method") or "",
         "academic_exam_mode": raw.get("academic_exam_mode") or "",
+        "source_assessment_plan_record_id": _as_dict(raw.get("source_assessment_plan")).get("record_id") or "",
+        "source_assessment_plan_title": _as_dict(raw.get("source_assessment_plan")).get("title") or "",
+        "source_assessment_plan_updated_at": _as_dict(raw.get("source_assessment_plan")).get("updated_at") or "",
         "source_exam_paper_record_id": _as_dict(raw.get("source_exam_paper")).get("record_id") or "",
         "source_exam_paper_title": _as_dict(raw.get("source_exam_paper")).get("title") or "",
         "source_exam_paper_updated_at": _as_dict(raw.get("source_exam_paper")).get("updated_at") or "",
@@ -896,7 +1172,17 @@ def _normalize_field_map(metadata: dict[str, Any]) -> dict[str, Any]:
         fields.pop("document_type", None)
     if "document_group" in fields:
         fields.pop("document_group", None)
-    return fields
+    source_plan = _as_dict(metadata.get("source_assessment_plan"))
+    if source_plan:
+        fields.setdefault("source_assessment_plan_record_id", source_plan.get("record_id") or source_plan.get("id") or "")
+        fields.setdefault("source_assessment_plan_title", source_plan.get("title") or source_plan.get("document_type_label") or "")
+        fields.setdefault("source_assessment_plan_updated_at", source_plan.get("updated_at") or "")
+    source_exam = _as_dict(metadata.get("source_exam_paper"))
+    if source_exam:
+        fields.setdefault("source_exam_paper_record_id", source_exam.get("record_id") or source_exam.get("id") or "")
+        fields.setdefault("source_exam_paper_title", source_exam.get("title") or source_exam.get("document_type_label") or "")
+        fields.setdefault("source_exam_paper_updated_at", source_exam.get("updated_at") or "")
+    return {key: value for key, value in fields.items() if not _is_blank(value)}
 
 
 def _canonical_field_key(raw_key: str) -> str:
@@ -951,8 +1237,12 @@ def _queryable_fields(fields: dict[str, Any], structured: dict[str, Any]) -> dic
         "assessment_items",
         "rubric_items",
         "paper_sections",
+        "score_table",
+        "command_blocks",
         "deduction_points",
         "screenshot_requirements",
+        "submission_requirements",
+        "source_assessment_plan",
         "source_exam_paper",
         "total_score",
     ):

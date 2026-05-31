@@ -20,6 +20,7 @@ const state = {
     detailItem: null,
     detailPreview: null,
     detailExportUrl: '',
+    detailExportPdfUrl: '',
 };
 
 function withClassroomLearningContext(urlText) {
@@ -56,8 +57,10 @@ function refs() {
         detailOpenBtn: document.getElementById('classroom-material-detail-open-btn'),
         detailDownloadBtn: document.getElementById('classroom-material-detail-download-btn'),
         detailExportBtn: document.getElementById('classroom-material-detail-export-btn'),
+        detailExportPdfBtn: document.getElementById('classroom-material-detail-export-pdf-btn'),
         finalMaterialModal: document.getElementById('classroom-final-material-modal'),
         finalMaterialType: document.getElementById('classroom-final-material-type'),
+        examPaperOptions: document.getElementById('classroom-exam-paper-options'),
         assessmentPlanOptions: document.getElementById('classroom-assessment-plan-options'),
         gradingRubricOptions: document.getElementById('classroom-grading-rubric-options'),
         finalMaterialAssessmentMode: document.getElementById('classroom-final-material-assessment-mode'),
@@ -235,6 +238,10 @@ function renderFields(fields = {}) {
         assessment_type: '考核类型',
         assessment_mode_label: '笔试/非笔试',
         assessment_method: '考核形式',
+        education_level: '学历层次',
+        paper_type: '试卷类型',
+        exam_flags: '考试标记',
+        source_assessment_plan_title: '来源考核计划表',
         source_exam_paper_title: '来源试卷',
         exam_duration: '考试时间',
         total_score: '总分',
@@ -366,6 +373,7 @@ async function openMaterialDetail(materialId) {
     state.detailItem = item || null;
     state.detailPreview = null;
     state.detailExportUrl = item?.ai_import_record?.export_url || '';
+    state.detailExportPdfUrl = item?.ai_import_record?.export_pdf_url || '';
 
     if (!isTeacher()) {
         const action = getMaterialPrimaryAction(item || {});
@@ -384,6 +392,7 @@ async function openMaterialDetail(materialId) {
     dom.detailContent.hidden = true;
     dom.detailContent.innerHTML = '';
     if (dom.detailExportBtn) dom.detailExportBtn.disabled = true;
+    if (dom.detailExportPdfBtn) dom.detailExportPdfBtn.disabled = true;
     if (dom.detailOpenBtn) dom.detailOpenBtn.textContent = item?.node_type === 'folder' ? '打开文件夹' : '打开';
     if (dom.detailDownloadBtn) dom.detailDownloadBtn.disabled = !item || item.node_type !== 'file' || item.download_allowed === false;
     openModal(dom.detailModal);
@@ -393,6 +402,7 @@ async function openMaterialDetail(materialId) {
         const material = detail.material || item || {};
         state.detailItem = material;
         state.detailExportUrl = material.ai_import_record?.export_url || '';
+        state.detailExportPdfUrl = material.ai_import_record?.export_pdf_url || '';
         let preview = null;
         if (material.ai_import_record?.preview_url) {
             try {
@@ -400,6 +410,7 @@ async function openMaterialDetail(materialId) {
                 preview = previewData.preview || null;
                 state.detailPreview = preview;
                 state.detailExportUrl = preview?.export_url || state.detailExportUrl;
+                state.detailExportPdfUrl = preview?.export_pdf_url || state.detailExportPdfUrl;
             } catch (error) {
                 console.warn('final material preview failed', error);
             }
@@ -413,6 +424,7 @@ async function openMaterialDetail(materialId) {
         if (dom.detailOpenBtn) dom.detailOpenBtn.textContent = material.node_type === 'folder' ? '打开文件夹' : '打开';
         if (dom.detailDownloadBtn) dom.detailDownloadBtn.disabled = material.node_type !== 'file' || material.download_allowed === false;
         if (dom.detailExportBtn) dom.detailExportBtn.disabled = !state.detailExportUrl;
+        if (dom.detailExportPdfBtn) dom.detailExportPdfBtn.disabled = !state.detailExportPdfUrl;
     } catch (error) {
         dom.detailLoading.hidden = true;
         dom.detailContent.hidden = false;
@@ -425,6 +437,10 @@ function updateFinalMaterialTemplateOptions() {
     const selectedType = dom.finalMaterialType?.value || '';
     const isAssessmentPlan = selectedType === 'assessment_plan';
     const isGradingRubric = selectedType === 'grading_rubric';
+    const isExamPaper = selectedType === 'exam_paper';
+    if (dom.examPaperOptions) {
+        dom.examPaperOptions.hidden = !isExamPaper;
+    }
     if (dom.assessmentPlanOptions) {
         dom.assessmentPlanOptions.hidden = !isAssessmentPlan;
     }
@@ -440,7 +456,7 @@ function updateFinalMaterialTemplateOptions() {
         } else if (isAssessmentPlan) {
             dom.finalMaterialPrompt.placeholder = '例如：按机试方式拆分 Linux 服务部署、数据库授权、脚本备份等考核技能，分值合计100。';
         } else {
-            dom.finalMaterialPrompt.placeholder = '例如：围绕本课堂的 Linux 服务部署、数据库授权、脚本备份设计机试任务，难度适中，适合专升本班级。';
+            dom.finalMaterialPrompt.placeholder = '例如：根据本课堂最新考核计划表，围绕 Linux 服务部署、数据库授权、脚本备份设计机试任务，写清截图编号、提交物和考试时长。';
         }
     }
 }
@@ -643,6 +659,14 @@ export function init(appConfig) {
             return;
         }
         window.location.href = state.detailExportUrl;
+    });
+
+    dom.detailExportPdfBtn?.addEventListener('click', () => {
+        if (!state.detailExportPdfUrl) {
+            showToast('这份材料暂时没有可导出的 PDF 模板', 'warning');
+            return;
+        }
+        window.location.href = state.detailExportPdfUrl;
     });
 
     dom.detailContent?.addEventListener('click', async (event) => {
