@@ -30,7 +30,6 @@ export default defineConfig({
         'blog-launcher': resolve(__dirname, 'frontend/src/islands/blog-launcher.tsx'),
         'blog-topbar-sync': resolve(__dirname, 'frontend/src/islands/blog-topbar-sync.tsx'),
         'classroom-activity-workspace-sync': resolve(__dirname, 'frontend/src/islands/classroom-activity-workspace-sync.tsx'),
-        'classroom-workspace-nav-sync': resolve(__dirname, 'frontend/src/islands/classroom-workspace-nav-sync.tsx'),
         'dashboard-quick-actions': resolve(__dirname, 'frontend/src/islands/dashboard-quick-actions.tsx'),
         'exam-assign-sync': resolve(__dirname, 'frontend/src/islands/exam-assign-sync.tsx'),
         'feedback-launcher': resolve(__dirname, 'frontend/src/islands/feedback-launcher.tsx'),

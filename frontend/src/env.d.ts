@@ -15,7 +15,6 @@ interface Window {
   openWithdrawModalForSelected?: () => void;
   __LANSHARE_TEACHER_SUBMISSION_WORKBENCH__?: unknown;
   __LANSHARE_MESSAGE_CENTER_WORKSPACE__?: unknown;
-  __LANSHARE_CLASSROOM_WORKSPACE_NAV__?: unknown;
   __LANSHARE_ASSIGNMENT_TASK_BOARD__?: unknown;
   __LANSHARE_CLASSROOM_ACTIVITY_WORKSPACE__?: unknown;
   __LANSHARE_RESOURCE_WORKSPACE__?: unknown;

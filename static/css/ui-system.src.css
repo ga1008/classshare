@@ -3401,188 +3401,6 @@ body.has-cultivation-login-reveal {
     color: var(--text-primary);
 }
 
-.classroom-workspace-nav-island {
-    min-width: 0;
-    margin: 12px 0;
-}
-
-.classroom-workspace-nav-sync {
-    display: grid;
-    grid-template-columns: minmax(0, 1.08fr) minmax(280px, 0.92fr);
-    gap: 12px;
-    align-items: stretch;
-    padding: 13px;
-    border: 1px solid rgba(148, 163, 184, 0.24);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.94);
-    box-shadow: 0 18px 42px -36px rgba(15, 23, 42, 0.5);
-}
-
-.classroom-workspace-nav-sync__summary {
-    min-width: 0;
-}
-
-.classroom-workspace-nav-sync__eyebrow {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    width: fit-content;
-    min-height: 26px;
-    padding: 4px 8px;
-    border-radius: 999px;
-    background: rgba(37, 99, 235, 0.09);
-    color: #1d4ed8;
-    font-size: 0.74rem;
-    font-weight: 850;
-    letter-spacing: 0;
-}
-
-.classroom-workspace-nav-sync h2 {
-    margin: 8px 0 4px;
-    color: var(--text-primary);
-    font-size: 1.32rem;
-    font-weight: 900;
-    line-height: 1.18;
-    letter-spacing: 0;
-}
-
-.classroom-workspace-nav-sync p {
-    margin: 0;
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-    line-height: 1.58;
-}
-
-.classroom-workspace-nav-sync__chips,
-.classroom-workspace-nav-sync__targets,
-.classroom-workspace-nav-sync__actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.classroom-workspace-nav-sync__chips {
-    margin-top: 10px;
-}
-
-.classroom-workspace-nav-sync__chips span {
-    display: inline-flex;
-    align-items: center;
-    min-height: 26px;
-    max-width: 100%;
-    padding: 4px 8px;
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    border-radius: 8px;
-    background: rgba(248, 250, 252, 0.86);
-    color: var(--text-muted);
-    font-size: 0.76rem;
-    font-weight: 800;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.classroom-workspace-nav-sync__targets {
-    align-content: start;
-    min-width: 0;
-}
-
-.classroom-workspace-nav-sync__target,
-.classroom-workspace-nav-sync__actions button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    min-height: 40px;
-    padding: 8px 10px;
-    border: 1px solid rgba(148, 163, 184, 0.24);
-    border-radius: 8px;
-    background: #fff;
-    color: var(--text-primary);
-    font: inherit;
-    font-size: 0.82rem;
-    font-weight: 850;
-    line-height: 1.12;
-    cursor: pointer;
-    transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease, color 0.16s ease;
-}
-
-.classroom-workspace-nav-sync__target {
-    flex: 1 1 138px;
-    justify-content: flex-start;
-    min-width: 0;
-}
-
-.classroom-workspace-nav-sync__target > span:last-child {
-    display: grid;
-    gap: 2px;
-    min-width: 0;
-    text-align: left;
-}
-
-.classroom-workspace-nav-sync__target strong,
-.classroom-workspace-nav-sync__target small {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.classroom-workspace-nav-sync__target strong {
-    font-size: 0.86rem;
-    font-weight: 900;
-}
-
-.classroom-workspace-nav-sync__target small {
-    color: var(--text-muted);
-    font-size: 0.72rem;
-    font-weight: 760;
-}
-
-.classroom-workspace-nav-sync__target-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
-    background: rgba(37, 99, 235, 0.09);
-    color: #1d4ed8;
-}
-
-.classroom-workspace-nav-sync__target.is-active {
-    border-color: rgba(37, 99, 235, 0.44);
-    background: rgba(239, 246, 255, 0.92);
-    box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.12);
-}
-
-.classroom-workspace-nav-sync__target:hover:not(:disabled),
-.classroom-workspace-nav-sync__target:focus-visible:not(:disabled),
-.classroom-workspace-nav-sync__actions button:hover,
-.classroom-workspace-nav-sync__actions button:focus-visible {
-    transform: translateY(-1px);
-    border-color: rgba(14, 165, 233, 0.42);
-    color: #0369a1;
-    box-shadow: 0 14px 30px -28px rgba(15, 23, 42, 0.54);
-    outline: none;
-}
-
-.classroom-workspace-nav-sync__target:disabled {
-    cursor: not-allowed;
-    opacity: 0.5;
-}
-
-.classroom-workspace-nav-sync__actions {
-    grid-column: 1 / -1;
-    justify-content: flex-end;
-}
-
-.classroom-workspace-nav-sync__actions button {
-    min-height: 34px;
-    padding: 7px 10px;
-}
-
 .message-center-workspace-island {
     min-width: 0;
 }
@@ -4526,10 +4344,6 @@ body.has-cultivation-login-reveal {
 }
 
 @media (max-width: 960px) {
-    .classroom-workspace-nav-sync {
-        grid-template-columns: minmax(0, 1fr);
-    }
-
     .message-center-workspace-sync {
         grid-template-columns: minmax(0, 1fr);
     }
@@ -4557,19 +4371,6 @@ body.has-cultivation-login-reveal {
 }
 
 @media (max-width: 640px) {
-    .classroom-workspace-nav-sync {
-        padding: 12px;
-    }
-
-    .classroom-workspace-nav-sync__target,
-    .classroom-workspace-nav-sync__actions button {
-        flex: 1 1 140px;
-    }
-
-    .classroom-workspace-nav-sync__actions {
-        justify-content: stretch;
-    }
-
     .message-center-workspace-sync {
         padding: 12px;
     }
@@ -37332,15 +37133,15 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 .classroom-page .learning-progress-sync-island {
     width: 100%;
     min-width: 0;
-    margin: 0.78rem 0 0.82rem;
+    margin: 0.9rem 0 1rem;
 }
 
 .classroom-page .learning-progress-sync {
     display: grid;
     grid-template-columns: minmax(220px, 0.92fr) minmax(280px, 1.08fr) minmax(220px, 0.86fr);
-    gap: 0.66rem;
+    gap: clamp(0.78rem, 1.3vw, 1rem);
     min-width: 0;
-    padding: 0.76rem;
+    padding: clamp(1.05rem, 1.6vw, 1.28rem);
     border: 1px solid rgba(148, 163, 184, 0.22);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.9);
@@ -39156,7 +38957,7 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     .classroom-page .learning-progress-sync,
     .classroom-page .material-learning-path-sync,
     .classroom-page .assignment-task-board-sync {
-        padding: 0.56rem;
+        padding: 0.86rem;
     }
 
     .classroom-page .assignment-task-board-sync__metrics,

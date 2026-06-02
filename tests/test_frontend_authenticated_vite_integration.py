@@ -24,7 +24,6 @@ REQUIRED_PAGE_ISLANDS = (
     "frontend/src/islands/assignment-submit-sync.tsx",
     "frontend/src/islands/assignment-task-board-sync.tsx",
     "frontend/src/islands/classroom-activity-workspace-sync.tsx",
-    "frontend/src/islands/classroom-workspace-nav-sync.tsx",
     "frontend/src/islands/exam-assign-sync.tsx",
     "frontend/src/islands/learning-progress-sync.tsx",
     "frontend/src/islands/material-learning-path-sync.tsx",
@@ -328,7 +327,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         self.assertIn("window.zeroUnsubmittedScores = async function()", html)
         self.assertIn("window.openWithdrawModalForSelected = function()", html)
 
-    def test_classroom_main_injects_workspace_nav_island_without_removing_legacy_modules(self):
+    def test_classroom_main_keeps_floating_nav_without_removing_legacy_modules(self):
         fixture = _load_teacher_classroom_fixture()
         if fixture is None:
             self.skipTest("No teacher-accessible classroom is available for classroom workspace nav smoke test.")
@@ -345,7 +344,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
         html = response.text
-        self.assertIn('data-lanshare-island="classroom-workspace-nav-sync"', html)
+        self.assertNotIn('data-lanshare-island="classroom-workspace-nav-sync"', html)
         self.assertIn('data-lanshare-island="assignment-task-board-sync"', html)
         self.assertIn('data-lanshare-island="classroom-activity-workspace-sync"', html)
         self.assertIn('data-lanshare-island="resource-workspace-sync"', html)
@@ -354,7 +353,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
             self.assertIn('data-lanshare-island="learning-progress-sync"', html)
         self.assertIn('data-lanshare-island="assignment-authoring-sync"', html)
         self.assertIn('data-lanshare-island="exam-assign-sync"', html)
-        self.assertIn("classroom-workspace-nav-sync", html)
+        self.assertNotIn("classroom-workspace-nav-sync", html)
         self.assertIn("assignment-task-board-sync", html)
         self.assertIn("classroom-activity-workspace-sync", html)
         self.assertIn("resource-workspace-sync", html)

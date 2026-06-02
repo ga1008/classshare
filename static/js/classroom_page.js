@@ -704,8 +704,6 @@ function initWorkspaceNav() {
     const navLinks = Array.from(document.querySelectorAll('[data-workspace-nav]'));
     if (!navLinks.length) return;
 
-    const workspaceNavEventName = 'lanshare:classroom-workspace-nav-change';
-    const workspaceNavCommandEventName = 'lanshare:classroom-workspace-nav-command';
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const resolveBehavior = (behavior) => (prefersReducedMotion ? 'auto' : behavior);
     const navItems = navLinks
@@ -727,79 +725,6 @@ function initWorkspaceNav() {
     let manualSyncTimer = 0;
     let manualNavigationUntil = 0;
 
-    const readText = (element) => (element?.textContent || '').replace(/\s+/g, ' ').trim();
-
-    const uniqueNavItems = () => {
-        const itemsByTarget = new Map();
-        navItems.forEach((item) => {
-            const existing = itemsByTarget.get(item.targetId);
-            const hasRicherLabel = item.link.classList.contains('workspace-floating-nav-link');
-            if (!existing || hasRicherLabel) {
-                itemsByTarget.set(item.targetId, item);
-            }
-        });
-        return Array.from(itemsByTarget.values());
-    };
-
-    const getNavItemLabel = (item) => (
-        readText(item.link.querySelector('.workspace-floating-nav-label'))
-        || readText(item.link.querySelector('.app-topbar-action__text strong'))
-        || readText(item.link.querySelector('strong'))
-        || item.link.getAttribute('aria-label')
-        || item.link.getAttribute('title')
-        || item.targetId
-    );
-
-    const getNavItemNote = (item) => (
-        readText(item.link.querySelector('small'))
-        || item.link.getAttribute('data-tooltip')
-        || item.link.getAttribute('title')
-        || ''
-    );
-
-    const getActivityCounts = () => {
-        const counts = {};
-        document.querySelectorAll('[data-classroom-activity-count]').forEach((node) => {
-            const key = node.getAttribute('data-classroom-activity-count') || '';
-            const value = Number.parseInt(readText(node), 10);
-            if (key) {
-                counts[key] = Number.isFinite(value) ? value : 0;
-            }
-        });
-        return counts;
-    };
-
-    const getClassroomText = (key, fallback = '') => {
-        const classroom = window.APP_CONFIG?.classroom || {};
-        const value = classroom[key];
-        return typeof value === 'string' || typeof value === 'number' ? String(value) : fallback;
-    };
-
-    const publishWorkspaceNavSnapshot = () => {
-        const items = uniqueNavItems().map((item) => ({
-            targetId: item.targetId,
-            label: getNavItemLabel(item),
-            note: getNavItemNote(item),
-            isActive: item.targetId === activeTargetId || item.link.classList.contains('is-active'),
-            exists: Boolean(item.section),
-        }));
-        const activeItem = items.find((item) => item.isActive) || items[0] || null;
-        const role = String(window.APP_CONFIG?.userInfo?.role || window.APP_CONFIG?.userRole || '');
-        const snapshot = {
-            role,
-            classOfferingId: window.APP_CONFIG?.classOfferingId || null,
-            courseName: getClassroomText('course_name', getClassroomText('courseName')),
-            className: getClassroomText('class_name', getClassroomText('className')),
-            semester: getClassroomText('semester_display', getClassroomText('semester')),
-            activeTargetId: activeItem?.targetId || '',
-            items,
-            activityCounts: getActivityCounts(),
-        };
-
-        window.__LANSHARE_CLASSROOM_WORKSPACE_NAV__ = snapshot;
-        window.dispatchEvent(new CustomEvent(workspaceNavEventName, { detail: snapshot }));
-    };
-
     const setActiveLink = (targetId) => {
         activeTargetId = targetId || activeTargetId;
         navItems.forEach((item) => {
@@ -811,7 +736,6 @@ function initWorkspaceNav() {
                 item.link.removeAttribute('aria-current');
             }
         });
-        publishWorkspaceNavSnapshot();
     };
 
     const spotlightSection = (section) => {
@@ -906,24 +830,6 @@ function initWorkspaceNav() {
         });
     };
 
-    const handleWorkspaceNavCommand = (event) => {
-        const detail = event instanceof CustomEvent ? event.detail : null;
-        const commandType = detail?.type;
-        if (commandType === 'focus-section' && detail?.targetId) {
-            focusSection(String(detail.targetId), {
-                behavior: detail.behavior || 'smooth',
-                updateHash: detail.updateHash !== false,
-            });
-        }
-        if (commandType === 'focus-top') {
-            window.scrollTo({
-                top: 0,
-                behavior: resolveBehavior(detail?.behavior || 'smooth'),
-            });
-            publishWorkspaceNavSnapshot();
-        }
-    };
-
     navItems.forEach((item) => {
         item.link.addEventListener('click', (event) => {
             event.preventDefault();
@@ -936,7 +842,6 @@ function initWorkspaceNav() {
 
     window.addEventListener('scroll', scheduleViewportSync, { passive: true });
     window.addEventListener('resize', scheduleViewportSync);
-    window.addEventListener(workspaceNavCommandEventName, handleWorkspaceNavCommand);
 
     const initialHash = String(window.location.hash || '').replace(/^#/, '').trim();
     if (initialHash && navItems.some((item) => item.targetId === initialHash)) {
@@ -950,7 +855,6 @@ function initWorkspaceNav() {
     }
 
     syncActiveLinkFromViewport();
-    publishWorkspaceNavSnapshot();
 }
 
 function initAssignmentTaskBoard(clockController = null) {

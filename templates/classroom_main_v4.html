@@ -745,12 +745,6 @@
             </div>
             {% endif %}
 
-            <div
-                class="classroom-workspace-nav-island"
-                data-lanshare-island="classroom-workspace-nav-sync"
-                data-island-id="classroom-workspace-nav-sync-{{ classroom.id }}"
-            ></div>
-
             {% if has_learning_entry %}
             <div
                 class="learning-progress-sync-island"
@@ -2462,7 +2456,6 @@
     });
 </script>
 
-{{ vite_entry_tags('frontend/src/islands/classroom-workspace-nav-sync.tsx') }}
 {{ vite_entry_tags('frontend/src/islands/assignment-task-board-sync.tsx') }}
 {{ vite_entry_tags('frontend/src/islands/classroom-activity-workspace-sync.tsx') }}
 {{ vite_entry_tags('frontend/src/islands/resource-workspace-sync.tsx') }}
