@@ -28,6 +28,9 @@
     <script type="module" src="/static/js/teacher_onboarding.js"></script>
     {% endif %}
     {% endif %}
+    {% if user_info is defined and user_info %}
+    {% include "partials/vite_islands.html" %}
+    {% endif %}
     {% block scripts %}{% endblock %}
 </body>
 </html>

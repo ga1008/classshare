@@ -704,6 +704,8 @@ function initWorkspaceNav() {
     const navLinks = Array.from(document.querySelectorAll('[data-workspace-nav]'));
     if (!navLinks.length) return;
 
+    const workspaceNavEventName = 'lanshare:classroom-workspace-nav-change';
+    const workspaceNavCommandEventName = 'lanshare:classroom-workspace-nav-command';
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const resolveBehavior = (behavior) => (prefersReducedMotion ? 'auto' : behavior);
     const navItems = navLinks
@@ -725,6 +727,79 @@ function initWorkspaceNav() {
     let manualSyncTimer = 0;
     let manualNavigationUntil = 0;
 
+    const readText = (element) => (element?.textContent || '').replace(/\s+/g, ' ').trim();
+
+    const uniqueNavItems = () => {
+        const itemsByTarget = new Map();
+        navItems.forEach((item) => {
+            const existing = itemsByTarget.get(item.targetId);
+            const hasRicherLabel = item.link.classList.contains('workspace-floating-nav-link');
+            if (!existing || hasRicherLabel) {
+                itemsByTarget.set(item.targetId, item);
+            }
+        });
+        return Array.from(itemsByTarget.values());
+    };
+
+    const getNavItemLabel = (item) => (
+        readText(item.link.querySelector('.workspace-floating-nav-label'))
+        || readText(item.link.querySelector('.app-topbar-action__text strong'))
+        || readText(item.link.querySelector('strong'))
+        || item.link.getAttribute('aria-label')
+        || item.link.getAttribute('title')
+        || item.targetId
+    );
+
+    const getNavItemNote = (item) => (
+        readText(item.link.querySelector('small'))
+        || item.link.getAttribute('data-tooltip')
+        || item.link.getAttribute('title')
+        || ''
+    );
+
+    const getActivityCounts = () => {
+        const counts = {};
+        document.querySelectorAll('[data-classroom-activity-count]').forEach((node) => {
+            const key = node.getAttribute('data-classroom-activity-count') || '';
+            const value = Number.parseInt(readText(node), 10);
+            if (key) {
+                counts[key] = Number.isFinite(value) ? value : 0;
+            }
+        });
+        return counts;
+    };
+
+    const getClassroomText = (key, fallback = '') => {
+        const classroom = window.APP_CONFIG?.classroom || {};
+        const value = classroom[key];
+        return typeof value === 'string' || typeof value === 'number' ? String(value) : fallback;
+    };
+
+    const publishWorkspaceNavSnapshot = () => {
+        const items = uniqueNavItems().map((item) => ({
+            targetId: item.targetId,
+            label: getNavItemLabel(item),
+            note: getNavItemNote(item),
+            isActive: item.targetId === activeTargetId || item.link.classList.contains('is-active'),
+            exists: Boolean(item.section),
+        }));
+        const activeItem = items.find((item) => item.isActive) || items[0] || null;
+        const role = String(window.APP_CONFIG?.userInfo?.role || window.APP_CONFIG?.userRole || '');
+        const snapshot = {
+            role,
+            classOfferingId: window.APP_CONFIG?.classOfferingId || null,
+            courseName: getClassroomText('course_name', getClassroomText('courseName')),
+            className: getClassroomText('class_name', getClassroomText('className')),
+            semester: getClassroomText('semester_display', getClassroomText('semester')),
+            activeTargetId: activeItem?.targetId || '',
+            items,
+            activityCounts: getActivityCounts(),
+        };
+
+        window.__LANSHARE_CLASSROOM_WORKSPACE_NAV__ = snapshot;
+        window.dispatchEvent(new CustomEvent(workspaceNavEventName, { detail: snapshot }));
+    };
+
     const setActiveLink = (targetId) => {
         activeTargetId = targetId || activeTargetId;
         navItems.forEach((item) => {
@@ -736,6 +811,7 @@ function initWorkspaceNav() {
                 item.link.removeAttribute('aria-current');
             }
         });
+        publishWorkspaceNavSnapshot();
     };
 
     const spotlightSection = (section) => {
@@ -830,6 +906,24 @@ function initWorkspaceNav() {
         });
     };
 
+    const handleWorkspaceNavCommand = (event) => {
+        const detail = event instanceof CustomEvent ? event.detail : null;
+        const commandType = detail?.type;
+        if (commandType === 'focus-section' && detail?.targetId) {
+            focusSection(String(detail.targetId), {
+                behavior: detail.behavior || 'smooth',
+                updateHash: detail.updateHash !== false,
+            });
+        }
+        if (commandType === 'focus-top') {
+            window.scrollTo({
+                top: 0,
+                behavior: resolveBehavior(detail?.behavior || 'smooth'),
+            });
+            publishWorkspaceNavSnapshot();
+        }
+    };
+
     navItems.forEach((item) => {
         item.link.addEventListener('click', (event) => {
             event.preventDefault();
@@ -842,6 +936,7 @@ function initWorkspaceNav() {
 
     window.addEventListener('scroll', scheduleViewportSync, { passive: true });
     window.addEventListener('resize', scheduleViewportSync);
+    window.addEventListener(workspaceNavCommandEventName, handleWorkspaceNavCommand);
 
     const initialHash = String(window.location.hash || '').replace(/^#/, '').trim();
     if (initialHash && navItems.some((item) => item.targetId === initialHash)) {
@@ -855,6 +950,419 @@ function initWorkspaceNav() {
     }
 
     syncActiveLinkFromViewport();
+    publishWorkspaceNavSnapshot();
+}
+
+function initAssignmentTaskBoard(clockController = null) {
+    const taskCards = Array.from(document.querySelectorAll('[data-assignment-task-card]'));
+    const mountPoint = document.querySelector('[data-lanshare-island="assignment-task-board-sync"]');
+    if (!taskCards.length && !mountPoint) return null;
+
+    const taskBoardEventName = 'lanshare:assignment-task-board-change';
+    const taskBoardCommandEventName = 'lanshare:assignment-task-board-command';
+    const focusTimers = new WeakMap();
+    let latestTimeStates = new Map();
+    let pendingFrame = 0;
+
+    const readText = (element) => (element?.textContent || '').replace(/\s+/g, ' ').trim();
+    const toCount = (value) => {
+        const count = Number.parseInt(String(value || '0'), 10);
+        return Number.isFinite(count) && count > 0 ? count : 0;
+    };
+    const isTeacher = () => String(window.APP_CONFIG?.userInfo?.role || window.APP_CONFIG?.userRole || '').trim() === 'teacher';
+
+    const readClockInfo = (card, assignmentId) => {
+        const clockEl = card.querySelector('[data-assignment-clock]');
+        const state = latestTimeStates.get(String(assignmentId || '')) || null;
+        const phase = String(state?.deadline_phase || state?.localDeadlinePhase || clockEl?.dataset?.deadlinePhase || '').trim();
+        const accepting = state?.is_accepting_submissions ?? state?.localAccepting ?? clockEl?.dataset?.accepting === '1';
+        const lateOpen = state?.is_late_submission_open ?? state?.localLateOpen ?? clockEl?.dataset?.lateOpen === '1';
+        return {
+            hasClock: Boolean(clockEl),
+            label: readText(clockEl?.querySelector('[data-assignment-clock-label]')),
+            value: readText(clockEl?.querySelector('[data-assignment-clock-value]')),
+            detail: readText(clockEl?.querySelector('[data-assignment-clock-detail]')),
+            phase,
+            accepting: Boolean(accepting),
+            lateOpen: Boolean(lateOpen),
+            isUrgent: Boolean(clockEl?.classList.contains('is-urgent')),
+            isExpired: Boolean(clockEl?.classList.contains('is-expired')),
+        };
+    };
+
+    const readTaskItem = (card) => {
+        const dataset = card.dataset || {};
+        const assignmentId = String(dataset.assignmentId || '').trim();
+        const clock = readClockInfo(card, assignmentId);
+        const title = String(dataset.assignmentTitle || readText(card.querySelector('.assignment-card-title')) || '未命名任务').trim();
+        const kind = dataset.assignmentKind === 'exam' ? 'exam' : 'assignment';
+        const pendingGradeCount = toCount(dataset.teacherPendingGradeCount);
+        const gradingCount = toCount(dataset.teacherGradingCount);
+        const returnedCount = toCount(dataset.teacherReturnedCount);
+        const unsubmittedCount = toCount(dataset.teacherUnsubmittedCount);
+        const lateCount = toCount(dataset.teacherLateCount);
+        const statusKey = String(dataset.assignmentStatusKey || '').trim();
+        return {
+            id: assignmentId,
+            title,
+            kind,
+            link: String(dataset.assignmentLink || card.getAttribute('data-assignment-link') || ''),
+            statusKey,
+            statusLabel: String(dataset.assignmentStatusLabel || readText(card.querySelector('.assignment-card-tags .badge')) || '').trim(),
+            stageLabel: String(dataset.assignmentStageLabel || '').trim(),
+            createdAt: String(dataset.assignmentCreatedAt || '').trim(),
+            submittedCount: toCount(dataset.teacherSubmittedCount),
+            totalStudents: toCount(dataset.teacherTotalStudents),
+            pendingGradeCount,
+            gradingCount,
+            returnedCount,
+            unsubmittedCount,
+            lateCount,
+            clock,
+            priority: pendingGradeCount > 0
+                ? 'review'
+                : returnedCount > 0 || statusKey === 'returned'
+                    ? 'returned'
+                    : clock.lateOpen || lateCount > 0
+                        ? 'late'
+                        : clock.isUrgent
+                            ? 'urgent'
+                            : statusKey === 'unsubmitted'
+                                ? 'todo'
+                                : 'normal',
+        };
+    };
+
+    const selectFocusItem = (items) => (
+        items.find((item) => item.priority === 'urgent')
+        || items.find((item) => item.priority === 'late')
+        || items.find((item) => item.priority === 'review')
+        || items.find((item) => item.priority === 'returned')
+        || items.find((item) => item.priority === 'todo')
+        || items[0]
+        || null
+    );
+
+    const readSnapshot = () => {
+        const items = taskCards.map(readTaskItem);
+        const teacherView = isTeacher();
+        const summary = items.reduce((acc, item) => {
+            acc.total += 1;
+            acc[item.kind === 'exam' ? 'examCount' : 'assignmentCount'] += 1;
+            if (item.stageLabel) acc.stageCount += 1;
+            if (item.clock.accepting || item.statusKey === 'published' || item.statusKey === 'unsubmitted') acc.openCount += 1;
+            if (item.clock.isUrgent) acc.urgentCount += 1;
+            if (item.clock.lateOpen || item.lateCount > 0) acc.lateOpenCount += 1;
+            acc.reviewQueue += item.pendingGradeCount;
+            acc.gradingQueue += item.gradingCount;
+            acc.returnedCount += item.returnedCount + (item.statusKey === 'returned' ? 1 : 0);
+            acc.unsubmittedCount += item.unsubmittedCount + (item.statusKey === 'unsubmitted' ? 1 : 0);
+            return acc;
+        }, {
+            total: 0,
+            assignmentCount: 0,
+            examCount: 0,
+            stageCount: 0,
+            openCount: 0,
+            urgentCount: 0,
+            lateOpenCount: 0,
+            reviewQueue: 0,
+            gradingQueue: 0,
+            returnedCount: 0,
+            unsubmittedCount: 0,
+        });
+        const focusItem = selectFocusItem(items);
+        return {
+            role: teacherView ? 'teacher' : String(window.APP_CONFIG?.userInfo?.role || window.APP_CONFIG?.userRole || ''),
+            classOfferingId: window.APP_CONFIG?.classOfferingId || null,
+            items,
+            summary,
+            focusItemId: focusItem?.id || '',
+        };
+    };
+
+    const publishSnapshot = () => {
+        const snapshot = readSnapshot();
+        window.__LANSHARE_ASSIGNMENT_TASK_BOARD__ = snapshot;
+        window.dispatchEvent(new CustomEvent(taskBoardEventName, { detail: snapshot }));
+        return snapshot;
+    };
+
+    const schedulePublish = () => {
+        if (pendingFrame) return;
+        pendingFrame = window.requestAnimationFrame(() => {
+            pendingFrame = 0;
+            publishSnapshot();
+        });
+    };
+
+    const focusCard = (assignmentId, { open = false } = {}) => {
+        const card = taskCards.find((item) => String(item.dataset.assignmentId || '') === String(assignmentId || ''));
+        if (!card) return;
+        const existingTimer = focusTimers.get(card);
+        if (existingTimer) {
+            window.clearTimeout(existingTimer);
+        }
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.classList.add('is-task-board-focus');
+        const timer = window.setTimeout(() => {
+            card.classList.remove('is-task-board-focus');
+            focusTimers.delete(card);
+        }, 1600);
+        focusTimers.set(card, timer);
+        if (open) {
+            const link = card.dataset.assignmentLink || card.getAttribute('data-assignment-link') || '';
+            if (link) {
+                window.location.href = link;
+            }
+        }
+    };
+
+    window.addEventListener(taskBoardCommandEventName, (event) => {
+        const detail = event instanceof CustomEvent ? event.detail : null;
+        const commandType = detail?.type;
+        if (commandType === 'focus-card' && detail?.assignmentId) {
+            focusCard(detail.assignmentId);
+        }
+        if (commandType === 'open-card' && detail?.assignmentId) {
+            focusCard(detail.assignmentId, { open: true });
+        }
+        if (commandType === 'focus-board') {
+            document.getElementById('assignment-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        schedulePublish();
+    });
+
+    taskCards.forEach((card) => {
+        const observer = new MutationObserver(schedulePublish);
+        observer.observe(card, {
+            attributes: true,
+            childList: true,
+            subtree: true,
+            attributeFilter: ['class', 'data-accepting', 'data-late-open', 'data-deadline-phase'],
+        });
+    });
+
+    publishSnapshot();
+    return {
+        publish: publishSnapshot,
+        updateTimeStates: (timeStates) => {
+            latestTimeStates = timeStates instanceof Map ? timeStates : new Map();
+            schedulePublish();
+        },
+        getSnapshot: readSnapshot,
+        clockController,
+    };
+}
+
+function initMaterialLearningPathBridge() {
+    const mountPoint = document.querySelector('[data-lanshare-island="material-learning-path-sync"]');
+    const timelinePanel = document.getElementById('timeline-panel');
+    const materialsPanel = document.getElementById('materials-panel');
+    const materialList = document.getElementById('classroom-materials-list');
+    if (!mountPoint && !timelinePanel && !materialsPanel) return null;
+
+    const materialPathEventName = 'lanshare:material-learning-path-change';
+    const materialPathCommandEventName = 'lanshare:material-learning-path-command';
+    const teachingPlan = window.APP_CONFIG?.teachingPlan || {};
+    const sessions = Array.isArray(teachingPlan.timeline_entries)
+        ? teachingPlan.timeline_entries
+        : (Array.isArray(teachingPlan.sessions) ? teachingPlan.sessions : []);
+    const sessionByOrder = new Map(sessions.map((session) => [String(session.order_index), session]));
+    let pendingFrame = 0;
+
+    const readText = (element) => (element?.textContent || '').replace(/\s+/g, ' ').trim();
+    const toCount = (value) => {
+        const count = Number.parseInt(String(value || '0'), 10);
+        return Number.isFinite(count) && count > 0 ? count : 0;
+    };
+    const isTeacher = () => String(window.APP_CONFIG?.userInfo?.role || window.APP_CONFIG?.userRole || '').trim() === 'teacher';
+    const getSelectedOrder = () => (
+        document.querySelector('[data-session-select].is-selected')?.getAttribute('data-session-order')
+        || timelinePanel?.getAttribute('data-anchor-order')
+        || sessions.find((session) => session.is_anchor)?.order_index
+        || sessions[0]?.order_index
+        || ''
+    );
+    const isHomeEntry = (session) => Boolean(session?.is_home_entry || session?.entry_type === 'home');
+    const isAcademicExamEntry = (session) => Boolean(session?.is_academic_exam || session?.entry_type === 'academic_exam');
+    const sessionHasMaterial = (session, button = null) => {
+        if (!session) return false;
+        if (isAcademicExamEntry(session)) return false;
+        if (button?.dataset?.hasMaterial) {
+            return button.dataset.hasMaterial === 'true';
+        }
+        return isHomeEntry(session)
+            ? Boolean(session.home_learning_material_id || session.has_home_learning_material || session.learning_material_viewer_url)
+            : Boolean(session.learning_material_id || session.has_learning_material || session.learning_material_viewer_url);
+    };
+
+    const readSessions = () => Array.from(document.querySelectorAll('[data-session-select]')).map((button) => {
+        const orderIndex = String(button.getAttribute('data-session-order') || '');
+        const session = sessionByOrder.get(orderIndex) || {};
+        const title = readText(button.querySelector('.teaching-timeline-segment-title'))
+            || session.segment_title
+            || session.detail_title
+            || session.title
+            || '课次';
+        const hasMaterial = sessionHasMaterial(session, button);
+        return {
+            id: session.id || button.getAttribute('data-session-id') || null,
+            orderIndex,
+            title,
+            label: readText(button.querySelector('.teaching-timeline-segment-order')) || session.session_number_label || '',
+            statusLabel: session.session_status_label || '',
+            progressState: session.progress_state || '',
+            entryType: button.getAttribute('data-entry-type') || session.entry_type || (isHomeEntry(session) ? 'home' : 'lesson'),
+            hasMaterial,
+            isSelected: button.classList.contains('is-selected'),
+            isHomeEntry: isHomeEntry(session),
+            isAcademicExam: isAcademicExamEntry(session),
+            isAcademicSchedule: Boolean(session.is_academic_schedule),
+            isShifted: Boolean(session.is_non_periodic),
+            materialName: session.home_learning_material_name || session.learning_material_name || '',
+            materialPath: session.home_learning_material_path || session.learning_material_path || '',
+            viewerUrl: session.home_learning_material_viewer_url || session.learning_material_viewer_url || '',
+            dateLabel: readText(button.querySelector('.teaching-timeline-segment-meta')) || session.detail_meta || '',
+        };
+    });
+
+    const readMaterialRows = () => Array.from(document.querySelectorAll('#classroom-materials-list .materials-row')).map((row) => {
+        const actionText = readText(row.querySelector('[data-action]'));
+        return {
+            id: String(row.dataset.id || ''),
+            name: String(row.dataset.materialName || readText(row.querySelector('.materials-name-copy strong')) || ''),
+            path: String(row.dataset.materialPath || readText(row.querySelector('.materials-name-copy span')) || ''),
+            nodeType: String(row.dataset.materialNodeType || ''),
+            typeLabel: readText(row.children?.[2]),
+            meta: readText(row.children?.[3]),
+            previewSupported: row.dataset.materialPreviewSupported === 'true',
+            downloadAllowed: row.dataset.materialDownloadAllowed !== 'false',
+            hasDocument: row.dataset.materialHasDocument === 'true',
+            primaryAction: String(row.dataset.materialPrimaryAction || ''),
+            actionText,
+        };
+    });
+
+    const readSnapshot = () => {
+        const sessionItems = readSessions();
+        const materialItems = readMaterialRows();
+        const selectedOrder = String(getSelectedOrder());
+        const selectedSession = sessionItems.find((session) => String(session.orderIndex) === selectedOrder)
+            || sessionItems.find((session) => session.isSelected)
+            || sessionItems[0]
+            || null;
+        const materialPanel = document.getElementById('teachingTimelineMaterialPanel');
+        const breadcrumbs = readText(document.getElementById('classroom-materials-breadcrumbs'));
+        const selectionCount = toCount(readText(document.getElementById('classroom-materials-selection-count')));
+        const hasHomeMaterial = Boolean(teachingPlan.has_home_material || teachingPlan.home_material?.id);
+        const materialReadyCount = sessionItems.filter((session) => session.hasMaterial).length;
+        const documentCount = materialItems.filter((item) => item.hasDocument || item.previewSupported).length;
+        const folderCount = materialItems.filter((item) => item.nodeType === 'folder').length;
+        const blockedDownloadCount = materialItems.filter((item) => !item.downloadAllowed).length;
+
+        return {
+            role: isTeacher() ? 'teacher' : String(window.APP_CONFIG?.userInfo?.role || window.APP_CONFIG?.userRole || ''),
+            classOfferingId: window.APP_CONFIG?.classOfferingId || null,
+            selectedOrder,
+            selectedSession,
+            sessionItems,
+            materialItems,
+            summary: {
+                sessionCount: sessionItems.length,
+                materialReadyCount,
+                missingMaterialCount: Math.max(sessionItems.filter((session) => !session.isAcademicExam).length - materialReadyCount, 0),
+                homeMaterialReady: hasHomeMaterial,
+                academicExamCount: sessionItems.filter((session) => session.isAcademicExam).length,
+                shiftedCount: sessionItems.filter((session) => session.isShifted).length,
+                materialItemCount: materialItems.length,
+                folderCount,
+                documentCount,
+                blockedDownloadCount,
+                selectionCount,
+            },
+            materialPanel: {
+                ready: materialPanel?.dataset?.materialReady === 'true',
+                entryType: materialPanel?.dataset?.entryType || '',
+                name: readText(document.getElementById('teachingTimelineMaterialName')),
+                path: readText(document.getElementById('teachingTimelineMaterialPath')),
+                hint: readText(document.getElementById('teachingTimelineOpenMaterialHint')),
+            },
+            breadcrumbs,
+            isLoadingMaterials: Boolean(materialList?.querySelector('.materials-empty') && readText(materialList).includes('正在加载')),
+        };
+    };
+
+    const publishSnapshot = () => {
+        const snapshot = readSnapshot();
+        window.__LANSHARE_MATERIAL_LEARNING_PATH__ = snapshot;
+        window.dispatchEvent(new CustomEvent(materialPathEventName, { detail: snapshot }));
+        return snapshot;
+    };
+
+    const schedulePublish = () => {
+        if (pendingFrame) return;
+        pendingFrame = window.requestAnimationFrame(() => {
+            pendingFrame = 0;
+            publishSnapshot();
+        });
+    };
+
+    const focusElement = (element, block = 'center') => {
+        element?.scrollIntoView({ behavior: 'smooth', block });
+        element?.focus?.({ preventScroll: true });
+    };
+
+    window.addEventListener(materialPathCommandEventName, (event) => {
+        const detail = event instanceof CustomEvent ? event.detail : null;
+        const commandType = detail?.type;
+        if (commandType === 'focus-timeline') {
+            focusElement(timelinePanel, 'start');
+        }
+        if (commandType === 'focus-materials') {
+            focusElement(materialsPanel, 'start');
+        }
+        if (commandType === 'refresh-materials') {
+            document.getElementById('classroom-materials-refresh-btn')?.click();
+        }
+        if (commandType === 'open-current-material') {
+            document.getElementById('teachingTimelineOpenMaterialBtn')?.click();
+        }
+        if (commandType === 'open-home-material') {
+            document.getElementById('teachingTimelineOpenHomeMaterialBtn')?.click();
+        }
+        if (commandType === 'generate-final-material') {
+            document.getElementById('classroom-final-material-generate-btn')?.click();
+        }
+        if (commandType === 'focus-session' && detail?.orderIndex) {
+            const sessionButton = document.querySelector(`[data-session-select][data-session-order="${String(detail.orderIndex)}"]`);
+            sessionButton?.click();
+            focusElement(sessionButton);
+        }
+        schedulePublish();
+    });
+
+    [
+        document.getElementById('teachingTimelineStage'),
+        document.getElementById('teachingTimelineDetail'),
+        document.getElementById('teachingTimelineMaterialPanel'),
+        document.getElementById('classroom-materials-list'),
+        document.getElementById('classroom-materials-breadcrumbs'),
+        document.getElementById('classroom-materials-selection'),
+    ].filter(Boolean).forEach((node) => {
+        const observer = new MutationObserver(schedulePublish);
+        observer.observe(node, {
+            attributes: true,
+            childList: true,
+            subtree: true,
+        });
+    });
+
+    publishSnapshot();
+    return {
+        publish: publishSnapshot,
+        getSnapshot: readSnapshot,
+    };
 }
 
 function initTeachingTimelineLegacy() {
@@ -3179,6 +3687,8 @@ function initClassroomActivitySidebar() {
     const shell = document.querySelector('[data-classroom-activity-shell]');
     if (!shell) return;
 
+    const activityWorkspaceEventName = 'lanshare:classroom-activity-workspace-change';
+    const activityWorkspaceCommandEventName = 'lanshare:classroom-activity-workspace-command';
     const tabs = Array.from(shell.querySelectorAll('[data-classroom-activity-tab]'));
     const panels = new Map(
         Array.from(shell.querySelectorAll('[data-classroom-activity-panel]'))
@@ -3190,11 +3700,66 @@ function initClassroomActivitySidebar() {
     );
     const liveCountKeys = new Set(['interaction', 'discussion', 'collaboration']);
     const counts = new Map();
+    let activeActivityKey = '';
 
     const toCount = (value) => {
         const numeric = Number(value);
         if (!Number.isFinite(numeric) || numeric < 0) return 0;
         return Math.round(numeric);
+    };
+
+    const readText = (element) => (element?.textContent || '').replace(/\s+/g, ' ').trim();
+
+    const getActivityNote = (key) => {
+        const notes = {
+            interaction: '课堂互动与即时反馈',
+            discussion: '研讨室与一对一消息',
+            collaboration: '小组协作空间',
+            resources: '资料上传与共享',
+        };
+        return notes[key] || '';
+    };
+
+    const getActivityLabel = (tab, key) => (
+        readText(tab.querySelector('.classroom-activity-tab__copy strong'))
+        || readText(tab.querySelector('strong'))
+        || tab.getAttribute('aria-label')
+        || key
+    );
+
+    const buildActivitySnapshot = () => {
+        const activeKey = activeActivityKey || tabs.find((tab) => tab.classList.contains('is-active'))?.dataset.classroomActivityTab || 'interaction';
+        const items = tabs.map((tab) => {
+            const key = tab.dataset.classroomActivityTab || '';
+            const targetId = tab.dataset.classroomActivityTarget || '';
+            return {
+                key,
+                label: getActivityLabel(tab, key),
+                note: getActivityNote(key),
+                targetId,
+                count: toCount(counts.get(key)),
+                isActive: key === activeKey,
+                exists: panels.has(key),
+            };
+        }).filter((item) => item.key);
+        const liveTotal = Array.from(liveCountKeys).reduce((total, key) => total + toCount(counts.get(key)), 0);
+        const resourceTotal = toCount(counts.get('resources'));
+        const role = String(window.APP_CONFIG?.userInfo?.role || window.APP_CONFIG?.userRole || '');
+
+        return {
+            role,
+            activeKey,
+            items,
+            liveTotal,
+            resourceTotal,
+            total: liveTotal + resourceTotal,
+        };
+    };
+
+    const publishActivitySnapshot = () => {
+        const snapshot = buildActivitySnapshot();
+        window.__LANSHARE_CLASSROOM_ACTIVITY_WORKSPACE__ = snapshot;
+        window.dispatchEvent(new CustomEvent(activityWorkspaceEventName, { detail: snapshot }));
     };
 
     const countEls = Array.from(shell.querySelectorAll('[data-classroom-activity-count]'));
@@ -3224,6 +3789,7 @@ function initClassroomActivitySidebar() {
             });
         }
         setTotal();
+        publishActivitySnapshot();
     };
 
     const resolveKeyFromHash = (hashText) => {
@@ -3235,6 +3801,7 @@ function initClassroomActivitySidebar() {
 
     const openActivity = (key, options = {}) => {
         const normalizedKey = panels.has(key) ? key : 'interaction';
+        activeActivityKey = normalizedKey;
         tabs.forEach((tab) => {
             const isActive = tab.dataset.classroomActivityTab === normalizedKey;
             tab.classList.toggle('is-active', isActive);
@@ -3262,6 +3829,43 @@ function initClassroomActivitySidebar() {
         window.requestAnimationFrame(() => {
             window.dispatchEvent(new Event('resize'));
         });
+        publishActivitySnapshot();
+    };
+
+    const refreshActiveActivity = () => {
+        const key = activeActivityKey || 'interaction';
+        if (key === 'interaction') {
+            shell.querySelector('[data-interaction-refresh]')?.click();
+        } else if (key === 'collaboration') {
+            shell.querySelector('[data-collab-refresh]')?.click();
+        } else if (key === 'resources') {
+            window.fileApp?.refreshFiles?.();
+        } else if (key === 'discussion') {
+            document.getElementById('chat-input')?.focus({ preventScroll: true });
+            window.dispatchEvent(new Event('resize'));
+        }
+        publishActivitySnapshot();
+    };
+
+    const handleActivityWorkspaceCommand = (event) => {
+        const detail = event instanceof CustomEvent ? event.detail : null;
+        const commandType = detail?.type;
+        if (commandType === 'open-activity' && detail?.key) {
+            openActivity(String(detail.key), {
+                updateHash: detail.updateHash !== false,
+                scroll: detail.scroll !== false,
+            });
+        }
+        if (commandType === 'focus-active') {
+            shell.scrollIntoView({
+                block: 'start',
+                behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+            });
+            publishActivitySnapshot();
+        }
+        if (commandType === 'refresh-active') {
+            refreshActiveActivity();
+        }
     };
 
     tabs.forEach((tab) => {
@@ -3298,6 +3902,7 @@ function initClassroomActivitySidebar() {
             }
         });
     });
+    window.addEventListener(activityWorkspaceCommandEventName, handleActivityWorkspaceCommand);
 
     const initialKey = resolveKeyFromHash(window.location.hash);
     if (initialKey) {
@@ -3306,6 +3911,7 @@ function initClassroomActivitySidebar() {
         openActivity('interaction', { updateHash: false, scroll: false });
     }
     setTotal();
+    publishActivitySnapshot();
 }
 
 function initAcademicCourseExamPanel(config = window.APP_CONFIG || {}) {
@@ -3389,8 +3995,13 @@ export function initClassroomPage() {
     initWorkspaceNav();
     initClassroomActivitySidebar();
     initTeachingTimeline();
+    initMaterialLearningPathBridge();
     initAcademicCourseExamPanel();
-    initAssignmentClocks();
+    let assignmentTaskBoard = null;
+    const assignmentClocks = initAssignmentClocks({
+        onStateChange: (timeStates) => assignmentTaskBoard?.updateTimeStates(timeStates),
+    });
+    assignmentTaskBoard = initAssignmentTaskBoard(assignmentClocks);
     personalizeClassroomCopy();
     document.addEventListener('classroom:alias-change', (event) => {
         personalizeClassroomCopy(event.detail || {});

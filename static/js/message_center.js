@@ -14,6 +14,8 @@ const app = document.querySelector('[data-message-center-app]');
 
 if (app) {
     const PRIVATE_TAB = 'private_message';
+    const WORKSPACE_EVENT = 'lanshare:message-center-workspace-change';
+    const WORKSPACE_COMMAND_EVENT = 'lanshare:message-center-workspace-command';
     const AI_JOB_POLL_INTERVAL_MS = 2200;
     const PRIVATE_ATTACHMENT_MAX_BYTES = 100 * 1024 * 1024;
     const PRIVATE_ATTACHMENT_LIMIT = 8;
@@ -155,6 +157,7 @@ if (app) {
         currentTabLabelEl.textContent = currentTabConfig().label || '全部';
         contactTotalEl.textContent = String(state.contacts.length);
         blockCountEl.textContent = String(state.blocks.length);
+        publishWorkspaceSnapshot();
     }
 
     function updateUrl() {
@@ -207,6 +210,53 @@ if (app) {
         );
     }
 
+    function currentFilterConfig() {
+        return (state.summary.filters || []).find((filter) => filter.value === state.filterKey) || {
+            value: 'all',
+            label: '全部',
+        };
+    }
+
+    function visibleContacts() {
+        return state.contacts.filter(contactMatchesFilter);
+    }
+
+    function publishWorkspaceSnapshot() {
+        const activeContact = getActiveContact();
+        const messages = state.conversation?.messages ? filteredMessages() : [];
+        const filter = currentFilterConfig();
+        const tab = currentTabConfig();
+        const snapshot = {
+            mode: appMode,
+            currentTab: state.currentTab,
+            currentTabLabel: tab.label || '全部',
+            filterKey: state.filterKey,
+            filterLabel: filter.label || '全部',
+            keyword: state.keyword,
+            unreadTotal: Number(state.summary?.unread_total || 0),
+            currentTabUnread: Number(tab.unread_count || 0),
+            itemTotal: Array.isArray(state.items) ? state.items.length : 0,
+            unreadItemTotal: Array.isArray(state.items) ? state.items.filter((item) => item.is_unread).length : 0,
+            contactTotal: state.contacts.length,
+            visibleContactTotal: visibleContacts().length,
+            blockCount: state.blocks.length,
+            privateOpen: state.currentTab === PRIVATE_TAB,
+            hasConversation: Boolean(state.conversation?.contact),
+            currentContactName: activeContact?.display_name || '',
+            currentContactSubtitle: activeContact?.subtitle || activeContact?.role || '',
+            currentContactUnread: Number(activeContact?.unread_count || 0),
+            canSend: Boolean(state.conversation?.contact?.can_send),
+            isBlocked: Boolean(state.conversation?.contact?.is_blocked),
+            aiPending: isCurrentConversationAiPending(),
+            pendingAttachmentCount: state.pendingAttachments.length,
+            filteredMessageTotal: messages.length,
+            isSendingMessage: Boolean(state.isSendingMessage),
+            sendCooldownSeconds: Math.ceil(getSendCooldownRemainingMs() / 1000),
+        };
+        window.__LANSHARE_MESSAGE_CENTER_WORKSPACE__ = snapshot;
+        window.dispatchEvent(new CustomEvent(WORKSPACE_EVENT, { detail: snapshot }));
+    }
+
     function setSubmitButtonVisualState({ label = '发送', disabled = false, busy = false, title = '' } = {}) {
         if (!composeSubmitButtonEl) {
             return;
@@ -239,18 +289,21 @@ if (app) {
         if (!contact || !canSend) {
             setSubmitButtonVisualState({ label: '发送', disabled: true });
             setAttachmentButtonsDisabled(true);
+            publishWorkspaceSnapshot();
             return;
         }
 
         if (state.isSendingMessage) {
             setSubmitButtonVisualState({ label: '发送中', disabled: true, busy: true, title: '正在发送私信' });
             setAttachmentButtonsDisabled(true);
+            publishWorkspaceSnapshot();
             return;
         }
 
         if (isCurrentConversationAiPending()) {
             setSubmitButtonVisualState({ label: 'AI 回复中', disabled: true, busy: true, title: 'AI 助教正在回复上一条消息' });
             setAttachmentButtonsDisabled(true);
+            publishWorkspaceSnapshot();
             return;
         }
 
@@ -258,11 +311,13 @@ if (app) {
             const remaining = Math.ceil(getSendCooldownRemainingMs() / 1000);
             setSubmitButtonVisualState({ label: `${remaining}s 后可发送`, disabled: true });
             setAttachmentButtonsDisabled(true);
+            publishWorkspaceSnapshot();
             return;
         }
 
         setAttachmentButtonsDisabled(false);
         setSubmitButtonVisualState({ label: '发送' });
+        publishWorkspaceSnapshot();
     }
 
     function formatBytes(size) {
@@ -323,11 +378,13 @@ if (app) {
 
     function renderPendingAttachments() {
         if (!attachmentPreviewEl) {
+            publishWorkspaceSnapshot();
             return;
         }
         attachmentPreviewEl.replaceChildren();
         attachmentPreviewEl.hidden = state.pendingAttachments.length === 0;
         if (!state.pendingAttachments.length) {
+            publishWorkspaceSnapshot();
             return;
         }
 
@@ -372,6 +429,7 @@ if (app) {
             fragment.appendChild(card);
         });
         attachmentPreviewEl.appendChild(fragment);
+        publishWorkspaceSnapshot();
     }
 
     function queuePrivateAttachments(files, { imagesOnly = false } = {}) {
@@ -680,6 +738,7 @@ if (app) {
     function renderItems() {
         if (!Array.isArray(state.items) || state.items.length === 0) {
             renderEmpty(feedEl, '当前没有匹配的信息', '可以切换分类、搜索关键词或调整筛选条件后再试。');
+            publishWorkspaceSnapshot();
             return;
         }
 
@@ -715,6 +774,7 @@ if (app) {
                 </div>
             </article>
         `).join('');
+        publishWorkspaceSnapshot();
     }
 
     function contactMatchesFilter(contact) {
@@ -787,6 +847,7 @@ if (app) {
                     </p>
                 </div>
             `;
+            publishWorkspaceSnapshot();
             return;
         }
 
@@ -798,12 +859,14 @@ if (app) {
             <div class="message-center-contact__subtitle">${escapeHtml(activeContact.subtitle || activeContact.role || '')}</div>
             <div class="message-center-contact__preview">${escapeHtml(activeContact.last_message_preview || '暂无私信记录')}</div>
         `;
+        publishWorkspaceSnapshot();
     }
 
     function renderBlocks() {
         if (!Array.isArray(state.blocks) || state.blocks.length === 0) {
             blockListEl.innerHTML = '<div class="message-center-block-empty">当前没有拉黑任何联系人。</div>';
             blockCountEl.textContent = '0';
+            publishWorkspaceSnapshot();
             return;
         }
 
@@ -823,6 +886,7 @@ if (app) {
                 </button>
             </div>
         `).join('');
+        publishWorkspaceSnapshot();
     }
 
     function syncContact(contact) {
@@ -958,6 +1022,7 @@ if (app) {
             }
             setAttachmentButtonsDisabled(true);
             updateSendButtonState();
+            publishWorkspaceSnapshot();
             return;
         }
 
@@ -1045,6 +1110,7 @@ if (app) {
             : (contact.is_blocked ? '对方已在黑名单中，解除后才能发送' : '当前无法向该联系人发送消息');
 
         updateSendButtonState();
+        publishWorkspaceSnapshot();
     }
 
     async function markRead(payload) {
@@ -1136,6 +1202,7 @@ if (app) {
             state.conversation = null;
             state.aiReplyJob = null;
             renderConversation();
+            publishWorkspaceSnapshot();
             return;
         }
 
@@ -1145,6 +1212,52 @@ if (app) {
         state.conversation = null;
         state.aiReplyJob = null;
         await loadItems();
+    }
+
+    async function markCurrentRead() {
+        if (state.currentTab === PRIVATE_TAB) {
+            if (!state.currentContact) {
+                showToast('当前没有打开私信会话', 'warning');
+                return;
+            }
+            await loadConversation(state.currentContact, state.currentScope, { showLoading: false, scrollToBottom: false });
+            showToast('当前私信会话已更新为已读', 'success');
+            return;
+        }
+
+        await markRead({ category: state.currentTab });
+        await loadItems();
+        showToast('当前分类已标记为已读', 'success');
+    }
+
+    async function handleWorkspaceCommand(event) {
+        const detail = event instanceof CustomEvent ? event.detail : {};
+        const type = String(detail?.type || '');
+        if (type === 'set-tab') {
+            const tab = String(detail.tab || 'all');
+            if (tab === PRIVATE_TAB && isNotificationsMode) {
+                window.location.href = '/profile?section=private&tab=private_message#profile-message-center';
+                return;
+            }
+            await setTab(tab);
+            return;
+        }
+        if (type === 'refresh') {
+            await bootstrap();
+            showToast('信息中心已刷新', 'success');
+            return;
+        }
+        if (type === 'mark-read') {
+            await markCurrentRead();
+            return;
+        }
+        if (type === 'focus-search') {
+            searchEl?.focus();
+            return;
+        }
+        if (type === 'focus-composer' && !composeInputEl.disabled) {
+            composeInputEl.focus();
+        }
     }
 
     async function toggleBlock(identity, scope, isBlocked) {
@@ -1294,6 +1407,7 @@ if (app) {
 
     function handleSearchInput() {
         state.keyword = searchEl.value.trim();
+        publishWorkspaceSnapshot();
         window.clearTimeout(state.searchTimer);
         state.searchTimer = window.setTimeout(async () => {
             if (state.currentTab === PRIVATE_TAB) {
@@ -1368,21 +1482,8 @@ if (app) {
     searchEl.addEventListener('input', handleSearchInput);
     contactSearchEl.addEventListener('input', handleContactSearchInput);
 
-    markReadEl.addEventListener('click', async () => {
-        if (state.currentTab === PRIVATE_TAB) {
-            if (!state.currentContact) {
-                showToast('当前没有打开私信会话', 'warning');
-                return;
-            }
-            await loadConversation(state.currentContact, state.currentScope, { showLoading: false, scrollToBottom: false });
-            showToast('当前私信会话已更新为已读', 'success');
-            return;
-        }
-
-        await markRead({ category: state.currentTab });
-        await loadItems();
-        showToast('当前分类已标记为已读', 'success');
-    });
+    markReadEl.addEventListener('click', markCurrentRead);
+    window.addEventListener(WORKSPACE_COMMAND_EVENT, handleWorkspaceCommand);
 
     feedEl.addEventListener('click', async (event) => {
         const markButton = event.target.closest('[data-mark-notification]');
@@ -1493,10 +1594,12 @@ if (app) {
     window.addEventListener('beforeunload', () => {
         clearAiReplyPolling();
         clearPendingAttachments();
+        window.removeEventListener(WORKSPACE_COMMAND_EVENT, handleWorkspaceCommand);
     });
 
     initEmojiPicker();
     initEditorToolbar();
     updateSendButtonState();
+    publishWorkspaceSnapshot();
     bootstrap();
 }

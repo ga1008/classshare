@@ -833,6 +833,12 @@
                     </div>
                 </section>
 
+                <div
+                    class="message-center-workspace-island profile-reveal"
+                    data-lanshare-island="message-center-workspace-sync"
+                    data-island-id="message-center-workspace-profile-{{ active_section }}"
+                ></div>
+
                 <section class="message-center-toolbar profile-message-toolbar profile-reveal">
                     <div class="message-center-tabs" id="message-center-tabs"></div>
                     <div class="message-center-controls">
@@ -919,5 +925,6 @@
 <script type="module" src="{{ asset_url('js/profile.js') }}"></script>
 {% if active_section in ['notifications', 'private'] %}
 <script type="module" src="/static/js/message_center.js?v=chat-image-derivatives-20260515"></script>
+{{ vite_entry_tags('frontend/src/islands/message-center-workspace-sync.tsx') }}
 {% endif %}
 {% endblock %}

@@ -580,6 +580,9 @@
     {% if not embedded_mode %}
     <script type="module" src="/static/js/message_center_bell.js"></script>
     {% endif %}
+    {% if not embedded_mode %}
+    {% include "partials/vite_islands.html" %}
+    {% endif %}
     <script type="module">
         import { showMessage } from '/static/js/ui.js';
         import { apiFetch } from '/static/js/api.js';

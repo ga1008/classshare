@@ -5,7 +5,7 @@ import anyio.to_thread
 from fastapi import FastAPI, Request, HTTPException
 import sys
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from starlette.middleware.gzip import GZipMiddleware
 
 # 修复：导入 templates 以便在错误处理程序中使用
@@ -86,6 +86,22 @@ class StreamingAwareGZipMiddleware(GZipMiddleware):
 
 
 app.add_middleware(StreamingAwareGZipMiddleware, minimum_size=1024)
+
+
+_FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<rect width="64" height="64" rx="14" fill="#0f766e"/>
+<path fill="#fff" d="M18 16h20a8 8 0 0 1 8 8v24H26a8 8 0 0 1-8-8V16Zm8 8v16h12V24H26Z"/>
+<path fill="#a7f3d0" d="M42 18h4a8 8 0 0 1 0 16h-4v-6h4a2 2 0 0 0 0-4h-4v-6Z"/>
+</svg>"""
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(
+        content=_FAVICON_SVG,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 # -----------------

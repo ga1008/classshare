@@ -182,7 +182,17 @@ function renderList() {
             : '';
 
         return `
-            <div class="materials-row" data-id="${item.id}">
+            <div
+                class="materials-row"
+                data-id="${item.id}"
+                data-material-node-type="${escapeHtml(item.node_type || '')}"
+                data-material-name="${escapeHtml(item.name || '')}"
+                data-material-path="${escapeHtml(item.material_path || '')}"
+                data-material-preview-supported="${item.preview_supported ? 'true' : 'false'}"
+                data-material-download-allowed="${item.download_allowed === false ? 'false' : 'true'}"
+                data-material-has-document="${hasLearningDocument(item) ? 'true' : 'false'}"
+                data-material-primary-action="${escapeHtml(primaryAction.action || '')}"
+            >
                 <div>
                     <input type="checkbox" data-role="select-item" data-id="${item.id}" ${state.selectedIds.has(item.id) ? 'checked' : ''}>
                 </div>

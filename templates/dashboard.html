@@ -372,7 +372,14 @@
         </div>
 
         <aside class="dashboard-main__rail">
-            <section class="dashboard-panel dashboard-reveal">
+            <section
+                class="dashboard-panel dashboard-reveal"
+                data-lanshare-island="dashboard-quick-actions"
+                data-island-id="dashboard-quick-actions"
+            >
+                <script type="application/json" data-dashboard-quick-actions-payload>
+                    {{ {"section": dashboard_sections.quick_actions, "actions": dashboard_quick_actions} | tojson }}
+                </script>
                 <div class="dashboard-panel__header">
                     <h2>{{ dashboard_sections.quick_actions.title }}</h2>
                     <p>{{ dashboard_sections.quick_actions.subtitle }}</p>
@@ -490,5 +497,6 @@
 <script>
     window.DASHBOARD_SEMESTER_CALENDAR = {{ dashboard_semester_calendar | tojson }};
 </script>
+{{ vite_entry_tags('frontend/src/islands/dashboard-quick-actions.tsx') }}
 <script type="module" src="/static/js/dashboard.js?v=dashboard-timeline-axis-status-now-20260512"></script>
 {% endblock %}

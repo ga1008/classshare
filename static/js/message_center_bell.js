@@ -12,12 +12,29 @@ const bellState = {
     hideTimer: null,
 };
 
+function legacyBellShells() {
+    return bellShells.filter((shell) => shell.dataset.messageCenterBellManaged !== 'react');
+}
+
+function legacyBlogEntries() {
+    return blogEntries.filter((entry) => entry.dataset.blogTopbarManaged !== 'react');
+}
+
+function legacyBlogCountNodes() {
+    return blogCountNodes.filter((node) => node.dataset.blogTopbarManaged !== 'react');
+}
+
+function legacyBlogCaptionNodes() {
+    return blogCaptionNodes.filter((node) => node.dataset.blogTopbarManaged !== 'react');
+}
+
 function updateBell(summary) {
+    const activeBellShells = legacyBellShells();
     const unreadTotal = Number(summary?.unread_total || 0);
     const countText = unreadTotal > 99 ? '99+' : String(unreadTotal);
     const captionText = unreadTotal > 0 ? `\u672a\u8bfb ${countText} \u6761` : '\u901a\u77e5\u4e0e\u79c1\u4fe1';
 
-    bellShells.forEach((shell) => {
+    activeBellShells.forEach((shell) => {
         const bellNode = shell.querySelector('[data-message-center-bell]');
         const countNode = shell.querySelector('[data-message-center-bell-count]');
         const captionNode = shell.querySelector('[data-message-center-bell-caption]');
@@ -42,7 +59,7 @@ function updateBell(summary) {
 }
 
 function hideBellToast(immediate = false) {
-    const toastNode = bellShells[0]?.querySelector('[data-message-center-bell-toast]');
+    const toastNode = legacyBellShells()[0]?.querySelector('[data-message-center-bell-toast]');
     if (!toastNode) {
         return;
     }
@@ -65,7 +82,7 @@ function hideBellToast(immediate = false) {
 }
 
 function showBellToast(notification) {
-    const shell = bellShells[0];
+    const shell = legacyBellShells()[0];
     if (!shell || !notification) {
         return;
     }
@@ -125,7 +142,7 @@ function syncBellState(summary, latestUnread, { allowPopup }) {
 }
 
 async function refreshBell(options = {}) {
-    if (bellShells.length === 0) {
+    if (legacyBellShells().length === 0) {
         return;
     }
 
@@ -140,13 +157,16 @@ async function refreshBell(options = {}) {
 }
 
 function updateBlogTopbar(summary) {
+    const activeBlogEntries = legacyBlogEntries();
+    const activeBlogCountNodes = legacyBlogCountNodes();
+    const activeBlogCaptionNodes = legacyBlogCaptionNodes();
     const todayNewCount = Number(summary?.today_new_count || 0);
     const countText = todayNewCount > 99 ? '+99' : `+${todayNewCount}`;
     const captionText = todayNewCount > 0
         ? `\u4eca\u65e5\u65b0\u589e ${todayNewCount > 99 ? '99+' : todayNewCount} \u7bc7`
         : '\u89c2\u70b9\u4e0e\u4ea4\u6d41';
 
-    blogEntries.forEach((entry) => {
+    activeBlogEntries.forEach((entry) => {
         entry.classList.toggle('has-new-count', todayNewCount > 0);
         entry.setAttribute(
             'aria-label',
@@ -159,18 +179,18 @@ function updateBlogTopbar(summary) {
             : '\u535a\u5ba2';
     });
 
-    blogCaptionNodes.forEach((captionNode) => {
+    activeBlogCaptionNodes.forEach((captionNode) => {
         captionNode.textContent = captionText;
     });
 
-    blogCountNodes.forEach((countNode) => {
+    activeBlogCountNodes.forEach((countNode) => {
         countNode.hidden = todayNewCount <= 0;
         countNode.textContent = todayNewCount > 0 ? countText : '+0';
     });
 }
 
 async function refreshBlogTopbar() {
-    if (blogCountNodes.length === 0 && blogCaptionNodes.length === 0) {
+    if (legacyBlogEntries().length === 0 && legacyBlogCountNodes().length === 0 && legacyBlogCaptionNodes().length === 0) {
         return;
     }
 

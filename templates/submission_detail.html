@@ -814,7 +814,19 @@
         </button>
         {% endif %}
     </div>
-    <div class="submission-jump-question-groups" id="submission-jump-question-groups"></div>
+    <div
+        class="submission-jump-question-groups"
+        id="submission-jump-question-groups"
+        data-lanshare-island="submission-jump-nav"
+        data-island-id="submission-jump-nav-{{ submission.id }}"
+    >
+        <script type="application/json" data-submission-jump-nav-payload>
+            {{ {
+                "answers": submission.answers_json,
+                "examQuestions": exam_questions
+            } | tojson }}
+        </script>
+    </div>
 </aside>
 <div class="detail-container">
     <!-- Student Info Card -->
@@ -1256,6 +1268,7 @@
         const totalQuestions = groups.reduce((total, group) => total + group.items.length, 0);
         const answered = groups.reduce((total, group) => total + group.items.filter(item => item.answered).length, 0);
         if (answerCount) answerCount.textContent = `${answered}/${totalQuestions}`;
+        if (groupsHost.dataset.submissionJumpManaged === 'react') return;
         groupsHost.innerHTML = groups.map((group) => `
             <div class="submission-jump-question-group">
                 <div class="submission-jump-group-title">
@@ -1799,4 +1812,5 @@
         initTeacherAttachmentManager();
     });
 </script>
+{{ vite_entry_tags('frontend/src/islands/submission-jump-nav.tsx') }}
 {% endblock %}

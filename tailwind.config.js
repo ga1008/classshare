@@ -4,6 +4,7 @@ module.exports = {
   content: [
     './templates/**/*.html',
     './classroom_app/**/*.py',
+    './frontend/src/**/*.{ts,tsx}',
     './static/js/**/*.js',
     './static/css/ui-system.src.css',
     './node_modules/flowbite/**/*.js',

@@ -3,6 +3,15 @@ import { showToast, escapeHtml } from './ui.js';
 
 let config = null;
 const DEFAULT_SCHEDULE_MODE = 'permanent';
+const assignmentAuthoringEventName = 'lanshare:assignment-authoring-change';
+const assignmentAuthoringCommandEventName = 'lanshare:assignment-authoring-command';
+const examAssignEventName = 'lanshare:exam-assign-change';
+const examAssignCommandEventName = 'lanshare:exam-assign-command';
+let assignmentAuthoringBridgeBound = false;
+let examAssignBridgeBound = false;
+let examAssignLoading = false;
+let examAssignPublishing = false;
+let examAssignLastError = '';
 
 function getTrimmedInputValue(elementId) {
     const element = document.getElementById(elementId);
@@ -11,6 +20,146 @@ function getTrimmedInputValue(elementId) {
 
 function isChecked(elementId) {
     return document.getElementById(elementId)?.checked === true;
+}
+
+function getTextLength(elementId) {
+    return getTrimmedInputValue(elementId).length;
+}
+
+function parseAllowedFileTypes(value) {
+    return String(value || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+}
+
+function readAssignmentAuthoringSnapshot(extra = {}) {
+    const mode = getTrimmedInputValue('assignment-availability-mode') || DEFAULT_SCHEDULE_MODE;
+    const stageEl = document.getElementById('assignment-learning-stage-key');
+    const selectedStage = stageEl?.selectedOptions?.[0];
+    const allowedTypes = parseAllowedFileTypes(getTrimmedInputValue('assignment-allowed-file-types'));
+    const lateEnabled = isChecked('assignment-late-submission-enabled');
+    const title = getTrimmedInputValue('assignment-title');
+    const requirementLength = getTextLength('assignment-requirements');
+    const rubricLength = getTextLength('assignment-rubric');
+    const checks = [
+        Boolean(title),
+        requirementLength > 0,
+        rubricLength > 0,
+        Boolean(getTrimmedInputValue('assignment-grading-mode')),
+        mode !== DEFAULT_SCHEDULE_MODE || !lateEnabled,
+    ];
+
+    return {
+        assignmentId: getTrimmedInputValue('assignment-id') || null,
+        title,
+        requirementLength,
+        rubricLength,
+        gradingMode: getTrimmedInputValue('assignment-grading-mode') || 'manual',
+        allowedFileTypes: allowedTypes,
+        learningStageKey: getTrimmedInputValue('assignment-learning-stage-key'),
+        learningStageLabel: selectedStage && selectedStage.value ? selectedStage.textContent?.trim() || '' : '',
+        sendEmailNotification: isChecked('assignment-send-email-notification'),
+        scheduleMode: mode,
+        dueAt: getTrimmedInputValue('assignment-due-at'),
+        durationMinutes: getTrimmedInputValue('assignment-duration-minutes'),
+        startsAt: getTrimmedInputValue('assignment-starts-at'),
+        lateSubmissionEnabled: lateEnabled,
+        lateSubmissionUntil: getTrimmedInputValue('assignment-late-submission-until'),
+        latePenaltyStrategy: getTrimmedInputValue('assignment-late-penalty-strategy') || 'fixed',
+        latePenaltyPoints: getTrimmedInputValue('assignment-late-penalty-points'),
+        lateScoreCap: getTrimmedInputValue('assignment-late-score-cap'),
+        completedChecks: checks.filter(Boolean).length,
+        totalChecks: checks.length,
+        canSave: Boolean(title),
+        isSaving: extra.isSaving === true,
+        lastError: typeof extra.lastError === 'string' ? extra.lastError : '',
+    };
+}
+
+function publishAssignmentAuthoringSnapshot(extra = {}) {
+    const snapshot = readAssignmentAuthoringSnapshot(extra);
+    window.__LANSHARE_ASSIGNMENT_AUTHORING__ = snapshot;
+    window.dispatchEvent(new CustomEvent(assignmentAuthoringEventName, { detail: snapshot }));
+}
+
+function getSelectedExamPaper() {
+    const selected = document.querySelector('input[name="exam-paper"]:checked');
+    if (!selected) {
+        return { id: '', title: '' };
+    }
+    const option = selected.closest('.exam-paper-option');
+    const title = option?.querySelector('.exam-paper-option-title')?.textContent?.trim() || '';
+    return {
+        id: String(selected.value || '').trim(),
+        title,
+    };
+}
+
+function readExamAssignSnapshot(extra = {}) {
+    const mode = getTrimmedInputValue('exam-availability-mode') || DEFAULT_SCHEDULE_MODE;
+    const stageEl = document.getElementById('exam-learning-stage-key');
+    const selectedStage = stageEl?.selectedOptions?.[0];
+    const allowedTypes = parseAllowedFileTypes(getTrimmedInputValue('exam-allowed-file-types'));
+    const lateEnabled = isChecked('exam-late-submission-enabled');
+    const selectedPaper = getSelectedExamPaper();
+    const paperCount = document.querySelectorAll('input[name="exam-paper"]').length;
+    const dueAt = getTrimmedInputValue('exam-due-at');
+    const durationMinutes = getTrimmedInputValue('exam-duration-minutes');
+    const feedback = getExamAssignFeedbackEl();
+    const feedbackType = feedback?.dataset?.type || '';
+    const feedbackText = feedback?.textContent?.trim() || '';
+    const scheduleReady = mode === 'deadline'
+        ? Boolean(dueAt)
+        : mode === 'countdown'
+            ? Number(durationMinutes) > 0
+            : true;
+    const lateReady = !lateEnabled || mode !== DEFAULT_SCHEDULE_MODE;
+    const loading = extra.isLoading === true || examAssignLoading;
+    const publishing = extra.isPublishing === true || examAssignPublishing;
+    const lastError = typeof extra.lastError === 'string'
+        ? extra.lastError
+        : (feedbackType === 'error' ? feedbackText : examAssignLastError);
+    const checks = [
+        !loading && paperCount > 0,
+        Boolean(selectedPaper.id),
+        scheduleReady,
+        lateReady,
+    ];
+
+    return {
+        selectedPaperId: selectedPaper.id,
+        selectedPaperTitle: selectedPaper.title,
+        paperCount,
+        allowedFileTypes: allowedTypes,
+        learningStageKey: getTrimmedInputValue('exam-learning-stage-key'),
+        learningStageLabel: selectedStage && selectedStage.value ? selectedStage.textContent?.trim() || '' : '',
+        sendEmailNotification: isChecked('exam-send-email-notification'),
+        scheduleMode: mode,
+        dueAt,
+        durationMinutes,
+        startsAt: getTrimmedInputValue('exam-starts-at'),
+        lateSubmissionEnabled: lateEnabled,
+        lateSubmissionUntil: getTrimmedInputValue('exam-late-submission-until'),
+        latePenaltyStrategy: getTrimmedInputValue('exam-late-penalty-strategy') || 'fixed',
+        latePenaltyIntervalHours: getTrimmedInputValue('exam-late-penalty-interval-hours'),
+        latePenaltyPoints: getTrimmedInputValue('exam-late-penalty-points'),
+        latePenaltyMinScore: getTrimmedInputValue('exam-late-penalty-min-score'),
+        lateScoreCap: getTrimmedInputValue('exam-late-score-cap'),
+        feedbackType,
+        completedChecks: checks.filter(Boolean).length,
+        totalChecks: checks.length,
+        canPublish: Boolean(selectedPaper.id) && scheduleReady && lateReady && !loading && !publishing,
+        isLoading: loading,
+        isPublishing: publishing,
+        lastError,
+    };
+}
+
+function publishExamAssignSnapshot(extra = {}) {
+    const snapshot = readExamAssignSnapshot(extra);
+    window.__LANSHARE_EXAM_ASSIGN__ = snapshot;
+    window.dispatchEvent(new CustomEvent(examAssignEventName, { detail: snapshot }));
 }
 
 function resetEmailNotificationChoice(prefix) {
@@ -32,12 +181,25 @@ function setExamAssignFeedback(type, message) {
         feedback.textContent = '';
         feedback.classList.add('hidden');
         feedback.removeAttribute('data-type');
+        examAssignLastError = '';
+        publishExamAssignSnapshot();
         return;
     }
 
     feedback.textContent = message;
     feedback.dataset.type = type;
     feedback.classList.remove('hidden');
+    examAssignLastError = type === 'error' ? message : '';
+    publishExamAssignSnapshot();
+}
+
+function clearExamAssignErrorFeedback() {
+    const feedback = getExamAssignFeedbackEl();
+    if (feedback?.dataset?.type === 'error') {
+        setExamAssignFeedback(null, '');
+        return;
+    }
+    examAssignLastError = '';
 }
 
 function getQuestionCount(paper) {
@@ -110,17 +272,29 @@ function bindScheduleMode(prefix) {
     const modeEl = document.getElementById(`${prefix}-availability-mode`);
     if (modeEl && modeEl.dataset.bound !== '1') {
         modeEl.dataset.bound = '1';
-        modeEl.addEventListener('change', () => syncScheduleFields(prefix));
+        modeEl.addEventListener('change', () => {
+            syncScheduleFields(prefix);
+            if (prefix === 'assignment') publishAssignmentAuthoringSnapshot();
+            if (prefix === 'exam') publishExamAssignSnapshot();
+        });
     }
     const lateEnabledEl = document.getElementById(`${prefix}-late-submission-enabled`);
     if (lateEnabledEl && lateEnabledEl.dataset.bound !== '1') {
         lateEnabledEl.dataset.bound = '1';
-        lateEnabledEl.addEventListener('change', () => syncLatePolicyFields(prefix));
+        lateEnabledEl.addEventListener('change', () => {
+            syncLatePolicyFields(prefix);
+            if (prefix === 'assignment') publishAssignmentAuthoringSnapshot();
+            if (prefix === 'exam') publishExamAssignSnapshot();
+        });
     }
     const strategyEl = document.getElementById(`${prefix}-late-penalty-strategy`);
     if (strategyEl && strategyEl.dataset.bound !== '1') {
         strategyEl.dataset.bound = '1';
-        strategyEl.addEventListener('change', () => syncLatePolicyFields(prefix));
+        strategyEl.addEventListener('change', () => {
+            syncLatePolicyFields(prefix);
+            if (prefix === 'assignment') publishAssignmentAuthoringSnapshot();
+            if (prefix === 'exam') publishExamAssignSnapshot();
+        });
     }
     syncScheduleFields(prefix);
 }
@@ -278,6 +452,123 @@ export function init(appConfig) {
     config = appConfig;
     bindScheduleMode('assignment');
     bindScheduleMode('exam');
+    bindAssignmentAuthoringBridge();
+    bindExamAssignBridge();
+    publishAssignmentAuthoringSnapshot();
+    publishExamAssignSnapshot();
+}
+
+function bindAssignmentAuthoringBridge() {
+    if (assignmentAuthoringBridgeBound) return;
+    assignmentAuthoringBridgeBound = true;
+
+    const fieldIds = [
+        'assignment-id',
+        'assignment-title',
+        'assignment-requirements',
+        'assignment-rubric',
+        'assignment-grading-mode',
+        'assignment-learning-stage-key',
+        'assignment-allowed-file-types',
+        'assignment-send-email-notification',
+        'assignment-availability-mode',
+        'assignment-due-at',
+        'assignment-duration-minutes',
+        'assignment-starts-at',
+        'assignment-late-submission-enabled',
+        'assignment-late-submission-until',
+        'assignment-late-penalty-strategy',
+        'assignment-late-penalty-points',
+        'assignment-late-score-cap',
+    ];
+    fieldIds.forEach((id) => {
+        const element = document.getElementById(id);
+        if (!element || element.dataset.authoringBridgeBound === '1') return;
+        element.dataset.authoringBridgeBound = '1';
+        element.addEventListener('input', () => publishAssignmentAuthoringSnapshot());
+        element.addEventListener('change', () => publishAssignmentAuthoringSnapshot());
+    });
+
+    window.addEventListener(assignmentAuthoringCommandEventName, (event) => {
+        const detail = event instanceof CustomEvent ? event.detail : null;
+        const commandType = detail?.type;
+        if (commandType === 'focus-field' && detail?.fieldId) {
+            const field = document.getElementById(String(detail.fieldId));
+            field?.focus({ preventScroll: false });
+            field?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        if (commandType === 'save') {
+            document.getElementById('btn-save-assignment')?.click();
+        }
+        publishAssignmentAuthoringSnapshot();
+    });
+}
+
+function bindExamAssignBridge() {
+    if (examAssignBridgeBound) return;
+    examAssignBridgeBound = true;
+
+    const fieldIds = [
+        'exam-send-email-notification',
+        'exam-allowed-file-types',
+        'exam-learning-stage-key',
+        'exam-availability-mode',
+        'exam-due-at',
+        'exam-duration-minutes',
+        'exam-starts-at',
+        'exam-late-submission-enabled',
+        'exam-late-submission-until',
+        'exam-late-penalty-strategy',
+        'exam-late-penalty-interval-hours',
+        'exam-late-penalty-points',
+        'exam-late-penalty-min-score',
+        'exam-late-score-cap',
+    ];
+    fieldIds.forEach((id) => {
+        const element = document.getElementById(id);
+        if (!element || element.dataset.examAssignBridgeBound === '1') return;
+        element.dataset.examAssignBridgeBound = '1';
+        element.addEventListener('input', () => {
+            clearExamAssignErrorFeedback();
+            publishExamAssignSnapshot();
+        });
+        element.addEventListener('change', () => {
+            clearExamAssignErrorFeedback();
+            publishExamAssignSnapshot();
+        });
+    });
+
+    const list = document.getElementById('exam-list-container');
+    if (list && list.dataset.examAssignBridgeBound !== '1') {
+        list.dataset.examAssignBridgeBound = '1';
+        list.addEventListener('change', (event) => {
+            const target = event.target;
+            if (target?.matches?.('input[name="exam-paper"]')) {
+                clearExamAssignErrorFeedback();
+                publishExamAssignSnapshot();
+            }
+        });
+    }
+
+    window.addEventListener(examAssignCommandEventName, (event) => {
+        const detail = event instanceof CustomEvent ? event.detail : null;
+        const commandType = detail?.type;
+        if (commandType === 'focus-field' && detail?.fieldId) {
+            const field = document.getElementById(String(detail.fieldId));
+            field?.focus({ preventScroll: false });
+            field?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        if (commandType === 'focus-list') {
+            document.getElementById('exam-list-container')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        if (commandType === 'reload-papers') {
+            loadExamPapers();
+        }
+        if (commandType === 'publish') {
+            document.getElementById('exam-assign-confirm-btn')?.click();
+        }
+        publishExamAssignSnapshot();
+    });
 }
 
 export async function loadExamPapers() {
@@ -296,11 +587,15 @@ export async function loadExamPapers() {
     resetEmailNotificationChoice('exam');
 
     setExamAssignFeedback(null, '');
+    examAssignLoading = true;
+    examAssignLastError = '';
     container.innerHTML = '<div class="text-center p-4"><div class="spinner"></div></div>';
+    publishExamAssignSnapshot({ isLoading: true });
 
     try {
         const data = await apiFetch('/api/exam-papers', { silent: true });
         const papers = Array.isArray(data?.papers) ? data.papers : [];
+        examAssignLoading = false;
 
         if (papers.length === 0) {
             container.innerHTML = `
@@ -310,6 +605,7 @@ export async function loadExamPapers() {
                     <a href="/manage/exams" class="btn btn-outline btn-sm">前往试卷库</a>
                 </div>
             `;
+            publishExamAssignSnapshot();
             return;
         }
 
@@ -335,14 +631,18 @@ export async function loadExamPapers() {
                 </label>
             `;
         }).join('');
+        publishExamAssignSnapshot();
     } catch (error) {
         console.error('Failed to load exam papers:', error);
+        examAssignLoading = false;
+        examAssignLastError = error.message || '试卷列表加载失败，请稍后重试。';
         container.innerHTML = `
             <div class="inline-feedback" data-type="error">
                 试卷列表加载失败，请刷新后重试。
             </div>
         `;
         setExamAssignFeedback('error', error.message || '试卷列表加载失败，请稍后重试。');
+        publishExamAssignSnapshot({ lastError: examAssignLastError });
     }
 }
 
@@ -350,6 +650,7 @@ export async function confirmExamAssign() {
     const selected = document.querySelector('input[name="exam-paper"]:checked');
     if (!selected) {
         setExamAssignFeedback('error', '请先从试卷库中选择一份试卷。');
+        publishExamAssignSnapshot({ lastError: '请先从试卷库中选择一份试卷。' });
         showToast('请先选择一份试卷', 'warning');
         return;
     }
@@ -357,6 +658,7 @@ export async function confirmExamAssign() {
     const paperId = String(selected.value || '').trim();
     if (!paperId) {
         setExamAssignFeedback('error', '试卷标识无效，请重新选择。');
+        publishExamAssignSnapshot({ lastError: '试卷标识无效，请重新选择。' });
         showToast('试卷标识无效，请重新选择', 'warning');
         return;
     }
@@ -364,6 +666,7 @@ export async function confirmExamAssign() {
     const scheduleResult = readSchedulePayload('exam');
     if (scheduleResult.error) {
         setExamAssignFeedback('error', scheduleResult.error);
+        publishExamAssignSnapshot({ lastError: scheduleResult.error });
         showToast(scheduleResult.error, 'warning');
         return;
     }
@@ -375,6 +678,8 @@ export async function confirmExamAssign() {
     }
 
     setExamAssignFeedback(null, '');
+    examAssignPublishing = true;
+    publishExamAssignSnapshot({ isPublishing: true });
 
     try {
         const result = await apiFetch(`/api/exam-papers/${encodeURIComponent(paperId)}/assign`, {
@@ -401,13 +706,16 @@ export async function confirmExamAssign() {
     } catch (error) {
         console.error('Failed to assign exam paper:', error);
         const message = error?.message || '发布失败，请稍后重试。';
+        examAssignLastError = message;
         setExamAssignFeedback('error', message);
         showToast(`发布失败：${message}`, 'error');
     } finally {
+        examAssignPublishing = false;
         if (btn) {
             btn.disabled = false;
             btn.textContent = '确认发布';
         }
+        publishExamAssignSnapshot();
     }
 }
 
@@ -435,6 +743,7 @@ export async function saveAssignment() {
         btn.disabled = true;
         btn.textContent = '保存中...';
     }
+    publishAssignmentAuthoringSnapshot({ isSaving: true });
 
     const body = {
         title,
@@ -470,11 +779,13 @@ export async function saveAssignment() {
     } catch (error) {
         console.error('Failed to save assignment:', error);
         showToast(`保存失败：${error.message || '未知错误'}`, 'error');
+        publishAssignmentAuthoringSnapshot({ lastError: error.message || '保存失败' });
     } finally {
         if (btn) {
             btn.disabled = false;
             btn.textContent = '保存作业';
         }
+        publishAssignmentAuthoringSnapshot();
     }
 }
 
@@ -533,6 +844,7 @@ export function editAssignment(
     if (window.UI) {
         window.UI.openModal('assignment-modal');
     }
+    publishAssignmentAuthoringSnapshot();
 }
 
 export function newAssignment() {

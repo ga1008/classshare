@@ -22,9 +22,19 @@ function setSubmitting(button, submitting, pendingText) {
 document.addEventListener('DOMContentLoaded', () => {
     const modalId = 'student-security-modal';
     const form = document.getElementById('student-password-change-form');
+    const isReactManaged = () => {
+        const modal = document.getElementById(modalId);
+        return modal?.dataset.studentSecurityManaged === 'react'
+            || form?.dataset.studentSecurityManaged === 'react';
+    };
 
     document.querySelectorAll('[data-open-student-security]').forEach((button) => {
-        button.addEventListener('click', () => openModal(modalId));
+        button.addEventListener('click', () => {
+            if (isReactManaged()) {
+                return;
+            }
+            openModal(modalId);
+        });
     });
 
     if (!form) {
@@ -32,6 +42,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     form.addEventListener('submit', async (event) => {
+        if (isReactManaged()) {
+            return;
+        }
         event.preventDefault();
         const submitButton = form.querySelector('button[type="submit"]');
         setSubmitting(submitButton, true, '保存中...');

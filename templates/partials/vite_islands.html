@@ -1,0 +1,25 @@
+<div
+    data-lanshare-island="app-shell"
+    data-island-id="app-shell"
+    data-page-path="{% if request is defined %}{{ request.url.path }}{% endif %}"
+    hidden
+></div>
+<div
+    data-lanshare-island="message-center-sync"
+    data-island-id="message-center-sync"
+    hidden
+></div>
+<div
+    data-lanshare-island="blog-topbar-sync"
+    data-island-id="blog-topbar-sync"
+    hidden
+></div>
+<div
+    data-lanshare-island="student-security-sync"
+    data-island-id="student-security-sync"
+    hidden
+></div>
+{{ vite_entry_tags('frontend/src/islands/app-shell.tsx') }}
+{{ vite_entry_tags('frontend/src/islands/message-center-sync.tsx') }}
+{{ vite_entry_tags('frontend/src/islands/blog-topbar-sync.tsx') }}
+{{ vite_entry_tags('frontend/src/islands/student-security-sync.tsx') }}

@@ -1,3 +1,17 @@
+FROM node:22-bookworm-slim AS frontend-builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json postcss.config.js tailwind.config.js tsconfig.json vite.config.ts ./
+COPY frontend ./frontend
+COPY classroom_app ./classroom_app
+COPY static/css/ui-system.src.css ./static/css/ui-system.src.css
+COPY static/js ./static/js
+COPY templates ./templates
+
+RUN npm ci \
+    && npm run build
+
 FROM lanshare_base
 
 ARG APP_VERSION=dev
@@ -40,6 +54,8 @@ RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debia
     && rm -rf /var/lib/apt/lists/*
 
 COPY . .
+COPY --from=frontend-builder /app/static/css/tailwind-app.css /app/static/css/tailwind-app.css
+COPY --from=frontend-builder /app/static/dist /app/static/dist
 
 RUN mkdir -p \
     /app/data \

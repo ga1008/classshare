@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
 
 from .config import TEMPLATES_DIR, MAX_HISTORY_IN_MEMORY, AI_ASSISTANT_URL, SITE_RECORD
-from .frontend_assets import asset_url
+from .frontend_assets import asset_url, vite_entry_tags
 from .time_utils import format_local_datetime
 
 # FastAPI 应用实例
@@ -26,6 +26,7 @@ def datetime_format(value, format="%Y-%m-%d %H:%M"):
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 templates.env.filters["datetime_format"] = datetime_format
 templates.env.globals["asset_url"] = asset_url
+templates.env.globals["vite_entry_tags"] = vite_entry_tags
 templates.env.globals["site_record"] = SITE_RECORD
 
 # AI 服务的 HTTP 客户端

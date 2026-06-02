@@ -270,6 +270,90 @@
     .file-chip:hover {
         background: var(--surface-hover);
     }
+    .assignment-submit-sync {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        margin: var(--spacing-md) var(--spacing-lg) 0;
+        padding: 12px 14px;
+        border: 1px solid rgba(99, 102, 241, 0.18);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.9);
+    }
+    .assignment-submit-sync__main {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+        min-width: 0;
+    }
+    .assignment-submit-sync__icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        color: #2563eb;
+        background: rgba(219, 234, 254, 0.84);
+    }
+    .assignment-submit-sync strong {
+        display: block;
+        color: var(--text-primary);
+        font-size: 0.92rem;
+        line-height: 1.25;
+    }
+    .assignment-submit-sync p {
+        margin: 3px 0 0;
+        color: var(--text-muted);
+        font-size: 0.84rem;
+        line-height: 1.45;
+    }
+    .assignment-submit-sync__meta {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+    .assignment-submit-sync__meta span {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        min-height: 30px;
+        padding: 5px 9px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.82);
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+    .assignment-submit-sync--success {
+        border-color: rgba(16, 185, 129, 0.24);
+        background: linear-gradient(135deg, rgba(236, 253, 245, 0.92), rgba(255, 255, 255, 0.96));
+    }
+    .assignment-submit-sync--success .assignment-submit-sync__icon {
+        color: #047857;
+        background: rgba(209, 250, 229, 0.9);
+    }
+    .assignment-submit-sync--warning {
+        border-color: rgba(245, 158, 11, 0.28);
+        background: linear-gradient(135deg, rgba(255, 251, 235, 0.94), rgba(255, 255, 255, 0.96));
+    }
+    .assignment-submit-sync--warning .assignment-submit-sync__icon {
+        color: #b45309;
+        background: rgba(254, 243, 199, 0.9);
+    }
+    .assignment-submit-sync--danger {
+        border-color: rgba(239, 68, 68, 0.26);
+        background: linear-gradient(135deg, rgba(254, 242, 242, 0.94), rgba(255, 255, 255, 0.96));
+    }
+    .assignment-submit-sync--danger .assignment-submit-sync__icon {
+        color: #dc2626;
+        background: rgba(254, 226, 226, 0.9);
+    }
     .submit-action-bar {
         background: var(--bg-color);
         padding: var(--spacing-md) var(--spacing-lg);
@@ -362,6 +446,12 @@
         .assignment-live-clock__value {
             white-space: normal;
         }
+        .assignment-submit-sync {
+            grid-template-columns: 1fr;
+        }
+        .assignment-submit-sync__meta {
+            justify-content: flex-start;
+        }
     }
     @media (prefers-reduced-motion: reduce) {
         .grade-feedback-overview,
@@ -416,6 +506,21 @@
             <div class="spinner mx-auto mb-2"></div>
             正在分析题目...
         </div>
+    </div>
+    <div
+        data-lanshare-island="assignment-submit-sync"
+        data-island-id="assignment-submit-sync-{{ assignment.id }}"
+    >
+        <script type="application/json" data-assignment-submit-sync-payload>
+            {{ {
+                "assignmentId": assignment.id|string,
+                "initialAccepting": assignment.is_accepting_submissions or can_resubmit_submission,
+                "canResubmitSubmission": can_resubmit_submission,
+                "resubmissionDueAt": resubmission_due_at,
+                "actionHint": action_hint,
+                "submitLabel": button_text
+            } | tojson }}
+        </script>
     </div>
     <div class="p-lg border-t">
         <label class="form-label mb-2 block">
@@ -794,6 +899,27 @@
         return d.innerHTML;
     }
 
+    function publishAssignmentSubmitAvailability() {
+        window.dispatchEvent(new CustomEvent('lanshare:assignment-submit-availability-change', {
+            detail: {
+                assignmentId: ASSIGNMENT_ID,
+                isAccepting: assignmentAcceptingSubmissions
+            }
+        }));
+    }
+
+    function publishAssignmentUploadSnapshot(snapshot) {
+        const entries = Array.isArray(snapshot?.entries) ? snapshot.entries : [];
+        const detail = {
+            count: Number(snapshot?.count ?? entries.length ?? 0),
+            totalBytes: Number(snapshot?.totalBytes ?? 0),
+            entries
+        };
+        window.__LANSHARE_ASSIGNMENT_UPLOAD_SNAPSHOT__ = detail;
+        window.dispatchEvent(new CustomEvent('lanshare:assignment-upload-change', { detail }));
+        return detail;
+    }
+
     function updateAssignmentSubmitAvailability(stateMap) {
         const current = stateMap?.get?.(ASSIGNMENT_ID);
         if (current) {
@@ -801,6 +927,7 @@
         } else {
             assignmentAcceptingSubmissions = assignmentAcceptingSubmissions || resubmissionAcceptingNow();
         }
+        publishAssignmentSubmitAvailability();
         const submitBtn = document.getElementById('submit-btn');
         if (!submitBtn) return;
         if (!assignmentAcceptingSubmissions) {
@@ -984,13 +1111,15 @@
             maxPerFileBytes: MAX_PER_FILE,
             maxFiles: MAX_FILES,
             notify: showToast,
-            onChange: (entries) => {
-                window.behaviorTracker?.log('assignment_file_select', `选择 ${entries.length} 个作业文件`, {
-                    file_count: entries.length
+            onChange: (snapshot) => {
+                const uploadState = publishAssignmentUploadSnapshot(snapshot);
+                window.behaviorTracker?.log('assignment_file_select', `选择 ${uploadState.count} 个作业文件`, {
+                    file_count: uploadState.count
                 }, 'assignment_detail');
             }
         });
         uploadManager.init();
+        publishAssignmentUploadSnapshot(uploadManager.getSnapshot());
         document.getElementById('pick-files-btn')?.addEventListener('click', () => uploadManager.openFilePicker());
         document.getElementById('pick-folder-btn')?.addEventListener('click', () => uploadManager.openFolderPicker());
     }
@@ -1073,4 +1202,5 @@
         }
     }
 </script>
+{{ vite_entry_tags('frontend/src/islands/assignment-submit-sync.tsx') }}
 {% endblock %}
