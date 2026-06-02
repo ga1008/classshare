@@ -1,4 +1,4 @@
-import { BookOpenCheck, CircleAlert, ClipboardList, Clock3, ExternalLink, LocateFixed, TimerReset } from 'lucide-react';
+import { BookOpenCheck, CheckCircle2, CircleAlert, ClipboardList, Clock3, ExternalLink, LocateFixed, TimerReset } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -25,22 +25,148 @@ function sendTaskBoardCommand(type: string, detail: Record<string, unknown> = {}
   }));
 }
 
-function Metric({
-  icon,
-  label,
-  value,
-  tone = 'neutral',
-}: {
+type AssignmentMetricKey = 'total' | 'review' | 'returned' | 'open' | 'todo' | 'urgent' | 'completed';
+
+type AssignmentMetric = {
+  key: AssignmentMetricKey;
   icon: ReactNode;
   label: string;
   value: string | number;
-  tone?: string;
+  note: string;
+  tone: string;
+  description: string;
+  actionLabel: string;
+};
+
+function countStudentCompletedItems(items: AssignmentTaskItem[]) {
+  return items.filter((item) => ['submitted', 'grading', 'graded'].includes(item.statusKey)).length;
+}
+
+function countStudentGradedItems(items: AssignmentTaskItem[]) {
+  return items.filter((item) => item.statusKey === 'graded').length;
+}
+
+function buildRoleMetrics(snapshot: AssignmentTaskBoardSnapshot): AssignmentMetric[] {
+  const { summary } = snapshot;
+  if (snapshot.role === 'teacher') {
+    return [
+      {
+        key: 'total',
+        icon: <ClipboardList size={15} aria-hidden="true" />,
+        label: '全部任务',
+        value: summary.total,
+        note: `${summary.assignmentCount} 作业 · ${summary.examCount} 考试`,
+        tone: 'primary',
+        description: '课堂内由教师创建并分配的作业与考试，个人试炼不混入这里。',
+        actionLabel: '查看任务列表',
+      },
+      {
+        key: 'review',
+        icon: <CircleAlert size={15} aria-hidden="true" />,
+        label: '待批改',
+        value: summary.reviewQueue,
+        note: `批改中 ${summary.gradingQueue}`,
+        tone: summary.reviewQueue > 0 ? 'danger' : 'neutral',
+        description: '定位到有待批改提交的任务，进入详情后继续原有批改流程。',
+        actionLabel: '定位待批改任务',
+      },
+      {
+        key: 'returned',
+        icon: <TimerReset size={15} aria-hidden="true" />,
+        label: '待重交',
+        value: summary.returnedCount,
+        note: '学生需补交',
+        tone: summary.returnedCount > 0 ? 'warning' : 'neutral',
+        description: '定位到已退回或处于补交流程的任务，便于回看学生后续提交。',
+        actionLabel: '定位待重交任务',
+      },
+      {
+        key: 'open',
+        icon: <CheckCircle2 size={15} aria-hidden="true" />,
+        label: '已发布',
+        value: summary.openCount,
+        note: '学生可见',
+        tone: 'success',
+        description: '查看当前学生可进入的任务，包含进行中的作业和考试。',
+        actionLabel: '定位已发布任务',
+      },
+    ];
+  }
+
+  const unsubmitted = summary.unsubmittedCount;
+  const returned = summary.returnedCount;
+  const todo = unsubmitted + returned;
+  const completed = countStudentCompletedItems(snapshot.items);
+  const graded = countStudentGradedItems(snapshot.items);
+  return [
+    {
+      key: 'todo',
+      icon: <CircleAlert size={15} aria-hidden="true" />,
+      label: '待完成',
+      value: todo,
+      note: `未交 ${unsubmitted}`,
+      tone: todo > 0 ? 'danger' : 'success',
+      description: '定位还需要提交或重新提交的任务，优先处理这些卡片。',
+      actionLabel: '定位待完成任务',
+    },
+    {
+      key: 'returned',
+      icon: <TimerReset size={15} aria-hidden="true" />,
+      label: '待重交',
+      value: returned,
+      note: '教师退回',
+      tone: returned > 0 ? 'warning' : 'neutral',
+      description: '定位老师退回后需要再次完善的任务，进入后按原提交流程处理。',
+      actionLabel: '定位待重交任务',
+    },
+    {
+      key: 'urgent',
+      icon: <Clock3 size={15} aria-hidden="true" />,
+      label: '临近截止',
+      value: summary.urgentCount,
+      note: '优先处理',
+      tone: summary.urgentCount > 0 ? 'warning' : 'neutral',
+      description: '定位剩余时间较紧的任务，避免错过提交或补交窗口。',
+      actionLabel: '定位临近任务',
+    },
+    {
+      key: 'completed',
+      icon: <CheckCircle2 size={15} aria-hidden="true" />,
+      label: '已提交',
+      value: completed,
+      note: `已评分 ${graded}`,
+      tone: 'success',
+      description: '回看已经提交、批改中或已评分的任务，便于确认结果和反馈。',
+      actionLabel: '定位已提交任务',
+    },
+  ];
+}
+
+function Metric({
+  metric,
+  isActive,
+  onActivate,
+}: {
+  metric: AssignmentMetric;
+  isActive: boolean;
+  onActivate: (metric: AssignmentMetric) => void;
 }) {
   return (
-    <button className={`assignment-task-board-sync__metric is-${tone}`} onClick={() => sendTaskBoardCommand('focus-board')} type="button">
-      <span>{icon}</span>
-      <small>{label}</small>
-      <strong>{value}</strong>
+    <button
+      aria-controls="assignment-task-board-metric-popover"
+      aria-expanded={isActive}
+      aria-pressed={isActive}
+      className={`assignment-task-board-sync__metric is-${metric.tone} ${isActive ? 'is-active' : ''}`}
+      data-metric-key={metric.key}
+      onClick={() => onActivate(metric)}
+      type="button"
+    >
+      <span className="assignment-task-board-sync__metric-icon">{metric.icon}</span>
+      <span className="assignment-task-board-sync__metric-copy">
+        <small>{metric.label}</small>
+        <em>{metric.note}</em>
+      </span>
+      <strong>{metric.value}</strong>
     </button>
   );
 }
@@ -91,13 +217,29 @@ function AssignmentTaskBoard({ snapshot }: { snapshot: AssignmentTaskBoardSnapsh
   const message = buildAssignmentTaskBoardMessage(snapshot);
   const queueItems = pickQueueItems(snapshot);
   const focusItem = getAssignmentTaskFocusItem(snapshot.items);
+  const isTeacher = snapshot.role === 'teacher';
+  const metrics = useMemo(() => buildRoleMetrics(snapshot), [snapshot]);
+  const [activeMetricKey, setActiveMetricKey] = useState<AssignmentMetricKey | ''>('');
+  const activeMetric = metrics.find((metric) => metric.key === activeMetricKey) || null;
+
+  useEffect(() => {
+    if (activeMetricKey && !metrics.some((metric) => metric.key === activeMetricKey)) {
+      setActiveMetricKey('');
+    }
+  }, [activeMetricKey, metrics]);
+
+  const activateMetric = (metric: AssignmentMetric) => {
+    setActiveMetricKey(metric.key);
+    sendTaskBoardCommand('focus-metric', { metricKey: metric.key });
+  };
 
   return (
-    <section className="assignment-task-board-sync" aria-live="polite" data-assignment-task-board-sync>
+    <section className={`assignment-task-board-sync is-${isTeacher ? 'teacher' : 'student'}`} aria-live="polite" data-assignment-task-board-sync>
+      {!isTeacher ? (
       <div className="assignment-task-board-sync__summary">
         <span className="assignment-task-board-sync__eyebrow">
           <ClipboardList size={14} aria-hidden="true" />
-          任务主线
+          学习清单
         </span>
         <div className="assignment-task-board-sync__headline">
           <strong>{focusItem ? focusItem.title : '课堂任务'}</strong>
@@ -108,15 +250,20 @@ function AssignmentTaskBoard({ snapshot }: { snapshot: AssignmentTaskBoardSnapsh
           <span />
         </div>
       </div>
+      ) : null}
 
       <div className="assignment-task-board-sync__metrics" aria-label="课堂任务指标">
-        <Metric icon={<ClipboardList size={14} aria-hidden="true" />} label="作业" value={snapshot.summary.assignmentCount} tone="primary" />
-        <Metric icon={<BookOpenCheck size={14} aria-hidden="true" />} label="考试" value={snapshot.summary.examCount} tone="exam" />
-        <Metric icon={<Clock3 size={14} aria-hidden="true" />} label="临近" value={snapshot.summary.urgentCount} tone={snapshot.summary.urgentCount > 0 ? 'warning' : 'neutral'} />
-        <Metric icon={<TimerReset size={14} aria-hidden="true" />} label="补交" value={snapshot.summary.lateOpenCount} tone={snapshot.summary.lateOpenCount > 0 ? 'warning' : 'neutral'} />
-        <Metric icon={<CircleAlert size={14} aria-hidden="true" />} label={snapshot.role === 'teacher' ? '待批' : '待办'} value={snapshot.role === 'teacher' ? snapshot.summary.reviewQueue : snapshot.summary.unsubmittedCount + snapshot.summary.returnedCount} tone="danger" />
+        {metrics.map((metric) => (
+          <Metric
+            isActive={metric.key === activeMetric?.key}
+            key={metric.key}
+            metric={metric}
+            onActivate={activateMetric}
+          />
+        ))}
       </div>
 
+      {!isTeacher ? (
       <div className="assignment-task-board-sync__queue" aria-label="优先任务">
         {queueItems.length ? (
           queueItems.map((item) => <TaskButton item={item} key={item.id || item.title} />)
@@ -127,6 +274,21 @@ function AssignmentTaskBoard({ snapshot }: { snapshot: AssignmentTaskBoardSnapsh
           </button>
         )}
       </div>
+      ) : null}
+
+      {activeMetric ? (
+        <div className="assignment-task-board-sync__popover" id="assignment-task-board-metric-popover" role="status">
+          <div>
+            <span>{activeMetric.label}</span>
+            <strong>{activeMetric.value}</strong>
+            <p>{activeMetric.description}</p>
+          </div>
+          <button type="button" onClick={() => sendTaskBoardCommand('focus-metric', { metricKey: activeMetric.key })}>
+            <LocateFixed size={15} aria-hidden="true" />
+            {activeMetric.actionLabel}
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }

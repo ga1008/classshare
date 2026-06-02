@@ -48,7 +48,7 @@ def build_classroom_page_context(
             class_size_text=class_size_text,
         ),
         "nav": [
-            {"target": "timeline-panel", "label": "进度区", "note": "课程时间轴"},
+            {"target": "timeline-panel", "label": "时间轴", "note": "课程进度"},
             {"target": "assignment-panel", "label": "任务区", "note": "作业与考试"},
             {"target": "materials-panel", "label": "材料区", "note": "课程文档"},
             {"target": "classroom-activity-sidebar", "label": "活动栏", "note": "互动与讨论"},

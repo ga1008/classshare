@@ -1118,6 +1118,54 @@ function initAssignmentTaskBoard(clockController = null) {
         }
     };
 
+    const focusAssignmentList = () => {
+        const listRegion = document.querySelector('[data-assignment-list-region]') || document.getElementById('assignment-panel');
+        listRegion?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    const clearMetricHighlights = () => {
+        taskCards.forEach((card) => card.classList.remove('is-task-board-filtered'));
+    };
+
+    const itemMatchesMetric = (item, metricKey) => {
+        const key = String(metricKey || '').trim();
+        if (!key || key === 'total') return true;
+        if (key === 'review') return item.pendingGradeCount > 0;
+        if (key === 'returned') return item.returnedCount > 0 || item.statusKey === 'returned';
+        if (key === 'open') return item.clock.accepting || item.statusKey === 'published' || item.statusKey === 'unsubmitted';
+        if (key === 'todo') return item.statusKey === 'unsubmitted' || item.statusKey === 'returned';
+        if (key === 'urgent') return item.clock.isUrgent;
+        if (key === 'completed') return ['submitted', 'grading', 'graded'].includes(item.statusKey);
+        return false;
+    };
+
+    const focusMetric = (metricKey) => {
+        clearMetricHighlights();
+        const key = String(metricKey || '').trim();
+        if (!key || key === 'total') {
+            focusAssignmentList();
+            return;
+        }
+
+        const snapshot = readSnapshot();
+        const matchingIds = new Set(
+            snapshot.items
+                .filter((item) => itemMatchesMetric(item, key))
+                .map((item) => String(item.id || '')),
+        );
+        const matchingCards = taskCards.filter((card) => matchingIds.has(String(card.dataset.assignmentId || '')));
+        matchingCards.forEach((card) => card.classList.add('is-task-board-filtered'));
+
+        if (matchingCards.length) {
+            const firstId = matchingCards[0]?.dataset.assignmentId;
+            focusCard(firstId);
+            window.setTimeout(clearMetricHighlights, 2600);
+            return;
+        }
+
+        focusAssignmentList();
+    };
+
     window.addEventListener(taskBoardCommandEventName, (event) => {
         const detail = event instanceof CustomEvent ? event.detail : null;
         const commandType = detail?.type;
@@ -1128,7 +1176,10 @@ function initAssignmentTaskBoard(clockController = null) {
             focusCard(detail.assignmentId, { open: true });
         }
         if (commandType === 'focus-board') {
-            document.getElementById('assignment-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            focusAssignmentList();
+        }
+        if (commandType === 'focus-metric') {
+            focusMetric(detail?.metricKey);
         }
         schedulePublish();
     });

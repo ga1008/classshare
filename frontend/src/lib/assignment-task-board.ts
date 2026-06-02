@@ -231,7 +231,7 @@ export function buildAssignmentTaskBoardMessage(snapshot: AssignmentTaskBoardSna
     return `${summary.lateOpenCount} 个任务处于补交窗口，请留意扣分策略。`;
   }
   if (snapshot.role === 'teacher' && summary.reviewQueue > 0) {
-    return `${summary.reviewQueue} 份提交等待批改，任务主线已帮你排在前面。`;
+    return `${summary.reviewQueue} 份提交等待批改，可从统计卡定位到对应任务。`;
   }
   if (snapshot.role !== 'teacher' && (summary.unsubmittedCount > 0 || summary.returnedCount > 0)) {
     return '还有未提交或待重交任务，先处理高优先级项。';

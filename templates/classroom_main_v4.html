@@ -1122,26 +1122,29 @@
                 {% endif %}
             </div>
 
-            <div class="section-metric-grid">
-                {% for metric in classroom_page.assignment_metrics %}
-                <article class="section-metric-card" data-tone="{{ metric.tone }}">
-                    <span class="section-metric-label">{{ metric.label }}</span>
-                    <strong class="section-metric-value">{{ metric.value }}</strong>
-                    <span class="section-metric-note">{{ metric.note }}</span>
-                </article>
-                {% endfor %}
-            </div>
-            {% if user_info.role == 'teacher' %}
-            <p class="assignment-scope-note">此处仅显示教师创建并分配的练习与考试；学生个人试炼已汇总到上方班级修行统计。</p>
-            {% endif %}
-
             <div
                 class="assignment-task-board-island"
                 data-lanshare-island="assignment-task-board-sync"
                 data-island-id="assignment-task-board-sync-{{ classroom.id }}"
             ></div>
+            {% if user_info.role == 'teacher' %}
+            <p class="assignment-scope-note">此处仅显示教师创建并分配的练习与考试；学生个人试炼已汇总到班级成长统计。</p>
+            {% endif %}
 
-            <div class="assignment-board">
+            <div class="assignment-board" id="assignment-list" data-assignment-list-region>
+                <div class="assignment-board__head">
+                    <div>
+                        <span>任务列表</span>
+                        <strong>{% if user_info.role == 'teacher' %}课堂作业区域{% else %}我的作业区域{% endif %}</strong>
+                    </div>
+                    <small>
+                        {% if user_info.role == 'teacher' %}
+                        点击任务进入布置、批改、重交跟踪与发布信息。
+                        {% else %}
+                        点击任务进入提交、补交、考试作答或查看批改结果。
+                        {% endif %}
+                    </small>
+                </div>
                 {% if assignments %}
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 assignment-grid">
                     {% for assignment in assignments %}

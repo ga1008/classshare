@@ -38165,6 +38165,277 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     box-shadow: 0 22px 58px -34px rgba(37, 99, 235, 0.92);
 }
 
+.classroom-page .assignment-task-board-island {
+    margin: 0.54rem 0 0.72rem;
+}
+
+.classroom-page .assignment-task-board-sync {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.58rem;
+    padding: 0.66rem;
+    border-color: rgba(148, 163, 184, 0.24);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.88)),
+        #fff;
+}
+
+.classroom-page .assignment-task-board-sync.is-student {
+    grid-template-columns: minmax(210px, 0.78fr) minmax(300px, 1.2fr) minmax(260px, 0.98fr);
+}
+
+.classroom-page .assignment-task-board-sync.is-teacher {
+    border-color: rgba(20, 184, 166, 0.2);
+    background:
+        linear-gradient(135deg, rgba(240, 253, 250, 0.72), rgba(255, 255, 255, 0.94)),
+        #fff;
+}
+
+.classroom-page .assignment-task-board-sync.is-teacher .assignment-task-board-sync__metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.classroom-page .assignment-task-board-sync__metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.46rem;
+}
+
+.classroom-page .assignment-task-board-sync__metric {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 3.14rem;
+    padding: 0.5rem 0.58rem;
+    text-align: left;
+}
+
+.classroom-page .assignment-task-board-sync__metric .assignment-task-board-sync__metric-icon {
+    width: 1.56rem;
+    height: 1.56rem;
+}
+
+.classroom-page .assignment-task-board-sync__metric .assignment-task-board-sync__metric-copy {
+    display: grid;
+    gap: 0.08rem;
+    width: auto;
+    height: auto;
+    min-width: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+}
+
+.classroom-page .assignment-task-board-sync__metric small,
+.classroom-page .assignment-task-board-sync__metric em {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.classroom-page .assignment-task-board-sync__metric em {
+    color: var(--text-muted);
+    font-size: 0.66rem;
+    font-style: normal;
+    font-weight: 760;
+}
+
+.classroom-page .assignment-task-board-sync__metric strong {
+    justify-self: end;
+    font-size: 1.2rem;
+}
+
+.classroom-page .assignment-task-board-sync__metric.is-success .assignment-task-board-sync__metric-icon {
+    background: rgba(20, 184, 166, 0.12);
+    color: #0f766e;
+}
+
+.classroom-page .assignment-task-board-sync__metric.is-neutral .assignment-task-board-sync__metric-icon {
+    background: rgba(100, 116, 139, 0.12);
+    color: #475569;
+}
+
+.classroom-page .assignment-task-board-sync__metric.is-active {
+    border-color: rgba(37, 99, 235, 0.38);
+    background: rgba(239, 246, 255, 0.9);
+    box-shadow: 0 16px 34px -30px rgba(37, 99, 235, 0.76);
+}
+
+.classroom-page .assignment-task-board-sync.is-teacher .assignment-task-board-sync__metric.is-active {
+    border-color: rgba(20, 184, 166, 0.38);
+    background: rgba(240, 253, 250, 0.92);
+}
+
+.classroom-page .assignment-task-board-sync__popover {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.72rem;
+    padding: 0.62rem 0.68rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.84);
+}
+
+.classroom-page .assignment-task-board-sync__popover div {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.1rem 0.52rem;
+    min-width: 0;
+}
+
+.classroom-page .assignment-task-board-sync__popover span {
+    color: #0f766e;
+    font-size: 0.74rem;
+    font-weight: 860;
+    white-space: nowrap;
+}
+
+.classroom-page .assignment-task-board-sync__popover strong {
+    color: var(--text-primary);
+    font-size: 0.96rem;
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.classroom-page .assignment-task-board-sync__popover p {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    line-height: 1.5;
+}
+
+.classroom-page .assignment-task-board-sync__popover button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.38rem;
+    min-height: 2.08rem;
+    padding: 0.36rem 0.58rem;
+    border: 1px solid rgba(20, 184, 166, 0.24);
+    border-radius: 8px;
+    background: #fff;
+    color: #0f766e;
+    font: inherit;
+    font-size: 0.76rem;
+    font-weight: 850;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.classroom-page .assignment-task-board-sync__popover button:hover,
+.classroom-page .assignment-task-board-sync__popover button:focus-visible {
+    transform: translateY(-1px);
+    border-color: rgba(20, 184, 166, 0.42);
+    box-shadow: 0 14px 30px -28px rgba(15, 23, 42, 0.54);
+    outline: none;
+}
+
+.classroom-page .assignment-board {
+    gap: 0.78rem;
+    margin-top: 0.66rem;
+    padding: 0.86rem;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 8px;
+    background:
+        linear-gradient(180deg, rgba(248, 250, 252, 0.94), rgba(255, 255, 255, 0.92)),
+        #fff;
+}
+
+.classroom-page .assignment-board__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.78rem;
+    min-width: 0;
+    padding-bottom: 0.68rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.classroom-page .assignment-board__head div {
+    display: grid;
+    gap: 0.14rem;
+    min-width: 0;
+}
+
+.classroom-page .assignment-board__head span {
+    color: #0f766e;
+    font-size: 0.72rem;
+    font-weight: 860;
+    line-height: 1;
+}
+
+.classroom-page .assignment-board__head strong {
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.classroom-page .assignment-board__head small {
+    max-width: 34rem;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.55;
+    text-align: right;
+}
+
+.classroom-page .assignment-card.is-task-board-filtered {
+    border-color: rgba(20, 184, 166, 0.38);
+    box-shadow: 0 18px 48px -32px rgba(20, 184, 166, 0.78);
+}
+
+.classroom-page .learning-progress-sync.is-teacher {
+    padding: 0.96rem;
+    border-color: rgba(20, 184, 166, 0.22);
+}
+
+@media (max-width: 1180px) {
+    .classroom-page .assignment-task-board-sync.is-student,
+    .classroom-page .assignment-task-board-sync.is-teacher {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 720px) {
+    .classroom-page .assignment-task-board-sync__metrics,
+    .classroom-page .assignment-task-board-sync.is-teacher .assignment-task-board-sync__metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .classroom-page .assignment-task-board-sync__popover,
+    .classroom-page .assignment-board__head {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .classroom-page .assignment-task-board-sync__popover {
+        align-items: stretch;
+    }
+
+    .classroom-page .assignment-task-board-sync__popover button {
+        width: 100%;
+        white-space: normal;
+    }
+
+    .classroom-page .assignment-board__head {
+        display: grid;
+    }
+
+    .classroom-page .assignment-board__head small {
+        max-width: none;
+        text-align: left;
+    }
+}
+
+@media (max-width: 430px) {
+    .classroom-page .assignment-task-board-sync__metrics,
+    .classroom-page .assignment-task-board-sync.is-teacher .assignment-task-board-sync__metrics {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 .classroom-page .assignment-authoring-island {
     width: 100%;
     min-width: 0;
