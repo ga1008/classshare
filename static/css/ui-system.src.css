@@ -37152,179 +37152,7 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 }
 
 .classroom-page .classroom-activity-workspace-island {
-    min-width: 0;
-}
-
-.classroom-page .classroom-activity-workspace-sync {
-    display: grid;
-    gap: 0.56rem;
-    min-width: 0;
-    padding: 0.68rem;
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    border-radius: 8px;
-    background: rgba(248, 250, 252, 0.86);
-}
-
-.classroom-page .classroom-activity-workspace-sync__summary {
-    min-width: 0;
-}
-
-.classroom-page .classroom-activity-workspace-sync__eyebrow {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.34rem;
-    width: fit-content;
-    min-height: 1.55rem;
-    padding: 0.22rem 0.46rem;
-    border-radius: 999px;
-    background: rgba(20, 184, 166, 0.1);
-    color: #0f766e;
-    font-size: 0.72rem;
-    font-weight: 840;
-}
-
-.classroom-page .classroom-activity-workspace-sync__headline {
-    display: grid;
-    gap: 0.14rem;
-    min-width: 0;
-    margin-top: 0.4rem;
-}
-
-.classroom-page .classroom-activity-workspace-sync__headline strong {
-    overflow: hidden;
-    color: var(--text-primary);
-    font-size: 0.98rem;
-    font-weight: 900;
-    line-height: 1.16;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.classroom-page .classroom-activity-workspace-sync__headline span,
-.classroom-page .classroom-activity-workspace-sync p {
-    color: var(--text-muted);
-    font-size: 0.76rem;
-    line-height: 1.48;
-}
-
-.classroom-page .classroom-activity-workspace-sync p {
-    margin: 0.28rem 0 0;
-}
-
-.classroom-page .classroom-activity-workspace-sync__items,
-.classroom-page .classroom-activity-workspace-sync__actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.42rem;
-    min-width: 0;
-}
-
-.classroom-page .classroom-activity-workspace-sync__item,
-.classroom-page .classroom-activity-workspace-sync__actions button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.42rem;
-    min-height: 2.1rem;
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    border-radius: 8px;
-    background: #fff;
-    color: var(--text-primary);
-    font: inherit;
-    font-size: 0.76rem;
-    font-weight: 820;
-    cursor: pointer;
-    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease, background-color 160ms ease;
-}
-
-.classroom-page .classroom-activity-workspace-sync__item {
-    flex: 1 1 8.2rem;
-    justify-content: flex-start;
-    min-width: 0;
-    padding: 0.38rem 0.42rem;
-}
-
-.classroom-page .classroom-activity-workspace-sync__item-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    width: 1.72rem;
-    height: 1.72rem;
-    border-radius: 8px;
-    background: rgba(14, 165, 233, 0.1);
-    color: #0369a1;
-}
-
-.classroom-page .classroom-activity-workspace-sync__item-copy {
-    display: grid;
-    gap: 0.08rem;
-    min-width: 0;
-}
-
-.classroom-page .classroom-activity-workspace-sync__item-copy strong,
-.classroom-page .classroom-activity-workspace-sync__item-copy small {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.classroom-page .classroom-activity-workspace-sync__item-copy strong {
-    font-size: 0.78rem;
-    line-height: 1.12;
-}
-
-.classroom-page .classroom-activity-workspace-sync__item-copy small {
-    color: var(--text-muted);
-    font-size: 0.68rem;
-    line-height: 1.1;
-}
-
-.classroom-page .classroom-activity-workspace-sync__item em {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    min-width: 1.35rem;
-    height: 1.35rem;
-    padding: 0 0.28rem;
-    border-radius: 999px;
-    background: #0f172a;
-    color: #fff;
-    font-size: 0.7rem;
-    font-style: normal;
-    font-weight: 840;
-}
-
-.classroom-page .classroom-activity-workspace-sync__item.is-active {
-    border-color: rgba(20, 184, 166, 0.34);
-    background: rgba(240, 253, 250, 0.86);
-    color: #0f766e;
-}
-
-.classroom-page .classroom-activity-workspace-sync__item:hover:not(:disabled),
-.classroom-page .classroom-activity-workspace-sync__item:focus-visible:not(:disabled),
-.classroom-page .classroom-activity-workspace-sync__actions button:hover,
-.classroom-page .classroom-activity-workspace-sync__actions button:focus-visible {
-    transform: translateY(-1px);
-    border-color: rgba(14, 165, 233, 0.38);
-    color: #0369a1;
-    box-shadow: 0 14px 30px -28px rgba(15, 23, 42, 0.54);
-    outline: none;
-}
-
-.classroom-page .classroom-activity-workspace-sync__item:disabled {
-    cursor: not-allowed;
-    opacity: 0.5;
-}
-
-.classroom-page .classroom-activity-workspace-sync__actions {
-    justify-content: flex-end;
-}
-
-.classroom-page .classroom-activity-workspace-sync__actions button {
-    min-height: 2rem;
-    padding: 0.38rem 0.52rem;
+    display: none;
 }
 
 .classroom-page .resource-workspace-island {
@@ -38642,6 +38470,11 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 }
 
 .classroom-page .classroom-activity-tab {
+    --classroom-activity-tab-rgb: 13, 148, 136;
+    --classroom-activity-tab-color: #0f766e;
+    --classroom-activity-tab-bg: rgba(240, 253, 250, 0.86);
+    position: relative;
+    overflow: hidden;
     min-width: 0;
     min-height: 2.9rem;
     display: grid;
@@ -38649,31 +38482,64 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     align-items: center;
     gap: 0.34rem;
     padding: 0.45rem 0.48rem;
-    border: 1px solid rgba(148, 163, 184, 0.22);
+    border: 1px solid rgba(var(--classroom-activity-tab-rgb), 0.2);
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.9);
+    background: linear-gradient(135deg, var(--classroom-activity-tab-bg), rgba(255, 255, 255, 0.94));
     color: var(--text-secondary);
     cursor: pointer;
     text-align: left;
-    box-shadow: 0 12px 28px -28px rgba(15, 23, 42, 0.36);
+    box-shadow: 0 12px 28px -28px rgba(var(--classroom-activity-tab-rgb), 0.44);
     transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, color 160ms ease;
+}
+
+.classroom-page .classroom-activity-tab::before {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 3px;
+    background: rgb(var(--classroom-activity-tab-rgb));
+    opacity: 0.78;
+}
+
+.classroom-page .classroom-activity-tab[data-classroom-activity-tab="interaction"] {
+    --classroom-activity-tab-rgb: 13, 148, 136;
+    --classroom-activity-tab-color: #0f766e;
+    --classroom-activity-tab-bg: rgba(240, 253, 250, 0.88);
+}
+
+.classroom-page .classroom-activity-tab[data-classroom-activity-tab="discussion"] {
+    --classroom-activity-tab-rgb: 79, 70, 229;
+    --classroom-activity-tab-color: #4338ca;
+    --classroom-activity-tab-bg: rgba(238, 242, 255, 0.88);
+}
+
+.classroom-page .classroom-activity-tab[data-classroom-activity-tab="collaboration"] {
+    --classroom-activity-tab-rgb: 217, 119, 6;
+    --classroom-activity-tab-color: #b45309;
+    --classroom-activity-tab-bg: rgba(255, 251, 235, 0.92);
+}
+
+.classroom-page .classroom-activity-tab[data-classroom-activity-tab="resources"] {
+    --classroom-activity-tab-rgb: 2, 132, 199;
+    --classroom-activity-tab-color: #0369a1;
+    --classroom-activity-tab-bg: rgba(240, 249, 255, 0.9);
 }
 
 .classroom-page .classroom-activity-tab:hover,
 .classroom-page .classroom-activity-tab:focus-visible {
     transform: translateY(-1px);
-    border-color: rgba(var(--app-topbar-accent-rgb), 0.26);
+    border-color: rgba(var(--classroom-activity-tab-rgb), 0.36);
     background: rgba(255, 255, 255, 0.98);
-    color: var(--app-topbar-accent);
+    color: var(--classroom-activity-tab-color);
     outline: none;
-    box-shadow: 0 16px 32px -28px rgba(var(--app-topbar-accent-rgb), 0.42);
+    box-shadow: 0 16px 34px -28px rgba(var(--classroom-activity-tab-rgb), 0.62);
 }
 
 .classroom-page .classroom-activity-tab.is-active {
-    border-color: rgba(var(--app-topbar-accent-rgb), 0.32);
-    background: rgba(var(--app-topbar-accent-rgb), 0.08);
-    color: var(--app-topbar-accent);
-    box-shadow: 0 18px 36px -30px rgba(var(--app-topbar-accent-rgb), 0.5);
+    border-color: rgba(var(--classroom-activity-tab-rgb), 0.44);
+    background: linear-gradient(135deg, rgba(var(--classroom-activity-tab-rgb), 0.16), rgba(255, 255, 255, 0.98));
+    color: var(--classroom-activity-tab-color);
+    box-shadow: 0 18px 36px -30px rgba(var(--classroom-activity-tab-rgb), 0.72);
 }
 
 .classroom-page .classroom-activity-tab__icon {
@@ -38688,7 +38554,7 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 }
 
 .classroom-page .classroom-activity-tab.is-active .classroom-activity-tab__icon {
-    background: rgba(var(--app-topbar-accent-rgb), 0.13);
+    background: rgba(var(--classroom-activity-tab-rgb), 0.13);
 }
 
 .classroom-page .classroom-activity-tab__icon svg {
@@ -38704,7 +38570,7 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 
 .classroom-page .classroom-activity-tab__copy strong {
     overflow: hidden;
-    color: var(--text-primary);
+    color: var(--classroom-activity-tab-color);
     font-size: 0.84rem;
     font-weight: 820;
     line-height: 1.15;
@@ -38729,7 +38595,7 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     justify-content: center;
     padding: 0 0.38rem;
     border-radius: 999px;
-    background: #0f172a;
+    background: rgb(var(--classroom-activity-tab-rgb));
     color: #fff;
     font-size: 0.73rem;
     font-style: normal;
@@ -38738,8 +38604,8 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 }
 
 .classroom-page .classroom-activity-tab em[data-empty] {
-    background: rgba(100, 116, 139, 0.34);
-    color: #475569;
+    background: rgba(var(--classroom-activity-tab-rgb), 0.16);
+    color: var(--classroom-activity-tab-color);
 }
 
 .classroom-page .classroom-activity-panels,
@@ -38943,11 +38809,6 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
         padding: 0.42rem 0.44rem;
     }
 
-    .classroom-page .classroom-activity-workspace-sync__item,
-    .classroom-page .classroom-activity-workspace-sync__actions button {
-        flex: 1 1 7.2rem;
-    }
-
     .classroom-page .resource-workspace-sync__actions {
         justify-content: stretch;
     }
@@ -39018,14 +38879,6 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     .classroom-page .classroom-activity-tab {
         gap: 0.24rem;
         padding-inline: 0.36rem;
-    }
-
-    .classroom-page .classroom-activity-workspace-sync {
-        padding: 0.56rem;
-    }
-
-    .classroom-page .classroom-activity-workspace-sync__item-copy small {
-        display: none;
     }
 
     .classroom-page .resource-workspace-sync,
