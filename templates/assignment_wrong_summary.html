@@ -411,10 +411,27 @@
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
         gap: 10px;
+        width: 100%;
         padding: 10px 12px;
         border: 1px solid rgba(239, 68, 68, 0.18);
         border-radius: 8px;
         background: rgba(255, 247, 237, 0.78);
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+        transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+    }
+
+    .wrong-answer-item:hover {
+        transform: translateY(-1px);
+        border-color: rgba(225, 29, 72, 0.34);
+        background: rgba(255, 241, 242, 0.92);
+    }
+
+    .wrong-answer-item:focus-visible {
+        outline: 3px solid rgba(14, 165, 233, 0.24);
+        outline-offset: 2px;
     }
 
     .wrong-answer-item__copy {
@@ -576,6 +593,174 @@
         background: rgba(255, 255, 255, 0.62);
     }
 
+    .wrong-option-stat-list {
+        display: grid;
+        gap: 9px;
+        margin-top: 4px;
+    }
+
+    .wrong-option-stat {
+        --option-percent: 0%;
+        --option-fill: rgba(148, 163, 184, 0.18);
+        --option-border: rgba(148, 163, 184, 0.24);
+        --option-text: #475569;
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--option-border);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.78);
+        color: var(--option-text);
+    }
+
+    .wrong-option-stat.is-correct {
+        --option-fill: rgba(16, 185, 129, 0.34);
+        --option-border: rgba(16, 185, 129, 0.34);
+        --option-text: #065f46;
+    }
+
+    .wrong-option-stat.is-wrong {
+        --option-fill: rgba(239, 68, 68, 0.32);
+        --option-border: rgba(239, 68, 68, 0.3);
+        --option-text: #991b1b;
+    }
+
+    .wrong-option-stat.is-muted {
+        --option-fill: rgba(148, 163, 184, 0.14);
+        --option-border: rgba(148, 163, 184, 0.24);
+        --option-text: #64748b;
+    }
+
+    .wrong-option-stat__fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: var(--option-percent);
+        min-width: 0;
+        background: var(--option-fill);
+    }
+
+    .wrong-option-stat__content {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 12px;
+    }
+
+    .wrong-option-stat__meta {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        white-space: nowrap;
+        font-size: 0.78rem;
+        font-weight: 900;
+    }
+
+    .wrong-option-stat__tag {
+        display: inline-flex;
+        align-items: center;
+        height: 22px;
+        padding: 0 7px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.72);
+        font-size: 0.72rem;
+    }
+
+    .wrong-answer-modal[hidden] {
+        display: none;
+    }
+
+    .wrong-answer-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 1100;
+        display: grid;
+        place-items: center;
+        padding: 18px;
+        background: rgba(15, 23, 42, 0.42);
+    }
+
+    .wrong-answer-dialog {
+        width: min(720px, 100%);
+        max-height: min(82vh, 720px);
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        overflow: hidden;
+        border-radius: 10px;
+        background: #fff;
+        box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+    }
+
+    .wrong-answer-dialog__head {
+        display: flex;
+        align-items: start;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 18px;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.86);
+    }
+
+    .wrong-answer-dialog__head strong {
+        display: block;
+        color: #0f172a;
+        font-size: 1rem;
+    }
+
+    .wrong-answer-dialog__head small {
+        display: block;
+        margin-top: 4px;
+        color: #64748b;
+        line-height: 1.45;
+    }
+
+    .wrong-answer-dialog__close {
+        flex: 0 0 auto;
+        width: 34px;
+        height: 34px;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 8px;
+        background: #fff;
+        color: #334155;
+        font-size: 1.25rem;
+        line-height: 1;
+        cursor: pointer;
+    }
+
+    .wrong-answer-dialog__body {
+        overflow: auto;
+        padding: 14px 18px 18px;
+    }
+
+    .wrong-answer-detail-list {
+        display: grid;
+        gap: 9px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .wrong-answer-detail-list li {
+        display: grid;
+        gap: 5px;
+        padding: 11px 12px;
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.86);
+    }
+
+    .wrong-answer-detail-list strong {
+        color: #0f172a;
+        font-size: 0.82rem;
+    }
+
+    .wrong-answer-detail-list span {
+        color: #334155;
+        line-height: 1.58;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
     .wrong-question-markdown table,
     .wrong-option-markdown table {
         min-width: min(100%, 520px);
@@ -669,8 +854,8 @@
             <span class="wrong-summary-kicker">全班试卷诊断</span>
             <h1>{{ assignment.title }}</h1>
             <p>
-                按已提交学生的逐题答案统计错题人数；客观题展示前三个高频错选，填空/问答题在错答发生变化后归集常见错误写法。
-                难题归集用于辅助安排讲评优先级，结果会按试卷内容复用。
+                按已提交学生的逐题得分统计未满分题目；选择题展示全选项选择柱图，填空/问答题在错答发生变化后归集常见错误写法与原因。
+                难题归集用于辅助安排讲评优先级，结果按未满分率与平均得分率排序。
             </p>
             {% if summary.ai_status.is_active %}
             <div class="wrong-summary-ai-strip" data-wrong-summary-status-strip>
@@ -734,7 +919,7 @@
                 tabindex="-1"
             >
                 <strong>难题归集</strong>
-                <small>{% if summary.difficulty['items'] %}{{ summary.difficulty['items']|length }} 题{% else %}待归集{% endif %}</small>
+                <small>{{ summary.hard_questions|length }} 题</small>
             </button>
         </div>
 
@@ -777,7 +962,27 @@
                                 data-question-markdown
                                 data-markdown-json="{{ question.text | tojson | forceescape }}"
                             ></div>
-                            {% if question.options %}
+                            {% if item.option_bars %}
+                            <div class="wrong-option-stat-list" aria-label="选项选择统计">
+                                {% for option in item.option_bars %}
+                                <div class="wrong-option-stat is-{{ option.tone }}" style="--option-percent: {{ option.percent }}%;">
+                                    <span class="wrong-option-stat__fill" aria-hidden="true"></span>
+                                    <div class="wrong-option-stat__content">
+                                        <div
+                                            class="wrong-option-markdown md-content"
+                                            data-question-markdown
+                                            data-markdown-json="{{ option.label | tojson | forceescape }}"
+                                        ></div>
+                                        <span class="wrong-option-stat__meta">
+                                            {% if option.is_correct %}<span class="wrong-option-stat__tag">正确</span>{% endif %}
+                                            <strong>{{ option.count }} 人</strong>
+                                            <span>{{ option.percent }}%</span>
+                                        </span>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% elif question.options %}
                             <ul class="wrong-question-options" aria-label="题目选项">
                                 {% for option in question.options %}
                                 <li class="wrong-question-option">
@@ -795,8 +1000,9 @@
                             <span>正确答案</span>
                             <strong>{{ question.answer_text or '未提供参考答案' }}</strong>
                         </div>
+                        {% if not item.option_bars %}
                         <div class="answer-block is-wrong">
-                            <span>高频错答</span>
+                            <span>{% if question.type == 'textarea' %}高频错误原因{% else %}高频错误答案{% endif %}</span>
                             {% if summary.ai_status.job_status == 'failed' and item.text_cluster_status == 'pending' %}
                             <div class="wrong-ai-waiting is-failed">
                                 <span>{{ summary.ai_status.message }}</span>
@@ -804,12 +1010,21 @@
                             {% elif item.text_cluster_status == 'pending' %}
                             <div class="wrong-ai-waiting" role="status" aria-live="polite">
                                 <span class="wrong-summary-spinner" aria-hidden="true"></span>
-                                <span>快速 AI 正在后台归集这道题的常见错误写法，完成后页面会自动刷新。</span>
+                                <span>快速 AI 正在后台归集这道题的{% if question.type == 'textarea' %}高频错误原因{% else %}常见错误写法{% endif %}，完成后页面会自动刷新。</span>
                             </div>
                             {% elif item.top_wrong_answers %}
                             <ul class="wrong-answer-list">
                                 {% for wrong in item.top_wrong_answers %}
-                                <li class="wrong-answer-item">
+                                <li>
+                                    <button
+                                        type="button"
+                                        class="wrong-answer-item"
+                                        data-wrong-answer-group
+                                        data-detail-title="{{ wrong.label }}"
+                                        data-detail-count="{{ wrong.count }}"
+                                        data-detail-percent="{{ wrong.percent }}"
+                                        data-details-json="{{ (wrong.details or []) | tojson | forceescape }}"
+                                    >
                                     <span class="wrong-answer-item__copy">
                                         <strong>{{ wrong.label }}</strong>
                                         {% if wrong.likely_issue %}<small>{{ wrong.likely_issue }}</small>{% endif %}
@@ -818,6 +1033,7 @@
                                         {% endif %}
                                     </span>
                                     <span class="wrong-answer-item__count">{{ wrong.count }} 人{% if wrong.percent %} · {{ wrong.percent }}%{% endif %}</span>
+                                    </button>
                                 </li>
                                 {% endfor %}
                             </ul>
@@ -828,6 +1044,7 @@
                             <small>错答归集暂未完成：{{ item.text_cluster_error }}</small>
                             {% endif %}
                         </div>
+                        {% endif %}
                     </div>
                 </article>
                 {% endfor %}
@@ -835,7 +1052,7 @@
             {% else %}
             <div class="wrong-summary-empty">
                 <strong>暂未发现错答</strong>
-                <span>当前已提交答卷与参考答案匹配，或试卷暂无可判定的参考答案。</span>
+                <span>当前已识别逐题得分的提交均为满分，或提交尚未生成可识别的逐题得分。</span>
             </div>
             {% endif %}
         </section>
@@ -853,27 +1070,15 @@
                     <h2>难题归集</h2>
                     <p>
                         {{ summary.difficulty.summary }}
-                        <small>由快速 AI 根据课程内容与试卷题目判断，仅作为讲评优先级参考。</small>
+                        <small>根据逐题得分、未满分率与平均得分率排序；主观题错误原因由快速 AI 根据未满分答案归集。</small>
                     </p>
                 </div>
-                <span class="wrong-summary-badge">
-                    {% if summary.difficulty.source == 'pending' %}归集中{% elif summary.difficulty['items'] %}已归集{% else %}待归集{% endif %}
-                </span>
+                <span class="wrong-summary-badge">{{ summary.hard_questions|length }} 题</span>
             </div>
 
-            {% if summary.difficulty.source == 'pending' and summary.ai_status.job_status == 'failed' %}
-            <div class="wrong-summary-empty">
-                <strong>难题归集失败</strong>
-                <span>{{ summary.ai_status.message }}</span>
-            </div>
-            {% elif summary.difficulty.source == 'pending' %}
-            <div class="wrong-ai-waiting" role="status" aria-live="polite">
-                <span class="wrong-summary-spinner" aria-hidden="true"></span>
-                <span>快速 AI 正在后台整理难题归集，完成后页面会自动刷新。</span>
-            </div>
-            {% elif summary.difficulty['items'] %}
+            {% if summary.hard_questions %}
             <div class="hard-question-list">
-                {% for item in summary.difficulty['items'] %}
+                {% for item in summary.hard_questions %}
                 {% set question = item.question %}
                 <article class="hard-question-card">
                     <div class="hard-question-card__head">
@@ -884,7 +1089,7 @@
                         </div>
                         <span class="hard-level-pill">
                             <strong>{{ item.difficulty_label }}</strong>
-                            <span>{{ item.difficulty }}/5</span>
+                            <span>风险值 {{ item.difficulty_score }}</span>
                         </span>
                     </div>
                     <div class="hard-question-body">
@@ -895,7 +1100,27 @@
                                 data-question-markdown
                                 data-markdown-json="{{ question.text | tojson | forceescape }}"
                             ></div>
-                            {% if question.options %}
+                            {% if item.option_bars %}
+                            <div class="wrong-option-stat-list" aria-label="选项选择统计">
+                                {% for option in item.option_bars %}
+                                <div class="wrong-option-stat is-{{ option.tone }}" style="--option-percent: {{ option.percent }}%;">
+                                    <span class="wrong-option-stat__fill" aria-hidden="true"></span>
+                                    <div class="wrong-option-stat__content">
+                                        <div
+                                            class="wrong-option-markdown md-content"
+                                            data-question-markdown
+                                            data-markdown-json="{{ option.label | tojson | forceescape }}"
+                                        ></div>
+                                        <span class="wrong-option-stat__meta">
+                                            {% if option.is_correct %}<span class="wrong-option-stat__tag">正确</span>{% endif %}
+                                            <strong>{{ option.count }} 人</strong>
+                                            <span>{{ option.percent }}%</span>
+                                        </span>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% elif question.options %}
                             <ul class="wrong-question-options" aria-label="题目选项">
                                 {% for option in question.options %}
                                 <li class="wrong-question-option">
@@ -909,18 +1134,54 @@
                             </ul>
                             {% endif %}
                         </div>
-                        {% if item.reason %}<p>{{ item.reason }}</p>{% endif %}
-                        {% if item.risk_factors %}
-                        <ul class="hard-risk-list">
-                            {% for factor in item.risk_factors %}
-                            <li>{{ factor }}</li>
-                            {% endfor %}
-                        </ul>
-                        {% endif %}
-                        {% if item.teaching_hint %}
+                        <p>{{ item.difficulty_reason }}</p>
                         <div class="answer-block is-correct">
-                            <span>讲评建议</span>
-                            <strong>{{ item.teaching_hint }}</strong>
+                            <span>正确答案</span>
+                            <strong>{{ question.answer_text or '未提供参考答案' }}</strong>
+                        </div>
+                        {% if not item.option_bars %}
+                        <div class="answer-block is-wrong">
+                            <span>{% if question.type == 'textarea' %}高频错误原因{% else %}高频错误答案{% endif %}</span>
+                            {% if summary.ai_status.job_status == 'failed' and item.text_cluster_status == 'pending' %}
+                            <div class="wrong-ai-waiting is-failed">
+                                <span>{{ summary.ai_status.message }}</span>
+                            </div>
+                            {% elif item.text_cluster_status == 'pending' %}
+                            <div class="wrong-ai-waiting" role="status" aria-live="polite">
+                                <span class="wrong-summary-spinner" aria-hidden="true"></span>
+                                <span>快速 AI 正在后台归集这道题的{% if question.type == 'textarea' %}高频错误原因{% else %}常见错误写法{% endif %}，完成后页面会自动刷新。</span>
+                            </div>
+                            {% elif item.top_wrong_answers %}
+                            <ul class="wrong-answer-list">
+                                {% for wrong in item.top_wrong_answers %}
+                                <li>
+                                    <button
+                                        type="button"
+                                        class="wrong-answer-item"
+                                        data-wrong-answer-group
+                                        data-detail-title="{{ wrong.label }}"
+                                        data-detail-count="{{ wrong.count }}"
+                                        data-detail-percent="{{ wrong.percent }}"
+                                        data-details-json="{{ (wrong.details or []) | tojson | forceescape }}"
+                                    >
+                                    <span class="wrong-answer-item__copy">
+                                        <strong>{{ wrong.label }}</strong>
+                                        {% if wrong.likely_issue %}<small>{{ wrong.likely_issue }}</small>{% endif %}
+                                        {% if wrong.examples and wrong.examples[0] != wrong.label %}
+                                        <small>例：{{ wrong.examples|join('；') }}</small>
+                                        {% endif %}
+                                    </span>
+                                    <span class="wrong-answer-item__count">{{ wrong.count }} 人{% if wrong.percent %} · {{ wrong.percent }}%{% endif %}</span>
+                                    </button>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <strong>暂无可展示的错答分组</strong>
+                            {% endif %}
+                            {% if item.text_cluster_error %}
+                            <small>错答归集暂未完成：{{ item.text_cluster_error }}</small>
+                            {% endif %}
                         </div>
                         {% endif %}
                     </div>
@@ -930,13 +1191,27 @@
             {% else %}
             <div class="wrong-summary-empty">
                 <strong>暂未生成难题归集</strong>
-                <span>{{ summary.difficulty.error or '难题归集暂不可用，请稍后刷新。' }}</span>
+                <span>{{ summary.difficulty.error or '暂无题目出现未满分记录，或当前提交尚未形成可识别的逐题得分。' }}</span>
             </div>
             {% endif %}
         </section>
     </div>
     {% endif %}
 </main>
+<div class="wrong-answer-modal" data-wrong-answer-modal hidden>
+    <div class="wrong-answer-dialog" role="dialog" aria-modal="true" aria-labelledby="wrong-answer-dialog-title">
+        <div class="wrong-answer-dialog__head">
+            <div>
+                <strong id="wrong-answer-dialog-title" data-wrong-answer-modal-title>错答明细</strong>
+                <small data-wrong-answer-modal-subtitle></small>
+            </div>
+            <button type="button" class="wrong-answer-dialog__close" data-wrong-answer-modal-close aria-label="关闭">×</button>
+        </div>
+        <div class="wrong-answer-dialog__body">
+            <ul class="wrong-answer-detail-list" data-wrong-answer-modal-list></ul>
+        </div>
+    </div>
+</div>
 {% set include_mermaid = true %}
 {% include "partials/markdown_assets.html" %}
 <script type="module">
@@ -1065,6 +1340,79 @@
         return panels.find((panel) => !panel.hidden) || null;
     }
 
+    function setupWrongAnswerDetails() {
+        const modal = document.querySelector('[data-wrong-answer-modal]');
+        const titleNode = document.querySelector('[data-wrong-answer-modal-title]');
+        const subtitleNode = document.querySelector('[data-wrong-answer-modal-subtitle]');
+        const listNode = document.querySelector('[data-wrong-answer-modal-list]');
+        const closeButton = document.querySelector('[data-wrong-answer-modal-close]');
+        if (!modal || !titleNode || !subtitleNode || !listNode || !closeButton) {
+            return;
+        }
+        let lastTrigger = null;
+
+        const closeModal = () => {
+            modal.hidden = true;
+            document.body.style.removeProperty('overflow');
+            if (lastTrigger) {
+                lastTrigger.focus();
+            }
+        };
+
+        const openModal = (trigger) => {
+            lastTrigger = trigger;
+            let details = [];
+            try {
+                details = JSON.parse(trigger.getAttribute('data-details-json') || '[]');
+            } catch (error) {
+                console.warn('Wrong answer detail parse failed:', error);
+            }
+            titleNode.textContent = trigger.getAttribute('data-detail-title') || '错答明细';
+            const count = trigger.getAttribute('data-detail-count') || '0';
+            const percent = trigger.getAttribute('data-detail-percent') || '0';
+            subtitleNode.textContent = `${count} 人归入此类${percent && percent !== '0' ? `，占未满分学生 ${percent}%` : ''}`;
+            listNode.innerHTML = '';
+            if (!Array.isArray(details) || !details.length) {
+                const emptyItem = document.createElement('li');
+                const emptyText = document.createElement('span');
+                emptyText.textContent = '暂无可展开的原始答案明细。';
+                emptyItem.appendChild(emptyText);
+                listNode.appendChild(emptyItem);
+            } else {
+                details.forEach((detail) => {
+                    const item = document.createElement('li');
+                    const student = document.createElement('strong');
+                    const scoreText = detail.score_text ? ` · ${detail.score_text}` : '';
+                    student.textContent = `${detail.student_name || '未命名学生'}${scoreText}`;
+                    const answer = document.createElement('span');
+                    answer.textContent = detail.answer || '未作答';
+                    item.append(student, answer);
+                    listNode.appendChild(item);
+                });
+            }
+            modal.hidden = false;
+            document.body.style.overflow = 'hidden';
+            closeButton.focus();
+        };
+
+        document.addEventListener('click', (event) => {
+            const trigger = event.target.closest('[data-wrong-answer-group]');
+            if (trigger) {
+                openModal(trigger);
+                return;
+            }
+            if (event.target === modal) {
+                closeModal();
+            }
+        });
+        closeButton.addEventListener('click', closeModal);
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !modal.hidden) {
+                closeModal();
+            }
+        });
+    }
+
     async function pollAiStatus() {
         if (reloadScheduled) {
             return;
@@ -1094,6 +1442,7 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         const activePanel = setupWrongSummaryTabs();
+        setupWrongAnswerDetails();
         renderQuestionMarkdown(activePanel || document);
         if (INITIAL_AI_ACTIVE) {
             window.setTimeout(pollAiStatus, POLL_INTERVAL_MS);

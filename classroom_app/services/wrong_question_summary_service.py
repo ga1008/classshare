@@ -15,7 +15,7 @@ from ..database import get_db_connection
 from .assignment_lifecycle_service import close_overdue_assignments, refresh_assignment_runtime_status
 
 
-PROMPT_VERSION = "wrong-question-summary-v1"
+PROMPT_VERSION = "wrong-question-summary-v2"
 TEXT_QUESTION_TYPES = {"text", "textarea"}
 CHOICE_QUESTION_TYPES = {"radio", "checkbox"}
 WRONG_SUMMARY_JOB_STATUS_QUEUED = "queued"
@@ -121,15 +121,9 @@ async def build_assignment_wrong_question_summary(
         question_stats,
         allow_generate=allow_ai_generation,
     )
-    difficulty = await _load_or_generate_difficulty_summary(
-        str(source["paper"]["id"]),
-        source["paper"]["title"],
-        source["questions_signature"],
-        questions,
-        allow_generate=allow_ai_generation,
-    )
-
     wrong_questions = [item for item in question_stats if item["wrong_count"] > 0]
+    hard_questions = _build_score_based_hard_questions(wrong_questions)
+    difficulty = _score_based_difficulty_summary(hard_questions)
     worst_wrong_count = wrong_questions[0]["wrong_count"] if wrong_questions else 0
     source["stats"].update(
         {
@@ -140,6 +134,7 @@ async def build_assignment_wrong_question_summary(
         }
     )
     source["wrong_questions"] = wrong_questions
+    source["hard_questions"] = hard_questions
     source["difficulty"] = difficulty
     source["ai_status"] = _build_ai_status(source, question_stats, difficulty)
     if schedule_ai and source["ai_status"]["needs_ai"]:
@@ -168,20 +163,15 @@ async def run_assignment_wrong_summary_ai_job(
         _mark_wrong_summary_job_running(assignment_key, source["questions_signature"])
         question_stats = _build_question_error_stats(source["questions"], source["submissions"])
         await _attach_text_answer_clusters(assignment_key, question_stats, allow_generate=True)
-        difficulty = await _load_or_generate_difficulty_summary(
-            str(source["paper"]["id"]),
-            source["paper"]["title"],
-            source["questions_signature"],
-            source["questions"],
-            allow_generate=True,
-        )
+        difficulty = _score_based_difficulty_summary(_build_score_based_hard_questions(question_stats))
         errors = _collect_ai_job_errors(question_stats, difficulty)
         if errors:
             _mark_wrong_summary_job_failed(assignment_key, source["questions_signature"], "；".join(errors))
         else:
             _mark_wrong_summary_job_completed(assignment_key, source["questions_signature"])
     except Exception as exc:
-        _mark_wrong_summary_job_failed(assignment_key, source["questions_signature"], _clip_text(str(exc), 260))
+        signature = questions_signature or (source.get("questions_signature") if "source" in locals() else "")
+        _mark_wrong_summary_job_failed(assignment_key, str(signature or ""), _clip_text(str(exc), 260))
     finally:
         _active_wrong_summary_jobs.discard(job_key)
 
@@ -227,6 +217,7 @@ def _load_summary_source(assignment_id: str, teacher_id: int) -> dict[str, Any]:
             "paper": None,
             "questions": [],
             "wrong_questions": [],
+            "hard_questions": [],
             "difficulty": _empty_difficulty_summary("仅试卷型任务支持难题归集。"),
             "stats": {
                 "total_students": _count_assignment_students(conn, assignment),
@@ -279,7 +270,7 @@ def _load_summary_source(assignment_id: str, teacher_id: int) -> dict[str, Any]:
             for row in conn.execute(
                 """
                 SELECT id, assignment_id, student_pk_id, student_name, status, score,
-                       answers_json, submitted_at, is_absence_score
+                       answers_json, feedback_md, submitted_at, is_absence_score
                 FROM submissions
                 WHERE assignment_id = ?
                 ORDER BY submitted_at DESC, id DESC
@@ -342,7 +333,7 @@ def _ensure_wrong_summary_ai_job(
         return None
 
     pending_text_questions = _pending_text_question_count(question_stats)
-    pending_difficulty = int(difficulty.get("source") == "pending")
+    pending_difficulty = 0
     if pending_text_questions <= 0 and pending_difficulty <= 0:
         return None
 
@@ -426,7 +417,7 @@ def _build_ai_status(
     questions_signature = str(source.get("questions_signature") or "")
     job = _load_wrong_summary_job(assignment_id, questions_signature) if questions_signature else None
     pending_text_questions = _pending_text_question_count(question_stats)
-    pending_difficulty = int(difficulty.get("source") == "pending")
+    pending_difficulty = 0
     needs_ai = pending_text_questions > 0 or pending_difficulty > 0
 
     job_status = str((job or {}).get("status") or "").strip().lower()
@@ -440,9 +431,7 @@ def _build_ai_status(
         label = "后台归集中" if job_status == WRONG_SUMMARY_JOB_STATUS_RUNNING else "等待归集"
         pieces = []
         if pending_text_questions:
-            pieces.append(f"{pending_text_questions} 道填空/问答题错答写法")
-        if pending_difficulty:
-            pieces.append("难题归集")
+            pieces.append(f"{pending_text_questions} 道主观题错误答案/原因")
         message = "快速 AI 正在后台整理：" + "、".join(pieces) + "，页面会自动刷新结果。"
     else:
         is_active = False
@@ -482,7 +471,6 @@ def _pending_text_question_count(question_stats: list[dict[str, Any]]) -> int:
             for item in question_stats
             if item["question"]["type"] in TEXT_QUESTION_TYPES
             and item["wrong_count"] > 0
-            and not item["missing_answer_key"]
             and item.get("text_cluster_status") == "pending"
         ]
     )
@@ -493,8 +481,6 @@ def _collect_ai_job_errors(question_stats: list[dict[str, Any]], difficulty: dic
     for item in question_stats:
         if item.get("text_cluster_status") == "fallback" and item.get("text_cluster_error"):
             errors.append(f"第 {item['question']['ordinal']} 题错答归集失败：{item['text_cluster_error']}")
-    if difficulty.get("source") == "fallback" and difficulty.get("error"):
-        errors.append(str(difficulty["error"]))
     return [_clip_text(error, 180) for error in errors[:4]]
 
 
@@ -716,67 +702,93 @@ def _build_question_error_stats(
         {
             "submission": submission,
             "answers": _answers_by_question(submission.get("answers_json")),
+            "feedback_scores": _feedback_scores_by_question(submission.get("feedback_md")),
         }
         for submission in submissions
         if not _is_absence_or_unsubmitted(submission)
     ]
 
     for question in questions:
-        wrong_counter: Counter[str] = Counter()
-        wrong_raw_counter: Counter[str] = Counter()
+        answer_buckets: dict[str, list[dict[str, Any]]] = {}
+        wrong_records: list[dict[str, Any]] = []
+        option_counter: Counter[str] = Counter()
         wrong_samples: list[str] = []
         attempted_count = 0
         correct_count = 0
         blank_wrong_count = 0
-        missing_answer_key = not _answer_has_value(question.get("answer"))
-        correct_key = _canonical_answer_key(question, question.get("answer"))
+        scored_count = 0
+        score_total = 0.0
+        max_score_total = 0.0
+        score_loss_total = 0.0
+        full_score = _question_full_score(question)
 
         for item in answer_maps:
             answer_record = _get_answer_record(item["answers"], question)
             raw_answer = _answer_value(answer_record)
             if _answer_has_value(raw_answer):
                 attempted_count += 1
-            if missing_answer_key:
+            score_record = _score_record_for_question(question, answer_record, item["feedback_scores"])
+            score = score_record.get("score")
+            max_score = score_record.get("max_score") or full_score
+            if score is None or max_score is None or float(max_score) <= 0:
                 continue
-            answer_key = _canonical_answer_key(question, raw_answer)
-            is_correct = answer_key == correct_key
-            if is_correct:
+
+            score = float(score)
+            max_score = float(max_score)
+            scored_count += 1
+            score_total += score
+            max_score_total += max_score
+            if not _is_not_full_score(score, max_score):
                 correct_count += 1
                 continue
 
+            score_loss_total += max(0.0, max_score - score)
             display = _format_student_answer(question, raw_answer)
-            wrong_counter[display] += 1
-            wrong_raw_counter[_clip_text(str(raw_answer or "").strip() or "未作答", 220)] += 1
+            detail = {
+                "submission_id": item["submission"].get("id"),
+                "student_pk_id": item["submission"].get("student_pk_id"),
+                "student_name": _clip_text(item["submission"].get("student_name") or "未命名学生", 80),
+                "answer": _clip_text(display, 600),
+                "answer_raw": _clip_text(_raw_answer_text(raw_answer), 800),
+                "score": score,
+                "max_score": max_score,
+                "score_text": f"{_format_score_value(score)}/{_format_score_value(max_score)}",
+            }
+            wrong_records.append(detail)
+            answer_buckets.setdefault(display, []).append(detail)
             if not _answer_has_value(raw_answer):
                 blank_wrong_count += 1
             if len(wrong_samples) < 12 and display not in wrong_samples:
                 wrong_samples.append(display)
+            if question["type"] in CHOICE_QUESTION_TYPES:
+                for selected_key in _selected_choice_keys(question, raw_answer):
+                    option_counter[selected_key] += 1
 
-        wrong_count = sum(wrong_counter.values())
-        top_wrong_answers = [
-            {
-                "label": label,
-                "count": count,
-                "percent": _percent(count, wrong_count),
-                "examples": [label],
-                "likely_issue": "",
-                "source": "local",
-            }
-            for label, count in wrong_counter.most_common(3)
-        ]
+        wrong_count = len(wrong_records)
+        top_wrong_answers = _build_local_wrong_answer_groups(answer_buckets, wrong_count)
+        average_score_percent = _percent_float(score_total, max_score_total)
+        wrong_percent = _percent(wrong_count, scored_count)
+        difficulty_score = _score_difficulty_index(wrong_percent, average_score_percent, score_loss_total, max_score_total)
         stats.append(
             {
                 "question": question,
                 "attempted_count": attempted_count,
                 "correct_count": correct_count,
                 "wrong_count": wrong_count,
-                "wrong_percent": _percent(wrong_count, max(attempted_count, correct_count + wrong_count)),
+                "wrong_percent": wrong_percent,
                 "blank_wrong_count": blank_wrong_count,
-                "missing_answer_key": missing_answer_key,
+                "scored_count": scored_count,
+                "average_score": round(score_total / scored_count, 2) if scored_count else None,
+                "average_score_percent": round(average_score_percent) if average_score_percent is not None else None,
+                "score_loss_total": round(score_loss_total, 2),
+                "difficulty_score": difficulty_score,
+                "difficulty_label": _score_difficulty_label(difficulty_score),
+                "difficulty_reason": _score_difficulty_reason(wrong_count, scored_count, wrong_percent, average_score_percent),
                 "top_wrong_answers": top_wrong_answers,
-                "wrong_answer_counter": dict(wrong_counter),
-                "wrong_raw_counter": dict(wrong_raw_counter),
+                "wrong_answer_counter": {label: len(records) for label, records in answer_buckets.items()},
+                "wrong_records": wrong_records,
                 "wrong_samples": wrong_samples,
+                "option_bars": _build_option_bars(question, option_counter, wrong_count),
                 "text_cluster_status": "not_required",
                 "text_cluster_error": "",
             }
@@ -784,6 +796,311 @@ def _build_question_error_stats(
 
     stats.sort(key=lambda item: (-int(item["wrong_count"]), int(item["question"]["ordinal"])))
     return stats
+
+
+def _score_record_for_question(
+    question: dict[str, Any],
+    answer_record: Any,
+    feedback_scores: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    direct_score = _score_record_from_answer(answer_record)
+    feedback_score = _lookup_feedback_score(question, feedback_scores)
+    score = direct_score.get("score") if direct_score.get("score") is not None else feedback_score.get("score")
+    max_score = (
+        direct_score.get("max_score")
+        if direct_score.get("max_score") is not None
+        else feedback_score.get("max_score")
+    )
+    if max_score is None:
+        max_score = _question_full_score(question)
+    return {"score": score, "max_score": max_score}
+
+
+def _score_record_from_answer(record: Any) -> dict[str, Any]:
+    if not isinstance(record, dict):
+        return {"score": None, "max_score": None}
+    score = _first_float(record, ("score", "question_score", "earned_score", "awarded_score", "points_awarded", "得分"))
+    max_score = _first_float(record, ("max_score", "full_score", "total_score", "points", "满分"))
+    grading = record.get("grading")
+    if isinstance(grading, dict):
+        if score is None:
+            score = _first_float(grading, ("score", "question_score", "earned_score", "awarded_score", "points_awarded", "得分"))
+        if max_score is None:
+            max_score = _first_float(grading, ("max_score", "full_score", "total_score", "points", "满分"))
+    return {"score": score, "max_score": max_score}
+
+
+def _feedback_scores_by_question(feedback_md: Any) -> dict[str, dict[str, Any]]:
+    raw = str(feedback_md or "").replace("\r\n", "\n").replace("\r", "\n")
+    if not raw.strip():
+        return {}
+
+    result: dict[str, dict[str, Any]] = {}
+    current_key: str | None = None
+    current_lines: list[str] = []
+
+    def flush() -> None:
+        nonlocal current_key, current_lines
+        if not current_key:
+            current_lines = []
+            return
+        section_text = "\n".join(current_lines)
+        score, max_score = _extract_score_pair(section_text)
+        if score is not None:
+            _store_feedback_score(result, current_key, score, max_score)
+        current_lines = []
+
+    for line in raw.split("\n"):
+        heading = _feedback_question_heading(line)
+        if heading:
+            flush()
+            current_key = heading
+            current_lines = [line]
+            continue
+        if current_key:
+            current_lines.append(line)
+    flush()
+
+    if result:
+        return result
+
+    score_pairs = re.findall(r"(?:第\s*)?(\d+)\s*(?:题|question|q)?[^\n]{0,80}?(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)", raw, flags=re.I)
+    for question_no, score, max_score in score_pairs:
+        _store_feedback_score(result, question_no, float(score), float(max_score))
+    return result
+
+
+def _feedback_question_heading(line: Any) -> str | None:
+    text = str(line or "").strip()
+    match = re.match(r"^#{1,6}\s*(?:第\s*)?([0-9A-Za-z_-]+)\s*(?:题|question|q)?(?:\s|$|[：:.\-、])", text, flags=re.I)
+    if match:
+        value = match.group(1).strip()
+        if value:
+            return value
+    return None
+
+
+def _extract_score_pair(text: Any) -> tuple[float | None, float | None]:
+    raw = str(text or "")
+    pair = re.search(r"(-?\d+(?:\.\d+)?)\s*/\s*(-?\d+(?:\.\d+)?)", raw)
+    if pair:
+        return float(pair.group(1)), float(pair.group(2))
+    number = re.search(r"(?:本题得分|得分|score)\s*[：:]\s*(-?\d+(?:\.\d+)?)", raw, flags=re.I)
+    if number:
+        return float(number.group(1)), None
+    return None, None
+
+
+def _store_feedback_score(
+    result: dict[str, dict[str, Any]],
+    raw_key: Any,
+    score: float | None,
+    max_score: float | None,
+) -> None:
+    if score is None:
+        return
+    for key in _question_score_aliases(raw_key):
+        result[key] = {"score": score, "max_score": max_score}
+
+
+def _lookup_feedback_score(question: dict[str, Any], feedback_scores: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    for raw_key in (question.get("id"), question.get("key"), question.get("ordinal")):
+        for alias in _question_score_aliases(raw_key):
+            if alias in feedback_scores:
+                return feedback_scores[alias]
+    return {}
+
+
+def _question_score_aliases(raw_key: Any) -> set[str]:
+    text = str(raw_key or "").strip()
+    if not text:
+        return set()
+    aliases = {text, text.casefold()}
+    number = re.search(r"\d+", text)
+    if number:
+        value = str(int(number.group(0)))
+        aliases.update({value, f"q{value}", f"Q{value}", f"第{value}题"})
+    return {alias for alias in aliases if alias}
+
+
+def _question_full_score(question: dict[str, Any]) -> float | None:
+    return _coerce_float(question.get("points"))
+
+
+def _first_float(mapping: dict[str, Any], keys: tuple[str, ...]) -> float | None:
+    for key in keys:
+        if key in mapping:
+            value = _coerce_float(mapping.get(key))
+            if value is not None:
+                return value
+    return None
+
+
+def _coerce_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        match = re.search(r"-?\d+(?:\.\d+)?", str(value))
+        if match:
+            return float(match.group(0))
+    return None
+
+
+def _is_not_full_score(score: float, max_score: float) -> bool:
+    return score < max_score - 1e-6
+
+
+def _format_score_value(value: Any) -> str:
+    number = _coerce_float(value)
+    if number is None:
+        return ""
+    if float(number).is_integer():
+        return str(int(number))
+    return f"{number:.2f}".rstrip("0").rstrip(".")
+
+
+def _raw_answer_text(raw_answer: Any) -> str:
+    if isinstance(raw_answer, list):
+        return "；".join(str(item).strip() for item in raw_answer if str(item).strip())
+    if isinstance(raw_answer, dict):
+        return json.dumps(raw_answer, ensure_ascii=False)
+    return str(raw_answer or "").strip() or "未作答"
+
+
+def _build_local_wrong_answer_groups(
+    answer_buckets: dict[str, list[dict[str, Any]]],
+    wrong_count: int,
+) -> list[dict[str, Any]]:
+    groups: list[dict[str, Any]] = []
+    for label, records in sorted(answer_buckets.items(), key=lambda pair: (-len(pair[1]), pair[0]))[:3]:
+        details = _wrong_answer_details(records)
+        groups.append(
+            {
+                "label": _clip_text(label, 100),
+                "count": len(records),
+                "percent": _percent(len(records), wrong_count),
+                "examples": [_clip_text(label, 90)],
+                "likely_issue": "",
+                "source": "local",
+                "details": details,
+            }
+        )
+    return groups
+
+
+def _wrong_answer_details(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "student_name": record.get("student_name") or "未命名学生",
+            "answer": _clip_text(record.get("answer_raw") or record.get("answer") or "未作答", 600),
+            "score_text": record.get("score_text") or "",
+            "submission_id": record.get("submission_id"),
+        }
+        for record in records
+    ]
+
+
+def _selected_choice_keys(question: dict[str, Any], raw_value: Any) -> list[str]:
+    values = _split_answer_values(raw_value) if question.get("type") == "checkbox" else [raw_value]
+    keys: list[str] = []
+    for value in values:
+        canonical = _canonical_choice_value(question, value)
+        if canonical:
+            keys.append(canonical)
+    return keys
+
+
+def _build_option_bars(question: dict[str, Any], option_counter: Counter[str], wrong_count: int) -> list[dict[str, Any]]:
+    if question["type"] not in CHOICE_QUESTION_TYPES or wrong_count <= 0:
+        return []
+    option_meta = question.get("option_meta") or {}
+    labels = option_meta.get("labels") or {}
+    order = option_meta.get("order") or {}
+    correct_keys = set(_selected_choice_keys(question, question.get("answer")))
+    bars: list[dict[str, Any]] = []
+    for key, label in sorted(labels.items(), key=lambda pair: int(order.get(pair[0], 9999))):
+        count = int(option_counter.get(key) or 0)
+        is_correct = key in correct_keys
+        if is_correct:
+            tone = "correct"
+        elif count > 0:
+            tone = "wrong"
+        else:
+            tone = "muted"
+        bars.append(
+            {
+                "key": key,
+                "label": label,
+                "count": count,
+                "percent": _percent(count, wrong_count),
+                "is_correct": is_correct,
+                "tone": tone,
+            }
+        )
+    return bars
+
+
+def _percent_float(part: float, total: float) -> float | None:
+    if total <= 0:
+        return None
+    return max(0.0, min(100.0, float(part) * 100.0 / float(total)))
+
+
+def _score_difficulty_index(
+    wrong_percent: int,
+    average_score_percent: float | None,
+    score_loss_total: float,
+    max_score_total: float,
+) -> int:
+    loss_percent = _percent_float(score_loss_total, max_score_total) or 0.0
+    average_loss_percent = 100.0 - average_score_percent if average_score_percent is not None else loss_percent
+    value = 0.55 * float(wrong_percent) + 0.35 * average_loss_percent + 0.10 * loss_percent
+    return int(round(max(0.0, min(100.0, value))))
+
+
+def _score_difficulty_label(value: int) -> str:
+    if value >= 70:
+        return "高难点"
+    if value >= 40:
+        return "中等难点"
+    return "轻微风险"
+
+
+def _score_difficulty_reason(
+    wrong_count: int,
+    scored_count: int,
+    wrong_percent: int,
+    average_score_percent: float | None,
+) -> str:
+    if scored_count <= 0:
+        return "暂无逐题得分，暂不纳入难题排序。"
+    average_text = f"{round(average_score_percent)}%" if average_score_percent is not None else "未识别"
+    return f"{wrong_count} 人未满分，未满分率 {wrong_percent}%，平均得分率 {average_text}。"
+
+
+def _build_score_based_hard_questions(question_stats: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        [item for item in question_stats if int(item.get("wrong_count") or 0) > 0],
+        key=lambda item: (
+            -int(item.get("difficulty_score") or 0),
+            -int(item.get("wrong_count") or 0),
+            int(item["question"]["ordinal"]),
+        ),
+    )
+
+
+def _score_based_difficulty_summary(hard_questions: list[dict[str, Any]]) -> dict[str, Any]:
+    if not hard_questions:
+        return _empty_difficulty_summary("所有已识别逐题得分的题目均为满分，暂未形成难题归集。")
+    hardest = hard_questions[0]
+    return {
+        "summary": f"按逐题得分自动排序：第 {hardest['question']['ordinal']} 题当前最需要优先讲评，{hardest.get('difficulty_reason')}",
+        "items": hard_questions,
+        "source": "score_based",
+        "error": "",
+    }
 
 
 async def _attach_text_answer_clusters(
@@ -795,18 +1112,25 @@ async def _attach_text_answer_clusters(
     pending: list[tuple[dict[str, Any], str]] = []
     for item in question_stats:
         question = item["question"]
-        if question["type"] not in TEXT_QUESTION_TYPES or item["wrong_count"] <= 0 or item["missing_answer_key"]:
+        if question["type"] not in TEXT_QUESTION_TYPES or item["wrong_count"] <= 0:
             continue
         signature = _signature(
             {
                 "question_id": question["id"],
+                "question_type": question["type"],
                 "correct_answer": question.get("answer"),
-                "wrong_answers": item["wrong_raw_counter"],
+                "wrong_answers": item["wrong_answer_counter"],
+                "wrong_count": item["wrong_count"],
             }
         )
         cached = _load_text_cluster_cache(assignment_id, question["key"], signature)
         if cached:
-            item["top_wrong_answers"] = cached.get("groups") or item["top_wrong_answers"]
+            groups = _attach_details_to_wrong_groups(
+                cached.get("groups") or [],
+                item["wrong_records"],
+                int(item["wrong_count"]),
+            )
+            item["top_wrong_answers"] = groups or item["top_wrong_answers"]
             item["text_cluster_status"] = "cached"
             continue
         item["text_cluster_status"] = "pending"
@@ -818,12 +1142,18 @@ async def _attach_text_answer_clusters(
     for item, signature in pending:
         question = item["question"]
         try:
-            result = await _generate_text_wrong_clusters(question, item["wrong_raw_counter"], int(item["wrong_count"]))
+            result = await _generate_text_wrong_clusters(question, item["wrong_records"], int(item["wrong_count"]))
             groups = _normalize_text_cluster_groups(result, int(item["wrong_count"]))
+            groups = _attach_details_to_wrong_groups(groups, item["wrong_records"], int(item["wrong_count"]))
             if groups:
                 item["top_wrong_answers"] = groups
                 item["text_cluster_status"] = "generated"
-                _save_text_cluster_cache(assignment_id, question["key"], signature, {"groups": groups})
+                _save_text_cluster_cache(
+                    assignment_id,
+                    question["key"],
+                    signature,
+                    {"groups": _strip_group_details_for_cache(groups)},
+                )
             else:
                 item["text_cluster_status"] = "fallback"
         except Exception as exc:
@@ -831,98 +1161,54 @@ async def _attach_text_answer_clusters(
             item["text_cluster_error"] = _clip_text(str(exc), 180)
 
 
-async def _load_or_generate_difficulty_summary(
-    exam_paper_id: str,
-    paper_title: str,
-    questions_signature: str,
-    questions: list[dict[str, Any]],
-    *,
-    allow_generate: bool,
-) -> dict[str, Any]:
-    cached = _load_difficulty_cache(exam_paper_id, questions_signature)
-    if cached:
-        cached["source"] = "cached"
-        return cached
-    if not questions:
-        return _empty_difficulty_summary("试卷中没有可分析的题目。")
-    if not allow_generate:
-        return _empty_difficulty_summary("快速 AI 正在后台整理难题归集，请稍候。", source="pending")
-    try:
-        raw = await _generate_difficulty_summary(paper_title, questions)
-        normalized = _normalize_difficulty_result(raw, questions)
-        if normalized["items"]:
-            _save_difficulty_cache(exam_paper_id, questions_signature, normalized)
-        normalized["source"] = "generated"
-        return normalized
-    except Exception as exc:
-        return _empty_difficulty_summary(f"难题归集暂不可用：{_clip_text(str(exc), 180)}", source="fallback")
-
-
 async def _generate_text_wrong_clusters(
     question: dict[str, Any],
-    wrong_counter: dict[str, int],
+    wrong_records: list[dict[str, Any]],
     wrong_count: int,
 ) -> dict[str, Any]:
-    answer_lines = []
-    for idx, (answer, count) in enumerate(
-        sorted(wrong_counter.items(), key=lambda pair: (-int(pair[1]), pair[0]))[:30],
-        start=1,
-    ):
-        answer_lines.append(f"{idx}. {answer}：{count}人")
+    question_type = str(question.get("type") or "")
+    answer_lines: list[str] = []
+    if question_type == "textarea":
+        for idx, record in enumerate(wrong_records[:60], start=1):
+            answer_lines.append(
+                f"{idx}. 得分 {record.get('score_text') or '-'}："
+                f"{_clip_text(record.get('answer_raw') or record.get('answer'), 360)}"
+            )
+        task_instruction = "请归集这道简答题未满分答案的高频错误原因，最多返回 5 类；label 写成清晰的错误原因。"
+        label_hint = "错误原因概括"
+        task_label = "short_answer_error_cluster"
+    else:
+        raw_counter = Counter(
+            _clip_text(record.get("answer_raw") or record.get("answer") or "未作答", 220)
+            for record in wrong_records
+        )
+        for idx, (answer, count) in enumerate(
+            sorted(raw_counter.items(), key=lambda pair: (-int(pair[1]), pair[0]))[:40],
+            start=1,
+        ):
+            answer_lines.append(f"{idx}. {answer}：{count}人")
+        task_instruction = "请归集这道填空题的高频错误写法，最多返回 3 类；label 写成最有代表性的错误答案或写法。"
+        label_hint = "错误写法概括"
+        task_label = "fill_answer_error_cluster"
     system_prompt = (
-        "你是教学数据分析助手。请只根据教师提供的错答统计归纳常见错误写法，"
-        "不要改写正确答案，不要编造未出现的学生答案。返回严格 JSON。"
+        "你是教学数据分析助手。请只根据教师提供的未满分学生答案做归集，"
+        "不要判断答案是否正确，不要改写正确答案，不要编造未出现的学生答案。返回严格 JSON。"
     )
     user_message = "\n".join(
         [
-            "请归集这道填空/问答题的学生错答，最多返回 3 类最常见错误写法。",
+            task_instruction,
             f"题目：{question.get('text') or '未填写题干'}",
             f"正确答案：{question.get('answer_text') or question.get('answer') or '未提供'}",
-            f"错答总人数：{wrong_count}",
-            "错答统计：",
+            f"未满分人数：{wrong_count}",
+            "学生原始答案：",
             "\n".join(answer_lines) or "暂无",
             (
-                '返回 JSON：{"groups":[{"label":"错误写法概括","count":3,'
-                '"examples":["学生原始写法"],"likely_issue":"可能误区"}]}。'
+                f'返回 JSON：{{"groups":[{{"label":"{label_hint}","count":3,'
+                '"examples":["必须来自上方学生原始答案"],"likely_issue":"可能误区或讲评提醒"}]}}。'
             ),
         ]
     )
-    return await _call_fast_json_ai(system_prompt, user_message, "wrong_answer_cluster", timeout=55.0)
-
-
-async def _generate_difficulty_summary(paper_title: str, questions: list[dict[str, Any]]) -> dict[str, Any]:
-    question_lines: list[str] = []
-    for question in questions[:80]:
-        options = "；".join(question.get("options") or [])
-        parts = [
-            f"{question['ordinal']}. id={question['id']}",
-            f"题型={question['type_label']}",
-            f"分值={question.get('points') or '未标注'}",
-            f"题干={_clip_text(question.get('text'), 420)}",
-        ]
-        if options:
-            parts.append(f"选项={_clip_text(options, 360)}")
-        if question.get("answer_text"):
-            parts.append(f"参考答案={_clip_text(question['answer_text'], 260)}")
-        question_lines.append(" | ".join(parts))
-    system_prompt = (
-        "你是课程考试命题质量分析助手。请仅根据试卷题目本身判断难度，"
-        "不使用学生成绩或提交行为推断。返回严格 JSON。"
-    )
-    user_message = "\n".join(
-        [
-            f"试卷：{paper_title}",
-            "请从认知层级、综合性、易错点和作答成本判断最难题，最多返回 5 题。",
-            "题目列表：",
-            "\n".join(question_lines),
-            (
-                '返回 JSON：{"summary":"一句总览","hardest":[{"question_id":"题目id",'
-                '"difficulty":5,"reason":"为什么难","risk_factors":["风险1"],'
-                '"teaching_hint":"讲评建议"}]}。difficulty 为 1-5。'
-            ),
-        ]
-    )
-    return await _call_fast_json_ai(system_prompt, user_message, "exam_difficulty_summary", timeout=75.0)
+    return await _call_fast_json_ai(system_prompt, user_message, task_label, timeout=55.0)
 
 
 async def _call_fast_json_ai(system_prompt: str, user_message: str, task_label: str, *, timeout: float) -> dict[str, Any]:
@@ -990,49 +1276,6 @@ def _save_text_cluster_cache(assignment_id: str, question_key: str, answer_signa
                 assignment_id,
                 question_key,
                 answer_signature,
-                PROMPT_VERSION,
-                json.dumps(result, ensure_ascii=False),
-                now,
-                now,
-            ),
-        )
-        conn.commit()
-
-
-def _load_difficulty_cache(exam_paper_id: str, questions_signature: str) -> dict[str, Any] | None:
-    with get_db_connection() as conn:
-        ensure_wrong_summary_cache_tables(conn)
-        row = conn.execute(
-            """
-            SELECT result_json
-            FROM exam_paper_difficulty_ai_cache
-            WHERE exam_paper_id = ?
-              AND questions_signature = ?
-              AND prompt_version = ?
-            LIMIT 1
-            """,
-            (exam_paper_id, questions_signature, PROMPT_VERSION),
-        ).fetchone()
-        conn.commit()
-    return _load_json_object(row["result_json"]) if row else None
-
-
-def _save_difficulty_cache(exam_paper_id: str, questions_signature: str, result: dict[str, Any]) -> None:
-    now = datetime.now().isoformat(timespec="seconds")
-    with get_db_connection() as conn:
-        ensure_wrong_summary_cache_tables(conn)
-        conn.execute(
-            """
-            INSERT INTO exam_paper_difficulty_ai_cache (
-                exam_paper_id, questions_signature, prompt_version,
-                result_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(exam_paper_id, questions_signature, prompt_version)
-            DO UPDATE SET result_json = excluded.result_json, updated_at = excluded.updated_at
-            """,
-            (
-                exam_paper_id,
-                questions_signature,
                 PROMPT_VERSION,
                 json.dumps(result, ensure_ascii=False),
                 now,
@@ -1228,64 +1471,73 @@ def _normalize_text_cluster_groups(raw: dict[str, Any], wrong_count: int) -> lis
     return result
 
 
-def _normalize_difficulty_result(raw: dict[str, Any], questions: list[dict[str, Any]]) -> dict[str, Any]:
-    question_by_id = {str(item["id"]): item for item in questions}
-    question_by_ordinal = {str(item["ordinal"]): item for item in questions}
-    raw_items = raw.get("hardest") or raw.get("items") or []
-    if not isinstance(raw_items, list):
-        raw_items = []
-    items: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for raw_item in raw_items:
-        if not isinstance(raw_item, dict):
+def _attach_details_to_wrong_groups(
+    groups: list[dict[str, Any]],
+    wrong_records: list[dict[str, Any]],
+    wrong_count: int,
+) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for group in groups:
+        if not isinstance(group, dict):
             continue
-        raw_qid = str(raw_item.get("question_id") or raw_item.get("id") or raw_item.get("ordinal") or "").strip()
-        question = question_by_id.get(raw_qid) or question_by_ordinal.get(raw_qid)
-        if not question:
-            continue
-        if question["id"] in seen:
-            continue
-        seen.add(question["id"])
-        try:
-            difficulty = int(float(raw_item.get("difficulty") or raw_item.get("score") or 3))
-        except (TypeError, ValueError):
-            difficulty = 3
-        risk_factors = raw_item.get("risk_factors") if isinstance(raw_item.get("risk_factors"), list) else []
-        items.append(
+        label = str(group.get("label") or "").strip()
+        examples = [str(item).strip() for item in group.get("examples") or [] if str(item).strip()]
+        matched = _match_wrong_records_for_group(label, examples, wrong_records)
+        count = len(matched) if matched else int(group.get("count") or 0)
+        result.append(
             {
-                "question": question,
-                "difficulty": max(1, min(5, difficulty)),
-                "difficulty_label": _difficulty_label(difficulty),
-                "reason": _clip_text(str(raw_item.get("reason") or "").strip(), 220),
-                "risk_factors": [_clip_text(str(item), 72) for item in risk_factors[:3] if str(item).strip()],
-                "teaching_hint": _clip_text(str(raw_item.get("teaching_hint") or "").strip(), 180),
+                "label": _clip_text(label, 100),
+                "count": max(0, min(count, wrong_count)),
+                "percent": _percent(max(0, min(count, wrong_count)), wrong_count),
+                "examples": [_clip_text(example, 90) for example in examples[:3]],
+                "likely_issue": _clip_text(str(group.get("likely_issue") or group.get("reason") or "").strip(), 160),
+                "source": group.get("source") or "ai",
+                "details": _wrong_answer_details(matched),
             }
         )
-        if len(items) >= 5:
+        if len(result) >= 5:
             break
-    items.sort(key=lambda item: (-int(item["difficulty"]), int(item["question"]["ordinal"])))
-    return {
-        "summary": _clip_text(str(raw.get("summary") or "AI 已按题目综合度、作答成本与易错点判断难度。").strip(), 220),
-        "items": items,
-        "source": "generated",
-        "error": "",
-    }
+    result.sort(key=lambda item: (-int(item["count"]), item["label"]))
+    return result[:5]
+
+
+def _match_wrong_records_for_group(
+    label: str,
+    examples: list[str],
+    wrong_records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not wrong_records:
+        return []
+    example_keys = {_normalize_free_text(example) for example in examples if example}
+    label_key = _normalize_free_text(label)
+    matched: list[dict[str, Any]] = []
+    for record in wrong_records:
+        answer_text = str(record.get("answer_raw") or record.get("answer") or "").strip()
+        answer_key = _normalize_free_text(answer_text)
+        display_key = _normalize_free_text(record.get("answer") or "")
+        if answer_key in example_keys or display_key in example_keys or (label_key and answer_key == label_key):
+            matched.append(record)
+    return matched
+
+
+def _strip_group_details_for_cache(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for group in groups:
+        result.append(
+            {
+                "label": group.get("label") or "",
+                "count": int(group.get("count") or 0),
+                "percent": int(group.get("percent") or 0),
+                "examples": group.get("examples") or [],
+                "likely_issue": group.get("likely_issue") or "",
+                "source": group.get("source") or "ai",
+            }
+        )
+    return result
 
 
 def _empty_difficulty_summary(message: str, *, source: str = "none") -> dict[str, Any]:
     return {"summary": message, "items": [], "source": source, "error": message}
-
-
-def _difficulty_label(value: int) -> str:
-    if value >= 5:
-        return "极难"
-    if value == 4:
-        return "偏难"
-    if value == 3:
-        return "中等"
-    if value == 2:
-        return "偏易"
-    return "基础"
 
 
 def _load_json_object(raw_value: Any) -> dict[str, Any]:
