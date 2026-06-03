@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 # 修复：移除这个错误的导入，COURSE_INFO 不再是 V4.0 的依赖
 # from ..core import COURSE_INFO
 from ..config import (
+    AI_GRADING_STALE_MINUTES,
     HOMEWORK_SUBMISSIONS_DIR,
     MAX_SUBMISSION_FILE_COUNT,
     MAX_SUBMISSION_PER_FILE_BYTES,
@@ -80,7 +81,11 @@ from ..services.ai_grading_attachments import (
     build_attachment_type_summary,
     ensure_ai_grading_attachments_supported,
 )
-from ..services.ai_grading_service import AIGradingQueueError, submit_submission_for_ai_grading
+from ..services.ai_grading_service import (
+    AIGradingQueueError,
+    expire_stale_ai_grading_submissions,
+    submit_submission_for_ai_grading,
+)
 from ..services.learning_progress_service import (
     get_stage_exam_target,
     handle_assignment_stage_grading_complete,
@@ -402,6 +407,29 @@ def _get_assignment_for_teacher(conn, assignment_id: str, teacher_id: int) -> di
     if assignment_dict.get("personal_stage_attempt_id") is not None:
         _hide_personal_stage_asset()
     return assignment_dict
+
+
+def _expire_stale_ai_grading_for_assignment(conn, assignment_id: str) -> int:
+    try:
+        reclaimed_count = expire_stale_ai_grading_submissions(
+            conn,
+            stale_minutes=AI_GRADING_STALE_MINUTES,
+            assignment_ids=[assignment_id],
+        )
+        if reclaimed_count:
+            conn.commit()
+            print(
+                f"[AI_GRADING] reclaimed {reclaimed_count} stale grading submission(s) "
+                f"for assignment {assignment_id}"
+            )
+        return int(reclaimed_count or 0)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"[AI_GRADING] stale grading reclaim for assignment {assignment_id} failed: {exc}")
+        return 0
 
 
 def _get_submission_for_teacher(conn, submission_id: int, teacher_id: int) -> dict[str, Any]:
@@ -1783,6 +1811,7 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
         assignment = _get_assignment_for_teacher(conn, assignment_id, int(user["id"]))
+        _expire_stale_ai_grading_for_assignment(conn, assignment_id)
 
         submissions_cursor = conn.execute(
             """

@@ -41,7 +41,6 @@ export default defineConfig({
         'resource-workspace-sync': resolve(__dirname, 'frontend/src/islands/resource-workspace-sync.tsx'),
         'student-security-sync': resolve(__dirname, 'frontend/src/islands/student-security-sync.tsx'),
         'submission-jump-nav': resolve(__dirname, 'frontend/src/islands/submission-jump-nav.tsx'),
-        'teacher-submission-workbench-sync': resolve(__dirname, 'frontend/src/islands/teacher-submission-workbench-sync.tsx'),
       },
       output: {
         entryFileNames: 'assets/[name]-[hash].js',

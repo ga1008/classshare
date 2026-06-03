@@ -19,10 +19,12 @@ from .assignment_lifecycle_service import close_overdue_assignments, refresh_ass
 PROMPT_VERSION = "wrong-question-summary-v2"
 TEXT_QUESTION_TYPES = {"text", "textarea"}
 CHOICE_QUESTION_TYPES = {"radio", "checkbox"}
+UNMATCHED_CHOICE_KEY = "__unmatched_choice__"
 WRONG_SUMMARY_JOB_STATUS_QUEUED = "queued"
 WRONG_SUMMARY_JOB_STATUS_RUNNING = "running"
 WRONG_SUMMARY_JOB_STATUS_COMPLETED = "completed"
 WRONG_SUMMARY_JOB_STATUS_FAILED = "failed"
+WRONG_SUMMARY_JOB_STATUS_MANUAL_REQUIRED = "manual_required"
 ACTIVE_WRONG_SUMMARY_JOB_STATUSES = {WRONG_SUMMARY_JOB_STATUS_QUEUED, WRONG_SUMMARY_JOB_STATUS_RUNNING}
 STALE_WRONG_SUMMARY_JOB_MINUTES = 30
 
@@ -503,15 +505,21 @@ def _build_ai_status(
     if job_status == WRONG_SUMMARY_JOB_STATUS_FAILED:
         is_active = False
         label = "AI 归集失败"
-        message = (job or {}).get("error_message") or "后台 AI 归集没有完成，请稍后刷新或重新进入页面触发重试。"
+        message = (job or {}).get("error_message") or "后台 AI 归集没有完成，请点击开始整理手动重试。"
     elif needs_ai:
-        is_active = True
-        job_status = job_status if job_status in ACTIVE_WRONG_SUMMARY_JOB_STATUSES else WRONG_SUMMARY_JOB_STATUS_QUEUED
-        label = "后台归集中" if job_status == WRONG_SUMMARY_JOB_STATUS_RUNNING else "等待归集"
         pieces = []
         if pending_text_questions:
             pieces.append(f"{pending_text_questions} 道主观题错误答案/原因")
-        message = "快速 AI 正在后台整理：" + "、".join(pieces) + "，页面会自动刷新结果。"
+        pending_label = "、".join(pieces) or "待整理内容"
+        if job_status in ACTIVE_WRONG_SUMMARY_JOB_STATUSES:
+            is_active = True
+            label = "后台归集中" if job_status == WRONG_SUMMARY_JOB_STATUS_RUNNING else "等待归集"
+            message = f"快速 AI 正在后台整理：{pending_label}，页面会自动刷新结果。"
+        else:
+            is_active = False
+            job_status = WRONG_SUMMARY_JOB_STATUS_MANUAL_REQUIRED
+            label = "待手动整理"
+            message = f"有 {pending_label} 需要 AI 整理；点击开始整理后再运行，客观题统计已可查看。"
     else:
         is_active = False
         job_status = job_status or WRONG_SUMMARY_JOB_STATUS_COMPLETED
@@ -606,7 +614,7 @@ def _recover_stale_wrong_summary_jobs(conn) -> None:
             END,
             completed_at = COALESCE(completed_at, ?),
             updated_at = ?
-        WHERE status = ?
+        WHERE status IN (?, ?)
           AND COALESCE(started_at, updated_at, created_at) < ?
         """,
         (
@@ -615,6 +623,7 @@ def _recover_stale_wrong_summary_jobs(conn) -> None:
             now,
             now,
             WRONG_SUMMARY_JOB_STATUS_RUNNING,
+            WRONG_SUMMARY_JOB_STATUS_QUEUED,
             cutoff,
         ),
     )
@@ -854,7 +863,7 @@ def _build_question_error_stats(
             if _answer_has_value(raw_answer):
                 attempted_count += 1
                 if question["type"] in CHOICE_QUESTION_TYPES:
-                    for selected_key in _selected_choice_keys(question, raw_answer):
+                    for selected_key in _selected_choice_keys(question, raw_answer, include_unmatched=True):
                         option_counter[selected_key] += 1
             score_record = _score_record_for_question(question, answer_record, item["feedback_scores"])
             score = score_record.get("score")
@@ -1038,16 +1047,28 @@ def _lookup_feedback_score(question: dict[str, Any], feedback_scores: dict[str, 
     return {}
 
 
-def _question_score_aliases(raw_key: Any) -> set[str]:
+def _question_key_aliases(raw_key: Any, *, include_numeric: bool = True) -> list[str]:
     text = str(raw_key or "").strip()
     if not text:
-        return set()
-    aliases = {text, text.casefold()}
-    number = re.search(r"\d+", text)
-    if number:
-        value = str(int(number.group(0)))
-        aliases.update({value, f"q{value}", f"Q{value}", f"第{value}题"})
-    return {alias for alias in aliases if alias}
+        return []
+    aliases = [text, text.casefold()]
+    if include_numeric:
+        numbers = re.findall(r"\d+", text)
+        if numbers:
+            value = str(int(numbers[-1]))
+            aliases.extend([value, f"q{value}", f"Q{value}", f"第{value}题"])
+    result: list[str] = []
+    seen: set[str] = set()
+    for alias in aliases:
+        alias_text = str(alias or "").strip()
+        if alias_text and alias_text not in seen:
+            result.append(alias_text)
+            seen.add(alias_text)
+    return result
+
+
+def _question_score_aliases(raw_key: Any) -> set[str]:
+    return set(_question_key_aliases(raw_key, include_numeric=True))
 
 
 def _question_full_score(question: dict[str, Any]) -> float | None:
@@ -1129,13 +1150,26 @@ def _wrong_answer_details(records: list[dict[str, Any]]) -> list[dict[str, Any]]
     ]
 
 
-def _selected_choice_keys(question: dict[str, Any], raw_value: Any) -> list[str]:
-    values = _split_answer_values(raw_value) if question.get("type") == "checkbox" else [raw_value]
+def _selected_choice_keys(
+    question: dict[str, Any],
+    raw_value: Any,
+    *,
+    include_unmatched: bool = False,
+) -> list[str]:
+    option_meta = question.get("option_meta") or {}
+    labels = option_meta.get("labels") or {}
+    if question.get("type") == "checkbox" and not isinstance(raw_value, list):
+        direct = _canonical_choice_value(question, raw_value)
+        values = [raw_value] if direct in labels else _split_answer_values(raw_value)
+    else:
+        values = _split_answer_values(raw_value) if question.get("type") == "checkbox" else [raw_value]
     keys: list[str] = []
     for value in values:
         canonical = _canonical_choice_value(question, value)
-        if canonical:
+        if canonical and (not labels or canonical in labels):
             keys.append(canonical)
+        elif include_unmatched and _answer_has_value(value):
+            keys.append(UNMATCHED_CHOICE_KEY)
     return keys
 
 
@@ -1164,6 +1198,18 @@ def _build_option_bars(question: dict[str, Any], option_counter: Counter[str], t
                 "percent": _percent(count, total_count),
                 "is_correct": is_correct,
                 "tone": tone,
+            }
+        )
+    unmatched_count = int(option_counter.get(UNMATCHED_CHOICE_KEY) or 0)
+    if unmatched_count > 0:
+        bars.append(
+            {
+                "key": UNMATCHED_CHOICE_KEY,
+                "label": "答案未匹配当前选项",
+                "count": unmatched_count,
+                "percent": _percent(unmatched_count, total_count),
+                "is_correct": False,
+                "tone": "wrong",
             }
         )
     return bars
@@ -1429,29 +1475,63 @@ def _answers_by_question(raw_answers: Any) -> dict[str, Any]:
     answers = payload.get("answers") if isinstance(payload, dict) and "answers" in payload else payload
     result: dict[str, Any] = {}
     if isinstance(answers, list):
-        for item in answers:
+        for index, item in enumerate(answers, start=1):
             if not isinstance(item, dict):
                 continue
-            key = str(item.get("question_id") or item.get("question") or "").strip()
-            if key:
-                result[key] = item
+            raw_keys = [
+                item.get("question_id"),
+                item.get("question_key"),
+                item.get("question"),
+                item.get("id"),
+                item.get("key"),
+                item.get("question_no"),
+                item.get("questionNo"),
+                item.get("question_index"),
+                item.get("questionIndex"),
+                item.get("ordinal"),
+                item.get("no"),
+            ]
+            explicit_keys = [key for key in raw_keys if str(key or "").strip()]
+            for key in explicit_keys or [index]:
+                for alias in _question_key_aliases(key, include_numeric=True):
+                    result.setdefault(alias, item)
     elif isinstance(answers, dict):
         for key, value in answers.items():
-            result[str(key)] = value
+            for alias in _question_key_aliases(key, include_numeric=True):
+                result.setdefault(alias, value)
     return result
 
 
 def _get_answer_record(answer_map: dict[str, Any], question: dict[str, Any]) -> Any:
-    for key in (question.get("id"), question.get("key"), question.get("text")):
-        key_text = str(key or "").strip()
-        if key_text and key_text in answer_map:
-            return answer_map[key_text]
+    aliases: list[str] = []
+    for key in (question.get("id"), question.get("key"), question.get("ordinal")):
+        aliases.extend(_question_key_aliases(key, include_numeric=True))
+    aliases.extend(_question_key_aliases(question.get("text"), include_numeric=False))
+    seen: set[str] = set()
+    for alias in aliases:
+        if alias in seen:
+            continue
+        seen.add(alias)
+        if alias in answer_map:
+            return answer_map[alias]
     return None
 
 
 def _answer_value(record: Any) -> Any:
     if isinstance(record, dict):
-        for key in ("answer", "content", "text", "value"):
+        for key in (
+            "answer",
+            "content",
+            "text",
+            "value",
+            "selected",
+            "selected_option",
+            "selectedOption",
+            "selected_options",
+            "selectedOptions",
+            "choice",
+            "choices",
+        ):
             if key in record:
                 return record.get(key)
         return ""

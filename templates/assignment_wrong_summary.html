@@ -547,6 +547,12 @@
         color: #b91c1c;
     }
 
+    .wrong-summary-ai-strip.is-manual {
+        border-color: rgba(20, 184, 166, 0.24);
+        background: rgba(240, 253, 250, 0.86);
+        color: #0f766e;
+    }
+
     .wrong-ai-waiting {
         padding: 12px;
         border: 1px dashed rgba(14, 165, 233, 0.28);
@@ -567,6 +573,7 @@
     }
 
     .wrong-summary-ai-strip.is-failed .wrong-summary-spinner,
+    .wrong-summary-ai-strip.is-manual .wrong-summary-spinner,
     .wrong-ai-waiting.is-failed .wrong-summary-spinner {
         display: none;
     }
@@ -850,9 +857,9 @@
     </div>
     <nav class="wrong-summary-actions" aria-label="错题归集页面操作">
         {% if not summary.unsupported_reason %}
-        <button type="button" class="app-topbar-action app-topbar-action--tone-cyan" data-wrong-summary-reorganize title="清空 AI 错答整理缓存并重新整理" aria-label="重新整理错题归集">
+        <button type="button" class="app-topbar-action app-topbar-action--tone-cyan" data-wrong-summary-reorganize title="手动启动 AI 错答整理；不会修改学生答案、分数和评语" aria-label="开始整理错题归集">
             <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('refresh') }}</span>
-            <span class="app-topbar-action__text"><strong>重新整理</strong><small>重跑归集</small></span>
+            <span class="app-topbar-action__text"><strong>开始整理</strong><small>手动归集</small></span>
         </button>
         {% endif %}
         <a href="{{ assignment_back_url }}" class="app-topbar-action app-topbar-action--tone-blue" title="返回作业详情" aria-label="返回作业详情">
@@ -876,11 +883,11 @@
                 难题归集用于辅助安排讲评优先级，结果按未满分率与平均得分率排序。
             </p>
             <div
-                class="wrong-summary-ai-strip{% if summary.ai_status.job_status == 'failed' %} is-failed{% endif %}"
+                class="wrong-summary-ai-strip{% if summary.ai_status.job_status == 'failed' %} is-failed{% elif summary.ai_status.job_status == 'manual_required' %} is-manual{% endif %}"
                 data-wrong-summary-status-strip
-                {% if not summary.ai_status.is_active and summary.ai_status.job_status != 'failed' %}hidden{% endif %}
+                {% if not summary.ai_status.is_active and summary.ai_status.job_status not in ['failed', 'manual_required'] %}hidden{% endif %}
             >
-                <span class="wrong-summary-spinner" aria-hidden="true"></span>
+                <span class="wrong-summary-spinner" aria-hidden="true" {% if not summary.ai_status.is_active %}hidden{% endif %}></span>
                 <span>{{ summary.ai_status.message }}</span>
             </div>
         </div>
@@ -1297,24 +1304,35 @@
             return;
         }
         const messageNode = strip.querySelector('span:last-child');
+        const spinner = strip.querySelector('.wrong-summary-spinner');
         if (messageNode && aiStatus.message) {
             messageNode.textContent = aiStatus.message;
         }
-        strip.hidden = !aiStatus.is_active && aiStatus.job_status !== 'failed';
+        const isManual = aiStatus.job_status === 'manual_required';
+        strip.hidden = !aiStatus.is_active && aiStatus.job_status !== 'failed' && !isManual;
         strip.classList.toggle('is-failed', aiStatus.job_status === 'failed');
+        strip.classList.toggle('is-manual', isManual);
+        if (spinner) {
+            spinner.hidden = !aiStatus.is_active;
+        }
     }
 
-    function showStatusStrip(message, isFailed = false) {
+    function showStatusStrip(message, isFailed = false, isActive = true) {
         const strip = document.querySelector('[data-wrong-summary-status-strip]');
         if (!strip) {
             return;
         }
         const messageNode = strip.querySelector('span:last-child');
+        const spinner = strip.querySelector('.wrong-summary-spinner');
         if (messageNode) {
             messageNode.textContent = message || '';
         }
         strip.hidden = false;
         strip.classList.toggle('is-failed', Boolean(isFailed));
+        strip.classList.toggle('is-manual', !isFailed && !isActive);
+        if (spinner) {
+            spinner.hidden = !isActive;
+        }
     }
 
     function setupReorganizeWrongSummary() {
@@ -1342,12 +1360,12 @@
             if (button.disabled || reloadScheduled) {
                 return;
             }
-            const confirmed = window.confirm('将清空本作业的 AI 错答整理缓存并重新整理；学生答案、分数和评语不会被修改。继续吗？');
+            const confirmed = window.confirm('将手动启动本作业的 AI 错答整理；学生答案、分数和评语不会被修改。继续吗？');
             if (!confirmed) {
                 return;
             }
             setBusy(true);
-            showStatusStrip('正在清空 AI 整理缓存并重新发起归集，页面会自动刷新结果。');
+            showStatusStrip('正在启动 AI 错答整理，页面会在完成后自动刷新结果。');
             try {
                 const response = await fetch(`/api/assignments/${encodeURIComponent(ASSIGNMENT_ID)}/wrong-summary/reorganize`, {
                     method: 'POST',
@@ -1371,7 +1389,7 @@
             } catch (error) {
                 console.warn('Wrong summary reorganize failed:', error);
                 setBusy(false);
-                showStatusStrip('重新整理没有发起成功，请稍后再试。', true);
+                showStatusStrip('整理没有发起成功，请稍后再试。', true, false);
             }
         });
     }

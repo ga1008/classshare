@@ -12,6 +12,7 @@ import pandas as pd
 from ..core import templates, COURSE_INFO
 # 修复：移除不再需要的 TEACHER_PASS, SHARE_DIR, ROSTER_DIR
 from ..config import (
+    AI_GRADING_STALE_MINUTES,
     INITIAL_SUPER_ADMIN_EMAIL,
     INITIAL_SUPER_ADMIN_NAME,
     MAX_SUBMISSION_FILE_COUNT,
@@ -112,6 +113,7 @@ from ..services.student_lifecycle_service import (
     normalize_student_enrollment_status,
     student_enrollment_status_label,
 )
+from ..services.ai_grading_service import expire_stale_ai_grading_submissions
 from ..services.submission_preview_service import ensure_submission_access, serialize_submission_file_row
 from ..services.teacher_account_service import (
     TEACHER_PASSWORD_HINT,
@@ -288,6 +290,26 @@ def _plain_feedback_preview(markdown: Any, limit: int = 96) -> str:
     return text[:limit].rstrip() + "..."
 
 
+def _expire_stale_ai_grading_for_assignments(conn, assignment_ids: list[Any] | tuple[Any, ...] | set[Any]) -> int:
+    try:
+        reclaimed_count = expire_stale_ai_grading_submissions(
+            conn,
+            stale_minutes=AI_GRADING_STALE_MINUTES,
+            assignment_ids=assignment_ids,
+        )
+        if reclaimed_count:
+            conn.commit()
+            print(f"[AI_GRADING] reclaimed {reclaimed_count} stale grading submission(s) before teacher stats")
+        return int(reclaimed_count or 0)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"[AI_GRADING] stale grading reclaim before teacher stats failed: {exc}")
+        return 0
+
+
 def _attach_teacher_assignment_card_metrics(
     conn,
     assignments: list[dict[str, Any]],
@@ -313,6 +335,8 @@ def _attach_teacher_assignment_card_metrics(
     assignment_ids = [assignment_id for assignment_id in assignment_ids if assignment_id > 0]
     if not assignment_ids:
         return
+
+    _expire_stale_ai_grading_for_assignments(conn, assignment_ids)
 
     placeholders = ",".join("?" for _ in assignment_ids)
     rows = conn.execute(
@@ -1370,6 +1394,7 @@ def assignment_detail_page(request: Request, assignment_id: str, user: dict = De
             ).fetchone()
             if not access_row:
                 raise HTTPException(403, "无权查看该作业")
+            _expire_stale_ai_grading_for_assignments(conn, [assignment_id])
             exam_questions = None
             exam_paper_preview = None
             if assignment.get("exam_paper_id"):
@@ -1502,7 +1527,7 @@ async def assignment_wrong_summary_page(
         assignment_id,
         int(user["id"]),
         ai_mode="cached",
-        schedule_ai=True,
+        schedule_ai=False,
     )
     assignment = summary.get("assignment") or {"id": assignment_id, "title": "错题归集"}
     return templates.TemplateResponse(

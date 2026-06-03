@@ -32,12 +32,32 @@ def expire_stale_ai_grading_submissions(
     conn,
     *,
     stale_minutes: int = 240,
+    assignment_ids: list[Any] | tuple[Any, ...] | set[Any] | None = None,
 ) -> int:
     cutoff = (datetime.now() - timedelta(minutes=max(15, int(stale_minutes or 240)))).isoformat()
+    scoped_assignment_ids: list[Any] = []
+    if assignment_ids is not None:
+        seen: set[str] = set()
+        for raw_id in assignment_ids:
+            text = str(raw_id or "").strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            scoped_assignment_ids.append(raw_id)
+        if not scoped_assignment_ids:
+            return 0
+    select_assignment_filter = ""
+    update_assignment_filter = ""
+    assignment_params: tuple[Any, ...] = ()
+    if scoped_assignment_ids:
+        placeholders = ",".join("?" for _ in scoped_assignment_ids)
+        select_assignment_filter = f" AND s.assignment_id IN ({placeholders})"
+        update_assignment_filter = f" AND assignment_id IN ({placeholders})"
+        assignment_params = tuple(scoped_assignment_ids)
     stale_rows = [
         dict(row)
         for row in conn.execute(
-            """
+            f"""
             SELECT s.id,
                    s.assignment_id,
                    lsea.id AS stage_attempt_id,
@@ -51,12 +71,13 @@ def expire_stale_ai_grading_submissions(
                   AND lsea.status = 'grading'
             WHERE s.status = 'grading'
               AND COALESCE(s.grading_started_at, s.submitted_at) < ?
+              {select_assignment_filter}
             """,
-            (cutoff,),
+            (cutoff, *assignment_params),
         ).fetchall()
     ]
     cursor = conn.execute(
-        """
+        f"""
         UPDATE submissions
         SET status = 'grading_failed',
             feedback_md = ?,
@@ -64,8 +85,9 @@ def expire_stale_ai_grading_submissions(
             grading_attempt_fingerprint = NULL
         WHERE status = 'grading'
           AND COALESCE(grading_started_at, submitted_at) < ?
+          {update_assignment_filter}
         """,
-        (STALE_GRADING_MESSAGE, cutoff),
+        (STALE_GRADING_MESSAGE, cutoff, *assignment_params),
     )
     stage_attempt_ids = sorted(
         {

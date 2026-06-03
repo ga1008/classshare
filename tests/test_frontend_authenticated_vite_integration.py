@@ -30,7 +30,6 @@ REQUIRED_PAGE_ISLANDS = (
     "frontend/src/islands/message-center-workspace-sync.tsx",
     "frontend/src/islands/resource-workspace-sync.tsx",
     "frontend/src/islands/submission-jump-nav.tsx",
-    "frontend/src/islands/teacher-submission-workbench-sync.tsx",
 )
 
 
@@ -304,7 +303,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         self.assertIn("fetch(`/api/submissions/${submissionId}/grade`", html)
         self.assertIn("fetch(`/api/submissions/${submissionId}/regrade`", html)
 
-    def test_teacher_assignment_detail_injects_workbench_without_removing_bulk_actions(self):
+    def test_teacher_assignment_detail_keeps_bulk_actions_without_duplicate_workbench(self):
         fixture = _load_teacher_assignment_workbench_fixture()
         if fixture is None:
             self.skipTest("No teacher-accessible assignment is available for teacher workbench smoke test.")
@@ -319,9 +318,9 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
         html = response.text
-        self.assertIn('data-lanshare-island="teacher-submission-workbench-sync"', html)
-        self.assertIn("teacher-submission-workbench-sync", html)
-        self.assertIn("lanshare:teacher-submission-workbench-change", html)
+        self.assertNotIn('data-lanshare-island="teacher-submission-workbench-sync"', html)
+        self.assertNotIn("teacher-submission-workbench-sync", html)
+        self.assertNotIn("lanshare:teacher-submission-workbench-change", html)
         self.assertIn("window.refreshSubmissions = async function()", html)
         self.assertIn("window.aiGradeAll = async function()", html)
         self.assertIn("window.zeroUnsubmittedScores = async function()", html)

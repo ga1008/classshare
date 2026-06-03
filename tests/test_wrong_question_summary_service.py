@@ -202,6 +202,157 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
         self.assertEqual(stats[0]["wrong_count"], 0)
         self.assertEqual(stats[0]["scored_count"], 0)
 
+    def test_choice_option_bars_match_wrong_count_when_answers_use_question_number_aliases(self):
+        questions = _extract_exam_questions(
+            {
+                "pages": [
+                    {
+                        "name": "Basics",
+                        "questions": [
+                            {
+                                "id": "p1_q1",
+                                "type": "radio",
+                                "text": "域名服务 DNS 的正确解析是（ ）。",
+                                "options": [
+                                    "A. 将域名转换为物理地址",
+                                    "B. 将域名转换为 IP 地址",
+                                    "C. 将 IP 地址转换为物理地址",
+                                    "D. 将 IP 地址转换为域名",
+                                ],
+                                "answer": "B",
+                                "points": 1,
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        submissions = [
+            {
+                "id": 1,
+                "student_name": "Student A",
+                "status": "submitted",
+                "answers_json": json.dumps(
+                    {"answers": [{"question_no": 1, "answer": "A. 将域名转换为物理地址"}]},
+                    ensure_ascii=False,
+                ),
+                "feedback_md": _feedback((1, 0, 1)),
+            },
+            {
+                "id": 2,
+                "student_name": "Student B",
+                "status": "submitted",
+                "answers_json": json.dumps(
+                    {"answers": [{"ordinal": 1, "answer": "B. 将域名转换为 IP 地址"}]},
+                    ensure_ascii=False,
+                ),
+                "feedback_md": _feedback((1, 1, 1)),
+            },
+        ]
+
+        stats = _build_question_error_stats(questions, submissions)
+        item = stats[0]
+        bars = {bar["label"]: bar for bar in item["option_bars"]}
+
+        self.assertEqual(item["wrong_count"], 1)
+        self.assertEqual(item["attempted_count"], 2)
+        self.assertEqual(bars["A. 将域名转换为物理地址"]["count"], 1)
+        self.assertEqual(bars["A. 将域名转换为物理地址"]["tone"], "wrong")
+        self.assertEqual(bars["B. 将域名转换为 IP 地址"]["count"], 1)
+        self.assertEqual(bars["B. 将域名转换为 IP 地址"]["tone"], "correct")
+
+    def test_checkbox_option_text_with_comma_is_not_split_before_option_matching(self):
+        questions = _extract_exam_questions(
+            {
+                "pages": [
+                    {
+                        "name": "Basics",
+                        "questions": [
+                            {
+                                "id": "q1",
+                                "type": "checkbox",
+                                "text": "Which troubleshooting direction is correct?",
+                                "options": [
+                                    "A. Check PC1 and PC2 are in the same subnet, with matching masks",
+                                    "B. Check the default gateway",
+                                    "C. Check both PCs are powered on",
+                                ],
+                                "answer": ["A", "C"],
+                                "points": 2,
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        submissions = [
+            {
+                "id": 1,
+                "student_name": "Student A",
+                "status": "submitted",
+                "answers_json": json.dumps(
+                    {
+                        "answers": [
+                            {
+                                "question_id": "q1",
+                                "answer": "A. Check PC1 and PC2 are in the same subnet, with matching masks",
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                "feedback_md": _feedback((1, 0, 2)),
+            }
+        ]
+
+        stats = _build_question_error_stats(questions, submissions)
+        bars = {bar["label"]: bar for bar in stats[0]["option_bars"]}
+
+        self.assertEqual(stats[0]["wrong_count"], 1)
+        self.assertEqual(bars["A. Check PC1 and PC2 are in the same subnet, with matching masks"]["count"], 1)
+        self.assertNotIn("答案未匹配当前选项", bars)
+
+    def test_choice_option_bars_expose_unmatched_legacy_answers(self):
+        questions = _extract_exam_questions(
+            {
+                "pages": [
+                    {
+                        "name": "Basics",
+                        "questions": [
+                            {
+                                "id": "q1",
+                                "type": "radio",
+                                "text": "Wi-Fi uses RTS/CTS to solve what?",
+                                "options": [
+                                    "A. Signal attenuation",
+                                    "B. Hidden station problem",
+                                    "C. Rate adaptation",
+                                ],
+                                "answer": "B",
+                                "points": 1,
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        submissions = [
+            {
+                "id": 1,
+                "student_name": "Student A",
+                "status": "submitted",
+                "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": "B. 80Mbps"}]}),
+                "feedback_md": _feedback((1, 0, 1)),
+            }
+        ]
+
+        stats = _build_question_error_stats(questions, submissions)
+        bars = {bar["label"]: bar for bar in stats[0]["option_bars"]}
+
+        self.assertEqual(stats[0]["wrong_count"], 1)
+        self.assertEqual(bars["答案未匹配当前选项"]["count"], 1)
+        self.assertEqual(bars["答案未匹配当前选项"]["tone"], "wrong")
+
     def test_cached_mode_marks_subjective_ai_work_pending_without_sync_generation(self):
         questions = _extract_exam_questions(
             {
@@ -261,9 +412,25 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
             )
 
         self.assertTrue(ai_status["needs_ai"])
-        self.assertTrue(ai_status["is_active"])
-        self.assertEqual(ai_status["job_status"], "queued")
+        self.assertFalse(ai_status["is_active"])
+        self.assertEqual(ai_status["job_status"], "manual_required")
         self.assertEqual(ai_status["pending_difficulty"], 0)
+
+        with patch(
+            "classroom_app.services.wrong_question_summary_service._load_wrong_summary_job",
+            return_value={"status": "queued"},
+        ):
+            active_status = _build_ai_status(
+                {
+                    "assignment": {"id": "assignment-1"},
+                    "questions_signature": "signature-1",
+                },
+                stats,
+                _score_based_difficulty_summary(_build_score_based_hard_questions(stats)),
+            )
+
+        self.assertTrue(active_status["is_active"])
+        self.assertEqual(active_status["job_status"], "queued")
 
     def test_reorganize_clear_only_removes_ai_cache_and_jobs(self):
         fd, db_path = tempfile.mkstemp(suffix=".db")
