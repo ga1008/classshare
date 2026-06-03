@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
@@ -17,6 +18,14 @@ from .assignment_lifecycle_service import close_overdue_assignments, refresh_ass
 PROMPT_VERSION = "wrong-question-summary-v1"
 TEXT_QUESTION_TYPES = {"text", "textarea"}
 CHOICE_QUESTION_TYPES = {"radio", "checkbox"}
+WRONG_SUMMARY_JOB_STATUS_QUEUED = "queued"
+WRONG_SUMMARY_JOB_STATUS_RUNNING = "running"
+WRONG_SUMMARY_JOB_STATUS_COMPLETED = "completed"
+WRONG_SUMMARY_JOB_STATUS_FAILED = "failed"
+ACTIVE_WRONG_SUMMARY_JOB_STATUSES = {WRONG_SUMMARY_JOB_STATUS_QUEUED, WRONG_SUMMARY_JOB_STATUS_RUNNING}
+STALE_WRONG_SUMMARY_JOB_MINUTES = 30
+
+_active_wrong_summary_jobs: set[str] = set()
 
 QUESTION_TYPE_LABELS = {
     "radio": "单选题",
@@ -57,6 +66,26 @@ def ensure_wrong_summary_cache_tables(conn) -> None:
         """
     )
     conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS assignment_wrong_summary_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            assignment_id TEXT NOT NULL,
+            teacher_id INTEGER NOT NULL,
+            questions_signature TEXT NOT NULL,
+            prompt_version TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'queued',
+            pending_text_questions INTEGER NOT NULL DEFAULT 0,
+            pending_difficulty INTEGER NOT NULL DEFAULT 0,
+            error_message TEXT NOT NULL DEFAULT '',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            started_at TEXT,
+            completed_at TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (assignment_id, questions_signature, prompt_version)
+        )
+        """
+    )
+    conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_wrong_answer_ai_cache_assignment "
         "ON assignment_wrong_answer_ai_cache (assignment_id, question_key, updated_at DESC)"
     )
@@ -64,23 +93,40 @@ def ensure_wrong_summary_cache_tables(conn) -> None:
         "CREATE INDEX IF NOT EXISTS idx_exam_difficulty_ai_cache_paper "
         "ON exam_paper_difficulty_ai_cache (exam_paper_id, updated_at DESC)"
     )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_wrong_summary_jobs_assignment "
+        "ON assignment_wrong_summary_jobs (assignment_id, questions_signature, status, updated_at DESC)"
+    )
 
 
-async def build_assignment_wrong_question_summary(assignment_id: str, teacher_id: int) -> dict[str, Any]:
+async def build_assignment_wrong_question_summary(
+    assignment_id: str,
+    teacher_id: int,
+    *,
+    ai_mode: str = "sync",
+    schedule_ai: bool = False,
+) -> dict[str, Any]:
     source = _load_summary_source(assignment_id, teacher_id)
     if source.get("unsupported_reason"):
+        source["ai_status"] = _empty_ai_status()
         return source
 
     questions = source["questions"]
     submissions = source["submissions"]
     question_stats = _build_question_error_stats(questions, submissions)
 
-    await _attach_text_answer_clusters(str(source["assignment"]["id"]), question_stats)
+    allow_ai_generation = ai_mode == "sync"
+    await _attach_text_answer_clusters(
+        str(source["assignment"]["id"]),
+        question_stats,
+        allow_generate=allow_ai_generation,
+    )
     difficulty = await _load_or_generate_difficulty_summary(
         str(source["paper"]["id"]),
         source["paper"]["title"],
         source["questions_signature"],
         questions,
+        allow_generate=allow_ai_generation,
     )
 
     wrong_questions = [item for item in question_stats if item["wrong_count"] > 0]
@@ -95,7 +141,49 @@ async def build_assignment_wrong_question_summary(assignment_id: str, teacher_id
     )
     source["wrong_questions"] = wrong_questions
     source["difficulty"] = difficulty
+    source["ai_status"] = _build_ai_status(source, question_stats, difficulty)
+    if schedule_ai and source["ai_status"]["needs_ai"]:
+        _ensure_wrong_summary_ai_job(source, question_stats, teacher_id, difficulty)
+        source["ai_status"] = _build_ai_status(source, question_stats, difficulty)
     return source
+
+
+async def run_assignment_wrong_summary_ai_job(
+    assignment_id: str,
+    teacher_id: int,
+    *,
+    questions_signature: str | None = None,
+) -> None:
+    assignment_key = str(assignment_id)
+    job_key = _wrong_summary_job_key(assignment_key, questions_signature or "")
+    try:
+        source = _load_summary_source(assignment_id, teacher_id)
+        if source.get("unsupported_reason"):
+            return
+        if questions_signature and source.get("questions_signature") != questions_signature:
+            return
+
+        assignment_key = str(source["assignment"]["id"])
+        job_key = _wrong_summary_job_key(assignment_key, source["questions_signature"])
+        _mark_wrong_summary_job_running(assignment_key, source["questions_signature"])
+        question_stats = _build_question_error_stats(source["questions"], source["submissions"])
+        await _attach_text_answer_clusters(assignment_key, question_stats, allow_generate=True)
+        difficulty = await _load_or_generate_difficulty_summary(
+            str(source["paper"]["id"]),
+            source["paper"]["title"],
+            source["questions_signature"],
+            source["questions"],
+            allow_generate=True,
+        )
+        errors = _collect_ai_job_errors(question_stats, difficulty)
+        if errors:
+            _mark_wrong_summary_job_failed(assignment_key, source["questions_signature"], "；".join(errors))
+        else:
+            _mark_wrong_summary_job_completed(assignment_key, source["questions_signature"])
+    except Exception as exc:
+        _mark_wrong_summary_job_failed(assignment_key, source["questions_signature"], _clip_text(str(exc), 260))
+    finally:
+        _active_wrong_summary_jobs.discard(job_key)
 
 
 def _load_summary_source(assignment_id: str, teacher_id: int) -> dict[str, Any]:
@@ -242,6 +330,344 @@ def _count_assignment_students(conn, assignment: dict[str, Any]) -> int:
     return int(row["total"] if row else 0)
 
 
+def _ensure_wrong_summary_ai_job(
+    source: dict[str, Any],
+    question_stats: list[dict[str, Any]],
+    teacher_id: int,
+    difficulty: dict[str, Any],
+) -> dict[str, Any] | None:
+    assignment_id = str(source["assignment"]["id"])
+    questions_signature = str(source.get("questions_signature") or "")
+    if not questions_signature:
+        return None
+
+    pending_text_questions = _pending_text_question_count(question_stats)
+    pending_difficulty = int(difficulty.get("source") == "pending")
+    if pending_text_questions <= 0 and pending_difficulty <= 0:
+        return None
+
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_db_connection() as conn:
+        ensure_wrong_summary_cache_tables(conn)
+        _recover_stale_wrong_summary_jobs(conn)
+        existing = conn.execute(
+            """
+            SELECT *
+            FROM assignment_wrong_summary_jobs
+            WHERE assignment_id = ?
+              AND questions_signature = ?
+              AND prompt_version = ?
+            LIMIT 1
+            """,
+            (assignment_id, questions_signature, PROMPT_VERSION),
+        ).fetchone()
+        if existing and str(existing["status"] or "") in ACTIVE_WRONG_SUMMARY_JOB_STATUSES:
+            row = existing
+        else:
+            conn.execute(
+                """
+                INSERT INTO assignment_wrong_summary_jobs (
+                    assignment_id, teacher_id, questions_signature, prompt_version,
+                    status, pending_text_questions, pending_difficulty,
+                    error_message, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?)
+                ON CONFLICT(assignment_id, questions_signature, prompt_version)
+                DO UPDATE SET
+                    teacher_id = excluded.teacher_id,
+                    status = excluded.status,
+                    pending_text_questions = excluded.pending_text_questions,
+                    pending_difficulty = excluded.pending_difficulty,
+                    error_message = '',
+                    started_at = NULL,
+                    completed_at = NULL,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    assignment_id,
+                    int(teacher_id),
+                    questions_signature,
+                    PROMPT_VERSION,
+                    WRONG_SUMMARY_JOB_STATUS_QUEUED,
+                    pending_text_questions,
+                    pending_difficulty,
+                    now,
+                    now,
+                ),
+            )
+            row = conn.execute(
+                """
+                SELECT *
+                FROM assignment_wrong_summary_jobs
+                WHERE assignment_id = ?
+                  AND questions_signature = ?
+                  AND prompt_version = ?
+                LIMIT 1
+                """,
+                (assignment_id, questions_signature, PROMPT_VERSION),
+            ).fetchone()
+        conn.commit()
+
+    serialized = _serialize_wrong_summary_job(row) if row else None
+    if serialized and serialized["status"] in ACTIVE_WRONG_SUMMARY_JOB_STATUSES:
+        _schedule_wrong_summary_ai_task(assignment_id, int(teacher_id), questions_signature)
+    return serialized
+
+
+def _build_ai_status(
+    source: dict[str, Any],
+    question_stats: list[dict[str, Any]],
+    difficulty: dict[str, Any],
+) -> dict[str, Any]:
+    if source.get("unsupported_reason"):
+        return _empty_ai_status()
+
+    assignment_id = str(source["assignment"]["id"])
+    questions_signature = str(source.get("questions_signature") or "")
+    job = _load_wrong_summary_job(assignment_id, questions_signature) if questions_signature else None
+    pending_text_questions = _pending_text_question_count(question_stats)
+    pending_difficulty = int(difficulty.get("source") == "pending")
+    needs_ai = pending_text_questions > 0 or pending_difficulty > 0
+
+    job_status = str((job or {}).get("status") or "").strip().lower()
+    if job_status == WRONG_SUMMARY_JOB_STATUS_FAILED:
+        is_active = False
+        label = "AI 归集失败"
+        message = (job or {}).get("error_message") or "后台 AI 归集没有完成，请稍后刷新或重新进入页面触发重试。"
+    elif needs_ai:
+        is_active = True
+        job_status = job_status if job_status in ACTIVE_WRONG_SUMMARY_JOB_STATUSES else WRONG_SUMMARY_JOB_STATUS_QUEUED
+        label = "后台归集中" if job_status == WRONG_SUMMARY_JOB_STATUS_RUNNING else "等待归集"
+        pieces = []
+        if pending_text_questions:
+            pieces.append(f"{pending_text_questions} 道填空/问答题错答写法")
+        if pending_difficulty:
+            pieces.append("整张试卷最难题")
+        message = "快速 AI 正在后台整理：" + "、".join(pieces) + "，页面会自动刷新结果。"
+    else:
+        is_active = False
+        job_status = job_status or WRONG_SUMMARY_JOB_STATUS_COMPLETED
+        label = "归集完成"
+        message = "错题归集已完成。"
+
+    return {
+        "needs_ai": needs_ai,
+        "is_active": is_active,
+        "job_status": job_status,
+        "status_label": label,
+        "message": message,
+        "pending_text_questions": pending_text_questions,
+        "pending_difficulty": pending_difficulty,
+        "job": job,
+    }
+
+
+def _empty_ai_status() -> dict[str, Any]:
+    return {
+        "needs_ai": False,
+        "is_active": False,
+        "job_status": "idle",
+        "status_label": "无需归集",
+        "message": "",
+        "pending_text_questions": 0,
+        "pending_difficulty": 0,
+        "job": None,
+    }
+
+
+def _pending_text_question_count(question_stats: list[dict[str, Any]]) -> int:
+    return len(
+        [
+            item
+            for item in question_stats
+            if item["question"]["type"] in TEXT_QUESTION_TYPES
+            and item["wrong_count"] > 0
+            and not item["missing_answer_key"]
+            and item.get("text_cluster_status") == "pending"
+        ]
+    )
+
+
+def _collect_ai_job_errors(question_stats: list[dict[str, Any]], difficulty: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    for item in question_stats:
+        if item.get("text_cluster_status") == "fallback" and item.get("text_cluster_error"):
+            errors.append(f"第 {item['question']['ordinal']} 题错答归集失败：{item['text_cluster_error']}")
+    if difficulty.get("source") == "fallback" and difficulty.get("error"):
+        errors.append(str(difficulty["error"]))
+    return [_clip_text(error, 180) for error in errors[:4]]
+
+
+def _wrong_summary_job_key(assignment_id: str, questions_signature: str) -> str:
+    return f"{assignment_id}:{questions_signature}:{PROMPT_VERSION}"
+
+
+def _schedule_wrong_summary_ai_task(assignment_id: str, teacher_id: int, questions_signature: str) -> None:
+    job_key = _wrong_summary_job_key(assignment_id, questions_signature)
+    if job_key in _active_wrong_summary_jobs:
+        return
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    _active_wrong_summary_jobs.add(job_key)
+    asyncio.create_task(
+        run_assignment_wrong_summary_ai_job(
+            assignment_id,
+            teacher_id,
+            questions_signature=questions_signature,
+        )
+    )
+
+
+def _recover_stale_wrong_summary_jobs(conn) -> None:
+    cutoff = datetime.fromtimestamp(datetime.now().timestamp() - STALE_WRONG_SUMMARY_JOB_MINUTES * 60).isoformat(
+        timespec="seconds"
+    )
+    now = datetime.now().isoformat(timespec="seconds")
+    conn.execute(
+        """
+        UPDATE assignment_wrong_summary_jobs
+        SET status = ?,
+            error_message = CASE
+                WHEN TRIM(COALESCE(error_message, '')) = '' THEN ?
+                ELSE error_message
+            END,
+            completed_at = COALESCE(completed_at, ?),
+            updated_at = ?
+        WHERE status = ?
+          AND COALESCE(started_at, updated_at, created_at) < ?
+        """,
+        (
+            WRONG_SUMMARY_JOB_STATUS_FAILED,
+            "后台 AI 归集长时间未完成，系统已停止等待。",
+            now,
+            now,
+            WRONG_SUMMARY_JOB_STATUS_RUNNING,
+            cutoff,
+        ),
+    )
+
+
+def _load_wrong_summary_job(assignment_id: str, questions_signature: str) -> dict[str, Any] | None:
+    with get_db_connection() as conn:
+        ensure_wrong_summary_cache_tables(conn)
+        _recover_stale_wrong_summary_jobs(conn)
+        row = conn.execute(
+            """
+            SELECT *
+            FROM assignment_wrong_summary_jobs
+            WHERE assignment_id = ?
+              AND questions_signature = ?
+              AND prompt_version = ?
+            LIMIT 1
+            """,
+            (assignment_id, questions_signature, PROMPT_VERSION),
+        ).fetchone()
+        conn.commit()
+    return _serialize_wrong_summary_job(row) if row else None
+
+
+def _serialize_wrong_summary_job(row) -> dict[str, Any]:
+    item = dict(row)
+    return {
+        "id": int(item.get("id") or 0),
+        "assignment_id": str(item.get("assignment_id") or ""),
+        "teacher_id": int(item.get("teacher_id") or 0),
+        "questions_signature": str(item.get("questions_signature") or ""),
+        "status": str(item.get("status") or WRONG_SUMMARY_JOB_STATUS_QUEUED),
+        "pending_text_questions": int(item.get("pending_text_questions") or 0),
+        "pending_difficulty": int(item.get("pending_difficulty") or 0),
+        "error_message": str(item.get("error_message") or ""),
+        "created_at": str(item.get("created_at") or ""),
+        "started_at": str(item.get("started_at") or ""),
+        "completed_at": str(item.get("completed_at") or ""),
+        "updated_at": str(item.get("updated_at") or ""),
+    }
+
+
+def _mark_wrong_summary_job_running(assignment_id: str, questions_signature: str) -> None:
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_db_connection() as conn:
+        ensure_wrong_summary_cache_tables(conn)
+        conn.execute(
+            """
+            UPDATE assignment_wrong_summary_jobs
+            SET status = ?,
+                started_at = COALESCE(started_at, ?),
+                error_message = '',
+                updated_at = ?
+            WHERE assignment_id = ?
+              AND questions_signature = ?
+              AND prompt_version = ?
+            """,
+            (
+                WRONG_SUMMARY_JOB_STATUS_RUNNING,
+                now,
+                now,
+                assignment_id,
+                questions_signature,
+                PROMPT_VERSION,
+            ),
+        )
+        conn.commit()
+
+
+def _mark_wrong_summary_job_completed(assignment_id: str, questions_signature: str) -> None:
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_db_connection() as conn:
+        ensure_wrong_summary_cache_tables(conn)
+        conn.execute(
+            """
+            UPDATE assignment_wrong_summary_jobs
+            SET status = ?,
+                error_message = '',
+                completed_at = COALESCE(completed_at, ?),
+                updated_at = ?
+            WHERE assignment_id = ?
+              AND questions_signature = ?
+              AND prompt_version = ?
+            """,
+            (
+                WRONG_SUMMARY_JOB_STATUS_COMPLETED,
+                now,
+                now,
+                assignment_id,
+                questions_signature,
+                PROMPT_VERSION,
+            ),
+        )
+        conn.commit()
+
+
+def _mark_wrong_summary_job_failed(assignment_id: str, questions_signature: str, error_message: str) -> None:
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_db_connection() as conn:
+        ensure_wrong_summary_cache_tables(conn)
+        conn.execute(
+            """
+            UPDATE assignment_wrong_summary_jobs
+            SET status = ?,
+                error_message = ?,
+                completed_at = COALESCE(completed_at, ?),
+                updated_at = ?
+            WHERE assignment_id = ?
+              AND questions_signature = ?
+              AND prompt_version = ?
+            """,
+            (
+                WRONG_SUMMARY_JOB_STATUS_FAILED,
+                _clip_text(error_message, 500),
+                now,
+                now,
+                assignment_id,
+                questions_signature,
+                PROMPT_VERSION,
+            ),
+        )
+        conn.commit()
+
+
 def _extract_exam_questions(exam_data: dict[str, Any]) -> list[dict[str, Any]]:
     pages = exam_data.get("pages") if isinstance(exam_data, dict) else []
     if not isinstance(pages, list):
@@ -360,7 +786,12 @@ def _build_question_error_stats(
     return stats
 
 
-async def _attach_text_answer_clusters(assignment_id: str, question_stats: list[dict[str, Any]]) -> None:
+async def _attach_text_answer_clusters(
+    assignment_id: str,
+    question_stats: list[dict[str, Any]],
+    *,
+    allow_generate: bool,
+) -> None:
     pending: list[tuple[dict[str, Any], str]] = []
     for item in question_stats:
         question = item["question"]
@@ -380,6 +811,9 @@ async def _attach_text_answer_clusters(assignment_id: str, question_stats: list[
             continue
         item["text_cluster_status"] = "pending"
         pending.append((item, signature))
+
+    if not allow_generate:
+        return
 
     for item, signature in pending:
         question = item["question"]
@@ -402,6 +836,8 @@ async def _load_or_generate_difficulty_summary(
     paper_title: str,
     questions_signature: str,
     questions: list[dict[str, Any]],
+    *,
+    allow_generate: bool,
 ) -> dict[str, Any]:
     cached = _load_difficulty_cache(exam_paper_id, questions_signature)
     if cached:
@@ -409,6 +845,8 @@ async def _load_or_generate_difficulty_summary(
         return cached
     if not questions:
         return _empty_difficulty_summary("试卷中没有可分析的题目。")
+    if not allow_generate:
+        return _empty_difficulty_summary("快速 AI 正在后台判断最难题，请稍候。", source="pending")
     try:
         raw = await _generate_difficulty_summary(paper_title, questions)
         normalized = _normalize_difficulty_result(raw, questions)

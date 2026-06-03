@@ -3180,6 +3180,26 @@ def init_database():
                          )
                          ''')
 
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS assignment_wrong_summary_jobs
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             assignment_id TEXT NOT NULL,
+                             teacher_id INTEGER NOT NULL,
+                             questions_signature TEXT NOT NULL,
+                             prompt_version TEXT NOT NULL,
+                             status TEXT NOT NULL DEFAULT 'queued',
+                             pending_text_questions INTEGER NOT NULL DEFAULT 0,
+                             pending_difficulty INTEGER NOT NULL DEFAULT 0,
+                             error_message TEXT NOT NULL DEFAULT '',
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             started_at TEXT,
+                             completed_at TEXT,
+                             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             UNIQUE (assignment_id, questions_signature, prompt_version)
+                         )
+                         ''')
+
             # 10. 聊天记录 (关联到班级课堂)
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS study_groups
@@ -5518,6 +5538,10 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_exam_difficulty_ai_cache_paper "
                 "ON exam_paper_difficulty_ai_cache (exam_paper_id, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_wrong_summary_jobs_assignment "
+                "ON assignment_wrong_summary_jobs (assignment_id, questions_signature, status, updated_at DESC)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_study_groups_offering_status "

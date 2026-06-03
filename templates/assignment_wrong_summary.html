@@ -428,6 +428,110 @@
         font-size: 1rem;
     }
 
+    .wrong-summary-ai-strip,
+    .wrong-ai-waiting {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-radius: 8px;
+        line-height: 1.55;
+    }
+
+    .wrong-summary-ai-strip {
+        width: fit-content;
+        max-width: 100%;
+        margin-top: 14px;
+        padding: 10px 12px;
+        border: 1px solid rgba(14, 165, 233, 0.24);
+        background: rgba(240, 249, 255, 0.82);
+        color: #0369a1;
+        font-size: 0.86rem;
+        font-weight: 800;
+    }
+
+    .wrong-summary-ai-strip.is-failed,
+    .wrong-ai-waiting.is-failed {
+        border-color: rgba(239, 68, 68, 0.24);
+        background: rgba(254, 242, 242, 0.86);
+        color: #b91c1c;
+    }
+
+    .wrong-ai-waiting {
+        padding: 12px;
+        border: 1px dashed rgba(14, 165, 233, 0.28);
+        background: rgba(240, 249, 255, 0.7);
+        color: #0369a1;
+        font-size: 0.84rem;
+        font-weight: 800;
+    }
+
+    .wrong-summary-spinner {
+        width: 18px;
+        height: 18px;
+        flex: 0 0 auto;
+        border: 3px solid rgba(14, 165, 233, 0.18);
+        border-top-color: #0284c7;
+        border-radius: 999px;
+        animation: wrong-summary-spin 0.82s linear infinite;
+    }
+
+    .wrong-summary-ai-strip.is-failed .wrong-summary-spinner,
+    .wrong-ai-waiting.is-failed .wrong-summary-spinner {
+        display: none;
+    }
+
+    .wrong-question-markdown,
+    .wrong-option-markdown {
+        min-width: 0;
+        max-width: 100%;
+        overflow-x: auto;
+        color: inherit;
+        font-weight: 760;
+    }
+
+    .wrong-question-markdown > :first-child,
+    .wrong-option-markdown > :first-child {
+        margin-top: 0;
+    }
+
+    .wrong-question-markdown > :last-child,
+    .wrong-option-markdown > :last-child {
+        margin-bottom: 0;
+    }
+
+    .wrong-question-options {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .wrong-question-option {
+        padding: 9px 10px;
+        border: 1px solid rgba(14, 165, 233, 0.16);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.62);
+    }
+
+    .wrong-question-markdown table,
+    .wrong-option-markdown table {
+        min-width: min(100%, 520px);
+    }
+
+    .wrong-summary-mermaid {
+        overflow-x: auto;
+        padding: 10px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.72);
+    }
+
+    @keyframes wrong-summary-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
     @media (max-width: 960px) {
         .wrong-summary-hero,
         .wrong-summary-grid {
@@ -498,6 +602,16 @@
                 按已提交学生的逐题答案统计错题人数；客观题展示前三个高频错选，填空/问答题在错答发生变化后调用一次快速 AI 归集常见错误写法。
                 最难题来自快速 AI 对整张试卷题目本身的难度判断，并按试卷内容缓存。
             </p>
+            {% if summary.ai_status.is_active %}
+            <div class="wrong-summary-ai-strip" data-wrong-summary-status-strip>
+                <span class="wrong-summary-spinner" aria-hidden="true"></span>
+                <span>{{ summary.ai_status.message }}</span>
+            </div>
+            {% elif summary.ai_status.job_status == 'failed' %}
+            <div class="wrong-summary-ai-strip is-failed" data-wrong-summary-status-strip>
+                <span>{{ summary.ai_status.message }}</span>
+            </div>
+            {% endif %}
         </div>
         <div class="wrong-summary-metrics" aria-label="统计摘要">
             <div class="wrong-summary-metric">
@@ -554,7 +668,24 @@
                     <div class="wrong-question-body">
                         <div class="question-copy-block">
                             <span>完整题目</span>
-                            <strong>{{ question.text }}</strong>
+                            <div
+                                class="wrong-question-markdown md-content"
+                                data-question-markdown
+                                data-markdown-json="{{ question.text | tojson | forceescape }}"
+                            ></div>
+                            {% if question.options %}
+                            <ul class="wrong-question-options" aria-label="题目选项">
+                                {% for option in question.options %}
+                                <li class="wrong-question-option">
+                                    <div
+                                        class="wrong-option-markdown md-content"
+                                        data-question-markdown
+                                        data-markdown-json="{{ option | tojson | forceescape }}"
+                                    ></div>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
                         </div>
                         <div class="answer-block is-correct">
                             <span>正确答案</span>
@@ -565,7 +696,16 @@
                                 高频错答
                                 {% if item.text_cluster_status == 'generated' %} / AI 已归集{% elif item.text_cluster_status == 'cached' %} / AI 缓存{% elif item.text_cluster_status == 'fallback' %} / 本地归并{% endif %}
                             </span>
-                            {% if item.top_wrong_answers %}
+                            {% if summary.ai_status.job_status == 'failed' and item.text_cluster_status == 'pending' %}
+                            <div class="wrong-ai-waiting is-failed">
+                                <span>{{ summary.ai_status.message }}</span>
+                            </div>
+                            {% elif item.text_cluster_status == 'pending' %}
+                            <div class="wrong-ai-waiting" role="status" aria-live="polite">
+                                <span class="wrong-summary-spinner" aria-hidden="true"></span>
+                                <span>快速 AI 正在后台归集这道题的常见错误写法，完成后页面会自动刷新。</span>
+                            </div>
+                            {% elif item.top_wrong_answers %}
                             <ul class="wrong-answer-list">
                                 {% for wrong in item.top_wrong_answers %}
                                 <li class="wrong-answer-item">
@@ -610,7 +750,17 @@
                 </span>
             </div>
 
-            {% if summary.difficulty['items'] %}
+            {% if summary.difficulty.source == 'pending' and summary.ai_status.job_status == 'failed' %}
+            <div class="wrong-summary-empty">
+                <strong>最难题归集失败</strong>
+                <span>{{ summary.ai_status.message }}</span>
+            </div>
+            {% elif summary.difficulty.source == 'pending' %}
+            <div class="wrong-ai-waiting" role="status" aria-live="polite">
+                <span class="wrong-summary-spinner" aria-hidden="true"></span>
+                <span>快速 AI 正在后台判断整张试卷的最难题，完成后页面会自动刷新。</span>
+            </div>
+            {% elif summary.difficulty['items'] %}
             <div class="hard-question-list">
                 {% for item in summary.difficulty['items'] %}
                 {% set question = item.question %}
@@ -629,7 +779,24 @@
                     <div class="hard-question-body">
                         <div class="question-copy-block">
                             <span>题目</span>
-                            <strong>{{ question.text }}</strong>
+                            <div
+                                class="wrong-question-markdown md-content"
+                                data-question-markdown
+                                data-markdown-json="{{ question.text | tojson | forceescape }}"
+                            ></div>
+                            {% if question.options %}
+                            <ul class="wrong-question-options" aria-label="题目选项">
+                                {% for option in question.options %}
+                                <li class="wrong-question-option">
+                                    <div
+                                        class="wrong-option-markdown md-content"
+                                        data-question-markdown
+                                        data-markdown-json="{{ option | tojson | forceescape }}"
+                                    ></div>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
                         </div>
                         {% if item.reason %}<p>{{ item.reason }}</p>{% endif %}
                         {% if item.risk_factors %}
@@ -659,4 +826,113 @@
     </div>
     {% endif %}
 </main>
+{% set include_mermaid = true %}
+{% include "partials/markdown_assets.html" %}
+<script type="module">
+    import { renderMarkdownHtml } from '/static/js/grading_feedback.js?v=20260517';
+
+    const ASSIGNMENT_ID = {{ assignment.id | string | tojson }};
+    const INITIAL_AI_ACTIVE = {{ summary.ai_status.is_active | tojson }};
+    const POLL_INTERVAL_MS = 2600;
+    let reloadScheduled = false;
+
+    function readMarkdownSource(element) {
+        const raw = element.getAttribute('data-markdown-json') || '""';
+        try {
+            return JSON.parse(raw);
+        } catch (error) {
+            console.warn('Wrong summary markdown payload parse failed:', error);
+            return '';
+        }
+    }
+
+    async function renderMermaidBlocks(scope) {
+        const host = scope || document;
+        const codeBlocks = Array.from(host.querySelectorAll('pre code.language-mermaid, pre code.lang-mermaid'));
+        if (!codeBlocks.length || typeof window.mermaid === 'undefined') {
+            return;
+        }
+        codeBlocks.forEach((codeBlock, index) => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'wrong-summary-mermaid mermaid';
+            wrapper.id = `wrong-summary-mermaid-${Date.now()}-${index}`;
+            wrapper.textContent = codeBlock.textContent || '';
+            const pre = codeBlock.closest('pre');
+            if (pre) {
+                pre.replaceWith(wrapper);
+            }
+        });
+        try {
+            window.mermaid.initialize({
+                startOnLoad: false,
+                securityLevel: 'strict',
+                theme: 'default',
+            });
+            await window.mermaid.run({
+                nodes: Array.from(host.querySelectorAll('.wrong-summary-mermaid.mermaid')),
+            });
+        } catch (error) {
+            console.warn('Wrong summary Mermaid render failed:', error);
+        }
+    }
+
+    async function renderQuestionMarkdown(scope = document) {
+        const targets = Array.from(scope.querySelectorAll('[data-question-markdown]'));
+        targets.forEach((target) => {
+            if (target.dataset.markdownRendered === 'true') {
+                return;
+            }
+            const source = String(readMarkdownSource(target) || '').trim();
+            target.innerHTML = renderMarkdownHtml(source);
+            target.dataset.markdownRendered = 'true';
+        });
+        await renderMermaidBlocks(scope);
+    }
+
+    function updateStatusStrip(aiStatus) {
+        const strip = document.querySelector('[data-wrong-summary-status-strip]');
+        if (!strip || !aiStatus) {
+            return;
+        }
+        const messageNode = strip.querySelector('span:last-child');
+        if (messageNode && aiStatus.message) {
+            messageNode.textContent = aiStatus.message;
+        }
+        strip.classList.toggle('is-failed', aiStatus.job_status === 'failed');
+    }
+
+    async function pollAiStatus() {
+        if (reloadScheduled) {
+            return;
+        }
+        try {
+            const response = await fetch(`/api/assignments/${encodeURIComponent(ASSIGNMENT_ID)}/wrong-summary/status`, {
+                headers: { Accept: 'application/json' },
+                credentials: 'same-origin',
+            });
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            const payload = await response.json();
+            const aiStatus = payload.ai_status || {};
+            updateStatusStrip(aiStatus);
+            if (aiStatus.is_active) {
+                window.setTimeout(pollAiStatus, POLL_INTERVAL_MS);
+                return;
+            }
+            reloadScheduled = true;
+            window.setTimeout(() => window.location.reload(), 450);
+        } catch (error) {
+            console.warn('Wrong summary status polling failed:', error);
+            window.setTimeout(pollAiStatus, POLL_INTERVAL_MS * 2);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        renderQuestionMarkdown();
+        if (INITIAL_AI_ACTIVE) {
+            window.setTimeout(pollAiStatus, POLL_INTERVAL_MS);
+        }
+    });
+</script>
 {% endblock %}

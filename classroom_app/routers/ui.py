@@ -1495,7 +1495,12 @@ async def assignment_wrong_summary_page(
     assignment_id: str,
     user: dict = Depends(get_current_teacher),
 ):
-    summary = await build_assignment_wrong_question_summary(assignment_id, int(user["id"]))
+    summary = await build_assignment_wrong_question_summary(
+        assignment_id,
+        int(user["id"]),
+        ai_mode="cached",
+        schedule_ai=True,
+    )
     assignment = summary.get("assignment") or {"id": assignment_id, "title": "错题归集"}
     return templates.TemplateResponse(
         request,
@@ -1510,6 +1515,25 @@ async def assignment_wrong_summary_page(
             "classroom_back_url": _assignment_back_url(assignment),
         },
     )
+
+
+@router.get("/api/assignments/{assignment_id}/wrong-summary/status", response_class=JSONResponse)
+async def assignment_wrong_summary_status(
+    assignment_id: str,
+    user: dict = Depends(get_current_teacher),
+):
+    summary = await build_assignment_wrong_question_summary(
+        assignment_id,
+        int(user["id"]),
+        ai_mode="cached",
+        schedule_ai=False,
+    )
+    return {
+        "status": "success",
+        "assignment_id": str(assignment_id),
+        "ai_status": summary.get("ai_status") or {},
+        "stats": summary.get("stats") or {},
+    }
 
 
 # ============================
