@@ -73,6 +73,18 @@
         gap: 8px;
     }
 
+    .wrong-summary-actions button.app-topbar-action {
+        border: 0;
+        font: inherit;
+        cursor: pointer;
+    }
+
+    .wrong-summary-actions button.app-topbar-action:disabled {
+        opacity: 0.68;
+        cursor: wait;
+        transform: none;
+    }
+
     .wrong-summary-shell {
         width: min(1380px, calc(100vw - 28px));
         margin: 18px auto 40px;
@@ -837,6 +849,12 @@
         </span>
     </div>
     <nav class="wrong-summary-actions" aria-label="错题归集页面操作">
+        {% if not summary.unsupported_reason %}
+        <button type="button" class="app-topbar-action app-topbar-action--tone-cyan" data-wrong-summary-reorganize title="清空 AI 错答整理缓存并重新整理" aria-label="重新整理错题归集">
+            <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('refresh') }}</span>
+            <span class="app-topbar-action__text"><strong>重新整理</strong><small>重跑归集</small></span>
+        </button>
+        {% endif %}
         <a href="{{ assignment_back_url }}" class="app-topbar-action app-topbar-action--tone-blue" title="返回作业详情" aria-label="返回作业详情">
             <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('arrow-left') }}</span>
             <span class="app-topbar-action__text"><strong>作业详情</strong><small>提交批改</small></span>
@@ -857,16 +875,14 @@
                 按已提交学生的逐题得分统计未满分题目；选择题展示全选项选择柱图，填空/问答题在错答发生变化后归集常见错误写法与原因。
                 难题归集用于辅助安排讲评优先级，结果按未满分率与平均得分率排序。
             </p>
-            {% if summary.ai_status.is_active %}
-            <div class="wrong-summary-ai-strip" data-wrong-summary-status-strip>
+            <div
+                class="wrong-summary-ai-strip{% if summary.ai_status.job_status == 'failed' %} is-failed{% endif %}"
+                data-wrong-summary-status-strip
+                {% if not summary.ai_status.is_active and summary.ai_status.job_status != 'failed' %}hidden{% endif %}
+            >
                 <span class="wrong-summary-spinner" aria-hidden="true"></span>
                 <span>{{ summary.ai_status.message }}</span>
             </div>
-            {% elif summary.ai_status.job_status == 'failed' %}
-            <div class="wrong-summary-ai-strip is-failed" data-wrong-summary-status-strip>
-                <span>{{ summary.ai_status.message }}</span>
-            </div>
-            {% endif %}
         </div>
         <div class="wrong-summary-metrics" aria-label="统计摘要">
             <div class="wrong-summary-metric">
@@ -1284,7 +1300,80 @@
         if (messageNode && aiStatus.message) {
             messageNode.textContent = aiStatus.message;
         }
+        strip.hidden = !aiStatus.is_active && aiStatus.job_status !== 'failed';
         strip.classList.toggle('is-failed', aiStatus.job_status === 'failed');
+    }
+
+    function showStatusStrip(message, isFailed = false) {
+        const strip = document.querySelector('[data-wrong-summary-status-strip]');
+        if (!strip) {
+            return;
+        }
+        const messageNode = strip.querySelector('span:last-child');
+        if (messageNode) {
+            messageNode.textContent = message || '';
+        }
+        strip.hidden = false;
+        strip.classList.toggle('is-failed', Boolean(isFailed));
+    }
+
+    function setupReorganizeWrongSummary() {
+        const button = document.querySelector('[data-wrong-summary-reorganize]');
+        if (!button) {
+            return;
+        }
+        const labelNode = button.querySelector('.app-topbar-action__text strong');
+        const subLabelNode = button.querySelector('.app-topbar-action__text small');
+        const originalLabel = labelNode ? labelNode.textContent : '';
+        const originalSubLabel = subLabelNode ? subLabelNode.textContent : '';
+
+        const setBusy = (busy) => {
+            button.disabled = busy;
+            button.setAttribute('aria-busy', busy ? 'true' : 'false');
+            if (labelNode) {
+                labelNode.textContent = busy ? '整理中' : originalLabel;
+            }
+            if (subLabelNode) {
+                subLabelNode.textContent = busy ? '请稍候' : originalSubLabel;
+            }
+        };
+
+        button.addEventListener('click', async () => {
+            if (button.disabled || reloadScheduled) {
+                return;
+            }
+            const confirmed = window.confirm('将清空本作业的 AI 错答整理缓存并重新整理；学生答案、分数和评语不会被修改。继续吗？');
+            if (!confirmed) {
+                return;
+            }
+            setBusy(true);
+            showStatusStrip('正在清空 AI 整理缓存并重新发起归集，页面会自动刷新结果。');
+            try {
+                const response = await fetch(`/api/assignments/${encodeURIComponent(ASSIGNMENT_ID)}/wrong-summary/reorganize`, {
+                    method: 'POST',
+                    headers: {
+                        Accept: 'application/json',
+                    },
+                    credentials: 'same-origin',
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const payload = await response.json();
+                const aiStatus = payload.ai_status || {};
+                updateStatusStrip(aiStatus);
+                if (aiStatus.is_active) {
+                    window.setTimeout(pollAiStatus, 800);
+                    return;
+                }
+                reloadScheduled = true;
+                window.setTimeout(() => window.location.reload(), 450);
+            } catch (error) {
+                console.warn('Wrong summary reorganize failed:', error);
+                setBusy(false);
+                showStatusStrip('重新整理没有发起成功，请稍后再试。', true);
+            }
+        });
     }
 
     function setupWrongSummaryTabs() {
@@ -1442,6 +1531,7 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         const activePanel = setupWrongSummaryTabs();
+        setupReorganizeWrongSummary();
         setupWrongAnswerDetails();
         renderQuestionMarkdown(activePanel || document);
         if (INITIAL_AI_ACTIVE) {

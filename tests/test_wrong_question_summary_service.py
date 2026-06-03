@@ -1,15 +1,22 @@
 import asyncio
 import json
+import os
+import sqlite3
+import tempfile
 import unittest
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, patch
 
 from classroom_app.services.wrong_question_summary_service import (
+    PROMPT_VERSION,
     _attach_text_answer_clusters,
     _build_ai_status,
     _build_question_error_stats,
     _build_score_based_hard_questions,
+    _clear_assignment_wrong_summary_ai_state,
     _extract_exam_questions,
     _score_based_difficulty_summary,
+    ensure_wrong_summary_cache_tables,
 )
 
 
@@ -257,6 +264,177 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
         self.assertTrue(ai_status["is_active"])
         self.assertEqual(ai_status["job_status"], "queued")
         self.assertEqual(ai_status["pending_difficulty"], 0)
+
+    def test_reorganize_clear_only_removes_ai_cache_and_jobs(self):
+        fd, db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            @contextmanager
+            def connect():
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                try:
+                    yield conn
+                finally:
+                    conn.close()
+
+            with connect() as conn:
+                ensure_wrong_summary_cache_tables(conn)
+                conn.execute("CREATE TABLE submissions (id INTEGER PRIMARY KEY, assignment_id TEXT, answers_json TEXT)")
+                conn.execute(
+                    "INSERT INTO submissions (id, assignment_id, answers_json) VALUES (1, 'assignment-1', '{}')"
+                )
+                conn.execute(
+                    """
+                    INSERT INTO assignment_wrong_answer_ai_cache (
+                        assignment_id, question_key, answer_signature, prompt_version, result_json
+                    ) VALUES ('assignment-1', 'q1', 'sig-1', 'v-test', '{}')
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO assignment_wrong_answer_ai_cache (
+                        assignment_id, question_key, answer_signature, prompt_version, result_json
+                    ) VALUES ('assignment-2', 'q1', 'sig-2', 'v-test', '{}')
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO assignment_wrong_summary_jobs (
+                        assignment_id, teacher_id, questions_signature, prompt_version, status
+                    ) VALUES ('assignment-1', 1, 'paper-sig', 'v-test', 'queued')
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO assignment_wrong_summary_jobs (
+                        assignment_id, teacher_id, questions_signature, prompt_version, status
+                    ) VALUES ('assignment-2', 1, 'paper-sig', 'v-test', 'queued')
+                    """
+                )
+                conn.commit()
+
+            with patch(
+                "classroom_app.services.wrong_question_summary_service.get_db_connection",
+                connect,
+            ):
+                result = _clear_assignment_wrong_summary_ai_state("assignment-1", "paper-sig")
+
+            with connect() as conn:
+                remaining_cache = conn.execute(
+                    "SELECT assignment_id FROM assignment_wrong_answer_ai_cache ORDER BY assignment_id"
+                ).fetchall()
+                remaining_jobs = conn.execute(
+                    "SELECT assignment_id FROM assignment_wrong_summary_jobs ORDER BY assignment_id"
+                ).fetchall()
+                submission_count = conn.execute("SELECT COUNT(*) AS count FROM submissions").fetchone()["count"]
+
+            self.assertEqual(result["cleared_cache_rows"], 1)
+            self.assertEqual(result["cleared_job_rows"], 1)
+            self.assertEqual([row["assignment_id"] for row in remaining_cache], ["assignment-2"])
+            self.assertEqual([row["assignment_id"] for row in remaining_jobs], ["assignment-2"])
+            self.assertEqual(submission_count, 1)
+        finally:
+            try:
+                os.remove(db_path)
+            except OSError:
+                pass
+
+    def test_stale_wrong_summary_job_token_cannot_write_ai_cache(self):
+        fd, db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            @contextmanager
+            def connect():
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                try:
+                    yield conn
+                finally:
+                    conn.close()
+
+            with connect() as conn:
+                ensure_wrong_summary_cache_tables(conn)
+                conn.execute(
+                    """
+                    INSERT INTO assignment_wrong_summary_jobs (
+                        assignment_id, teacher_id, questions_signature, prompt_version,
+                        status, run_token
+                    ) VALUES ('assignment-1', 1, 'paper-sig', ?, 'running', 'new-token')
+                    """,
+                    (PROMPT_VERSION,),
+                )
+                conn.commit()
+
+            questions = _extract_exam_questions(
+                {
+                    "pages": [
+                        {
+                            "name": "Basics",
+                            "questions": [
+                                {
+                                    "id": "q1",
+                                    "type": "text",
+                                    "text": "Default HTTP port?",
+                                    "answer": "80",
+                                    "points": 1,
+                                }
+                            ],
+                        }
+                    ]
+                }
+            )
+            submissions = [
+                {
+                    "id": 1,
+                    "student_name": "Student A",
+                    "status": "submitted",
+                    "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": "8080"}]}),
+                    "feedback_md": _feedback((1, 0, 1)),
+                }
+            ]
+            stats = _build_question_error_stats(questions, submissions)
+
+            with patch(
+                "classroom_app.services.wrong_question_summary_service.get_db_connection",
+                connect,
+            ), patch(
+                "classroom_app.services.wrong_question_summary_service._generate_text_wrong_clusters",
+                new=AsyncMock(
+                    return_value={
+                        "groups": [
+                            {
+                                "label": "8080",
+                                "count": 1,
+                                "examples": ["8080"],
+                                "likely_issue": "Confused with a common dev port.",
+                            }
+                        ]
+                    }
+                ),
+            ):
+                asyncio.run(
+                    _attach_text_answer_clusters(
+                        "assignment-1",
+                        stats,
+                        allow_generate=True,
+                        questions_signature="paper-sig",
+                        job_run_token="old-token",
+                    )
+                )
+
+            with connect() as conn:
+                cache_count = conn.execute(
+                    "SELECT COUNT(*) AS count FROM assignment_wrong_answer_ai_cache"
+                ).fetchone()["count"]
+
+            self.assertEqual(stats[0]["text_cluster_status"], "stale")
+            self.assertEqual(cache_count, 0)
+        finally:
+            try:
+                os.remove(db_path)
+            except OSError:
+                pass
 
 
 if __name__ == "__main__":

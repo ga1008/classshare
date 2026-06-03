@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import re
+import secrets
 from collections import Counter
 from datetime import datetime
 from typing import Any
@@ -80,10 +81,17 @@ def ensure_wrong_summary_cache_tables(conn) -> None:
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             started_at TEXT,
             completed_at TEXT,
+            run_token TEXT NOT NULL DEFAULT '',
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
             UNIQUE (assignment_id, questions_signature, prompt_version)
         )
         """
+    )
+    _ensure_table_column(
+        conn,
+        "assignment_wrong_summary_jobs",
+        "run_token",
+        "TEXT NOT NULL DEFAULT ''",
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_wrong_answer_ai_cache_assignment "
@@ -97,6 +105,15 @@ def ensure_wrong_summary_cache_tables(conn) -> None:
         "CREATE INDEX IF NOT EXISTS idx_wrong_summary_jobs_assignment "
         "ON assignment_wrong_summary_jobs (assignment_id, questions_signature, status, updated_at DESC)"
     )
+
+
+def _ensure_table_column(conn, table_name: str, column_name: str, column_def: str) -> None:
+    columns = {
+        str(row["name"] if hasattr(row, "keys") else row[1])
+        for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if column_name not in columns:
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
 
 
 async def build_assignment_wrong_question_summary(
@@ -143,14 +160,40 @@ async def build_assignment_wrong_question_summary(
     return source
 
 
+async def reorganize_assignment_wrong_summary_ai(
+    assignment_id: str,
+    teacher_id: int,
+) -> dict[str, Any]:
+    source = _load_summary_source(assignment_id, teacher_id)
+    if source.get("unsupported_reason"):
+        source["reset_result"] = {"cleared_cache_rows": 0, "cleared_job_rows": 0}
+        source["ai_status"] = _empty_ai_status()
+        return source
+
+    reset_result = _clear_assignment_wrong_summary_ai_state(
+        str(source["assignment"]["id"]),
+        str(source.get("questions_signature") or ""),
+    )
+    refreshed = await build_assignment_wrong_question_summary(
+        assignment_id,
+        teacher_id,
+        ai_mode="cached",
+        schedule_ai=True,
+    )
+    refreshed["reset_result"] = reset_result
+    return refreshed
+
+
 async def run_assignment_wrong_summary_ai_job(
     assignment_id: str,
     teacher_id: int,
     *,
     questions_signature: str | None = None,
+    run_token: str | None = None,
 ) -> None:
     assignment_key = str(assignment_id)
-    job_key = _wrong_summary_job_key(assignment_key, questions_signature or "")
+    token = str(run_token or "")
+    job_key = _wrong_summary_job_key(assignment_key, questions_signature or "", token)
     try:
         source = _load_summary_source(assignment_id, teacher_id)
         if source.get("unsupported_reason"):
@@ -159,21 +202,49 @@ async def run_assignment_wrong_summary_ai_job(
             return
 
         assignment_key = str(source["assignment"]["id"])
-        job_key = _wrong_summary_job_key(assignment_key, source["questions_signature"])
-        _mark_wrong_summary_job_running(assignment_key, source["questions_signature"])
+        signature = str(source["questions_signature"])
+        job_key = _wrong_summary_job_key(assignment_key, signature, token)
+        if not _mark_wrong_summary_job_running(assignment_key, signature, token):
+            return
         question_stats = _build_question_error_stats(source["questions"], source["submissions"])
-        await _attach_text_answer_clusters(assignment_key, question_stats, allow_generate=True)
+        await _attach_text_answer_clusters(
+            assignment_key,
+            question_stats,
+            allow_generate=True,
+            questions_signature=signature,
+            job_run_token=token,
+        )
         difficulty = _score_based_difficulty_summary(_build_score_based_hard_questions(question_stats))
         errors = _collect_ai_job_errors(question_stats, difficulty)
+        if not _is_wrong_summary_job_token_current(assignment_key, signature, token):
+            return
         if errors:
-            _mark_wrong_summary_job_failed(assignment_key, source["questions_signature"], "；".join(errors))
+            _mark_wrong_summary_job_failed(assignment_key, signature, "；".join(errors), token)
         else:
-            _mark_wrong_summary_job_completed(assignment_key, source["questions_signature"])
+            _mark_wrong_summary_job_completed(assignment_key, signature, token)
     except Exception as exc:
         signature = questions_signature or (source.get("questions_signature") if "source" in locals() else "")
-        _mark_wrong_summary_job_failed(assignment_key, str(signature or ""), _clip_text(str(exc), 260))
+        _mark_wrong_summary_job_failed(assignment_key, str(signature or ""), _clip_text(str(exc), 260), token)
     finally:
         _active_wrong_summary_jobs.discard(job_key)
+
+
+def _clear_assignment_wrong_summary_ai_state(assignment_id: str, questions_signature: str = "") -> dict[str, int]:
+    with get_db_connection() as conn:
+        ensure_wrong_summary_cache_tables(conn)
+        cache_cursor = conn.execute(
+            "DELETE FROM assignment_wrong_answer_ai_cache WHERE assignment_id = ?",
+            (str(assignment_id),),
+        )
+        job_cursor = conn.execute(
+            "DELETE FROM assignment_wrong_summary_jobs WHERE assignment_id = ?",
+            (str(assignment_id),),
+        )
+        conn.commit()
+    return {
+        "cleared_cache_rows": int(cache_cursor.rowcount or 0),
+        "cleared_job_rows": int(job_cursor.rowcount or 0),
+    }
 
 
 def _load_summary_source(assignment_id: str, teacher_id: int) -> dict[str, Any]:
@@ -338,6 +409,7 @@ def _ensure_wrong_summary_ai_job(
         return None
 
     now = datetime.now().isoformat(timespec="seconds")
+    run_token = secrets.token_hex(12)
     with get_db_connection() as conn:
         ensure_wrong_summary_cache_tables(conn)
         _recover_stale_wrong_summary_jobs(conn)
@@ -360,9 +432,9 @@ def _ensure_wrong_summary_ai_job(
                 INSERT INTO assignment_wrong_summary_jobs (
                     assignment_id, teacher_id, questions_signature, prompt_version,
                     status, pending_text_questions, pending_difficulty,
-                    error_message, created_at, updated_at
+                    error_message, created_at, updated_at, run_token
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)
                 ON CONFLICT(assignment_id, questions_signature, prompt_version)
                 DO UPDATE SET
                     teacher_id = excluded.teacher_id,
@@ -372,6 +444,7 @@ def _ensure_wrong_summary_ai_job(
                     error_message = '',
                     started_at = NULL,
                     completed_at = NULL,
+                    run_token = excluded.run_token,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -384,6 +457,7 @@ def _ensure_wrong_summary_ai_job(
                     pending_difficulty,
                     now,
                     now,
+                    run_token,
                 ),
             )
             row = conn.execute(
@@ -401,7 +475,12 @@ def _ensure_wrong_summary_ai_job(
 
     serialized = _serialize_wrong_summary_job(row) if row else None
     if serialized and serialized["status"] in ACTIVE_WRONG_SUMMARY_JOB_STATUSES:
-        _schedule_wrong_summary_ai_task(assignment_id, int(teacher_id), questions_signature)
+        _schedule_wrong_summary_ai_task(
+            assignment_id,
+            int(teacher_id),
+            questions_signature,
+            str(serialized.get("run_token") or ""),
+        )
     return serialized
 
 
@@ -447,7 +526,7 @@ def _build_ai_status(
         "message": message,
         "pending_text_questions": pending_text_questions,
         "pending_difficulty": pending_difficulty,
-        "job": job,
+        "job": _public_wrong_summary_job(job),
     }
 
 
@@ -484,12 +563,17 @@ def _collect_ai_job_errors(question_stats: list[dict[str, Any]], difficulty: dic
     return [_clip_text(error, 180) for error in errors[:4]]
 
 
-def _wrong_summary_job_key(assignment_id: str, questions_signature: str) -> str:
-    return f"{assignment_id}:{questions_signature}:{PROMPT_VERSION}"
+def _wrong_summary_job_key(assignment_id: str, questions_signature: str, run_token: str = "") -> str:
+    return f"{assignment_id}:{questions_signature}:{PROMPT_VERSION}:{run_token}"
 
 
-def _schedule_wrong_summary_ai_task(assignment_id: str, teacher_id: int, questions_signature: str) -> None:
-    job_key = _wrong_summary_job_key(assignment_id, questions_signature)
+def _schedule_wrong_summary_ai_task(
+    assignment_id: str,
+    teacher_id: int,
+    questions_signature: str,
+    run_token: str,
+) -> None:
+    job_key = _wrong_summary_job_key(assignment_id, questions_signature, run_token)
     if job_key in _active_wrong_summary_jobs:
         return
     try:
@@ -502,6 +586,7 @@ def _schedule_wrong_summary_ai_task(assignment_id: str, teacher_id: int, questio
             assignment_id,
             teacher_id,
             questions_signature=questions_signature,
+            run_token=run_token,
         )
     )
 
@@ -568,15 +653,43 @@ def _serialize_wrong_summary_job(row) -> dict[str, Any]:
         "created_at": str(item.get("created_at") or ""),
         "started_at": str(item.get("started_at") or ""),
         "completed_at": str(item.get("completed_at") or ""),
+        "run_token": str(item.get("run_token") or ""),
         "updated_at": str(item.get("updated_at") or ""),
     }
 
 
-def _mark_wrong_summary_job_running(assignment_id: str, questions_signature: str) -> None:
+def _public_wrong_summary_job(job: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not job:
+        return None
+    public_job = dict(job)
+    public_job.pop("run_token", None)
+    return public_job
+
+
+def _is_wrong_summary_job_token_current(assignment_id: str, questions_signature: str, run_token: str) -> bool:
+    with get_db_connection() as conn:
+        ensure_wrong_summary_cache_tables(conn)
+        row = conn.execute(
+            """
+            SELECT status
+            FROM assignment_wrong_summary_jobs
+            WHERE assignment_id = ?
+              AND questions_signature = ?
+              AND prompt_version = ?
+              AND run_token = ?
+            LIMIT 1
+            """,
+            (assignment_id, questions_signature, PROMPT_VERSION, str(run_token or "")),
+        ).fetchone()
+        conn.commit()
+    return bool(row) and str(row["status"] or "") in ACTIVE_WRONG_SUMMARY_JOB_STATUSES
+
+
+def _mark_wrong_summary_job_running(assignment_id: str, questions_signature: str, run_token: str) -> bool:
     now = datetime.now().isoformat(timespec="seconds")
     with get_db_connection() as conn:
         ensure_wrong_summary_cache_tables(conn)
-        conn.execute(
+        cursor = conn.execute(
             """
             UPDATE assignment_wrong_summary_jobs
             SET status = ?,
@@ -586,6 +699,7 @@ def _mark_wrong_summary_job_running(assignment_id: str, questions_signature: str
             WHERE assignment_id = ?
               AND questions_signature = ?
               AND prompt_version = ?
+              AND run_token = ?
             """,
             (
                 WRONG_SUMMARY_JOB_STATUS_RUNNING,
@@ -594,12 +708,14 @@ def _mark_wrong_summary_job_running(assignment_id: str, questions_signature: str
                 assignment_id,
                 questions_signature,
                 PROMPT_VERSION,
+                str(run_token or ""),
             ),
         )
         conn.commit()
+    return int(cursor.rowcount or 0) > 0
 
 
-def _mark_wrong_summary_job_completed(assignment_id: str, questions_signature: str) -> None:
+def _mark_wrong_summary_job_completed(assignment_id: str, questions_signature: str, run_token: str) -> None:
     now = datetime.now().isoformat(timespec="seconds")
     with get_db_connection() as conn:
         ensure_wrong_summary_cache_tables(conn)
@@ -613,6 +729,7 @@ def _mark_wrong_summary_job_completed(assignment_id: str, questions_signature: s
             WHERE assignment_id = ?
               AND questions_signature = ?
               AND prompt_version = ?
+              AND run_token = ?
             """,
             (
                 WRONG_SUMMARY_JOB_STATUS_COMPLETED,
@@ -621,12 +738,18 @@ def _mark_wrong_summary_job_completed(assignment_id: str, questions_signature: s
                 assignment_id,
                 questions_signature,
                 PROMPT_VERSION,
+                str(run_token or ""),
             ),
         )
         conn.commit()
 
 
-def _mark_wrong_summary_job_failed(assignment_id: str, questions_signature: str, error_message: str) -> None:
+def _mark_wrong_summary_job_failed(
+    assignment_id: str,
+    questions_signature: str,
+    error_message: str,
+    run_token: str,
+) -> None:
     now = datetime.now().isoformat(timespec="seconds")
     with get_db_connection() as conn:
         ensure_wrong_summary_cache_tables(conn)
@@ -640,6 +763,7 @@ def _mark_wrong_summary_job_failed(assignment_id: str, questions_signature: str,
             WHERE assignment_id = ?
               AND questions_signature = ?
               AND prompt_version = ?
+              AND run_token = ?
             """,
             (
                 WRONG_SUMMARY_JOB_STATUS_FAILED,
@@ -649,6 +773,7 @@ def _mark_wrong_summary_job_failed(assignment_id: str, questions_signature: str,
                 assignment_id,
                 questions_signature,
                 PROMPT_VERSION,
+                str(run_token or ""),
             ),
         )
         conn.commit()
@@ -1110,6 +1235,8 @@ async def _attach_text_answer_clusters(
     question_stats: list[dict[str, Any]],
     *,
     allow_generate: bool,
+    questions_signature: str = "",
+    job_run_token: str = "",
 ) -> None:
     pending: list[tuple[dict[str, Any], str]] = []
     for item in question_stats:
@@ -1148,6 +1275,13 @@ async def _attach_text_answer_clusters(
             groups = _normalize_text_cluster_groups(result, int(item["wrong_count"]))
             groups = _attach_details_to_wrong_groups(groups, item["wrong_records"], int(item["wrong_count"]))
             if groups:
+                if questions_signature and not _is_wrong_summary_job_token_current(
+                    assignment_id,
+                    str(questions_signature or ""),
+                    str(job_run_token or ""),
+                ):
+                    item["text_cluster_status"] = "stale"
+                    return
                 item["top_wrong_answers"] = groups
                 item["text_cluster_status"] = "generated"
                 _save_text_cluster_cache(

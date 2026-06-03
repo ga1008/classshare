@@ -118,7 +118,10 @@ from ..services.teacher_account_service import (
     build_teacher_account_summary,
     list_teacher_accounts,
 )
-from ..services.wrong_question_summary_service import build_assignment_wrong_question_summary
+from ..services.wrong_question_summary_service import (
+    build_assignment_wrong_question_summary,
+    reorganize_assignment_wrong_summary_ai,
+)
 from ..services.academic_integration_service import (
     list_academic_system_profiles,
     list_teacher_academic_credentials,
@@ -1533,6 +1536,24 @@ async def assignment_wrong_summary_status(
         "assignment_id": str(assignment_id),
         "ai_status": summary.get("ai_status") or {},
         "stats": summary.get("stats") or {},
+    }
+
+
+@router.post("/api/assignments/{assignment_id}/wrong-summary/reorganize", response_class=JSONResponse)
+async def assignment_wrong_summary_reorganize(
+    assignment_id: str,
+    user: dict = Depends(get_current_teacher),
+):
+    summary = await reorganize_assignment_wrong_summary_ai(
+        assignment_id,
+        int(user["id"]),
+    )
+    return {
+        "status": "success",
+        "assignment_id": str(assignment_id),
+        "ai_status": summary.get("ai_status") or {},
+        "stats": summary.get("stats") or {},
+        "reset_result": summary.get("reset_result") or {},
     }
 
 
