@@ -10,6 +10,8 @@ from classroom_app.database import get_db_connection
 from classroom_app.dependencies import get_current_user
 from classroom_app.frontend_assets import VITE_MANIFEST_PATH
 from classroom_app.routers import ui as ui_router
+from classroom_app.routers.ui_parts import assignment_pages as ui_assignment_pages
+from classroom_app.routers.ui_parts import classroom as ui_classroom
 
 
 REQUIRED_AUTHENTICATED_ISLANDS = (
@@ -269,7 +271,9 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
 
         with (
             patch.object(ui_router, "close_overdue_assignments", lambda conn: 0),
+            patch.object(ui_assignment_pages, "close_overdue_assignments", lambda conn: 0),
             patch.object(ui_router, "record_behavior_event", lambda *args, **kwargs: None),
+            patch.object(ui_assignment_pages, "record_behavior_event", lambda *args, **kwargs: None),
             _authenticated_client(student) as client,
         ):
             response = client.get(f"/assignment/{assignment_id}", follow_redirects=False)
@@ -290,6 +294,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
 
         with (
             patch.object(ui_router, "close_overdue_assignments", lambda conn: 0),
+            patch.object(ui_assignment_pages, "close_overdue_assignments", lambda conn: 0),
             _authenticated_client(teacher) as client,
         ):
             response = client.get(f"/submission/{submission_id}", follow_redirects=False)
@@ -312,7 +317,9 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
 
         with (
             patch.object(ui_router, "close_overdue_assignments", lambda conn: 0),
+            patch.object(ui_assignment_pages, "close_overdue_assignments", lambda conn: 0),
             patch.object(ui_router, "record_behavior_event", lambda *args, **kwargs: None),
+            patch.object(ui_assignment_pages, "record_behavior_event", lambda *args, **kwargs: None),
             _authenticated_client(teacher) as client,
         ):
             response = client.get(f"/assignment/{assignment_id}", follow_redirects=False)
@@ -335,9 +342,13 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
 
         with (
             patch.object(ui_router, "close_overdue_assignments", lambda conn: 0),
+            patch.object(ui_classroom, "close_overdue_assignments", lambda conn: 0),
             patch.object(ui_router, "maybe_enqueue_teacher_daily_checkin_sync", lambda *args, **kwargs: None),
+            patch.object(ui_classroom, "maybe_enqueue_teacher_daily_checkin_sync", lambda *args, **kwargs: None),
             patch.object(ui_router, "record_behavior_event", lambda *args, **kwargs: None),
+            patch.object(ui_classroom, "record_behavior_event", lambda *args, **kwargs: None),
             patch.object(ui_router, "schedule_discussion_mood_refresh_soon", lambda *args, **kwargs: None),
+            patch.object(ui_classroom, "schedule_discussion_mood_refresh_soon", lambda *args, **kwargs: None),
             _authenticated_client(teacher) as client,
         ):
             response = client.get(f"/classroom/{class_offering_id}", follow_redirects=False)

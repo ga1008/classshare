@@ -1,0 +1,3026 @@
+[
+  {
+    "path": "/",
+    "methods": [
+      "GET"
+    ],
+    "name": "root",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_agent_tasks",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_agent_task",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/bootstrap",
+    "methods": [
+      "GET"
+    ],
+    "name": "bootstrap_agent_task_center",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/composer",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_set_agent_task_composer",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/history",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_agent_task_history",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/{task_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_agent_task",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/{task_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_agent_task",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/{task_id}/cancel",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_cancel_agent_task",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/chat",
+    "methods": [
+      "POST"
+    ],
+    "name": "handle_ai_chat",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/chat/history/{session_uuid}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_ai_chat_history",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/chat/session/new/{class_offering_id}",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_new_ai_chat_session",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/chat/sessions/{class_offering_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_ai_chat_sessions",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/exam/generate",
+    "methods": [
+      "POST"
+    ],
+    "name": "ai_generate_exam",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/exam/paper/{paper_id}/status",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_exam_paper_gen_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/exam/papers/generating",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_generating_exam_papers",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/exam/source-materials",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_ai_exam_source_materials",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/exam/suggest-topics",
+    "methods": [
+      "POST"
+    ],
+    "name": "ai_suggest_exam_topics",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/exam/task/{task_id}/cancel",
+    "methods": [
+      "POST"
+    ],
+    "name": "cancel_exam_gen_task",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/exam/task/{task_id}/status",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_exam_gen_task_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/generate_assignment",
+    "methods": [
+      "POST"
+    ],
+    "name": "ai_generate_assignment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/workspace-chat",
+    "methods": [
+      "POST"
+    ],
+    "name": "handle_ai_workspace_chat",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/time-state",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_assignment_time_state",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_assignment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "update_assignment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/draft",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_assignment_draft",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/draft",
+    "methods": [
+      "POST"
+    ],
+    "name": "save_assignment_draft",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/draft-files/{file_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "download_assignment_draft_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/export-attachments/{class_offering_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "export_submission_attachments",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/export-review-docx",
+    "methods": [
+      "GET"
+    ],
+    "name": "export_student_assignment_review_docx",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/export/{class_offering_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "export_grades_for_class",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/submissions",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_submissions_for_assignment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/submissions/batch-grade",
+    "methods": [
+      "POST"
+    ],
+    "name": "batch_grade_submissions",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/submissions/offline",
+    "methods": [
+      "POST"
+    ],
+    "name": "teacher_offline_submit_assignment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/submissions/withdraw",
+    "methods": [
+      "POST"
+    ],
+    "name": "teacher_withdraw_submissions",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/submissions/zero-unsubmitted",
+    "methods": [
+      "POST"
+    ],
+    "name": "zero_unsubmitted_scores",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/submit",
+    "methods": [
+      "POST"
+    ],
+    "name": "submit_assignment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/withdraw",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "withdraw_submission",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/wrong-summary/reorganize",
+    "methods": [
+      "POST"
+    ],
+    "name": "assignment_wrong_summary_reorganize",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/wrong-summary/status",
+    "methods": [
+      "GET"
+    ],
+    "name": "assignment_wrong_summary_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/bookmarks",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_bookmarks",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/comments/{comment_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_comment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/comments/{comment_id}/like",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_like_comment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/custom-emojis",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_custom_emojis",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/discovery",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_blog_discovery",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/image/{file_hash}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_blog_image",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/my-posts",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_my_posts",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/posts",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_posts",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/posts",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_post",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/posts/{post_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_post",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/posts/{post_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_post",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/posts/{post_id}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_update_post",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/posts/{post_id}/bookmark",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_bookmark_post",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/posts/{post_id}/comments",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_comments",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/posts/{post_id}/comments",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_add_comment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/posts/{post_id}/comments-toggle",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_toggle_comments",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/posts/{post_id}/feature",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_feature_post",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/posts/{post_id}/hide",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_hide_post",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/posts/{post_id}/like",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_like_post",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/posts/{post_id}/pin",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_pin_post",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/summary",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_blog_summary",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/upload-image",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_upload_image",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/user-classes",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_user_classes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/users-search",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_users_search",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classroom-interactions/activities/{activity_id}/close",
+    "methods": [
+      "POST"
+    ],
+    "name": "close_live_activity",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classroom-interactions/activities/{activity_id}/questions",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_live_question",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classroom-interactions/activities/{activity_id}/respond",
+    "methods": [
+      "POST"
+    ],
+    "name": "respond_live_activity",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classroom-interactions/classrooms/{class_offering_id}/activities",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_live_activity",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classroom-interactions/classrooms/{class_offering_id}/signals",
+    "methods": [
+      "POST"
+    ],
+    "name": "set_live_signal",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classroom-interactions/classrooms/{class_offering_id}/signals/clear",
+    "methods": [
+      "POST"
+    ],
+    "name": "clear_live_signal",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classroom-interactions/classrooms/{class_offering_id}/snapshot",
+    "methods": [
+      "GET"
+    ],
+    "name": "interaction_snapshot",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classroom-interactions/questions/{question_id}/resolve",
+    "methods": [
+      "POST"
+    ],
+    "name": "resolve_live_question",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classroom-interactions/signals/{signal_id}/resolve",
+    "methods": [
+      "POST"
+    ],
+    "name": "resolve_live_signal",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/behavior/batch",
+    "methods": [
+      "POST"
+    ],
+    "name": "ingest_behavior_batch",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/custom-emojis",
+    "methods": [
+      "POST"
+    ],
+    "name": "upload_custom_emoji",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/custom-emojis/{emoji_id}/file",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_custom_emoji_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/discussion-attachments",
+    "methods": [
+      "POST"
+    ],
+    "name": "upload_discussion_attachments",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/discussion-attachments/{attachment_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "download_discussion_attachment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/discussion-attachments/{attachment_id}/{variant}",
+    "methods": [
+      "GET"
+    ],
+    "name": "download_discussion_attachment_variant",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/discussion-mood",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_discussion_mood",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/emoji-panel",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_emoji_panel_data",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/final-materials/generate",
+    "methods": [
+      "POST"
+    ],
+    "name": "generate_classroom_final_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/learning-home-material",
+    "methods": [
+      "PUT"
+    ],
+    "name": "update_classroom_home_learning_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/learning/material-progress",
+    "methods": [
+      "POST"
+    ],
+    "name": "post_material_progress",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/learning/progress",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_learning_progress",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/learning/stages/{stage_key}/exam",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_learning_stage_exam",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/learning/stages/{stage_key}/exam",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_learning_stage_exam",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/materials",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_classroom_materials",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/private/contacts",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_classroom_private_message_contacts",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/ai-material-task",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_classroom_session_ai_material_task",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/ai-material-task",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_classroom_session_ai_material_task",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/learning-material",
+    "methods": [
+      "PUT"
+    ],
+    "name": "update_classroom_session_learning_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/smart-checkin",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_session_smart_checkin",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/smart-checkin/sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_session_smart_checkin",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/smart-attendance/analytics",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_classroom_smart_attendance_analytics",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/smart-attendance/export",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_export_classroom_smart_attendance",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/todos",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_classroom_todos",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/todos",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_classroom_todo",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/todos/{todo_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_classroom_todo",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/todos/{todo_id}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "update_classroom_todo",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/classrooms/{class_offering_id}/groups",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_study_group",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/classrooms/{class_offering_id}/snapshot",
+    "methods": [
+      "GET"
+    ],
+    "name": "collaboration_snapshot",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/files/{file_id}/download",
+    "methods": [
+      "GET"
+    ],
+    "name": "download_study_group_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/groups/{group_id}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "update_study_group",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/groups/{group_id}/blog-draft",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_submission_blog_draft",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/groups/{group_id}/files",
+    "methods": [
+      "POST"
+    ],
+    "name": "upload_study_group_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/groups/{group_id}/join",
+    "methods": [
+      "POST"
+    ],
+    "name": "join_study_group",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/groups/{group_id}/leave",
+    "methods": [
+      "POST"
+    ],
+    "name": "leave_study_group",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/groups/{group_id}/members",
+    "methods": [
+      "POST"
+    ],
+    "name": "add_study_group_member",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/groups/{group_id}/members/{student_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "remove_study_group_member",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/groups/{group_id}/peer-reviews",
+    "methods": [
+      "POST"
+    ],
+    "name": "save_peer_review",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/groups/{group_id}/submission",
+    "methods": [
+      "PUT"
+    ],
+    "name": "save_group_submission",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/courses/{class_offering_id}/files",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_classroom_files",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/courses/{course_id}/assignment-stats",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_course_assignment_stats",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/courses/{course_id}/assignments",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_assignment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/courses/{course_id}/files/upload",
+    "methods": [
+      "POST"
+    ],
+    "name": "upload_course_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/courses/{course_id}/files/{file_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_course_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/exam-papers",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_exam_papers",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/exam-papers",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_exam_paper",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/exam-papers/import-json",
+    "methods": [
+      "POST"
+    ],
+    "name": "import_exam_paper_json",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/exam-papers/json-template",
+    "methods": [
+      "GET"
+    ],
+    "name": "download_exam_json_template",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/exam-papers/{paper_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_exam_paper",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/exam-papers/{paper_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_exam_paper",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/exam-papers/{paper_id}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "update_exam_paper",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/exam-papers/{paper_id}/assign",
+    "methods": [
+      "POST"
+    ],
+    "name": "assign_exam_paper",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/exam-papers/{paper_id}/tags",
+    "methods": [
+      "PUT"
+    ],
+    "name": "update_exam_paper_tags",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/feedback",
+    "methods": [
+      "POST"
+    ],
+    "name": "submit_feedback",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/feedback-review/bootstrap",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_feedback_review_bootstrap",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/feedback-review/items",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_update_feedback_review_item",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/feedback/my",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_my_feedback",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/feedback/{feedback_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "withdraw_feedback",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/feedback/{feedback_id}/attachment/{file_hash}",
+    "methods": [
+      "GET"
+    ],
+    "name": "serve_feedback_attachment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/feedback/{feedback_id}/detail",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_feedback_detail",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/feedback/{feedback_id}/upload",
+    "methods": [
+      "POST"
+    ],
+    "name": "upload_feedback_attachment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/files/check",
+    "methods": [
+      "POST"
+    ],
+    "name": "check_file_exists",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/files/upload/chunk",
+    "methods": [
+      "POST"
+    ],
+    "name": "upload_chunk",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/files/upload/complete",
+    "methods": [
+      "POST"
+    ],
+    "name": "complete_chunked_upload",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/files/upload/init",
+    "methods": [
+      "POST"
+    ],
+    "name": "init_chunked_upload",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/files/{file_id}/ai-enrich",
+    "methods": [
+      "POST"
+    ],
+    "name": "ai_enrich_file_metadata",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/files/{file_id}/description",
+    "methods": [
+      "PUT"
+    ],
+    "name": "update_file_description",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/files/{file_id}/metadata",
+    "methods": [
+      "PUT"
+    ],
+    "name": "update_file_metadata",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/internal/grading-complete",
+    "methods": [
+      "POST"
+    ],
+    "name": "handle_ai_grading_callback",
+    "include_in_schema": false
+  },
+  {
+    "path": "/api/internal/health",
+    "methods": [
+      "GET"
+    ],
+    "name": "internal_health",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/internal/metrics",
+    "methods": [
+      "GET"
+    ],
+    "name": "internal_metrics",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/learning-path/bootstrap",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_learning_path_bootstrap",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/learning-path/items",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_update_learning_path_item",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/learning/cultivation-profile",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_cultivation_profile",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/ai/ai-generate",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_ai_generate_config",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/ai/config/{class_offering_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_ai_config",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/ai/configure",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_configure_ai_offering",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/class_offerings/create",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_class_offering",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/class_offerings/preview",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_preview_class_offering",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/class_offerings/save",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_save_class_offering",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/class_offerings/{offering_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_class_offering",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classes/create",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_class",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classes/sync-current-academic",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_current_classes_from_academic_system",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classes/{class_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_class",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classes/{class_id}/students",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_class_student",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classrooms/free-options",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_load_free_classroom_options",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classrooms/free-query",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_query_free_classrooms",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classrooms/sync-academic",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_academic_teaching_places",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classrooms/teaching-places",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_academic_teaching_places",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classrooms/{class_offering_id}/academic-exams",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_classroom_academic_exams",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classrooms/{class_offering_id}/academic-exams/sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_classroom_academic_exams",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classrooms/{class_offering_id}/exam-roster",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_classroom_exam_roster",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classrooms/{class_offering_id}/exam-roster/export",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_export_classroom_exam_roster",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classrooms/{class_offering_id}/exam-roster/sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_classroom_exam_roster",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/courses/ai-generate-lessons",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_ai_generate_course_lessons",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/courses/create",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_course",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/courses/save",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_save_course",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/courses/sync-current-academic",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_current_courses_from_academic_system",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/courses/{course_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_course",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/courses/{course_id}/files/upload",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_upload_course_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/offerings/list",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_offerings",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/semesters/calendar/sync-current",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_current_semester_from_academic_system",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/semesters/save",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_save_semester",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/semesters/{semester_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_semester",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/semesters/{semester_id}/calendar/sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_semester_calendar",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/students/{student_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_class_student",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/students/{student_id}/status",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_update_class_student_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/students/{student_id}/support-note",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_update_student_support_note",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/academic-course-exams/sync-current",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_academic_course_exams",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/academic-credentials",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_academic_credentials",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/academic-credentials",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_save_academic_credential",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/academic-credentials/{credential_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_academic_credential",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/academic-credentials/{credential_id}/verify",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_verify_academic_credential",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/academic-invigilations/sync-current",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_academic_invigilations",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/academic-sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_academic_data",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/academic-sync-capabilities",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_academic_sync_capabilities",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/agent-keys",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_agent_key",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/agent-keys/status",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_agent_key_dashboard",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/agent-keys/usage/refresh",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_refresh_agent_runtime_usage",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/agent-keys/{key_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_agent_key",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/agent-keys/{key_id}/activate",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_activate_agent_key",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/agent-keys/{key_id}/test",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_test_agent_key",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/blog-crawler/cancel-pending",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_cancel_blog_news_crawler_pending_runs",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/blog-crawler/config",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_update_blog_news_crawler_config",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/blog-crawler/run",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_enqueue_blog_news_crawler_run",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/blog-crawler/status",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_blog_news_crawler_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/integration-request-probe",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_probe_integration_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/organizations/colleges",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_organization_college",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/organizations/colleges/{college_id:int}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_organization_college",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/organizations/colleges/{college_id:int}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "api_update_organization_college",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/organizations/departments",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_organization_department",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/organizations/departments/{department_id:int}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_organization_department",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/organizations/departments/{department_id:int}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "api_update_organization_department",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/organizations/schools",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_organization_school_options",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/organizations/schools",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_organization_school",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/organizations/schools/{school_id:int}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_organization_school",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/organizations/schools/{school_id:int}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "api_update_organization_school",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/organizations/tree",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_organization_tree",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/password-resets/{request_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_password_reset_request_detail",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/password-resets/{request_id}/approve",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_approve_password_reset_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/password-resets/{request_id}/reject",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_reject_password_reset_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/repair-submission-files",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_repair_submission_files",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/smart-classroom-credentials",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_smart_classroom_credentials",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/smart-classroom-credentials",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_save_smart_classroom_credential",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/smart-classroom-credentials/{credential_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_smart_classroom_credential",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/smart-classroom-credentials/{credential_id}/verify",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_verify_smart_classroom_credential",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/smart-classroom-sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_smart_classroom_data",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/smart-classroom-sync-capabilities",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_smart_classroom_sync_capabilities",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/super-admin",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_update_super_admin_teacher",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/teachers",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_teacher_account",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/teachers/{teacher_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_teacher_account",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/teachers/{teacher_id}",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_update_teacher_account",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/teachers/{teacher_id}/memberships",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_upsert_teacher_membership",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/teachers/{teacher_id}/memberships/{membership_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_deactivate_teacher_membership",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/teachers/{teacher_id}/memberships/{membership_id}/primary",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_set_teacher_primary_membership",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/teachers/{teacher_id}/reset-password",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_reset_teacher_account_password",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/teachers/{teacher_id}/super-admin/grant",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_grant_teacher_account_super_admin",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/teachers/{teacher_id}/super-admin/revoke",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_revoke_teacher_account_super_admin",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/teacher-onboarding/classes/create",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_onboarding_class",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/teacher-onboarding/complete",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_complete_teacher_onboarding",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/teacher-onboarding/course-description",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_generate_onboarding_course_description",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/teacher-onboarding/dismiss",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_dismiss_teacher_onboarding",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/teacher-onboarding/state",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_teacher_onboarding_state",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/textbooks/ai-format-intro-catalog",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_ai_format_textbook_intro_catalog",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/textbooks/save",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_save_textbook",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/textbooks/{textbook_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_textbook",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/textbooks/{textbook_id}/attachment",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_download_textbook_attachment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/ai-generate",
+    "methods": [
+      "POST"
+    ],
+    "name": "ai_generate_material_from_context",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/ai-generation/assignments",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_material_ai_generation_assignment_candidates",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/ai-generation/candidates",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_material_ai_generation_candidates",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/ai-import",
+    "methods": [
+      "POST"
+    ],
+    "name": "ai_import_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/ai-import-records/active",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_ai_import_records",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/ai-import-records/{record_id}/export",
+    "methods": [
+      "GET"
+    ],
+    "name": "export_ai_import_record",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/ai-import-records/{record_id}/status",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_ai_import_record_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/download",
+    "methods": [
+      "POST"
+    ],
+    "name": "batch_download_materials",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/library",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_teacher_material_library",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/upload",
+    "methods": [
+      "POST"
+    ],
+    "name": "upload_materials",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_material_detail",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/ai-assign-sessions",
+    "methods": [
+      "POST"
+    ],
+    "name": "ai_assign_material_to_sessions",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/ai-import/export",
+    "methods": [
+      "GET"
+    ],
+    "name": "export_ai_import_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/ai-import/optimize",
+    "methods": [
+      "POST"
+    ],
+    "name": "optimize_ai_import_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/ai-import/preview",
+    "methods": [
+      "GET"
+    ],
+    "name": "preview_ai_import_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/ai-optimize",
+    "methods": [
+      "POST"
+    ],
+    "name": "ai_optimize_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/ai-parse",
+    "methods": [
+      "POST"
+    ],
+    "name": "ai_parse_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/ai-rewrite",
+    "methods": [
+      "POST"
+    ],
+    "name": "ai_rewrite_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/assign",
+    "methods": [
+      "POST"
+    ],
+    "name": "assign_material_to_classrooms",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/content",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_material_content",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/content",
+    "methods": [
+      "PUT"
+    ],
+    "name": "update_material_content",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/repository",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_material_repository",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/repository/auto-bind-readmes",
+    "methods": [
+      "POST"
+    ],
+    "name": "auto_bind_repository_readmes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/repository/command",
+    "methods": [
+      "POST"
+    ],
+    "name": "run_material_repository_command",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/repository/credentials",
+    "methods": [
+      "POST"
+    ],
+    "name": "save_material_repository_credentials",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/scope",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "update_material_scope",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/message-center/bootstrap",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_message_center_bootstrap",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/message-center/items",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_message_center_items",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/message-center/private/ai-jobs/{job_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_private_ai_reply_job",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/message-center/private/attachments/{attachment_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_private_message_attachment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/message-center/private/attachments/{attachment_id}/{variant}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_private_message_attachment_variant",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/message-center/private/blocks",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_remove_private_message_block",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/message-center/private/blocks",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_private_message_blocks",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/message-center/private/blocks",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_add_private_message_block",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/message-center/private/contacts",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_private_message_contacts",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/message-center/private/conversation",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_private_message_conversation",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/message-center/private/messages",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_send_private_message",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/message-center/read",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_message_center_mark_read",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/message-center/summary",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_message_center_summary",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/avatar",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_profile_avatar",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/avatar",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_upload_profile_avatar",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/basic",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_update_basic_profile",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/bootstrap",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_profile_bootstrap",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/email-configs",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_teacher_email_configs",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/email-configs",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_teacher_email_config",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/email-configs/{config_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_teacher_email_config",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/email-configs/{config_id}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_update_teacher_email_config",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/email-configs/{config_id}/test",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_test_teacher_email_config",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/mood",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_update_profile_mood",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/password",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_change_profile_password",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/portfolio",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_profile_portfolio",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/portfolio/items",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_add_profile_portfolio_item",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/portfolio/items/{item_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_remove_profile_portfolio_item",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/portfolio/items/{item_id}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_update_profile_portfolio_item",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/session/active",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_active_sessions",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/session/invalidate/{user_id}",
+    "methods": [
+      "POST"
+    ],
+    "name": "invalidate_session",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/session/my-info",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_my_session_info",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_signatures",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/delete",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_delete_signature_compat",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/image/{signature_id:int}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_signature_image",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/list",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_signatures",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/requests",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_signature_access_requests",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/requests/{request_id:int}/approve",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_approve_signature_access_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/requests/{request_id:int}/reject",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_reject_signature_access_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/schools",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_signature_school_options",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/teachers",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_signature_teacher_options",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/upload",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_upload_signature",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/{signature_id:int}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_signature",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/{signature_id:int}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "api_update_signature",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/{signature_id:int}/image",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_signature_image",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/{signature_id:int}/requests",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_signature_access_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/{signature_id:int}/use",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_record_signature_use",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/student/login/identity",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_student_identity_login",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/student/login/password",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_student_password_login",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/student/password/change",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_student_password_change",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/student/password/forgot",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_student_password_forgot",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/student/password/setup",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_student_password_setup",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/submission-files/{file_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_submission_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/submission-files/{file_id}/preview",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_submission_file_preview",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/submissions/{submission_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "return_submission",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/submissions/{submission_id}/files",
+    "methods": [
+      "POST"
+    ],
+    "name": "add_submission_files",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/submissions/{submission_id}/force-regrade",
+    "methods": [
+      "POST"
+    ],
+    "name": "ai_force_regrade_submission",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/submissions/{submission_id}/grade",
+    "methods": [
+      "POST"
+    ],
+    "name": "grade_submission",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/submissions/{submission_id}/regrade",
+    "methods": [
+      "POST"
+    ],
+    "name": "ai_regrade_submission",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/submissions/{submission_id}/stop-grading",
+    "methods": [
+      "POST"
+    ],
+    "name": "ai_stop_grading_submission",
+    "include_in_schema": true
+  },
+  {
+    "path": "/assignment/{assignment_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "assignment_detail_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/assignment/{assignment_id}/wrong-summary",
+    "methods": [
+      "GET"
+    ],
+    "name": "assignment_wrong_summary_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/auth/forbidden",
+    "methods": [
+      "GET"
+    ],
+    "name": "permission_warning_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/blog",
+    "methods": [
+      "GET"
+    ],
+    "name": "blog_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/classroom/{class_offering_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "classroom_main",
+    "include_in_schema": true
+  },
+  {
+    "path": "/dashboard",
+    "methods": [
+      "GET"
+    ],
+    "name": "dashboard",
+    "include_in_schema": true
+  },
+  {
+    "path": "/download/course_file/{file_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "download_course_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/exam/new",
+    "methods": [
+      "GET"
+    ],
+    "name": "exam_new_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/exam/take/{assignment_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "exam_take_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/exam/{exam_id}/edit",
+    "methods": [
+      "GET"
+    ],
+    "name": "exam_editor_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/favicon.ico",
+    "methods": [
+      "GET"
+    ],
+    "name": "favicon",
+    "include_in_schema": false
+  },
+  {
+    "path": "/feedback-review",
+    "methods": [
+      "GET"
+    ],
+    "name": "feedback_review_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/learning-path",
+    "methods": [
+      "GET"
+    ],
+    "name": "learning_path_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/logout",
+    "methods": [
+      "GET"
+    ],
+    "name": "logout",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_workflow_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/ai",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_ai_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/classes",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_classes_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/classrooms",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_classrooms_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/courses",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_courses_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/exams",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_exams_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/materials",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_materials_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/offerings",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_offerings_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/semesters",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_semesters_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/signatures",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_signatures_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/students/{student_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_student_detail_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/system",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_redirect",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/system/academic-integrations",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_academic_integrations_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/system/agent-keys",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_agent_keys_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/system/blog-crawler",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_blog_crawler_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/system/diagnostics",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_diagnostics_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/system/feedback",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_feedback_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/system/organizations",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_organizations_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/system/password-resets",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_password_resets_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/system/smart-classroom-integrations",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_smart_classroom_integrations_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/system/super-admin",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_super_admin_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/system/users",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_users_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/textbooks",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_textbooks_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/materials/download/{material_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "download_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/materials/raw/{material_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_material_raw",
+    "include_in_schema": true
+  },
+  {
+    "path": "/materials/view/{material_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "material_viewer_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/message-center",
+    "methods": [
+      "GET"
+    ],
+    "name": "message_center_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/message-center/notifications/{notification_id}/open",
+    "methods": [
+      "GET"
+    ],
+    "name": "open_notification_detail",
+    "include_in_schema": true
+  },
+  {
+    "path": "/profile",
+    "methods": [
+      "GET"
+    ],
+    "name": "profile_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/student/login",
+    "methods": [
+      "GET"
+    ],
+    "name": "student_login_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/student/login",
+    "methods": [
+      "POST"
+    ],
+    "name": "handle_student_login",
+    "include_in_schema": true
+  },
+  {
+    "path": "/submission-files/raw/{file_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_submission_file_raw",
+    "include_in_schema": true
+  },
+  {
+    "path": "/submission/{submission_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "submission_detail_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/submissions/download/{file_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "download_submission_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/teacher/login",
+    "methods": [
+      "GET"
+    ],
+    "name": "teacher_login_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/teacher/login",
+    "methods": [
+      "POST"
+    ],
+    "name": "handle_teacher_login",
+    "include_in_schema": true
+  },
+  {
+    "path": "/teacher/register",
+    "methods": [
+      "GET"
+    ],
+    "name": "teacher_register_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/teacher/register",
+    "methods": [
+      "POST"
+    ],
+    "name": "handle_teacher_register",
+    "include_in_schema": true
+  }
+]

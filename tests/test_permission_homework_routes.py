@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, patch
 from fastapi import HTTPException
 
 from classroom_app.routers import homework
+from classroom_app.routers.homework_parts import assignments as homework_assignments
+from classroom_app.routers.homework_parts import grading as homework_grading
 
 
 class JsonRequest:
@@ -89,7 +91,11 @@ class HomeworkRoutePermissionTests(unittest.TestCase):
     def _run_with_patched_db(self, coroutine):
         with (
             patch.object(homework, "get_db_connection", lambda: _same_connection(self.conn)),
+            patch.object(homework_assignments, "get_db_connection", lambda: _same_connection(self.conn)),
+            patch.object(homework_grading, "get_db_connection", lambda: _same_connection(self.conn)),
             patch.object(homework, "close_overdue_assignments", lambda conn: 0),
+            patch.object(homework_assignments, "close_overdue_assignments", lambda conn: 0),
+            patch.object(homework_grading, "close_overdue_assignments", lambda conn: 0),
         ):
             return asyncio.run(coroutine)
 
@@ -119,7 +125,7 @@ class HomeworkRoutePermissionTests(unittest.TestCase):
         self.assertTrue(self._assignment_exists())
 
     def test_batch_grade_rejects_non_offering_teacher_before_ai_enqueue(self):
-        with patch.object(homework, "submit_submission_for_ai_grading", new_callable=AsyncMock) as enqueue:
+        with patch.object(homework_grading, "submit_submission_for_ai_grading", new_callable=AsyncMock) as enqueue:
             with self.assertRaises(HTTPException) as ctx:
                 self._run_with_patched_db(
                     homework.batch_grade_submissions(
