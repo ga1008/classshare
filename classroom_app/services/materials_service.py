@@ -541,8 +541,10 @@ def ensure_user_material_access(conn, material_id: int, user: dict):
             raise HTTPException(403, "无权访问该材料")
         return material
 
-    if can_read_scoped_resource(conn, material, user):
-        return material
+    if user["role"] != "student":
+        if can_read_scoped_resource(conn, material, user):
+            return material
+        raise HTTPException(403, "Permission denied")
 
     offering_ids = _get_student_offering_ids(conn, int(user["id"]))
     if not offering_ids:

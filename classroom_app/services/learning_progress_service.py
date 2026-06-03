@@ -26,6 +26,7 @@ from .psych_profile_service import (
 from .submission_file_alignment import resolve_submission_file_path
 from .submission_assets import delete_storage_tree
 from .ai_grading_service import submit_submission_for_ai_grading
+from .resource_access_service import student_can_read_assignment
 
 
 PASSING_STAGE_SCORE = 80
@@ -393,10 +394,7 @@ def get_stage_exam_target(conn, assignment_id: int | str) -> Optional[dict[str, 
 
 
 def student_can_access_assignment(conn, assignment_id: int | str, student_id: int | str) -> bool:
-    target = get_stage_exam_target(conn, assignment_id)
-    if not target:
-        return True
-    return int(target["student_id"]) == int(student_id)
+    return student_can_read_assignment(conn, assignment_id, student_id)
 
 
 def is_personal_stage_exam_assignment(conn, assignment_id: int | str) -> bool:

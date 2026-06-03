@@ -139,6 +139,7 @@ from ..services.resource_access_service import (
     SCOPE_PRIVATE,
     SCOPE_SCHOOL,
     normalize_scope_level,
+    teacher_can_manage_assignment,
     teacher_can_manage_exam_paper,
     teacher_can_use_exam_paper,
 )
@@ -1382,17 +1383,18 @@ def assignment_detail_page(request: Request, assignment_id: str, user: dict = De
         if user['role'] == 'teacher':
             access_row = conn.execute(
                 """
-                SELECT 1
+                SELECT a.*,
+                       c.created_by_teacher_id,
+                       o.teacher_id AS offering_teacher_id
                 FROM assignments a
                 JOIN courses c ON c.id = a.course_id
                 LEFT JOIN class_offerings o ON o.id = a.class_offering_id
                 WHERE a.id = ?
-                  AND (c.created_by_teacher_id = ? OR o.teacher_id = ?)
                 LIMIT 1
                 """,
-                (assignment_id, user["id"], user["id"]),
+                (assignment_id,),
             ).fetchone()
-            if not access_row:
+            if not access_row or not teacher_can_manage_assignment(conn, int(user["id"]), access_row):
                 raise HTTPException(403, "无权查看该作业")
             _expire_stale_ai_grading_for_assignments(conn, [assignment_id])
             exam_questions = None

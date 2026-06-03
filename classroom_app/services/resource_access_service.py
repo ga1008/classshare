@@ -186,6 +186,59 @@ def teacher_can_manage_course(conn: sqlite3.Connection, teacher_id: int | str, c
     return teacher_can_manage_owned_row(conn, teacher_id, course_row, owner_key="created_by_teacher_id")
 
 
+def teacher_can_use_semester(conn: sqlite3.Connection, teacher_id: int | str, semester_row: Any) -> bool:
+    teacher_pk = _safe_int(teacher_id)
+    if teacher_pk is None:
+        return False
+    return teacher_can_manage_semester(conn, teacher_pk, semester_row) or _teacher_matches_school(
+        conn,
+        teacher_pk,
+        semester_row,
+    )
+
+
+def teacher_can_manage_semester(conn: sqlite3.Connection, teacher_id: int | str, semester_row: Any) -> bool:
+    return teacher_can_manage_owned_row(conn, teacher_id, semester_row, owner_key="teacher_id")
+
+
+def teacher_can_use_textbook(conn: sqlite3.Connection, teacher_id: int | str, textbook_row: Any) -> bool:
+    return teacher_can_manage_textbook(conn, teacher_id, textbook_row)
+
+
+def teacher_can_manage_textbook(conn: sqlite3.Connection, teacher_id: int | str, textbook_row: Any) -> bool:
+    return teacher_can_manage_owned_row(conn, teacher_id, textbook_row, owner_key="teacher_id")
+
+
+def teacher_can_manage_class_offering(conn: sqlite3.Connection, teacher_id: int | str, offering_row: Any) -> bool:
+    teacher_pk = _safe_int(teacher_id)
+    if teacher_pk is None:
+        return False
+    offering_teacher_id = _safe_int(_row_value(offering_row, "teacher_id"))
+    return offering_teacher_id == teacher_pk
+
+
+def teacher_can_use_class_offering(conn: sqlite3.Connection, teacher_id: int | str, offering_row: Any) -> bool:
+    return teacher_can_manage_class_offering(conn, teacher_id, offering_row)
+
+
+def teacher_can_read_student(conn: sqlite3.Connection, teacher_id: int | str, student_row: Any) -> bool:
+    teacher_pk = _safe_int(teacher_id)
+    student_pk = _safe_int(_row_value(student_row, "id"))
+    class_id = _safe_int(_row_value(student_row, "class_id"))
+    if teacher_pk is None or student_pk is None:
+        return False
+    created_by_teacher_id = _safe_int(_row_value(student_row, "created_by_teacher_id"))
+    if created_by_teacher_id == teacher_pk:
+        return True
+    if class_id is not None:
+        return _teacher_teaches_class(conn, teacher_pk, class_id)
+    return False
+
+
+def teacher_can_manage_student(conn: sqlite3.Connection, teacher_id: int | str, student_row: Any) -> bool:
+    return teacher_can_manage_class(conn, teacher_id, student_row)
+
+
 def teacher_can_use_exam_paper(conn: sqlite3.Connection, teacher_id: int | str, paper_row: Any) -> bool:
     teacher_pk = _safe_int(teacher_id)
     if teacher_pk is None:
@@ -281,6 +334,158 @@ def _teacher_teaches_class(conn: sqlite3.Connection, teacher_id: int, class_id: 
         (teacher_id, class_id),
     ).fetchone()
     return row is not None
+
+
+def _load_assignment_row(conn: sqlite3.Connection, assignment: Any) -> Any:
+    if isinstance(assignment, (dict, sqlite3.Row)):
+        return assignment
+    row = conn.execute(
+        """
+        SELECT a.*,
+               c.created_by_teacher_id,
+               o.teacher_id AS offering_teacher_id,
+               o.class_id AS offering_class_id
+        FROM assignments a
+        JOIN courses c ON c.id = a.course_id
+        LEFT JOIN class_offerings o ON o.id = a.class_offering_id
+        WHERE a.id = ?
+        LIMIT 1
+        """,
+        (assignment,),
+    ).fetchone()
+    return row
+
+
+def _assignment_stage_student_id(conn: sqlite3.Connection, assignment_id: Any) -> int | None:
+    if assignment_id in (None, ""):
+        return None
+    row = conn.execute(
+        """
+        SELECT student_id
+        FROM learning_stage_exam_attempts
+        WHERE assignment_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (assignment_id,),
+    ).fetchone()
+    return _safe_int(row["student_id"]) if row else None
+
+
+def _assignment_owner_teacher_ids(conn: sqlite3.Connection, row: Any) -> set[int]:
+    owner_ids: set[int] = set()
+
+    class_offering_id = _safe_int(_row_value(row, "class_offering_id"))
+    if class_offering_id is not None:
+        offering_teacher_id = _safe_int(_row_value(row, "offering_teacher_id"))
+        if offering_teacher_id is None:
+            offering = conn.execute(
+                "SELECT teacher_id FROM class_offerings WHERE id = ? LIMIT 1",
+                (class_offering_id,),
+            ).fetchone()
+            offering_teacher_id = _safe_int(offering["teacher_id"]) if offering else None
+        if offering_teacher_id is not None:
+            owner_ids.add(offering_teacher_id)
+        return owner_ids
+
+    for key in ("created_by_teacher_id", "teacher_id"):
+        value = _safe_int(_row_value(row, key))
+        if value is not None:
+            owner_ids.add(value)
+
+    course_id = _safe_int(_row_value(row, "course_id"))
+    if course_id is not None and _safe_int(_row_value(row, "created_by_teacher_id")) is None:
+        course = conn.execute(
+            "SELECT created_by_teacher_id FROM courses WHERE id = ? LIMIT 1",
+            (course_id,),
+        ).fetchone()
+        course_teacher_id = _safe_int(course["created_by_teacher_id"]) if course else None
+        if course_teacher_id is not None:
+            owner_ids.add(course_teacher_id)
+
+    return owner_ids
+
+
+def teacher_can_manage_assignment(conn: sqlite3.Connection, teacher_id: int | str, assignment: Any) -> bool:
+    teacher_pk = _safe_int(teacher_id)
+    row = _load_assignment_row(conn, assignment)
+    if teacher_pk is None or row is None:
+        return False
+    return teacher_pk in _assignment_owner_teacher_ids(conn, row)
+
+
+def teacher_can_read_assignment(conn: sqlite3.Connection, teacher_id: int | str, assignment: Any) -> bool:
+    return teacher_can_manage_assignment(conn, teacher_id, assignment)
+
+
+def student_can_read_assignment(conn: sqlite3.Connection, assignment: Any, student_id: int | str) -> bool:
+    student_pk = _safe_int(student_id)
+    row = _load_assignment_row(conn, assignment)
+    if student_pk is None or row is None:
+        return False
+
+    stage_student_id = _assignment_stage_student_id(conn, _row_value(row, "id"))
+    if stage_student_id is not None:
+        return stage_student_id == student_pk
+
+    status = str(_row_value(row, "status") or "").strip().lower()
+    if status == "new":
+        return False
+
+    class_offering_id = _safe_int(_row_value(row, "class_offering_id"))
+    if class_offering_id is not None:
+        return _student_in_classroom(conn, student_pk, class_offering_id)
+
+    course_id = _safe_int(_row_value(row, "course_id"))
+    if course_id is not None:
+        return _student_in_course(conn, student_pk, course_id)
+
+    return False
+
+
+def _load_submission_row(conn: sqlite3.Connection, submission: Any) -> Any:
+    if isinstance(submission, (dict, sqlite3.Row)):
+        return submission
+    row = conn.execute(
+        """
+        SELECT s.*,
+               a.course_id,
+               a.class_offering_id,
+               c.created_by_teacher_id,
+               o.teacher_id AS offering_teacher_id,
+               o.class_id AS offering_class_id
+        FROM submissions s
+        JOIN assignments a ON a.id = s.assignment_id
+        JOIN courses c ON c.id = a.course_id
+        LEFT JOIN class_offerings o ON o.id = a.class_offering_id
+        WHERE s.id = ?
+        LIMIT 1
+        """,
+        (submission,),
+    ).fetchone()
+    return row
+
+
+def teacher_can_manage_submission(conn: sqlite3.Connection, teacher_id: int | str, submission: Any) -> bool:
+    teacher_pk = _safe_int(teacher_id)
+    row = _load_submission_row(conn, submission)
+    if teacher_pk is None or row is None:
+        return False
+    return teacher_can_manage_assignment(conn, teacher_pk, row)
+
+
+def teacher_can_read_submission(conn: sqlite3.Connection, teacher_id: int | str, submission: Any) -> bool:
+    return teacher_can_manage_submission(conn, teacher_id, submission)
+
+
+def student_can_read_submission(conn: sqlite3.Connection, student_id: int | str, submission: Any) -> bool:
+    student_pk = _safe_int(student_id)
+    row = _load_submission_row(conn, submission)
+    if student_pk is None or row is None:
+        return False
+    if _safe_int(_row_value(row, "student_pk_id")) != student_pk:
+        return False
+    return student_can_read_assignment(conn, _row_value(row, "assignment_id"), student_pk)
 
 
 def can_read_scoped_resource(conn: sqlite3.Connection, row: Any, user: dict[str, Any] | None) -> bool:

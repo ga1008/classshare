@@ -67,7 +67,8 @@ def _load_student_assignment_form_fixture() -> tuple[dict, str] | None:
                 s.student_id_number,
                 s.class_id
             FROM assignments a
-            CROSS JOIN students s
+            JOIN class_offerings o ON o.id = a.class_offering_id
+            JOIN students s ON s.class_id = o.class_id
             WHERE a.status = 'published'
               AND (a.exam_paper_id IS NULL OR a.exam_paper_id = '')
               AND COALESCE(s.enrollment_status, 'active') = 'active'

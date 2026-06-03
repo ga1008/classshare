@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from .file_preview_service import infer_file_preview_profile, load_text_content
+from .resource_access_service import student_can_read_submission, teacher_can_read_submission
 from .submission_file_alignment import resolve_submission_file_path, _file_hash_sha256, _infer_mime_type
 
 
@@ -101,10 +102,8 @@ def _coerce_user_id(user: dict | None) -> int:
         raise HTTPException(403, "Invalid user") from exc
 
 
-def _can_teacher_access_submission(row, teacher_id: int) -> bool:
-    creator_teacher_id = int(row["created_by_teacher_id"] or 0)
-    offering_teacher_id = int(row["offering_teacher_id"] or 0)
-    return teacher_id in {creator_teacher_id, offering_teacher_id}
+def _can_teacher_access_submission(conn, row, teacher_id: int) -> bool:
+    return teacher_can_read_submission(conn, teacher_id, row)
 
 
 def ensure_submission_access(conn, submission_id: int, user: dict | None) -> dict:
@@ -133,12 +132,12 @@ def ensure_submission_access(conn, submission_id: int, user: dict | None) -> dic
 
     role = str(user.get("role") or "").lower()
     if role == "student":
-        if int(row["student_pk_id"]) != user_id:
+        if not student_can_read_submission(conn, user_id, row):
             raise HTTPException(403, "Permission denied")
         return dict(row)
 
     if role == "teacher":
-        if not _can_teacher_access_submission(row, user_id):
+        if not _can_teacher_access_submission(conn, row, user_id):
             raise HTTPException(403, "Permission denied")
         if row["personal_stage_attempt_id"] is not None:
             raise HTTPException(404, "Submission not found")
@@ -176,10 +175,10 @@ def ensure_submission_file_access(conn, file_id: int, user: dict | None) -> dict
 
     role = str(user.get("role") or "").lower()
     if role == "student":
-        if int(row["student_pk_id"]) != user_id:
+        if not student_can_read_submission(conn, user_id, row):
             raise HTTPException(403, "Permission denied")
     elif role == "teacher":
-        if not _can_teacher_access_submission(row, user_id):
+        if not _can_teacher_access_submission(conn, row, user_id):
             raise HTTPException(403, "Permission denied")
         if row["personal_stage_attempt_id"] is not None:
             raise HTTPException(404, "File not found")

@@ -52,10 +52,15 @@ from ..services.organization_scope_service import (
 )
 from ..services.resource_access_service import (
     teacher_can_manage_class,
+    teacher_can_manage_class_offering,
     teacher_can_manage_course,
+    teacher_can_manage_semester,
+    teacher_can_manage_student,
+    teacher_can_manage_textbook,
     teacher_can_use_class,
     teacher_can_use_course,
-    teacher_matches_school,
+    teacher_can_use_semester,
+    teacher_can_use_textbook,
 )
 from ..services.organization_management_service import (
     OrganizationManagementError,
@@ -375,14 +380,14 @@ def _ensure_teacher_can_use_semester(conn, *, semester_id: int, teacher_id: int)
         """,
         (int(semester_id),),
     ).fetchone()
-    if not row or not teacher_matches_school(conn, teacher_id, row):
+    if not row or not teacher_can_use_semester(conn, teacher_id, row):
         raise HTTPException(404, "学期不存在或不属于当前教师所在学校")
     return row
 
 
 def _ensure_teacher_can_manage_semester(conn, *, semester_id: int, teacher_id: int):
     row = _ensure_teacher_can_use_semester(conn, semester_id=semester_id, teacher_id=teacher_id)
-    if int(row["teacher_id"]) != int(teacher_id) and not is_super_admin_teacher(conn, teacher_id):
+    if not teacher_can_manage_semester(conn, teacher_id, row):
         raise HTTPException(403, "该学期由同校其他教师维护，仅可复用，不能编辑或删除")
     return row
 
@@ -416,14 +421,14 @@ def _ensure_teacher_can_use_textbook(conn, *, textbook_id: int, teacher_id: int)
         "SELECT * FROM textbooks WHERE id = ? LIMIT 1",
         (int(textbook_id),),
     ).fetchone()
-    if not row:
+    if not row or not teacher_can_use_textbook(conn, teacher_id, row):
         raise HTTPException(404, "Textbook not found")
     return row
 
 
 def _ensure_teacher_can_manage_textbook(conn, *, textbook_id: int, teacher_id: int):
     row = _ensure_teacher_can_use_textbook(conn, textbook_id=textbook_id, teacher_id=teacher_id)
-    if int(row["teacher_id"] or 0) != int(teacher_id) and not is_super_admin_teacher(conn, teacher_id):
+    if not teacher_can_manage_textbook(conn, teacher_id, row):
         raise HTTPException(403, "Only the textbook owner or a super admin can edit this textbook")
     return row
 
@@ -437,12 +442,12 @@ def _ensure_teacher_owned_offering(conn, offering_id: int, teacher_id: int):
         FROM class_offerings o
         LEFT JOIN academic_semesters s ON s.id = o.semester_id
         LEFT JOIN textbooks tb ON tb.id = o.textbook_id
-        WHERE o.id = ? AND o.teacher_id = ?
+        WHERE o.id = ?
         LIMIT 1
         """,
-        (offering_id, teacher_id),
+        (offering_id,),
     ).fetchone()
-    if not offering:
+    if not offering or not teacher_can_manage_class_offering(conn, teacher_id, offering):
         raise HTTPException(404, "课堂不存在或无权操作")
     return offering
 
@@ -757,7 +762,7 @@ def _ensure_teacher_owned_student(conn, *, student_id: int, teacher_id: int):
         """,
         (int(student_id),),
     ).fetchone()
-    if not student_row or not teacher_can_manage_class(conn, teacher_id, student_row):
+    if not student_row or not teacher_can_manage_student(conn, teacher_id, student_row):
         raise HTTPException(status_code=404, detail="学生不存在或无权操作")
     return student_row
 

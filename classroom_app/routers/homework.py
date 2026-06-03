@@ -106,6 +106,7 @@ from ..services.resource_access_service import (
     SCOPE_PRIVATE,
     SCOPE_SCHOOL,
     normalize_scope_level,
+    teacher_can_manage_assignment,
     teacher_can_manage_exam_paper,
     teacher_can_use_exam_paper,
 )
@@ -337,11 +338,8 @@ def _ensure_accepting_submission(assignment: dict[str, Any]) -> None:
     raise HTTPException(400, "作业已截止，当前只能查看，不能作答或提交")
 
 
-def _teacher_can_access_assignment(assignment: dict[str, Any], teacher_id: int) -> bool:
-    teacher_id = int(teacher_id)
-    owner_id = int(assignment.get("created_by_teacher_id") or 0)
-    offering_teacher_id = int(assignment.get("offering_teacher_id") or 0)
-    return teacher_id in {owner_id, offering_teacher_id}
+def _teacher_can_access_assignment(conn, assignment: dict[str, Any], teacher_id: int) -> bool:
+    return teacher_can_manage_assignment(conn, int(teacher_id), assignment)
 
 
 def _hide_personal_stage_asset() -> None:
@@ -402,7 +400,7 @@ def _get_assignment_for_teacher(conn, assignment_id: str, teacher_id: int) -> di
     if not assignment:
         raise HTTPException(404, "作业不存在")
     assignment_dict = refresh_assignment_runtime_status(conn, assignment)
-    if not _teacher_can_access_assignment(assignment_dict, int(teacher_id)):
+    if not _teacher_can_access_assignment(conn, assignment_dict, int(teacher_id)):
         raise HTTPException(403, "无权操作该作业")
     if assignment_dict.get("personal_stage_attempt_id") is not None:
         _hide_personal_stage_asset()
@@ -464,7 +462,7 @@ def _get_submission_for_teacher(conn, submission_id: int, teacher_id: int) -> di
     if not submission:
         raise HTTPException(404, "提交记录不存在")
     submission_dict = dict(submission)
-    if not _teacher_can_access_assignment(submission_dict, int(teacher_id)):
+    if not _teacher_can_access_assignment(conn, submission_dict, int(teacher_id)):
         raise HTTPException(403, "无权操作该提交")
     if submission_dict.get("personal_stage_attempt_id") is not None:
         _hide_personal_stage_asset()
@@ -1646,15 +1644,18 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
         assignment = conn.execute(
-            """SELECT a.*, c.created_by_teacher_id
+            """SELECT a.*,
+                      c.created_by_teacher_id,
+                      o.teacher_id AS offering_teacher_id
                FROM assignments a
                JOIN courses c ON a.course_id = c.id
+               LEFT JOIN class_offerings o ON o.id = a.class_offering_id
                WHERE a.id = ?""",
             (assignment_id,)
         ).fetchone()
         if not assignment:
             raise HTTPException(404, "作业不存在")
-        if assignment['created_by_teacher_id'] != user['id']:
+        if not _teacher_can_access_assignment(conn, dict(assignment), int(user["id"])):
             raise HTTPException(403, "无权修改该作业")
         if is_personal_stage_exam_assignment(conn, assignment_id):
             _hide_personal_stage_asset()
@@ -1735,15 +1736,20 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
 async def delete_assignment(assignment_id: str, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         assignment = conn.execute(
-            """SELECT a.id, a.course_id, c.created_by_teacher_id
+            """SELECT a.id,
+                      a.course_id,
+                      a.class_offering_id,
+                      c.created_by_teacher_id,
+                      o.teacher_id AS offering_teacher_id
                FROM assignments a
                JOIN courses c ON a.course_id = c.id
+               LEFT JOIN class_offerings o ON o.id = a.class_offering_id
                WHERE a.id = ?""",
             (assignment_id,)
         ).fetchone()
         if not assignment:
             raise HTTPException(404, "作业不存在")
-        if assignment['created_by_teacher_id'] != user['id']:
+        if not _teacher_can_access_assignment(conn, dict(assignment), int(user["id"])):
             raise HTTPException(403, "无权删除该作业")
         if is_personal_stage_exam_assignment(conn, assignment_id):
             _hide_personal_stage_asset()
@@ -1790,7 +1796,7 @@ async def get_assignment_time_state(request: Request, user: dict = Depends(get_c
         for row in rows:
             item = dict(row)
             if user.get("role") == "teacher":
-                if not _teacher_can_access_assignment(item, int(user["id"])):
+                if not _teacher_can_access_assignment(conn, item, int(user["id"])):
                     continue
             elif user.get("role") == "student":
                 if str(item.get("status") or "").strip().lower() == "new":

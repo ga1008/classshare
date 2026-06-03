@@ -106,6 +106,10 @@ def _ensure_course_file_access(conn, file_row, user: Optional[dict]):
     ensure_scoped_resource_access(conn, file_row, user)
 
 
+def _ensure_course_file_manage(conn, file_row, user: Optional[dict]):
+    ensure_scoped_resource_access(conn, file_row, user, manage=True)
+
+
 def _normalize_shared_file_description(raw_description: object) -> str:
     description = str(raw_description or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     return description[:5000]
@@ -129,21 +133,23 @@ def _update_course_file_metadata(
     conn,
     *,
     file_id: int,
-    teacher_id: int,
+    user: dict,
     description: str | None = None,
     original_link: str | None = None,
 ):
     file_row = conn.execute(
         """
-        SELECT cf.id, cf.file_name, cf.course_id, cf.description, cf.original_link
+        SELECT cf.*, c.created_by_teacher_id
         FROM course_files cf
         JOIN courses c ON cf.course_id = c.id
-        WHERE cf.id = ? AND c.created_by_teacher_id = ?
+        WHERE cf.id = ?
         """,
-        (file_id, teacher_id),
+        (file_id,),
     ).fetchone()
     if not file_row:
         raise HTTPException(status_code=404, detail="文件不存在或无操作权限")
+
+    _ensure_course_file_manage(conn, file_row, user)
 
     normalized_description = (
         _normalize_shared_file_description(description)
@@ -1065,7 +1071,7 @@ async def update_file_metadata(
         metadata = _update_course_file_metadata(
             conn,
             file_id=file_id,
-            teacher_id=int(user["id"]),
+            user=user,
             description=req.description,
             original_link=req.original_link,
         )
@@ -1088,7 +1094,7 @@ async def update_file_description(
         metadata = _update_course_file_metadata(
             conn,
             file_id=file_id,
-            teacher_id=int(user["id"]),
+            user=user,
             description=req.description,
             original_link=None,
         )
@@ -1110,16 +1116,19 @@ async def ai_enrich_file_metadata(
     with get_db_connection() as conn:
         file_row = conn.execute(
             """
-            SELECT cf.id, cf.file_name, cf.description, cf.original_link
+            SELECT cf.*, c.created_by_teacher_id
             FROM course_files cf
             JOIN courses c ON cf.course_id = c.id
-            WHERE cf.id = ? AND c.created_by_teacher_id = ?
+            WHERE cf.id = ?
             """,
-            (file_id, int(user["id"])),
+            (file_id,),
         ).fetchone()
 
     if not file_row:
         raise HTTPException(404, "文件不存在或无操作权限")
+
+    with get_db_connection() as conn:
+        _ensure_course_file_manage(conn, file_row, user)
 
     file_name = file_row["file_name"]
     existing_desc = str(file_row["description"] or "").strip()
@@ -1430,19 +1439,16 @@ async def get_classroom_files(
 
         # 3. 告知前端当前是否是教师 (用于显示操作按钮)
         is_teacher = (user['role'] == 'teacher')
+        payload_files = []
+        for row in files:
+            try:
+                ensure_scoped_resource_access(conn, row, user)
+            except HTTPException:
+                continue
+            item = dict(row)
+            item["download_url"] = f"/download/course_file/{item['id']}"
+            payload_files.append(apply_download_policy(item, resource_label="shared file"))
 
-    payload_files = []
-
-    # 将 sqlite3.Row 转换为字典列表
-    payload_files = []
-    for row in files:
-        try:
-            ensure_scoped_resource_access(conn, row, user)
-        except HTTPException:
-            continue
-        item = dict(row)
-        item["download_url"] = f"/download/course_file/{item['id']}"
-        payload_files.append(apply_download_policy(item, resource_label="共享文件"))
 
     return {"files": payload_files, "is_teacher": is_teacher}
 
