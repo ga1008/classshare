@@ -3151,6 +3151,35 @@ def init_database():
                          )
                          ''')
 
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS assignment_wrong_answer_ai_cache
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             assignment_id TEXT NOT NULL,
+                             question_key TEXT NOT NULL,
+                             answer_signature TEXT NOT NULL,
+                             prompt_version TEXT NOT NULL,
+                             result_json TEXT NOT NULL,
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             UNIQUE (assignment_id, question_key, answer_signature, prompt_version)
+                         )
+                         ''')
+
+            conn.execute('''
+                         CREATE TABLE IF NOT EXISTS exam_paper_difficulty_ai_cache
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             exam_paper_id TEXT NOT NULL,
+                             questions_signature TEXT NOT NULL,
+                             prompt_version TEXT NOT NULL,
+                             result_json TEXT NOT NULL,
+                             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                             UNIQUE (exam_paper_id, questions_signature, prompt_version)
+                         )
+                         ''')
+
             # 10. 聊天记录 (关联到班级课堂)
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS study_groups
@@ -5481,6 +5510,14 @@ def init_database():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_feedback_review_submission_question "
                 "ON student_feedback_review_notes (submission_id, question_key)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_wrong_answer_ai_cache_assignment "
+                "ON assignment_wrong_answer_ai_cache (assignment_id, question_key, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_exam_difficulty_ai_cache_paper "
+                "ON exam_paper_difficulty_ai_cache (exam_paper_id, updated_at DESC)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_study_groups_offering_status "

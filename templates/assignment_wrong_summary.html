@@ -1,0 +1,662 @@
+{% extends "base.html" %}
+{% from "macros/app_topbar.html" import app_topbar_icon %}
+
+{% block title %}错题归集 - {{ assignment.title }} | 课堂平台{% endblock %}
+{% block body_class %}wrong-summary-page{% endblock %}
+
+{% block css %}
+<style>
+    .wrong-summary-topbar {
+        position: sticky;
+        top: 0;
+        z-index: 1020;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 68px;
+        padding: 10px clamp(14px, 2vw, 24px);
+        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 18px 40px -34px rgba(15, 23, 42, 0.62);
+        backdrop-filter: blur(18px);
+    }
+
+    .wrong-summary-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+    }
+
+    .wrong-summary-brand__icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        height: 42px;
+        flex: 0 0 auto;
+        border-radius: 10px;
+        background: rgba(14, 165, 233, 0.12);
+        color: #0369a1;
+    }
+
+    .wrong-summary-brand__copy {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+    }
+
+    .wrong-summary-brand__copy strong,
+    .wrong-summary-brand__copy small {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .wrong-summary-brand__copy strong {
+        color: var(--text-primary);
+        font-size: 0.98rem;
+        font-weight: 850;
+    }
+
+    .wrong-summary-brand__copy small {
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+
+    .wrong-summary-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+
+    .wrong-summary-shell {
+        width: min(1380px, calc(100vw - 28px));
+        margin: 18px auto 40px;
+        display: grid;
+        gap: 16px;
+    }
+
+    .wrong-summary-hero,
+    .wrong-summary-section,
+    .wrong-question-card,
+    .hard-question-card {
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 18px 42px -34px rgba(15, 23, 42, 0.56);
+    }
+
+    .wrong-summary-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.8fr);
+        gap: 14px;
+        padding: clamp(18px, 2.4vw, 26px);
+    }
+
+    .wrong-summary-kicker {
+        display: inline-flex;
+        width: fit-content;
+        padding: 4px 9px;
+        border-radius: 999px;
+        background: rgba(14, 165, 233, 0.12);
+        color: #0369a1;
+        font-size: 0.74rem;
+        font-weight: 850;
+    }
+
+    .wrong-summary-hero h1 {
+        margin: 10px 0 8px;
+        color: #0f172a;
+        font-size: clamp(1.5rem, 2.3vw, 2.15rem);
+        font-weight: 880;
+        letter-spacing: 0;
+        line-height: 1.18;
+    }
+
+    .wrong-summary-hero p {
+        margin: 0;
+        color: #475569;
+        line-height: 1.72;
+    }
+
+    .wrong-summary-metrics {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .wrong-summary-metric {
+        display: grid;
+        gap: 4px;
+        min-height: 86px;
+        padding: 12px;
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.86);
+    }
+
+    .wrong-summary-metric span {
+        color: #64748b;
+        font-size: 0.76rem;
+        font-weight: 800;
+    }
+
+    .wrong-summary-metric strong {
+        color: #0f172a;
+        font-size: 1.55rem;
+        font-weight: 900;
+        line-height: 1;
+    }
+
+    .wrong-summary-metric.is-danger {
+        border-color: rgba(239, 68, 68, 0.24);
+        background: rgba(254, 242, 242, 0.86);
+    }
+
+    .wrong-summary-metric.is-danger strong {
+        color: #b91c1c;
+    }
+
+    .wrong-summary-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.12fr) minmax(360px, 0.88fr);
+        gap: 16px;
+        align-items: start;
+    }
+
+    .wrong-summary-section {
+        display: grid;
+        gap: 12px;
+        padding: 16px;
+    }
+
+    .wrong-summary-section__head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .wrong-summary-section__head h2 {
+        margin: 0;
+        color: #0f172a;
+        font-size: 1.08rem;
+        font-weight: 880;
+    }
+
+    .wrong-summary-section__head p {
+        margin: 5px 0 0;
+        color: #64748b;
+        font-size: 0.86rem;
+        line-height: 1.55;
+    }
+
+    .wrong-summary-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 28px;
+        padding: 4px 9px;
+        border-radius: 999px;
+        background: rgba(14, 165, 233, 0.1);
+        color: #0369a1;
+        font-size: 0.74rem;
+        font-weight: 850;
+        white-space: nowrap;
+    }
+
+    .wrong-question-list,
+    .hard-question-list {
+        display: grid;
+        gap: 12px;
+    }
+
+    .wrong-question-card,
+    .hard-question-card {
+        overflow: hidden;
+    }
+
+    .wrong-question-card__head,
+    .hard-question-card__head {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: start;
+        padding: 14px;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.82);
+        background: rgba(248, 250, 252, 0.86);
+    }
+
+    .wrong-question-rank,
+    .hard-question-rank {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        background: #0f172a;
+        color: #fff;
+        font-size: 0.82rem;
+        font-weight: 900;
+    }
+
+    .wrong-question-title,
+    .hard-question-title {
+        min-width: 0;
+    }
+
+    .wrong-question-title strong,
+    .hard-question-title strong {
+        display: block;
+        color: #0f172a;
+        font-size: 0.96rem;
+        font-weight: 860;
+    }
+
+    .wrong-question-title span,
+    .hard-question-title span {
+        display: block;
+        margin-top: 3px;
+        color: #64748b;
+        font-size: 0.78rem;
+        font-weight: 750;
+    }
+
+    .wrong-count-pill,
+    .hard-level-pill {
+        display: grid;
+        justify-items: end;
+        gap: 2px;
+        min-width: 76px;
+        color: #64748b;
+        font-size: 0.74rem;
+        font-weight: 800;
+    }
+
+    .wrong-count-pill strong {
+        color: #b91c1c;
+        font-size: 1.25rem;
+        line-height: 1;
+    }
+
+    .hard-level-pill strong {
+        color: #7c2d12;
+        font-size: 1.18rem;
+        line-height: 1;
+    }
+
+    .wrong-question-body,
+    .hard-question-body {
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+    }
+
+    .question-copy-block,
+    .answer-block {
+        display: grid;
+        gap: 7px;
+        padding: 12px;
+        border-radius: 8px;
+        line-height: 1.68;
+    }
+
+    .question-copy-block {
+        border: 1px solid rgba(14, 165, 233, 0.2);
+        background: rgba(240, 249, 255, 0.74);
+        color: #0f172a;
+    }
+
+    .answer-block.is-correct {
+        border: 1px solid rgba(16, 185, 129, 0.24);
+        background: rgba(236, 253, 245, 0.9);
+        color: #065f46;
+    }
+
+    .answer-block.is-wrong {
+        border: 1px solid rgba(239, 68, 68, 0.22);
+        background: rgba(254, 242, 242, 0.88);
+        color: #991b1b;
+    }
+
+    .answer-block span,
+    .question-copy-block span {
+        color: inherit;
+        font-size: 0.76rem;
+        font-weight: 880;
+    }
+
+    .answer-block strong,
+    .question-copy-block strong {
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .wrong-answer-list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .wrong-answer-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        padding: 10px 12px;
+        border: 1px solid rgba(239, 68, 68, 0.18);
+        border-radius: 8px;
+        background: rgba(255, 247, 237, 0.78);
+    }
+
+    .wrong-answer-item__copy {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+    }
+
+    .wrong-answer-item__copy strong {
+        color: #9f1239;
+        line-height: 1.55;
+        word-break: break-word;
+    }
+
+    .wrong-answer-item__copy small {
+        color: #9a3412;
+        line-height: 1.45;
+    }
+
+    .wrong-answer-item__count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 58px;
+        height: 32px;
+        padding: 0 9px;
+        border-radius: 999px;
+        background: rgba(225, 29, 72, 0.12);
+        color: #be123c;
+        font-size: 0.78rem;
+        font-weight: 900;
+        white-space: nowrap;
+    }
+
+    .hard-question-body p {
+        margin: 0;
+        color: #334155;
+        line-height: 1.7;
+    }
+
+    .hard-risk-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .hard-risk-list li {
+        display: inline-flex;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: rgba(245, 158, 11, 0.14);
+        color: #92400e;
+        font-size: 0.74rem;
+        font-weight: 820;
+    }
+
+    .wrong-summary-empty {
+        padding: 24px;
+        border: 1px dashed rgba(148, 163, 184, 0.34);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.78);
+        color: #64748b;
+        text-align: center;
+    }
+
+    .wrong-summary-empty strong {
+        display: block;
+        margin-bottom: 6px;
+        color: #0f172a;
+        font-size: 1rem;
+    }
+
+    @media (max-width: 960px) {
+        .wrong-summary-hero,
+        .wrong-summary-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .wrong-summary-topbar {
+            align-items: stretch;
+            flex-direction: column;
+        }
+
+        .wrong-summary-actions {
+            justify-content: flex-start;
+        }
+    }
+
+    @media (max-width: 640px) {
+        .wrong-summary-shell {
+            width: min(100% - 18px, 1380px);
+            margin-top: 10px;
+        }
+
+        .wrong-summary-metrics {
+            grid-template-columns: 1fr;
+        }
+
+        .wrong-question-card__head,
+        .hard-question-card__head,
+        .wrong-answer-item {
+            grid-template-columns: 1fr;
+        }
+
+        .wrong-count-pill,
+        .hard-level-pill {
+            justify-items: start;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+<header class="wrong-summary-topbar">
+    <div class="wrong-summary-brand">
+        <span class="wrong-summary-brand__icon" aria-hidden="true">{{ app_topbar_icon('alert') }}</span>
+        <span class="wrong-summary-brand__copy">
+            <strong>错题归集</strong>
+            <small>{{ assignment.title }}{% if paper %} / {{ paper.title }}{% endif %}</small>
+        </span>
+    </div>
+    <nav class="wrong-summary-actions" aria-label="错题归集页面操作">
+        <a href="{{ assignment_back_url }}" class="app-topbar-action app-topbar-action--tone-blue" title="返回作业详情" aria-label="返回作业详情">
+            <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('arrow-left') }}</span>
+            <span class="app-topbar-action__text"><strong>作业详情</strong><small>提交批改</small></span>
+        </a>
+        <a href="{{ classroom_back_url }}#assignment-panel" class="app-topbar-action app-topbar-action--primary" title="返回课堂任务区" aria-label="返回课堂任务区">
+            <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('list') }}</span>
+            <span class="app-topbar-action__text"><strong>课堂任务</strong><small>列表入口</small></span>
+        </a>
+    </nav>
+</header>
+
+<main class="wrong-summary-shell">
+    <section class="wrong-summary-hero" aria-label="错题归集概览">
+        <div>
+            <span class="wrong-summary-kicker">全班试卷诊断</span>
+            <h1>{{ assignment.title }}</h1>
+            <p>
+                按已提交学生的逐题答案统计错题人数；客观题展示前三个高频错选，填空/问答题在错答发生变化后调用一次快速 AI 归集常见错误写法。
+                最难题来自快速 AI 对整张试卷题目本身的难度判断，并按试卷内容缓存。
+            </p>
+        </div>
+        <div class="wrong-summary-metrics" aria-label="统计摘要">
+            <div class="wrong-summary-metric">
+                <span>全班人数</span>
+                <strong>{{ summary.stats.total_students }}</strong>
+            </div>
+            <div class="wrong-summary-metric">
+                <span>已提交</span>
+                <strong>{{ summary.stats.submitted_count }}</strong>
+            </div>
+            <div class="wrong-summary-metric is-danger">
+                <span>出现错答题目</span>
+                <strong>{{ summary.stats.wrong_question_count }}</strong>
+            </div>
+            <div class="wrong-summary-metric is-danger">
+                <span>单题最高错答</span>
+                <strong>{{ summary.stats.worst_wrong_count }}</strong>
+            </div>
+        </div>
+    </section>
+
+    {% if summary.unsupported_reason %}
+    <section class="wrong-summary-empty">
+        <strong>暂不能生成错题归集</strong>
+        <span>{{ summary.unsupported_reason }}</span>
+    </section>
+    {% else %}
+    <div class="wrong-summary-grid">
+        <section class="wrong-summary-section" aria-label="按错误人数排序的错题">
+            <div class="wrong-summary-section__head">
+                <div>
+                    <h2>错误人数排序</h2>
+                    <p>只统计已提交答卷；未提交学生显示在概览中，不混入单题错答人数。</p>
+                </div>
+                <span class="wrong-summary-badge">{{ summary.wrong_questions|length }} 题</span>
+            </div>
+
+            {% if summary.wrong_questions %}
+            <div class="wrong-question-list">
+                {% for item in summary.wrong_questions %}
+                {% set question = item.question %}
+                <article class="wrong-question-card">
+                    <div class="wrong-question-card__head">
+                        <span class="wrong-question-rank">{{ loop.index }}</span>
+                        <div class="wrong-question-title">
+                            <strong>第 {{ question.ordinal }} 题 · {{ question.type_label }}</strong>
+                            <span>{{ question.page_name }}{% if question.points %} / {{ question.points }} 分{% endif %}</span>
+                        </div>
+                        <span class="wrong-count-pill">
+                            <strong>{{ item.wrong_count }}</strong>
+                            <span>人错答</span>
+                        </span>
+                    </div>
+                    <div class="wrong-question-body">
+                        <div class="question-copy-block">
+                            <span>完整题目</span>
+                            <strong>{{ question.text }}</strong>
+                        </div>
+                        <div class="answer-block is-correct">
+                            <span>正确答案</span>
+                            <strong>{{ question.answer_text or '未提供参考答案' }}</strong>
+                        </div>
+                        <div class="answer-block is-wrong">
+                            <span>
+                                高频错答
+                                {% if item.text_cluster_status == 'generated' %} / AI 已归集{% elif item.text_cluster_status == 'cached' %} / AI 缓存{% elif item.text_cluster_status == 'fallback' %} / 本地归并{% endif %}
+                            </span>
+                            {% if item.top_wrong_answers %}
+                            <ul class="wrong-answer-list">
+                                {% for wrong in item.top_wrong_answers %}
+                                <li class="wrong-answer-item">
+                                    <span class="wrong-answer-item__copy">
+                                        <strong>{{ wrong.label }}</strong>
+                                        {% if wrong.likely_issue %}<small>{{ wrong.likely_issue }}</small>{% endif %}
+                                        {% if wrong.examples and wrong.examples[0] != wrong.label %}
+                                        <small>例：{{ wrong.examples|join('；') }}</small>
+                                        {% endif %}
+                                    </span>
+                                    <span class="wrong-answer-item__count">{{ wrong.count }} 人{% if wrong.percent %} · {{ wrong.percent }}%{% endif %}</span>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <strong>暂无可展示的错答分组</strong>
+                            {% endif %}
+                            {% if item.text_cluster_error %}
+                            <small>AI 归集暂未完成：{{ item.text_cluster_error }}</small>
+                            {% endif %}
+                        </div>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="wrong-summary-empty">
+                <strong>暂未发现错答</strong>
+                <span>当前已提交答卷与参考答案匹配，或试卷暂无可判定的参考答案。</span>
+            </div>
+            {% endif %}
+        </section>
+
+        <aside class="wrong-summary-section" aria-label="AI 判断的最难题">
+            <div class="wrong-summary-section__head">
+                <div>
+                    <h2>AI 判断最难题</h2>
+                    <p>{{ summary.difficulty.summary }}</p>
+                </div>
+                <span class="wrong-summary-badge">
+                    {% if summary.difficulty.source == 'cached' %}试卷缓存{% elif summary.difficulty.source == 'generated' %}本次生成{% else %}AI 状态{% endif %}
+                </span>
+            </div>
+
+            {% if summary.difficulty['items'] %}
+            <div class="hard-question-list">
+                {% for item in summary.difficulty['items'] %}
+                {% set question = item.question %}
+                <article class="hard-question-card">
+                    <div class="hard-question-card__head">
+                        <span class="hard-question-rank">{{ loop.index }}</span>
+                        <div class="hard-question-title">
+                            <strong>第 {{ question.ordinal }} 题 · {{ question.type_label }}</strong>
+                            <span>{{ question.page_name }}{% if question.points %} / {{ question.points }} 分{% endif %}</span>
+                        </div>
+                        <span class="hard-level-pill">
+                            <strong>{{ item.difficulty_label }}</strong>
+                            <span>{{ item.difficulty }}/5</span>
+                        </span>
+                    </div>
+                    <div class="hard-question-body">
+                        <div class="question-copy-block">
+                            <span>题目</span>
+                            <strong>{{ question.text }}</strong>
+                        </div>
+                        {% if item.reason %}<p>{{ item.reason }}</p>{% endif %}
+                        {% if item.risk_factors %}
+                        <ul class="hard-risk-list">
+                            {% for factor in item.risk_factors %}
+                            <li>{{ factor }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
+                        {% if item.teaching_hint %}
+                        <div class="answer-block is-correct">
+                            <span>讲评建议</span>
+                            <strong>{{ item.teaching_hint }}</strong>
+                        </div>
+                        {% endif %}
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="wrong-summary-empty">
+                <strong>暂未生成最难题</strong>
+                <span>{{ summary.difficulty.error or '快速 AI 暂不可用，请稍后刷新。' }}</span>
+            </div>
+            {% endif %}
+        </aside>
+    </div>
+    {% endif %}
+</main>
+{% endblock %}

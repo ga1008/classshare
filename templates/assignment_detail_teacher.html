@@ -1460,6 +1460,16 @@
                 </div>
             </details>
 
+            {% if assignment.exam_paper_id %}
+            <a href="/assignment/{{ assignment.id }}/wrong-summary" class="app-topbar-action app-topbar-action--tone-cyan" title="查看全班错题归集" aria-label="查看全班错题归集">
+                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('alert') }}</span>
+                <span class="app-topbar-action__text">
+                    <strong>错题</strong>
+                    <small>全班归集</small>
+                </span>
+            </a>
+            {% endif %}
+
             <details class="assignment-more-dropdown">
                 <summary class="app-topbar-action app-topbar-action--tone-teal" title="批改处理" aria-label="打开批改处理菜单">
                     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('robot') }}</span>

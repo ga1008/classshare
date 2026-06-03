@@ -5,6 +5,46 @@
 
 {% block css %}
 <style>
+    .assignment-card-action-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .assignment-wrong-summary-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        min-height: 30px;
+        padding: 5px 9px;
+        border: 1px solid rgba(14, 165, 233, 0.24);
+        border-radius: 8px;
+        background: rgba(240, 249, 255, 0.86);
+        color: #0369a1;
+        font-size: 0.76rem;
+        font-weight: 850;
+        white-space: nowrap;
+        transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+    }
+
+    .assignment-wrong-summary-link:hover,
+    .assignment-wrong-summary-link:focus-visible {
+        border-color: rgba(14, 165, 233, 0.42);
+        background: rgba(224, 242, 254, 0.96);
+        color: #075985;
+        outline: none;
+        transform: translateY(-1px);
+    }
+
+    .assignment-wrong-summary-link svg {
+        width: 14px;
+        height: 14px;
+    }
+
     .student-security-summary {
         display: grid;
         gap: var(--spacing-sm);
@@ -1301,7 +1341,21 @@
                                     {{ teacher_unsubmitted_count }} 人未交
                                     {% elif assignment.created_at %}创建于 {{ assignment.created_at[:10] }}{% else %}随时可进入查看{% endif %}
                                 </span>
-                                <span class="assignment-meta-link">查看详情</span>
+                                <span class="assignment-card-action-row">
+                                    {% if user_info.role == 'teacher' and assignment.exam_paper_id %}
+                                    <a
+                                        class="assignment-wrong-summary-link"
+                                        href="/assignment/{{ assignment.id }}/wrong-summary"
+                                        onclick="event.stopPropagation();"
+                                        title="查看全班错题归集"
+                                        aria-label="查看 {{ assignment.title }} 的全班错题归集"
+                                    >
+                                        {{ app_topbar_icon('alert') }}
+                                        错题归集
+                                    </a>
+                                    {% endif %}
+                                    <span class="assignment-meta-link">查看详情</span>
+                                </span>
                             </div>
                         </div>
                     </article>

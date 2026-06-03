@@ -118,6 +118,7 @@ from ..services.teacher_account_service import (
     build_teacher_account_summary,
     list_teacher_accounts,
 )
+from ..services.wrong_question_summary_service import build_assignment_wrong_question_summary
 from ..services.academic_integration_service import (
     list_academic_system_profiles,
     list_teacher_academic_credentials,
@@ -1486,6 +1487,29 @@ def assignment_detail_page(request: Request, assignment_id: str, user: dict = De
         "max_per_file_mb": MAX_SUBMISSION_PER_FILE_MB,
         "max_total_mb": MAX_SUBMISSION_TOTAL_MB,
     })
+
+
+@router.get("/assignment/{assignment_id}/wrong-summary", response_class=HTMLResponse)
+async def assignment_wrong_summary_page(
+    request: Request,
+    assignment_id: str,
+    user: dict = Depends(get_current_teacher),
+):
+    summary = await build_assignment_wrong_question_summary(assignment_id, int(user["id"]))
+    assignment = summary.get("assignment") or {"id": assignment_id, "title": "错题归集"}
+    return templates.TemplateResponse(
+        request,
+        "assignment_wrong_summary.html",
+        {
+            "request": request,
+            "user_info": user,
+            "summary": summary,
+            "assignment": assignment,
+            "paper": summary.get("paper"),
+            "assignment_back_url": f"/assignment/{assignment_id}",
+            "classroom_back_url": _assignment_back_url(assignment),
+        },
+    )
 
 
 # ============================
