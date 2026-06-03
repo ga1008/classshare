@@ -721,12 +721,16 @@ def _build_question_error_stats(
         max_score_total = 0.0
         score_loss_total = 0.0
         full_score = _question_full_score(question)
+        option_total_count = len(answer_maps) if question["type"] in CHOICE_QUESTION_TYPES else 0
 
         for item in answer_maps:
             answer_record = _get_answer_record(item["answers"], question)
             raw_answer = _answer_value(answer_record)
             if _answer_has_value(raw_answer):
                 attempted_count += 1
+                if question["type"] in CHOICE_QUESTION_TYPES:
+                    for selected_key in _selected_choice_keys(question, raw_answer):
+                        option_counter[selected_key] += 1
             score_record = _score_record_for_question(question, answer_record, item["feedback_scores"])
             score = score_record.get("score")
             max_score = score_record.get("max_score") or full_score
@@ -760,9 +764,6 @@ def _build_question_error_stats(
                 blank_wrong_count += 1
             if len(wrong_samples) < 12 and display not in wrong_samples:
                 wrong_samples.append(display)
-            if question["type"] in CHOICE_QUESTION_TYPES:
-                for selected_key in _selected_choice_keys(question, raw_answer):
-                    option_counter[selected_key] += 1
 
         wrong_count = len(wrong_records)
         top_wrong_answers = _build_local_wrong_answer_groups(answer_buckets, wrong_count)
@@ -788,7 +789,8 @@ def _build_question_error_stats(
                 "wrong_answer_counter": {label: len(records) for label, records in answer_buckets.items()},
                 "wrong_records": wrong_records,
                 "wrong_samples": wrong_samples,
-                "option_bars": _build_option_bars(question, option_counter, wrong_count),
+                "option_bars": _build_option_bars(question, option_counter, option_total_count),
+                "option_total_count": option_total_count,
                 "text_cluster_status": "not_required",
                 "text_cluster_error": "",
             }
@@ -1012,8 +1014,8 @@ def _selected_choice_keys(question: dict[str, Any], raw_value: Any) -> list[str]
     return keys
 
 
-def _build_option_bars(question: dict[str, Any], option_counter: Counter[str], wrong_count: int) -> list[dict[str, Any]]:
-    if question["type"] not in CHOICE_QUESTION_TYPES or wrong_count <= 0:
+def _build_option_bars(question: dict[str, Any], option_counter: Counter[str], total_count: int) -> list[dict[str, Any]]:
+    if question["type"] not in CHOICE_QUESTION_TYPES or total_count <= 0:
         return []
     option_meta = question.get("option_meta") or {}
     labels = option_meta.get("labels") or {}
@@ -1034,7 +1036,7 @@ def _build_option_bars(question: dict[str, Any], option_counter: Counter[str], w
                 "key": key,
                 "label": label,
                 "count": count,
-                "percent": _percent(count, wrong_count),
+                "percent": _percent(count, total_count),
                 "is_correct": is_correct,
                 "tone": tone,
             }

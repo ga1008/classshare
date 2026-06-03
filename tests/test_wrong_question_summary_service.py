@@ -130,20 +130,27 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
 
         self.assertEqual(by_id["q1"]["wrong_count"], 2)
         self.assertEqual(by_id["q1"]["correct_count"], 1)
+        self.assertEqual(by_id["q1"]["option_total_count"], 3)
         q1_bars = {item["label"]: item for item in by_id["q1"]["option_bars"]}
-        self.assertEqual(q1_bars["A. 5 layers"]["count"], 1)
+        self.assertEqual(q1_bars["A. 5 layers"]["count"], 2)
+        self.assertEqual(q1_bars["A. 5 layers"]["percent"], 67)
         self.assertEqual(q1_bars["A. 5 layers"]["tone"], "wrong")
         self.assertEqual(q1_bars["B. 7 layers"]["count"], 0)
+        self.assertEqual(q1_bars["B. 7 layers"]["percent"], 0)
         self.assertEqual(q1_bars["B. 7 layers"]["tone"], "correct")
         self.assertEqual(q1_bars["C. 4 layers"]["count"], 1)
+        self.assertEqual(q1_bars["C. 4 layers"]["percent"], 33)
 
         self.assertEqual(by_id["q2"]["wrong_count"], 1)
         q2_bars = {item["label"]: item for item in by_id["q2"]["option_bars"]}
-        self.assertEqual(q2_bars["A. TCP"]["count"], 1)
+        self.assertEqual(q2_bars["A. TCP"]["count"], 2)
+        self.assertEqual(q2_bars["A. TCP"]["percent"], 67)
         self.assertEqual(q2_bars["A. TCP"]["tone"], "correct")
-        self.assertEqual(q2_bars["B. IP"]["count"], 0)
-        self.assertEqual(q2_bars["B. IP"]["tone"], "muted")
-        self.assertEqual(q2_bars["C. UDP"]["count"], 0)
+        self.assertEqual(q2_bars["B. IP"]["count"], 1)
+        self.assertEqual(q2_bars["B. IP"]["percent"], 33)
+        self.assertEqual(q2_bars["B. IP"]["tone"], "wrong")
+        self.assertEqual(q2_bars["C. UDP"]["count"], 1)
+        self.assertEqual(q2_bars["C. UDP"]["percent"], 33)
         self.assertEqual(q2_bars["C. UDP"]["tone"], "correct")
 
         self.assertEqual(by_id["q3"]["wrong_count"], 1)
