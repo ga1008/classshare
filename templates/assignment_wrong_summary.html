@@ -161,11 +161,65 @@
         color: #b91c1c;
     }
 
-    .wrong-summary-grid {
+    .wrong-summary-tabs {
         display: grid;
-        grid-template-columns: minmax(0, 1.12fr) minmax(360px, 0.88fr);
-        gap: 16px;
-        align-items: start;
+        gap: 12px;
+    }
+
+    .wrong-summary-tablist {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        max-width: 100%;
+        padding: 4px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 8px;
+        background: rgba(241, 245, 249, 0.84);
+        box-shadow: 0 16px 36px -34px rgba(15, 23, 42, 0.5);
+        overflow-x: auto;
+    }
+
+    .wrong-summary-tab {
+        display: inline-grid;
+        gap: 2px;
+        min-width: 150px;
+        padding: 9px 13px;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: #475569;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+        transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .wrong-summary-tab strong {
+        font-size: 0.9rem;
+        font-weight: 880;
+        line-height: 1.1;
+    }
+
+    .wrong-summary-tab small {
+        color: inherit;
+        font-size: 0.72rem;
+        font-weight: 760;
+        opacity: 0.74;
+    }
+
+    .wrong-summary-tab[aria-selected="true"] {
+        background: #0f172a;
+        color: #fff;
+        box-shadow: 0 12px 28px -22px rgba(15, 23, 42, 0.85);
+    }
+
+    .wrong-summary-tab:focus-visible {
+        outline: 2px solid rgba(14, 165, 233, 0.7);
+        outline-offset: 2px;
+    }
+
+    .wrong-summary-tab-panel[hidden] {
+        display: none;
     }
 
     .wrong-summary-section {
@@ -193,6 +247,14 @@
         color: #64748b;
         font-size: 0.86rem;
         line-height: 1.55;
+    }
+
+    .wrong-summary-section__head p small {
+        display: block;
+        margin-top: 4px;
+        color: #64748b;
+        font-size: 0.76rem;
+        font-weight: 760;
     }
 
     .wrong-summary-badge {
@@ -533,8 +595,7 @@
     }
 
     @media (max-width: 960px) {
-        .wrong-summary-hero,
-        .wrong-summary-grid {
+        .wrong-summary-hero {
             grid-template-columns: 1fr;
         }
 
@@ -556,6 +617,15 @@
 
         .wrong-summary-metrics {
             grid-template-columns: 1fr;
+        }
+
+        .wrong-summary-tablist {
+            width: 100%;
+        }
+
+        .wrong-summary-tab {
+            min-width: 0;
+            flex: 1 0 150px;
         }
 
         .wrong-question-card__head,
@@ -599,8 +669,8 @@
             <span class="wrong-summary-kicker">全班试卷诊断</span>
             <h1>{{ assignment.title }}</h1>
             <p>
-                按已提交学生的逐题答案统计错题人数；客观题展示前三个高频错选，填空/问答题在错答发生变化后调用一次快速 AI 归集常见错误写法。
-                最难题来自快速 AI 对整张试卷题目本身的难度判断，并按试卷内容缓存。
+                按已提交学生的逐题答案统计错题人数；客观题展示前三个高频错选，填空/问答题在错答发生变化后归集常见错误写法。
+                难题归集用于辅助安排讲评优先级，结果会按试卷内容复用。
             </p>
             {% if summary.ai_status.is_active %}
             <div class="wrong-summary-ai-strip" data-wrong-summary-status-strip>
@@ -639,11 +709,45 @@
         <span>{{ summary.unsupported_reason }}</span>
     </section>
     {% else %}
-    <div class="wrong-summary-grid">
-        <section class="wrong-summary-section" aria-label="按错误人数排序的错题">
+    <div class="wrong-summary-tabs" data-wrong-summary-tabs>
+        <div class="wrong-summary-tablist" role="tablist" aria-label="错题归集维度">
+            <button
+                type="button"
+                class="wrong-summary-tab"
+                id="wrong-summary-tab-errors"
+                role="tab"
+                aria-selected="true"
+                aria-controls="wrong-summary-panel-errors"
+                data-tab-target="wrong-summary-panel-errors"
+            >
+                <strong>错误人数归集</strong>
+                <small>{{ summary.wrong_questions|length }} 题</small>
+            </button>
+            <button
+                type="button"
+                class="wrong-summary-tab"
+                id="wrong-summary-tab-hard"
+                role="tab"
+                aria-selected="false"
+                aria-controls="wrong-summary-panel-hard"
+                data-tab-target="wrong-summary-panel-hard"
+                tabindex="-1"
+            >
+                <strong>难题归集</strong>
+                <small>{% if summary.difficulty['items'] %}{{ summary.difficulty['items']|length }} 题{% else %}待归集{% endif %}</small>
+            </button>
+        </div>
+
+        <section
+            class="wrong-summary-section wrong-summary-tab-panel"
+            id="wrong-summary-panel-errors"
+            role="tabpanel"
+            aria-labelledby="wrong-summary-tab-errors"
+            data-tab-panel
+        >
             <div class="wrong-summary-section__head">
                 <div>
-                    <h2>错误人数排序</h2>
+                    <h2>错误人数归集</h2>
                     <p>只统计已提交答卷；未提交学生显示在概览中，不混入单题错答人数。</p>
                 </div>
                 <span class="wrong-summary-badge">{{ summary.wrong_questions|length }} 题</span>
@@ -692,10 +796,7 @@
                             <strong>{{ question.answer_text or '未提供参考答案' }}</strong>
                         </div>
                         <div class="answer-block is-wrong">
-                            <span>
-                                高频错答
-                                {% if item.text_cluster_status == 'generated' %} / AI 已归集{% elif item.text_cluster_status == 'cached' %} / AI 缓存{% elif item.text_cluster_status == 'fallback' %} / 本地归并{% endif %}
-                            </span>
+                            <span>高频错答</span>
                             {% if summary.ai_status.job_status == 'failed' and item.text_cluster_status == 'pending' %}
                             <div class="wrong-ai-waiting is-failed">
                                 <span>{{ summary.ai_status.message }}</span>
@@ -724,7 +825,7 @@
                             <strong>暂无可展示的错答分组</strong>
                             {% endif %}
                             {% if item.text_cluster_error %}
-                            <small>AI 归集暂未完成：{{ item.text_cluster_error }}</small>
+                            <small>错答归集暂未完成：{{ item.text_cluster_error }}</small>
                             {% endif %}
                         </div>
                     </div>
@@ -739,26 +840,36 @@
             {% endif %}
         </section>
 
-        <aside class="wrong-summary-section" aria-label="AI 判断的最难题">
+        <section
+            class="wrong-summary-section wrong-summary-tab-panel"
+            id="wrong-summary-panel-hard"
+            role="tabpanel"
+            aria-labelledby="wrong-summary-tab-hard"
+            data-tab-panel
+            hidden
+        >
             <div class="wrong-summary-section__head">
                 <div>
-                    <h2>AI 判断最难题</h2>
-                    <p>{{ summary.difficulty.summary }}</p>
+                    <h2>难题归集</h2>
+                    <p>
+                        {{ summary.difficulty.summary }}
+                        <small>由快速 AI 根据课程内容与试卷题目判断，仅作为讲评优先级参考。</small>
+                    </p>
                 </div>
                 <span class="wrong-summary-badge">
-                    {% if summary.difficulty.source == 'cached' %}试卷缓存{% elif summary.difficulty.source == 'generated' %}本次生成{% else %}AI 状态{% endif %}
+                    {% if summary.difficulty.source == 'pending' %}归集中{% elif summary.difficulty['items'] %}已归集{% else %}待归集{% endif %}
                 </span>
             </div>
 
             {% if summary.difficulty.source == 'pending' and summary.ai_status.job_status == 'failed' %}
             <div class="wrong-summary-empty">
-                <strong>最难题归集失败</strong>
+                <strong>难题归集失败</strong>
                 <span>{{ summary.ai_status.message }}</span>
             </div>
             {% elif summary.difficulty.source == 'pending' %}
             <div class="wrong-ai-waiting" role="status" aria-live="polite">
                 <span class="wrong-summary-spinner" aria-hidden="true"></span>
-                <span>快速 AI 正在后台判断整张试卷的最难题，完成后页面会自动刷新。</span>
+                <span>快速 AI 正在后台整理难题归集，完成后页面会自动刷新。</span>
             </div>
             {% elif summary.difficulty['items'] %}
             <div class="hard-question-list">
@@ -818,11 +929,11 @@
             </div>
             {% else %}
             <div class="wrong-summary-empty">
-                <strong>暂未生成最难题</strong>
-                <span>{{ summary.difficulty.error or '快速 AI 暂不可用，请稍后刷新。' }}</span>
+                <strong>暂未生成难题归集</strong>
+                <span>{{ summary.difficulty.error or '难题归集暂不可用，请稍后刷新。' }}</span>
             </div>
             {% endif %}
-        </aside>
+        </section>
     </div>
     {% endif %}
 </main>
@@ -901,6 +1012,59 @@
         strip.classList.toggle('is-failed', aiStatus.job_status === 'failed');
     }
 
+    function setupWrongSummaryTabs() {
+        const root = document.querySelector('[data-wrong-summary-tabs]');
+        if (!root) {
+            return null;
+        }
+        const tabs = Array.from(root.querySelectorAll('[role="tab"][data-tab-target]'));
+        const panels = Array.from(root.querySelectorAll('[data-tab-panel]'));
+        if (!tabs.length || !panels.length) {
+            return null;
+        }
+
+        const activateTab = (tab, shouldFocus = false) => {
+            tabs.forEach((item) => {
+                const selected = item === tab;
+                item.setAttribute('aria-selected', selected ? 'true' : 'false');
+                item.tabIndex = selected ? 0 : -1;
+            });
+            panels.forEach((panel) => {
+                const selected = panel.id === tab.dataset.tabTarget;
+                panel.hidden = !selected;
+            });
+            if (shouldFocus) {
+                tab.focus();
+            }
+            const activePanel = panels.find((panel) => !panel.hidden);
+            if (activePanel) {
+                renderQuestionMarkdown(activePanel);
+            }
+        };
+
+        tabs.forEach((tab, index) => {
+            tab.addEventListener('click', () => activateTab(tab));
+            tab.addEventListener('keydown', (event) => {
+                const keyMap = {
+                    ArrowRight: index + 1,
+                    ArrowLeft: index - 1,
+                    Home: 0,
+                    End: tabs.length - 1,
+                };
+                if (!(event.key in keyMap)) {
+                    return;
+                }
+                event.preventDefault();
+                const nextIndex = (keyMap[event.key] + tabs.length) % tabs.length;
+                activateTab(tabs[nextIndex], true);
+            });
+        });
+
+        const selectedTab = tabs.find((tab) => tab.getAttribute('aria-selected') === 'true') || tabs[0];
+        activateTab(selectedTab);
+        return panels.find((panel) => !panel.hidden) || null;
+    }
+
     async function pollAiStatus() {
         if (reloadScheduled) {
             return;
@@ -929,7 +1093,8 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
-        renderQuestionMarkdown();
+        const activePanel = setupWrongSummaryTabs();
+        renderQuestionMarkdown(activePanel || document);
         if (INITIAL_AI_ACTIVE) {
             window.setTimeout(pollAiStatus, POLL_INTERVAL_MS);
         }

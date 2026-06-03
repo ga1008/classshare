@@ -227,7 +227,7 @@ def _load_summary_source(assignment_id: str, teacher_id: int) -> dict[str, Any]:
             "paper": None,
             "questions": [],
             "wrong_questions": [],
-            "difficulty": _empty_difficulty_summary("仅试卷型任务支持 AI 难度判断。"),
+            "difficulty": _empty_difficulty_summary("仅试卷型任务支持难题归集。"),
             "stats": {
                 "total_students": _count_assignment_students(conn, assignment),
                 "submitted_count": 0,
@@ -442,7 +442,7 @@ def _build_ai_status(
         if pending_text_questions:
             pieces.append(f"{pending_text_questions} 道填空/问答题错答写法")
         if pending_difficulty:
-            pieces.append("整张试卷最难题")
+            pieces.append("难题归集")
         message = "快速 AI 正在后台整理：" + "、".join(pieces) + "，页面会自动刷新结果。"
     else:
         is_active = False
@@ -846,7 +846,7 @@ async def _load_or_generate_difficulty_summary(
     if not questions:
         return _empty_difficulty_summary("试卷中没有可分析的题目。")
     if not allow_generate:
-        return _empty_difficulty_summary("快速 AI 正在后台判断最难题，请稍候。", source="pending")
+        return _empty_difficulty_summary("快速 AI 正在后台整理难题归集，请稍候。", source="pending")
     try:
         raw = await _generate_difficulty_summary(paper_title, questions)
         normalized = _normalize_difficulty_result(raw, questions)
@@ -855,7 +855,7 @@ async def _load_or_generate_difficulty_summary(
         normalized["source"] = "generated"
         return normalized
     except Exception as exc:
-        return _empty_difficulty_summary(f"AI 难度判断暂不可用：{_clip_text(str(exc), 180)}", source="fallback")
+        return _empty_difficulty_summary(f"难题归集暂不可用：{_clip_text(str(exc), 180)}", source="fallback")
 
 
 async def _generate_text_wrong_clusters(
