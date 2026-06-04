@@ -4,7 +4,12 @@ from .common import *
 router = APIRouter()
 
 
-@router.get("/assignments/{assignment_id}/submissions", response_class=JSONResponse)
+@router.get(
+    "/assignments/{assignment_id}/submissions",
+    response_class=JSONResponse,
+    response_model=AssignmentSubmissionsResponse,
+    response_model_exclude_unset=True,
+)
 async def get_submissions_for_assignment(assignment_id: str, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
@@ -192,7 +197,12 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
     }
 
 
-@router.delete("/submissions/{submission_id}", response_class=JSONResponse)
+@router.delete(
+    "/submissions/{submission_id}",
+    response_class=JSONResponse,
+    response_model=SubmissionMutationResponse,
+    response_model_exclude_unset=True,
+)
 async def return_submission(submission_id: int, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         submission = _get_submission_for_teacher(conn, submission_id, int(user["id"]))

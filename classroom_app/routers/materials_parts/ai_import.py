@@ -8,7 +8,12 @@ from .rewrite_helpers import *
 router = APIRouter()
 
 
-@router.get("/api/materials/ai-generation/candidates", response_class=JSONResponse)
+@router.get(
+    "/api/materials/ai-generation/candidates",
+    response_class=JSONResponse,
+    response_model=MaterialAiGenerationCandidatesResponse,
+    response_model_exclude_unset=True,
+)
 async def list_material_ai_generation_candidates(
     query: str = Query(default=""),
     limit: int = Query(default=30, ge=1, le=80),
@@ -31,7 +36,12 @@ async def list_material_ai_generation_candidates(
     return {"status": "success", "items": items}
 
 
-@router.get("/api/materials/ai-generation/assignments", response_class=JSONResponse)
+@router.get(
+    "/api/materials/ai-generation/assignments",
+    response_class=JSONResponse,
+    response_model=MaterialAiGenerationCandidatesResponse,
+    response_model_exclude_unset=True,
+)
 async def list_material_ai_generation_assignment_candidates(
     query: str = Query(default=""),
     limit: int = Query(default=30, ge=1, le=80),
@@ -332,7 +342,12 @@ async def ai_import_material(
     }
 
 
-@router.get("/api/materials/ai-import-records/active", response_class=JSONResponse)
+@router.get(
+    "/api/materials/ai-import-records/active",
+    response_class=JSONResponse,
+    response_model=MaterialAiImportActiveResponse,
+    response_model_exclude_unset=True,
+)
 async def list_ai_import_records(
     parent_id: int | None = Query(default=None),
     recent_minutes: int = Query(default=MATERIAL_AI_IMPORT_RECENT_MINUTES, ge=1, le=1440),
@@ -384,7 +399,12 @@ async def list_ai_import_records(
     }
 
 
-@router.get("/api/materials/ai-import-records/{record_id}/status", response_class=JSONResponse)
+@router.get(
+    "/api/materials/ai-import-records/{record_id}/status",
+    response_class=JSONResponse,
+    response_model=MaterialAiImportStatusResponse,
+    response_model_exclude_unset=True,
+)
 async def get_ai_import_record_status(
     record_id: int,
     user: dict = Depends(get_current_teacher),
@@ -413,7 +433,12 @@ async def get_ai_import_record_status(
     }
 
 
-@router.get("/api/materials/{material_id}/ai-import/preview", response_class=JSONResponse)
+@router.get(
+    "/api/materials/{material_id}/ai-import/preview",
+    response_class=JSONResponse,
+    response_model=MaterialAiImportPreviewResponse,
+    response_model_exclude_unset=True,
+)
 async def preview_ai_import_material(
     material_id: int,
     user: dict = Depends(get_current_teacher),

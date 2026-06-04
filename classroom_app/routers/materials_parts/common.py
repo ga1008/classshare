@@ -20,6 +20,16 @@ from starlette.background import BackgroundTask
 from ...core import ai_client, templates
 from ...database import get_db_connection
 from ...dependencies import get_current_teacher, get_current_user
+from ...schemas.materials_contracts import (
+    ClassroomMaterialsResponse,
+    MaterialAiGenerationCandidatesResponse,
+    MaterialAiImportActiveResponse,
+    MaterialAiImportPreviewResponse,
+    MaterialAiImportStatusResponse,
+    MaterialDetailResponse,
+    MaterialLibraryResponse,
+    MaterialRepositoryResponse,
+)
 from ...services.file_service import delete_global_file, global_file_write_path, resolve_global_file_path, save_file_globally
 from ...services.download_policy import apply_download_policy, ensure_download_allowed
 from ...services.file_preview_service import TEXT_CONTENT_ENCODINGS

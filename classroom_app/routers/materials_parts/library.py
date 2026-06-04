@@ -63,7 +63,12 @@ async def manage_materials_page(request: Request, user: dict = Depends(get_curre
     )
 
 
-@router.get("/api/materials/library", response_class=JSONResponse)
+@router.get(
+    "/api/materials/library",
+    response_class=JSONResponse,
+    response_model=MaterialLibraryResponse,
+    response_model_exclude_unset=True,
+)
 async def get_teacher_material_library(
     parent_id: int | None = Query(default=None),
     keyword: str = Query(default=""),
@@ -140,7 +145,12 @@ async def get_teacher_material_library(
     }
 
 
-@router.get("/api/materials/{material_id}", response_class=JSONResponse)
+@router.get(
+    "/api/materials/{material_id}",
+    response_class=JSONResponse,
+    response_model=MaterialDetailResponse,
+    response_model_exclude_unset=True,
+)
 async def get_material_detail(material_id: int, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         material = ensure_user_material_access(conn, material_id, user)
@@ -198,7 +208,12 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
     return {"status": "success", "material": detail}
 
 
-@router.get("/api/materials/{material_id}/repository", response_class=JSONResponse)
+@router.get(
+    "/api/materials/{material_id}/repository",
+    response_class=JSONResponse,
+    response_model=MaterialRepositoryResponse,
+    response_model_exclude_unset=True,
+)
 async def get_material_repository(material_id: int, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         repository = get_material_repository_detail(conn, material_id, user["id"])

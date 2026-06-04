@@ -28,6 +28,17 @@ from ...config import (
 )
 from ...database import get_db_connection
 from ...dependencies import get_current_user, get_current_student, get_current_teacher
+from ...schemas.homework_contracts import (
+    AssignmentDraftResponse,
+    AssignmentDraftSaveResponse,
+    AssignmentMutationResponse,
+    AssignmentSubmissionsResponse,
+    AssignmentTimeStateResponse,
+    CourseAssignmentStatsResponse,
+    ExamPaperDetailResponse,
+    ExamPapersResponse,
+    SubmissionMutationResponse,
+)
 from ...services.behavior_tracking_service import record_behavior_event
 from ...services.message_center_service import (
     create_assignment_published_notifications,

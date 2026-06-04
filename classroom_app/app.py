@@ -3,6 +3,8 @@ from pathlib import Path
 from urllib.parse import parse_qs
 import anyio.to_thread
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 import sys
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, RedirectResponse, Response
@@ -25,6 +27,12 @@ from .database import init_database
 from .dependencies import build_login_redirect_url, build_permission_warning_url
 from .dependencies import clear_access_token_cookie, get_active_user_from_request
 from .dependencies import infer_required_role_from_path
+from .schemas.api_common import (
+    ApiErrorCode,
+    api_error_code_for_status,
+    build_error_payload,
+    error_message_from_detail,
+)
 from .services.behavior_tracking_service import (
     get_behavior_write_pipeline_stats,
     start_behavior_profile_scheduler,
@@ -273,17 +281,51 @@ def _is_api_request(request: Request) -> bool:
     return request.url.path.startswith("/api")
 
 
+def _request_id_from_request(request: Request) -> str | None:
+    for header_name in ("x-request-id", "x-correlation-id"):
+        value = request.headers.get(header_name)
+        if value and value.strip():
+            return value.strip()
+    return None
+
+
+def _api_error_response(
+    request: Request,
+    *,
+    status_code: int,
+    detail,
+    code: ApiErrorCode | None = None,
+    message: str | None = None,
+    details: dict | None = None,
+    legacy_fields: dict | None = None,
+    headers: dict | None = None,
+) -> JSONResponse:
+    message = message or error_message_from_detail(detail, f"Request failed ({status_code})")
+    payload = build_error_payload(
+        detail=detail,
+        message=message,
+        code=code or api_error_code_for_status(status_code),
+        details=details,
+        request_id=_request_id_from_request(request),
+        legacy_fields=legacy_fields,
+    )
+    return JSONResponse(payload, status_code=status_code, headers=headers)
+
+
 @app.exception_handler(401)
 async def unauthorized_exception_handler(request: Request, exc: HTTPException):
     login_url = build_login_redirect_url(request)
     detail = exc.detail if isinstance(exc.detail, str) else "登录状态已失效，请重新登录。"
 
     if _is_api_request(request):
-        response = JSONResponse({
-            "detail": detail,
-            "code": "login_required",
-            "redirect_to": login_url,
-        }, status_code=401)
+        response = _api_error_response(
+            request,
+            status_code=401,
+            detail=detail,
+            code=ApiErrorCode.LOGIN_REQUIRED,
+            details={"redirect_to": login_url},
+            legacy_fields={"redirect_to": login_url},
+        )
         clear_access_token_cookie(response)
         return response
 
@@ -303,11 +345,15 @@ async def forbidden_exception_handler(request: Request, exc: HTTPException):
     if not user_hint:
         login_url = build_login_redirect_url(request)
         if _is_api_request(request):
-            response = JSONResponse({
-                "detail": "登录状态已失效，请重新登录。",
-                "code": "login_required",
-                "redirect_to": login_url,
-            }, status_code=401)
+            detail = "登录状态已失效，请重新登录。"
+            response = _api_error_response(
+                request,
+                status_code=401,
+                detail=detail,
+                code=ApiErrorCode.LOGIN_REQUIRED,
+                details={"redirect_to": login_url},
+                legacy_fields={"redirect_to": login_url},
+            )
             clear_access_token_cookie(response)
             return response
 
@@ -319,12 +365,20 @@ async def forbidden_exception_handler(request: Request, exc: HTTPException):
     detail = exc.detail if isinstance(exc.detail, str) else "当前账号没有访问该页面或资源的权限。"
 
     if _is_api_request(request):
-        return JSONResponse({
-            "detail": detail,
-            "code": "permission_denied",
-            "required_role": required_role,
-            "redirect_to": warning_url,
-        }, status_code=403)
+        return _api_error_response(
+            request,
+            status_code=403,
+            detail=detail,
+            code=ApiErrorCode.PERMISSION_DENIED,
+            details={
+                "required_role": required_role,
+                "redirect_to": warning_url,
+            },
+            legacy_fields={
+                "required_role": required_role,
+                "redirect_to": warning_url,
+            },
+        )
 
     return RedirectResponse(url=warning_url, status_code=303)
 
@@ -335,7 +389,12 @@ async def not_found_exception_handler(request: Request, exc: HTTPException):
     捕获所有 404 (Not Found) 错误，并返回一个友好的 HTML 页面。
     """
     if request.url.path.startswith("/api"):
-        return JSONResponse({"detail": "接口不存在"}, status_code=404)
+        return _api_error_response(
+            request,
+            status_code=404,
+            detail="接口不存在",
+            code=ApiErrorCode.NOT_FOUND,
+        )
 
     return templates.TemplateResponse(request, "error.html", {
         "request": request,
@@ -344,6 +403,40 @@ async def not_found_exception_handler(request: Request, exc: HTTPException):
         "error_message": "抱歉，您要查找的页面不存在。请检查URL或返回仪表盘。",
         "back_url": "/"
     }, status_code=404)
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = jsonable_encoder(exc.errors())
+    if _is_api_request(request):
+        return _api_error_response(
+            request,
+            status_code=422,
+            detail=errors,
+            code=ApiErrorCode.VALIDATION_ERROR,
+            message="Request validation failed",
+            details={"errors": errors},
+        )
+
+    return JSONResponse({"detail": errors}, status_code=422)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if _is_api_request(request):
+        legacy_fields = dict(exc.detail) if isinstance(exc.detail, dict) else None
+        details = dict(exc.detail) if isinstance(exc.detail, dict) else None
+        return _api_error_response(
+            request,
+            status_code=exc.status_code,
+            detail=exc.detail,
+            code=api_error_code_for_status(exc.status_code),
+            details=details,
+            legacy_fields=legacy_fields,
+            headers=exc.headers,
+        )
+
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
 
 
 @app.exception_handler(Exception)
@@ -357,7 +450,12 @@ async def general_exception_handler(request: Request, exc: Exception):
     traceback.print_exc()
 
     if request.url.path.startswith("/api"):
-        return JSONResponse({"detail": "服务器内部错误，请稍后重试"}, status_code=500)
+        return _api_error_response(
+            request,
+            status_code=500,
+            detail="服务器内部错误，请稍后重试",
+            code=ApiErrorCode.INTERNAL_ERROR,
+        )
 
     return templates.TemplateResponse(request, "error.html", {
         "request": request,

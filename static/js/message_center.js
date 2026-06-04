@@ -1393,9 +1393,15 @@ if (app) {
             scrollConversationToBottom();
             showToast(response.ai_reply_job ? '私信已发送，AI 助教正在回复' : '私信已发送', 'success');
         } catch (error) {
-            if (error.status === 429 && error.data?.retry_after_seconds) {
-                activateSendCooldown(error.data.retry_after_seconds);
-                showToast(`发送太频繁，请 ${error.data.retry_after_seconds} 秒后再发`, 'warning');
+            const retryAfterSeconds = Number(
+                error.details?.retry_after_seconds
+                || error.data?.retry_after_seconds
+                || error.data?.detail?.retry_after_seconds
+                || 0
+            );
+            if (error.code === 'rate_limited' && retryAfterSeconds > 0) {
+                activateSendCooldown(retryAfterSeconds);
+                showToast(`发送太频繁，请 ${retryAfterSeconds} 秒后再发`, 'warning');
             } else {
                 showToast(error.message || '发送失败', 'error');
             }

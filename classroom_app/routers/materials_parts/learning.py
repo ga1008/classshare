@@ -505,7 +505,12 @@ async def create_classroom_session_ai_material_task(
     }
 
 
-@router.get("/api/classrooms/{class_offering_id}/materials", response_class=JSONResponse)
+@router.get(
+    "/api/classrooms/{class_offering_id}/materials",
+    response_class=JSONResponse,
+    response_model=ClassroomMaterialsResponse,
+    response_model_exclude_unset=True,
+)
 async def get_classroom_materials(
     class_offering_id: int,
     parent_id: int | None = Query(default=None),

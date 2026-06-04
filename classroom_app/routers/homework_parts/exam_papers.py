@@ -4,7 +4,12 @@ from .common import *
 router = APIRouter()
 
 
-@router.get("/exam-papers", response_class=JSONResponse)
+@router.get(
+    "/exam-papers",
+    response_class=JSONResponse,
+    response_model=ExamPapersResponse,
+    response_model_exclude_unset=True,
+)
 async def list_exam_papers(user: dict = Depends(get_current_teacher)):
     """获取当前教师的所有试卷"""
     with get_db_connection() as conn:
@@ -174,7 +179,12 @@ async def create_exam_paper(request: Request, user: dict = Depends(get_current_t
     return {"status": "success", "paper_id": paper_id}
 
 
-@router.get("/exam-papers/{paper_id}", response_class=JSONResponse)
+@router.get(
+    "/exam-papers/{paper_id}",
+    response_class=JSONResponse,
+    response_model=ExamPaperDetailResponse,
+    response_model_exclude_unset=True,
+)
 async def get_exam_paper(paper_id: str, user: dict = Depends(get_current_user)):
     """获取试卷详情"""
     if str(user.get("role") or "").lower() != "teacher":

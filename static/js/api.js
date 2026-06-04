@@ -1,9 +1,13 @@
 export class APIError extends Error {
     constructor(message, status, data, options = {}) {
         super(message);
+        const structured = extractStructuredError(data);
         this.name = 'APIError';
         this.status = status;
         this.data = data;
+        this.code = options.code || structured.code || null;
+        this.details = options.details || structured.details || null;
+        this.requestId = options.requestId || structured.requestId || null;
         this.redirectTo = options.redirectTo || null;
         this.suppressToast = Boolean(options.suppressToast);
     }
@@ -51,6 +55,21 @@ function extractStructuredDetailMessage(detail) {
     return null;
 }
 
+function extractStructuredError(data) {
+    if (!data || typeof data !== 'object') {
+        return {};
+    }
+    const error = data.error && typeof data.error === 'object' ? data.error : null;
+    return {
+        code: typeof error?.code === 'string'
+            ? error.code
+            : (typeof data.code === 'string' ? data.code : null),
+        message: typeof error?.message === 'string' ? error.message : null,
+        details: error?.details && typeof error.details === 'object' ? error.details : null,
+        requestId: typeof error?.request_id === 'string' ? error.request_id : null,
+    };
+}
+
 async function parseResponseData(response) {
     const contentType = response.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
@@ -60,6 +79,11 @@ async function parseResponseData(response) {
 }
 
 function extractErrorMessage(response, data) {
+    const structured = extractStructuredError(data);
+    if (structured.message) {
+        return normalizeErrorMessage(structured.message);
+    }
+
     if (data && typeof data === 'object' && data.detail) {
         const structuredMessage = extractStructuredDetailMessage(data.detail);
         if (structuredMessage) {

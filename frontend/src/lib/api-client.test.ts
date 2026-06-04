@@ -69,4 +69,34 @@ describe('apiRequest', () => {
       status: 403,
     } satisfies Partial<ApiError>);
   });
+
+  it('exposes structured backend error codes and details', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({
+          detail: { message: 'Too many requests', retry_after_seconds: 12 },
+          code: 'rate_limited',
+          error: {
+            code: 'rate_limited',
+            message: 'Too many requests',
+            details: { retry_after_seconds: 12 },
+            request_id: 'req-123',
+          },
+          retry_after_seconds: 12,
+        }), {
+          status: 429,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(apiRequest('/api/rate-limited', z.object({}), { method: 'POST' })).rejects.toMatchObject({
+      name: 'ApiError',
+      message: 'Too many requests',
+      status: 429,
+      code: 'rate_limited',
+      details: { retry_after_seconds: 12 },
+      requestId: 'req-123',
+    } satisfies Partial<ApiError>);
+  });
 });

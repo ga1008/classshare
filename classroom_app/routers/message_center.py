@@ -11,6 +11,19 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from ..core import templates
 from ..database import get_db_connection
 from ..dependencies import get_current_user
+from ..schemas.message_center_contracts import (
+    ClassroomPrivateContactsResponse,
+    MessageCenterBootstrapResponse,
+    MessageCenterItemsResponse,
+    MessageCenterMarkReadResponse,
+    MessageCenterSummaryResponse,
+    PrivateAiReplyJobResponse,
+    PrivateBlockMutationResponse,
+    PrivateBlocksResponse,
+    PrivateContactsResponse,
+    PrivateConversationResponse,
+    PrivateMessageSendResponse,
+)
 from ..services.file_service import stream_file
 from ..services.message_center_service import (
     add_private_message_block,
@@ -96,7 +109,12 @@ async def message_center_page(
     return RedirectResponse(url=f"/profile?{urlencode(params)}#profile-message-center", status_code=303)
 
 
-@router.get("/api/message-center/bootstrap", response_class=JSONResponse)
+@router.get(
+    "/api/message-center/bootstrap",
+    response_class=JSONResponse,
+    response_model=MessageCenterBootstrapResponse,
+    response_model_exclude_unset=True,
+)
 def api_message_center_bootstrap(
     include_private: bool = Query(default=True),
     private_data: bool = Query(default=True),
@@ -114,7 +132,12 @@ def api_message_center_bootstrap(
         }
 
 
-@router.get("/api/message-center/summary", response_class=JSONResponse)
+@router.get(
+    "/api/message-center/summary",
+    response_class=JSONResponse,
+    response_model=MessageCenterSummaryResponse,
+    response_model_exclude_unset=True,
+)
 def api_message_center_summary(
     include_private: bool = Query(default=True),
     user: dict = Depends(get_current_user),
@@ -127,7 +150,12 @@ def api_message_center_summary(
         }
 
 
-@router.get("/api/message-center/items", response_class=JSONResponse)
+@router.get(
+    "/api/message-center/items",
+    response_class=JSONResponse,
+    response_model=MessageCenterItemsResponse,
+    response_model_exclude_unset=True,
+)
 def api_message_center_items(
     category: str = Query(default="all"),
     keyword: str = Query(default=""),
@@ -166,7 +194,12 @@ def open_notification_detail(notification_id: int, user: dict = Depends(get_curr
     return RedirectResponse(url=target_url, status_code=303)
 
 
-@router.post("/api/message-center/read", response_class=JSONResponse)
+@router.post(
+    "/api/message-center/read",
+    response_class=JSONResponse,
+    response_model=MessageCenterMarkReadResponse,
+    response_model_exclude_unset=True,
+)
 async def api_message_center_mark_read(request: Request, user: dict = Depends(get_current_user)):
     data = await request.json()
     if not isinstance(data, dict):
@@ -191,7 +224,12 @@ async def api_message_center_mark_read(request: Request, user: dict = Depends(ge
     }
 
 
-@router.get("/api/message-center/private/contacts", response_class=JSONResponse)
+@router.get(
+    "/api/message-center/private/contacts",
+    response_class=JSONResponse,
+    response_model=PrivateContactsResponse,
+    response_model_exclude_unset=True,
+)
 def api_private_message_contacts(user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         return {
@@ -200,7 +238,12 @@ def api_private_message_contacts(user: dict = Depends(get_current_user)):
         }
 
 
-@router.get("/api/classrooms/{class_offering_id}/private/contacts", response_class=JSONResponse)
+@router.get(
+    "/api/classrooms/{class_offering_id}/private/contacts",
+    response_class=JSONResponse,
+    response_model=ClassroomPrivateContactsResponse,
+    response_model_exclude_unset=True,
+)
 def api_classroom_private_message_contacts(class_offering_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         try:
@@ -215,7 +258,12 @@ def api_classroom_private_message_contacts(class_offering_id: int, user: dict = 
     }
 
 
-@router.get("/api/message-center/private/conversation", response_class=JSONResponse)
+@router.get(
+    "/api/message-center/private/conversation",
+    response_class=JSONResponse,
+    response_model=PrivateConversationResponse,
+    response_model_exclude_unset=True,
+)
 def api_private_message_conversation(
     contact: str = Query(..., min_length=3),
     scope: Optional[int] = Query(default=None),
@@ -242,7 +290,12 @@ def api_private_message_conversation(
     }
 
 
-@router.post("/api/message-center/private/messages", response_class=JSONResponse)
+@router.post(
+    "/api/message-center/private/messages",
+    response_class=JSONResponse,
+    response_model=PrivateMessageSendResponse,
+    response_model_exclude_unset=True,
+)
 async def api_send_private_message(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -364,7 +417,12 @@ def _stream_private_attachment_payload(attachment_payload: dict, *, download: bo
     )
 
 
-@router.get("/api/message-center/private/ai-jobs/{job_id}", response_class=JSONResponse)
+@router.get(
+    "/api/message-center/private/ai-jobs/{job_id}",
+    response_class=JSONResponse,
+    response_model=PrivateAiReplyJobResponse,
+    response_model_exclude_unset=True,
+)
 def api_private_ai_reply_job(job_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         try:
@@ -377,7 +435,12 @@ def api_private_ai_reply_job(job_id: int, user: dict = Depends(get_current_user)
     }
 
 
-@router.get("/api/message-center/private/blocks", response_class=JSONResponse)
+@router.get(
+    "/api/message-center/private/blocks",
+    response_class=JSONResponse,
+    response_model=PrivateBlocksResponse,
+    response_model_exclude_unset=True,
+)
 def api_private_message_blocks(user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         return {
@@ -386,7 +449,12 @@ def api_private_message_blocks(user: dict = Depends(get_current_user)):
         }
 
 
-@router.post("/api/message-center/private/blocks", response_class=JSONResponse)
+@router.post(
+    "/api/message-center/private/blocks",
+    response_class=JSONResponse,
+    response_model=PrivateBlockMutationResponse,
+    response_model_exclude_unset=True,
+)
 async def api_add_private_message_block(request: Request, user: dict = Depends(get_current_user)):
     data = await request.json()
     with get_db_connection() as conn:
@@ -412,7 +480,12 @@ async def api_add_private_message_block(request: Request, user: dict = Depends(g
     }
 
 
-@router.delete("/api/message-center/private/blocks", response_class=JSONResponse)
+@router.delete(
+    "/api/message-center/private/blocks",
+    response_class=JSONResponse,
+    response_model=PrivateBlockMutationResponse,
+    response_model_exclude_unset=True,
+)
 async def api_remove_private_message_block(
     contact_identity: str = Query(..., min_length=3),
     user: dict = Depends(get_current_user),

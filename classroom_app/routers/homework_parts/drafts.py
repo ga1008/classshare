@@ -4,7 +4,12 @@ from .common import *
 router = APIRouter()
 
 
-@router.get("/assignments/{assignment_id}/draft", response_class=JSONResponse)
+@router.get(
+    "/assignments/{assignment_id}/draft",
+    response_class=JSONResponse,
+    response_model=AssignmentDraftResponse,
+    response_model_exclude_unset=True,
+)
 def get_assignment_draft(assignment_id: str, user: dict = Depends(get_current_student)):
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
@@ -22,7 +27,12 @@ def get_assignment_draft(assignment_id: str, user: dict = Depends(get_current_st
         return _serialize_submission_draft(conn, draft, assignment_id)
 
 
-@router.post("/assignments/{assignment_id}/draft", response_class=JSONResponse)
+@router.post(
+    "/assignments/{assignment_id}/draft",
+    response_class=JSONResponse,
+    response_model=AssignmentDraftSaveResponse,
+    response_model_exclude_unset=True,
+)
 async def save_assignment_draft(
     assignment_id: str,
     answers_json: str = Form(""),

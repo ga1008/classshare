@@ -4,7 +4,12 @@ from .common import *
 router = APIRouter()
 
 
-@router.post("/courses/{course_id}/assignments", response_class=JSONResponse)
+@router.post(
+    "/courses/{course_id}/assignments",
+    response_class=JSONResponse,
+    response_model=AssignmentMutationResponse,
+    response_model_exclude_unset=True,
+)
 async def create_assignment(course_id: int, request: Request, user: dict = Depends(get_current_teacher)):
     """V4.0: 在指定课程下创建新作业"""
     data = await request.json()
@@ -98,7 +103,12 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
     }
 
 
-@router.put("/assignments/{assignment_id}", response_class=JSONResponse)
+@router.put(
+    "/assignments/{assignment_id}",
+    response_class=JSONResponse,
+    response_model=AssignmentMutationResponse,
+    response_model_exclude_unset=True,
+)
 async def update_assignment(assignment_id: str, request: Request, user: dict = Depends(get_current_teacher)):
     data = await request.json()
     with get_db_connection() as conn:
@@ -192,7 +202,12 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
     }
 
 
-@router.delete("/assignments/{assignment_id}", response_class=JSONResponse)
+@router.delete(
+    "/assignments/{assignment_id}",
+    response_class=JSONResponse,
+    response_model=AssignmentMutationResponse,
+    response_model_exclude_unset=True,
+)
 async def delete_assignment(assignment_id: str, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         assignment = conn.execute(
@@ -220,7 +235,12 @@ async def delete_assignment(assignment_id: str, user: dict = Depends(get_current
     return {"status": "success", "deleted_assignment_id": assignment_id}
 
 
-@router.get("/assignments/time-state", response_class=JSONResponse)
+@router.get(
+    "/assignments/time-state",
+    response_class=JSONResponse,
+    response_model=AssignmentTimeStateResponse,
+    response_model_exclude_unset=True,
+)
 async def get_assignment_time_state(request: Request, user: dict = Depends(get_current_user)):
     raw_ids = request.query_params.get("ids") or request.query_params.get("assignment_ids") or ""
     assignment_ids = []
@@ -272,7 +292,12 @@ async def get_assignment_time_state(request: Request, user: dict = Depends(get_c
     return {"status": "success", "server_now": now_dt.isoformat(), "assignments": assignments}
 
 
-@router.get("/courses/{course_id}/assignment-stats", response_class=JSONResponse)
+@router.get(
+    "/courses/{course_id}/assignment-stats",
+    response_class=JSONResponse,
+    response_model=CourseAssignmentStatsResponse,
+    response_model_exclude_unset=True,
+)
 async def get_course_assignment_stats(course_id: int, user: dict = Depends(get_current_teacher)):
     """课程维度统计：汇总某课程下所有作业的提交率、批改进度和平均分。"""
     with get_db_connection() as conn:

@@ -1,14 +1,31 @@
 import { z, type ZodType } from 'zod';
 
+import { parseApiErrorPayload, type ApiErrorCode } from '../contracts/api-common';
+
 export class ApiError extends Error {
   readonly status: number;
   readonly payload: unknown;
+  readonly code?: ApiErrorCode;
+  readonly details?: Record<string, unknown>;
+  readonly requestId?: string | null;
 
-  constructor(message: string, status: number, payload: unknown = null) {
+  constructor(
+    message: string,
+    status: number,
+    payload: unknown = null,
+    options: {
+      code?: ApiErrorCode;
+      details?: Record<string, unknown>;
+      requestId?: string | null;
+    } = {},
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.payload = payload;
+    this.code = options.code;
+    this.details = options.details;
+    this.requestId = options.requestId;
   }
 }
 
@@ -53,6 +70,11 @@ async function parseResponsePayload(response: Response): Promise<unknown> {
 }
 
 function errorMessageFromPayload(payload: unknown, fallback: string): string {
+  const structured = parseApiErrorPayload(payload);
+  if (structured.message) {
+    return structured.message;
+  }
+
   if (payload && typeof payload === 'object') {
     const record = payload as Record<string, unknown>;
     const detail = record.detail || record.message || record.error;
@@ -84,10 +106,16 @@ export async function apiRequest<T>(
   const payload = await parseResponsePayload(response);
 
   if (!response.ok) {
+    const structured = parseApiErrorPayload(payload);
     throw new ApiError(
-      errorMessageFromPayload(payload, `请求失败 (${response.status})`),
+      errorMessageFromPayload(payload, `Request failed (${response.status})`),
       response.status,
       payload,
+      {
+        code: structured.code,
+        details: structured.details,
+        requestId: structured.requestId,
+      },
     );
   }
 

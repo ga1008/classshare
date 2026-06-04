@@ -4,7 +4,12 @@ from .common import *
 router = APIRouter()
 
 
-@router.post("/assignments/{assignment_id}/submissions/zero-unsubmitted", response_class=JSONResponse)
+@router.post(
+    "/assignments/{assignment_id}/submissions/zero-unsubmitted",
+    response_class=JSONResponse,
+    response_model=SubmissionMutationResponse,
+    response_model_exclude_unset=True,
+)
 async def zero_unsubmitted_scores(assignment_id: str, user: dict = Depends(get_current_teacher)):
     """为仍未提交的学生创建“缺交记 0”成绩，占位记录不视为正式提交。"""
     with get_db_connection() as conn:
@@ -155,7 +160,12 @@ async def zero_unsubmitted_scores(assignment_id: str, user: dict = Depends(get_c
     }
 
 
-@router.post("/submissions/{submission_id}/grade", response_class=JSONResponse)
+@router.post(
+    "/submissions/{submission_id}/grade",
+    response_class=JSONResponse,
+    response_model=SubmissionMutationResponse,
+    response_model_exclude_unset=True,
+)
 async def grade_submission(submission_id: int, request: Request, user: dict = Depends(get_current_teacher)):
     data = await request.json()
     with get_db_connection() as conn:
@@ -229,7 +239,12 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
     return {"status": "success", "graded_submission_id": submission_id}
 
 
-@router.post("/assignments/{assignment_id}/submissions/batch-grade", response_class=JSONResponse)
+@router.post(
+    "/assignments/{assignment_id}/submissions/batch-grade",
+    response_class=JSONResponse,
+    response_model=SubmissionMutationResponse,
+    response_model_exclude_unset=True,
+)
 async def batch_grade_submissions(assignment_id: str, request: Request, user: dict = Depends(get_current_teacher)):
     """教师批量发起 AI 批改：可指定 submission_ids 或自动处理所有待批改提交。"""
     data = await request.json()
