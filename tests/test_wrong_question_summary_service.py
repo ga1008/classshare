@@ -534,6 +534,165 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
         self.assertTrue(active_status["is_active"])
         self.assertEqual(active_status["job_status"], "queued")
 
+        with patch(
+            "classroom_app.services.wrong_question_summary_service._load_wrong_summary_job",
+            return_value={"status": "completed", "error_message": ""},
+        ):
+            incomplete_completed_status = _build_ai_status(
+                {
+                    "assignment": {"id": "assignment-1"},
+                    "questions_signature": "signature-1",
+                },
+                stats,
+                _score_based_difficulty_summary(_build_score_based_hard_questions(stats)),
+            )
+
+        self.assertFalse(incomplete_completed_status["is_active"])
+        self.assertEqual(incomplete_completed_status["job_status"], "failed")
+        self.assertIn("没有生成全部", incomplete_completed_status["message"])
+
+    def test_empty_ai_groups_fall_back_to_local_groups_and_cache(self):
+        fd, db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            @contextmanager
+            def connect():
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                try:
+                    yield conn
+                finally:
+                    conn.close()
+
+            questions = _extract_exam_questions(
+                {
+                    "pages": [
+                        {
+                            "name": "Basics",
+                            "questions": [
+                                {
+                                    "id": "q1",
+                                    "type": "text",
+                                    "text": "Default HTTP port?",
+                                    "answer": "80",
+                                    "points": 1,
+                                }
+                            ],
+                        }
+                    ]
+                }
+            )
+            submissions = [
+                {
+                    "id": 1,
+                    "student_name": "Student A",
+                    "status": "submitted",
+                    "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": "8080"}]}),
+                    "feedback_md": _feedback((1, 0, 1)),
+                }
+            ]
+            stats = _build_question_error_stats(questions, submissions)
+
+            with patch(
+                "classroom_app.services.wrong_question_summary_service.get_db_connection",
+                connect,
+            ), patch(
+                "classroom_app.services.wrong_question_summary_service._generate_text_wrong_clusters",
+                new=AsyncMock(return_value={"groups": []}),
+            ):
+                asyncio.run(_attach_text_answer_clusters("assignment-1", stats, allow_generate=True))
+
+            with connect() as conn:
+                row = conn.execute(
+                    "SELECT result_json FROM assignment_wrong_answer_ai_cache WHERE assignment_id = 'assignment-1'"
+                ).fetchone()
+
+            self.assertEqual(stats[0]["text_cluster_status"], "fallback")
+            self.assertIn("AI", stats[0]["text_cluster_error"])
+            self.assertEqual(stats[0]["top_wrong_answers"][0]["source"], "local_fallback")
+            self.assertIsNotNone(row)
+            cached = json.loads(row["result_json"])
+            self.assertTrue(cached["fallback"])
+            self.assertEqual(cached["groups"][0]["source"], "local_fallback")
+        finally:
+            try:
+                os.remove(db_path)
+            except OSError:
+                pass
+
+    def test_timed_out_ai_groups_fall_back_to_local_groups_and_cache(self):
+        fd, db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            @contextmanager
+            def connect():
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                try:
+                    yield conn
+                finally:
+                    conn.close()
+
+            async def slow_cluster(*args, **kwargs):
+                await asyncio.sleep(0.2)
+                return {"groups": [{"label": "8080", "count": 1, "examples": ["8080"]}]}
+
+            questions = _extract_exam_questions(
+                {
+                    "pages": [
+                        {
+                            "name": "Basics",
+                            "questions": [
+                                {
+                                    "id": "q1",
+                                    "type": "text",
+                                    "text": "Default HTTP port?",
+                                    "answer": "80",
+                                    "points": 1,
+                                }
+                            ],
+                        }
+                    ]
+                }
+            )
+            submissions = [
+                {
+                    "id": 1,
+                    "student_name": "Student A",
+                    "status": "submitted",
+                    "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": "8080"}]}),
+                    "feedback_md": _feedback((1, 0, 1)),
+                }
+            ]
+            stats = _build_question_error_stats(questions, submissions)
+
+            with patch(
+                "classroom_app.services.wrong_question_summary_service.get_db_connection",
+                connect,
+            ), patch(
+                "classroom_app.services.wrong_question_summary_service.WRONG_SUMMARY_QUESTION_TIMEOUT_SECONDS",
+                0.01,
+            ), patch(
+                "classroom_app.services.wrong_question_summary_service._generate_text_wrong_clusters",
+                slow_cluster,
+            ):
+                asyncio.run(_attach_text_answer_clusters("assignment-1", stats, allow_generate=True))
+
+            with connect() as conn:
+                cache_count = conn.execute(
+                    "SELECT COUNT(*) AS count FROM assignment_wrong_answer_ai_cache"
+                ).fetchone()["count"]
+
+            self.assertEqual(stats[0]["text_cluster_status"], "fallback")
+            self.assertIn("超过", stats[0]["text_cluster_error"])
+            self.assertEqual(stats[0]["top_wrong_answers"][0]["source"], "local_fallback")
+            self.assertEqual(cache_count, 1)
+        finally:
+            try:
+                os.remove(db_path)
+            except OSError:
+                pass
+
     def test_reorganize_clear_only_removes_ai_cache_and_jobs(self):
         fd, db_path = tempfile.mkstemp(suffix=".db")
         os.close(fd)

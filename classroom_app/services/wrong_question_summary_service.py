@@ -29,6 +29,9 @@ WRONG_SUMMARY_JOB_STATUS_MANUAL_REQUIRED = "manual_required"
 ACTIVE_WRONG_SUMMARY_JOB_STATUSES = {WRONG_SUMMARY_JOB_STATUS_QUEUED, WRONG_SUMMARY_JOB_STATUS_RUNNING}
 STALE_WRONG_SUMMARY_JOB_MINUTES = 12
 WRONG_SUMMARY_AI_CONCURRENCY = 3
+WRONG_SUMMARY_QUESTION_TIMEOUT_SECONDS = 65
+WRONG_SUMMARY_JOB_MIN_TIMEOUT_SECONDS = 90
+WRONG_SUMMARY_JOB_MAX_TIMEOUT_SECONDS = 360
 
 _active_wrong_summary_jobs: set[str] = set()
 
@@ -223,13 +226,25 @@ async def run_assignment_wrong_summary_ai_job(
         if not _mark_wrong_summary_job_running(assignment_key, signature, token):
             return
         question_stats = _build_question_error_stats(source["questions"], source["submissions"])
-        await _attach_text_answer_clusters(
-            assignment_key,
-            question_stats,
-            allow_generate=True,
-            questions_signature=signature,
-            job_run_token=token,
-        )
+        try:
+            await asyncio.wait_for(
+                _attach_text_answer_clusters(
+                    assignment_key,
+                    question_stats,
+                    allow_generate=True,
+                    questions_signature=signature,
+                    job_run_token=token,
+                ),
+                timeout=_wrong_summary_job_timeout_seconds(question_stats),
+            )
+        except asyncio.TimeoutError:
+            _apply_local_fallback_to_pending_text_questions(
+                assignment_key,
+                question_stats,
+                "后台 AI 归集超过系统等待时间，已先展示本地错答分组。",
+                questions_signature=signature,
+                job_run_token=token,
+            )
         difficulty = _score_based_difficulty_summary(_build_score_based_hard_questions(question_stats))
         errors = _collect_ai_job_errors(question_stats, difficulty)
         if not _is_wrong_summary_job_token_current(assignment_key, signature, token):
@@ -516,6 +531,21 @@ def _build_ai_status(
     needs_ai = pending_text_questions > 0 or pending_difficulty > 0
 
     job_status = str((job or {}).get("status") or "").strip().lower()
+    if job_status == WRONG_SUMMARY_JOB_STATUS_COMPLETED and needs_ai:
+        incomplete_message = "上次 AI 整理没有生成全部题目的可用分组，系统已先展示本地错答分组；请点击开始整理重新尝试。"
+        if job and "run_token" in job and job.get("assignment_id") is not None:
+            _mark_wrong_summary_job_failed(
+                assignment_id,
+                questions_signature,
+                incomplete_message,
+                str(job.get("run_token") or ""),
+            )
+        job_status = WRONG_SUMMARY_JOB_STATUS_FAILED
+        job = {
+            **(job or {}),
+            "status": WRONG_SUMMARY_JOB_STATUS_FAILED,
+            "error_message": incomplete_message,
+        }
     if job_status == WRONG_SUMMARY_JOB_STATUS_FAILED:
         is_active = False
         label = "AI 归集失败"
@@ -1429,7 +1459,10 @@ async def _attach_text_answer_clusters(
         question = item["question"]
         async with semaphore:
             try:
-                result = await _generate_text_wrong_clusters(question, item["wrong_records"], int(item["wrong_count"]))
+                result = await asyncio.wait_for(
+                    _generate_text_wrong_clusters(question, item["wrong_records"], int(item["wrong_count"])),
+                    timeout=max(0.1, float(WRONG_SUMMARY_QUESTION_TIMEOUT_SECONDS)),
+                )
                 groups = _normalize_text_cluster_groups(result, int(item["wrong_count"]))
                 groups = _attach_details_to_wrong_groups(groups, item["wrong_records"], int(item["wrong_count"]))
                 if groups:
@@ -1449,12 +1482,140 @@ async def _attach_text_answer_clusters(
                         {"groups": _strip_group_details_for_cache(groups)},
                     )
                 else:
-                    item["text_cluster_status"] = "fallback"
+                    _apply_text_cluster_fallback(
+                        assignment_id,
+                        item,
+                        signature,
+                        "AI 未返回可用错答分组，已先展示本地错答分组。",
+                        questions_signature=questions_signature,
+                        job_run_token=job_run_token,
+                    )
+            except asyncio.TimeoutError:
+                _apply_text_cluster_fallback(
+                    assignment_id,
+                    item,
+                    signature,
+                    "这道题的 AI 归集超过系统等待时间，已先展示本地错答分组。",
+                    questions_signature=questions_signature,
+                    job_run_token=job_run_token,
+                )
             except Exception as exc:
-                item["text_cluster_status"] = "fallback"
-                item["text_cluster_error"] = _clip_text(str(exc), 180)
+                _apply_text_cluster_fallback(
+                    assignment_id,
+                    item,
+                    signature,
+                    f"AI 归集失败：{_clip_text(str(exc), 140)}",
+                    questions_signature=questions_signature,
+                    job_run_token=job_run_token,
+                )
 
     await asyncio.gather(*(generate_one(item, signature) for item, signature in pending))
+
+
+def _wrong_summary_job_timeout_seconds(question_stats: list[dict[str, Any]]) -> float:
+    pending_count = len(
+        [
+            item
+            for item in question_stats
+            if item["question"]["type"] in TEXT_QUESTION_TYPES and int(item.get("wrong_count") or 0) > 0
+        ]
+    )
+    concurrency = max(1, int(WRONG_SUMMARY_AI_CONCURRENCY))
+    batches = max(1, (pending_count + concurrency - 1) // concurrency)
+    timeout = batches * (max(0.1, float(WRONG_SUMMARY_QUESTION_TIMEOUT_SECONDS)) + 10)
+    return max(
+        float(WRONG_SUMMARY_JOB_MIN_TIMEOUT_SECONDS),
+        min(float(WRONG_SUMMARY_JOB_MAX_TIMEOUT_SECONDS), timeout),
+    )
+
+
+def _apply_local_fallback_to_pending_text_questions(
+    assignment_id: str,
+    question_stats: list[dict[str, Any]],
+    reason: str,
+    *,
+    questions_signature: str = "",
+    job_run_token: str = "",
+) -> None:
+    for item in question_stats:
+        if (
+            item["question"]["type"] in TEXT_QUESTION_TYPES
+            and int(item.get("wrong_count") or 0) > 0
+            and item.get("text_cluster_status") == "pending"
+        ):
+            signature = _signature(
+                {
+                    "question_id": item["question"]["id"],
+                    "question_type": item["question"]["type"],
+                    "correct_answer": item["question"].get("answer"),
+                    "wrong_answers": item.get("wrong_answer_counter") or {},
+                    "wrong_count": item.get("wrong_count"),
+                }
+            )
+            _apply_text_cluster_fallback(
+                assignment_id,
+                item,
+                signature,
+                reason,
+                questions_signature=questions_signature,
+                job_run_token=job_run_token,
+            )
+
+
+def _apply_text_cluster_fallback(
+    assignment_id: str,
+    item: dict[str, Any],
+    signature: str,
+    reason: str,
+    *,
+    questions_signature: str = "",
+    job_run_token: str = "",
+) -> None:
+    if questions_signature and not _is_wrong_summary_job_token_current(
+        assignment_id,
+        str(questions_signature or ""),
+        str(job_run_token or ""),
+    ):
+        item["text_cluster_status"] = "stale"
+        return
+
+    groups = _local_fallback_text_groups(item, reason)
+    item["top_wrong_answers"] = groups
+    item["text_cluster_status"] = "fallback"
+    item["text_cluster_error"] = _clip_text(reason, 180)
+    _save_text_cluster_cache(
+        assignment_id,
+        item["question"]["key"],
+        signature,
+        {
+            "groups": _strip_group_details_for_cache(groups),
+            "fallback_error": _clip_text(reason, 180),
+            "fallback": True,
+        },
+    )
+
+
+def _local_fallback_text_groups(item: dict[str, Any], reason: str) -> list[dict[str, Any]]:
+    fallback_note = _clip_text(reason, 160)
+    groups = [dict(group) for group in item.get("top_wrong_answers") or [] if isinstance(group, dict)]
+    if not groups:
+        records = item.get("wrong_records") or []
+        if records:
+            label = _clip_text(str(records[0].get("answer") or records[0].get("answer_raw") or "未作答"), 100)
+            groups = [
+                {
+                    "label": label,
+                    "count": len(records),
+                    "percent": _percent(len(records), int(item.get("wrong_count") or len(records))),
+                    "examples": [_clip_text(str(record.get("answer") or record.get("answer_raw") or ""), 90) for record in records[:3]],
+                    "details": _wrong_answer_details(records),
+                }
+            ]
+    for group in groups:
+        group["source"] = "local_fallback"
+        if not str(group.get("likely_issue") or "").strip():
+            group["likely_issue"] = fallback_note
+    return groups[:5]
 
 
 async def _generate_text_wrong_clusters(
