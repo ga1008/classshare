@@ -3,7 +3,7 @@ param(
     [string]$ReportRoot = ".codex-temp\deploy-checks",
     [string]$Remote = "root@106.53.153.171",
     [string]$RemotePath = "/lanshare",
-    [string]$SshKeyPath = "",
+    [string]$SshKeyPath = "$env:USERPROFILE\.ssh\lanshare_deploy_rsa",
     [switch]$SkipSsh
 )
 
@@ -65,10 +65,11 @@ Invoke-HttpSmoke "vite-manifest" "/static/dist/manifest.json"
 if (-not $SkipSsh) {
     $LogPath = Join-Path $ReportDir "remote-docker-ps.log"
     $SshArgs = @()
+    $SshArgs += @("-o", "BatchMode=yes", "-o", "ConnectTimeout=20")
     if ($SshKeyPath) {
         $SshArgs += @("-i", $SshKeyPath)
     }
-    $SshArgs += @($Remote, "cd $RemotePath; docker compose ps; docker compose exec -T app python -c ""import json, urllib.request; print('app container reachable')""")
+    $SshArgs += @($Remote, "cd $RemotePath; docker compose ps; docker compose exec -T app true")
     try {
         $PreviousErrorActionPreference = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
