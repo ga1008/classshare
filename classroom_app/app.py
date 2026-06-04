@@ -32,6 +32,7 @@ from .services.behavior_tracking_service import (
     stop_behavior_profile_scheduler,
     stop_behavior_write_pipeline,
 )
+from .services.background_task_ledger_service import build_background_task_health_summary
 from .services.discussion_mood_service import stop_discussion_mood_refresh_tasks
 from .services.email_notification_service import email_worker_health_snapshot
 from .services.message_center_service import schedule_pending_private_ai_reply_jobs
@@ -228,6 +229,7 @@ async def internal_health():
         "behavior_write_queue_depth": behavior_stats["queue_depth"],
         "behavior_write_queue_capacity": behavior_stats["queue_capacity"],
         "email_worker": email_worker_health_snapshot(),
+        "background_tasks": build_background_task_health_summary(),
     }
 
 
@@ -243,6 +245,7 @@ async def internal_metrics():
         "service": "main",
         "database_path": str(DB_PATH),
         "runtime": get_runtime_metrics_snapshot(),
+        "background_tasks": build_background_task_health_summary(),
         "discussion_runtime": {
             "room_count": len(manager.rooms),
             "active_socket_count": int(room_connection_total),
@@ -255,6 +258,14 @@ async def internal_metrics():
                 for room_id, room_connections in manager.rooms.items()
             },
         },
+    }
+
+
+@app.get("/api/internal/background-tasks")
+async def internal_background_tasks():
+    return {
+        "status": "ok",
+        "background_tasks": build_background_task_health_summary(),
     }
 
 

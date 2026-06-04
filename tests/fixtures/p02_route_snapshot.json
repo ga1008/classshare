@@ -1128,6 +1128,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/internal/background-tasks",
+    "methods": [
+      "GET"
+    ],
+    "name": "internal_background_tasks",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/internal/grading-complete",
     "methods": [
       "POST"
@@ -1557,6 +1565,14 @@
       "POST"
     ],
     "name": "api_test_agent_key",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/background-tasks",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_background_tasks",
     "include_in_schema": true
   },
   {

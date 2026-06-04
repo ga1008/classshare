@@ -375,6 +375,20 @@ def _discussion_room_recipient_count(class_offering_id: int) -> int:
     return max(1, len(manager.rooms.get(class_offering_id, {})))
 
 
+def _is_benign_websocket_disconnect_error(exc: Exception) -> bool:
+    message = str(exc or "")
+    if isinstance(exc, WebSocketDisconnect):
+        return True
+    benign_fragments = (
+        "ClientDisconnected",
+        "ConnectionClosedOK",
+        "WebSocket is not connected",
+        "Cannot call \"send\" once a close message has been sent",
+        "close message has been sent",
+    )
+    return any(fragment in message for fragment in benign_fragments)
+
+
 async def _broadcast_discussion_payload(class_offering_id: int, payload: dict) -> None:
     await manager.broadcast(class_offering_id, json.dumps(payload, ensure_ascii=False))
     record_websocket_sent(class_offering_id, _discussion_room_recipient_count(class_offering_id))
@@ -1673,7 +1687,17 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
     ws_user = dict(user)
     ws_user['id'] = client_id
 
-    connection_id = await manager.connect(websocket, ws_user)
+    connection_id = ""
+    try:
+        connection_id = await manager.connect(websocket, ws_user)
+    except Exception as exc:
+        if _is_benign_websocket_disconnect_error(exc):
+            record_websocket_disconnect(class_offering_id)
+            return
+        print(f"[WS ERROR] {exc}")
+        record_websocket_error(class_offering_id, str(exc))
+        record_websocket_disconnect(class_offering_id)
+        return
     record_websocket_connect(class_offering_id)
     try:
         while True:
@@ -1774,7 +1798,9 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
         record_websocket_disconnect(class_offering_id)
         await manager.disconnect(connection_id)
     except Exception as e:
-        print(f"[WS ERROR] {e}")
-        record_websocket_error(class_offering_id, str(e))
+        if not _is_benign_websocket_disconnect_error(e):
+            print(f"[WS ERROR] {e}")
+            record_websocket_error(class_offering_id, str(e))
         record_websocket_disconnect(class_offering_id)
-        await manager.disconnect(connection_id)
+        if connection_id:
+            await manager.disconnect(connection_id)

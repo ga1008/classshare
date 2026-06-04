@@ -200,10 +200,98 @@
         margin-top: var(--spacing-md);
     }
 
+    .dg-task-ledger {
+        margin-top: var(--spacing-lg);
+        padding: var(--spacing-xl);
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border-color);
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .dg-task-ledger__header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-md);
+    }
+
+    .dg-task-ledger__header h3 {
+        margin: 0;
+        font-size: 1.05rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .dg-task-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--spacing-md);
+    }
+
+    .dg-task-item {
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        padding: var(--spacing-md);
+        background: rgba(248, 250, 252, 0.72);
+    }
+
+    .dg-task-item__top {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-sm);
+        align-items: center;
+        margin-bottom: var(--spacing-sm);
+    }
+
+    .dg-task-item h4 {
+        margin: 0;
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .dg-task-metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 6px;
+        margin-bottom: var(--spacing-sm);
+    }
+
+    .dg-task-metrics span {
+        display: block;
+        padding: 6px 8px;
+        border-radius: var(--radius-sm);
+        background: #fff;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        white-space: nowrap;
+    }
+
+    .dg-task-metrics strong {
+        color: var(--text-primary);
+        font-weight: 700;
+    }
+
+    .dg-task-meta {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        line-height: 1.55;
+        word-break: break-word;
+    }
+
     @media (max-width: 768px) {
         .dg-grid,
-        .dg-stats {
+        .dg-stats,
+        .dg-task-grid {
             grid-template-columns: 1fr;
+        }
+
+        .dg-task-metrics {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
         }
     }
 </style>
@@ -275,13 +363,42 @@
     </section>
 </div>
 
+<section class="dg-task-ledger">
+    <div class="dg-task-ledger__header">
+        <div>
+            <h3>后台任务运行台账</h3>
+            <p class="dg-card__desc">汇总 AI 批改、材料 AI 导入、材料生成、消息中心、邮件、博客爬虫、agent worker 与行为写入管线。</p>
+        </div>
+        <span class="dg-pill loading" id="dg-task-pill">加载中</span>
+    </div>
+    <div class="dg-stats">
+        <div class="dg-stat">
+            <span>待处理总数</span>
+            <strong id="dg-task-queued">-</strong>
+        </div>
+        <div class="dg-stat">
+            <span>运行中总数</span>
+            <strong id="dg-task-running">-</strong>
+        </div>
+        <div class="dg-stat">
+            <span>失败/未恢复</span>
+            <strong id="dg-task-failed">-</strong>
+        </div>
+        <div class="dg-stat">
+            <span>疑似卡住</span>
+            <strong id="dg-task-stale">-</strong>
+        </div>
+    </div>
+    <div class="dg-task-grid" id="dg-task-grid"></div>
+</section>
+
 <section class="dg-command-card">
     <div class="dg-command-card__header">
         <h3>推荐压测命令</h3>
         <span class="badge badge-primary">隔离数据库</span>
     </div>
     <p class="dg-command-card__desc">使用项目自带的全链路压测脚本。它会复制当前数据库、自动插入测试学生、启动主后端与 AI mock、执行登录/课堂/材料/私信/助教/WebSocket/作业链路，并在结束后自动清理临时库与日志。</p>
-    <div class="dg-command" id="dg-command-text">venv\Scripts\python.exe tools\full_stack_load_test.py --student-count 100 --ai-mode mock</div>
+    <div class="dg-command" id="dg-command-text">venv\Scripts\python.exe tools\full_stack_load_test.py --profile classroom-200 --runtime-root .codex-temp\p11-load-runtime --json-output .codex-temp\p11-artifacts\classroom-200.json --keep-artifacts --ai-mode mock</div>
     <div class="dg-actions">
         <button type="button" class="btn btn-primary btn-sm" id="dg-copy-command">复制命令</button>
         <button type="button" class="btn btn-outline btn-sm" id="dg-refresh">刷新状态</button>
@@ -294,6 +411,7 @@
     (() => {
         const healthPill = document.getElementById('dg-health-pill');
         const metricsPill = document.getElementById('dg-metrics-pill');
+        const taskPill = document.getElementById('dg-task-pill');
 
         function setPillState(el, state) {
             el.className = 'dg-pill ' + state;
@@ -349,16 +467,83 @@
                         `热点路由：<code>${top.method} ${top.route_path}</code> — ${top.count} 次请求，平均 ${top.avg_duration_ms}ms`;
                 }
 
+                if (topRoutes.length) {
+                    const top = topRoutes[0];
+                    document.getElementById('dg-top-route').innerHTML =
+                        `Top route: <code>${top.method} ${top.route_path}</code> - ${top.count} requests, p95 ${top.p95_duration_ms}ms, avg ${top.avg_duration_ms}ms`;
+                }
+
                 setPillState(metricsPill, 'healthy');
             } catch {
                 setPillState(metricsPill, 'error');
             }
         }
 
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#39;');
+        }
+
+        function renderTaskLedger(data) {
+            const summary = data.summary || {};
+            document.getElementById('dg-task-queued').textContent = formatNum(summary.total_queue_depth);
+            document.getElementById('dg-task-running').textContent = formatNum(summary.total_running_count);
+            document.getElementById('dg-task-failed').textContent = formatNum(summary.total_failed_count);
+            document.getElementById('dg-task-stale').textContent = formatNum(summary.total_stale_count);
+
+            const grid = document.getElementById('dg-task-grid');
+            const items = data.items || [];
+            grid.innerHTML = items.map((item) => {
+                const failed = Number(item.failed_count || 0);
+                const stale = Number(item.stale_count || 0);
+                const hasProblem = failed > 0 || stale > 0 || item.status === 'error';
+                const pillClass = hasProblem || item.status === 'missing_source' ? 'warn' : 'healthy';
+                const workers = (item.worker_ids || []).map(escapeHtml).join(', ') || '-';
+                const error = item.last_error ? `<br>last error: ${escapeHtml(item.last_error)}` : '';
+                return `
+                    <article class="dg-task-item">
+                        <div class="dg-task-item__top">
+                            <h4>${escapeHtml(item.display_name || item.task_type)}</h4>
+                            <span class="dg-pill ${pillClass}">${escapeHtml(item.status || 'ok')}</span>
+                        </div>
+                        <div class="dg-task-metrics">
+                            <span>queued <strong>${formatNum(item.queue_depth)}</strong></span>
+                            <span>running <strong>${formatNum(item.running_count)}</strong></span>
+                            <span>failed <strong>${formatNum(item.failed_count)}</strong></span>
+                            <span>stale <strong>${formatNum(item.stale_count)}</strong></span>
+                        </div>
+                        <p class="dg-task-meta">
+                            workers: ${workers}<br>
+                            heartbeat: ${escapeHtml(item.last_heartbeat_at || '-')}<br>
+                            recovery: ${item.recoverable ? 'recoverable' : 'transient'} / ${escapeHtml(item.recovery_action || '-')}${error}
+                        </p>
+                    </article>
+                `;
+            }).join('');
+        }
+
+        async function fetchTaskLedger() {
+            try {
+                const res = await fetch('/api/manage/system/background-tasks');
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                renderTaskLedger(data);
+                const problems = ((data.summary || {}).problem_task_types || []).length;
+                setPillState(taskPill, problems ? 'warn' : 'healthy');
+            } catch {
+                setPillState(taskPill, 'error');
+            }
+        }
+
         function refreshAll() {
             setPillState(healthPill, 'loading');
             setPillState(metricsPill, 'loading');
-            Promise.all([fetchHealth(), fetchMetrics()]);
+            setPillState(taskPill, 'loading');
+            Promise.all([fetchHealth(), fetchMetrics(), fetchTaskLedger()]);
         }
 
         document.getElementById('dg-refresh').addEventListener('click', refreshAll);

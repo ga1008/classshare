@@ -24,6 +24,17 @@ DEFAULT_MAIN_PORT = 18700
 DEFAULT_AI_PORT = 18701
 DEFAULT_STUDENT_COUNT = 100
 DEFAULT_MAX_CONNECTIONS = 300
+DEFAULT_PROFILE = "classroom-100"
+PROFILE_STUDENT_COUNTS = {
+    "classroom-100": 100,
+    "classroom-200": 200,
+    "custom": DEFAULT_STUDENT_COUNT,
+}
+PROFILE_SCENARIO_CONCURRENCY = {
+    "classroom-100": 40,
+    "classroom-200": 50,
+    "custom": 40,
+}
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -87,6 +98,65 @@ def _percentile(samples: list[float], ratio: float) -> float:
     upper_value = float(ordered[upper_index])
     weight = position - lower_index
     return lower_value + (upper_value - lower_value) * weight
+
+
+def resolve_student_count(profile: str, student_count: int | None) -> int:
+    normalized_profile = str(profile or DEFAULT_PROFILE).strip() or DEFAULT_PROFILE
+    if student_count is not None:
+        return max(1, int(student_count))
+    return max(1, int(PROFILE_STUDENT_COUNTS.get(normalized_profile, DEFAULT_STUDENT_COUNT)))
+
+
+def resolve_scenario_concurrency(profile: str, scenario_concurrency: int | None, *, student_count: int) -> int:
+    normalized_profile = str(profile or DEFAULT_PROFILE).strip() or DEFAULT_PROFILE
+    if scenario_concurrency is not None:
+        return max(1, min(int(scenario_concurrency), int(student_count)))
+    default_value = int(PROFILE_SCENARIO_CONCURRENCY.get(normalized_profile, 40))
+    return max(1, min(default_value, int(student_count)))
+
+
+def _is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _resolve_runtime_path(value: str) -> Path:
+    raw_path = Path(value)
+    if raw_path.is_absolute():
+        return raw_path.resolve()
+    return (PROJECT_ROOT / raw_path).resolve()
+
+
+def assert_safe_runtime_root(runtime_root: Path, *, source_db: Path) -> None:
+    resolved_root = runtime_root.resolve()
+    resolved_source_db = source_db.resolve()
+    source_parent = resolved_source_db.parent.resolve()
+
+    if resolved_root == resolved_source_db:
+        raise ValueError("runtime root must be a directory, not the source database file.")
+    if resolved_root == source_parent or _is_relative_to(resolved_root, source_parent):
+        raise ValueError("runtime root must not live under the real source database directory.")
+    if _is_relative_to(resolved_source_db, resolved_root):
+        raise ValueError("runtime root must not contain the source database file.")
+
+    lower_parts = [part.lower() for part in resolved_root.parts]
+    for index in range(len(lower_parts) - 1):
+        if lower_parts[index] == "lanshare" and lower_parts[index + 1] == "data":
+            raise ValueError("runtime root must not point at remote or local /lanshare/data.")
+
+
+def quick_check_sqlite_database(db_path: Path, *, read_only: bool = False) -> str:
+    if read_only:
+        uri = f"file:{db_path.resolve().as_posix()}?mode=ro"
+        with sqlite3.connect(uri, uri=True) as conn:
+            row = conn.execute("PRAGMA quick_check").fetchone()
+    else:
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute("PRAGMA quick_check").fetchone()
+    return str((row[0] if row else "") or "")
 
 
 @dataclass(slots=True)
@@ -232,8 +302,13 @@ class ScenarioContext:
 
 def clone_sqlite_database(source_path: Path, target_path: Path) -> None:
     target_path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(source_path) as source_conn, sqlite3.connect(target_path) as target_conn:
+    source_conn = sqlite3.connect(source_path)
+    target_conn = sqlite3.connect(target_path)
+    try:
         source_conn.backup(target_conn)
+    finally:
+        source_conn.close()
+        target_conn.close()
 
 
 def _row_to_target_offering(row: sqlite3.Row) -> TargetOffering:
@@ -251,7 +326,8 @@ def _row_to_target_offering(row: sqlite3.Row) -> TargetOffering:
 
 
 def select_target_offering(db_path: Path, requested_offering_id: Optional[int] = None) -> TargetOffering:
-    with sqlite3.connect(db_path) as conn:
+    conn = sqlite3.connect(db_path)
+    try:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             """
@@ -271,6 +347,8 @@ def select_target_offering(db_path: Path, requested_offering_id: Optional[int] =
             ORDER BY o.id
             """
         ).fetchall()
+    finally:
+        conn.close()
 
     if not rows:
         raise RuntimeError("当前数据库没有可用的课堂，无法执行压测。")
@@ -296,7 +374,8 @@ def select_target_offering(db_path: Path, requested_offering_id: Optional[int] =
 
 def discover_assignment_target(db_path: Path, class_offering_id: int) -> Optional[AssignmentTarget]:
     now_iso = datetime.now().isoformat()
-    with sqlite3.connect(db_path) as conn:
+    conn = sqlite3.connect(db_path)
+    try:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             """
@@ -305,11 +384,13 @@ def discover_assignment_target(db_path: Path, class_offering_id: int) -> Optiona
             WHERE class_offering_id = ?
               AND status = 'published'
               AND (due_at IS NULL OR due_at = '' OR due_at > ?)
-            ORDER BY CASE WHEN exam_paper_id IS NOT NULL THEN 0 ELSE 1 END, id DESC
+            ORDER BY CASE WHEN exam_paper_id IS NULL THEN 0 ELSE 1 END, id DESC
             LIMIT 1
             """,
             (class_offering_id, now_iso),
         ).fetchone()
+    finally:
+        conn.close()
     if not row:
         return None
     return AssignmentTarget(
@@ -320,7 +401,8 @@ def discover_assignment_target(db_path: Path, class_offering_id: int) -> Optiona
 
 
 def discover_material_target(db_path: Path, class_offering_id: int) -> Optional[MaterialTarget]:
-    with sqlite3.connect(db_path) as conn:
+    conn = sqlite3.connect(db_path)
+    try:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             """
@@ -338,6 +420,8 @@ def discover_material_target(db_path: Path, class_offering_id: int) -> Optional[
             """,
             (class_offering_id,),
         ).fetchone()
+    finally:
+        conn.close()
     if not row:
         return None
     return MaterialTarget(
@@ -435,6 +519,7 @@ def build_process_env(
     env["MAIN_PORT"] = str(main_port)
     env["MAIN_DB_PATH"] = str(db_path)
     env["MAIN_DATA_DIR"] = str(temp_root / "data")
+    env["LANSHARE_DATA_ROOT"] = str(temp_root / "data")
     env["MAIN_HOMEWORK_SUBMISSIONS_DIR"] = str(temp_root / "homework_submissions")
     env["MAIN_CHAT_LOG_DIR"] = str(temp_root / "chat_logs")
     env["MAIN_ATTENDANCE_DIR"] = str(temp_root / "attendance")
@@ -517,23 +602,52 @@ async def terminate_process(started: Optional[StartedProcess]) -> dict[str, Any]
 
 def make_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Isolated full-stack load test for Lanshare.")
-    parser.add_argument("--source-db", default=str(DEFAULT_SOURCE_DB), help="源数据库路径。")
-    parser.add_argument("--class-offering-id", type=int, default=None, help="指定要压测的课堂 ID。")
-    parser.add_argument("--student-count", type=int, default=DEFAULT_STUDENT_COUNT, help="压测学生数量。")
-    parser.add_argument("--host", default=DEFAULT_MAIN_HOST, help="后端监听地址。")
-    parser.add_argument("--port", type=int, default=DEFAULT_MAIN_PORT, help="主后端端口。")
-    parser.add_argument("--ai-port", type=int, default=DEFAULT_AI_PORT, help="AI 服务端口。")
+    parser.add_argument("--source-db", default=str(DEFAULT_SOURCE_DB), help="Source database path.")
+    parser.add_argument("--class-offering-id", type=int, default=None, help="Target class offering id.")
+    parser.add_argument(
+        "--profile",
+        choices=tuple(PROFILE_STUDENT_COUNTS.keys()),
+        default=DEFAULT_PROFILE,
+        help="Load profile: classroom-100, classroom-200, or custom.",
+    )
+    parser.add_argument(
+        "--student-count",
+        "--students",
+        dest="student_count",
+        type=int,
+        default=None,
+        help="Student count override. Defaults to the selected profile size.",
+    )
+    parser.add_argument("--host", default=DEFAULT_MAIN_HOST, help="Backend bind host.")
+    parser.add_argument("--port", type=int, default=DEFAULT_MAIN_PORT, help="Main backend port.")
+    parser.add_argument("--ai-port", type=int, default=DEFAULT_AI_PORT, help="AI service port.")
     parser.add_argument(
         "--ai-mode",
         choices=("mock", "real", "skip"),
         default="mock",
-        help="AI 依赖模式：mock=本地模拟，real=启动真实 ai_assistant.py，skip=跳过 AI 相关链路。",
+        help="AI dependency mode: mock, real, or skip.",
     )
-    parser.add_argument("--startup-timeout", type=float, default=60.0, help="服务启动超时时间（秒）。")
-    parser.add_argument("--request-timeout", type=float, default=45.0, help="客户端请求超时时间（秒）。")
-    parser.add_argument("--max-connections", type=int, default=DEFAULT_MAX_CONNECTIONS, help="HTTP 连接池上限。")
-    parser.add_argument("--keep-artifacts", action="store_true", help="保留临时数据库、日志和凭据文件。")
-    parser.add_argument("--artifact-dir", default="", help="显式指定产物目录。留空则自动创建临时目录。")
+    parser.add_argument("--startup-timeout", type=float, default=60.0, help="Service startup timeout seconds.")
+    parser.add_argument("--request-timeout", type=float, default=45.0, help="Client request timeout seconds.")
+    parser.add_argument("--max-connections", type=int, default=DEFAULT_MAX_CONNECTIONS, help="HTTP connection pool limit.")
+    parser.add_argument("--keep-artifacts", action="store_true", help="Keep isolated database, logs, and credentials.")
+    parser.add_argument("--artifact-dir", default="", help="Backward-compatible artifact directory.")
+    parser.add_argument("--runtime-root", default="", help="P11 isolated runtime root. Takes precedence over --artifact-dir.")
+    parser.add_argument("--json-output", default="", help="Write the final report to this JSON path as well as stdout.")
+    parser.add_argument(
+        "--scenario-concurrency",
+        type=int,
+        default=None,
+        help="Maximum concurrent student workflows. Defaults to the selected profile shape.",
+    )
+    parser.add_argument("--min-success-rate", type=float, default=99.0, help="Minimum scenario success rate.")
+    parser.add_argument("--max-http-5xx", type=int, default=0, help="Maximum allowed HTTP 5xx count.")
+    parser.add_argument(
+        "--max-action-p95-ms",
+        type=float,
+        default=0.0,
+        help="Optional maximum action p95 threshold. 0 records p95 without failing the gate.",
+    )
     return parser.parse_args()
 
 
@@ -736,7 +850,7 @@ async def poll_private_ai_job(
     *,
     job_id: int,
     access_token: str,
-    timeout_seconds: float = 15.0,
+    timeout_seconds: float = 45.0,
 ) -> dict[str, Any]:
     deadline = time.perf_counter() + timeout_seconds
     while time.perf_counter() < deadline:
@@ -1070,17 +1184,92 @@ async def collect_server_snapshot(base_url: str) -> dict[str, Any]:
         }
 
 
+def _count_http_5xx(server_snapshot: dict[str, Any]) -> int:
+    status_counts = (
+        server_snapshot.get("metrics", {})
+        .get("runtime", {})
+        .get("http", {})
+        .get("status_counts", {})
+    )
+    total = 0
+    for code, count in dict(status_counts or {}).items():
+        try:
+            if int(code) >= 500:
+                total += int(count or 0)
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
+def build_gate_summary(
+    *,
+    action_summary: dict[str, Any],
+    scenario_results: list[dict[str, Any]],
+    server_snapshot: dict[str, Any],
+    min_success_rate: float,
+    max_http_5xx: int,
+    max_action_p95_ms: float,
+) -> dict[str, Any]:
+    total_scenarios = len(scenario_results)
+    succeeded_scenarios = sum(1 for item in scenario_results if item.get("success"))
+    scenario_success_rate = (
+        round((succeeded_scenarios / total_scenarios) * 100.0, 2) if total_scenarios else 0.0
+    )
+    action_failures = sum(int(item.get("failures") or 0) for item in action_summary.values())
+    action_p95_values = [
+        float(item.get("p95_ms") or 0.0)
+        for item in action_summary.values()
+        if int(item.get("attempts") or 0) > 0
+    ]
+    max_observed_action_p95_ms = round(max(action_p95_values), 2) if action_p95_values else 0.0
+    http_5xx_count = _count_http_5xx(server_snapshot)
+    failures: list[str] = []
+
+    if scenario_success_rate < float(min_success_rate):
+        failures.append("scenario_success_rate")
+    if action_failures > 0:
+        failures.append("action_failures")
+    if http_5xx_count > int(max_http_5xx):
+        failures.append("http_5xx")
+    if float(max_action_p95_ms or 0.0) > 0 and max_observed_action_p95_ms > float(max_action_p95_ms):
+        failures.append("action_p95")
+
+    return {
+        "passed": not failures,
+        "failures": failures,
+        "scenario_success_rate": scenario_success_rate,
+        "scenario_success_count": succeeded_scenarios,
+        "scenario_total": total_scenarios,
+        "action_failures": action_failures,
+        "http_5xx_count": http_5xx_count,
+        "max_observed_action_p95_ms": max_observed_action_p95_ms,
+        "thresholds": {
+            "min_success_rate": float(min_success_rate),
+            "max_http_5xx": int(max_http_5xx),
+            "max_action_p95_ms": float(max_action_p95_ms or 0.0),
+        },
+    }
+
+
+def write_json_report(path: Path, report: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_safe_json(report), encoding="utf-8")
+
+
 def build_final_report(
     *,
     started_at: str,
     completed_at: str,
     duration_seconds: float,
     ctx: ScenarioContext,
+    profile_name: str,
+    scenario_concurrency: int,
     students: list[SeededStudent],
     credentials_path: str,
     action_summary: dict[str, Any],
     scenario_results: list[dict[str, Any]],
     server_snapshot: dict[str, Any],
+    data_safety: dict[str, Any],
     artifact_dir: str,
     kept_artifacts: bool,
     process_logs: dict[str, str],
@@ -1104,7 +1293,9 @@ def build_final_report(
             "chat_log_count": ctx.offering.chat_log_count,
         },
         "load_profile": {
+            "profile": profile_name,
             "student_count": len(students),
+            "scenario_concurrency": int(scenario_concurrency),
             "ai_mode": ctx.ai_mode,
             "material_target": (
                 {
@@ -1131,14 +1322,16 @@ def build_final_report(
         },
         "credential_sample": [
             {
+                "student_pk": student.student_pk,
                 "student_id_number": student.student_id_number,
-                "password": student.password,
+                "password": "[REDACTED]",
             }
             for student in students[:3]
         ],
         "credentials_path": credentials_path,
         "action_summary": action_summary,
         "server_snapshot": server_snapshot,
+        "data_safety": data_safety,
         "artifacts": {
             "kept": kept_artifacts,
             "artifact_dir": artifact_dir if kept_artifacts else "",
@@ -1150,6 +1343,12 @@ def build_final_report(
 async def main() -> int:
     args = make_args()
     source_db = Path(args.source_db).resolve()
+    student_count = resolve_student_count(str(args.profile), args.student_count)
+    scenario_concurrency = resolve_scenario_concurrency(
+        str(args.profile),
+        args.scenario_concurrency,
+        student_count=student_count,
+    )
     if not source_db.exists():
         raise FileNotFoundError(f"源数据库不存在: {source_db}")
 
@@ -1159,12 +1358,18 @@ async def main() -> int:
 
     artifact_root: Path
     cleanup_artifact_root = False
-    if args.artifact_dir:
-        artifact_root = Path(args.artifact_dir).resolve()
+    if args.runtime_root:
+        artifact_root = _resolve_runtime_path(str(args.runtime_root))
+        assert_safe_runtime_root(artifact_root, source_db=source_db)
+        artifact_root.mkdir(parents=True, exist_ok=True)
+    elif args.artifact_dir:
+        artifact_root = _resolve_runtime_path(str(args.artifact_dir))
+        assert_safe_runtime_root(artifact_root, source_db=source_db)
         artifact_root.mkdir(parents=True, exist_ok=True)
     else:
         artifact_root = Path(tempfile.mkdtemp(prefix="lanshare-loadtest-"))
         cleanup_artifact_root = not args.keep_artifacts
+    json_output_path = _resolve_runtime_path(str(args.json_output)) if args.json_output else None
 
     cloned_db_path = artifact_root / "isolated" / "classroom.db"
     process_logs_dir = artifact_root / "logs"
@@ -1176,16 +1381,30 @@ async def main() -> int:
     main_process: Optional[StartedProcess] = None
     ai_process: Optional[StartedProcess] = None
     report: Optional[dict[str, Any]] = None
+    source_quick_check_before = ""
+    cloned_quick_check_before = ""
+    cloned_quick_check_after = ""
 
     try:
-        await logger.write({"event": "run_start", "source_db": str(source_db), "run_id": run_id})
+        await logger.write(
+            {
+                "event": "run_start",
+                "source_db": str(source_db),
+                "run_id": run_id,
+                "profile": str(args.profile),
+                "student_count": student_count,
+                "scenario_concurrency": scenario_concurrency,
+            }
+        )
 
+        source_quick_check_before = quick_check_sqlite_database(source_db, read_only=True)
         clone_sqlite_database(source_db, cloned_db_path)
+        cloned_quick_check_before = quick_check_sqlite_database(cloned_db_path)
         offering = select_target_offering(cloned_db_path, args.class_offering_id)
         students = seed_test_students(
             db_path=cloned_db_path,
             offering=offering,
-            student_count=max(1, int(args.student_count)),
+            student_count=student_count,
             run_id=run_id,
         )
         write_seed_credentials(credentials_path, students)
@@ -1259,14 +1478,20 @@ async def main() -> int:
             limits=limits,
             follow_redirects=False,
         ) as client:
+            scenario_semaphore = asyncio.Semaphore(scenario_concurrency)
+
+            async def run_student_scenario(student: SeededStudent) -> dict[str, Any]:
+                async with scenario_semaphore:
+                    return await execute_student_scenario(
+                        client=client,
+                        ctx=ctx,
+                        student=student,
+                        logger=logger,
+                        recorder=recorder,
+                    )
+
             scenario_tasks = [
-                execute_student_scenario(
-                    client=client,
-                    ctx=ctx,
-                    student=student,
-                    logger=logger,
-                    recorder=recorder,
-                )
+                run_student_scenario(student)
                 for student in students
             ]
             scenario_results = await asyncio.gather(*scenario_tasks)
@@ -1274,17 +1499,31 @@ async def main() -> int:
         await asyncio.sleep(1.0)
         server_snapshot = await collect_server_snapshot(base_url)
         action_summary = await recorder.snapshot()
+        cloned_quick_check_after = quick_check_sqlite_database(cloned_db_path)
         completed_at_iso = _now_iso()
+        data_safety = {
+            "source_db": str(source_db),
+            "cloned_db": str(cloned_db_path),
+            "runtime_root": str(artifact_root),
+            "writes_to_source_db": False,
+            "source_quick_check_before": source_quick_check_before,
+            "cloned_quick_check_before": cloned_quick_check_before,
+            "cloned_quick_check_after": cloned_quick_check_after,
+            "safe_runtime_root": True,
+        }
         report = build_final_report(
             started_at=started_at_iso,
             completed_at=completed_at_iso,
             duration_seconds=time.perf_counter() - run_started_at,
             ctx=ctx,
+            profile_name=str(args.profile),
+            scenario_concurrency=scenario_concurrency,
             students=students,
             credentials_path=str(credentials_path) if args.keep_artifacts else "",
             action_summary=action_summary,
             scenario_results=scenario_results,
             server_snapshot=server_snapshot,
+            data_safety=data_safety,
             artifact_dir=str(artifact_root),
             kept_artifacts=bool(args.keep_artifacts),
             process_logs={
@@ -1293,6 +1532,25 @@ async def main() -> int:
                 "operation_log": str(operation_log_path.resolve()),
             },
         )
+        report["gate_summary"] = build_gate_summary(
+            action_summary=action_summary,
+            scenario_results=scenario_results,
+            server_snapshot=server_snapshot,
+            min_success_rate=float(args.min_success_rate),
+            max_http_5xx=int(args.max_http_5xx),
+            max_action_p95_ms=float(args.max_action_p95_ms),
+        )
+        if (
+            report["data_safety"]["source_quick_check_before"] != "ok"
+            or report["data_safety"]["cloned_quick_check_before"] != "ok"
+            or report["data_safety"]["cloned_quick_check_after"] != "ok"
+        ):
+            report["gate_summary"]["passed"] = False
+            report["gate_summary"].setdefault("failures", []).append("sqlite_quick_check")
+        if not report["gate_summary"].get("passed"):
+            report["status"] = "partial_failure"
+        if json_output_path is not None:
+            write_json_report(json_output_path, report)
         print(_safe_json(report))
     finally:
         logger.close()

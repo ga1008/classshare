@@ -1,7 +1,17 @@
 from .common import *
+from ...services.background_task_ledger_service import build_background_task_ledger_snapshot
 
 
 router = APIRouter()
+
+
+@router.get("/system/background-tasks", response_class=JSONResponse)
+async def api_get_background_tasks(user: dict = Depends(get_current_teacher)):
+    """Return the unified background task ledger for super-admin diagnostics."""
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        snapshot = build_background_task_ledger_snapshot(conn)
+    return {"status": "success", **snapshot}
 
 
 @router.get("/system/password-resets/{request_id}", response_class=JSONResponse)
