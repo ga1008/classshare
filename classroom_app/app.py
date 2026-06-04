@@ -53,6 +53,7 @@ from .services.submission_file_alignment import repair_stale_stored_paths
 from .services.assignment_lifecycle_service import close_overdue_assignments
 from .services.ai_grading_service import expire_stale_ai_grading_submissions
 from .services.exam_generation_recovery_service import expire_stale_exam_generation_tasks
+from .services.wrong_question_summary_service import expire_interrupted_wrong_summary_jobs
 from .time_utils import app_timezone_name, local_iso
 from .database import get_db_connection
 
@@ -157,6 +158,7 @@ async def startup_event():
                 stale_minutes=AI_GRADING_STALE_MINUTES,
             )
             align_conn.commit()
+        interrupted_wrong_summary_jobs = expire_interrupted_wrong_summary_jobs()
         if repair_report.paths_repaired > 0 or repair_report.paths_still_missing > 0:
             print(
                 f"[ALIGNMENT] stored_path repair: "
@@ -170,6 +172,8 @@ async def startup_event():
             print(f"[AI_GEN] reclaimed {stale_exam_gen_count} stale exam generation task(s)")
         if stale_grading_count > 0:
             print(f"[AI_GRADING] reclaimed {stale_grading_count} stale grading submission(s)")
+        if interrupted_wrong_summary_jobs > 0:
+            print(f"[WRONG_SUMMARY] reclaimed {interrupted_wrong_summary_jobs} interrupted AI summary job(s)")
     except Exception as exc:
         print(f"[ALIGNMENT] stored_path auto-repair failed (non-fatal): {exc}")
 

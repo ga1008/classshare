@@ -20,13 +20,15 @@ PROMPT_VERSION = "wrong-question-summary-v2"
 TEXT_QUESTION_TYPES = {"text", "textarea"}
 CHOICE_QUESTION_TYPES = {"radio", "checkbox"}
 UNMATCHED_CHOICE_KEY = "__unmatched_choice__"
+BLANK_CHOICE_KEY = "__blank_choice__"
 WRONG_SUMMARY_JOB_STATUS_QUEUED = "queued"
 WRONG_SUMMARY_JOB_STATUS_RUNNING = "running"
 WRONG_SUMMARY_JOB_STATUS_COMPLETED = "completed"
 WRONG_SUMMARY_JOB_STATUS_FAILED = "failed"
 WRONG_SUMMARY_JOB_STATUS_MANUAL_REQUIRED = "manual_required"
 ACTIVE_WRONG_SUMMARY_JOB_STATUSES = {WRONG_SUMMARY_JOB_STATUS_QUEUED, WRONG_SUMMARY_JOB_STATUS_RUNNING}
-STALE_WRONG_SUMMARY_JOB_MINUTES = 30
+STALE_WRONG_SUMMARY_JOB_MINUTES = 12
+WRONG_SUMMARY_AI_CONCURRENCY = 3
 
 _active_wrong_summary_jobs: set[str] = set()
 
@@ -107,6 +109,18 @@ def ensure_wrong_summary_cache_tables(conn) -> None:
         "CREATE INDEX IF NOT EXISTS idx_wrong_summary_jobs_assignment "
         "ON assignment_wrong_summary_jobs (assignment_id, questions_signature, status, updated_at DESC)"
     )
+
+
+def expire_interrupted_wrong_summary_jobs() -> int:
+    """Fail active wrong-summary jobs left behind by a previous app process."""
+    with get_db_connection() as conn:
+        ensure_wrong_summary_cache_tables(conn)
+        reclaimed = _fail_active_wrong_summary_jobs(
+            conn,
+            "后台 AI 归集任务因服务重启或进程中断已停止，请点击开始整理重新发起。",
+        )
+        conn.commit()
+    return reclaimed
 
 
 def _ensure_table_column(conn, table_name: str, column_name: str, column_def: str) -> None:
@@ -587,6 +601,12 @@ def _schedule_wrong_summary_ai_task(
     try:
         asyncio.get_running_loop()
     except RuntimeError:
+        _mark_wrong_summary_job_failed(
+            assignment_id,
+            questions_signature,
+            "后台 AI 归集任务调度失败，请稍后重新开始整理。",
+            run_token,
+        )
         return
     _active_wrong_summary_jobs.add(job_key)
     asyncio.create_task(
@@ -627,6 +647,32 @@ def _recover_stale_wrong_summary_jobs(conn) -> None:
             cutoff,
         ),
     )
+
+
+def _fail_active_wrong_summary_jobs(conn, message: str) -> int:
+    now = datetime.now().isoformat(timespec="seconds")
+    cursor = conn.execute(
+        """
+        UPDATE assignment_wrong_summary_jobs
+        SET status = ?,
+            error_message = CASE
+                WHEN TRIM(COALESCE(error_message, '')) = '' THEN ?
+                ELSE error_message
+            END,
+            completed_at = COALESCE(completed_at, ?),
+            updated_at = ?
+        WHERE status IN (?, ?)
+        """,
+        (
+            WRONG_SUMMARY_JOB_STATUS_FAILED,
+            _clip_text(message, 500),
+            now,
+            now,
+            WRONG_SUMMARY_JOB_STATUS_RUNNING,
+            WRONG_SUMMARY_JOB_STATUS_QUEUED,
+        ),
+    )
+    return int(cursor.rowcount or 0)
 
 
 def _load_wrong_summary_job(assignment_id: str, questions_signature: str) -> dict[str, Any] | None:
@@ -851,36 +897,58 @@ def _build_question_error_stats(
         correct_count = 0
         blank_wrong_count = 0
         scored_count = 0
+        evaluated_count = 0
         score_total = 0.0
         max_score_total = 0.0
         score_loss_total = 0.0
         full_score = _question_full_score(question)
-        option_total_count = len(answer_maps) if question["type"] in CHOICE_QUESTION_TYPES else 0
+        is_choice_question = question["type"] in CHOICE_QUESTION_TYPES
+        option_total_count = 0
 
         for item in answer_maps:
             answer_record = _get_answer_record(item["answers"], question)
             raw_answer = _answer_value(answer_record)
-            if _answer_has_value(raw_answer):
+            answer_has_value = _answer_has_value(raw_answer)
+            if answer_has_value:
                 attempted_count += 1
-                if question["type"] in CHOICE_QUESTION_TYPES:
-                    for selected_key in _selected_choice_keys(question, raw_answer, include_unmatched=True):
-                        option_counter[selected_key] += 1
             score_record = _score_record_for_question(question, answer_record, item["feedback_scores"])
-            score = score_record.get("score")
-            max_score = score_record.get("max_score") or full_score
-            if score is None or max_score is None or float(max_score) <= 0:
-                continue
+            score = _coerce_float(score_record.get("score"))
+            max_score = _coerce_float(score_record.get("max_score") or full_score)
+            if max_score is not None and max_score <= 0:
+                max_score = None
 
-            score = float(score)
-            max_score = float(max_score)
-            scored_count += 1
-            score_total += score
-            max_score_total += max_score
-            if not _is_not_full_score(score, max_score):
+            if is_choice_question:
+                evaluated_count += 1
+                option_total_count += 1
+                selected_keys = _selected_choice_keys(question, raw_answer, include_unmatched=True)
+                if selected_keys:
+                    for selected_key in selected_keys:
+                        option_counter[selected_key] += 1
+                else:
+                    option_counter[BLANK_CHOICE_KEY] += 1
+                is_wrong = not _choice_answer_matches_correct(question, raw_answer)
+                if max_score is not None:
+                    score = 0.0 if is_wrong else max_score
+                    scored_count += 1
+                    score_total += score
+                    max_score_total += max_score
+            else:
+                if score is None or max_score is None:
+                    continue
+                evaluated_count += 1
+                is_wrong = _is_not_full_score(score, max_score)
+                scored_count += 1
+                score_total += score
+                max_score_total += max_score
+
+            if not is_wrong:
                 correct_count += 1
                 continue
 
-            score_loss_total += max(0.0, max_score - score)
+            if score is not None and max_score is not None:
+                score_loss_total += max(0.0, max_score - score)
+            elif max_score is not None:
+                score_loss_total += max(0.0, max_score)
             display = _format_student_answer(question, raw_answer)
             detail = {
                 "submission_id": item["submission"].get("id"),
@@ -890,11 +958,15 @@ def _build_question_error_stats(
                 "answer_raw": _clip_text(_raw_answer_text(raw_answer), 800),
                 "score": score,
                 "max_score": max_score,
-                "score_text": f"{_format_score_value(score)}/{_format_score_value(max_score)}",
+                "score_text": (
+                    f"{_format_score_value(score)}/{_format_score_value(max_score)}"
+                    if score is not None and max_score is not None
+                    else ""
+                ),
             }
             wrong_records.append(detail)
             answer_buckets.setdefault(display, []).append(detail)
-            if not _answer_has_value(raw_answer):
+            if not answer_has_value:
                 blank_wrong_count += 1
             if len(wrong_samples) < 12 and display not in wrong_samples:
                 wrong_samples.append(display)
@@ -902,7 +974,7 @@ def _build_question_error_stats(
         wrong_count = len(wrong_records)
         top_wrong_answers = _build_local_wrong_answer_groups(answer_buckets, wrong_count)
         average_score_percent = _percent_float(score_total, max_score_total)
-        wrong_percent = _percent(wrong_count, scored_count)
+        wrong_percent = _percent(wrong_count, evaluated_count)
         difficulty_score = _score_difficulty_index(wrong_percent, average_score_percent, score_loss_total, max_score_total)
         stats.append(
             {
@@ -913,12 +985,19 @@ def _build_question_error_stats(
                 "wrong_percent": wrong_percent,
                 "blank_wrong_count": blank_wrong_count,
                 "scored_count": scored_count,
+                "evaluated_count": evaluated_count,
                 "average_score": round(score_total / scored_count, 2) if scored_count else None,
                 "average_score_percent": round(average_score_percent) if average_score_percent is not None else None,
                 "score_loss_total": round(score_loss_total, 2),
                 "difficulty_score": difficulty_score,
                 "difficulty_label": _score_difficulty_label(difficulty_score),
-                "difficulty_reason": _score_difficulty_reason(wrong_count, scored_count, wrong_percent, average_score_percent),
+                "difficulty_reason": _score_difficulty_reason(
+                    wrong_count,
+                    evaluated_count,
+                    wrong_percent,
+                    average_score_percent,
+                    is_choice_question=is_choice_question,
+                ),
                 "top_wrong_answers": top_wrong_answers,
                 "wrong_answer_counter": {label: len(records) for label, records in answer_buckets.items()},
                 "wrong_records": wrong_records,
@@ -932,6 +1011,20 @@ def _build_question_error_stats(
 
     stats.sort(key=lambda item: (-int(item["wrong_count"]), int(item["question"]["ordinal"])))
     return stats
+
+
+def _choice_answer_matches_correct(question: dict[str, Any], raw_answer: Any) -> bool:
+    if not _answer_has_value(raw_answer):
+        return False
+    selected_keys = _selected_choice_keys(question, raw_answer, include_unmatched=True)
+    if not selected_keys or any(key == UNMATCHED_CHOICE_KEY for key in selected_keys):
+        return False
+    correct_keys = _selected_choice_keys(question, question.get("answer"), include_unmatched=False)
+    if not correct_keys:
+        return False
+    if question.get("type") == "checkbox":
+        return set(selected_keys) == set(correct_keys)
+    return len(selected_keys) == 1 and len(correct_keys) == 1 and selected_keys[0] == correct_keys[0]
 
 
 def _score_record_for_question(
@@ -1212,6 +1305,18 @@ def _build_option_bars(question: dict[str, Any], option_counter: Counter[str], t
                 "tone": "wrong",
             }
         )
+    blank_count = int(option_counter.get(BLANK_CHOICE_KEY) or 0)
+    if blank_count > 0:
+        bars.append(
+            {
+                "key": BLANK_CHOICE_KEY,
+                "label": "未作答",
+                "count": blank_count,
+                "percent": _percent(blank_count, total_count),
+                "is_correct": False,
+                "tone": "wrong",
+            }
+        )
     return bars
 
 
@@ -1243,13 +1348,17 @@ def _score_difficulty_label(value: int) -> str:
 
 def _score_difficulty_reason(
     wrong_count: int,
-    scored_count: int,
+    evaluated_count: int,
     wrong_percent: int,
     average_score_percent: float | None,
+    *,
+    is_choice_question: bool = False,
 ) -> str:
-    if scored_count <= 0:
-        return "暂无逐题得分，暂不纳入难题排序。"
+    if evaluated_count <= 0:
+        return "暂无可评价的逐题数据，暂不纳入难题排序。"
     average_text = f"{round(average_score_percent)}%" if average_score_percent is not None else "未识别"
+    if is_choice_question:
+        return f"{wrong_count} 人错答或答案未匹配，错答率 {wrong_percent}%，平均得分率 {average_text}。"
     return f"{wrong_count} 人未满分，未满分率 {wrong_percent}%，平均得分率 {average_text}。"
 
 
@@ -1314,33 +1423,38 @@ async def _attach_text_answer_clusters(
     if not allow_generate:
         return
 
-    for item, signature in pending:
+    semaphore = asyncio.Semaphore(max(1, int(WRONG_SUMMARY_AI_CONCURRENCY)))
+
+    async def generate_one(item: dict[str, Any], signature: str) -> None:
         question = item["question"]
-        try:
-            result = await _generate_text_wrong_clusters(question, item["wrong_records"], int(item["wrong_count"]))
-            groups = _normalize_text_cluster_groups(result, int(item["wrong_count"]))
-            groups = _attach_details_to_wrong_groups(groups, item["wrong_records"], int(item["wrong_count"]))
-            if groups:
-                if questions_signature and not _is_wrong_summary_job_token_current(
-                    assignment_id,
-                    str(questions_signature or ""),
-                    str(job_run_token or ""),
-                ):
-                    item["text_cluster_status"] = "stale"
-                    return
-                item["top_wrong_answers"] = groups
-                item["text_cluster_status"] = "generated"
-                _save_text_cluster_cache(
-                    assignment_id,
-                    question["key"],
-                    signature,
-                    {"groups": _strip_group_details_for_cache(groups)},
-                )
-            else:
+        async with semaphore:
+            try:
+                result = await _generate_text_wrong_clusters(question, item["wrong_records"], int(item["wrong_count"]))
+                groups = _normalize_text_cluster_groups(result, int(item["wrong_count"]))
+                groups = _attach_details_to_wrong_groups(groups, item["wrong_records"], int(item["wrong_count"]))
+                if groups:
+                    if questions_signature and not _is_wrong_summary_job_token_current(
+                        assignment_id,
+                        str(questions_signature or ""),
+                        str(job_run_token or ""),
+                    ):
+                        item["text_cluster_status"] = "stale"
+                        return
+                    item["top_wrong_answers"] = groups
+                    item["text_cluster_status"] = "generated"
+                    _save_text_cluster_cache(
+                        assignment_id,
+                        question["key"],
+                        signature,
+                        {"groups": _strip_group_details_for_cache(groups)},
+                    )
+                else:
+                    item["text_cluster_status"] = "fallback"
+            except Exception as exc:
                 item["text_cluster_status"] = "fallback"
-        except Exception as exc:
-            item["text_cluster_status"] = "fallback"
-            item["text_cluster_error"] = _clip_text(str(exc), 180)
+                item["text_cluster_error"] = _clip_text(str(exc), 180)
+
+    await asyncio.gather(*(generate_one(item, signature) for item, signature in pending))
 
 
 async def _generate_text_wrong_clusters(

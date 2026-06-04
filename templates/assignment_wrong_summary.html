@@ -879,8 +879,8 @@
             <span class="wrong-summary-kicker">全班试卷诊断</span>
             <h1>{{ assignment.title }}</h1>
             <p>
-                按已提交学生的逐题得分统计未满分题目；选择题展示全选项选择柱图，填空/问答题在错答发生变化后归集常见错误写法与原因。
-                难题归集用于辅助安排讲评优先级，结果按未满分率与平均得分率排序。
+                客观题按当前参考答案统计错答，主观题按逐题得分统计未满分；选择题展示全选项选择柱图，填空/问答题在错答发生变化后归集常见错误写法与原因。
+                难题归集用于辅助安排讲评优先级，结果按错答/未满分情况与平均得分率排序。
             </p>
             <div
                 class="wrong-summary-ai-strip{% if summary.ai_status.job_status == 'failed' %} is-failed{% elif summary.ai_status.job_status == 'manual_required' %} is-manual{% endif %}"

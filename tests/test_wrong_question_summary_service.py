@@ -17,6 +17,7 @@ from classroom_app.services.wrong_question_summary_service import (
     _extract_exam_questions,
     _score_based_difficulty_summary,
     ensure_wrong_summary_cache_tables,
+    expire_interrupted_wrong_summary_jobs,
 )
 
 
@@ -135,8 +136,8 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
         stats = _build_question_error_stats(questions, submissions)
         by_id = {item["question"]["id"]: item for item in stats}
 
-        self.assertEqual(by_id["q1"]["wrong_count"], 2)
-        self.assertEqual(by_id["q1"]["correct_count"], 1)
+        self.assertEqual(by_id["q1"]["wrong_count"], 3)
+        self.assertEqual(by_id["q1"]["correct_count"], 0)
         self.assertEqual(by_id["q1"]["option_total_count"], 3)
         q1_bars = {item["label"]: item for item in by_id["q1"]["option_bars"]}
         self.assertEqual(q1_bars["A. 5 layers"]["count"], 2)
@@ -148,7 +149,7 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
         self.assertEqual(q1_bars["C. 4 layers"]["count"], 1)
         self.assertEqual(q1_bars["C. 4 layers"]["percent"], 33)
 
-        self.assertEqual(by_id["q2"]["wrong_count"], 1)
+        self.assertEqual(by_id["q2"]["wrong_count"], 2)
         q2_bars = {item["label"]: item for item in by_id["q2"]["option_bars"]}
         self.assertEqual(q2_bars["A. TCP"]["count"], 2)
         self.assertEqual(q2_bars["A. TCP"]["percent"], 67)
@@ -167,7 +168,7 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
 
         hard_questions = _build_score_based_hard_questions(stats)
         self.assertEqual(hard_questions[0]["question"]["id"], "q1")
-        self.assertIn("未满分率", hard_questions[0]["difficulty_reason"])
+        self.assertIn("率", hard_questions[0]["difficulty_reason"])
 
     def test_missing_question_score_is_not_counted_as_wrong(self):
         questions = _extract_exam_questions(
@@ -260,6 +261,107 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
         self.assertEqual(bars["A. 将域名转换为物理地址"]["tone"], "wrong")
         self.assertEqual(bars["B. 将域名转换为 IP 地址"]["count"], 1)
         self.assertEqual(bars["B. 将域名转换为 IP 地址"]["tone"], "correct")
+
+    def test_choice_wrong_count_uses_answer_not_stale_score(self):
+        questions = _extract_exam_questions(
+            {
+                "pages": [
+                    {
+                        "name": "Basics",
+                        "questions": [
+                            {
+                                "id": "q1",
+                                "type": "radio",
+                                "text": "Ethernet V2 minimum frame length is 60 bytes.",
+                                "options": ["A. Correct", "B. Wrong"],
+                                "answer": "B",
+                                "points": 1,
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        submissions = [
+            {
+                "id": 1,
+                "student_name": "Student A",
+                "status": "submitted",
+                "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": "A. Correct"}]}),
+                "feedback_md": _feedback((1, 0, 1)),
+            },
+            {
+                "id": 2,
+                "student_name": "Student B",
+                "status": "submitted",
+                "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": "B. Wrong"}]}),
+                "feedback_md": _feedback((1, 0, 1)),
+            },
+            {
+                "id": 3,
+                "student_name": "Student C",
+                "status": "submitted",
+                "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": "B. Wrong"}]}),
+                "feedback_md": _feedback((1, 1, 1)),
+            },
+        ]
+
+        stats = _build_question_error_stats(questions, submissions)
+        item = stats[0]
+        bars = {bar["label"]: bar for bar in item["option_bars"]}
+
+        self.assertEqual(item["wrong_count"], 1)
+        self.assertEqual(item["correct_count"], 2)
+        self.assertEqual(item["average_score_percent"], 67)
+        self.assertEqual(bars["A. Correct"]["count"], 1)
+        self.assertEqual(bars["B. Wrong"]["count"], 2)
+
+    def test_choice_blank_answers_are_visible_in_option_bars(self):
+        questions = _extract_exam_questions(
+            {
+                "pages": [
+                    {
+                        "name": "Basics",
+                        "questions": [
+                            {
+                                "id": "q1",
+                                "type": "radio",
+                                "text": "Which answer is correct?",
+                                "options": ["A. Correct", "B. Wrong"],
+                                "answer": "A",
+                                "points": 1,
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        submissions = [
+            {
+                "id": 1,
+                "student_name": "Student A",
+                "status": "submitted",
+                "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": "A. Correct"}]}),
+                "feedback_md": _feedback((1, 1, 1)),
+            },
+            {
+                "id": 2,
+                "student_name": "Student B",
+                "status": "submitted",
+                "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": ""}]}),
+                "feedback_md": _feedback((1, 0, 1)),
+            },
+        ]
+
+        stats = _build_question_error_stats(questions, submissions)
+        item = stats[0]
+        bars = {bar["label"]: bar for bar in item["option_bars"]}
+
+        self.assertEqual(item["wrong_count"], 1)
+        self.assertEqual(item["blank_wrong_count"], 1)
+        self.assertEqual(item["option_total_count"], 2)
+        self.assertEqual(bars["未作答"]["count"], 1)
+        self.assertEqual(bars["未作答"]["tone"], "wrong")
 
     def test_checkbox_option_text_with_comma_is_not_split_before_option_matching(self):
         questions = _extract_exam_questions(
@@ -501,6 +603,55 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
             self.assertEqual([row["assignment_id"] for row in remaining_cache], ["assignment-2"])
             self.assertEqual([row["assignment_id"] for row in remaining_jobs], ["assignment-2"])
             self.assertEqual(submission_count, 1)
+        finally:
+            try:
+                os.remove(db_path)
+            except OSError:
+                pass
+
+    def test_interrupted_wrong_summary_jobs_are_failed_on_startup(self):
+        fd, db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            @contextmanager
+            def connect():
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                try:
+                    yield conn
+                finally:
+                    conn.close()
+
+            with connect() as conn:
+                ensure_wrong_summary_cache_tables(conn)
+                for idx, status in enumerate(["queued", "running", "completed"], start=1):
+                    conn.execute(
+                        """
+                        INSERT INTO assignment_wrong_summary_jobs (
+                            assignment_id, teacher_id, questions_signature, prompt_version,
+                            status, run_token
+                        ) VALUES (?, 1, 'paper-sig', ?, ?, ?)
+                        """,
+                        (f"assignment-{idx}", PROMPT_VERSION, status, f"token-{idx}"),
+                    )
+                conn.commit()
+
+            with patch(
+                "classroom_app.services.wrong_question_summary_service.get_db_connection",
+                connect,
+            ):
+                reclaimed = expire_interrupted_wrong_summary_jobs()
+
+            with connect() as conn:
+                rows = conn.execute(
+                    "SELECT assignment_id, status, error_message FROM assignment_wrong_summary_jobs ORDER BY id"
+                ).fetchall()
+
+            self.assertEqual(reclaimed, 2)
+            self.assertEqual(rows[0]["status"], "failed")
+            self.assertIn("重新", rows[0]["error_message"])
+            self.assertEqual(rows[1]["status"], "failed")
+            self.assertEqual(rows[2]["status"], "completed")
         finally:
             try:
                 os.remove(db_path)

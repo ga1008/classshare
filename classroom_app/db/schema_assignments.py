@@ -598,6 +598,7 @@ def ensure_assignment_schema(conn: sqlite3.Connection) -> None:
                      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                      started_at TEXT,
                      completed_at TEXT,
+                     run_token TEXT NOT NULL DEFAULT '',
                      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
                      UNIQUE (assignment_id, questions_signature, prompt_version)
                  )
