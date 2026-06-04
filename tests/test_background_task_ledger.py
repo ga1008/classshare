@@ -138,49 +138,55 @@ class BackgroundTaskLedgerTests(unittest.TestCase):
 
     def test_ledger_collects_all_task_types_and_redacts_errors(self):
         conn = self._build_conn()
-        snapshot = build_background_task_ledger_snapshot(
-            conn,
-            behavior_stats_provider=lambda: {
-                "alive": True,
-                "queue_depth": 7,
-                "queue_capacity": 512,
-                "dropped_count": 0,
-            },
-        )
-        items = {item["task_type"]: item for item in snapshot["items"]}
+        try:
+            snapshot = build_background_task_ledger_snapshot(
+                conn,
+                behavior_stats_provider=lambda: {
+                    "alive": True,
+                    "queue_depth": 7,
+                    "queue_capacity": 512,
+                    "dropped_count": 0,
+                },
+            )
+            items = {item["task_type"]: item for item in snapshot["items"]}
 
-        self.assertEqual(set(items), {
-            "ai_grading",
-            "material_ai_import",
-            "session_material_generation",
-            "private_message_ai_reply",
-            "email_outbox",
-            "blog_news_crawler",
-            "agent_task",
-            "behavior_write_pipeline",
-        })
-        self.assertEqual(items["material_ai_import"]["queue_depth"], 1)
-        self.assertGreaterEqual(items["material_ai_import"]["stale_count"], 1)
-        self.assertEqual(items["behavior_write_pipeline"]["queue_depth"], 7)
-        combined_errors = " ".join(str(item.get("last_error") or "") for item in items.values())
-        self.assertNotIn("abc123", combined_errors)
-        self.assertNotIn("secret", combined_errors)
-        self.assertNotIn("sk-demo", combined_errors)
-        self.assertIn("[REDACTED]", combined_errors)
+            self.assertEqual(set(items), {
+                "ai_grading",
+                "material_ai_import",
+                "session_material_generation",
+                "private_message_ai_reply",
+                "email_outbox",
+                "blog_news_crawler",
+                "agent_task",
+                "behavior_write_pipeline",
+            })
+            self.assertEqual(items["material_ai_import"]["queue_depth"], 1)
+            self.assertGreaterEqual(items["material_ai_import"]["stale_count"], 1)
+            self.assertEqual(items["behavior_write_pipeline"]["queue_depth"], 7)
+            combined_errors = " ".join(str(item.get("last_error") or "") for item in items.values())
+            self.assertNotIn("abc123", combined_errors)
+            self.assertNotIn("secret", combined_errors)
+            self.assertNotIn("sk-demo", combined_errors)
+            self.assertIn("[REDACTED]", combined_errors)
+        finally:
+            conn.close()
 
     def test_missing_tables_return_stable_items_instead_of_crashing(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
-        snapshot = build_background_task_ledger_snapshot(
-            conn,
-            behavior_stats_provider=lambda: {"alive": False, "queue_depth": 0, "queue_capacity": 512},
-        )
+        try:
+            snapshot = build_background_task_ledger_snapshot(
+                conn,
+                behavior_stats_provider=lambda: {"alive": False, "queue_depth": 0, "queue_capacity": 512},
+            )
 
-        self.assertEqual(len(snapshot["items"]), 8)
-        self.assertTrue(
-            any(item["status"] == "missing_source" for item in snapshot["items"]),
-            snapshot,
-        )
+            self.assertEqual(len(snapshot["items"]), 8)
+            self.assertTrue(
+                any(item["status"] == "missing_source" for item in snapshot["items"]),
+                snapshot,
+            )
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":

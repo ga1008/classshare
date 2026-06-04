@@ -25,12 +25,26 @@ def _apply_sqlite_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA foreign_keys = ON;")
 
 
+class LanShareSQLiteConnection(sqlite3.Connection):
+    """SQLite connection that also closes when used as a context manager."""
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 def get_db_connection():
     """Return a SQLite connection with LanShare's concurrency pragmas applied."""
     try:
         config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         timeout_seconds = max(float(config.SQLITE_BUSY_TIMEOUT_MS) / 1000.0, 1.0)
-        conn = sqlite3.connect(config.DB_PATH, timeout=timeout_seconds)
+        conn = sqlite3.connect(
+            config.DB_PATH,
+            timeout=timeout_seconds,
+            factory=LanShareSQLiteConnection,
+        )
         _apply_sqlite_pragmas(conn)
         conn.row_factory = sqlite3.Row
         return conn
