@@ -2598,6 +2598,9 @@
 
         filtered.forEach(sub => {
             const row = document.createElement('tr');
+            row.dataset.testid = 'p03-submission-row';
+            row.dataset.submissionId = sub.id ? String(sub.id) : '';
+            row.dataset.studentPkId = sub.student_pk_id ? String(sub.student_pk_id) : '';
             const isUnsubmitted = sub.status === 'unsubmitted';
             const absenceScore = isAbsenceScore(sub);
             const isReturned = Number(sub.resubmission_allowed || 0) === 1;
@@ -2663,10 +2666,10 @@
                 : '';
             const aiActionButtons = sub.status === 'grading'
                 ? `
-                        <button class="btn btn-outline btn-sm text-warning" onclick="event.stopPropagation(); aiForceRegrade(${sub.id})" title="让旧批改结果失效，并重新进入 AI 队列">强制重批</button>
-                        <button class="btn btn-outline btn-sm text-danger" onclick="event.stopPropagation(); stopAiGrading(${sub.id})" title="停止当前 AI 批改，提交回到可处理状态">停止</button>
+                        <button class="btn btn-outline btn-sm text-warning" data-testid="p03-submission-ai-force" onclick="event.stopPropagation(); aiForceRegrade(${sub.id})" title="让旧批改结果失效，并重新进入 AI 队列">强制重批</button>
+                        <button class="btn btn-outline btn-sm text-danger" data-testid="p03-submission-ai-stop" onclick="event.stopPropagation(); stopAiGrading(${sub.id})" title="停止当前 AI 批改，提交回到可处理状态">停止</button>
                   `
-                : `<button class="btn btn-outline btn-sm text-warning" onclick="event.stopPropagation(); aiRegrade(${sub.id})"
+                : `<button class="btn btn-outline btn-sm text-warning" data-testid="p03-submission-ai" onclick="event.stopPropagation(); aiRegrade(${sub.id})"
                             ${aiDisabled ? `disabled title="${aiTitle}"` : `title="${aiTitle}"`}>AI</button>`;
 
             row.innerHTML = `
@@ -2675,14 +2678,14 @@
                 </td>
                 <td data-label="学号" class="text-sm text-muted">${escapeHtml(sub.student_id_number || '-')}</td>
                 <td data-label="学生姓名" class="font-medium">${escapeHtml(sub.student_name || '-')}</td>
-                <td data-label="状态"><span class="badge ${st.cls}">${st.text}</span>${channelBadge}${statusSubtext}</td>
+                <td data-label="状态"><span class="badge ${st.cls}" data-testid="p03-submission-status">${st.text}</span>${channelBadge}${statusSubtext}</td>
                 <td data-label="得分">${scoreDisplay}</td>
                 <td data-label="提交时间" class="text-sm text-muted">${isUnsubmitted ? '-' : fmtDate(sub.submitted_at)}</td>
                 <td data-label="附件类型">${attachmentTypesHtml}</td>
                 <td data-label="操作">
                     <div class="action-btns">
                         ${!isUnsubmitted ? `
-                        <button class="btn btn-ghost btn-sm text-primary" onclick="event.stopPropagation(); goDetail(${sub.id})" title="查看详情">详情</button>
+                        <button class="btn btn-ghost btn-sm text-primary" data-testid="p03-submission-detail" onclick="event.stopPropagation(); goDetail(${sub.id})" title="查看详情">详情</button>
                         ${aiActionButtons}
                         ${withdrawButton}
                         ` : ''}

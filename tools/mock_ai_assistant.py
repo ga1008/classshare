@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import os
+import uuid
 from typing import Any
 
+import httpx
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -85,6 +87,43 @@ async def chat_stream(request: Request) -> StreamingResponse:
             await asyncio.sleep(0.03)
 
     return StreamingResponse(_stream(), media_type="text/plain; charset=utf-8")
+
+
+@app.post("/api/ai/submit-grading-job")
+async def submit_grading_job(request: Request) -> JSONResponse:
+    payload = await request.json()
+    submission_id = int(payload.get("submission_id") or 0)
+    callback_url = str(os.getenv("MAIN_APP_CALLBACK_URL") or "").strip()
+    delay_ms = int(os.getenv("MOCK_AI_GRADING_DELAY_MS", "300"))
+    job_id = str(uuid.uuid4())
+    fingerprint = str(payload.get("submission_fingerprint") or "")
+
+    async def _send_callback() -> None:
+        if not callback_url or submission_id <= 0:
+            return
+        await asyncio.sleep(max(delay_ms, 0) / 1000)
+        callback_payload = {
+            "submission_id": submission_id,
+            "status": "graded",
+            "score": 88,
+            "feedback_md": "P03 mock AI grading completed. The answer is coherent and actionable.",
+            "submission_fingerprint": fingerprint,
+            "submitted_at": payload.get("submitted_at"),
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(callback_url, json=callback_payload)
+        except Exception as exc:  # pragma: no cover - mock service diagnostic only
+            print(f"[MOCK_AI] grading callback failed for submission {submission_id}: {exc}")
+
+    asyncio.create_task(_send_callback())
+    return JSONResponse(
+        {
+            "status": "queued",
+            "job_id": job_id,
+            "submission_id": submission_id,
+        }
+    )
 
 
 def main() -> int:

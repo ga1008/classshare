@@ -852,7 +852,7 @@
                             {% elif submission.status == 'grading' %}badge-warning
                             {% elif submission.status == 'grading_failed' %}badge-warning
                             {% elif submission.status == 'submitted' %}badge-primary
-                            {% else %}badge-secondary{% endif %}">
+                            {% else %}badge-secondary{% endif %}" data-testid="p03-submission-status">
                             {% if submission.resubmission_allowed %}待重交
                             {% elif submission.status == 'graded' %}已批改
                             {% elif submission.status == 'grading' %}批改中
@@ -1048,7 +1048,7 @@
             <div class="grading-score-group">
                 <label>评分</label>
                 <div class="score-input-wrapper">
-                    <input type="number" id="grade-score" min="0" max="100"
+                    <input type="number" id="grade-score" data-testid="p03-submission-score-input" min="0" max="100"
                            value="{% if submission.is_late_submission and submission.score_before_late_penalty is not none %}{{ submission.score_before_late_penalty }}{% elif submission.score != None %}{{ submission.score }}{% endif %}"
                            placeholder="--">
                     <span>/ 100</span>
@@ -1068,9 +1068,9 @@
             </div>
             <div class="grading-actions">
                 <button class="btn btn-outline" onclick="history.back()">取消</button>
-                <button class="btn btn-primary" onclick="submitGrade()">提交批改结果</button>
+                <button class="btn btn-primary" data-testid="p03-submit-manual-grade" onclick="submitGrade()">提交批改结果</button>
                 {% if submission.status != 'grading' %}
-                <button class="btn btn-outline text-warning" onclick="aiRegrade()">AI 辅助批改</button>
+                <button class="btn btn-outline text-warning" data-testid="p03-ai-regrade-detail" onclick="aiRegrade()">AI 辅助批改</button>
                 {% endif %}
             </div>
         </div>

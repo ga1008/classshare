@@ -6,11 +6,14 @@
     "dev:frontend": "vite --host 127.0.0.1 --port 5173",
     "inventory:frontend": "python tools/frontend_migration_inventory.py",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:p03": "playwright test tests/e2e/specs --project=chromium",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@emnapi/core": "^1.10.0",
     "@emnapi/runtime": "^1.10.0",
+    "@playwright/test": "^1.60.0",
     "@types/node": "^25.9.1",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",

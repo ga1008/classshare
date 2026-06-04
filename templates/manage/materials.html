@@ -15,6 +15,7 @@
             type="button"
             class="app-topbar-action app-topbar-action--primary app-topbar-action--tone-teal materials-upload-menu__trigger"
             id="materials-upload-menu-btn"
+            data-testid="p03-materials-upload-menu"
             title="上传文件"
             aria-label="上传文件"
             aria-haspopup="true"
@@ -31,7 +32,7 @@
                 <strong>AI解析</strong>
                 <small>按材料类型导入</small>
             </button>
-            <button type="button" id="materials-upload-direct-btn">
+            <button type="button" id="materials-upload-direct-btn" data-testid="p03-materials-upload-direct">
                 <strong>直接上传</strong>
                 <small>保留原始文件</small>
             </button>
@@ -95,7 +96,7 @@
                 <button type="button" class="btn btn-ghost btn-sm" id="materials-back-btn">返回</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="materials-up-btn">上一级</button>
                 <button type="button" class="btn btn-outline btn-sm" id="materials-repository-btn" hidden>仓库</button>
-                <button type="button" class="btn btn-outline btn-sm" id="materials-refresh-btn">刷新</button>
+                <button type="button" class="btn btn-outline btn-sm" id="materials-refresh-btn" data-testid="p03-materials-refresh">刷新</button>
             </div>
             <div class="materials-breadcrumbs" id="materials-breadcrumbs">
                 <span class="text-muted">材料库根目录</span>
@@ -113,6 +114,7 @@
                 <input
                     type="search"
                     id="materials-search-input"
+                    data-testid="p03-materials-search"
                     class="form-control"
                     placeholder="按名称或路径模糊搜索当前范围内的材料"
                     autocomplete="off"
@@ -196,7 +198,7 @@
                 <div>时间信息</div>
                 <div>操作</div>
             </div>
-            <div id="materials-list-body" class="materials-list-body">
+            <div id="materials-list-body" class="materials-list-body" data-testid="p03-materials-list">
                 <div class="materials-empty">正在加载课程材料...</div>
             </div>
         </div>
@@ -209,7 +211,7 @@
     </aside>
 </div>
 
-<input type="file" id="materials-file-input" class="hidden" multiple>
+<input type="file" id="materials-file-input" class="hidden" data-testid="p03-materials-file-input" multiple>
 <input type="file" id="materials-folder-input" class="hidden" webkitdirectory directory multiple>
 <input
     type="file"
