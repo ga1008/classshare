@@ -19,6 +19,7 @@ test.describe('P03 message center', () => {
       page.waitForURL(/\/profile\?section=notifications.*profile-message-center/, { timeout: 15_000 }),
       page.locator('[data-message-center-bell]').first().click(),
     ]);
+    await expect(page.locator('[data-lanshare-island="message-center-page"]')).toBeAttached();
     await expect(page.locator('[data-lanshare-island="message-center-workspace-sync"]')).toBeVisible();
     await expect(page.locator('#message-center-feed')).toBeVisible();
 
@@ -41,6 +42,7 @@ test.describe('P03 message center', () => {
 
     await loginStudent(page, fixture);
     await page.goto('/profile?section=notifications#profile-message-center');
+    await expect(page.locator('[data-lanshare-island="message-center-page"]')).toBeAttached();
     await expect(page.locator('[data-lanshare-island="message-center-workspace-sync"]')).toBeVisible();
     await expect(page.locator('#message-center-feed')).toBeVisible();
     const summary = await apiJson<{ status: number; ok: boolean; body: any }>(page, '/api/message-center/summary');

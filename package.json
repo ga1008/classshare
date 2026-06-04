@@ -8,6 +8,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:p03": "playwright test tests/e2e/specs --project=chromium",
+    "test:e2e:p12": "playwright test tests/e2e/specs/message-center.spec.ts tests/e2e/specs/classroom.spec.ts tests/e2e/specs/materials.spec.ts --project=chromium",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

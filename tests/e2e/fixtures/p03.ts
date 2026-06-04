@@ -132,6 +132,8 @@ export async function expectProtectedPageRejected(page: Page, pathOrUrl: string,
 export async function expectHealthUsesRuntimeDb(page: Page, fixture: P03Fixture) {
   const payload = await apiJson<{ status: number; ok: boolean; body: any }>(page, '/api/internal/health');
   expect(payload.status).toBe(200);
-  expect(String(payload.body.database_path).replaceAll('\\', '/')).toContain('/.codex-temp/p03-runtime/db/classroom.db');
+  const databasePath = String(payload.body.database_path).replaceAll('\\', '/');
+  expect(databasePath).toContain('/.codex-temp/');
+  expect(databasePath).toMatch(/\/db\/classroom\.db$/);
   expect(String(payload.body.database_path)).toBe(fixture.databasePath);
 }

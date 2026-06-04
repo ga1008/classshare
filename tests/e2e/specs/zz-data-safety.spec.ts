@@ -20,7 +20,9 @@ test.describe('P03 runtime data safety', () => {
     );
     expect(payload.status).toBe('success');
     expect(payload.quickCheck).toBe('ok');
-    expect(String(payload.databasePath).replaceAll('\\', '/')).toContain('/.codex-temp/p03-runtime/db/classroom.db');
+    const databasePath = String(payload.databasePath).replaceAll('\\', '/');
+    expect(databasePath).toContain('/.codex-temp/');
+    expect(databasePath).toMatch(/\/db\/classroom\.db$/);
     expect(String(payload.databasePath)).toBe(fixture.databasePath);
   });
 });

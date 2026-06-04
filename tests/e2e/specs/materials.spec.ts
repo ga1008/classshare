@@ -20,6 +20,7 @@ test.describe('P03 materials management', () => {
 
     await loginTeacher(page, fixture);
     await page.goto('/manage/materials');
+    await expect(page.locator('[data-lanshare-island="materials-manage-page"]')).toBeAttached();
     await expect(page.getByTestId('p03-materials-list')).toBeVisible();
     await expect(page.getByTestId('p03-materials-refresh')).toBeVisible();
     await page.getByTestId('p03-materials-refresh').click();
@@ -45,6 +46,7 @@ test.describe('P03 materials management', () => {
     await loginStudent(page, fixture);
     await page.goto('/manage/materials', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => undefined);
+    await expect(page.locator('[data-lanshare-island="materials-manage-page"]')).toHaveCount(0);
     await expect(page.getByTestId('p03-materials-list')).toHaveCount(0);
 
     await expectNoBrowserErrors(errors, testInfo);

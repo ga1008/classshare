@@ -7,6 +7,7 @@ import os
 import secrets
 import shutil
 import sqlite3
+import stat
 import string
 import sys
 from pathlib import Path
@@ -56,6 +57,13 @@ def _copy_runtime_db(runtime_root: Path) -> Path:
     (runtime_root / "uploads").mkdir(parents=True, exist_ok=True)
     db_path = runtime_root / "db" / "classroom.db"
     shutil.copy2(_source_db_path(), db_path)
+    with db_path.open("rb") as copied_db:
+        copied_db.read(4096)
+    db_path.chmod(db_path.stat().st_mode | stat.S_IREAD | stat.S_IWRITE)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS p03_runtime_write_probe (id INTEGER PRIMARY KEY)")
+        conn.execute("DROP TABLE p03_runtime_write_probe")
+        conn.commit()
     return db_path
 
 
@@ -453,6 +461,7 @@ def prepare(runtime_root: Path) -> dict[str, Any]:
     db_path = _copy_runtime_db(runtime_root)
     os.environ["LANSHARE_DATA_ROOT"] = str(runtime_root)
     os.environ["MAIN_DATA_DIR"] = str(runtime_root)
+    os.environ["MAIN_DB_PATH"] = str(db_path)
 
     sys.path.insert(0, str(REPO_ROOT))
     from classroom_app.database import init_database

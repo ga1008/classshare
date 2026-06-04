@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -796,9 +797,15 @@ def _page_label_from_context(page_context: dict[str, Any] | None) -> str:
     return _summarize_text(next((str(item) for item in pieces if str(item or "").strip()), "当前页面"), limit=48)
 
 
-def _purge_stale_composers(conn) -> None:
+def _purge_stale_composers(conn, *, tolerate_write_failure: bool = False) -> str:
     cutoff = (datetime.now(timezone.utc) - timedelta(seconds=COMPOSER_TTL_SECONDS)).isoformat()
-    conn.execute("DELETE FROM agent_task_composers WHERE updated_at < ?", (cutoff,))
+    try:
+        conn.execute("DELETE FROM agent_task_composers WHERE updated_at < ?", (cutoff,))
+    except sqlite3.OperationalError:
+        if not tolerate_write_failure:
+            raise
+        conn.rollback()
+    return cutoff
 
 
 def set_agent_task_composer(
@@ -832,7 +839,7 @@ def set_agent_task_composer(
 
 
 def get_agent_queue_state(conn, *, viewer_teacher_id: int) -> dict[str, Any]:
-    _purge_stale_composers(conn)
+    composer_cutoff = _purge_stale_composers(conn, tolerate_write_failure=True)
     queued_count = int(
         conn.execute("SELECT COUNT(*) FROM agent_tasks WHERE status = ?", (TASK_STATUS_QUEUED,)).fetchone()[0]
     )
@@ -850,11 +857,11 @@ def get_agent_queue_state(conn, *, viewer_teacher_id: int) -> dict[str, Any]:
         """
         SELECT teacher_id, teacher_name, page_label, updated_at
         FROM agent_task_composers
-        WHERE teacher_id <> ?
+        WHERE teacher_id <> ? AND updated_at >= ?
         ORDER BY updated_at DESC
         LIMIT 1
         """,
-        (int(viewer_teacher_id),),
+        (int(viewer_teacher_id), composer_cutoff),
     ).fetchone()
 
     running_payload: dict[str, Any] | None = None

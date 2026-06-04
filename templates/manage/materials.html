@@ -42,6 +42,13 @@
 {% endblock %}
 
 {% block content %}
+<div
+    data-materials-manage-page-app
+    data-lanshare-island="materials-manage-page"
+    data-island-id="materials-manage-page-main"
+    hidden
+></div>
+
 <section class="materials-overview">
     <div class="materials-overview-copy">
         <div class="materials-overview-eyebrow">教师管理中心 / 课程材料</div>
@@ -587,5 +594,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="{{ asset_url('js/materials_manage.js') }}"></script>
+{{ vite_entry_tags('frontend/src/islands/materials-manage-page.tsx') }}
 {% endblock %}

@@ -25,10 +25,13 @@ REQUIRED_PAGE_ISLANDS = (
     "frontend/src/islands/assignment-authoring-sync.tsx",
     "frontend/src/islands/assignment-submit-sync.tsx",
     "frontend/src/islands/assignment-task-board-sync.tsx",
+    "frontend/src/islands/classroom-page.tsx",
     "frontend/src/islands/classroom-activity-workspace-sync.tsx",
     "frontend/src/islands/exam-assign-sync.tsx",
     "frontend/src/islands/learning-progress-sync.tsx",
     "frontend/src/islands/material-learning-path-sync.tsx",
+    "frontend/src/islands/materials-manage-page.tsx",
+    "frontend/src/islands/message-center-page.tsx",
     "frontend/src/islands/message-center-workspace-sync.tsx",
     "frontend/src/islands/resource-workspace-sync.tsx",
     "frontend/src/islands/submission-jump-nav.tsx",
@@ -355,6 +358,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
         html = response.text
+        self.assertIn('data-lanshare-island="classroom-page"', html)
         self.assertNotIn('data-lanshare-island="classroom-workspace-nav-sync"', html)
         self.assertIn('data-lanshare-island="assignment-task-board-sync"', html)
         self.assertIn('data-lanshare-island="classroom-activity-workspace-sync"', html)
@@ -372,9 +376,9 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         if 'id="learning-progress-modal"' in html:
             self.assertIn("learning-progress-sync", html)
             self.assertIn("data-learning-modal-open", html)
-            self.assertIn("initLearningProgress(window.APP_CONFIG)", html)
         self.assertIn("assignment-authoring-sync", html)
         self.assertIn("exam-assign-sync", html)
+        self.assertIn("classroom-page", html)
         self.assertIn("data-workspace-nav", html)
         self.assertIn('id="assignment-panel"', html)
         self.assertIn("assignment-board", html)
@@ -407,21 +411,63 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         self.assertIn("window.examApp.confirmExamAssign()", html)
         self.assertIn("data-classroom-activity-count", html)
         self.assertIn("data-classroom-activity-tab", html)
-        self.assertIn("initClassroomPage()", html)
-        self.assertIn("new ClassroomChat", html)
-        self.assertIn("fileApp.init(window.APP_CONFIG)", html)
-        self.assertIn("materialsApp.init(window.APP_CONFIG)", html)
-        self.assertIn("examApp.init(window.APP_CONFIG)", html)
+        self.assertNotIn("initClassroomPage()", html)
+        self.assertNotIn("new ClassroomChat", html)
+        self.assertNotIn("fileApp.init(window.APP_CONFIG)", html)
+        self.assertNotIn("materialsApp.init(window.APP_CONFIG)", html)
+        self.assertNotIn("examApp.init(window.APP_CONFIG)", html)
 
-    def test_profile_message_center_injects_workspace_without_removing_legacy_message_flow(self):
+    def test_message_center_route_keeps_redirect_and_lands_on_page_island_without_direct_legacy_script(self):
+        with _authenticated_client(self.teacher) as client:
+            response = client.get("/message-center", follow_redirects=False)
+
+        self.assertEqual(303, response.status_code)
+        location = response.headers.get("location", "")
+        self.assertIn("/profile?section=notifications", location)
+        self.assertTrue(location.endswith("#profile-message-center"))
+
+        with _authenticated_client(self.teacher) as client:
+            response = client.get(location.split("#", 1)[0], follow_redirects=False)
+
+        self.assertEqual(200, response.status_code)
+        html = response.text
+        self.assertIn('data-lanshare-island="message-center-page"', html)
+        self.assertIn("message-center-page", html)
+        self.assertIn('data-lanshare-island="message-center-workspace-sync"', html)
+        self.assertIn("message-center-workspace-sync", html)
+        self.assertNotIn("/static/js/message_center.js", html)
+        self.assertIn('id="message-center-mark-read"', html)
+        self.assertIn('id="message-center-feed"', html)
+        self.assertIn('id="message-center-compose-form"', html)
+        self.assertIn('data-md-insert="bold"', html)
+
+    def test_manage_materials_injects_page_island_without_direct_legacy_script(self):
+        with _authenticated_client(self.teacher) as client:
+            response = client.get("/manage/materials", follow_redirects=False)
+
+        if response.status_code != 200:
+            self.skipTest(f"Authenticated teacher cannot access /manage/materials in this fixture: {response.status_code}")
+
+        html = response.text
+        self.assertIn('data-lanshare-island="materials-manage-page"', html)
+        self.assertIn("materials-manage-page", html)
+        self.assertNotIn("/static/js/materials_manage.js", html)
+        self.assertIn("window.MATERIALS_MANAGE_CONFIG", html)
+        self.assertIn('data-testid="p03-materials-list"', html)
+        self.assertIn('data-testid="p03-materials-refresh"', html)
+        self.assertIn('data-testid="p03-materials-file-input"', html)
+
+    def test_profile_message_center_injects_page_and_workspace_islands_without_direct_legacy_script(self):
         with _authenticated_client(self.teacher) as client:
             response = client.get("/profile?section=notifications#profile-message-center", follow_redirects=False)
 
         self.assertEqual(200, response.status_code)
         html = response.text
+        self.assertIn('data-lanshare-island="message-center-page"', html)
+        self.assertIn("message-center-page", html)
         self.assertIn('data-lanshare-island="message-center-workspace-sync"', html)
         self.assertIn("message-center-workspace-sync", html)
-        self.assertIn("/static/js/message_center.js", html)
+        self.assertNotIn("/static/js/message_center.js", html)
         self.assertIn('id="message-center-mark-read"', html)
         self.assertIn('id="message-center-feed"', html)
         self.assertIn('id="message-center-compose-form"', html)

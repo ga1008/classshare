@@ -14,6 +14,11 @@
     data-initial-contact="{{ initial_contact }}"
     data-initial-scope="{{ initial_scope if initial_scope is not none else '' }}"
 >
+    <div
+        data-lanshare-island="message-center-page"
+        data-island-id="message-center-page-main"
+        hidden
+    ></div>
     <section class="message-center-hero">
         <span class="message-center-hero__eyebrow">Message Center</span>
         <h1 class="message-center-hero__title">系统信息管理中心</h1>
@@ -166,6 +171,6 @@
 {% block scripts %}
 {{ super() }}
 {% include "partials/markdown_assets.html" %}
-<script type="module" src="/static/js/message_center.js?v=chat-image-derivatives-20260515"></script>
+{{ vite_entry_tags('frontend/src/islands/message-center-page.tsx') }}
 {{ vite_entry_tags('frontend/src/islands/message-center-workspace-sync.tsx') }}
 {% endblock %}

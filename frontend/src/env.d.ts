@@ -1,7 +1,24 @@
 /// <reference types="vite/client" />
 
+interface LanShareAppConfig {
+  classOfferingId?: number | string;
+  userInfo?: unknown;
+  [key: string]: unknown;
+}
+
+interface LanShareBehaviorTracker {
+  start: () => LanShareBehaviorTracker;
+  logClick?: (label: string, payload?: Record<string, unknown>, pageKey?: string) => void;
+}
+
+interface LanShareLegacyAppModule {
+  init?: (config?: LanShareAppConfig) => unknown;
+  refreshFiles?: () => unknown;
+  [key: string]: unknown;
+}
+
 interface Window {
-  APP_CONFIG?: unknown;
+  APP_CONFIG?: LanShareAppConfig;
   __LANSHARE_REACT_ISLANDS__?: {
     version: string;
     mounted: string[];
@@ -15,6 +32,8 @@ interface Window {
   openWithdrawModalForSelected?: () => void;
   __LANSHARE_TEACHER_SUBMISSION_WORKBENCH__?: unknown;
   __LANSHARE_MESSAGE_CENTER_WORKSPACE__?: unknown;
+  __LANSHARE_MESSAGE_CENTER_PAGE_CONTROLLER__?: Promise<unknown>;
+  __LANSHARE_MATERIALS_MANAGE_PAGE_CONTROLLER__?: Promise<unknown>;
   __LANSHARE_ASSIGNMENT_TASK_BOARD__?: unknown;
   __LANSHARE_CLASSROOM_ACTIVITY_WORKSPACE__?: unknown;
   __LANSHARE_RESOURCE_WORKSPACE__?: unknown;
@@ -28,6 +47,11 @@ interface Window {
     entries?: unknown[];
   };
   showMessage?: (message: string, type?: string, duration?: number) => void;
+  BehaviorTracker?: new (options: Record<string, unknown>) => LanShareBehaviorTracker;
+  behaviorTracker?: LanShareBehaviorTracker;
+  fileApp?: LanShareLegacyAppModule;
+  materialsApp?: LanShareLegacyAppModule;
+  examApp?: LanShareLegacyAppModule;
   UI?: {
     showToast?: (message: string, type?: string, duration?: number) => void;
     openModal?: (modalId: string) => void;

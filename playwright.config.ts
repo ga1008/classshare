@@ -39,7 +39,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `powershell -ExecutionPolicy Bypass -File tests\\e2e\\scripts\\start-p03-server.ps1 -Port ${port} -AiPort ${aiPort}`,
+    command: `powershell -NoProfile -ExecutionPolicy Bypass -File tests\\e2e\\scripts\\start-p03-server.ps1 -Port ${port} -AiPort ${aiPort}`,
     url: `${baseURL}/api/internal/health`,
     reuseExistingServer: false,
     timeout: 120_000,
