@@ -98,7 +98,14 @@ class ApiContractSchemaTests(unittest.TestCase):
             {
                 "status": "success",
                 "server_now": "2026-06-04T08:00:00+08:00",
-                "assignments": [{"id": 10, "status": "published", "effective_status": "published"}],
+                "assignments": [
+                    {
+                        "id": 10,
+                        "assignment_id": 10,
+                        "status": "published",
+                        "effective_status": "published",
+                    }
+                ],
             }
         )
         draft = AssignmentDraftResponse.model_validate(
@@ -123,6 +130,7 @@ class ApiContractSchemaTests(unittest.TestCase):
         )
 
         self.assertEqual(10, time_state.assignments[0].id)
+        self.assertEqual(10, time_state.assignments[0].assignment_id)
         self.assertFalse(draft.exists)
         self.assertEqual(1, submissions.stats["total_students"])
 

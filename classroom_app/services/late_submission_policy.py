@@ -420,6 +420,7 @@ def serialize_assignment_time_state(
         phase = "closed"
 
     return {
+        "id": assignment.get("id"),
         "assignment_id": assignment.get("id"),
         "server_now": dt_to_iso(now_dt),
         "status": status,

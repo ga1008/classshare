@@ -916,7 +916,7 @@
             <div
                 class="wrong-summary-ai-strip{% if summary.ai_status.job_status == 'failed' %} is-failed{% elif summary.ai_status.job_status == 'manual_required' %} is-manual{% endif %}"
                 data-wrong-summary-status-strip
-                {% if not summary.ai_status.is_active and summary.ai_status.job_status not in ['failed', 'manual_required'] %}hidden{% endif %}
+                {% if not summary.ai_status.is_active and summary.ai_status.job_status not in ['failed', 'manual_required'] and not summary.ai_status.fallback_text_questions %}hidden{% endif %}
             >
                 <span class="wrong-summary-spinner" aria-hidden="true" {% if not summary.ai_status.is_active %}hidden{% endif %}></span>
                 <span>{{ summary.ai_status.message }}</span>
@@ -1306,7 +1306,8 @@
             messageNode.textContent = aiStatus.message;
         }
         const isManual = aiStatus.job_status === 'manual_required';
-        strip.hidden = !aiStatus.is_active && aiStatus.job_status !== 'failed' && !isManual;
+        const hasFallbackNotice = Number(aiStatus.fallback_text_questions || 0) > 0;
+        strip.hidden = !aiStatus.is_active && aiStatus.job_status !== 'failed' && !isManual && !hasFallbackNotice;
         strip.classList.toggle('is-failed', aiStatus.job_status === 'failed');
         strip.classList.toggle('is-manual', isManual);
         if (spinner) {

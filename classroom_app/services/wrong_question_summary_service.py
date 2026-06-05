@@ -32,6 +32,8 @@ WRONG_SUMMARY_AI_CONCURRENCY = 3
 WRONG_SUMMARY_QUESTION_TIMEOUT_SECONDS = 65
 WRONG_SUMMARY_JOB_MIN_TIMEOUT_SECONDS = 90
 WRONG_SUMMARY_JOB_MAX_TIMEOUT_SECONDS = 360
+LOCAL_TEXT_CLUSTER_MAX_WRONG_COUNT = 2
+LOCAL_TEXT_CLUSTER_MAX_DISTINCT_ANSWERS = 2
 
 _active_wrong_summary_jobs: set[str] = set()
 
@@ -529,6 +531,7 @@ def _build_ai_status(
     pending_text_questions = _pending_text_question_count(question_stats)
     pending_difficulty = 0
     needs_ai = pending_text_questions > 0 or pending_difficulty > 0
+    fallback_text_questions = _fallback_text_question_count(question_stats)
 
     job_status = str((job or {}).get("status") or "").strip().lower()
     if job_status == WRONG_SUMMARY_JOB_STATUS_COMPLETED and needs_ai:
@@ -545,6 +548,13 @@ def _build_ai_status(
             **(job or {}),
             "status": WRONG_SUMMARY_JOB_STATUS_FAILED,
             "error_message": incomplete_message,
+        }
+    if job_status == WRONG_SUMMARY_JOB_STATUS_FAILED and not needs_ai and fallback_text_questions:
+        job_status = WRONG_SUMMARY_JOB_STATUS_COMPLETED
+        job = {
+            **(job or {}),
+            "status": WRONG_SUMMARY_JOB_STATUS_COMPLETED,
+            "error_message": "",
         }
     if job_status == WRONG_SUMMARY_JOB_STATUS_FAILED:
         is_active = False
@@ -568,7 +578,10 @@ def _build_ai_status(
         is_active = False
         job_status = job_status or WRONG_SUMMARY_JOB_STATUS_COMPLETED
         label = "归集完成"
-        message = "错题归集已完成。"
+        if fallback_text_questions:
+            message = f"错题归集已完成；{fallback_text_questions} 道题已使用本地错答分组兜底展示。"
+        else:
+            message = "错题归集已完成。"
 
     return {
         "needs_ai": needs_ai,
@@ -578,6 +591,7 @@ def _build_ai_status(
         "message": message,
         "pending_text_questions": pending_text_questions,
         "pending_difficulty": pending_difficulty,
+        "fallback_text_questions": fallback_text_questions,
         "job": _public_wrong_summary_job(job),
     }
 
@@ -591,6 +605,7 @@ def _empty_ai_status() -> dict[str, Any]:
         "message": "",
         "pending_text_questions": 0,
         "pending_difficulty": 0,
+        "fallback_text_questions": 0,
         "job": None,
     }
 
@@ -607,10 +622,26 @@ def _pending_text_question_count(question_stats: list[dict[str, Any]]) -> int:
     )
 
 
+def _fallback_text_question_count(question_stats: list[dict[str, Any]]) -> int:
+    return len(
+        [
+            item
+            for item in question_stats
+            if item["question"]["type"] in TEXT_QUESTION_TYPES
+            and item["wrong_count"] > 0
+            and item.get("text_cluster_status") in {"fallback", "fallback_cached"}
+        ]
+    )
+
+
 def _collect_ai_job_errors(question_stats: list[dict[str, Any]], difficulty: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     for item in question_stats:
-        if item.get("text_cluster_status") == "fallback" and item.get("text_cluster_error"):
+        if (
+            item.get("text_cluster_status") == "fallback"
+            and item.get("text_cluster_error")
+            and not item.get("top_wrong_answers")
+        ):
             errors.append(f"第 {item['question']['ordinal']} 题错答归集失败：{item['text_cluster_error']}")
     return [_clip_text(error, 180) for error in errors[:4]]
 
@@ -1445,7 +1476,23 @@ async def _attach_text_answer_clusters(
                 int(item["wrong_count"]),
             )
             item["top_wrong_answers"] = groups or item["top_wrong_answers"]
-            item["text_cluster_status"] = "cached"
+            if cached.get("fallback"):
+                item["text_cluster_status"] = "fallback_cached"
+                item["text_cluster_error"] = _clip_text(cached.get("fallback_error") or "", 180)
+            elif cached.get("local_only"):
+                item["text_cluster_status"] = "local"
+            else:
+                item["text_cluster_status"] = "cached"
+            continue
+        if _should_use_local_text_cluster(item):
+            if allow_generate and questions_signature and not _is_wrong_summary_job_token_current(
+                assignment_id,
+                str(questions_signature or ""),
+                str(job_run_token or ""),
+            ):
+                item["text_cluster_status"] = "stale"
+                continue
+            _apply_local_text_cluster(assignment_id, item, signature, save_cache=allow_generate)
             continue
         item["text_cluster_status"] = "pending"
         pending.append((item, signature))
@@ -1560,6 +1607,71 @@ def _apply_local_fallback_to_pending_text_questions(
                 questions_signature=questions_signature,
                 job_run_token=job_run_token,
             )
+
+
+def _should_use_local_text_cluster(item: dict[str, Any]) -> bool:
+    question = item.get("question") or {}
+    question_type = str(question.get("type") or "")
+    if question_type not in TEXT_QUESTION_TYPES or int(item.get("wrong_count") or 0) <= 0:
+        return False
+    if not item.get("top_wrong_answers"):
+        return False
+    if _all_wrong_text_records_blank(item):
+        return True
+    if question_type == "text":
+        wrong_count = int(item.get("wrong_count") or 0)
+        distinct_answers = len(item.get("wrong_answer_counter") or {})
+        return (
+            wrong_count <= LOCAL_TEXT_CLUSTER_MAX_WRONG_COUNT
+            and distinct_answers <= LOCAL_TEXT_CLUSTER_MAX_DISTINCT_ANSWERS
+        )
+    return False
+
+
+def _all_wrong_text_records_blank(item: dict[str, Any]) -> bool:
+    records = item.get("wrong_records") or []
+    if not records:
+        return False
+    for record in records:
+        raw = str(record.get("answer_raw") or record.get("answer") or "").strip()
+        if raw and raw != "未作答":
+            return False
+    return True
+
+
+def _apply_local_text_cluster(
+    assignment_id: str,
+    item: dict[str, Any],
+    signature: str,
+    *,
+    save_cache: bool,
+) -> None:
+    groups = _local_text_groups(item)
+    item["top_wrong_answers"] = groups or item.get("top_wrong_answers") or []
+    item["text_cluster_status"] = "local"
+    item["text_cluster_error"] = ""
+    if not save_cache:
+        return
+    _save_text_cluster_cache(
+        assignment_id,
+        item["question"]["key"],
+        signature,
+        {
+            "groups": _strip_group_details_for_cache(item["top_wrong_answers"]),
+            "local_only": True,
+        },
+    )
+
+
+def _local_text_groups(item: dict[str, Any]) -> list[dict[str, Any]]:
+    groups: list[dict[str, Any]] = []
+    for group in item.get("top_wrong_answers") or []:
+        if not isinstance(group, dict):
+            continue
+        next_group = dict(group)
+        next_group["source"] = "local"
+        groups.append(next_group)
+    return groups[:5]
 
 
 def _apply_text_cluster_fallback(

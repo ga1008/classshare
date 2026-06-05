@@ -476,15 +476,16 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
         )
         submissions = [
             {
-                "id": 1,
-                "student_name": "Student A",
+                "id": idx,
+                "student_name": f"Student {idx}",
                 "status": "submitted",
                 "answers_json": json.dumps(
-                    {"answers": [{"question_id": "q1", "answer": "8080"}]},
+                    {"answers": [{"question_id": "q1", "answer": f"808{idx}"}]},
                     ensure_ascii=False,
                 ),
                 "feedback_md": _feedback((1, 0, 1)),
             }
+            for idx in range(3)
         ]
         stats = _build_question_error_stats(questions, submissions)
 
@@ -551,6 +552,82 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
         self.assertEqual(incomplete_completed_status["job_status"], "failed")
         self.assertIn("没有生成全部", incomplete_completed_status["message"])
 
+    def test_sparse_fill_answers_use_local_cluster_without_ai_call(self):
+        fd, db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            @contextmanager
+            def connect():
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                try:
+                    yield conn
+                finally:
+                    conn.close()
+
+            questions = _extract_exam_questions(
+                {
+                    "pages": [
+                        {
+                            "name": "Basics",
+                            "questions": [
+                                {
+                                    "id": "q1",
+                                    "type": "text",
+                                    "text": "Congestion window term?",
+                                    "answer": "congestion",
+                                    "points": 1,
+                                }
+                            ],
+                        }
+                    ]
+                }
+            )
+            submissions = [
+                {
+                    "id": 1,
+                    "student_name": "Student A",
+                    "status": "submitted",
+                    "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": "congestion"}]}),
+                    "feedback_md": _feedback((1, 0, 1)),
+                },
+                {
+                    "id": 2,
+                    "student_name": "Student B",
+                    "status": "submitted",
+                    "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": ""}]}),
+                    "feedback_md": _feedback((1, 0, 1)),
+                },
+            ]
+            stats = _build_question_error_stats(questions, submissions)
+
+            with patch(
+                "classroom_app.services.wrong_question_summary_service.get_db_connection",
+                connect,
+            ), patch(
+                "classroom_app.services.wrong_question_summary_service._generate_text_wrong_clusters",
+                new=AsyncMock(),
+            ) as generate_text:
+                asyncio.run(_attach_text_answer_clusters("assignment-1", stats, allow_generate=True))
+
+            with connect() as conn:
+                row = conn.execute(
+                    "SELECT result_json FROM assignment_wrong_answer_ai_cache WHERE assignment_id = 'assignment-1'"
+                ).fetchone()
+
+            self.assertEqual(stats[0]["text_cluster_status"], "local")
+            generate_text.assert_not_awaited()
+            self.assertEqual([group["source"] for group in stats[0]["top_wrong_answers"]], ["local", "local"])
+            self.assertIsNotNone(row)
+            cached = json.loads(row["result_json"])
+            self.assertTrue(cached["local_only"])
+            self.assertEqual(cached["groups"][0]["source"], "local")
+        finally:
+            try:
+                os.remove(db_path)
+            except OSError:
+                pass
+
     def test_empty_ai_groups_fall_back_to_local_groups_and_cache(self):
         fd, db_path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
@@ -584,12 +661,13 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
             )
             submissions = [
                 {
-                    "id": 1,
-                    "student_name": "Student A",
+                    "id": idx,
+                    "student_name": f"Student {idx}",
                     "status": "submitted",
-                    "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": "8080"}]}),
+                    "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": f"808{idx}"}]}),
                     "feedback_md": _feedback((1, 0, 1)),
                 }
+                for idx in range(3)
             ]
             stats = _build_question_error_stats(questions, submissions)
 
@@ -620,6 +698,61 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
             except OSError:
                 pass
 
+    def test_failed_job_with_cached_fallback_is_reported_as_usable_completion(self):
+        questions = _extract_exam_questions(
+            {
+                "pages": [
+                    {
+                        "name": "Basics",
+                        "questions": [
+                            {
+                                "id": "q1",
+                                "type": "text",
+                                "text": "Default HTTP port?",
+                                "answer": "80",
+                                "points": 1,
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        submissions = [
+            {
+                "id": 1,
+                "student_name": "Student A",
+                "status": "submitted",
+                "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": ""}]}),
+                "feedback_md": _feedback((1, 0, 1)),
+            }
+        ]
+        stats = _build_question_error_stats(questions, submissions)
+        stats[0]["text_cluster_status"] = "fallback_cached"
+        stats[0]["text_cluster_error"] = "AI 未返回可用错答分组，已先展示本地错答分组。"
+
+        with patch(
+            "classroom_app.services.wrong_question_summary_service._load_wrong_summary_job",
+            return_value={
+                "assignment_id": "assignment-1",
+                "status": "failed",
+                "error_message": "第 1 题错答归集失败",
+            },
+        ):
+            ai_status = _build_ai_status(
+                {
+                    "assignment": {"id": "assignment-1"},
+                    "questions_signature": "signature-1",
+                },
+                stats,
+                _score_based_difficulty_summary(_build_score_based_hard_questions(stats)),
+            )
+
+        self.assertFalse(ai_status["needs_ai"])
+        self.assertFalse(ai_status["is_active"])
+        self.assertEqual(ai_status["job_status"], "completed")
+        self.assertEqual(ai_status["fallback_text_questions"], 1)
+        self.assertIn("本地错答分组", ai_status["message"])
+
     def test_timed_out_ai_groups_fall_back_to_local_groups_and_cache(self):
         fd, db_path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
@@ -645,9 +778,9 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
                             "questions": [
                                 {
                                     "id": "q1",
-                                    "type": "text",
-                                    "text": "Default HTTP port?",
-                                    "answer": "80",
+                                    "type": "textarea",
+                                    "text": "Explain the default HTTP port.",
+                                    "answer": "HTTP uses port 80 by default.",
                                     "points": 1,
                                 }
                             ],
@@ -660,7 +793,7 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
                     "id": 1,
                     "student_name": "Student A",
                     "status": "submitted",
-                    "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": "8080"}]}),
+                    "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": "It uses 8080."}]}),
                     "feedback_md": _feedback((1, 0, 1)),
                 }
             ]

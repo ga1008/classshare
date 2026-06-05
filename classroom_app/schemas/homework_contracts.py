@@ -17,6 +17,7 @@ class AssignmentMutationResponse(ApiSuccessResponse):
 
 class AssignmentTimeStateItem(ApiFlexibleRecord):
     id: int | str
+    assignment_id: int | str | None = None
     status: str | None = None
     effective_status: str | None = None
 
@@ -71,4 +72,3 @@ class ExamPapersResponse(ApiSuccessResponse):
 
 class ExamPaperDetailResponse(ApiSuccessResponse):
     paper: dict[str, Any]
-
