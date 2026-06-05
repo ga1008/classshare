@@ -160,7 +160,12 @@ def teacher_can_use_class(conn: sqlite3.Connection, teacher_id: int | str, class
     teacher_pk = _safe_int(teacher_id)
     if teacher_pk is None:
         return False
-    return teacher_can_manage_owned_row(conn, teacher_pk, class_row, owner_key="created_by_teacher_id") or _teacher_matches_school(
+    if teacher_can_manage_owned_row(conn, teacher_pk, class_row, owner_key="created_by_teacher_id"):
+        return True
+    explicit_scope = _row_value(class_row, "scope_level")
+    if str(explicit_scope or "").strip():
+        return can_read_scoped_resource(conn, class_row, {"role": "teacher", "id": teacher_pk})
+    return _teacher_matches_school(
         conn,
         teacher_pk,
         class_row,
@@ -175,7 +180,12 @@ def teacher_can_use_course(conn: sqlite3.Connection, teacher_id: int | str, cour
     teacher_pk = _safe_int(teacher_id)
     if teacher_pk is None:
         return False
-    return teacher_can_manage_owned_row(conn, teacher_pk, course_row, owner_key="created_by_teacher_id") or _teacher_matches_school(
+    if teacher_can_manage_owned_row(conn, teacher_pk, course_row, owner_key="created_by_teacher_id"):
+        return True
+    explicit_scope = _row_value(course_row, "scope_level")
+    if str(explicit_scope or "").strip():
+        return can_read_scoped_resource(conn, course_row, {"role": "teacher", "id": teacher_pk})
+    return _teacher_matches_school(
         conn,
         teacher_pk,
         course_row,
@@ -202,7 +212,15 @@ def teacher_can_manage_semester(conn: sqlite3.Connection, teacher_id: int | str,
 
 
 def teacher_can_use_textbook(conn: sqlite3.Connection, teacher_id: int | str, textbook_row: Any) -> bool:
-    return teacher_can_manage_textbook(conn, teacher_id, textbook_row)
+    teacher_pk = _safe_int(teacher_id)
+    if teacher_pk is None:
+        return False
+    if teacher_can_manage_textbook(conn, teacher_pk, textbook_row):
+        return True
+    explicit_scope = _row_value(textbook_row, "scope_level")
+    if str(explicit_scope or "").strip():
+        return can_read_scoped_resource(conn, textbook_row, {"role": "teacher", "id": teacher_pk})
+    return False
 
 
 def teacher_can_manage_textbook(conn: sqlite3.Connection, teacher_id: int | str, textbook_row: Any) -> bool:

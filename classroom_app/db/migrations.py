@@ -417,6 +417,111 @@ def _ensure_resource_scope_schema(conn: sqlite3.Connection) -> None:
     if _source_table_exists(conn, "chunked_uploads"):
         _add_column_if_missing(conn, "chunked_uploads", "class_offering_id", "INTEGER")
 
+    if _source_table_exists(conn, "classes"):
+        for column_name, column_def in {
+            "major": "TEXT NOT NULL DEFAULT ''",
+            "enrollment_year": "INTEGER",
+            "expected_graduation_year": "INTEGER",
+            "program_duration_years": "INTEGER",
+            "owner_role": "TEXT NOT NULL DEFAULT 'teacher'",
+            "owner_user_pk": "INTEGER",
+            "scope_level": "TEXT NOT NULL DEFAULT 'school'",
+            "updated_at": "TEXT",
+            "archived_at": "TEXT",
+            "deleted_at": "TEXT",
+        }.items():
+            _add_column_if_missing(conn, "classes", column_name, column_def)
+        conn.execute(
+            """
+            UPDATE classes
+            SET owner_role = COALESCE(NULLIF(TRIM(owner_role), ''), 'teacher'),
+                owner_user_pk = COALESCE(owner_user_pk, created_by_teacher_id),
+                scope_level = COALESCE(NULLIF(TRIM(scope_level), ''), 'school'),
+                updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP),
+                major = COALESCE(NULLIF(TRIM(major), ''), academic_major, '')
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_classes_scope_owner "
+            "ON classes (owner_role, owner_user_pk, scope_level, updated_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_classes_scope_org "
+            "ON classes (scope_level, school_code COLLATE NOCASE, department COLLATE NOCASE, name COLLATE NOCASE)"
+        )
+
+    if _source_table_exists(conn, "courses"):
+        for column_name, column_def in {
+            "owner_role": "TEXT NOT NULL DEFAULT 'teacher'",
+            "owner_user_pk": "INTEGER",
+            "scope_level": "TEXT NOT NULL DEFAULT 'school'",
+            "updated_at": "TEXT",
+            "archived_at": "TEXT",
+            "deleted_at": "TEXT",
+        }.items():
+            _add_column_if_missing(conn, "courses", column_name, column_def)
+        conn.execute(
+            """
+            UPDATE courses
+            SET owner_role = COALESCE(NULLIF(TRIM(owner_role), ''), 'teacher'),
+                owner_user_pk = COALESCE(owner_user_pk, created_by_teacher_id),
+                scope_level = COALESCE(NULLIF(TRIM(scope_level), ''), 'school'),
+                updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP)
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_courses_scope_owner "
+            "ON courses (owner_role, owner_user_pk, scope_level, updated_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_courses_scope_org "
+            "ON courses (scope_level, school_code COLLATE NOCASE, department COLLATE NOCASE, name COLLATE NOCASE)"
+        )
+
+    if _source_table_exists(conn, "textbooks"):
+        for column_name, column_def in {
+            "owner_role": "TEXT NOT NULL DEFAULT 'teacher'",
+            "owner_user_pk": "INTEGER",
+            "scope_level": "TEXT NOT NULL DEFAULT 'private'",
+            "school_code": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_CODE}'",
+            "school_name": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_NAME}'",
+            "college": "TEXT NOT NULL DEFAULT ''",
+            "department": "TEXT NOT NULL DEFAULT ''",
+            "published_at": "TEXT",
+            "archived_at": "TEXT",
+            "deleted_at": "TEXT",
+        }.items():
+            _add_column_if_missing(conn, "textbooks", column_name, column_def)
+        conn.execute(
+            """
+            UPDATE textbooks
+            SET owner_role = COALESCE(NULLIF(TRIM(owner_role), ''), 'teacher'),
+                owner_user_pk = COALESCE(owner_user_pk, teacher_id),
+                school_code = COALESCE(NULLIF(TRIM(school_code), ''), (
+                    SELECT NULLIF(TRIM(t.school_code), '') FROM teachers t WHERE t.id = textbooks.teacher_id
+                ), ?),
+                school_name = COALESCE(NULLIF(TRIM(school_name), ''), (
+                    SELECT NULLIF(TRIM(t.school_name), '') FROM teachers t WHERE t.id = textbooks.teacher_id
+                ), ?),
+                college = COALESCE(NULLIF(TRIM(college), ''), (
+                    SELECT NULLIF(TRIM(t.college), '') FROM teachers t WHERE t.id = textbooks.teacher_id
+                ), ''),
+                department = COALESCE(NULLIF(TRIM(department), ''), (
+                    SELECT NULLIF(TRIM(t.department), '') FROM teachers t WHERE t.id = textbooks.teacher_id
+                ), ''),
+                scope_level = COALESCE(NULLIF(TRIM(scope_level), ''), 'private')
+            """,
+            (DEFAULT_SCHOOL_CODE, DEFAULT_SCHOOL_NAME),
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_textbooks_scope_owner "
+            "ON textbooks (owner_role, owner_user_pk, scope_level, updated_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_textbooks_scope_org "
+            "ON textbooks (scope_level, school_code COLLATE NOCASE, department COLLATE NOCASE, updated_at DESC)"
+        )
+
     if _source_table_exists(conn, "course_files"):
         for column_name, column_def in {
             "owner_role": "TEXT NOT NULL DEFAULT 'teacher'",
@@ -485,6 +590,8 @@ def _ensure_resource_scope_schema(conn: sqlite3.Connection) -> None:
             "college": "TEXT NOT NULL DEFAULT ''",
             "department": "TEXT NOT NULL DEFAULT ''",
             "published_at": "TEXT",
+            "archived_at": "TEXT",
+            "deleted_at": "TEXT",
         }.items():
             _add_column_if_missing(conn, "course_materials", column_name, column_def)
         conn.execute(
@@ -527,6 +634,8 @@ def _ensure_resource_scope_schema(conn: sqlite3.Connection) -> None:
             "college": "TEXT NOT NULL DEFAULT ''",
             "department": "TEXT NOT NULL DEFAULT ''",
             "published_at": "TEXT",
+            "archived_at": "TEXT",
+            "deleted_at": "TEXT",
         }.items():
             _add_column_if_missing(conn, "exam_papers", column_name, column_def)
         conn.execute(

@@ -213,7 +213,8 @@
                     </div>
 
                     <div class="class-card-actions">
-                        <button type="button" class="btn btn-primary btn-sm" data-action="open-students" data-class-id="{{ class_item.id }}">查看学生</button>
+                        <button type="button" class="btn btn-outline btn-sm" data-resource-attributes data-resource-type="class" data-resource-id="{{ class_item.id }}">属性</button>
+                        <button type="button" class="btn btn-primary btn-sm" data-action="open-students" data-class-id="{{ class_item.id }}">学生</button>
                         <button type="button" class="btn btn-outline btn-sm" data-action="add-student" data-class-id="{{ class_item.id }}" data-class-name="{{ class_item.name }}">新增学生</button>
                         <button type="button" class="btn btn-outline btn-sm" data-action="export-class" data-class-id="{{ class_item.id }}">导出名单</button>
                         <a class="btn btn-outline btn-sm" href="/manage/offerings">开设课堂</a>
@@ -381,5 +382,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script type="module" src="{{ asset_url('js/base_resource_modes.js') }}"></script>
 <script type="module" src="/static/js/manage_classes.js?v=class-academic-roster-sync-20260518"></script>
 {% endblock %}

@@ -271,6 +271,23 @@ class PermissionResourceAccessTests(unittest.TestCase):
         self.assertFalse(teacher_can_manage_textbook(self.conn, 2, textbook))
         self.assertTrue(teacher_can_manage_textbook(self.conn, 9, textbook))
 
+    def test_textbook_scope_allows_use_without_granting_manage(self):
+        scoped_textbook = {
+            "id": 803,
+            "teacher_id": 1,
+            "owner_role": "teacher",
+            "owner_user_pk": 1,
+            "scope_level": "school",
+            "school_code": "gxufl",
+            "school_name": "GXUFL",
+            "college": "info",
+            "department": "network",
+        }
+
+        self.assertTrue(teacher_can_use_textbook(self.conn, 2, scoped_textbook))
+        self.assertFalse(teacher_can_manage_textbook(self.conn, 2, scoped_textbook))
+        self.assertFalse(teacher_can_use_textbook(self.conn, 3, scoped_textbook))
+
     def test_classroom_and_student_management_follow_classroom_boundaries(self):
         offering = self._offering(1004)
         student = self._student(100)

@@ -1,4 +1,5 @@
 from .common import *
+from ...services.base_resource_modes_service import build_course_delete_blockers, raise_if_delete_blocked
 
 
 router = APIRouter()
@@ -283,16 +284,10 @@ async def api_delete_course(course_id: int, user: dict = Depends(get_current_tea
                 course_id=course_id,
                 teacher_id=user["id"],
             )
-            linked_count_row = conn.execute(
-                "SELECT COUNT(*) AS count FROM class_offerings WHERE course_id = ?",
-                (course_id,),
-            ).fetchone()
-            linked_count = int((linked_count_row["count"] if linked_count_row else 0) or 0)
-            if linked_count > 0:
-                raise HTTPException(
-                    400,
-                    f"课程“{course_row['name']}”已被 {linked_count} 个课堂使用，请先调整课堂绑定后再删除",
-                )
+            raise_if_delete_blocked(
+                f"课程“{course_row['name']}”",
+                build_course_delete_blockers(conn, int(course_id)),
+            )
 
             conn.execute("DELETE FROM courses WHERE id = ?", (course_id,))
 
@@ -300,6 +295,8 @@ async def api_delete_course(course_id: int, user: dict = Depends(get_current_tea
 
             conn.commit()
 
+    except HTTPException:
+        raise
     except sqlite3.IntegrityError as e:
         raise HTTPException(400, f"删除失败: {e}")
     except Exception as e:

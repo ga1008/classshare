@@ -490,6 +490,7 @@ function renderList() {
                     <span><strong>更新</strong>${escapeHtml(formatDateLabel(item.updated_at || item.created_at))}</span>
                 </div>
                 <div class="materials-row-actions">
+                    <button type="button" class="btn btn-ghost btn-sm" data-resource-attributes data-resource-type="material" data-resource-id="${item.id}">属性</button>
                     <button type="button" class="btn btn-ghost btn-sm" data-action="${primaryAction.action}">${primaryAction.label}</button>
                     ${documentAction}
                     ${repositoryAction}
@@ -636,6 +637,7 @@ function renderDetail(detail) {
                     <h3 title="${escapeHtml(detail.name)}">${escapeHtml(detail.name)}</h3>
                     <div class="text-muted text-sm">${escapeHtml(detail.material_path || '')}</div>
                     <div class="materials-detail-actions">
+                        <button type="button" class="btn btn-outline" data-resource-attributes data-resource-type="material" data-resource-id="${detail.id}">属性</button>
                         ${previewUrl ? `<a href="${previewUrl}" class="btn btn-primary" target="_blank" rel="noopener">${previewLabel}</a>` : ''}
                         ${optimizedUrl ? `<a href="${optimizedUrl}" class="btn btn-outline" target="_blank" rel="noopener">查看优化稿</a>` : ''}
                         ${exportUrl ? `<a href="${exportUrl}" class="btn btn-outline">导出Word</a>` : ''}

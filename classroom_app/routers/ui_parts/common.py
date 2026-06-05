@@ -141,7 +141,10 @@ from ...services.resource_access_service import (
     normalize_scope_level,
     teacher_can_manage_assignment,
     teacher_can_manage_exam_paper,
+    teacher_can_use_class,
+    teacher_can_use_course,
     teacher_can_use_exam_paper,
+    teacher_can_use_textbook,
 )
 from ...services.smart_attendance_entry_service import (
     maybe_enqueue_teacher_daily_checkin_sync,
@@ -589,7 +592,8 @@ def _perform_student_password_login(
 
 
 def _load_teacher_textbook_rows(conn, teacher_id: int):
-    return conn.execute(
+    current_teacher_is_super_admin = is_super_admin_teacher(conn, teacher_id)
+    rows = conn.execute(
         """
         SELECT tb.id,
                tb.teacher_id,
@@ -604,14 +608,29 @@ def _load_teacher_textbook_rows(conn, teacher_id: int):
                tb.attachment_size,
                tb.attachment_mime_type,
                tb.tags_json,
+               tb.owner_role,
+               tb.owner_user_pk,
+               tb.scope_level,
+               tb.school_code,
+               tb.school_name,
+               tb.college,
+               tb.department,
+               tb.published_at,
+               tb.archived_at,
+               tb.deleted_at,
                t.name AS owner_teacher_name,
                tb.created_at,
                tb.updated_at
         FROM textbooks tb
         LEFT JOIN teachers t ON t.id = tb.teacher_id
+        WHERE ? = 1
+           OR tb.teacher_id = ?
+           OR COALESCE(tb.scope_level, 'private') != 'private'
         ORDER BY tb.updated_at DESC, tb.id DESC
         """,
+        (1 if current_teacher_is_super_admin else 0, int(teacher_id)),
     ).fetchall()
+    return [row for row in rows if teacher_can_use_textbook(conn, int(teacher_id), row)]
 
 
 def _teacher_school_codes(conn, teacher_id: int) -> list[str]:
@@ -769,8 +788,6 @@ def _load_teacher_academic_course_occurrence_summaries(
 
 
 def _load_teacher_course_rows(conn, teacher_id: int):
-    teacher_scope = load_teacher_org_scope(conn, teacher_id)
-    teacher_school_code = teacher_scope["school_code"]
     current_teacher_is_super_admin = is_super_admin_teacher(conn, teacher_id)
     rows = conn.execute(
         """
@@ -786,6 +803,12 @@ def _load_teacher_course_rows(conn, teacher_id: int):
                c.school_code,
                c.school_name,
                c.college,
+               c.owner_role,
+               c.owner_user_pk,
+               c.scope_level,
+               c.updated_at,
+               c.archived_at,
+               c.deleted_at,
                c.academic_source,
                c.academic_course_code,
                c.academic_sync_at,
@@ -802,26 +825,22 @@ def _load_teacher_course_rows(conn, teacher_id: int):
             GROUP BY course_id
         ) o
             ON o.course_id = c.id
-        WHERE c.created_by_teacher_id = ?
-           OR (
-                lower(TRIM(COALESCE(c.school_code, ?))) = lower(TRIM(?))
-                AND lower(TRIM(COALESCE(c.school_code, ?))) = lower(TRIM(?))
-           )
+        WHERE ? = 1
+           OR c.created_by_teacher_id = ?
+           OR COALESCE(c.scope_level, 'school') != 'private'
         ORDER BY
             CASE WHEN c.created_by_teacher_id = ? THEN 0 ELSE 1 END,
-            c.created_at DESC,
+            COALESCE(c.updated_at, c.created_at) DESC,
             c.name
         """,
         (
             teacher_id,
+            1 if current_teacher_is_super_admin else 0,
             teacher_id,
-            teacher_school_code,
-            teacher_school_code,
-            teacher_school_code,
-            teacher_school_code,
             teacher_id,
         ),
     ).fetchall()
+    rows = [row for row in rows if teacher_can_use_course(conn, int(teacher_id), row)]
     course_ids = [int(row["id"]) for row in rows]
     lessons_by_course = load_course_lessons_by_course_id(conn, course_ids)
     academic_items_by_course = _load_teacher_academic_course_items(conn, teacher_id, course_ids)

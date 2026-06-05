@@ -594,5 +594,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script type="module" src="{{ asset_url('js/base_resource_modes.js') }}"></script>
 {{ vite_entry_tags('frontend/src/islands/materials-manage-page.tsx') }}
 {% endblock %}

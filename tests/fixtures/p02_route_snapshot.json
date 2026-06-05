@@ -1000,6 +1000,38 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/exam-papers/{paper_id}/attributes",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_exam_paper_attributes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/exam-papers/{paper_id}/attributes",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "patch_exam_paper_attributes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/exam-papers/{paper_id}/content",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_exam_paper_content",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/exam-papers/{paper_id}/content",
+    "methods": [
+      "PUT"
+    ],
+    "name": "put_exam_paper_content",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/exam-papers/{paper_id}/tags",
     "methods": [
       "PUT"
@@ -1264,6 +1296,30 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/classes/{class_id}/attributes",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_class_attributes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classes/{class_id}/attributes",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "api_update_class_attributes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classes/{class_id}/students",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_class_students",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/classes/{class_id}/students",
     "methods": [
       "POST"
@@ -1384,6 +1440,38 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/courses/{course_id}/attributes",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_course_attributes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/courses/{course_id}/attributes",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "api_update_course_attributes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/courses/{course_id}/content",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_course_content",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/courses/{course_id}/content",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_update_course_content",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/courses/{course_id}/files/upload",
     "methods": [
       "POST"
@@ -1437,6 +1525,22 @@
       "DELETE"
     ],
     "name": "api_delete_class_student",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/students/{student_id}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "api_update_student_profile",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/students/{student_id}/status",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "api_patch_class_student_status",
     "include_in_schema": true
   },
   {
@@ -1936,6 +2040,38 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/textbooks/{textbook_id}/attributes",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_textbook_attributes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/textbooks/{textbook_id}/attributes",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "api_update_textbook_attributes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/textbooks/{textbook_id}/content",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_textbook_content",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/textbooks/{textbook_id}/content",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_update_textbook_content",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/materials/ai-generate",
     "methods": [
       "POST"
@@ -2093,6 +2229,22 @@
       "POST"
     ],
     "name": "assign_material_to_classrooms",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/attributes",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_material_attributes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/attributes",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "patch_material_attributes",
     "include_in_schema": true
   },
   {

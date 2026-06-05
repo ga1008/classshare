@@ -223,6 +223,32 @@ def ensure_foundation_schema(conn: sqlite3.Connection) -> None:
             conn.execute(statement)
         except sqlite3.OperationalError:
             pass
+    for column_name, column_def in {
+        "major": "TEXT NOT NULL DEFAULT ''",
+        "enrollment_year": "INTEGER",
+        "expected_graduation_year": "INTEGER",
+        "program_duration_years": "INTEGER",
+        "owner_role": "TEXT NOT NULL DEFAULT 'teacher'",
+        "owner_user_pk": "INTEGER",
+        "scope_level": "TEXT NOT NULL DEFAULT 'school'",
+        "updated_at": "TEXT",
+        "archived_at": "TEXT",
+        "deleted_at": "TEXT",
+    }.items():
+        try:
+            conn.execute(f"ALTER TABLE classes ADD COLUMN {column_name} {column_def}")
+        except sqlite3.OperationalError:
+            pass
+    conn.execute(
+        """
+        UPDATE classes
+        SET owner_role = COALESCE(NULLIF(TRIM(owner_role), ''), 'teacher'),
+            owner_user_pk = COALESCE(owner_user_pk, created_by_teacher_id),
+            scope_level = COALESCE(NULLIF(TRIM(scope_level), ''), 'school'),
+            updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP),
+            major = COALESCE(NULLIF(TRIM(major), ''), academic_major, '')
+        """
+    )
 
     # 3. 学生
     conn.execute('''
@@ -477,6 +503,27 @@ def ensure_foundation_schema(conn: sqlite3.Connection) -> None:
             conn.execute(statement)
         except sqlite3.OperationalError:
             pass
+    for column_name, column_def in {
+        "owner_role": "TEXT NOT NULL DEFAULT 'teacher'",
+        "owner_user_pk": "INTEGER",
+        "scope_level": "TEXT NOT NULL DEFAULT 'school'",
+        "updated_at": "TEXT",
+        "archived_at": "TEXT",
+        "deleted_at": "TEXT",
+    }.items():
+        try:
+            conn.execute(f"ALTER TABLE courses ADD COLUMN {column_name} {column_def}")
+        except sqlite3.OperationalError:
+            pass
+    conn.execute(
+        """
+        UPDATE courses
+        SET owner_role = COALESCE(NULLIF(TRIM(owner_role), ''), 'teacher'),
+            owner_user_pk = COALESCE(owner_user_pk, created_by_teacher_id),
+            scope_level = COALESCE(NULLIF(TRIM(scope_level), ''), 'school'),
+            updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP)
+        """
+    )
 
     conn.execute(
         '''
@@ -1112,6 +1159,43 @@ def ensure_foundation_schema(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE
         )
         '''
+    )
+    for column_name, column_def in {
+        "owner_role": "TEXT NOT NULL DEFAULT 'teacher'",
+        "owner_user_pk": "INTEGER",
+        "scope_level": "TEXT NOT NULL DEFAULT 'private'",
+        "school_code": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_CODE}'",
+        "school_name": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_NAME}'",
+        "college": "TEXT NOT NULL DEFAULT ''",
+        "department": "TEXT NOT NULL DEFAULT ''",
+        "published_at": "TEXT",
+        "archived_at": "TEXT",
+        "deleted_at": "TEXT",
+    }.items():
+        try:
+            conn.execute(f"ALTER TABLE textbooks ADD COLUMN {column_name} {column_def}")
+        except sqlite3.OperationalError:
+            pass
+    conn.execute(
+        """
+        UPDATE textbooks
+        SET owner_role = COALESCE(NULLIF(TRIM(owner_role), ''), 'teacher'),
+            owner_user_pk = COALESCE(owner_user_pk, teacher_id),
+            school_code = COALESCE(NULLIF(TRIM(school_code), ''), (
+                SELECT NULLIF(TRIM(t.school_code), '') FROM teachers t WHERE t.id = textbooks.teacher_id
+            ), ?),
+            school_name = COALESCE(NULLIF(TRIM(school_name), ''), (
+                SELECT NULLIF(TRIM(t.school_name), '') FROM teachers t WHERE t.id = textbooks.teacher_id
+            ), ?),
+            college = COALESCE(NULLIF(TRIM(college), ''), (
+                SELECT NULLIF(TRIM(t.college), '') FROM teachers t WHERE t.id = textbooks.teacher_id
+            ), ''),
+            department = COALESCE(NULLIF(TRIM(department), ''), (
+                SELECT NULLIF(TRIM(t.department), '') FROM teachers t WHERE t.id = textbooks.teacher_id
+            ), ''),
+            scope_level = COALESCE(NULLIF(TRIM(scope_level), ''), 'private')
+        """,
+        (DEFAULT_SCHOOL_CODE, DEFAULT_SCHOOL_NAME),
     )
 
     # 5. 班级课堂 (核心关联表)

@@ -65,6 +65,7 @@ from ..services.prompt_utils import (
 )
 from ..services.resource_access_service import ensure_classroom_access as ensure_scoped_classroom_access
 from ..services.resource_access_service import can_read_scoped_resource
+from ..services.base_resource_modes_service import build_exam_delete_blockers
 from ..services.file_service import resolve_global_file_path
 from ..services.materials_service import is_git_internal_material_path
 from ..services.organization_scope_service import load_teacher_org_scope
@@ -109,6 +110,35 @@ def _exam_task_payload_from_paper(paper: dict[str, Any]) -> dict[str, Any]:
         if isinstance(exam_data, dict):
             task["exam_data"] = exam_data
     return task
+
+
+def _delete_generated_exam_paper_if_unreferenced(conn: sqlite3.Connection, paper_id: str | None, teacher_id: int) -> bool:
+    if not paper_id:
+        return False
+    blockers = build_exam_delete_blockers(conn, str(paper_id))
+    if blockers:
+        conn.execute(
+            """
+            UPDATE exam_papers
+            SET ai_gen_status = ?,
+                ai_gen_error = ?,
+                updated_at = ?
+            WHERE id = ? AND teacher_id = ?
+            """,
+            (
+                ExamGenTaskStatus.CANCELLED,
+                "生成任务已取消；试卷已有业务引用，系统保留试卷记录。",
+                datetime.now().isoformat(),
+                str(paper_id),
+                int(teacher_id),
+            ),
+        )
+        return False
+    conn.execute(
+        "DELETE FROM exam_papers WHERE id = ? AND teacher_id = ?",
+        (str(paper_id), int(teacher_id)),
+    )
+    return True
 
 
 def _load_exam_task_from_db(task_id: str, teacher_id: int) -> dict[str, Any] | None:
@@ -3008,10 +3038,7 @@ async def cancel_exam_gen_task(task_id: str, user: dict = Depends(get_current_te
         paper_id = task_from_db.get("paper_id")
         if paper_id:
             with get_db_connection() as conn:
-                conn.execute(
-                    "DELETE FROM exam_papers WHERE id = ? AND teacher_id = ?",
-                    (paper_id, user["id"]),
-                )
+                _delete_generated_exam_paper_if_unreferenced(conn, paper_id, int(user["id"]))
                 conn.commit()
         return {"status": "success", "message": "任务已取消", "paper_id": paper_id}
 
@@ -3035,10 +3062,7 @@ async def cancel_exam_gen_task(task_id: str, user: dict = Depends(get_current_te
     if paper_id:
         try:
             with get_db_connection() as conn:
-                conn.execute(
-                    "DELETE FROM exam_papers WHERE id = ? AND teacher_id = ?",
-                    (paper_id, user['id'])
-                )
+                _delete_generated_exam_paper_if_unreferenced(conn, paper_id, int(user["id"]))
                 conn.commit()
         except Exception as e:
             print(f"[WARN] 删除取消的试卷失败: {e}")

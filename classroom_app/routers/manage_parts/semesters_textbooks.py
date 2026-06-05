@@ -1,4 +1,5 @@
 from .common import *
+from ...services.base_resource_modes_service import build_textbook_delete_blockers, raise_if_delete_blocked
 
 
 router = APIRouter()
@@ -398,16 +399,10 @@ async def api_delete_textbook(textbook_id: int, user: dict = Depends(get_current
     attachment_path = ""
     with get_db_connection() as conn:
         textbook_row = _ensure_teacher_can_manage_textbook(conn, textbook_id=textbook_id, teacher_id=user["id"])
-        offering_count = conn.execute(
-            "SELECT COUNT(*) AS count FROM class_offerings WHERE textbook_id = ?",
-            (textbook_id,),
-        ).fetchone()
-        linked_count = int((offering_count["count"] if offering_count else 0) or 0)
-        if linked_count > 0:
-            raise HTTPException(
-                400,
-                f"该教材已被 {linked_count} 个课堂绑定，请先调整课堂教材后再删除",
-            )
+        raise_if_delete_blocked(
+            f"教材“{textbook_row['title']}”",
+            build_textbook_delete_blockers(conn, int(textbook_id)),
+        )
 
         attachment_path = str(textbook_row["attachment_path"] or "")
         conn.execute(

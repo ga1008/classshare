@@ -1,4 +1,5 @@
 from .common import *
+from ...services.base_resource_modes_service import build_class_delete_blockers, raise_if_delete_blocked
 
 
 router = APIRouter()
@@ -505,21 +506,20 @@ async def api_delete_class_student(student_id: int, user: dict = Depends(get_cur
 
 @router.delete("/classes/{class_id}", response_class=JSONResponse)
 async def api_delete_class(class_id: int, user: dict = Depends(get_current_teacher)):
-    """删除一个班级 (及其所有学生和课堂关联)"""
+    """删除一个未产生学生、课堂或学习历史引用的班级。"""
     try:
         with get_db_connection() as conn:
             # 权限检查
             cursor = conn.execute(
-                "SELECT id FROM classes WHERE id = ? AND (created_by_teacher_id = ? OR ? = 1)",
-                (class_id, user['id'], 1 if is_super_admin_teacher(conn, user["id"]) else 0)
+                "SELECT * FROM classes WHERE id = ?",
+                (class_id,),
             )
-            if not cursor.fetchone():
+            class_row = cursor.fetchone()
+            if not class_row or not teacher_can_manage_class(conn, user["id"], class_row):
                 raise HTTPException(403, "无权删除该班级或班级不存在")
 
-            # 删除 (依赖于 database.py 中设置的 PRAGMA foreign_keys = ON 和 ON DELETE CASCADE)
-            # 1. 删除 students (通过外键)
-            # 2. 删除 class_offerings (通过外键)
-            # 3. 删除 class
+            # 仅允许删除从未被课堂或学生历史引用过的空班级，避免误清线上业务数据。
+            raise_if_delete_blocked("班级", build_class_delete_blockers(conn, int(class_id)))
             conn.execute("DELETE FROM classes WHERE id = ?", (class_id,))
             conn.commit()
 

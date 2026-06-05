@@ -1327,8 +1327,9 @@
 
                     <div class="academic-card-actions">
                         <div class="academic-action-group">
+                            <button type="button" class="btn btn-outline btn-sm" data-resource-attributes data-resource-type="course" data-resource-id="{{ course.id }}">属性</button>
                             {% if course.can_manage %}
-                            <button type="button" class="btn btn-outline btn-sm" data-action="edit-course" data-course-id="{{ course.id }}">编辑</button>
+                            <button type="button" class="btn btn-outline btn-sm" data-action="edit-course" data-course-id="{{ course.id }}">课次</button>
                             {% else %}
                             <span class="academic-badge is-accent">可直接开课</span>
                             {% endif %}
@@ -1534,5 +1535,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script type="module" src="{{ asset_url('js/base_resource_modes.js') }}"></script>
 <script type="module" src="{{ asset_url('js/manage_courses.js') }}"></script>
 {% endblock %}

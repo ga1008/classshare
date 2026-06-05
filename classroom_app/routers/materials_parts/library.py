@@ -3,9 +3,93 @@ from .generation_helpers import *
 from .ai_import_helpers import *
 from .final_material_helpers import *
 from .rewrite_helpers import *
+from ...services.base_resource_modes_service import (
+    build_material_delete_blockers,
+    build_mode_permissions,
+    raise_if_delete_blocked,
+)
 
 
 router = APIRouter()
+
+
+def _serialize_material_attributes(conn, material, user: dict) -> dict[str, Any]:
+    child_count = conn.execute(
+        "SELECT COUNT(*) FROM course_materials WHERE parent_id = ? AND name != '.git'",
+        (int(material["id"]),),
+    ).fetchone()[0]
+    assignment_count = conn.execute(
+        "SELECT COUNT(*) FROM course_material_assignments WHERE material_id = ?",
+        (int(material["id"]),),
+    ).fetchone()[0]
+    item = serialize_material_row(
+        material,
+        {
+            "child_count": int(child_count or 0),
+            "assignment_count": int(assignment_count or 0),
+            "breadcrumbs": get_material_breadcrumbs(conn, int(material["id"])),
+        },
+    )
+    item = _decorate_material_ownership(conn, item, user)
+    item = attach_git_repository_metadata(conn, [item])[0]
+    can_manage = bool(item.get("can_manage"))
+    item["permissions"] = build_mode_permissions(can_use=True, can_manage=can_manage)
+    return item
+
+
+def _rename_material_subtree(conn, material, new_name: str) -> None:
+    normalized_name = normalize_material_path(new_name, fallback_name=str(material["name"] or "material"))
+    if "/" in normalized_name or normalized_name in {"", ".git"}:
+        raise HTTPException(400, "材料名称不合法")
+    parent_id = material["parent_id"]
+    if parent_id is None:
+        conflict = conn.execute(
+            """
+            SELECT id
+            FROM course_materials
+            WHERE parent_id IS NULL
+              AND teacher_id = ?
+              AND LOWER(name) = LOWER(?)
+              AND id != ?
+            LIMIT 1
+            """,
+            (int(material["teacher_id"]), normalized_name, int(material["id"])),
+        ).fetchone()
+    else:
+        conflict = conn.execute(
+            """
+            SELECT id
+            FROM course_materials
+            WHERE parent_id = ?
+              AND LOWER(name) = LOWER(?)
+              AND id != ?
+            LIMIT 1
+            """,
+            (int(parent_id), normalized_name, int(material["id"])),
+        ).fetchone()
+    if conflict:
+        raise HTTPException(409, "同一目录下已有同名材料")
+
+    old_path = str(material["material_path"] or "").strip()
+    if not old_path:
+        raise HTTPException(400, "材料路径异常，不能重命名")
+    prefix = old_path.rsplit("/", 1)[0] if "/" in old_path else ""
+    new_path = f"{prefix}/{normalized_name}" if prefix else normalized_name
+    subtree = _collect_subtree_rows(conn, material)
+    now_text = datetime.now().isoformat()
+    for row in subtree:
+        row_path = str(row["material_path"] or "")
+        suffix = row_path[len(old_path):] if row_path.startswith(old_path) else ""
+        conn.execute(
+            """
+            UPDATE course_materials
+            SET name = CASE WHEN id = ? THEN ? ELSE name END,
+                material_path = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (int(material["id"]), normalized_name, f"{new_path}{suffix}", now_text, int(row["id"])),
+        )
 
 
 @router.get("/manage/materials", response_class=HTMLResponse)
@@ -206,6 +290,73 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
             detail["ai_import_record"] = None
 
     return {"status": "success", "material": detail}
+
+
+@router.get("/api/materials/{material_id}/attributes", response_class=JSONResponse)
+async def get_material_attributes(material_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        material = ensure_user_material_access(conn, material_id, user)
+        attributes = _serialize_material_attributes(conn, material, user)
+    return {"status": "success", "resource_type": "material", "attributes": attributes}
+
+
+@router.patch("/api/materials/{material_id}/attributes", response_class=JSONResponse)
+async def patch_material_attributes(
+    material_id: int,
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "请求数据格式错误")
+    normalized_scope = None
+    if "scope_level" in payload:
+        normalized_scope = str(payload.get("scope_level") or "private").strip().lower()
+        if normalized_scope not in {"private", "school", "department"}:
+            raise HTTPException(400, "Invalid material scope")
+
+    with get_db_connection() as conn:
+        material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        if "name" in payload:
+            _rename_material_subtree(conn, material, str(payload.get("name") or ""))
+            material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        if normalized_scope is not None:
+            owner_scope = load_teacher_org_scope(conn, int(material["teacher_id"]))
+            now_text = datetime.now().isoformat()
+            conn.execute(
+                """
+                UPDATE course_materials
+                SET scope_level = ?,
+                    owner_role = 'teacher',
+                    owner_user_pk = ?,
+                    school_code = ?,
+                    school_name = ?,
+                    college = ?,
+                    department = ?,
+                    published_at = CASE WHEN ? != 'private' THEN COALESCE(published_at, ?) ELSE published_at END,
+                    updated_at = ?
+                WHERE root_id = ?
+                  AND (material_path = ? OR material_path LIKE ?)
+                """,
+                (
+                    normalized_scope,
+                    int(material["teacher_id"]),
+                    owner_scope["school_code"],
+                    owner_scope["school_name"],
+                    owner_scope["college"],
+                    owner_scope["department"],
+                    normalized_scope,
+                    now_text,
+                    now_text,
+                    int(material["root_id"]),
+                    material["material_path"],
+                    f"{material['material_path']}/%",
+                ),
+            )
+        conn.commit()
+        refreshed = ensure_teacher_material_owner(conn, material_id, user["id"])
+        attributes = _serialize_material_attributes(conn, refreshed, user)
+    return {"status": "success", "message": "材料属性已保存", "attributes": attributes}
 
 
 @router.get(
@@ -614,6 +765,10 @@ async def delete_material(material_id: int, user: dict = Depends(get_current_tea
         subtree_rows = _collect_subtree_rows(conn, material)
         file_hashes = {row["file_hash"] for row in subtree_rows if row["node_type"] == "file" and row["file_hash"]}
 
+        raise_if_delete_blocked(
+            f"材料“{material['name']}”",
+            build_material_delete_blockers(conn, material),
+        )
         conn.execute("DELETE FROM course_materials WHERE id = ?", (material_id,))
         conn.commit()
 
@@ -647,7 +802,7 @@ async def ai_rewrite_material(
 @router.get("/api/materials/{material_id}/content", response_class=JSONResponse)
 async def get_material_content(material_id: int, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
-        material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        material = ensure_user_material_access(conn, material_id, user)
         if not is_editable_material(material):
             raise HTTPException(400, "当前仅支持编辑文本类材料")
 

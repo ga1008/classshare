@@ -1,7 +1,71 @@
 from .common import *
+from ...services.base_resource_modes_service import (
+    build_exam_delete_blockers,
+    ensure_teacher_can_manage_exam_attributes,
+    ensure_teacher_can_view_exam_attributes,
+    raise_if_delete_blocked,
+    serialize_exam_attributes,
+    serialize_exam_content,
+    update_exam_attributes,
+)
 
 
 router = APIRouter()
+
+
+def _count_exam_assignments(conn, paper_id: str) -> int:
+    row = conn.execute("SELECT COUNT(*) FROM assignments WHERE exam_paper_id = ?", (str(paper_id),)).fetchone()
+    return int(row[0] or 0) if row else 0
+
+
+def _count_exam_submissions(conn, paper_id: str) -> int:
+    row = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM submissions s
+        JOIN assignments a ON a.id = s.assignment_id
+        WHERE a.exam_paper_id = ?
+        """,
+        (str(paper_id),),
+    ).fetchone()
+    return int(row[0] or 0) if row else 0
+
+
+def _count_exam_drafts(conn, paper_id: str) -> int:
+    try:
+        row = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM submission_drafts sd
+            JOIN assignments a ON a.id = sd.assignment_id
+            WHERE a.exam_paper_id = ?
+            """,
+            (str(paper_id),),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return 0
+    return int(row[0] or 0) if row else 0
+
+
+def _sync_exam_assignment_content(conn, *, paper_id: str, title: str, description: str, exam_data: dict[str, Any]) -> int:
+    rubric_md = build_exam_rubric_md(
+        title=title,
+        description=description,
+        exam_data=exam_data,
+        require_complete=True,
+    )
+    requirements_md = f"**试卷**: {title}\n\n{description or ''}"
+    cursor = conn.execute(
+        """
+        UPDATE assignments
+        SET title = COALESCE(NULLIF(title, ''), ?),
+            requirements_md = ?,
+            rubric_md = ?
+        WHERE exam_paper_id = ?
+        """,
+        (title, requirements_md, rubric_md, str(paper_id)),
+    )
+    return int(cursor.rowcount or 0)
 
 
 @router.get(
@@ -75,6 +139,118 @@ async def update_exam_paper_tags(paper_id: str, request: Request, user: dict = D
         )
         conn.commit()
     return {"status": "success", "tags": tags}
+
+
+@router.get("/exam-papers/{paper_id}/attributes", response_class=JSONResponse)
+async def get_exam_paper_attributes(paper_id: str, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        paper = ensure_teacher_can_view_exam_attributes(conn, paper_id, int(user["id"]))
+        attributes = serialize_exam_attributes(conn, paper, int(user["id"]))
+    return {"status": "success", "resource_type": "exam_paper", "attributes": attributes}
+
+
+@router.patch("/exam-papers/{paper_id}/attributes", response_class=JSONResponse)
+async def patch_exam_paper_attributes(
+    paper_id: str,
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "请求数据格式错误")
+    with get_db_connection() as conn:
+        paper = ensure_teacher_can_manage_exam_attributes(conn, paper_id, int(user["id"]))
+        update_exam_attributes(conn, paper_row=paper, teacher_id=int(user["id"]), payload=payload)
+        conn.commit()
+        refreshed = ensure_teacher_can_view_exam_attributes(conn, paper_id, int(user["id"]))
+        attributes = serialize_exam_attributes(conn, refreshed, int(user["id"]))
+    return {"status": "success", "message": "试卷属性已保存", "attributes": attributes}
+
+
+@router.get("/exam-papers/{paper_id}/content", response_class=JSONResponse)
+async def get_exam_paper_content(paper_id: str, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        paper = ensure_teacher_can_view_exam_attributes(conn, paper_id, int(user["id"]))
+        content = serialize_exam_content(conn, paper, int(user["id"]))
+    return {"status": "success", "resource_type": "exam_paper", "content": content}
+
+
+@router.put("/exam-papers/{paper_id}/content", response_class=JSONResponse)
+async def put_exam_paper_content(
+    paper_id: str,
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "请求数据格式错误")
+    title = str(payload.get("title") or "").strip()
+    if not title:
+        raise HTTPException(400, "试卷标题不能为空")
+    description = str(payload.get("description") or "").strip()
+    try:
+        questions_payload = normalize_exam_scoring_payload(payload.get("questions", {"pages": []}))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    config_payload = payload.get("config", {})
+    if not isinstance(config_payload, dict):
+        raise HTTPException(400, "试卷配置必须是对象")
+
+    with get_db_connection() as conn:
+        paper = ensure_teacher_can_manage_exam_attributes(conn, paper_id, int(user["id"]))
+        submission_count = _count_exam_submissions(conn, paper_id)
+        draft_count = _count_exam_drafts(conn, paper_id)
+        if submission_count > 0 or draft_count > 0:
+            raise HTTPException(
+                409,
+                "试卷已有学生提交或草稿，不能原地修改题目、分值和评分标准；请创建新版本后再编辑。",
+            )
+        assignment_count = _count_exam_assignments(conn, paper_id)
+        synced_assignment_count = 0
+        if assignment_count > 0:
+            try:
+                complete_questions = normalize_exam_scoring_payload(questions_payload, require_complete=True)
+                synced_assignment_count = _sync_exam_assignment_content(
+                    conn,
+                    paper_id=paper_id,
+                    title=title,
+                    description=description,
+                    exam_data=complete_questions,
+                )
+                questions_payload = complete_questions
+            except ValueError as exc:
+                raise HTTPException(
+                    400,
+                    f"试卷已分配到课堂，修改内容前必须补齐评分标准：{exc}",
+                ) from exc
+        conn.execute(
+            """
+            UPDATE exam_papers
+            SET title = ?,
+                description = ?,
+                questions_json = ?,
+                exam_config_json = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                title,
+                description,
+                json.dumps(questions_payload, ensure_ascii=False),
+                json.dumps(config_payload, ensure_ascii=False),
+                datetime.now().isoformat(),
+                str(paper["id"]),
+            ),
+        )
+        conn.commit()
+        refreshed = ensure_teacher_can_view_exam_attributes(conn, paper_id, int(user["id"]))
+        content = serialize_exam_content(conn, refreshed, int(user["id"]))
+    return {
+        "status": "success",
+        "message": "试卷内容已保存",
+        "synced_assignment_count": synced_assignment_count,
+        "content": content,
+    }
 
 
 @router.get("/exam-papers/json-template")
@@ -260,19 +436,11 @@ async def update_exam_paper(paper_id: str, request: Request, user: dict = Depend
 async def delete_exam_paper(paper_id: str, user: dict = Depends(get_current_teacher)):
     """删除试卷"""
     with get_db_connection() as conn:
-        _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]), manage=True)
-        # 检查是否已被分配
-        assigned = conn.execute(
-            f"""
-            SELECT COUNT(*)
-            FROM assignments a
-            WHERE a.exam_paper_id = ?
-              AND {personal_stage_assignment_filter_sql('a')}
-            """,
-            (paper_id,),
-        ).fetchone()[0]
-        if assigned > 0:
-            raise HTTPException(400, f"该试卷已被分配给 {assigned} 个作业，请先删除相关作业")
+        paper = _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]), manage=True)
+        raise_if_delete_blocked(
+            f"试卷“{paper['title']}”",
+            build_exam_delete_blockers(conn, str(paper_id)),
+        )
         conn.execute("DELETE FROM exam_papers WHERE id = ?", (paper_id,))
         conn.commit()
     return {"status": "success"}

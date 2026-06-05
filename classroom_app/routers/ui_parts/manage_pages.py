@@ -53,6 +53,13 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
                    c.school_code,
                    c.school_name,
                    c.college,
+                   c.major,
+                   c.owner_role,
+                   c.owner_user_pk,
+                   c.scope_level,
+                   c.updated_at,
+                   c.archived_at,
+                   c.deleted_at,
                    c.academic_sync_at,
                    c.academic_sync_message,
                    c.created_at,
@@ -94,22 +101,24 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
                    ON o.class_id = c.id
                   AND o.teacher_id = c.created_by_teacher_id
             WHERE {class_scope_where}
-             GROUP BY c.id, c.name, c.department, c.description,
-                      c.academic_source, c.academic_class_code, c.academic_class_name,
-                      c.academic_college, c.academic_grade, c.academic_major,
-                      c.school_code, c.school_name, c.college,
-                      c.academic_sync_at, c.academic_sync_message, c.created_at,
-                      c.created_by_teacher_id, t.name
+              GROUP BY c.id, c.name, c.department, c.description,
+                       c.academic_source, c.academic_class_code, c.academic_class_name,
+                       c.academic_college, c.academic_grade, c.academic_major,
+                       c.school_code, c.school_name, c.college, c.major,
+                       c.owner_role, c.owner_user_pk, c.scope_level,
+                       c.updated_at, c.archived_at, c.deleted_at,
+                       c.academic_sync_at, c.academic_sync_message, c.created_at,
+                       c.created_by_teacher_id, t.name
              ORDER BY COALESCE(NULLIF(TRIM(c.department), ''), '未分类'), c.name
             """,
             class_scope_params,
         )
-        my_classes = [dict(row) for row in my_classes_cursor.fetchall()]
-        students_by_class = _load_teacher_class_student_rows(
-            conn,
-            int(user["id"]),
-            [int(item["id"]) for item in my_classes],
-        )
+        my_classes = [
+            dict(row)
+            for row in my_classes_cursor.fetchall()
+            if teacher_can_use_class(conn, int(user["id"]), row)
+        ]
+        manageable_or_taught_ids = []
         for class_item in my_classes:
             class_item["student_count"] = int(class_item.get("student_count") or 0)
             class_item["suspended_student_count"] = int(class_item.get("suspended_student_count") or 0)
@@ -119,6 +128,18 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
             class_item["offering_count"] = int(class_item.get("offering_count") or 0)
             class_item["is_owned"] = int(class_item.get("created_by_teacher_id") or 0) == int(user["id"])
             class_item["can_manage"] = class_item["is_owned"] or current_teacher_is_super_admin
+            teaches_class = conn.execute(
+                """
+                SELECT 1
+                FROM class_offerings
+                WHERE teacher_id = ? AND class_id = ?
+                LIMIT 1
+                """,
+                (int(user["id"]), int(class_item["id"])),
+            ).fetchone() is not None
+            class_item["can_view_content"] = bool(class_item["can_manage"] or teaches_class)
+            if class_item["can_view_content"]:
+                manageable_or_taught_ids.append(int(class_item["id"]))
             class_item["is_shared_class"] = not class_item["is_owned"]
             class_item["owner_teacher_name"] = str(class_item.get("owner_teacher_name") or "").strip()
             class_item["department_label"] = str(class_item.get("department") or "").strip() or "未分类"
@@ -145,6 +166,12 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
                 if class_item["student_count"]
                 else 0
             )
+        students_by_class = _load_teacher_class_student_rows(
+            conn,
+            int(user["id"]),
+            manageable_or_taught_ids,
+        )
+        for class_item in my_classes:
             class_item["students"] = students_by_class.get(int(class_item["id"]), [])
             class_item["active_students"] = [
                 student
@@ -391,9 +418,17 @@ async def get_manage_offerings_page(request: Request, user: dict = Depends(get_c
         my_classes = [
             dict(row)
             for row in conn.execute(
-                f"SELECT id, name, department, created_by_teacher_id FROM classes WHERE {class_where} ORDER BY name",
+                f"""
+                SELECT id, name, department, created_by_teacher_id,
+                       owner_role, owner_user_pk, scope_level,
+                       school_code, school_name, college
+                FROM classes
+                WHERE {class_where}
+                ORDER BY name
+                """,
                 class_params,
             ).fetchall()
+            if teacher_can_use_class(conn, int(user["id"]), row)
         ]
         my_courses = _load_teacher_course_rows(conn, int(user["id"]))
         semester_rows = load_teacher_semester_rows(conn, int(user["id"]))

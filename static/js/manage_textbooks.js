@@ -187,7 +187,8 @@ function renderCards() {
             </div>
             <div class="academic-card-actions">
                 <div class="academic-action-group">
-                    <button type="button" class="btn btn-outline btn-sm" data-action="edit" data-textbook-id="${item.id}">编辑</button>
+                    <button type="button" class="btn btn-outline btn-sm" data-resource-attributes data-resource-type="textbook" data-resource-id="${item.id}">属性</button>
+                    <button type="button" class="btn btn-outline btn-sm" data-action="edit" data-textbook-id="${item.id}">内容</button>
                     ${item.has_attachment ? `<a class="btn btn-ghost btn-sm" href="/api/manage/textbooks/${item.id}/attachment" target="_blank" rel="noopener">下载附件</a>` : ''}
                 </div>
                 <button type="button" class="btn btn-danger btn-sm" data-action="delete" data-textbook-id="${item.id}">删除</button>
