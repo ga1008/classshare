@@ -953,6 +953,7 @@ def _build_question_error_stats(
         answer_buckets: dict[str, list[dict[str, Any]]] = {}
         wrong_records: list[dict[str, Any]] = []
         option_counter: Counter[str] = Counter()
+        option_records: dict[str, list[dict[str, Any]]] = {}
         wrong_samples: list[str] = []
         attempted_count = 0
         correct_count = 0
@@ -986,6 +987,7 @@ def _build_question_error_stats(
                     for selected_key in selected_keys:
                         option_counter[selected_key] += 1
                 else:
+                    selected_keys = [BLANK_CHOICE_KEY]
                     option_counter[BLANK_CHOICE_KEY] += 1
                 is_wrong = not _choice_answer_matches_correct(question, raw_answer)
                 if max_score is not None:
@@ -993,6 +995,15 @@ def _build_question_error_stats(
                     scored_count += 1
                     score_total += score
                     max_score_total += max_score
+                detail = _answer_detail_record(
+                    item["submission"],
+                    question,
+                    raw_answer,
+                    score=score,
+                    max_score=max_score,
+                )
+                for selected_key in selected_keys:
+                    option_records.setdefault(selected_key, []).append(detail)
             else:
                 if score is None or max_score is None:
                     continue
@@ -1010,21 +1021,14 @@ def _build_question_error_stats(
                 score_loss_total += max(0.0, max_score - score)
             elif max_score is not None:
                 score_loss_total += max(0.0, max_score)
-            display = _format_student_answer(question, raw_answer)
-            detail = {
-                "submission_id": item["submission"].get("id"),
-                "student_pk_id": item["submission"].get("student_pk_id"),
-                "student_name": _clip_text(item["submission"].get("student_name") or "未命名学生", 80),
-                "answer": _clip_text(display, 600),
-                "answer_raw": _clip_text(_raw_answer_text(raw_answer), 800),
-                "score": score,
-                "max_score": max_score,
-                "score_text": (
-                    f"{_format_score_value(score)}/{_format_score_value(max_score)}"
-                    if score is not None and max_score is not None
-                    else ""
-                ),
-            }
+            detail = _answer_detail_record(
+                item["submission"],
+                question,
+                raw_answer,
+                score=score,
+                max_score=max_score,
+            )
+            display = detail["answer"]
             wrong_records.append(detail)
             answer_buckets.setdefault(display, []).append(detail)
             if not answer_has_value:
@@ -1063,7 +1067,7 @@ def _build_question_error_stats(
                 "wrong_answer_counter": {label: len(records) for label, records in answer_buckets.items()},
                 "wrong_records": wrong_records,
                 "wrong_samples": wrong_samples,
-                "option_bars": _build_option_bars(question, option_counter, option_total_count),
+                "option_bars": _build_option_bars(question, option_counter, option_total_count, option_records),
                 "option_total_count": option_total_count,
                 "text_cluster_status": "not_required",
                 "text_cluster_error": "",
@@ -1347,9 +1351,35 @@ def _wrong_answer_details(records: list[dict[str, Any]]) -> list[dict[str, Any]]
             "answer": _clip_text(record.get("answer_raw") or record.get("answer") or "未作答", 600),
             "score_text": record.get("score_text") or "",
             "submission_id": record.get("submission_id"),
+            "student_pk_id": record.get("student_pk_id"),
         }
         for record in records
     ]
+
+
+def _answer_detail_record(
+    submission: dict[str, Any],
+    question: dict[str, Any],
+    raw_answer: Any,
+    *,
+    score: float | None,
+    max_score: float | None,
+) -> dict[str, Any]:
+    display = _format_student_answer(question, raw_answer)
+    return {
+        "submission_id": submission.get("id"),
+        "student_pk_id": submission.get("student_pk_id"),
+        "student_name": _clip_text(submission.get("student_name") or "未命名学生", 80),
+        "answer": _clip_text(display, 600),
+        "answer_raw": _clip_text(_raw_answer_text(raw_answer), 800),
+        "score": score,
+        "max_score": max_score,
+        "score_text": (
+            f"{_format_score_value(score)}/{_format_score_value(max_score)}"
+            if score is not None and max_score is not None
+            else ""
+        ),
+    }
 
 
 def _selected_choice_keys(
@@ -1375,13 +1405,19 @@ def _selected_choice_keys(
     return keys
 
 
-def _build_option_bars(question: dict[str, Any], option_counter: Counter[str], total_count: int) -> list[dict[str, Any]]:
+def _build_option_bars(
+    question: dict[str, Any],
+    option_counter: Counter[str],
+    total_count: int,
+    option_records: dict[str, list[dict[str, Any]]] | None = None,
+) -> list[dict[str, Any]]:
     if question["type"] not in CHOICE_QUESTION_TYPES or total_count <= 0:
         return []
     option_meta = question.get("option_meta") or {}
     labels = option_meta.get("labels") or {}
     order = option_meta.get("order") or {}
     correct_keys = set(_selected_choice_keys(question, question.get("answer")))
+    option_records = option_records or {}
     bars: list[dict[str, Any]] = []
     for key, label in sorted(labels.items(), key=lambda pair: int(order.get(pair[0], 9999))):
         count = int(option_counter.get(key) or 0)
@@ -1400,6 +1436,7 @@ def _build_option_bars(question: dict[str, Any], option_counter: Counter[str], t
                 "percent": _percent(count, total_count),
                 "is_correct": is_correct,
                 "tone": tone,
+                "details": _wrong_answer_details(option_records.get(key) or []),
             }
         )
     unmatched_count = int(option_counter.get(UNMATCHED_CHOICE_KEY) or 0)
@@ -1412,6 +1449,7 @@ def _build_option_bars(question: dict[str, Any], option_counter: Counter[str], t
                 "percent": _percent(unmatched_count, total_count),
                 "is_correct": False,
                 "tone": "wrong",
+                "details": _wrong_answer_details(option_records.get(UNMATCHED_CHOICE_KEY) or []),
             }
         )
     blank_count = int(option_counter.get(BLANK_CHOICE_KEY) or 0)
@@ -1424,6 +1462,7 @@ def _build_option_bars(question: dict[str, Any], option_counter: Counter[str], t
                 "percent": _percent(blank_count, total_count),
                 "is_correct": False,
                 "tone": "wrong",
+                "details": _wrong_answer_details(option_records.get(BLANK_CHOICE_KEY) or []),
             }
         )
     return bars

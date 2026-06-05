@@ -1,7 +1,24 @@
+import re
+from urllib.parse import urlsplit
+
 from .common import *
 
 
 router = APIRouter()
+
+
+def _submission_return_url(request: Request, fallback: str) -> str:
+    raw_return = request.query_params.get("return_to")
+    safe_base = sanitize_next_path(raw_return, fallback=fallback)
+    if not raw_return or safe_base == fallback:
+        return safe_base
+    try:
+        fragment = urlsplit(str(raw_return).strip()).fragment
+    except Exception:
+        fragment = ""
+    if fragment and re.fullmatch(r"[A-Za-z0-9_.:\-]+", fragment):
+        return f"{safe_base}#{fragment}"
+    return safe_base
 
 
 @router.get("/assignment/{assignment_id}", response_class=HTMLResponse)
@@ -253,6 +270,8 @@ async def submission_detail_page(request: Request, submission_id: int, user: dic
             raise HTTPException(404, "作业不存在")
         assignment = refresh_assignment_runtime_status(conn, assignment)
         assignment = _enrich_assignment_upload_config(dict(assignment))
+        submission_back_url = _submission_return_url(request, f"/assignment/{assignment['id']}")
+        submission_back_label = "返回错题归集" if "/wrong-summary" in submission_back_url else "返回作业"
 
         # 获取提交的附件
         files_cursor = conn.execute(
@@ -299,6 +318,8 @@ async def submission_detail_page(request: Request, submission_id: int, user: dic
         "attachment_locked_reason": attachment_locked_reason,
         "ai_grading_upload_extensions": AI_GRADING_UPLOAD_EXTENSIONS,
         "ai_grading_supported_types_label": AI_GRADING_SUPPORTED_TYPES_LABEL,
+        "submission_back_url": submission_back_url,
+        "submission_back_label": submission_back_label,
         "max_upload_mb": MAX_UPLOAD_SIZE_MB,
         "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
         "max_per_file_mb": MAX_SUBMISSION_PER_FILE_MB,

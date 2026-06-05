@@ -146,6 +146,11 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
         self.assertEqual(q1_bars["A. 5 layers"]["count"], 2)
         self.assertEqual(q1_bars["A. 5 layers"]["percent"], 67)
         self.assertEqual(q1_bars["A. 5 layers"]["tone"], "wrong")
+        self.assertEqual(
+            [item["student_name"] for item in q1_bars["A. 5 layers"]["details"]],
+            ["Student A", "Student B"],
+        )
+        self.assertEqual(q1_bars["A. 5 layers"]["details"][0]["submission_id"], 1)
         self.assertEqual(q1_bars["B. 7 layers"]["count"], 0)
         self.assertEqual(q1_bars["B. 7 layers"]["percent"], 0)
         self.assertEqual(q1_bars["B. 7 layers"]["tone"], "correct")
@@ -157,6 +162,10 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
         self.assertEqual(q2_bars["A. TCP"]["count"], 2)
         self.assertEqual(q2_bars["A. TCP"]["percent"], 67)
         self.assertEqual(q2_bars["A. TCP"]["tone"], "correct")
+        self.assertEqual(
+            [item["student_name"] for item in q2_bars["A. TCP"]["details"]],
+            ["Student A", "Student B"],
+        )
         self.assertEqual(q2_bars["B. IP"]["count"], 1)
         self.assertEqual(q2_bars["B. IP"]["percent"], 33)
         self.assertEqual(q2_bars["B. IP"]["tone"], "wrong")

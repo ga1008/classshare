@@ -13,6 +13,9 @@
             data-detail-title="{{ wrong.label }}"
             data-detail-count="{{ wrong.count }}"
             data-detail-percent="{{ wrong.percent }}"
+            data-detail-issue="{{ (wrong.likely_issue or wrong.label) | e }}"
+            data-detail-examples="{{ (wrong.examples or []) | join('；') | e }}"
+            data-question-index="{{ item.question.ordinal }}"
             data-details-json="{{ (wrong.details or []) | tojson | forceescape }}"
         >
         <span class="wrong-answer-item__copy">
@@ -129,6 +132,18 @@
         border-radius: 8px;
         background: rgba(255, 255, 255, 0.92);
         box-shadow: 0 18px 42px -34px rgba(15, 23, 42, 0.56);
+    }
+
+    .wrong-question-card,
+    .hard-question-card {
+        scroll-margin-top: 92px;
+    }
+
+    .wrong-question-card:target,
+    .hard-question-card:target {
+        border-color: rgba(245, 158, 11, 0.48);
+        box-shadow: 0 20px 46px -28px rgba(245, 158, 11, 0.42);
+        animation: wrong-summary-target-pulse 1.2s ease both;
     }
 
     .wrong-summary-hero {
@@ -261,6 +276,10 @@
 
     .wrong-summary-tab-panel[hidden] {
         display: none;
+    }
+
+    .wrong-summary-tab-panel {
+        animation: wrong-summary-panel-in 0.18s ease both;
     }
 
     .wrong-summary-section {
@@ -440,6 +459,23 @@
         word-break: break-word;
     }
 
+    .answer-block .md-content {
+        min-width: 0;
+        max-width: 100%;
+        overflow-x: auto;
+        color: inherit;
+        font-size: 0.96rem;
+        font-weight: 820;
+    }
+
+    .answer-block .md-content > :first-child {
+        margin-top: 0;
+    }
+
+    .answer-block .md-content > :last-child {
+        margin-bottom: 0;
+    }
+
     .wrong-answer-list {
         display: grid;
         gap: 8px;
@@ -489,6 +525,7 @@
 
     .wrong-answer-item__copy small {
         color: #9a3412;
+        font-size: 0.84rem;
         line-height: 1.45;
     }
 
@@ -655,11 +692,28 @@
         --option-border: rgba(148, 163, 184, 0.24);
         --option-text: #475569;
         position: relative;
+        display: block;
+        width: 100%;
         overflow: hidden;
         border: 1px solid var(--option-border);
         border-radius: 8px;
         background: rgba(255, 255, 255, 0.78);
         color: var(--option-text);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+        transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+    }
+
+    .wrong-option-stat:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 14px 30px -26px rgba(15, 23, 42, 0.65);
+        background: rgba(255, 255, 255, 0.95);
+    }
+
+    .wrong-option-stat:focus-visible {
+        outline: 3px solid rgba(14, 165, 233, 0.24);
+        outline-offset: 2px;
     }
 
     .wrong-option-stat.is-correct {
@@ -729,10 +783,11 @@
         place-items: center;
         padding: 18px;
         background: rgba(15, 23, 42, 0.42);
+        animation: wrong-summary-fade-in 0.18s ease both;
     }
 
     .wrong-answer-dialog {
-        width: min(720px, 100%);
+        width: min(820px, 100%);
         max-height: min(82vh, 720px);
         display: grid;
         grid-template-rows: auto minmax(0, 1fr);
@@ -740,6 +795,7 @@
         border-radius: 10px;
         background: #fff;
         box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+        animation: wrong-summary-dialog-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
     }
 
     .wrong-answer-dialog__head {
@@ -778,8 +834,42 @@
     }
 
     .wrong-answer-dialog__body {
+        display: grid;
+        gap: 12px;
         overflow: auto;
         padding: 14px 18px 18px;
+    }
+
+    .wrong-answer-dialog__issue {
+        display: grid;
+        gap: 6px;
+        padding: 12px 14px;
+        border: 1px solid rgba(239, 68, 68, 0.2);
+        border-radius: 8px;
+        background: linear-gradient(135deg, rgba(255, 247, 237, 0.95), rgba(255, 255, 255, 0.96));
+        color: #991b1b;
+    }
+
+    .wrong-answer-dialog__issue[hidden] {
+        display: none;
+    }
+
+    .wrong-answer-dialog__issue span {
+        color: #9a3412;
+        font-size: 0.76rem;
+        font-weight: 880;
+    }
+
+    .wrong-answer-dialog__issue strong {
+        color: #991b1b;
+        font-size: 1rem;
+        line-height: 1.55;
+    }
+
+    .wrong-answer-dialog__issue small {
+        color: #9a3412;
+        font-size: 0.86rem;
+        line-height: 1.5;
     }
 
     .wrong-answer-detail-list {
@@ -791,12 +881,30 @@
     }
 
     .wrong-answer-detail-list li {
+        display: block;
+    }
+
+    .wrong-answer-detail-link,
+    .wrong-answer-detail-static {
         display: grid;
         gap: 5px;
+        width: 100%;
         padding: 11px 12px;
         border: 1px solid rgba(226, 232, 240, 0.9);
         border-radius: 8px;
         background: rgba(248, 250, 252, 0.86);
+        color: inherit;
+        text-align: left;
+        text-decoration: none;
+        transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+    }
+
+    .wrong-answer-detail-link:hover,
+    .wrong-answer-detail-link:focus-visible {
+        transform: translateY(-1px);
+        border-color: rgba(14, 165, 233, 0.34);
+        background: rgba(240, 249, 255, 0.96);
+        outline: none;
     }
 
     .wrong-answer-detail-list strong {
@@ -811,8 +919,15 @@
         word-break: break-word;
     }
 
+    .wrong-answer-detail-list small {
+        color: #0369a1;
+        font-size: 0.74rem;
+        font-weight: 800;
+    }
+
     .wrong-question-markdown table,
-    .wrong-option-markdown table {
+    .wrong-option-markdown table,
+    .wrong-answer-markdown table {
         min-width: min(100%, 520px);
     }
 
@@ -827,6 +942,27 @@
         to {
             transform: rotate(360deg);
         }
+    }
+
+    @keyframes wrong-summary-fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    @keyframes wrong-summary-dialog-in {
+        from { opacity: 0; transform: translateY(8px) scale(0.985); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes wrong-summary-panel-in {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes wrong-summary-target-pulse {
+        0% { transform: translateY(0); }
+        35% { transform: translateY(-2px); }
+        100% { transform: translateY(0); }
     }
 
     @media (max-width: 960px) {
@@ -872,6 +1008,29 @@
         .wrong-count-pill,
         .hard-level-pill {
             justify-items: start;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .wrong-answer-modal,
+        .wrong-answer-dialog,
+        .wrong-summary-tab-panel,
+        .wrong-question-card:target,
+        .hard-question-card:target,
+        .wrong-summary-spinner {
+            animation: none;
+        }
+
+        .wrong-answer-item,
+        .wrong-option-stat,
+        .wrong-answer-detail-link {
+            transition: none;
+        }
+
+        .wrong-answer-item:hover,
+        .wrong-option-stat:hover,
+        .wrong-answer-detail-link:hover {
+            transform: none;
         }
     }
 </style>
@@ -996,7 +1155,7 @@
             <div class="wrong-question-list">
                 {% for item in summary.wrong_questions %}
                 {% set question = item.question %}
-                <article class="wrong-question-card">
+                <article class="wrong-question-card" id="wrong-summary-errors-q-{{ question.ordinal }}">
                     <div class="wrong-question-card__head">
                         <span class="wrong-question-rank">{{ loop.index }}</span>
                         <div class="wrong-question-title">
@@ -1019,7 +1178,18 @@
                             {% if item.option_bars %}
                             <div class="wrong-option-stat-list" aria-label="选项选择统计">
                                 {% for option in item.option_bars %}
-                                <div class="wrong-option-stat is-{{ option.tone }}" style="--option-percent: {{ option.percent }}%;">
+                                <button
+                                    type="button"
+                                    class="wrong-option-stat is-{{ option.tone }}"
+                                    style="--option-percent: {{ option.percent }}%;"
+                                    data-wrong-answer-group
+                                    data-detail-title="{{ option.label }}"
+                                    data-detail-count="{{ option.count }}"
+                                    data-detail-percent="{{ option.percent }}"
+                                    data-detail-issue="{% if option.is_correct %}选中此项的学生名单；此项为参考正确项。{% elif option.key == '__blank_choice__' %}未作答学生名单。{% elif option.key == '__unmatched_choice__' %}这些答案未能匹配当前试卷选项，建议核对原始答卷。{% else %}选中此项的学生名单；此项不是本题参考正确项。{% endif %}"
+                                    data-question-index="{{ question.ordinal }}"
+                                    data-details-json="{{ (option.details or []) | tojson | forceescape }}"
+                                >
                                     <span class="wrong-option-stat__fill" aria-hidden="true"></span>
                                     <div class="wrong-option-stat__content">
                                         <div
@@ -1033,7 +1203,7 @@
                                             <span>{{ option.percent }}%</span>
                                         </span>
                                     </div>
-                                </div>
+                                </button>
                                 {% endfor %}
                             </div>
                             {% elif question.options %}
@@ -1052,7 +1222,11 @@
                         </div>
                         <div class="answer-block is-correct">
                             <span>正确答案</span>
-                            <strong>{{ question.answer_text or '未提供参考答案' }}</strong>
+                            <div
+                                class="wrong-answer-markdown md-content"
+                                data-question-markdown
+                                data-markdown-json="{{ (question.answer_text or '未提供参考答案') | tojson | forceescape }}"
+                            ></div>
                         </div>
                         {% if not item.option_bars %}
                         <div class="answer-block is-wrong">
@@ -1117,7 +1291,7 @@
             <div class="hard-question-list">
                 {% for item in summary.hard_questions %}
                 {% set question = item.question %}
-                <article class="hard-question-card">
+                <article class="hard-question-card" id="wrong-summary-hard-q-{{ question.ordinal }}">
                     <div class="hard-question-card__head">
                         <span class="hard-question-rank">{{ loop.index }}</span>
                         <div class="hard-question-title">
@@ -1140,7 +1314,18 @@
                             {% if item.option_bars %}
                             <div class="wrong-option-stat-list" aria-label="选项选择统计">
                                 {% for option in item.option_bars %}
-                                <div class="wrong-option-stat is-{{ option.tone }}" style="--option-percent: {{ option.percent }}%;">
+                                <button
+                                    type="button"
+                                    class="wrong-option-stat is-{{ option.tone }}"
+                                    style="--option-percent: {{ option.percent }}%;"
+                                    data-wrong-answer-group
+                                    data-detail-title="{{ option.label }}"
+                                    data-detail-count="{{ option.count }}"
+                                    data-detail-percent="{{ option.percent }}"
+                                    data-detail-issue="{% if option.is_correct %}选中此项的学生名单；此项为参考正确项。{% elif option.key == '__blank_choice__' %}未作答学生名单。{% elif option.key == '__unmatched_choice__' %}这些答案未能匹配当前试卷选项，建议核对原始答卷。{% else %}选中此项的学生名单；此项不是本题参考正确项。{% endif %}"
+                                    data-question-index="{{ question.ordinal }}"
+                                    data-details-json="{{ (option.details or []) | tojson | forceescape }}"
+                                >
                                     <span class="wrong-option-stat__fill" aria-hidden="true"></span>
                                     <div class="wrong-option-stat__content">
                                         <div
@@ -1154,7 +1339,7 @@
                                             <span>{{ option.percent }}%</span>
                                         </span>
                                     </div>
-                                </div>
+                                </button>
                                 {% endfor %}
                             </div>
                             {% elif question.options %}
@@ -1174,7 +1359,11 @@
                         <p>{{ item.difficulty_reason }}</p>
                         <div class="answer-block is-correct">
                             <span>正确答案</span>
-                            <strong>{{ question.answer_text or '未提供参考答案' }}</strong>
+                            <div
+                                class="wrong-answer-markdown md-content"
+                                data-question-markdown
+                                data-markdown-json="{{ (question.answer_text or '未提供参考答案') | tojson | forceescape }}"
+                            ></div>
                         </div>
                         {% if not item.option_bars %}
                         <div class="answer-block is-wrong">
@@ -1228,6 +1417,11 @@
             <button type="button" class="wrong-answer-dialog__close" data-wrong-answer-modal-close aria-label="关闭">×</button>
         </div>
         <div class="wrong-answer-dialog__body">
+            <div class="wrong-answer-dialog__issue" data-wrong-answer-modal-issue hidden>
+                <span data-wrong-answer-modal-issue-label>归集说明</span>
+                <strong data-wrong-answer-modal-issue-text></strong>
+                <small data-wrong-answer-modal-examples hidden></small>
+            </div>
             <ul class="wrong-answer-detail-list" data-wrong-answer-modal-list></ul>
         </div>
     </div>
@@ -1449,9 +1643,12 @@
         const modal = document.querySelector('[data-wrong-answer-modal]');
         const titleNode = document.querySelector('[data-wrong-answer-modal-title]');
         const subtitleNode = document.querySelector('[data-wrong-answer-modal-subtitle]');
+        const issueNode = document.querySelector('[data-wrong-answer-modal-issue]');
+        const issueTextNode = document.querySelector('[data-wrong-answer-modal-issue-text]');
+        const examplesNode = document.querySelector('[data-wrong-answer-modal-examples]');
         const listNode = document.querySelector('[data-wrong-answer-modal-list]');
         const closeButton = document.querySelector('[data-wrong-answer-modal-close]');
-        if (!modal || !titleNode || !subtitleNode || !listNode || !closeButton) {
+        if (!modal || !titleNode || !subtitleNode || !issueNode || !issueTextNode || !examplesNode || !listNode || !closeButton) {
             return;
         }
         let lastTrigger = null;
@@ -1464,6 +1661,25 @@
             }
         };
 
+        const currentReturnTarget = (trigger) => {
+            const anchor = trigger.closest('.wrong-question-card, .hard-question-card')?.id || '';
+            return `${window.location.pathname}${window.location.search}${anchor ? `#${anchor}` : ''}`;
+        };
+
+        const detailSubmissionUrl = (detail, questionIndex, trigger) => {
+            const submissionId = detail && detail.submission_id ? String(detail.submission_id) : '';
+            if (!submissionId) {
+                return '';
+            }
+            const params = new URLSearchParams();
+            params.set('return_to', currentReturnTarget(trigger));
+            if (questionIndex) {
+                params.set('focus_question', String(questionIndex));
+            }
+            const focusHash = questionIndex ? `#submission-q-${encodeURIComponent(String(questionIndex))}` : '';
+            return `/submission/${encodeURIComponent(submissionId)}?${params.toString()}${focusHash}`;
+        };
+
         const openModal = (trigger) => {
             lastTrigger = trigger;
             let details = [];
@@ -1472,26 +1688,51 @@
             } catch (error) {
                 console.warn('Wrong answer detail parse failed:', error);
             }
-            titleNode.textContent = trigger.getAttribute('data-detail-title') || '错答明细';
+            const title = trigger.getAttribute('data-detail-title') || '错答明细';
+            const issue = trigger.getAttribute('data-detail-issue') || title;
+            const examples = trigger.getAttribute('data-detail-examples') || '';
+            const questionIndex = trigger.getAttribute('data-question-index') || '';
+            titleNode.textContent = title;
             const count = trigger.getAttribute('data-detail-count') || '0';
             const percent = trigger.getAttribute('data-detail-percent') || '0';
             subtitleNode.textContent = `${count} 人归入此类${percent && percent !== '0' ? `，占未满分学生 ${percent}%` : ''}`;
+            issueNode.hidden = !issue;
+            issueTextNode.textContent = issue;
+            examplesNode.hidden = !examples;
+            examplesNode.textContent = examples ? `例：${examples}` : '';
             listNode.innerHTML = '';
             if (!Array.isArray(details) || !details.length) {
                 const emptyItem = document.createElement('li');
-                const emptyText = document.createElement('span');
-                emptyText.textContent = '暂无可展开的原始答案明细。';
+                const emptyText = document.createElement('div');
+                emptyText.className = 'wrong-answer-detail-static';
+                const summary = document.createElement('span');
+                summary.textContent = issue
+                    ? '当前没有可展开的学生原始答案；请先参考上方归集说明。'
+                    : '当前没有学生原始答案可展示。';
+                emptyText.appendChild(summary);
                 emptyItem.appendChild(emptyText);
                 listNode.appendChild(emptyItem);
             } else {
                 details.forEach((detail) => {
                     const item = document.createElement('li');
+                    const url = detailSubmissionUrl(detail, questionIndex, trigger);
+                    const detailNode = document.createElement(url ? 'a' : 'div');
+                    detailNode.className = url ? 'wrong-answer-detail-link' : 'wrong-answer-detail-static';
+                    if (url) {
+                        detailNode.href = url;
+                    }
                     const student = document.createElement('strong');
                     const scoreText = detail.score_text ? ` · ${detail.score_text}` : '';
                     student.textContent = `${detail.student_name || '未命名学生'}${scoreText}`;
                     const answer = document.createElement('span');
                     answer.textContent = detail.answer || '未作答';
-                    item.append(student, answer);
+                    detailNode.append(student, answer);
+                    if (url) {
+                        const hint = document.createElement('small');
+                        hint.textContent = questionIndex ? `查看该学生第 ${questionIndex} 题答卷` : '查看该学生答卷';
+                        detailNode.appendChild(hint);
+                    }
+                    item.appendChild(detailNode);
                     listNode.appendChild(item);
                 });
             }
