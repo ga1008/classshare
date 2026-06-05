@@ -10,11 +10,14 @@ from unittest.mock import AsyncMock, patch
 from classroom_app.services.wrong_question_summary_service import (
     PROMPT_VERSION,
     _attach_text_answer_clusters,
+    _answer_value,
+    _answers_by_question,
     _build_ai_status,
     _build_question_error_stats,
     _build_score_based_hard_questions,
     _clear_assignment_wrong_summary_ai_state,
     _extract_exam_questions,
+    _get_answer_record,
     _score_based_difficulty_summary,
     ensure_wrong_summary_cache_tables,
     expire_interrupted_wrong_summary_jobs,
@@ -202,6 +205,72 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
         stats = _build_question_error_stats(questions, submissions)
         self.assertEqual(stats[0]["wrong_count"], 0)
         self.assertEqual(stats[0]["scored_count"], 0)
+
+    def test_text_score_uses_visible_ordinal_not_numeric_fragment_from_question_id(self):
+        raw_questions = []
+        for index in range(1, 13):
+            raw_questions.append(
+                {
+                    "id": "set2_blank_02" if index == 12 else f"set2_single_{index:02d}",
+                    "type": "text",
+                    "text": (
+                        "Most common internal gateway protocols include RIP and ____."
+                        if index == 12
+                        else f"Question {index}"
+                    ),
+                    "answer": "OSPF" if index == 12 else "A",
+                    "points": 1,
+                }
+            )
+        questions = _extract_exam_questions({"pages": [{"name": "Paper", "questions": raw_questions}]})
+        submissions = [
+            {
+                "id": 1,
+                "student_name": "Student A",
+                "status": "submitted",
+                "answers_json": json.dumps(
+                    {
+                        "answers": [
+                            {"question_id": "set2_blank_02", "answer": "OSPF"},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                "feedback_md": _feedback((2, 0, 1), (12, 1, 1)),
+            }
+        ]
+
+        stats = _build_question_error_stats(questions, submissions)
+        q12 = next(item for item in stats if item["question"]["ordinal"] == 12)
+
+        self.assertEqual(q12["wrong_count"], 0)
+        self.assertEqual(q12["correct_count"], 1)
+        self.assertEqual(q12["average_score_percent"], 100)
+
+    def test_answer_lookup_uses_exact_and_ordinal_buckets_not_id_numeric_fragments(self):
+        raw_questions = []
+        answer_items = []
+        for index in range(1, 13):
+            question_id = "set2_blank_02" if index == 12 else f"set2_single_{index:02d}"
+            raw_questions.append(
+                {
+                    "id": question_id,
+                    "type": "text",
+                    "text": f"Question {index}",
+                    "answer": "OSPF" if index == 12 else "A",
+                    "points": 1,
+                }
+            )
+            if index == 12:
+                answer_items.append({"answer": "OSPF"})
+            else:
+                answer_items.append({"question_id": question_id, "answer": f"answer-{index}"})
+        questions = _extract_exam_questions({"pages": [{"name": "Paper", "questions": raw_questions}]})
+        answer_map = _answers_by_question(json.dumps({"answers": answer_items}, ensure_ascii=False))
+
+        q12_answer = _get_answer_record(answer_map, questions[11])
+
+        self.assertEqual(_answer_value(q12_answer), "OSPF")
 
     def test_choice_option_bars_match_wrong_count_when_answers_use_question_number_aliases(self):
         questions = _extract_exam_questions(

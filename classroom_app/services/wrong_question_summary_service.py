@@ -7,7 +7,7 @@ import re
 import secrets
 from collections import Counter
 from datetime import datetime
-from typing import Any
+from typing import Any, Iterable
 
 from fastapi import HTTPException
 
@@ -1189,13 +1189,18 @@ def _store_feedback_score(
 ) -> None:
     if score is None:
         return
-    for key in _question_score_aliases(raw_key):
+    for key in _feedback_score_storage_aliases(raw_key):
         result[key] = {"score": score, "max_score": max_score}
 
 
 def _lookup_feedback_score(question: dict[str, Any], feedback_scores: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    for raw_key in (question.get("id"), question.get("key"), question.get("ordinal")):
-        for alias in _question_score_aliases(raw_key):
+    alias_groups = [
+        _question_key_aliases(question.get("id"), include_numeric=False),
+        _question_key_aliases(question.get("key"), include_numeric=False),
+        _question_ordinal_aliases(question.get("ordinal"), include_q_alias=True),
+    ]
+    for aliases in alias_groups:
+        for alias in aliases:
             if alias in feedback_scores:
                 return feedback_scores[alias]
     return {}
@@ -1207,10 +1212,7 @@ def _question_key_aliases(raw_key: Any, *, include_numeric: bool = True) -> list
         return []
     aliases = [text, text.casefold()]
     if include_numeric:
-        numbers = re.findall(r"\d+", text)
-        if numbers:
-            value = str(int(numbers[-1]))
-            aliases.extend([value, f"q{value}", f"Q{value}", f"第{value}题"])
+        aliases.extend(_question_ordinal_aliases(text, include_q_alias=True))
     result: list[str] = []
     seen: set[str] = set()
     for alias in aliases:
@@ -1222,7 +1224,53 @@ def _question_key_aliases(raw_key: Any, *, include_numeric: bool = True) -> list
 
 
 def _question_score_aliases(raw_key: Any) -> set[str]:
-    return set(_question_key_aliases(raw_key, include_numeric=True))
+    return set(_feedback_score_storage_aliases(raw_key))
+
+
+def _feedback_score_storage_aliases(raw_key: Any) -> list[str]:
+    aliases = _question_key_aliases(raw_key, include_numeric=False)
+    ordinal_value = _question_ordinal_value(raw_key)
+    if ordinal_value:
+        aliases.extend(_question_ordinal_aliases(ordinal_value, include_q_alias=_is_q_style_question_key(raw_key)))
+    return _dedupe_aliases(aliases)
+
+
+def _question_ordinal_aliases(raw_key: Any, *, include_q_alias: bool = True) -> list[str]:
+    value = _question_ordinal_value(raw_key)
+    if not value:
+        return []
+    aliases = [value, f"第{value}题"]
+    if include_q_alias:
+        aliases.extend([f"q{value}", f"Q{value}"])
+    return _dedupe_aliases(aliases)
+
+
+def _question_ordinal_value(raw_key: Any) -> str | None:
+    text = str(raw_key or "").strip()
+    if not text:
+        return None
+    match = re.fullmatch(r"(?:第\s*)?0*(\d+)\s*(?:题)?", text, flags=re.I)
+    if not match:
+        match = re.fullmatch(r"(?:q|question)[_\-\s]*0*(\d+)", text, flags=re.I)
+    if not match:
+        return None
+    return str(int(match.group(1)))
+
+
+def _is_q_style_question_key(raw_key: Any) -> bool:
+    text = str(raw_key or "").strip()
+    return bool(re.fullmatch(r"(?:q|question)[_\-\s]*0*\d+", text, flags=re.I))
+
+
+def _dedupe_aliases(aliases: Iterable[Any]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for alias in aliases:
+        alias_text = str(alias or "").strip()
+        if alias_text and alias_text not in seen:
+            result.append(alias_text)
+            seen.add(alias_text)
+    return result
 
 
 def _question_full_score(question: dict[str, Any]) -> float | None:
@@ -1854,53 +1902,76 @@ def _save_text_cluster_cache(assignment_id: str, question_key: str, answer_signa
         conn.commit()
 
 
-def _answers_by_question(raw_answers: Any) -> dict[str, Any]:
+ANSWER_EXACT_KEY_FIELDS = ("question_id", "question_key", "id", "key")
+ANSWER_TEXT_KEY_FIELDS = ("question",)
+ANSWER_ORDINAL_KEY_FIELDS = (
+    "question_no",
+    "questionNo",
+    "question_index",
+    "questionIndex",
+    "ordinal",
+    "no",
+)
+ANSWER_INDEX_EXACT = "__exact__"
+ANSWER_INDEX_TEXT = "__text__"
+ANSWER_INDEX_ORDINAL = "__ordinal__"
+
+
+def _answers_by_question(raw_answers: Any) -> dict[str, dict[str, Any]]:
     try:
         payload = json.loads(raw_answers) if isinstance(raw_answers, str) else raw_answers
     except (TypeError, json.JSONDecodeError):
         payload = {}
     answers = payload.get("answers") if isinstance(payload, dict) and "answers" in payload else payload
-    result: dict[str, Any] = {}
+    result: dict[str, dict[str, Any]] = {
+        ANSWER_INDEX_EXACT: {},
+        ANSWER_INDEX_TEXT: {},
+        ANSWER_INDEX_ORDINAL: {},
+    }
+
+    def add(bucket: str, aliases: Iterable[Any], item: Any) -> None:
+        for alias in _dedupe_aliases(aliases):
+            result[bucket].setdefault(alias, item)
+
     if isinstance(answers, list):
         for index, item in enumerate(answers, start=1):
             if not isinstance(item, dict):
                 continue
-            raw_keys = [
-                item.get("question_id"),
-                item.get("question_key"),
-                item.get("question"),
-                item.get("id"),
-                item.get("key"),
-                item.get("question_no"),
-                item.get("questionNo"),
-                item.get("question_index"),
-                item.get("questionIndex"),
-                item.get("ordinal"),
-                item.get("no"),
-            ]
-            explicit_keys = [key for key in raw_keys if str(key or "").strip()]
-            for key in explicit_keys or [index]:
-                for alias in _question_key_aliases(key, include_numeric=True):
-                    result.setdefault(alias, item)
+            for field in ANSWER_EXACT_KEY_FIELDS:
+                add(ANSWER_INDEX_EXACT, _question_key_aliases(item.get(field), include_numeric=False), item)
+            for field in ANSWER_TEXT_KEY_FIELDS:
+                add(ANSWER_INDEX_TEXT, _question_key_aliases(item.get(field), include_numeric=False), item)
+            for field in ANSWER_ORDINAL_KEY_FIELDS:
+                add(ANSWER_INDEX_ORDINAL, _question_ordinal_aliases(item.get(field), include_q_alias=True), item)
+            add(ANSWER_INDEX_ORDINAL, _question_ordinal_aliases(index, include_q_alias=False), item)
     elif isinstance(answers, dict):
         for key, value in answers.items():
-            for alias in _question_key_aliases(key, include_numeric=True):
-                result.setdefault(alias, value)
+            add(ANSWER_INDEX_EXACT, _question_key_aliases(key, include_numeric=False), value)
+            add(ANSWER_INDEX_TEXT, _question_key_aliases(key, include_numeric=False), value)
+            add(ANSWER_INDEX_ORDINAL, _question_ordinal_aliases(key, include_q_alias=True), value)
     return result
 
 
 def _get_answer_record(answer_map: dict[str, Any], question: dict[str, Any]) -> Any:
-    aliases: list[str] = []
-    for key in (question.get("id"), question.get("key"), question.get("ordinal")):
-        aliases.extend(_question_key_aliases(key, include_numeric=True))
-    aliases.extend(_question_key_aliases(question.get("text"), include_numeric=False))
-    seen: set[str] = set()
-    for alias in aliases:
-        if alias in seen:
+    exact_map = answer_map.get(ANSWER_INDEX_EXACT, answer_map)
+    text_map = answer_map.get(ANSWER_INDEX_TEXT, {})
+    ordinal_map = answer_map.get(ANSWER_INDEX_ORDINAL, {})
+    alias_groups = [
+        (exact_map, _question_key_aliases(question.get("id"), include_numeric=False)),
+        (exact_map, _question_key_aliases(question.get("key"), include_numeric=False)),
+        (text_map, _question_key_aliases(question.get("text"), include_numeric=False)),
+        (ordinal_map, _question_ordinal_aliases(question.get("ordinal"), include_q_alias=True)),
+    ]
+    for bucket, aliases in alias_groups:
+        if not isinstance(bucket, dict):
             continue
-        seen.add(alias)
-        if alias in answer_map:
-            return answer_map[alias]
+        seen: set[str] = set()
+        for alias in aliases:
+            if alias in seen:
+                continue
+            seen.add(alias)
+            if alias in bucket:
+                return bucket[alias]
     return None
 
 
