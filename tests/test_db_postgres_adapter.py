@@ -8,6 +8,7 @@ from classroom_app.db.postgres import (
     connect_postgres,
     qmark_to_psycopg,
     sqlite_compatible_dict_row,
+    sqlite_sql_to_psycopg,
     validate_database_url,
 )
 
@@ -99,6 +100,20 @@ class PostgresAdapterTests(unittest.TestCase):
         self.assertIn("note = '-- ?'", converted)
         self.assertIn("-- ?", converted)
         self.assertTrue(converted.endswith("AND x = %s"))
+
+    def test_sqlite_sql_to_psycopg_rewrites_runtime_sqlite_only_functions(self):
+        sql = """
+        SELECT GROUP_CONCAT(DISTINCT COALESCE(ss.academic_course_code, '')) AS codes
+        FROM course_materials m
+        WHERE m.name LIKE ? COLLATE NOCASE
+        ORDER BY m.name COLLATE NOCASE
+        """
+
+        converted = sqlite_sql_to_psycopg(sql)
+
+        self.assertIn("STRING_AGG(DISTINCT (COALESCE(ss.academic_course_code, ''))::text, ',')", converted)
+        self.assertIn("m.name ILIKE %s", converted)
+        self.assertNotIn("COLLATE NOCASE", converted.upper())
 
     def test_validate_database_url_requires_postgres_scheme(self):
         with self.assertRaises(DatabaseConfigurationError):

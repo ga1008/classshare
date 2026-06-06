@@ -2424,8 +2424,8 @@ def _load_course_resource_stats(
     placeholders = ",".join("?" for _ in course_ids)
     conditions = [f"course_id IN ({placeholders})"]
     if not include_teacher_resources:
-        conditions.append("is_public = 1")
-        conditions.append("is_teacher_resource = 0")
+        conditions.append("LOWER(COALESCE(is_public, '0')) IN ('1', 'true', 't', 'yes')")
+        conditions.append("LOWER(COALESCE(is_teacher_resource, '0')) NOT IN ('1', 'true', 't', 'yes')")
     rows = conn.execute(
         f"""
         SELECT course_id,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import re
 from typing import Any, Iterable, Sequence
 
 from .. import config
@@ -8,6 +9,72 @@ from .errors import DatabaseConfigurationError, DatabaseConnectionError, redact_
 
 
 POSTGRES_DRIVER_REQUIREMENT = "psycopg[binary]==3.3.4"
+_LIKE_NOCASE_RE = re.compile(r"\bLIKE\s+(%s)\s+COLLATE\s+NOCASE\b", re.IGNORECASE)
+_COLLATE_NOCASE_RE = re.compile(r"\s+COLLATE\s+NOCASE\b", re.IGNORECASE)
+
+
+def _replace_group_concat(sql: str) -> str:
+    result: list[str] = []
+    index = 0
+    pattern = re.compile(r"group_concat\s*\(", re.IGNORECASE)
+
+    while True:
+        match = pattern.search(sql, index)
+        if not match:
+            result.append(sql[index:])
+            break
+
+        open_paren = match.end() - 1
+        depth = 0
+        position = open_paren
+        in_single_quote = False
+        close_paren = -1
+
+        while position < len(sql):
+            char = sql[position]
+            next_char = sql[position + 1] if position + 1 < len(sql) else ""
+            if in_single_quote:
+                if char == "'" and next_char == "'":
+                    position += 2
+                    continue
+                if char == "'":
+                    in_single_quote = False
+                position += 1
+                continue
+            if char == "'":
+                in_single_quote = True
+                position += 1
+                continue
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    close_paren = position
+                    break
+            position += 1
+
+        if close_paren < 0:
+            result.append(sql[index:])
+            break
+
+        result.append(sql[index:match.start()])
+        inner = sql[open_paren + 1:close_paren].strip()
+        distinct = ""
+        if inner.upper().startswith("DISTINCT "):
+            distinct = "DISTINCT "
+            inner = inner[len("DISTINCT "):].strip()
+        result.append(f"STRING_AGG({distinct}({inner})::text, ',')")
+        index = close_paren + 1
+
+    return "".join(result)
+
+
+def sqlite_sql_to_psycopg(sql: str) -> str:
+    converted = qmark_to_psycopg(sql)
+    converted = _replace_group_concat(converted)
+    converted = _LIKE_NOCASE_RE.sub(r"ILIKE \1", converted)
+    return _COLLATE_NOCASE_RE.sub("", converted)
 
 
 def load_psycopg_driver() -> Any:
@@ -128,13 +195,13 @@ class LanSharePostgresConnection:
         return self._raw_connection
 
     def execute(self, sql: str, params: Sequence[Any] | None = None) -> Any:
-        converted = qmark_to_psycopg(sql)
+        converted = sqlite_sql_to_psycopg(sql)
         if params is None:
             return self._raw_connection.execute(converted)
         return self._raw_connection.execute(converted, tuple(params))
 
     def executemany(self, sql: str, params_seq: Iterable[Sequence[Any]]) -> Any:
-        converted = qmark_to_psycopg(sql)
+        converted = sqlite_sql_to_psycopg(sql)
         with self._raw_connection.cursor() as cursor:
             cursor.executemany(converted, [tuple(params) for params in params_seq])
             return cursor

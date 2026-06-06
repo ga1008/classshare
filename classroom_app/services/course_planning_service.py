@@ -673,7 +673,7 @@ def summarize_academic_teaching_classes(
                COUNT(*) AS session_count,
                MIN(session_date) AS first_session_date,
                MAX(session_date) AS last_session_date,
-               SUM(CASE WHEN is_non_periodic THEN 1 ELSE 0 END) AS non_periodic_count
+               SUM(CASE WHEN COALESCE(is_non_periodic, 0) <> 0 THEN 1 ELSE 0 END) AS non_periodic_count
         FROM teacher_academic_course_session_occurrences
         WHERE teacher_id = ? AND semester_id = ? AND course_id = ?
         GROUP BY teaching_class_name, class_composition
