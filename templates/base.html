@@ -20,6 +20,42 @@
     <!-- Global Toast Container -->
     <div id="toast-container" class="toast-container"></div>
 
+    {% if user_info is defined and user_info %}
+    <!-- Global Back-to-top -->
+    <button type="button" id="global-back-to-top" class="back-to-top" aria-label="回到顶部" title="回到顶部" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m18 15-6-6-6 6"></path>
+        </svg>
+        <span class="sr-only">回到顶部</span>
+    </button>
+    <script>
+        (() => {
+            const btn = document.getElementById('global-back-to-top');
+            if (!btn) return;
+            const SHOW_AFTER = 480;
+            const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+            let ticking = false;
+            const sync = () => {
+                ticking = false;
+                const past = window.scrollY > SHOW_AFTER;
+                if (past === !btn.hidden) return;
+                btn.hidden = !past;
+                btn.classList.toggle('is-visible', past);
+            };
+            const onScroll = () => {
+                if (ticking) return;
+                ticking = true;
+                window.requestAnimationFrame(sync);
+            };
+            window.addEventListener('scroll', onScroll, { passive: true });
+            btn.addEventListener('click', () => {
+                window.scrollTo({ top: 0, behavior: reduceMotion.matches ? 'auto' : 'smooth' });
+            });
+            sync();
+        })();
+    </script>
+    {% endif %}
+
     <script type="module" src="/static/js/auth.js"></script>
     {% if user_info is defined and user_info %}
     <script type="module" src="/static/js/cultivation_identity.js?v=20260512-reveal"></script>

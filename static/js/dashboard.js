@@ -19,8 +19,42 @@ function toNumber(value) {
     return Number.isFinite(parsed) ? parsed : 0;
 }
 
+// Selector for interactive descendants that should keep their own click
+// behaviour instead of triggering whole-card navigation.
+const INTERACTIVE_CARD_CHILD = 'a, button, input, select, textarea, label, [role="button"], [data-timeline-axis], [contenteditable="true"]';
+
+/**
+ * Make each offering card fully clickable: a click (or Enter/Space when the
+ * card is focused) anywhere outside an interactive child navigates to the
+ * classroom, reusing the existing "进入课堂" link as the source of truth.
+ * @param {HTMLElement[]} cards
+ */
+function setupOfferingCardNavigation(cards) {
+    cards.forEach((card) => {
+        const enterLink = card.querySelector('.dashboard-offering-card__enter, a[href^="/classroom/"]');
+        const href = enterLink && enterLink.getAttribute('href');
+        if (!href) {
+            return;
+        }
+        card.addEventListener('click', (event) => {
+            if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                return;
+            }
+            if (event.target.closest(INTERACTIVE_CARD_CHILD)) {
+                return;
+            }
+            const selection = window.getSelection();
+            if (selection && selection.toString().trim()) {
+                return;
+            }
+            window.location.assign(href);
+        });
+    });
+}
+
 if (root) {
     const cards = Array.from(root.querySelectorAll('[data-offering-card]'));
+    setupOfferingCardNavigation(cards);
     const filterButtons = Array.from(root.querySelectorAll('[data-filter-value]'));
     const groupModeButtons = Array.from(root.querySelectorAll('[data-group-mode]'));
     const searchForm = root.querySelector('[data-dashboard-search-form]');
