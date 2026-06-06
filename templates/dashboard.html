@@ -146,6 +146,7 @@
     </section>
     {% endif %}
 
+    {% if not (user_info.role == 'student' and student_cockpit) %}
     <section class="dashboard-hero dashboard-reveal" aria-label="首页总览">
         <div class="dashboard-hero__content">
             <div class="dashboard-hero__topline">
@@ -192,6 +193,7 @@
             </div>
         </div>
     </section>
+    {% endif %}
 
     <section class="dashboard-main">
         <div class="dashboard-main__primary">

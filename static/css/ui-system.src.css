@@ -40136,3 +40136,30 @@ body.has-teaching-session-modal {
         transform: none;
     }
 }
+
+/* ==========================================================================
+   Dashboard hierarchy pass (2026-06): subordinate the secondary rail so the
+   primary column (cockpit + class list) clearly leads the eye. The rail
+   section titles previously rendered at the same 1.35rem weight as the main
+   column headings, leaving no clear focal point.
+   ========================================================================== */
+.dashboard-main__rail .dashboard-panel__header {
+    margin-bottom: 12px;
+}
+
+.dashboard-main__rail .dashboard-panel__header h2 {
+    font-size: 1.04rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.dashboard-main__rail .dashboard-panel__header p {
+    font-size: 0.84rem;
+    line-height: 1.6;
+    color: var(--text-muted, var(--text-secondary));
+}
+
+/* Give the focal cockpit a touch more separation from the content below. */
+.student-cockpit {
+    margin-bottom: 4px;
+}
