@@ -11,6 +11,7 @@ from classroom_app.dependencies import get_current_user
 from classroom_app.frontend_assets import VITE_MANIFEST_PATH
 from classroom_app.routers import ui as ui_router
 from classroom_app.routers.ui_parts import assignment_pages as ui_assignment_pages
+from classroom_app.routers.ui_parts import common as ui_common
 from classroom_app.routers.ui_parts import classroom as ui_classroom
 
 
@@ -224,6 +225,24 @@ def _authenticated_client(user: dict):
             app.dependency_overrides[get_current_user] = previous_override
 
 
+class _FakeScalarCursor:
+    def __init__(self, row):
+        self._row = row
+
+    def fetchone(self):
+        return self._row
+
+
+class _FakeScalarConnection:
+    def __init__(self, row):
+        self._row = row
+        self.executed = []
+
+    def execute(self, sql, params=()):
+        self.executed.append((sql, params))
+        return _FakeScalarCursor(self._row)
+
+
 class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
     def setUp(self):
         if not VITE_MANIFEST_PATH.is_file():
@@ -265,6 +284,23 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
             payload = message_summary.json()
             self.assertIn("unread_total", payload["summary"])
             self.assertIn("latest_unread", payload)
+
+    def test_manage_count_reader_accepts_postgres_dict_count_rows(self):
+        conn = _FakeScalarConnection({"count": "9"})
+
+        value = ui_common._query_count(conn, "SELECT COUNT(*) FROM courses WHERE created_by_teacher_id = ?", (1,))
+
+        self.assertEqual(9, value)
+
+    def test_manage_workflow_page_renders_for_authenticated_teacher(self):
+        with _authenticated_client(self.teacher) as client:
+            response = client.get("/manage", follow_redirects=False)
+
+        self.assertEqual(200, response.status_code)
+        html = response.text
+        self.assertIn("workflowStageTrack", html)
+        self.assertIn("data-teacher-onboarding-open", html)
+        self.assertNotIn("login_required", html)
 
     def test_student_assignment_form_injects_submit_sync_without_removing_legacy_submission_flow(self):
         fixture = _load_student_assignment_form_fixture()

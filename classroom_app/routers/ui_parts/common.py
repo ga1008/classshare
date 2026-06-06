@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from datetime import datetime
 import json
 import re
@@ -278,6 +279,32 @@ def _safe_int(value: Any) -> int:
         return 0
 
 
+def _row_first_value(row: Any, default: Any = 0) -> Any:
+    if row is None:
+        return default
+    if isinstance(row, Mapping):
+        for key in ("row_count", "count", "total", "cnt"):
+            if key in row:
+                return row[key]
+        return next(iter(row.values()), default)
+    keys = getattr(row, "keys", None)
+    if callable(keys):
+        row_keys = list(keys())
+        for key in ("row_count", "count", "total", "cnt"):
+            if key in row_keys:
+                return row[key]
+        if row_keys:
+            return row[row_keys[0]]
+    try:
+        return row[0]
+    except (IndexError, KeyError, TypeError):
+        return default
+
+
+def _query_count(conn, sql: str, params: tuple[Any, ...] = ()) -> int:
+    return _safe_int(_row_first_value(conn.execute(sql, params).fetchone()))
+
+
 def _plain_feedback_preview(markdown: Any, limit: int = 96) -> str:
     text = str(markdown or "")
     if not text.strip():
@@ -332,7 +359,7 @@ def _attach_teacher_assignment_card_metrics(
             """,
             (classroom.get("class_id"),),
         ).fetchone()
-        total_students = _safe_int(count_row[0] if count_row else 0)
+        total_students = _safe_int(_row_first_value(count_row))
 
     assignment_ids = [_safe_int(item.get("id")) for item in assignments if item.get("id") is not None]
     assignment_ids = [assignment_id for assignment_id in assignment_ids if assignment_id > 0]
@@ -1115,11 +1142,11 @@ def _build_classroom_opening_workflow_snapshot(conn, teacher_id: int) -> dict:
     counts = {
         "semesters": len(semester_rows),
         "current_semesters": sum(1 for item in semester_rows if item.get("is_current")),
-        "courses": int(conn.execute(
+        "courses": _query_count(conn,
             "SELECT COUNT(*) FROM courses WHERE created_by_teacher_id = ?",
             (teacher_id,),
-        ).fetchone()[0] or 0),
-        "course_lessons": int(conn.execute(
+        ),
+        "course_lessons": _query_count(conn,
             """
             SELECT COUNT(*)
             FROM course_lessons lessons
@@ -1127,24 +1154,24 @@ def _build_classroom_opening_workflow_snapshot(conn, teacher_id: int) -> dict:
             WHERE c.created_by_teacher_id = ?
             """,
             (teacher_id,),
-        ).fetchone()[0] or 0),
-        "textbooks": int(conn.execute(
+        ),
+        "textbooks": _query_count(conn,
             "SELECT COUNT(*) FROM textbooks WHERE teacher_id = ?",
             (teacher_id,),
-        ).fetchone()[0] or 0),
-        "materials": int(conn.execute(
+        ),
+        "materials": _query_count(conn,
             "SELECT COUNT(*) FROM course_materials WHERE teacher_id = ? AND name != '.git'",
             (teacher_id,),
-        ).fetchone()[0] or 0),
-        "classes": int(conn.execute(
+        ),
+        "classes": _query_count(conn,
             "SELECT COUNT(*) FROM classes WHERE created_by_teacher_id = ?",
             (teacher_id,),
-        ).fetchone()[0] or 0),
-        "offerings": int(conn.execute(
+        ),
+        "offerings": _query_count(conn,
             "SELECT COUNT(*) FROM class_offerings WHERE teacher_id = ?",
             (teacher_id,),
-        ).fetchone()[0] or 0),
-        "ai_configs": int(conn.execute(
+        ),
+        "ai_configs": _query_count(conn,
             """
             SELECT COUNT(*)
             FROM ai_class_configs cfg
@@ -1152,7 +1179,7 @@ def _build_classroom_opening_workflow_snapshot(conn, teacher_id: int) -> dict:
             WHERE o.teacher_id = ?
             """,
             (teacher_id,),
-        ).fetchone()[0] or 0),
+        ),
     }
 
     def status_for(ready: bool, partial: bool = False, optional: bool = False) -> str:
@@ -1450,37 +1477,37 @@ def _build_manage_workflow_snapshot(conn, teacher_id: int) -> dict:
     semester_rows = [serialize_semester_row(row) for row in load_teacher_semester_rows(conn, teacher_id)]
 
     counts = {
-        "classes": int(conn.execute(
+        "classes": _query_count(conn,
             "SELECT COUNT(*) FROM classes WHERE created_by_teacher_id = ?",
             (teacher_id,),
-        ).fetchone()[0] or 0),
-        "courses": int(conn.execute(
+        ),
+        "courses": _query_count(conn,
             "SELECT COUNT(*) FROM courses WHERE created_by_teacher_id = ?",
             (teacher_id,),
-        ).fetchone()[0] or 0),
-        "textbooks": int(conn.execute(
+        ),
+        "textbooks": _query_count(conn,
             "SELECT COUNT(*) FROM textbooks WHERE teacher_id = ?",
             (teacher_id,),
-        ).fetchone()[0] or 0),
-        "exams": int(conn.execute(
+        ),
+        "exams": _query_count(conn,
             "SELECT COUNT(*) FROM exam_papers WHERE teacher_id = ?",
             (teacher_id,),
-        ).fetchone()[0] or 0),
-        "materials": int(conn.execute(
+        ),
+        "materials": _query_count(conn,
             "SELECT COUNT(*) FROM course_materials WHERE teacher_id = ? AND name != '.git'",
             (teacher_id,),
-        ).fetchone()[0] or 0),
+        ),
         "signatures": int((build_signature_dashboard_context(
             conn,
             {"id": teacher_id, "role": "teacher"},
         ).get("signature_stats") or {}).get("visible_total") or 0),
         "semesters": len(semester_rows),
         "current_semesters": sum(1 for item in semester_rows if item.get("is_current")),
-        "offerings": int(conn.execute(
+        "offerings": _query_count(conn,
             "SELECT COUNT(*) FROM class_offerings WHERE teacher_id = ?",
             (teacher_id,),
-        ).fetchone()[0] or 0),
-        "ai_configs": int(conn.execute(
+        ),
+        "ai_configs": _query_count(conn,
             """
             SELECT COUNT(*)
             FROM ai_class_configs cfg
@@ -1488,7 +1515,7 @@ def _build_manage_workflow_snapshot(conn, teacher_id: int) -> dict:
             WHERE o.teacher_id = ?
             """,
             (teacher_id,),
-        ).fetchone()[0] or 0),
+        ),
     }
 
     resource_definitions = [
