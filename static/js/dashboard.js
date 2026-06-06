@@ -23,6 +23,28 @@ function toNumber(value) {
 // behaviour instead of triggering whole-card navigation.
 const INTERACTIVE_CARD_CHILD = 'a, button, input, select, textarea, label, [role="button"], [data-timeline-axis], [contenteditable="true"]';
 
+// Short labels for the agenda event types shown on each session row.
+const AGENDA_KIND_LABELS = {
+    class: '上课',
+    invigilation: '监考',
+    exam: '考试',
+    assignment: '作业',
+    todo: '待办',
+};
+
+function readAgendaEvents(root) {
+    const node = root.querySelector('[data-dashboard-agenda-events]');
+    if (!node) {
+        return [];
+    }
+    try {
+        const parsed = JSON.parse(node.textContent || '[]');
+        return Array.isArray(parsed) ? parsed.filter((item) => item && item.date_full_label) : [];
+    } catch (error) {
+        return [];
+    }
+}
+
 /**
  * Make each offering card fully clickable: a click (or Enter/Space when the
  * card is focused) anywhere outside an interactive child navigates to the
@@ -55,6 +77,7 @@ function setupOfferingCardNavigation(cards) {
 if (root) {
     const cards = Array.from(root.querySelectorAll('[data-offering-card]'));
     setupOfferingCardNavigation(cards);
+    const agendaEvents = readAgendaEvents(root);
     const filterButtons = Array.from(root.querySelectorAll('[data-filter-value]'));
     const groupModeButtons = Array.from(root.querySelectorAll('[data-group-mode]'));
     const searchForm = root.querySelector('[data-dashboard-search-form]');
@@ -495,9 +518,12 @@ if (root) {
     }
 
     function buildTimelineSession(item) {
+        const kind = item.kind || 'class';
         const session = document.createElement('a');
         session.className = `dashboard-agenda-session is-${item.status || 'upcoming'}`;
+        session.dataset.kind = kind;
         session.href = item.href || '#';
+
         const time = document.createElement('span');
         time.className = 'dashboard-agenda-session__time';
         time.textContent = item.hour_label || '时间待定';
@@ -505,15 +531,23 @@ if (root) {
             time.title = item.time_hint;
             session.classList.add('has-hint');
         }
+
         const body = document.createElement('span');
         body.className = 'dashboard-agenda-session__body';
+        const titleRow = document.createElement('span');
+        titleRow.className = 'dashboard-agenda-session__titlerow';
+        const chip = document.createElement('span');
+        chip.className = `dashboard-agenda-session__kind kind-${kind}`;
+        chip.textContent = AGENDA_KIND_LABELS[kind] || '日程';
         const title = document.createElement('strong');
         title.textContent = item.title || item.course_name || '课堂安排';
+        titleRow.append(chip, title);
         const meta = document.createElement('span');
         meta.className = 'dashboard-agenda-session__meta';
-        meta.textContent = [item.course_name, item.class_name, item.week_label, item.section_label]
-            .filter(Boolean).join(' · ');
-        body.append(title, meta);
+        meta.textContent = item.subtitle
+            || [item.course_name, item.class_name, item.week_label, item.section_label].filter(Boolean).join(' · ');
+        body.append(titleRow, meta);
+
         const go = document.createElement('span');
         go.className = 'dashboard-agenda-session__go';
         go.setAttribute('aria-hidden', 'true');
@@ -564,10 +598,11 @@ if (root) {
     }
 
     function renderTimelineGroups(visibleCards) {
-        const timelineItems = visibleCards.flatMap((card) => {
+        const cardItems = visibleCards.flatMap((card) => {
             const state = cardState.get(card);
-            return (state?.timelineItems || []).map((item) => ({ ...item, card }));
-        }).sort(compareTimelineItems);
+            return (state?.timelineItems || []).map((item) => ({ ...item, kind: item.kind || 'class', card }));
+        });
+        const timelineItems = [...cardItems, ...agendaEvents].sort(compareTimelineItems);
 
         if (!timelineItems.length) {
             const emptyShell = document.createElement('div');
@@ -599,9 +634,9 @@ if (root) {
         const summary = document.createElement('div');
         summary.className = 'dashboard-agenda__summary';
         const summaryTitle = document.createElement('strong');
-        summaryTitle.textContent = hasToday ? '今天有课' : '已按上课时间排好';
+        summaryTitle.textContent = hasToday ? '今天有安排' : '日程已按时间排好';
         const summaryNote = document.createElement('span');
-        summaryNote.textContent = `已结束 ${pastSessionCount} 节 · 今后 ${aheadSessionCount} 节`;
+        summaryNote.textContent = `已结束 ${pastSessionCount} 项 · 今后 ${aheadSessionCount} 项`;
         summary.append(summaryTitle, summaryNote);
         head.appendChild(summary);
         const todayBtn = document.createElement('button');
@@ -627,8 +662,8 @@ if (root) {
             const syncPast = () => {
                 toggle.setAttribute('aria-expanded', String(timelinePastExpanded));
                 toggle.textContent = timelinePastExpanded
-                    ? `收起已结束的 ${pastSessionCount} 节课`
-                    : `查看已结束的 ${pastSessionCount} 节课（${pastDays.length} 天）`;
+                    ? `收起已结束的 ${pastSessionCount} 项`
+                    : `查看已结束的 ${pastSessionCount} 项（${pastDays.length} 天）`;
                 pastBody.hidden = !timelinePastExpanded;
                 pastWrap.classList.toggle('is-open', timelinePastExpanded);
             };

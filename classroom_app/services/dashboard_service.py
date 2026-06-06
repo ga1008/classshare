@@ -708,6 +708,7 @@ def _build_teacher_timeline_item(
 
     return {
         "id": str(session.get("session_id") or session.get("id") or f"fallback-{offering.get('id')}"),
+        "kind": "class",
         "offering_id": _dashboard_int(offering.get("id")),
         "course_name": str(offering.get("course_name") or "未命名课程"),
         "class_name": str(offering.get("class_name") or "未命名班级"),
@@ -829,6 +830,175 @@ def _attach_teacher_timeline_items(
                 _dashboard_sort_text(item.get("class_name")),
             )
         )
+
+
+_AGENDA_TODO_KIND_BY_SOURCE = {
+    "lesson": "class",
+    "assignment": "assignment",
+    "academic_course_exam": "exam",
+    "academic_exam": "exam",
+    "exam": "exam",
+    "stage": "todo",
+    "manual": "todo",
+}
+
+_AGENDA_FALLBACK_TITLE = {
+    "invigilation": "监考安排",
+    "exam": "考试安排",
+    "assignment": "作业",
+    "todo": "待办事项",
+    "class": "课堂安排",
+}
+
+
+def _dashboard_agenda_event(
+    *,
+    kind: str,
+    when: datetime,
+    title: Any,
+    subtitle: Any,
+    href: Any,
+    today: date,
+) -> dict[str, Any]:
+    """Normalise any dated item into the shape the agenda renderer expects."""
+    event_date = when.date()
+    has_time = (when.hour, when.minute) != (0, 0)
+    if event_date < today:
+        status = "completed"
+    elif event_date == today:
+        status = "current"
+    else:
+        status = "upcoming"
+    clean_title = str(title or "").strip() or _AGENDA_FALLBACK_TITLE.get(kind, "日程安排")
+    return {
+        "kind": kind,
+        "title": clean_title,
+        "subtitle": str(subtitle or "").strip(),
+        "href": str(href or "#").strip() or "#",
+        "status": status,
+        "starts_at": when.isoformat(timespec="minutes"),
+        "timeline_key": f"{event_date.isoformat()} {when.hour:02d}:{when.minute:02d}",
+        "date_full_label": event_date.isoformat(),
+        "date_label": f"{event_date.month}月{event_date.day}日",
+        "year_label": f"{event_date.year}年",
+        "hour_label": f"{when.hour:02d}:{when.minute:02d}" if has_time else "全天",
+        "weekday_label": _dashboard_weekday_label(event_date.weekday()),
+        "relative_label": _dashboard_relative_day_label(event_date, today),
+    }
+
+
+def _build_teacher_calendar_agenda_events(
+    conn: sqlite3.Connection,
+    *,
+    teacher_id: int,
+    today: date,
+    now: datetime,
+) -> list[dict[str, Any]]:
+    """Invigilation / exam / personal-todo events from the teacher calendar."""
+    if not teacher_id:
+        return []
+    try:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM teacher_calendar_events
+            WHERE teacher_id = ?
+              AND status = 'active'
+              AND deleted_at IS NULL
+              AND COALESCE(starts_at, due_at, created_at) >= ?
+            ORDER BY COALESCE(starts_at, due_at, created_at), id
+            LIMIT 200
+            """,
+            (int(teacher_id), (now - timedelta(days=14)).isoformat(timespec="minutes")),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+
+    events: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        when = _dashboard_parse_datetime(
+            item.get("starts_at") or item.get("due_at") or item.get("created_at")
+        )
+        if when is None:
+            continue
+        source_type = str(item.get("source_type") or "")
+        if source_type == "academic_invigilation":
+            kind = "invigilation"
+        elif source_type in {"academic_course_exam", "academic_exam"}:
+            kind = "exam"
+        else:
+            kind = "todo"
+        metadata = _dashboard_safe_json(item.get("metadata_json"))
+        subtitle = " · ".join(
+            part
+            for part in (
+                str(metadata.get("course_name") or "").strip(),
+                str(metadata.get("teaching_class_name") or "").strip(),
+                str(item.get("location") or "").strip(),
+            )
+            if part
+        )
+        title = re.sub(r"^教务(?:考试|监考)[：:]\s*", "", str(item.get("title") or "")).strip()
+        events.append(
+            _dashboard_agenda_event(
+                kind=kind,
+                when=when,
+                title=title,
+                subtitle=subtitle,
+                href=item.get("link_url") or "/dashboard#dashboard-semester",
+                today=today,
+            )
+        )
+    return events
+
+
+def _build_agenda_events_from_todos(
+    todo_items: list[dict[str, Any]],
+    *,
+    today: date,
+    now: datetime,
+) -> list[dict[str, Any]]:
+    """Exam / assignment / lesson / manual-todo events from a todo overview."""
+    del now
+    events: list[dict[str, Any]] = []
+    for item in todo_items or []:
+        if item.get("is_completed"):
+            continue
+        source_type = str(item.get("source_type") or "")
+        kind = _AGENDA_TODO_KIND_BY_SOURCE.get(source_type)
+        if kind is None:
+            kind = "todo" if item.get("is_manual") else None
+        if kind is None:
+            continue
+        if kind in {"class", "exam"}:
+            raw = item.get("start_at") or item.get("effective_start_at") or item.get("due_at")
+        else:
+            raw = item.get("due_at") or item.get("effective_end_at") or item.get("effective_start_at")
+        when = _dashboard_parse_datetime(raw)
+        if when is None:
+            continue
+        if item.get("no_deadline") and kind not in {"class", "exam"}:
+            continue
+        subtitle = " · ".join(
+            part
+            for part in (
+                str(item.get("offering_label") or "").strip(),
+                str(item.get("subtitle") or "").strip(),
+            )
+            if part
+        )
+        events.append(
+            _dashboard_agenda_event(
+                kind=kind,
+                when=when,
+                title=item.get("title"),
+                subtitle=subtitle,
+                href=item.get("link_url") or "#",
+                today=today,
+            )
+        )
+    return events
 
 
 def build_dashboard_context(
@@ -1256,6 +1426,12 @@ def _build_teacher_dashboard_context(
         },
         "class_offerings": enriched_offerings,
         "dashboard_semester_calendar": semester_calendar,
+        "dashboard_agenda_events": _build_teacher_calendar_agenda_events(
+            conn,
+            teacher_id=teacher_id,
+            today=china_today(),
+            now=china_now().replace(tzinfo=None),
+        ),
         "dashboard_student_cockpit": None,
         "student_security_summary": None,
     }
@@ -2220,6 +2396,11 @@ def _build_student_dashboard_context(
         },
         "class_offerings": enriched_offerings,
         "dashboard_semester_calendar": semester_calendar,
+        "dashboard_agenda_events": _build_agenda_events_from_todos(
+            dashboard_todo_items,
+            today=china_today(),
+            now=china_now().replace(tzinfo=None),
+        ),
         "dashboard_student_cockpit": student_cockpit,
         "dashboard_feedback_review_summary": feedback_review_summary,
         "student_security_summary": student_security_summary,

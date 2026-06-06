@@ -48,6 +48,7 @@
     data-recent-activity-days="{{ dashboard_recent_activity_days|default(14) }}"
     data-dashboard-role="{{ user_info.role }}"
 >
+    <script type="application/json" data-dashboard-agenda-events>{{ dashboard_agenda_events|default([])|tojson }}</script>
     {% set student_cockpit = dashboard_student_cockpit|default(None) %}
     {% if user_info.role == 'student' and student_cockpit %}
     <section class="student-cockpit dashboard-reveal" aria-labelledby="student-cockpit-title">
@@ -250,6 +251,14 @@
                             <button type="button" class="dashboard-group-mode-btn" data-group-mode="department" aria-pressed="true">系别班级</button>
                             <button type="button" class="dashboard-group-mode-btn" data-group-mode="course" aria-pressed="false">课程</button>
                             <button type="button" class="dashboard-group-mode-btn" data-group-mode="timeline" aria-pressed="false">时间轴</button>
+                        </div>
+                    </div>
+                    {% elif user_info.role == 'student' %}
+                    <div class="dashboard-organization-toolbar" aria-label="课堂展示方式">
+                        <span class="dashboard-organization-toolbar__label">展示方式</span>
+                        <div class="dashboard-organization-switch" data-group-mode-tabs>
+                            <button type="button" class="dashboard-group-mode-btn" data-group-mode="flat" aria-pressed="true">课程列表</button>
+                            <button type="button" class="dashboard-group-mode-btn" data-group-mode="timeline" aria-pressed="false">我的日程</button>
                         </div>
                     </div>
                     {% endif %}

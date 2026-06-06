@@ -40520,3 +40520,58 @@ body.has-teaching-session-modal {
 .dashboard-agenda__past-body[hidden] {
     display: none;
 }
+
+/* Agenda session type chips (class / invigilation / exam / assignment / todo). */
+.dashboard-agenda-session__titlerow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.dashboard-agenda-session__titlerow strong {
+    min-width: 0;
+}
+
+.dashboard-agenda-session__kind {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 8px;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 750;
+    letter-spacing: 0.02em;
+    background: rgba(148, 163, 184, 0.18);
+    color: #475569;
+}
+
+.dashboard-agenda-session__kind.kind-invigilation {
+    background: rgba(245, 158, 11, 0.16);
+    color: #b45309;
+}
+
+.dashboard-agenda-session__kind.kind-exam {
+    background: rgba(239, 68, 68, 0.14);
+    color: #dc2626;
+}
+
+.dashboard-agenda-session__kind.kind-assignment {
+    background: rgba(139, 92, 246, 0.16);
+    color: #7c3aed;
+}
+
+.dashboard-agenda-session__kind.kind-todo {
+    background: rgba(14, 165, 233, 0.16);
+    color: #0284c7;
+}
+
+.dashboard-agenda-session__kind.kind-class {
+    background: rgba(var(--dashboard-accent-rgb, 37, 99, 235), 0.12);
+    color: var(--dashboard-accent, #2563eb);
+}
+
+/* Completed rows mute their chip alongside the row. */
+.dashboard-agenda-session.is-completed .dashboard-agenda-session__kind {
+    filter: grayscale(0.3);
+}
