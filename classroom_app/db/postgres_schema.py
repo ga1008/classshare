@@ -9,6 +9,115 @@ from .sql import quote_identifier
 
 POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
+        "idx_teacher_academic_system_credentials_unique_auth",
+        "teacher_academic_system_credentials",
+        ("teacher_id", "school_code", "auth_method"),
+    ),
+    (
+        "idx_teacher_academic_course_sync_items_unique_schedule",
+        "teacher_academic_course_sync_items",
+        (
+            "teacher_id",
+            "semester_id",
+            "course_code",
+            "teaching_class_name",
+            "weeks_text",
+            "weekday",
+            "section_text",
+            "location",
+        ),
+    ),
+    (
+        "idx_teacher_academic_course_occurrences_unique_session",
+        "teacher_academic_course_session_occurrences",
+        (
+            "teacher_id",
+            "semester_id",
+            "course_id",
+            "teaching_class_name",
+            "session_date",
+            "section_text",
+            "location",
+        ),
+    ),
+    (
+        "idx_teacher_academic_roster_items_unique_teaching_class",
+        "teacher_academic_roster_sync_items",
+        ("teacher_id", "school_code", "academic_year", "academic_term", "teaching_class_id"),
+    ),
+    (
+        "idx_teacher_academic_roster_memberships_unique_student",
+        "teacher_academic_roster_memberships",
+        (
+            "teacher_id",
+            "school_code",
+            "academic_year",
+            "academic_term",
+            "teaching_class_id",
+            "student_number",
+        ),
+    ),
+    (
+        "idx_teacher_academic_invigilation_items_unique_key",
+        "teacher_academic_invigilation_items",
+        ("teacher_id", "school_code", "academic_year", "academic_term", "invigilation_key"),
+    ),
+    (
+        "idx_teacher_academic_course_exam_items_unique_key",
+        "teacher_academic_course_exam_items",
+        ("teacher_id", "school_code", "academic_year", "academic_term", "exam_key"),
+    ),
+    (
+        "idx_teacher_academic_exam_roster_items_unique_course",
+        "teacher_academic_exam_roster_items",
+        ("teacher_id", "school_code", "academic_year", "academic_term", "exam_course_key"),
+    ),
+    (
+        "idx_teacher_academic_exam_roster_students_unique_student",
+        "teacher_academic_exam_roster_students",
+        ("exam_roster_item_id", "student_number"),
+    ),
+    (
+        "idx_teacher_academic_teaching_places_unique_place",
+        "teacher_academic_teaching_places",
+        ("teacher_id", "school_code", "source", "place_key"),
+    ),
+    (
+        "idx_teacher_smart_classroom_credentials_unique_auth",
+        "teacher_smart_classroom_credentials",
+        ("teacher_id", "platform_code", "auth_method"),
+    ),
+    (
+        "idx_smart_classroom_schedule_items_unique_remote",
+        "smart_classroom_schedule_items",
+        ("teacher_id", "platform_code", "remote_schedule_id"),
+    ),
+    (
+        "idx_smart_classroom_checkin_sessions_unique_remote",
+        "smart_classroom_checkin_sessions",
+        ("teacher_id", "platform_code", "remote_checkin_id"),
+    ),
+    (
+        "idx_smart_classroom_checkin_students_unique_student",
+        "smart_classroom_checkin_students",
+        ("checkin_session_id", "student_number"),
+    ),
+    (
+        "idx_smart_attendance_daily_tasks_unique_task",
+        "smart_attendance_daily_tasks",
+        ("class_offering_id", "teacher_id", "task_type", "task_date"),
+    ),
+    (
+        "idx_smart_attendance_student_advice_unique_fingerprint",
+        "smart_attendance_student_advice",
+        ("class_offering_id", "student_id", "fingerprint"),
+    ),
+    (
+        "idx_class_offering_sessions_unique_order",
+        "class_offering_sessions",
+        ("class_offering_id", "order_index"),
+    ),
+    (
         "idx_learning_material_progress_unique_material",
         "learning_material_progress",
         ("class_offering_id", "student_id", "material_id"),

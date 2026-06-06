@@ -128,6 +128,30 @@ class PostgresSchemaValidationTests(unittest.TestCase):
         with self.assertRaises(DatabaseProgrammingError):
             ensure_postgres_runtime_constraints(conn)
 
+    def test_runtime_constraints_cover_integration_upsert_targets(self):
+        runtime_index_names = {index_name for index_name, _table, _columns in POSTGRES_RUNTIME_UNIQUE_INDEXES}
+        expected = {
+            "idx_teacher_academic_system_credentials_unique_auth",
+            "idx_teacher_academic_course_sync_items_unique_schedule",
+            "idx_teacher_academic_course_occurrences_unique_session",
+            "idx_teacher_academic_roster_items_unique_teaching_class",
+            "idx_teacher_academic_roster_memberships_unique_student",
+            "idx_teacher_academic_invigilation_items_unique_key",
+            "idx_teacher_academic_course_exam_items_unique_key",
+            "idx_teacher_academic_exam_roster_items_unique_course",
+            "idx_teacher_academic_exam_roster_students_unique_student",
+            "idx_teacher_academic_teaching_places_unique_place",
+            "idx_teacher_smart_classroom_credentials_unique_auth",
+            "idx_smart_classroom_schedule_items_unique_remote",
+            "idx_smart_classroom_checkin_sessions_unique_remote",
+            "idx_smart_classroom_checkin_students_unique_student",
+            "idx_smart_attendance_daily_tasks_unique_task",
+            "idx_smart_attendance_student_advice_unique_fingerprint",
+            "idx_class_offering_sessions_unique_order",
+        }
+
+        self.assertTrue(expected.issubset(runtime_index_names))
+
     def test_required_schema_covers_all_static_sqlite_schema_tables(self):
         repo_root = Path(__file__).resolve().parents[1]
         schema_tables: set[str] = set()
