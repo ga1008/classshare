@@ -37069,12 +37069,10 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 }
 
 .classroom-page .resource-workspace-sync__metric small {
-    overflow: hidden;
     color: var(--text-muted);
     font-size: 0.7rem;
     font-weight: 780;
     line-height: 1.1;
-    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
@@ -40574,4 +40572,30 @@ body.has-teaching-session-modal {
 /* Completed rows mute their chip alongside the row. */
 .dashboard-agenda-session.is-completed .dashboard-agenda-session__kind {
     filter: grayscale(0.3);
+}
+
+/* ==========================================================================
+   Classroom activity dock polish (2026-06): calmer empty states, a clearer
+   primary action for students, and resource metric labels that never clip.
+   ========================================================================== */
+
+/* Resource metric labels: let short labels breathe instead of clipping. */
+.classroom-page .resource-workspace-sync__metric {
+    grid-template-columns: auto minmax(0, 1fr);
+}
+.classroom-page .resource-workspace-sync__metric small {
+    overflow: visible;
+}
+
+/* The student "我的课堂状态" card is their primary action while idle — give it
+   a gentle accent so it reads as actionable, not just another empty card. */
+.classroom-page .interaction-side-card:has(.interaction-signal-grid) {
+    border-color: rgba(13, 148, 136, 0.32);
+    background:
+        linear-gradient(180deg, rgba(240, 253, 250, 0.7), rgba(255, 255, 255, 0.96));
+    box-shadow: inset 3px 0 0 rgba(13, 148, 136, 0.55);
+}
+
+.classroom-page .interaction-side-card:has(.interaction-signal-grid) .interaction-side-head strong {
+    color: #0f766e;
 }

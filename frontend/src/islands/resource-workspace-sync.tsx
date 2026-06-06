@@ -66,10 +66,10 @@ function ResourceWorkspace({ snapshot }: { snapshot: ResourceWorkspaceSnapshot }
       </div>
 
       <div className="resource-workspace-sync__metrics">
-        <Metric icon={<FileText size={14} aria-hidden="true" />} label="有详情" value={snapshot.withDescription} tone="primary" />
-        <Metric icon={<Link2 size={14} aria-hidden="true" />} label="有外链" value={snapshot.withOriginalLink} tone="link" />
+        <Metric icon={<FileText size={14} aria-hidden="true" />} label="详情" value={snapshot.withDescription} tone="primary" />
+        <Metric icon={<Link2 size={14} aria-hidden="true" />} label="外链" value={snapshot.withOriginalLink} tone="link" />
         <Metric icon={<Download size={14} aria-hidden="true" />} label="受限" value={snapshot.blockedDownloads} tone={snapshot.blockedDownloads > 0 ? 'warning' : 'success'} />
-        <Metric icon={<UploadCloud size={14} aria-hidden="true" />} label="上传中" value={snapshot.upload.activeCount} tone={uploadActive ? 'primary' : 'neutral'} />
+        <Metric icon={<UploadCloud size={14} aria-hidden="true" />} label="上传" value={snapshot.upload.activeCount} tone={uploadActive ? 'primary' : 'neutral'} />
       </div>
 
       <div className="resource-workspace-sync__actions" aria-label="课堂资源操作">

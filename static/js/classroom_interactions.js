@@ -500,7 +500,7 @@ function renderSnapshot(snapshot, state) {
                 </section>
             </div>
             <div class="interaction-detail">
-                ${renderActivityDetail(snapshot, currentActivity)}
+                ${currentActivity ? renderActivityDetail(snapshot, currentActivity) : ''}
                 ${renderSignals(snapshot)}
             </div>
         </div>
