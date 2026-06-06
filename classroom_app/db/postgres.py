@@ -164,6 +164,39 @@ class LanSharePostgresConnection:
         return getattr(self._raw_connection, name)
 
 
+class SqliteCompatibleRow(dict):
+    """Dict row that also supports sqlite3.Row-style integer indexing."""
+
+    def __init__(self, columns: Sequence[str], values: Sequence[Any]):
+        self._columns = tuple(columns)
+        self._values = tuple(values)
+        super().__init__(zip(self._columns, self._values))
+
+    def __getitem__(self, key: Any) -> Any:
+        if isinstance(key, int):
+            return self._values[key]
+        return super().__getitem__(key)
+
+
+def _cursor_column_name(column: Any) -> str:
+    name = getattr(column, "name", None)
+    if name is not None:
+        return str(name)
+    try:
+        return str(column[0])
+    except (IndexError, TypeError):
+        return str(column)
+
+
+def sqlite_compatible_dict_row(cursor: Any):
+    columns = tuple(_cursor_column_name(column) for column in (cursor.description or ()))
+
+    def make_row(values: Sequence[Any]) -> SqliteCompatibleRow:
+        return SqliteCompatibleRow(columns, values)
+
+    return make_row
+
+
 def _session_timeout_value(milliseconds: int) -> str:
     return f"{max(0, int(milliseconds))}ms"
 
@@ -189,7 +222,7 @@ def connect_postgres(*, driver: Any | None = None, row_factory: Any | None = Non
     database_url = validate_database_url(config.DATABASE_URL)
     psycopg_driver = driver or load_psycopg_driver()
     if row_factory is None:
-        row_factory = getattr(getattr(psycopg_driver, "rows", None), "dict_row", None)
+        row_factory = sqlite_compatible_dict_row
     try:
         raw_connection = psycopg_driver.connect(
             database_url,

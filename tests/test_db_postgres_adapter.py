@@ -7,6 +7,7 @@ from classroom_app.db.postgres import (
     LanSharePostgresConnection,
     connect_postgres,
     qmark_to_psycopg,
+    sqlite_compatible_dict_row,
     validate_database_url,
 )
 
@@ -76,6 +77,15 @@ class FakeDriver:
         if self.fail:
             raise RuntimeError("boom")
         return self.raw_connection
+
+
+class FakeColumn:
+    def __init__(self, name):
+        self.name = name
+
+
+class FakeDescriptionCursor:
+    description = (FakeColumn("id"), FakeColumn("name"))
 
 
 class PostgresAdapterTests(unittest.TestCase):
@@ -148,6 +158,17 @@ class PostgresAdapterTests(unittest.TestCase):
         self.assertEqual(12, inserted_id)
         self.assertIn("RETURNING id", raw.execute_calls[0][0])
 
+    def test_sqlite_compatible_postgres_row_supports_key_and_index_access(self):
+        row_maker = sqlite_compatible_dict_row(FakeDescriptionCursor())
+
+        row = row_maker((12, "Teacher"))
+
+        self.assertEqual(12, row["id"])
+        self.assertEqual(12, row[0])
+        self.assertEqual("Teacher", row["name"])
+        self.assertEqual("Teacher", row[1])
+        self.assertEqual({"id": 12, "name": "Teacher"}, dict(row))
+
     def test_connect_postgres_applies_session_settings(self):
         original_url = config.DATABASE_URL
         raw = FakeRawConnection()
@@ -163,6 +184,7 @@ class PostgresAdapterTests(unittest.TestCase):
         self.assertEqual(("postgresql://user@db.example/lanshare",), connect_args)
         self.assertFalse(connect_kwargs["autocommit"])
         self.assertEqual(10, connect_kwargs["connect_timeout"])
+        self.assertIs(sqlite_compatible_dict_row, connect_kwargs["row_factory"])
         setting_names = [params[0] for sql, params in raw.execute_calls if sql.startswith("SELECT set_config")]
         self.assertIn("statement_timeout", setting_names)
         self.assertIn("lock_timeout", setting_names)
