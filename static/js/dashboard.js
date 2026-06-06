@@ -97,6 +97,7 @@ if (root) {
         activeGroupMode = 'department';
     }
     let activeTimelineKey = '';
+    let timelinePastExpanded = false;
     let groupSectionSerial = 0;
     let isComposing = false;
     let searchTimerId = 0;
@@ -451,6 +452,117 @@ if (root) {
         offeringList.appendChild(board);
     }
 
+    function groupTimelineDays(items) {
+        const buckets = new Map();
+        items.forEach((item) => {
+            const key = item.date_full_label || String(item.starts_at || '').slice(0, 10);
+            if (!key) {
+                return;
+            }
+            if (!buckets.has(key)) {
+                buckets.set(key, {
+                    key,
+                    dateFull: key,
+                    dateLabel: item.date_label || '',
+                    weekdayLabel: item.weekday_label || '',
+                    yearLabel: item.year_label || getYearLabel(item.starts_at),
+                    relativeLabel: item.relative_label || '',
+                    items: [],
+                });
+            }
+            buckets.get(key).items.push(item);
+        });
+        const days = Array.from(buckets.values());
+        days.forEach((day) => day.items.sort(compareTimelineSession));
+        days.sort((a, b) => compareText(a.dateFull, b.dateFull));
+        return days;
+    }
+
+    function timelineDayStatus(day) {
+        const time = new Date(`${day.dateFull}T00:00:00`).getTime();
+        if (!Number.isFinite(time)) {
+            return 'future';
+        }
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        if (time < today) {
+            return 'past';
+        }
+        if (time === today) {
+            return 'current';
+        }
+        return 'future';
+    }
+
+    function buildTimelineSession(item) {
+        const session = document.createElement('a');
+        session.className = `dashboard-agenda-session is-${item.status || 'upcoming'}`;
+        session.href = item.href || '#';
+        const time = document.createElement('span');
+        time.className = 'dashboard-agenda-session__time';
+        time.textContent = item.hour_label || '时间待定';
+        if (item.time_hint) {
+            time.title = item.time_hint;
+            session.classList.add('has-hint');
+        }
+        const body = document.createElement('span');
+        body.className = 'dashboard-agenda-session__body';
+        const title = document.createElement('strong');
+        title.textContent = item.title || item.course_name || '课堂安排';
+        const meta = document.createElement('span');
+        meta.className = 'dashboard-agenda-session__meta';
+        meta.textContent = [item.course_name, item.class_name, item.week_label, item.section_label]
+            .filter(Boolean).join(' · ');
+        body.append(title, meta);
+        const go = document.createElement('span');
+        go.className = 'dashboard-agenda-session__go';
+        go.setAttribute('aria-hidden', 'true');
+        go.textContent = '进入';
+        session.append(time, body, go);
+        return session;
+    }
+
+    function buildTimelineDay(day) {
+        const status = timelineDayStatus(day);
+        const section = document.createElement('section');
+        section.className = `dashboard-agenda-day is-${status}`;
+        if (status === 'current') {
+            section.dataset.timelineToday = 'true';
+        }
+
+        const marker = document.createElement('span');
+        marker.className = 'dashboard-agenda-day__marker';
+        marker.setAttribute('aria-hidden', 'true');
+
+        const header = document.createElement('div');
+        header.className = 'dashboard-agenda-day__header';
+        const heading = document.createElement('h3');
+        const dateStrong = document.createElement('strong');
+        dateStrong.textContent = `${day.dateLabel} ${day.weekdayLabel}`.trim();
+        heading.appendChild(dateStrong);
+        const rel = (day.relativeLabel || '').trim();
+        if (rel) {
+            const relSpan = document.createElement('span');
+            relSpan.className = `dashboard-agenda-day__rel is-${status}`;
+            relSpan.textContent = rel;
+            heading.appendChild(relSpan);
+        }
+        const sub = document.createElement('p');
+        sub.textContent = [day.yearLabel, `${day.items.length} 节课`].filter(Boolean).join(' · ');
+        header.append(heading, sub);
+
+        const list = document.createElement('div');
+        list.className = 'dashboard-agenda-day__sessions';
+        day.items.forEach((item) => list.appendChild(buildTimelineSession(item)));
+
+        const body = document.createElement('div');
+        body.className = 'dashboard-agenda-day__body';
+        body.append(header, list);
+
+        section.append(marker, body);
+        return section;
+    }
+
     function renderTimelineGroups(visibleCards) {
         const timelineItems = visibleCards.flatMap((card) => {
             const state = cardState.get(card);
@@ -458,8 +570,8 @@ if (root) {
         }).sort(compareTimelineItems);
 
         if (!timelineItems.length) {
-            const shell = document.createElement('div');
-            shell.className = 'dashboard-timeline-shell';
+            const emptyShell = document.createElement('div');
+            emptyShell.className = 'dashboard-agenda dashboard-agenda--empty';
             const empty = document.createElement('div');
             empty.className = 'dashboard-timeline-empty';
             const title = document.createElement('strong');
@@ -467,216 +579,96 @@ if (root) {
             const copy = document.createElement('p');
             copy.textContent = '可以切换搜索或标签筛选，或在课堂管理里补齐首次上课日期、每周安排与课堂时间轴。';
             empty.append(title, copy);
-            shell.appendChild(empty);
-            offeringList.appendChild(shell);
+            emptyShell.appendChild(empty);
+            offeringList.appendChild(emptyShell);
             return;
         }
 
-        const groups = groupTimelineItems(timelineItems);
-        if (!groups.some((group) => group.key === activeTimelineKey)) {
-            activeTimelineKey = chooseTimelineKey(groups);
+        const days = groupTimelineDays(timelineItems);
+        const pastDays = days.filter((day) => timelineDayStatus(day) === 'past');
+        const aheadDays = days.filter((day) => timelineDayStatus(day) !== 'past');
+        const pastSessionCount = pastDays.reduce((sum, day) => sum + day.items.length, 0);
+        const aheadSessionCount = aheadDays.reduce((sum, day) => sum + day.items.length, 0);
+        const hasToday = aheadDays.some((day) => timelineDayStatus(day) === 'current');
+
+        const shell = document.createElement('div');
+        shell.className = 'dashboard-agenda';
+
+        const head = document.createElement('div');
+        head.className = 'dashboard-agenda__head';
+        const summary = document.createElement('div');
+        summary.className = 'dashboard-agenda__summary';
+        const summaryTitle = document.createElement('strong');
+        summaryTitle.textContent = hasToday ? '今天有课' : '已按上课时间排好';
+        const summaryNote = document.createElement('span');
+        summaryNote.textContent = `已结束 ${pastSessionCount} 节 · 今后 ${aheadSessionCount} 节`;
+        summary.append(summaryTitle, summaryNote);
+        head.appendChild(summary);
+        const todayBtn = document.createElement('button');
+        todayBtn.type = 'button';
+        todayBtn.className = 'dashboard-agenda__today-btn';
+        todayBtn.textContent = '回到今天';
+        head.appendChild(todayBtn);
+        shell.appendChild(head);
+
+        const track = document.createElement('div');
+        track.className = 'dashboard-agenda__track';
+
+        if (pastDays.length) {
+            const pastWrap = document.createElement('div');
+            pastWrap.className = 'dashboard-agenda__past';
+            const toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'dashboard-agenda__past-toggle';
+            const pastBody = document.createElement('div');
+            pastBody.className = 'dashboard-agenda__past-body';
+            pastDays.forEach((day) => pastBody.appendChild(buildTimelineDay(day)));
+
+            const syncPast = () => {
+                toggle.setAttribute('aria-expanded', String(timelinePastExpanded));
+                toggle.textContent = timelinePastExpanded
+                    ? `收起已结束的 ${pastSessionCount} 节课`
+                    : `查看已结束的 ${pastSessionCount} 节课（${pastDays.length} 天）`;
+                pastBody.hidden = !timelinePastExpanded;
+                pastWrap.classList.toggle('is-open', timelinePastExpanded);
+            };
+            toggle.addEventListener('click', () => {
+                timelinePastExpanded = !timelinePastExpanded;
+                syncPast();
+            });
+            syncPast();
+
+            pastWrap.append(toggle, pastBody);
+            track.appendChild(pastWrap);
         }
 
-        const activeIndex = Math.max(0, groups.findIndex((group) => group.key === activeTimelineKey));
-        const shell = document.createElement('div');
-        shell.className = 'dashboard-timeline-shell';
+        if (!hasToday) {
+            const divider = document.createElement('div');
+            divider.className = 'dashboard-agenda__divider';
+            divider.dataset.timelineToday = 'true';
+            const dot = document.createElement('span');
+            dot.className = 'dashboard-agenda__divider-dot';
+            dot.setAttribute('aria-hidden', 'true');
+            const label = document.createElement('span');
+            label.textContent = '今天 · 暂无课程安排';
+            divider.append(dot, label);
+            track.appendChild(divider);
+        }
 
-        const axis = document.createElement('div');
-        axis.className = 'dashboard-timeline-axis';
-        axis.setAttribute('aria-label', '学期课堂时间轴刻度');
-        axis.setAttribute('role', 'listbox');
+        aheadDays.forEach((day) => track.appendChild(buildTimelineDay(day)));
 
-        const focus = document.createElement('div');
-        focus.className = 'dashboard-timeline-focus';
+        shell.appendChild(track);
+        offeringList.appendChild(shell);
 
-        buildTimelineAxisNodes(groups).forEach((node) => {
-            if (node.type === 'gap') {
-                const gap = document.createElement('div');
-                gap.className = 'dashboard-timeline-gap';
-                gap.setAttribute('aria-hidden', 'true');
-                const line = document.createElement('span');
-                line.className = 'dashboard-timeline-gap__line';
-                const label = document.createElement('span');
-                label.className = 'dashboard-timeline-gap__label';
-                label.textContent = node.label;
-                gap.append(line, label);
-                axis.appendChild(gap);
-                return;
-            }
-
-            if (node.type === 'now') {
-                const marker = document.createElement('div');
-                marker.className = 'dashboard-timeline-now-marker';
-                marker.setAttribute('aria-hidden', 'true');
-                const line = document.createElement('span');
-                line.className = 'dashboard-timeline-now-marker__line';
-                const label = document.createElement('span');
-                label.className = 'dashboard-timeline-now-marker__label';
-                label.textContent = '现在';
-                marker.append(line, label);
-                axis.appendChild(marker);
-                return;
-            }
-
-            const group = node.group;
-            const status = getTimelineGroupStatus(group);
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'dashboard-timeline-tick';
-            button.classList.add(`is-${status}`);
-            button.dataset.timelineKey = group.key;
-            button.dataset.timelineStatus = status;
-            button.setAttribute('role', 'option');
-            button.setAttribute(
-                'aria-label',
-                `${getTimelineStatusLabel(status)}，${group.yearLabel || getYearLabel(group.startsAt)}，${group.dateLabel} ${group.weekdayLabel}，${group.hourLabel}`,
-            );
-            const line = document.createElement('span');
-            line.className = 'dashboard-timeline-tick__line';
-            const statusLabel = document.createElement('span');
-            statusLabel.className = 'dashboard-timeline-tick__status';
-            statusLabel.setAttribute('aria-hidden', 'true');
-            statusLabel.textContent = getTimelineStatusLabel(status);
-            line.appendChild(statusLabel);
-            const copy = document.createElement('span');
-            copy.className = 'dashboard-timeline-tick__copy';
-            const yearLabel = document.createElement('span');
-            yearLabel.className = 'dashboard-timeline-tick__year';
-            yearLabel.textContent = group.yearLabel || getYearLabel(group.startsAt);
-            const dateLabel = document.createElement('strong');
-            dateLabel.textContent = `${group.dateLabel} ${group.weekdayLabel}`;
-            const hourLabel = document.createElement('span');
-            hourLabel.textContent = `${group.hourLabel} · ${group.relativeLabel}`;
-            const count = document.createElement('em');
-            count.textContent = `${group.items.length} 次课`;
-            copy.append(yearLabel, dateLabel, hourLabel, count);
-            button.append(line, copy);
-            axis.appendChild(button);
-        });
-
-        const selectTimelineKey = (key, { scrollIntoView = false } = {}) => {
-            const group = groups.find((item) => item.key === key) || groups[0];
-            if (!group) {
-                return;
-            }
-            const isSameFocus = activeTimelineKey === group.key;
-            activeTimelineKey = group.key;
-            axis.querySelectorAll('[data-timeline-key]').forEach((button) => {
-                const isActive = button.dataset.timelineKey === group.key;
-                button.classList.toggle('is-active', isActive);
-                button.setAttribute('aria-selected', String(isActive));
-                if (isActive && scrollIntoView) {
-                    button.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                }
-            });
-            if (!isSameFocus || !focus.dataset.timelineFocusReady) {
-                renderTimelineFocus(focus, group, groups);
-                focus.dataset.timelineFocusReady = 'true';
+        const scrollToToday = () => {
+            const anchor = track.querySelector('[data-timeline-today="true"]');
+            if (anchor && typeof anchor.scrollIntoView === 'function') {
+                anchor.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                anchor.classList.add('is-pinged');
+                window.setTimeout(() => anchor.classList.remove('is-pinged'), 1200);
             }
         };
-
-        axis.addEventListener('click', (event) => {
-            const button = event.target.closest('[data-timeline-key]');
-            if (!button) {
-                return;
-            }
-            if (axis.dataset.dragged === 'true') {
-                delete axis.dataset.dragged;
-                return;
-            }
-            selectTimelineKey(button.dataset.timelineKey, { scrollIntoView: true });
-        });
-        bindTimelineDrag(axis, groups, selectTimelineKey);
-
-        shell.append(axis, focus);
-        offeringList.appendChild(shell);
-        renderTimelineFocus(focus, groups[activeIndex], groups);
-        focus.dataset.timelineFocusReady = 'true';
-        selectTimelineKey(activeTimelineKey, { scrollIntoView: true });
-    }
-
-    function renderTimelineFocus(container, group, groups) {
-        container.replaceChildren();
-        const focusGroups = getTimelineFocusGroups(groups, group.key);
-        const header = document.createElement('div');
-        header.className = 'dashboard-timeline-focus__header';
-        const copy = document.createElement('div');
-        const title = document.createElement('h3');
-        title.textContent = `${group.yearLabel || getYearLabel(group.startsAt)} · ${group.dateLabel} ${group.hourLabel}`;
-        const subtitle = document.createElement('p');
-        subtitle.textContent = `${group.weekdayLabel} · 当前聚焦 ${group.items.length} 次课 · 前后课次已同步展开`;
-        copy.append(title, subtitle);
-        const badge = document.createElement('span');
-        badge.className = 'dashboard-timeline-focus__badge';
-        badge.textContent = group.items.some((item) => item.status === 'current') ? '今天' : `${focusGroups.length} 个刻度`;
-        header.append(copy, badge);
-        container.appendChild(header);
-
-        const windowList = document.createElement('div');
-        windowList.className = 'dashboard-timeline-window';
-        focusGroups.forEach((windowGroup) => {
-            const isActive = windowGroup.key === group.key;
-            const orderedItems = [...windowGroup.items].sort(compareTimelineSession);
-            const segment = document.createElement('article');
-            segment.className = `dashboard-timeline-focus-group${isActive ? ' is-active' : ''}`;
-
-            const segmentHeader = document.createElement('div');
-            segmentHeader.className = 'dashboard-timeline-focus-group__header';
-            const segmentCopy = document.createElement('div');
-            const segmentTitle = document.createElement('h4');
-            segmentTitle.textContent = `${windowGroup.dateLabel} ${windowGroup.hourLabel}`;
-            const segmentMeta = document.createElement('p');
-            segmentMeta.textContent = [
-                windowGroup.yearLabel || getYearLabel(windowGroup.startsAt),
-                windowGroup.weekdayLabel,
-                windowGroup.relativeLabel,
-                `${windowGroup.items.length} 次课`,
-            ].filter(Boolean).join(' · ');
-            segmentCopy.append(segmentTitle, segmentMeta);
-            const segmentBadge = document.createElement('span');
-            segmentBadge.className = 'dashboard-timeline-focus-group__badge';
-            segmentBadge.textContent = isActive ? '当前焦点' : (windowGroup.items.some((item) => item.status === 'completed') ? '已过' : '待上');
-            segmentHeader.append(segmentCopy, segmentBadge);
-            segment.appendChild(segmentHeader);
-
-            const sessionList = document.createElement('div');
-            sessionList.className = 'dashboard-timeline-session-list';
-            orderedItems.forEach((item) => {
-                const session = document.createElement('a');
-                session.className = `dashboard-timeline-session is-${item.status || 'upcoming'}`;
-                session.href = item.href || '#';
-                const main = document.createElement('div');
-                const title = document.createElement('strong');
-                title.textContent = item.title || item.course_name || '课堂安排';
-                const meta = document.createElement('span');
-                meta.textContent = [
-                    item.course_name,
-                    item.class_name,
-                    item.section_label,
-                    item.week_label,
-                ].filter(Boolean).join(' · ');
-                main.append(title, meta);
-                const time = document.createElement('em');
-                time.textContent = item.time_hint ? `${item.hour_label} · 默认` : item.hour_label;
-                if (item.time_hint) {
-                    time.title = item.time_hint;
-                }
-                session.append(main, time);
-                sessionList.appendChild(session);
-            });
-            segment.appendChild(sessionList);
-
-            if (isActive) {
-                const grid = createCardGrid();
-                const uniqueCards = uniqueCardsFromTimeline(orderedItems);
-                appendCards(grid, sortCards(uniqueCards, ['courseName', 'className']));
-                segment.appendChild(grid);
-            }
-
-            windowList.appendChild(segment);
-        });
-
-        container.appendChild(windowList);
+        todayBtn.addEventListener('click', scrollToToday);
     }
 
     function createGroupSection({ key, title, subtitle, activityLabel, count, level, tone }) {
@@ -986,101 +978,12 @@ if (root) {
         return Array.from(buckets.values()).sort((a, b) => compareText(a.startsAt, b.startsAt));
     }
 
-    function buildTimelineAxisNodes(groups) {
-        const nodes = [];
-        const nowTime = Date.now();
-        let insertedNowMarker = false;
-        groups.forEach((group, index) => {
-            const previous = groups[index - 1];
-            if (previous) {
-                const gapDays = daysBetweenTimelineGroups(previous, group);
-                if (gapDays >= 2) {
-                    nodes.push({
-                        type: 'gap',
-                        label: gapDays >= 30 ? `间隔约 ${Math.round(gapDays / 7)} 周` : `间隔 ${gapDays} 天`,
-                    });
-                }
-            }
-            const groupTime = new Date(group.startsAt || group.dateFullLabel || '').getTime();
-            if (!insertedNowMarker && Number.isFinite(groupTime) && groupTime >= nowTime) {
-                nodes.push({ type: 'now' });
-                insertedNowMarker = true;
-            }
-            nodes.push({ type: 'group', group });
-        });
-        if (!insertedNowMarker && groups.length) {
-            nodes.push({ type: 'now' });
-        }
-        return nodes;
-    }
-
-    function getTimelineGroupStatus(group) {
-        const items = group.items || [];
-        if (items.some((item) => item.status === 'current')) {
-            return 'current';
-        }
-        if (items.length && items.every((item) => item.status === 'completed')) {
-            return 'past';
-        }
-
-        const startsAt = new Date(group.startsAt || group.dateFullLabel || '').getTime();
-        if (Number.isFinite(startsAt)) {
-            const now = new Date();
-            const groupDate = new Date(startsAt);
-            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-            const groupDay = new Date(groupDate.getFullYear(), groupDate.getMonth(), groupDate.getDate()).getTime();
-            if (groupDay < today) {
-                return 'past';
-            }
-            if (groupDay === today) {
-                return 'current';
-            }
-        }
-
-        return 'future';
-    }
-
-    function getTimelineStatusLabel(status) {
-        if (status === 'past') {
-            return '过去';
-        }
-        if (status === 'current') {
-            return '现在';
-        }
-        return '未来';
-    }
-
-    function getTimelineFocusGroups(groups, key) {
-        const currentIndex = Math.max(0, groups.findIndex((group) => group.key === key));
-        const start = Math.max(0, currentIndex - 3);
-        const end = Math.min(groups.length, currentIndex + 4);
-        return groups.slice(start, end);
-    }
-
-    function daysBetweenTimelineGroups(previous, current) {
-        const previousTime = new Date(previous.startsAt || previous.dateFullLabel || '').getTime();
-        const currentTime = new Date(current.startsAt || current.dateFullLabel || '').getTime();
-        if (!Number.isFinite(previousTime) || !Number.isFinite(currentTime)) {
-            return 0;
-        }
-        return Math.max(0, Math.floor((currentTime - previousTime) / 86400000));
-    }
-
     function getYearLabel(value) {
         const dateValue = new Date(value || '');
         if (!Number.isFinite(dateValue.getTime())) {
             return '';
         }
         return `${dateValue.getFullYear()}年`;
-    }
-
-    function chooseTimelineKey(groups) {
-        const now = new Date();
-        const futureGroup = groups.find((group) => new Date(group.startsAt).getTime() >= now.getTime());
-        if (futureGroup) {
-            return futureGroup.key;
-        }
-        return groups[groups.length - 1]?.key || '';
     }
 
     function compareTimelineItems(a, b) {
@@ -1101,92 +1004,6 @@ if (root) {
         return compareText(a.course_name, b.course_name)
             || compareText(a.class_name, b.class_name)
             || compareText(a.title, b.title);
-    }
-
-    function uniqueCardsFromTimeline(items) {
-        const seen = new Set();
-        const unique = [];
-        items.forEach((item) => {
-            if (!item.card || seen.has(item.card)) {
-                return;
-            }
-            seen.add(item.card);
-            unique.push(item.card);
-        });
-        return unique;
-    }
-
-    function bindTimelineDrag(axis, groups, selectTimelineKey) {
-        let pointerId = null;
-        let startY = 0;
-        let startScrollTop = 0;
-        let moved = false;
-        let scrollTimer = 0;
-
-        const selectClosestToCenter = () => {
-            const buttons = Array.from(axis.querySelectorAll('[data-timeline-key]'));
-            if (!buttons.length) {
-                return;
-            }
-            const axisRect = axis.getBoundingClientRect();
-            const centerY = axisRect.top + axisRect.height / 2;
-            let closestButton = buttons[0];
-            let closestDistance = Number.POSITIVE_INFINITY;
-            buttons.forEach((button) => {
-                const rect = button.getBoundingClientRect();
-                const buttonCenter = rect.top + rect.height / 2;
-                const distance = Math.abs(buttonCenter - centerY);
-                if (distance < closestDistance) {
-                    closestDistance = distance;
-                    closestButton = button;
-                }
-            });
-            selectTimelineKey(closestButton.dataset.timelineKey || groups[0]?.key || '', { scrollIntoView: false });
-        };
-
-        axis.addEventListener('pointerdown', (event) => {
-            pointerId = event.pointerId;
-            startY = event.clientY;
-            startScrollTop = axis.scrollTop;
-            moved = false;
-            axis.classList.add('is-dragging');
-            axis.setPointerCapture?.(event.pointerId);
-        });
-
-        axis.addEventListener('pointermove', (event) => {
-            if (pointerId !== event.pointerId) {
-                return;
-            }
-            const deltaY = startY - event.clientY;
-            if (Math.abs(deltaY) > 3) {
-                moved = true;
-            }
-            axis.scrollTop = startScrollTop + deltaY;
-            if (moved) {
-                event.preventDefault();
-                selectClosestToCenter();
-            }
-        });
-
-        const stopDragging = (event) => {
-            if (pointerId !== event.pointerId) {
-                return;
-            }
-            pointerId = null;
-            axis.classList.remove('is-dragging');
-            axis.releasePointerCapture?.(event.pointerId);
-            axis.dataset.dragged = moved ? 'true' : 'false';
-            if (moved) {
-                selectClosestToCenter();
-            }
-        };
-
-        axis.addEventListener('pointerup', stopDragging);
-        axis.addEventListener('pointercancel', stopDragging);
-        axis.addEventListener('scroll', () => {
-            window.clearTimeout(scrollTimer);
-            scrollTimer = window.setTimeout(selectClosestToCenter, 80);
-        }, { passive: true });
     }
 
     function normalizeGroupLabel(value, fallback) {
