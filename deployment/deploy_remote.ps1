@@ -211,7 +211,26 @@ try {
     Write-Step "Checking PostgreSQL deployment gates"
     Push-Location $repoRoot
     try {
-        & python tools\deploy\postgres_preflight.py --json-output (Join-Path $localWorkDir "postgres-preflight.json")
+        # The postgres cutover gate (PGD-R007) requires a migration-validation
+        # artifact. Generate it from the local SQLite snapshot first, then hand
+        # it to the preflight. The dry-run must run in SQLite mode regardless of
+        # docker.env's DB_ENGINE (the deploy host has no psycopg driver).
+        $migrationReport = Join-Path $localWorkDir "migration-report.json"
+        $previousDbEngine = $env:DB_ENGINE
+        $env:DB_ENGINE = "sqlite"
+        try {
+            & python tools\deploy\migration_dry_run.py --json-output $migrationReport
+        } finally {
+            if ($null -eq $previousDbEngine) {
+                Remove-Item Env:\DB_ENGINE -ErrorAction SilentlyContinue
+            } else {
+                $env:DB_ENGINE = $previousDbEngine
+            }
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "PostgreSQL migration dry-run failed. See $migrationReport."
+        }
+        & python tools\deploy\postgres_preflight.py --migration-report $migrationReport --json-output (Join-Path $localWorkDir "postgres-preflight.json")
         if ($LASTEXITCODE -ne 0) {
             throw "PostgreSQL deployment preflight failed. See $(Join-Path $localWorkDir "postgres-preflight.json")."
         }
