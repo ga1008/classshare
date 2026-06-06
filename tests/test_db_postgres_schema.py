@@ -152,6 +152,8 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             "idx_email_outbox_unique_dedupe_key",
             "idx_email_worker_heartbeats_unique_worker",
             "idx_private_message_blocks_unique_pair",
+            "idx_blog_media_assets_unique_uploader_file",
+            "idx_emoji_usage_stats_unique_target",
         }
 
         self.assertTrue(expected.issubset(runtime_index_names))

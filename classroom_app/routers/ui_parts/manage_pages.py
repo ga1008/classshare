@@ -1,7 +1,31 @@
 from .common import *
+from ...db.connection import get_configured_db_engine
 
 
 router = APIRouter()
+
+
+def _password_reset_login_summary_sql() -> str:
+    today_login_expr = (
+        "logged_at::date = CURRENT_DATE"
+        if get_configured_db_engine() == "postgres"
+        else "date(logged_at) = date('now', 'localtime')"
+    )
+    return f"""
+            SELECT
+                COUNT(*) AS total_logins,
+                SUM(CASE WHEN {today_login_expr} THEN 1 ELSE 0 END) AS today_logins
+            FROM student_login_audit_logs logs
+            JOIN students s ON s.id = logs.student_id
+            JOIN classes c ON c.id = s.class_id
+            WHERE ? = 1
+               OR c.created_by_teacher_id = ?
+               OR EXISTS (
+                    SELECT 1 FROM class_offerings o
+                    WHERE o.class_id = c.id
+                      AND o.teacher_id = ?
+               )
+            """
 
 
 @router.get("/manage", response_class=HTMLResponse)
@@ -755,21 +779,7 @@ async def get_manage_system_password_resets_page(request: Request, user: dict = 
         ).fetchone()
 
         login_summary = conn.execute(
-            """
-            SELECT
-                COUNT(*) AS total_logins,
-                SUM(CASE WHEN date(logged_at) = date('now', 'localtime') THEN 1 ELSE 0 END) AS today_logins
-            FROM student_login_audit_logs logs
-            JOIN students s ON s.id = logs.student_id
-            JOIN classes c ON c.id = s.class_id
-            WHERE ? = 1
-               OR c.created_by_teacher_id = ?
-               OR EXISTS (
-                    SELECT 1 FROM class_offerings o
-                    WHERE o.class_id = c.id
-                      AND o.teacher_id = ?
-               )
-            """,
+            _password_reset_login_summary_sql(),
             (1 if is_super_admin_teacher(conn, user["id"]) else 0, user["id"], user["id"]),
         ).fetchone()
 

@@ -167,6 +167,16 @@ POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = 
         "private_message_blocks",
         ("owner_identity", "blocked_identity"),
     ),
+    (
+        "idx_blog_media_assets_unique_uploader_file",
+        "blog_media_assets",
+        ("file_hash", "uploader_identity"),
+    ),
+    (
+        "idx_emoji_usage_stats_unique_target",
+        "emoji_usage_stats",
+        ("class_offering_id", "user_id", "user_role", "emoji_type", "emoji_key"),
+    ),
 )
 
 
