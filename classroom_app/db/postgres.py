@@ -70,11 +70,33 @@ def _replace_group_concat(sql: str) -> str:
     return "".join(result)
 
 
+def _escape_literal_percent_markers(sql: str) -> str:
+    output: list[str] = []
+    index = 0
+    while index < len(sql):
+        char = sql[index]
+        next_char = sql[index + 1] if index + 1 < len(sql) else ""
+        if char == "%":
+            if next_char in {"s", "b", "t"}:
+                output.append(char)
+            elif next_char == "%":
+                output.append("%%")
+                index += 1
+            else:
+                output.append("%%")
+            index += 1
+            continue
+        output.append(char)
+        index += 1
+    return "".join(output)
+
+
 def sqlite_sql_to_psycopg(sql: str) -> str:
     converted = qmark_to_psycopg(sql)
     converted = _replace_group_concat(converted)
     converted = _LIKE_NOCASE_RE.sub(r"ILIKE \1", converted)
-    return _COLLATE_NOCASE_RE.sub("", converted)
+    converted = _COLLATE_NOCASE_RE.sub("", converted)
+    return _escape_literal_percent_markers(converted)
 
 
 def load_psycopg_driver() -> Any:

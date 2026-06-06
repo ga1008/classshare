@@ -7,6 +7,40 @@ from .row import rows_to_mappings
 from .sql import quote_identifier
 
 
+POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (
+        "idx_learning_material_progress_unique_material",
+        "learning_material_progress",
+        ("class_offering_id", "student_id", "material_id"),
+    ),
+    (
+        "idx_learning_stage_status_unique_stage",
+        "learning_stage_status",
+        ("class_offering_id", "student_id", "stage_key"),
+    ),
+    (
+        "idx_learning_certificates_unique_stage",
+        "learning_certificates",
+        ("class_offering_id", "student_id", "stage_key"),
+    ),
+    (
+        "idx_student_learning_path_item_states_unique_item",
+        "student_learning_path_item_states",
+        ("student_id", "item_key"),
+    ),
+    (
+        "idx_student_portfolio_items_unique_source",
+        "student_portfolio_items",
+        ("student_id", "source_type", "source_id"),
+    ),
+    (
+        "idx_student_portfolio_reflections_unique_item",
+        "student_portfolio_reflections",
+        ("portfolio_item_id",),
+    ),
+)
+
+
 REQUIRED_POSTGRES_TABLES = (
     "teachers",
     "system_settings",
@@ -1997,6 +2031,63 @@ def _count_rows(conn: Any, table: str) -> int | None:
         return None
     value = rows[0].get("row_count")
     return int(value) if value is not None else None
+
+
+def _index_exists(conn: Any, index_name: str) -> bool:
+    rows = conn.execute(
+        """
+        SELECT 1 AS exists_flag
+        FROM pg_indexes
+        WHERE schemaname = ?
+          AND indexname = ?
+        LIMIT 1
+        """,
+        ("public", index_name),
+    ).fetchall()
+    return bool(rows)
+
+
+def _duplicate_unique_key_rows(conn: Any, table: str, columns: Sequence[str]) -> list[dict[str, Any]]:
+    column_sql = ", ".join(quote_identifier(column) for column in columns)
+    rows = conn.execute(
+        f"""
+        SELECT {column_sql}, COUNT(*) AS row_count
+        FROM {quote_identifier(table)}
+        GROUP BY {column_sql}
+        HAVING COUNT(*) > 1
+        LIMIT 5
+        """
+    ).fetchall()
+    return rows_to_mappings(rows, (*columns, "row_count"))
+
+
+def ensure_postgres_runtime_constraints(conn: Any) -> dict[str, Any]:
+    created_indexes: list[str] = []
+    skipped_indexes: list[str] = []
+    table_names = _public_tables(conn)
+    for index_name, table, columns in POSTGRES_RUNTIME_UNIQUE_INDEXES:
+        if table not in table_names:
+            skipped_indexes.append(index_name)
+            continue
+        if _index_exists(conn, index_name):
+            continue
+        duplicate_rows = _duplicate_unique_key_rows(conn, table, columns)
+        if duplicate_rows:
+            raise DatabaseProgrammingError(
+                "PostgreSQL schema repair refused to create unique index "
+                f"{index_name} because duplicate keys exist in {table}: {duplicate_rows}"
+            )
+        column_sql = ", ".join(quote_identifier(column) for column in columns)
+        conn.execute(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS {quote_identifier(index_name)} "
+            f"ON {quote_identifier(table)} ({column_sql})"
+        )
+        created_indexes.append(index_name)
+    return {
+        "created_indexes": created_indexes,
+        "skipped_indexes": skipped_indexes,
+        "schema_writes_executed": bool(created_indexes),
+    }
 
 
 def build_postgres_schema_report(conn: Any) -> dict[str, Any]:

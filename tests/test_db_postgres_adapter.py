@@ -115,6 +115,14 @@ class PostgresAdapterTests(unittest.TestCase):
         self.assertIn("m.name ILIKE %s", converted)
         self.assertNotIn("COLLATE NOCASE", converted.upper())
 
+    def test_sqlite_sql_to_psycopg_escapes_literal_like_percent_without_touching_placeholders(self):
+        sql = "SELECT * FROM chat_logs WHERE message LIKE '%@AI%' AND user_id = ?"
+
+        converted = sqlite_sql_to_psycopg(sql)
+
+        self.assertIn("LIKE '%%@AI%%'", converted)
+        self.assertTrue(converted.endswith("user_id = %s"))
+
     def test_validate_database_url_requires_postgres_scheme(self):
         with self.assertRaises(DatabaseConfigurationError):
             validate_database_url("")

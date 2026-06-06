@@ -3,7 +3,7 @@ import sys
 
 from .. import config
 from .connection import get_db_connection
-from .postgres_schema import validate_postgres_schema
+from .postgres_schema import ensure_postgres_runtime_constraints, validate_postgres_schema
 from .schema_assignments import ensure_assignment_schema
 from .schema_classroom_activity import ensure_classroom_activity_schema
 from .schema_foundation import ensure_foundation_schema
@@ -20,7 +20,14 @@ def init_database():
         print("[DB] Verifying PostgreSQL schema...")
         conn = get_db_connection()
         try:
+            runtime_constraint_report = ensure_postgres_runtime_constraints(conn)
+            conn.commit()
             report = validate_postgres_schema(conn)
+            report["runtime_constraints"] = runtime_constraint_report
+            report["schema_writes_executed"] = bool(runtime_constraint_report["schema_writes_executed"])
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
         print(

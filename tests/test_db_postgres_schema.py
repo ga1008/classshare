@@ -6,9 +6,11 @@ from unittest.mock import patch
 from classroom_app import config, database
 from classroom_app.db.errors import DatabaseProgrammingError
 from classroom_app.db.postgres_schema import (
+    POSTGRES_RUNTIME_UNIQUE_INDEXES,
     REQUIRED_POSTGRES_COLUMNS,
     REQUIRED_POSTGRES_TABLES,
     build_postgres_schema_report,
+    ensure_postgres_runtime_constraints,
     validate_postgres_schema,
 )
 
@@ -27,6 +29,8 @@ class FakePostgresConnection:
         self.missing_columns = missing_columns or {}
         self.executed_sql = []
         self.closed = False
+        self.committed = False
+        self.rolled_back = False
 
     def execute(self, sql, params=()):
         self.executed_sql.append((sql, params))
@@ -52,10 +56,47 @@ class FakePostgresConnection:
             return FakeCursor(rows)
         if normalized.startswith("SELECT COUNT(*) AS row_count FROM"):
             return FakeCursor([{"row_count": 1}])
+        if "pg_indexes" in normalized:
+            return FakeCursor([])
+        if "HAVING COUNT(*) > 1" in normalized:
+            return FakeCursor([])
+        if normalized.startswith("CREATE UNIQUE INDEX IF NOT EXISTS"):
+            return FakeCursor([])
         raise AssertionError(f"unexpected sql: {sql}")
 
     def close(self):
         self.closed = True
+
+    def commit(self):
+        self.committed = True
+
+    def rollback(self):
+        self.rolled_back = True
+
+
+class FakePostgresConstraintConnection(FakePostgresConnection):
+    def __init__(self, *, existing_indexes=(), duplicate_indexes=()):
+        super().__init__()
+        self.existing_indexes = set(existing_indexes)
+        self.duplicate_indexes = set(duplicate_indexes)
+
+    def execute(self, sql, params=()):
+        self.executed_sql.append((sql, params))
+        normalized = " ".join(str(sql).split())
+        if "information_schema.tables" in normalized:
+            rows = [{"table_name": table} for table in REQUIRED_POSTGRES_TABLES]
+            return FakeCursor(rows)
+        if "pg_indexes" in normalized:
+            index_name = params[1]
+            return FakeCursor([{"exists_flag": 1}] if index_name in self.existing_indexes else [])
+        if "HAVING COUNT(*) > 1" in normalized:
+            for index_name, table, _columns in POSTGRES_RUNTIME_UNIQUE_INDEXES:
+                if table in normalized and index_name in self.duplicate_indexes:
+                    return FakeCursor([{"row_count": 2}])
+            return FakeCursor([])
+        if normalized.startswith("CREATE UNIQUE INDEX IF NOT EXISTS"):
+            return FakeCursor([])
+        return super().execute(sql, params)
 
 
 class PostgresSchemaValidationTests(unittest.TestCase):
@@ -68,6 +109,24 @@ class PostgresSchemaValidationTests(unittest.TestCase):
         self.assertFalse(report["schema_writes_executed"])
         self.assertEqual(len(REQUIRED_POSTGRES_TABLES), report["present_required_table_count"])
         self.assertFalse(any(sql.strip().upper().startswith(("CREATE", "ALTER", "DROP")) for sql, _ in conn.executed_sql))
+
+    def test_ensure_runtime_constraints_creates_missing_unique_indexes(self):
+        conn = FakePostgresConstraintConnection()
+
+        report = ensure_postgres_runtime_constraints(conn)
+
+        self.assertTrue(report["schema_writes_executed"])
+        self.assertIn("idx_learning_stage_status_unique_stage", report["created_indexes"])
+        created_sql = "\n".join(str(sql) for sql, _ in conn.executed_sql)
+        self.assertIn('CREATE UNIQUE INDEX IF NOT EXISTS "idx_learning_stage_status_unique_stage"', created_sql)
+
+    def test_ensure_runtime_constraints_refuses_duplicate_keys(self):
+        conn = FakePostgresConstraintConnection(
+            duplicate_indexes={"idx_learning_stage_status_unique_stage"}
+        )
+
+        with self.assertRaises(DatabaseProgrammingError):
+            ensure_postgres_runtime_constraints(conn)
 
     def test_required_schema_covers_all_static_sqlite_schema_tables(self):
         repo_root = Path(__file__).resolve().parents[1]
