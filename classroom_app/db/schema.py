@@ -3,6 +3,7 @@ import sys
 
 from .. import config
 from .connection import get_db_connection
+from .postgres_indexes import ensure_postgres_performance_indexes
 from .postgres_schema import ensure_postgres_runtime_constraints, validate_postgres_schema
 from .schema_assignments import ensure_assignment_schema
 from .schema_classroom_activity import ensure_classroom_activity_schema
@@ -30,6 +31,24 @@ def init_database():
             raise
         finally:
             conn.close()
+        # Port the SQLite performance indexes onto PostgreSQL. This is isolated
+        # in its own connection/transaction and tolerant of individual failures
+        # so a missing column or lock never blocks startup.
+        try:
+            index_conn = get_db_connection()
+            try:
+                index_report = ensure_postgres_performance_indexes(index_conn)
+                index_conn.commit()
+            finally:
+                index_conn.close()
+            report["performance_indexes"] = index_report
+            print(
+                "[DB] PostgreSQL performance indexes: "
+                f"{index_report.get('created', 0)} created, "
+                f"{index_report.get('failed', 0)} skipped of {index_report.get('total', 0)}"
+            )
+        except Exception as exc:
+            print(f"[DB] PostgreSQL performance index step skipped: {exc}")
         print(
             "[DB] PostgreSQL schema verified: "
             f"{report['present_required_table_count']}/{report['required_table_count']} required tables"

@@ -300,11 +300,15 @@ def apply_postgres_session_settings(raw_connection: Any) -> None:
         ),
         ("application_name", "lanshare-app"),
     )
+    # Apply every session setting in a single round-trip. With no pooling each
+    # request opens a fresh connection, so collapsing four set_config calls into
+    # one statement removes three network round-trips per request.
+    projection = ", ".join("set_config(%s, %s, false)" for _ in settings)
+    params: list[Any] = []
     for setting_name, setting_value in settings:
-        raw_connection.execute(
-            "SELECT set_config(%s, %s, false)",
-            (setting_name, setting_value),
-        )
+        params.append(setting_name)
+        params.append(setting_value)
+    raw_connection.execute(f"SELECT {projection}", tuple(params))
 
 
 def connect_postgres(*, driver: Any | None = None, row_factory: Any | None = None) -> LanSharePostgresConnection:
