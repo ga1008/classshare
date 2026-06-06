@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 from ..database import get_db_connection
+from ..db.connection import begin_immediate_transaction, execute_insert_returning_id, get_configured_db_engine
 from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
 from .academic_integration_service import (
     load_teacher_academic_access_method,
@@ -1120,9 +1121,20 @@ def _insert_academic_occurrences(
             note_parts.append("教务周次不是完整连续周循环")
         if item.course_note:
             note_parts.append(item.course_note)
-        cursor = conn.execute(
+        if get_configured_db_engine() == "postgres":
+            insert_verb = "INSERT INTO"
+            conflict_clause = """
+            ON CONFLICT (
+                teacher_id, semester_id, course_id, teaching_class_name,
+                session_date, section_text, location
+            ) DO NOTHING
             """
-            INSERT OR IGNORE INTO teacher_academic_course_session_occurrences (
+        else:
+            insert_verb = "INSERT OR IGNORE INTO"
+            conflict_clause = ""
+        cursor = conn.execute(
+            f"""
+            {insert_verb} teacher_academic_course_session_occurrences (
                 teacher_id, semester_id, course_id, sync_item_id,
                 academic_year, academic_term, course_name, course_code,
                 teaching_class_name, class_composition, session_date,
@@ -1137,6 +1149,7 @@ def _insert_academic_occurrences(
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP
             )
+            {conflict_clause}
             """,
             (
                 int(teacher_id),
@@ -1310,7 +1323,7 @@ def _upsert_courses_and_schedule_items(
     synced_at = _now_iso()
     sync_message = "已同步本学期教务课表；请继续补充教材、课堂设置和本平台班级绑定。"
 
-    conn.execute("BEGIN IMMEDIATE")
+    begin_immediate_transaction(conn)
     conn.execute(
         "DELETE FROM teacher_academic_course_sync_items WHERE teacher_id = ? AND semester_id = ?",
         (int(teacher_id), int(semester["id"])),
@@ -1375,7 +1388,8 @@ def _upsert_courses_and_schedule_items(
             updated_count += 1
             action = "updated"
         else:
-            cursor = conn.execute(
+            course_id = execute_insert_returning_id(
+                conn,
                 """
                 INSERT INTO courses (
                     name, description, sect_name, department, credits, total_hours, created_by_teacher_id,
@@ -1403,7 +1417,6 @@ def _upsert_courses_and_schedule_items(
                     _json_dumps(metadata),
                 ),
             )
-            course_id = int(cursor.lastrowid)
             created_count += 1
             action = "created_after_ambiguous_name" if match_mode == "ambiguous_name" else "created"
 
@@ -1411,9 +1424,21 @@ def _upsert_courses_and_schedule_items(
             affected_course_ids.append(course_id)
         group_occurrence_count = 0
         for item in group_items:
-            cursor = conn.execute(
+            if get_configured_db_engine() == "postgres":
+                insert_verb = "INSERT INTO"
+                conflict_clause = """
+                ON CONFLICT (
+                    teacher_id, semester_id, course_code, teaching_class_name,
+                    weeks_text, weekday, section_text, location
+                ) DO NOTHING
+                RETURNING id
                 """
-                INSERT OR IGNORE INTO teacher_academic_course_sync_items (
+            else:
+                insert_verb = "INSERT OR IGNORE INTO"
+                conflict_clause = ""
+            cursor = conn.execute(
+                f"""
+                {insert_verb} teacher_academic_course_sync_items (
                     teacher_id, semester_id, course_id,
                     academic_year, academic_year_name, academic_term, academic_term_name,
                     teacher_name, teacher_org_id, teacher_org_name,
@@ -1430,6 +1455,7 @@ def _upsert_courses_and_schedule_items(
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP
                 )
+                {conflict_clause}
                 """,
                 (
                     int(teacher_id),
@@ -1478,13 +1504,23 @@ def _upsert_courses_and_schedule_items(
                     synced_at,
                 ),
             )
-            sync_item_id = int(cursor.lastrowid) if cursor.rowcount else _find_sync_item_id(
-                conn,
-                teacher_id=teacher_id,
-                semester_id=int(semester["id"]),
-                course_id=course_id,
-                item=item,
-            )
+            if get_configured_db_engine() == "postgres":
+                inserted_row = cursor.fetchone()
+                sync_item_id = int(inserted_row["id"]) if inserted_row else _find_sync_item_id(
+                    conn,
+                    teacher_id=teacher_id,
+                    semester_id=int(semester["id"]),
+                    course_id=course_id,
+                    item=item,
+                )
+            else:
+                sync_item_id = _find_sync_item_id(
+                    conn,
+                    teacher_id=teacher_id,
+                    semester_id=int(semester["id"]),
+                    course_id=course_id,
+                    item=item,
+                )
             group_occurrence_count += _insert_academic_occurrences(
                 conn,
                 teacher_id=teacher_id,

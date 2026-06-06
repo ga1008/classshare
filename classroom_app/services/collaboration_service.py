@@ -7,6 +7,7 @@ from typing import Any, Iterable, Optional
 
 from fastapi import HTTPException
 
+from ..db.connection import execute_insert_returning_id
 from .blog_service import POST_STATUS_DRAFT, VISIBILITY_CLASS, create_post
 from .file_service import resolve_global_file_path
 from .message_center_service import create_collaboration_notification
@@ -475,7 +476,8 @@ def create_group(conn, class_offering_id: int, user: dict[str, Any], payload: di
         if conflict:
             raise HTTPException(400, f"学生已在同一任务的小组中：{conflict['name']}")
 
-    cursor = conn.execute(
+    group_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO study_groups (
             class_offering_id, assignment_id, name, description, status, join_policy,
@@ -498,7 +500,6 @@ def create_group(conn, class_offering_id: int, user: dict[str, Any], payload: di
             now,
         ),
     )
-    group_id = int(cursor.lastrowid)
     for student_id in sorted(member_ids):
         _upsert_member(
             conn,
@@ -823,7 +824,8 @@ def add_group_file(
     description = _normalize_text(description, limit=500, field_name="文件说明")
     filename = Path(str(original_filename or "group-file")).name or "group-file"
     resolved_mime = str(mime_type or mimetypes.guess_type(filename)[0] or "application/octet-stream")
-    cursor = conn.execute(
+    file_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO study_group_files (
             group_id, uploaded_by_role, uploaded_by_user_pk, uploaded_by_name,
@@ -845,7 +847,7 @@ def add_group_file(
         ),
     )
     conn.execute("UPDATE study_groups SET updated_at = ? WHERE id = ?", (_now_iso(), int(group_id)))
-    file_row = _load_group_file(conn, int(cursor.lastrowid))
+    file_row = _load_group_file(conn, file_id)
     _notify_group_members(
         conn,
         group=group,
@@ -958,7 +960,8 @@ def upsert_group_submission(conn, group_id: int, user: dict[str, Any], payload: 
         )
         submission_id = int(existing["id"])
     else:
-        cursor = conn.execute(
+        submission_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO group_submissions (
                 group_id, assignment_id, submitted_by_role, submitted_by_user_pk,
@@ -978,7 +981,6 @@ def upsert_group_submission(conn, group_id: int, user: dict[str, Any], payload: 
                 now,
             ),
         )
-        submission_id = int(cursor.lastrowid)
     conn.execute("UPDATE study_groups SET updated_at = ? WHERE id = ?", (now, int(group_id)))
     group = _load_group(conn, group_id)
     _notify_teacher(
@@ -1221,7 +1223,8 @@ def submit_peer_review(conn, group_id: int, user: dict[str, Any], payload: dict[
         )
         review_id = int(existing["id"])
     else:
-        cursor = conn.execute(
+        review_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO peer_reviews (
                 class_offering_id, group_id, assignment_id, reviewer_student_id, reviewee_student_id,
@@ -1245,7 +1248,6 @@ def submit_peer_review(conn, group_id: int, user: dict[str, Any], payload: dict[
                 now,
             ),
         )
-        review_id = int(cursor.lastrowid)
     conn.execute("UPDATE study_groups SET updated_at = ? WHERE id = ?", (now, int(group_id)))
     reviewee = conn.execute("SELECT name FROM students WHERE id = ? LIMIT 1", (reviewee_id,)).fetchone()
     reviewee_name = str(reviewee["name"] or "组员") if reviewee else "组员"

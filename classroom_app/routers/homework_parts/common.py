@@ -27,6 +27,7 @@ from ...config import (
     MAX_UPLOAD_SIZE_MB,
 )
 from ...database import get_db_connection
+from ...db.connection import begin_immediate_transaction, execute_insert_returning_id
 from ...dependencies import get_current_user, get_current_student, get_current_teacher
 from ...schemas.homework_contracts import (
     AssignmentDraftResponse,
@@ -121,6 +122,10 @@ from ...services.resource_access_service import (
     teacher_can_manage_exam_paper,
     teacher_can_use_exam_paper,
 )
+
+
+def insert_and_get_id(conn, sql: str, params: tuple | list, *, id_column: str = "id") -> int:
+    return execute_insert_returning_id(conn, sql, params, id_column=id_column)
 
 
 # 并发控制：限制同时进行的 AI 批改提交数量，避免大量学生同时提交时
@@ -642,7 +647,8 @@ def _ensure_submission_draft(
             "server_version": int(existing.get("server_version") or 0) + 1,
         }
 
-    cursor = conn.execute(
+    draft_id = insert_and_get_id(
+        conn,
         """
         INSERT INTO submission_drafts (
             assignment_id, student_pk_id, answers_json, current_page,
@@ -652,7 +658,7 @@ def _ensure_submission_draft(
         (assignment_id, int(student_pk_id), answers_json, current_page, client_updated_at, now),
     )
     return {
-        "id": int(cursor.lastrowid),
+        "id": draft_id,
         "assignment_id": assignment_id,
         "student_pk_id": int(student_pk_id),
         "answers_json": answers_json,
@@ -800,7 +806,7 @@ def _save_assignment_draft_without_files_sync(
         }
 
         try:
-            conn.execute("BEGIN IMMEDIATE")
+            begin_immediate_transaction(conn)
             draft = _ensure_submission_draft(
                 conn,
                 assignment_id=assignment_id,
@@ -1388,8 +1394,8 @@ async def _save_submission_payload(
     full_submission_json = json.dumps(full_submission, ensure_ascii=False)
 
     try:
-        conn.execute("BEGIN IMMEDIATE")
-        cursor = conn.cursor()
+        begin_immediate_transaction(conn)
+        cursor = conn
         current_submission = cursor.execute(
             "SELECT id FROM submissions WHERE assignment_id = ? AND student_pk_id = ? LIMIT 1",
             (assignment["id"], student_pk_id),
@@ -1451,7 +1457,8 @@ async def _save_submission_payload(
                 ),
             )
         else:
-            cursor.execute(
+            submission_id = insert_and_get_id(
+                cursor,
                 """
                 INSERT INTO submissions (
                     assignment_id, student_pk_id, student_name, status, submitted_at, started_at, answers_json,
@@ -1476,7 +1483,6 @@ async def _save_submission_payload(
                     channel,
                 ),
             )
-            submission_id = cursor.lastrowid
 
         for file_info in storage_result.stored_files:
             cursor.execute(

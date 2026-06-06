@@ -16,6 +16,7 @@ from openpyxl.utils import get_column_letter
 
 from ..config import ROSTER_DIR
 from ..database import get_db_connection
+from ..db.connection import get_configured_db_engine
 from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
 from .academic_classroom_sync_service import load_teacher_teaching_place_by_key
 from .academic_integration_service import (
@@ -625,8 +626,7 @@ def _upsert_exam_roster_item(
     synced_at: str,
 ) -> int:
     semester_id = _optional_int(semester.get("id"))
-    cursor = conn.execute(
-        """
+    sql = """
         INSERT INTO teacher_academic_exam_roster_items (
             teacher_id, semester_id, class_offering_id, course_id, class_id, school_code,
             academic_year, academic_year_name, academic_term, academic_term_name,
@@ -663,54 +663,42 @@ def _upsert_exam_roster_item(
             sync_status = 'active',
             synced_at = excluded.synced_at,
             updated_at = excluded.updated_at
-        """,
-        (
-            int(teacher_id),
-            semester_id,
-            int(context["class_offering_id"]),
-            int(context["course_id"]),
-            int(context["class_id"]),
-            SCHOOL_CODE,
-            course.academic_year,
-            course.academic_year_name,
-            course.academic_term,
-            course.academic_term_name,
-            course.exam_course_key,
-            course.course_code,
-            course.course_internal_id,
-            course.course_name,
-            course.teaching_class_id,
-            course.teaching_class_name,
-            course.class_composition,
-            course.teacher_name,
-            course.schedule_text,
-            course.exam_method,
-            course.grade_entry_status,
-            course.credits,
-            int(course.declared_student_count or len(students)),
-            len(students),
-            _json_dumps(course.raw_json),
-            course.source_url,
-            synced_at,
-            synced_at,
-        ),
+        """
+    params = (
+        int(teacher_id),
+        semester_id,
+        int(context["class_offering_id"]),
+        int(context["course_id"]),
+        int(context["class_id"]),
+        SCHOOL_CODE,
+        course.academic_year,
+        course.academic_year_name,
+        course.academic_term,
+        course.academic_term_name,
+        course.exam_course_key,
+        course.course_code,
+        course.course_internal_id,
+        course.course_name,
+        course.teaching_class_id,
+        course.teaching_class_name,
+        course.class_composition,
+        course.teacher_name,
+        course.schedule_text,
+        course.exam_method,
+        course.grade_entry_status,
+        course.credits,
+        int(course.declared_student_count or len(students)),
+        len(students),
+        _json_dumps(course.raw_json),
+        course.source_url,
+        synced_at,
+        synced_at,
     )
-    if cursor.lastrowid:
-        row = conn.execute(
-            """
-            SELECT id
-            FROM teacher_academic_exam_roster_items
-            WHERE teacher_id = ?
-              AND school_code = ?
-              AND academic_year = ?
-              AND academic_term = ?
-              AND exam_course_key = ?
-            LIMIT 1
-            """,
-            (int(teacher_id), SCHOOL_CODE, course.academic_year, course.academic_term, course.exam_course_key),
-        ).fetchone()
-        if row:
-            return int(row["id"])
+    if get_configured_db_engine() == "postgres":
+        row = conn.execute(f"{sql} RETURNING id", params).fetchone()
+        return int(row["id"]) if row else 0
+
+    conn.execute(sql, params)
     row = conn.execute(
         """
         SELECT id

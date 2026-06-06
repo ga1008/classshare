@@ -11,6 +11,7 @@ import httpx
 
 from ..core import ai_client
 from ..database import get_db_connection
+from ..db.connection import get_configured_db_engine
 from .ai_grading_attachments import ensure_ai_grading_attachments_supported
 from .exam_json_service import build_exam_rubric_md
 from .psych_profile_service import load_latest_hidden_profile
@@ -445,6 +446,73 @@ def _resume_status_after_grading_interrupt(submission: dict[str, Any]) -> str:
     return "graded" if submission.get("score") is not None else "submitted"
 
 
+def _mark_submission_grading_with_connection(
+    conn,
+    *,
+    submission_id: int,
+    started_at: str,
+    attempt_token: str,
+    allow_graded: bool,
+    engine: str | None = None,
+) -> bool:
+    db_engine = (engine or get_configured_db_engine()).strip().lower()
+    if db_engine not in {"sqlite", "postgres"}:
+        raise ValueError(f"Unsupported AI grading database engine: {db_engine}")
+    graded_filter = "" if allow_graded else " AND status != 'graded'"
+    returning_clause = " RETURNING id" if db_engine == "postgres" else ""
+    cursor = conn.execute(
+        f"""
+        UPDATE submissions
+        SET status = 'grading',
+            grading_started_at = ?,
+            grading_attempt_fingerprint = ?
+        WHERE id = ?
+          AND COALESCE(resubmission_allowed, 0) = 0
+          AND status != 'grading'
+          {graded_filter}
+        {returning_clause}
+        """,
+        (started_at, attempt_token, submission_id),
+    )
+    if db_engine == "postgres":
+        return cursor.fetchone() is not None
+    return cursor.rowcount == 1
+
+
+def _reset_submission_after_queue_failure_with_connection(
+    conn,
+    *,
+    submission_id: int,
+    error_message: str = "",
+    attempt_fingerprint: str | None = None,
+) -> dict[str, Any] | None:
+    submission = conn.execute(
+        "SELECT * FROM submissions WHERE id = ?",
+        (submission_id,),
+    ).fetchone()
+    if not submission:
+        return None
+    token_filter = ""
+    params: list[Any] = [submission_id]
+    if attempt_fingerprint:
+        token_filter = " AND grading_attempt_fingerprint = ?"
+        params.append(attempt_fingerprint)
+    cursor = conn.execute(
+        f"""
+        UPDATE submissions
+        SET status = CASE WHEN score IS NOT NULL THEN 'graded' ELSE 'submitted' END,
+            grading_started_at = NULL,
+            grading_attempt_fingerprint = NULL
+        WHERE id = ? AND status = 'grading'
+          {token_filter}
+        """,
+        tuple(params),
+    )
+    if cursor.rowcount != 1:
+        return None
+    return dict(submission)
+
+
 def _release_stage_exam_grading_attempts(conn, submission: dict[str, Any], message: str) -> None:
     assignment_id = submission.get("assignment_id")
     student_pk_id = submission.get("student_pk_id")
@@ -609,17 +677,14 @@ async def submit_submission_for_ai_grading(
 
         rubric_md = _resolve_grading_rubric(submission)
         attempt_token = _build_grading_attempt_token(content_fingerprint)
-        cursor = conn.execute(
-            """
-            UPDATE submissions
-            SET status = 'grading',
-                grading_started_at = ?,
-                grading_attempt_fingerprint = ?
-            WHERE id = ? AND COALESCE(resubmission_allowed, 0) = 0
-            """,
-            (datetime.now().isoformat(), attempt_token, submission_id),
+        marked_grading = _mark_submission_grading_with_connection(
+            conn,
+            submission_id=submission_id,
+            started_at=datetime.now().isoformat(),
+            attempt_token=attempt_token,
+            allow_graded=allow_graded,
         )
-        if cursor.rowcount != 1:
+        if not marked_grading:
             raise AIGradingQueueError(409, "该提交状态刚刚发生变化，请刷新后重试")
         conn.commit()
         student_profile_context = _build_hidden_student_profile_context(conn, current)
@@ -654,35 +719,35 @@ async def submit_submission_for_ai_grading(
         return response.json()
     except httpx.ConnectError as exc:
         detail = "AI 助手服务未运行，请先启动 ai_assistant.py。"
-        _reset_submission_after_queue_failure(submission_id, detail)
+        _reset_submission_after_queue_failure(submission_id, detail, attempt_fingerprint=attempt_token)
         raise AIGradingQueueError(503, detail) from exc
     except httpx.HTTPStatusError as exc:
         detail = _extract_ai_service_http_error(exc)
-        _reset_submission_after_queue_failure(submission_id, detail)
+        _reset_submission_after_queue_failure(submission_id, detail, attempt_fingerprint=attempt_token)
         raise AIGradingQueueError(exc.response.status_code, detail) from exc
     except Exception as exc:
         detail = f"AI 任务提交失败: {exc}"
-        _reset_submission_after_queue_failure(submission_id, detail)
+        _reset_submission_after_queue_failure(submission_id, detail, attempt_fingerprint=attempt_token)
         raise AIGradingQueueError(500, detail) from exc
 
 
-def _reset_submission_after_queue_failure(submission_id: int, error_message: str = "") -> None:
+def _reset_submission_after_queue_failure(
+    submission_id: int,
+    error_message: str = "",
+    *,
+    attempt_fingerprint: str | None = None,
+) -> None:
     try:
         with get_db_connection() as conn:
-            submission = conn.execute(
-                "SELECT * FROM submissions WHERE id = ?",
-                (submission_id,),
-            ).fetchone()
-            conn.execute(
-                """
-                UPDATE submissions
-                SET status = CASE WHEN score IS NOT NULL THEN 'graded' ELSE 'submitted' END,
-                    grading_started_at = NULL,
-                    grading_attempt_fingerprint = NULL
-                WHERE id = ? AND status = 'grading'
-                """,
-                (submission_id,),
+            submission = _reset_submission_after_queue_failure_with_connection(
+                conn,
+                submission_id=submission_id,
+                error_message=error_message,
+                attempt_fingerprint=attempt_fingerprint,
             )
+            if not submission:
+                conn.commit()
+                return
             if submission:
                 _release_stage_exam_grading_attempts(
                     conn,

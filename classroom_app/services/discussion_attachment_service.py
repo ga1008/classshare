@@ -10,6 +10,8 @@ from fastapi import HTTPException, UploadFile
 
 from ..config import MAX_UPLOAD_SIZE_BYTES
 from ..database import get_db_connection
+from ..db.connection import execute_insert_returning_id, get_configured_db_engine
+from ..db.errors import DatabaseProgrammingError
 from ..services.chat_image_derivatives import (
     CHAT_IMAGE_DERIVATIVE_MIME_TYPE,
     CHAT_IMAGE_TYPES,
@@ -62,8 +64,48 @@ DISCUSSION_VARIANT_COLUMNS = {
     },
 }
 
+DISCUSSION_ATTACHMENT_REQUIRED_COLUMNS = (
+    "id",
+    "class_offering_id",
+    "uploaded_by_user_id",
+    "uploaded_by_role",
+    "file_hash",
+    "original_filename",
+    "mime_type",
+    "file_size",
+    "image_width",
+    "image_height",
+    "created_at",
+    *DISCUSSION_DERIVATIVE_COLUMNS.keys(),
+)
+
 
 def ensure_discussion_attachment_schema(conn) -> None:
+    engine = get_configured_db_engine()
+    if engine == "postgres":
+        rows = conn.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = ?
+              AND table_name = ?
+            """,
+            ("public", "discussion_attachments"),
+        ).fetchall()
+        columns = {
+            str(row["column_name"] if hasattr(row, "keys") and "column_name" in row.keys() else row[0])
+            for row in rows
+        }
+        missing = [column for column in DISCUSSION_ATTACHMENT_REQUIRED_COLUMNS if column not in columns]
+        if missing:
+            raise DatabaseProgrammingError(
+                "PostgreSQL discussion_attachments schema validation failed; missing columns: "
+                + ", ".join(missing)
+            )
+        return
+    if engine != "sqlite":
+        raise ValueError(f"Unsupported discussion attachment database engine: {engine!r}")
+
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS discussion_attachments
@@ -486,7 +528,8 @@ async def create_discussion_attachment(conn, class_offering_id: int, user: dict,
     thumbnail = derivative_payload["thumbnail"]
     preview = derivative_payload["preview"]
 
-    cursor = conn.execute(
+    attachment_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO discussion_attachments (
             class_offering_id,
@@ -535,7 +578,7 @@ async def create_discussion_attachment(conn, class_offering_id: int, user: dict,
     )
     row = conn.execute(
         "SELECT * FROM discussion_attachments WHERE id = ?",
-        (int(cursor.lastrowid),),
+        (attachment_id,),
     ).fetchone()
     return build_discussion_attachment_payload(row, class_offering_id)
 

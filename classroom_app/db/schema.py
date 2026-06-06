@@ -1,7 +1,9 @@
 import sqlite3
 import sys
 
+from .. import config
 from .connection import get_db_connection
+from .postgres_schema import validate_postgres_schema
 from .schema_assignments import ensure_assignment_schema
 from .schema_classroom_activity import ensure_classroom_activity_schema
 from .schema_foundation import ensure_foundation_schema
@@ -14,6 +16,19 @@ def init_database():
     """
     Initialize the LanShare database schema without changing the public startup entrypoint.
     """
+    if getattr(config, "DB_ENGINE", "sqlite") == "postgres":
+        print("[DB] Verifying PostgreSQL schema...")
+        conn = get_db_connection()
+        try:
+            report = validate_postgres_schema(conn)
+        finally:
+            conn.close()
+        print(
+            "[DB] PostgreSQL schema verified: "
+            f"{report['present_required_table_count']}/{report['required_table_count']} required tables"
+        )
+        return report
+
     print("[DB] Initializing V4.0 database schema...")
     try:
         conn = get_db_connection()

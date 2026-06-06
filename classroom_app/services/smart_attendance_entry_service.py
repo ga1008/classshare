@@ -5,6 +5,7 @@ import sqlite3
 from typing import Any
 
 from ..database import get_db_connection
+from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 from ..time_utils import local_iso, local_now
 from .message_center_service import create_smart_attendance_alert_notification
 from .smart_classroom_checkin_sync_service import (
@@ -51,8 +52,33 @@ def maybe_enqueue_teacher_daily_checkin_sync(
     teacher_id: int,
 ) -> int | None:
     now = local_iso()
+    params = (
+        int(class_offering_id),
+        int(teacher_id),
+        TEACHER_DAILY_SYNC_TASK_TYPE,
+        _today_text(),
+        now,
+        now,
+    )
+    if get_configured_db_engine() == "postgres":
+        row = conn.execute(
+            """
+            INSERT INTO smart_attendance_daily_tasks (
+                class_offering_id, teacher_id, task_type, task_date,
+                status, message, raw_payload_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, 'queued', '', '{}', ?, ?)
+            ON CONFLICT (class_offering_id, teacher_id, task_type, task_date)
+            DO NOTHING
+            RETURNING id
+            """,
+            params,
+        ).fetchone()
+        return int(row["id"]) if row else None
+
     try:
-        cursor = conn.execute(
+        return execute_insert_returning_id(
+            conn,
             """
             INSERT INTO smart_attendance_daily_tasks (
                 class_offering_id, teacher_id, task_type, task_date,
@@ -60,18 +86,11 @@ def maybe_enqueue_teacher_daily_checkin_sync(
             )
             VALUES (?, ?, ?, ?, 'queued', '', '{}', ?, ?)
             """,
-            (
-                int(class_offering_id),
-                int(teacher_id),
-                TEACHER_DAILY_SYNC_TASK_TYPE,
-                _today_text(),
-                now,
-                now,
-            ),
+            params,
+            engine="sqlite",
         )
     except sqlite3.IntegrityError:
         return None
-    return int(cursor.lastrowid)
 
 
 def _mark_daily_task(

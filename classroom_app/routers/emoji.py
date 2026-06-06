@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from ..database import get_db_connection
+from ..db.connection import execute_insert_returning_id
 from ..dependencies import get_current_user
 from ..services.emoji_service import (
     MAX_CUSTOM_EMOJIS_PER_USER,
@@ -81,7 +82,8 @@ async def upload_custom_emoji(
             sanitize_custom_emoji_name(file.filename or "emoji"),
         )
 
-        cursor = conn.execute(
+        emoji_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO custom_emojis
             (
@@ -115,7 +117,7 @@ async def upload_custom_emoji(
 
         created = conn.execute(
             "SELECT * FROM custom_emojis WHERE id = ?",
-            (cursor.lastrowid,),
+            (emoji_id,),
         ).fetchone()
 
     return {

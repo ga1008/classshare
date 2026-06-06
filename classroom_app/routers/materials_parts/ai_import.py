@@ -4,8 +4,64 @@ from .ai_import_helpers import *
 from .final_material_helpers import *
 from .rewrite_helpers import *
 
+from ...db.connection import execute_insert_returning_id, get_configured_db_engine
+
 
 router = APIRouter()
+
+
+def _insert_material_ai_import_record(
+    conn,
+    *,
+    teacher_id: int,
+    parent_material_id: int | None,
+    document_group: str,
+    document_type: str,
+    document_type_label: str,
+    source_file_name: str,
+    source_file_hash: str,
+    source_file_size: int,
+    source_mime_type: str,
+    metadata_json: str,
+    now: str,
+    engine: str | None = None,
+):
+    db_engine = (engine or get_configured_db_engine()).strip().lower()
+    if db_engine not in {"sqlite", "postgres"}:
+        raise ValueError(f"Unsupported material AI import database engine: {db_engine}")
+    insert_sql = """
+        INSERT INTO material_ai_import_records
+        (teacher_id, package_material_id, source_material_id, parsed_material_id,
+         parent_material_id, document_group, document_type, document_type_label,
+         parse_status, parse_mode, extraction_method, source_file_name,
+         source_file_hash, source_file_size, source_mime_type, metadata_json, content_markdown,
+         parsed_payload_json, export_payload_json, warnings_json, content_quality_status,
+         content_quality_json, error_message, created_at, updated_at, completed_at)
+        VALUES (?, NULL, NULL, NULL, ?, ?, ?, ?, 'queued', 'ai', '', ?, ?, ?, ?, ?, '',
+                NULL, NULL, '[]', 'unchecked', '{}', '', ?, ?, NULL)
+    """
+    params = (
+        int(teacher_id),
+        parent_material_id,
+        document_group,
+        document_type,
+        document_type_label,
+        source_file_name,
+        source_file_hash,
+        int(source_file_size),
+        source_mime_type,
+        metadata_json,
+        now,
+        now,
+    )
+    if db_engine == "postgres":
+        cursor = conn.execute(f"{insert_sql} RETURNING *", params)
+        return cursor.fetchone()
+    record_id = execute_insert_returning_id(conn, insert_sql, params, engine=db_engine)
+    return conn.execute(
+        "SELECT * FROM material_ai_import_records WHERE id = ?",
+        (record_id,),
+    ).fetchone()
 
 
 @router.get(
@@ -291,39 +347,22 @@ async def ai_import_material(
             if base_parent["node_type"] != "folder":
                 raise HTTPException(400, "只能导入到文件夹中")
         now = datetime.now().isoformat()
-        record_cursor = conn.execute(
-            """
-            INSERT INTO material_ai_import_records
-            (teacher_id, package_material_id, source_material_id, parsed_material_id,
-             parent_material_id, document_group, document_type, document_type_label,
-             parse_status, parse_mode, extraction_method, source_file_name,
-             source_file_hash, source_file_size, source_mime_type, metadata_json, content_markdown,
-             parsed_payload_json, export_payload_json, warnings_json, content_quality_status,
-             content_quality_json, error_message, created_at, updated_at, completed_at)
-            VALUES (?, NULL, NULL, NULL, ?, ?, ?, ?, 'queued', 'ai', '', ?, ?, ?, ?, ?, '',
-                    NULL, NULL, '[]', 'unchecked', '{}', '', ?, ?, NULL)
-            """,
-            (
-                user["id"],
-                base_parent["id"] if base_parent else None,
-                type_meta["group_key"],
-                type_meta["key"],
-                type_meta["label"],
-                original_name,
-                file_hash,
-                source_file_size,
-                source_mime_type,
-                json.dumps(initial_metadata, ensure_ascii=False),
-                now,
-                now,
-            ),
+        row = _insert_material_ai_import_record(
+            conn,
+            teacher_id=int(user["id"]),
+            parent_material_id=base_parent["id"] if base_parent else None,
+            document_group=type_meta["group_key"],
+            document_type=type_meta["key"],
+            document_type_label=type_meta["label"],
+            source_file_name=original_name,
+            source_file_hash=file_hash,
+            source_file_size=source_file_size,
+            source_mime_type=source_mime_type,
+            metadata_json=json.dumps(initial_metadata, ensure_ascii=False),
+            now=now,
         )
-        import_record_id = int(record_cursor.lastrowid)
+        import_record_id = int(row["id"])
         conn.commit()
-        row = conn.execute(
-            "SELECT * FROM material_ai_import_records WHERE id = ?",
-            (import_record_id,),
-        ).fetchone()
         task = _serialize_material_ai_import_task(conn, row, user)
 
     if not _enqueue_material_ai_import_task(import_record_id):

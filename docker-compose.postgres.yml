@@ -1,0 +1,54 @@
+name: lanshare
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ./docker.env
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      POSTGRES_USER: ${POSTGRES_USER:-lanshare}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: ${POSTGRES_DB:-lanshare}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ${POSTGRES_HOST_DATA_DIR:-./data/postgres}:/var/lib/postgresql/data
+      - ./data/postgres-backups:/backups
+    expose:
+      - "5432"
+    networks:
+      - lanshare
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -h 127.0.0.1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  app:
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  mailer:
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  blog-crawler:
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  agent-worker:
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  lanshare:
+    driver: bridge

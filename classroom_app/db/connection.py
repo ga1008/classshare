@@ -3,10 +3,70 @@ import sys
 import threading
 
 from .. import config
+from .errors import DatabaseBackendState, DatabaseConfigurationError, redact_database_url
+from .postgres import connect_postgres
 
 
 _sqlite_journal_mode_lock = threading.Lock()
 _sqlite_journal_mode_paths: set[str] = set()
+SUPPORTED_DB_ENGINES = {"sqlite", "postgres"}
+
+
+def get_configured_db_engine() -> str:
+    engine = str(getattr(config, "DB_ENGINE", "sqlite") or "sqlite").strip().lower()
+    if engine not in SUPPORTED_DB_ENGINES:
+        raise DatabaseConfigurationError(
+            f"Unsupported DB_ENGINE '{engine}'. Supported values: sqlite, postgres."
+        )
+    return engine
+
+
+def database_backend_state() -> DatabaseBackendState:
+    engine = get_configured_db_engine()
+    if engine == "sqlite":
+        return DatabaseBackendState(engine=engine, configured=True, details=str(config.DB_PATH))
+    return DatabaseBackendState(
+        engine=engine,
+        configured=bool(getattr(config, "DATABASE_URL", "")),
+        details=redact_database_url(getattr(config, "DATABASE_URL", "")),
+    )
+
+
+def begin_immediate_transaction(conn, *, engine: str | None = None) -> None:
+    """Start SQLite's reserved write transaction; PostgreSQL uses the active implicit transaction."""
+    db_engine = (engine or get_configured_db_engine()).strip().lower()
+    if db_engine == "sqlite":
+        conn.execute("BEGIN IMMEDIATE")
+        return
+    if db_engine == "postgres":
+        return
+    raise DatabaseConfigurationError(
+        f"Unsupported DB engine '{db_engine}' for immediate transaction."
+    )
+
+
+def execute_insert_returning_id(
+    conn,
+    sql: str,
+    params: tuple | list,
+    *,
+    id_column: str = "id",
+    engine: str | None = None,
+) -> int:
+    db_engine = (engine or get_configured_db_engine()).strip().lower()
+    statement = str(sql).rstrip()
+    if db_engine == "postgres":
+        if " RETURNING " not in statement.upper():
+            statement = f"{statement} RETURNING {id_column}"
+        cursor = conn.execute(statement, tuple(params))
+        row = cursor.fetchone()
+        return int(row[id_column])
+    if db_engine == "sqlite":
+        cursor = conn.execute(statement, tuple(params))
+        return int(cursor.lastrowid)
+    raise DatabaseConfigurationError(
+        f"Unsupported DB engine '{db_engine}' for insert returning id."
+    )
 
 
 def _apply_sqlite_pragmas(conn: sqlite3.Connection) -> None:
@@ -36,7 +96,21 @@ class LanShareSQLiteConnection(sqlite3.Connection):
 
 
 def get_db_connection():
-    """Return a SQLite connection with LanShare's concurrency pragmas applied."""
+    """Return a database connection for the configured LanShare backend."""
+    engine = get_configured_db_engine()
+    if engine == "postgres":
+        if not getattr(config, "DATABASE_URL", ""):
+            raise DatabaseConfigurationError(
+                "DB_ENGINE=postgres requires DATABASE_URL. Refusing to fall back to SQLite."
+            )
+        if not getattr(config, "POSTGRES_BACKEND_READY", False):
+            raise DatabaseConfigurationError(
+                "DB_ENGINE=postgres is recognized but gated until the PostgreSQL dialect, "
+                "schema migration, data migration, and deployment targets are complete. "
+                "Set POSTGRES_BACKEND_READY=true only in an explicit PostgreSQL test or cutover flow."
+            )
+        return connect_postgres()
+
     try:
         config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         timeout_seconds = max(float(config.SQLITE_BUSY_TIMEOUT_MS) / 1000.0, 1.0)

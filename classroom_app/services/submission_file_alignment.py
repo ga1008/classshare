@@ -19,6 +19,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ..config import HOMEWORK_SUBMISSIONS_DIR, HOMEWORK_SUBMISSIONS_LEGACY_DIRS
+from ..db.connection import execute_insert_returning_id
 from ..storage_paths import extract_relative_after_markers, resolve_migrated_file_path
 
 
@@ -78,6 +79,34 @@ def _infer_mime_type(filename: str) -> str:
     return guessed or "application/octet-stream"
 
 
+def _row_dict(row: Any) -> dict[str, Any]:
+    if row is None:
+        return {}
+    if isinstance(row, sqlite3.Row):
+        return {key: row[key] for key in row.keys()}
+    if isinstance(row, dict):
+        return dict(row)
+    try:
+        return dict(row)
+    except Exception:
+        return {}
+
+
+def _row_value(row: Any, key: str, index: int = 0, default: Any = None) -> Any:
+    if row is None:
+        return default
+    try:
+        return row[key]
+    except (KeyError, TypeError, IndexError):
+        pass
+    try:
+        return row[index]
+    except (KeyError, TypeError, IndexError):
+        pass
+    data = _row_dict(row)
+    return data.get(key, default)
+
+
 # ---------------------------------------------------------------------------
 # Alignment report
 # ---------------------------------------------------------------------------
@@ -127,13 +156,12 @@ def repair_stale_stored_paths(conn: sqlite3.Connection) -> AlignmentReport:
     report.total_stored_paths_checked = len(rows)
 
     for row in rows:
-        file_id = row[0]
-        stored_path = row[1]
-        relative_path = row[2]
-        original_hash = row[3]
-        assignment_id = row[4]
-        student_pk_id = row[5]
-        course_id = row[6]
+        file_id = int(_row_value(row, "id", 0, 0) or 0)
+        stored_path = _row_value(row, "stored_path", 1, "")
+        relative_path = _row_value(row, "relative_path", 2, "")
+        assignment_id = _row_value(row, "assignment_id", 4, "")
+        student_pk_id = _row_value(row, "student_pk_id", 5, "")
+        course_id = _row_value(row, "course_id", 6, "")
 
         report.total_stored_paths_checked = max(report.total_stored_paths_checked, file_id)
 
@@ -193,9 +221,9 @@ def recover_orphan_files(conn: sqlite3.Connection) -> AlignmentReport:
         report.finished_at = datetime.now().isoformat(timespec="seconds")
         return report
 
-    # Ensure we have dict-like row access
-    original_factory = conn.row_factory
-    conn.row_factory = sqlite3.Row
+    original_factory = getattr(conn, "row_factory", None)
+    if hasattr(conn, "row_factory"):
+        conn.row_factory = sqlite3.Row
 
     try:
         # Build set of (assignment_id, student_pk_id) that already
@@ -209,16 +237,17 @@ def recover_orphan_files(conn: sqlite3.Connection) -> AlignmentReport:
             JOIN assignments a ON a.id = s.assignment_id
             """
         ):
-            key = (str(row[1]), str(row[2]))
+            data = _row_dict(row)
+            key = (str(_row_value(row, "assignment_id", 1)), str(_row_value(row, "student_pk_id", 2)))
             existing_submissions[key] = {
-                "submission_id": row[0],
-                "assignment_id": row[1],
-                "student_pk_id": row[2],
-                "student_name": row[3],
-                "status": row[4],
-                "answers_json": row[5],
-                "submitted_at": row[6],
-                "course_id": row[7],
+                "submission_id": data.get("id", _row_value(row, "id", 0)),
+                "assignment_id": data.get("assignment_id", _row_value(row, "assignment_id", 1)),
+                "student_pk_id": data.get("student_pk_id", _row_value(row, "student_pk_id", 2)),
+                "student_name": data.get("student_name", _row_value(row, "student_name", 3)),
+                "status": data.get("status", _row_value(row, "status", 4)),
+                "answers_json": data.get("answers_json", _row_value(row, "answers_json", 5)),
+                "submitted_at": data.get("submitted_at", _row_value(row, "submitted_at", 6)),
+                "course_id": data.get("course_id", _row_value(row, "course_id", 7)),
             }
 
         # Scan filesystem
@@ -276,7 +305,8 @@ def recover_orphan_files(conn: sqlite3.Connection) -> AlignmentReport:
                         except OSError:
                             submitted_at = now_iso
 
-                        cursor = conn.execute(
+                        submission_id = execute_insert_returning_id(
+                            conn,
                             """
                             INSERT INTO submissions
                                 (assignment_id, student_pk_id, student_name,
@@ -285,7 +315,6 @@ def recover_orphan_files(conn: sqlite3.Connection) -> AlignmentReport:
                             """,
                             (assign_id, int(student_pk_id), student_name, submitted_at),
                         )
-                        submission_id = cursor.lastrowid
                         sub_info = {
                             "submission_id": submission_id,
                             "assignment_id": assign_id,
@@ -303,7 +332,7 @@ def recover_orphan_files(conn: sqlite3.Connection) -> AlignmentReport:
                         "SELECT relative_path FROM submission_files WHERE submission_id = ?",
                         (submission_id,),
                     ):
-                        existing_files.add(str(ef[0] or "").replace("\\", "/"))
+                        existing_files.add(str(_row_value(ef, "relative_path", 0, "") or "").replace("\\", "/"))
 
                     # Walk student directory and register missing files
                     for root, _dirs, files in os.walk(student_dir):
@@ -348,7 +377,8 @@ def recover_orphan_files(conn: sqlite3.Connection) -> AlignmentReport:
 
         conn.commit()
     finally:
-        conn.row_factory = original_factory
+        if hasattr(conn, "row_factory"):
+            conn.row_factory = original_factory
 
     report.finished_at = datetime.now().isoformat(timespec="seconds")
     return report

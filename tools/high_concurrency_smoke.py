@@ -41,6 +41,12 @@ class StudentSession:
     access_token: str
 
 
+def _normalize_run_suffix(run_id: str | None = None) -> str:
+    raw = str(run_id or datetime.now().strftime("%Y%m%d%H%M%S%f"))
+    suffix = "".join(ch.lower() for ch in raw if ch.isalnum())
+    return (suffix[-12:] if suffix else "loadtest")
+
+
 class _MockAIResponse:
     def __init__(self, payload: dict[str, Any], status_code: int = 200) -> None:
         self._payload = payload
@@ -59,52 +65,70 @@ class _MockAIResponse:
         return dict(self._payload)
 
 
-def _seed_test_data(student_count: int) -> dict[str, Any]:
+def _seed_test_data(student_count: int, *, run_id: str | None = None) -> dict[str, Any]:
     from classroom_app.database import get_db_connection
+    from classroom_app.db.connection import execute_insert_returning_id, get_configured_db_engine
     from classroom_app.dependencies import get_password_hash
 
     students: list[StudentSeed] = []
+    db_engine = get_configured_db_engine()
+    run_suffix = _normalize_run_suffix(run_id)
+    teacher_email = f"loadtest.teacher.{run_suffix}@example.com"
     with get_db_connection() as conn:
-        teacher_cursor = conn.execute(
+        teacher_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO teachers (name, email, hashed_password)
             VALUES (?, ?, ?)
             """,
-            ("Load Test Teacher", TEACHER_EMAIL, get_password_hash(TEACHER_PASSWORD)),
+            (f"Load Test Teacher {run_suffix}", teacher_email, get_password_hash(TEACHER_PASSWORD)),
+            engine=db_engine,
         )
-        teacher_id = int(teacher_cursor.lastrowid)
 
-        class_cursor = conn.execute(
+        class_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO classes (name, created_by_teacher_id, description)
             VALUES (?, ?, ?)
             """,
-            ("Load Test Class", teacher_id, "Synthetic class for concurrency smoke tests."),
+            (
+                f"Load Test Class {run_suffix}",
+                teacher_id,
+                f"Synthetic class for concurrency smoke tests. run={run_suffix}",
+            ),
+            engine=db_engine,
         )
-        class_id = int(class_cursor.lastrowid)
 
-        course_cursor = conn.execute(
+        course_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO courses (name, description, credits, created_by_teacher_id)
             VALUES (?, ?, ?, ?)
             """,
-            ("Load Test Course", "Synthetic course for concurrency smoke tests.", 2.0, teacher_id),
+            (
+                f"Load Test Course {run_suffix}",
+                f"Synthetic course for concurrency smoke tests. run={run_suffix}",
+                2.0,
+                teacher_id,
+            ),
+            engine=db_engine,
         )
-        course_id = int(course_cursor.lastrowid)
 
-        offering_cursor = conn.execute(
+        class_offering_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO class_offerings (class_id, course_id, teacher_id, semester, schedule_info)
             VALUES (?, ?, ?, ?, ?)
             """,
             (class_id, course_id, teacher_id, "2026-Spring", "Mon 08:00"),
+            engine=db_engine,
         )
-        class_offering_id = int(offering_cursor.lastrowid)
 
         for index in range(1, student_count + 1):
-            name = f"Student{index:03d}"
-            student_id_number = f"202600{index:03d}"
-            student_cursor = conn.execute(
+            name = f"Student{run_suffix}{index:03d}"
+            student_id_number = f"LT{run_suffix}{index:03d}"
+            student_id = execute_insert_returning_id(
+                conn,
                 """
                 INSERT INTO students (student_id_number, name, class_id, gender, email)
                 VALUES (?, ?, ?, ?, ?)
@@ -114,12 +138,13 @@ def _seed_test_data(student_count: int) -> dict[str, Any]:
                     name,
                     class_id,
                     "unknown",
-                    f"student{index:03d}@example.test",
+                    f"student.{run_suffix}.{index:03d}@example.test",
                 ),
+                engine=db_engine,
             )
             students.append(
                 StudentSeed(
-                    student_pk=int(student_cursor.lastrowid),
+                    student_pk=student_id,
                     name=name,
                     student_id_number=student_id_number,
                 )
@@ -129,6 +154,9 @@ def _seed_test_data(student_count: int) -> dict[str, Any]:
 
     return {
         "teacher_id": teacher_id,
+        "teacher_email": teacher_email,
+        "teacher_password": TEACHER_PASSWORD,
+        "run_id": run_suffix,
         "class_id": class_id,
         "course_id": course_id,
         "class_offering_id": class_offering_id,
@@ -346,12 +374,12 @@ async def _fetch_message_center_summary(
     return payload
 
 
-async def _login_teacher(client: httpx.AsyncClient) -> str:
+async def _login_teacher(client: httpx.AsyncClient, *, email: str, password: str) -> str:
     response = await client.post(
         "/teacher/login",
         data={
-            "email": TEACHER_EMAIL,
-            "password": TEACHER_PASSWORD,
+            "email": email,
+            "password": password,
             "next": "/dashboard",
         },
         follow_redirects=False,
@@ -468,6 +496,8 @@ async def _main() -> None:
             seed = _seed_test_data(STUDENT_COUNT)
             class_offering_id = int(seed["class_offering_id"])
             teacher_id = int(seed["teacher_id"])
+            teacher_email = str(seed["teacher_email"])
+            teacher_password = str(seed["teacher_password"])
             students = list(seed["students"])
 
             transport = httpx.ASGITransport(app=app, raise_app_exceptions=True)
@@ -517,7 +547,11 @@ async def _main() -> None:
                 _assert_phase_success(discussion_mood_summary, discussion_mood_results)
                 phase_summaries.append(discussion_mood_summary)
 
-                teacher_access_token = await _login_teacher(client)
+                teacher_access_token = await _login_teacher(
+                    client,
+                    email=teacher_email,
+                    password=teacher_password,
+                )
 
                 ai_summary, ai_results = await _run_phase(
                     "ai_generate_assignment",

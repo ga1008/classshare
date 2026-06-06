@@ -122,6 +122,36 @@ Validate the final merged compose file:
 docker compose config
 ```
 
+## Optional PostgreSQL Overlay
+
+SQLite remains the default production backend until every migration gate passes.
+The PostgreSQL service is provided as an explicit overlay:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml config
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d postgres
+```
+
+The overlay keeps PostgreSQL on the internal Compose network and stores data
+under `data/postgres/`. Do not publish PostgreSQL ports on the public server.
+
+Before enabling `DB_ENGINE=postgres` in the real remote `docker.env`, complete
+all of the following:
+
+1. Back up `/lanshare/data` and the current SQLite database.
+2. Load or confirm the PostgreSQL image locally on the remote host; do not rely
+   on internet access during production deployment.
+3. Run the SQLite to PostgreSQL migration against a backup copy and save the
+   validation report.
+4. Run `python tools/deploy/postgres_preflight.py` and resolve every blocker.
+5. Set `DATABASE_URL`, `POSTGRES_PASSWORD`, and `POSTGRES_BACKEND_READY=true`
+   only after the migration report and rollback plan are accepted.
+6. Restart app and worker containers together so they read the same database
+   configuration.
+7. Run `tools/deploy/postflight.ps1 -CheckPostgres` and keep the report.
+
+Never commit the real PostgreSQL password or a production `DATABASE_URL`.
+
 ## Notes
 
 - `requirements.lock.txt` is now the single locked dependency source for local and Docker installs.

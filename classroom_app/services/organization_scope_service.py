@@ -4,6 +4,7 @@ import re
 import sqlite3
 from typing import Any
 
+from ..db.connection import get_configured_db_engine
 from .department_service import infer_department_from_text, normalize_department
 
 
@@ -76,6 +77,21 @@ def _first_nonempty(conn: sqlite3.Connection, sql: str, params: tuple[Any, ...])
 
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     try:
+        engine = get_configured_db_engine()
+        if engine == "postgres":
+            row = conn.execute(
+                """
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = ?
+                  AND table_name = ?
+                LIMIT 1
+                """,
+                ("public", table_name),
+            ).fetchone()
+            return row is not None
+        if engine != "sqlite":
+            raise ValueError(f"Unsupported organization scope database engine: {engine!r}")
         row = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
             (table_name,),

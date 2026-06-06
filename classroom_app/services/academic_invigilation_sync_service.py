@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 from ..database import get_db_connection
+from ..db.connection import execute_insert_returning_id
 from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
 from .academic_integration_service import (
     load_teacher_academic_access_method,
@@ -603,7 +604,8 @@ def _upsert_calendar_event(
         synced_at,
     )
     if existing is None:
-        cursor = conn.execute(
+        event_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO teacher_calendar_events (
                 teacher_id, semester_id, source_type, source_id, source_key,
@@ -614,7 +616,7 @@ def _upsert_calendar_event(
             """,
             (*params, synced_at),
         )
-        return True, False, int(cursor.lastrowid)
+        return True, False, event_id
 
     changed = any(
         str(existing[key] or "") != str(value or "")

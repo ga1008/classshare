@@ -1,7 +1,9 @@
 import sqlite3
 import unittest
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
+from classroom_app.services import background_task_ledger_service as ledger
 from classroom_app.services.background_task_ledger_service import build_background_task_ledger_snapshot
 
 
@@ -187,6 +189,64 @@ class BackgroundTaskLedgerTests(unittest.TestCase):
             )
         finally:
             conn.close()
+
+    def test_postgres_metadata_checks_use_information_schema(self):
+        class FakeCursor:
+            def __init__(self, row=None):
+                self._row = row
+
+            def fetchone(self):
+                return self._row
+
+        class FakePostgresConnection:
+            def __init__(self):
+                self.calls = []
+
+            def execute(self, sql, params=()):
+                normalized = " ".join(str(sql).split())
+                self.calls.append((normalized, tuple(params)))
+                if "information_schema.tables" in normalized:
+                    return FakeCursor({"exists": 1} if params[1] == "email_outbox" else None)
+                if "information_schema.columns" in normalized:
+                    return FakeCursor({"exists": 1} if params[2] == "status" else None)
+                raise AssertionError(f"Unexpected SQL: {normalized}")
+
+        conn = FakePostgresConnection()
+        with patch.object(ledger, "get_configured_db_engine", return_value="postgres"):
+            self.assertTrue(ledger._table_exists(conn, "email_outbox"))
+            self.assertTrue(ledger._column_exists(conn, "email_outbox", "status"))
+            self.assertFalse(ledger._column_exists(conn, "email_outbox", "missing_column"))
+
+        sql_text = "\n".join(sql for sql, _ in conn.calls)
+        self.assertIn("information_schema.tables", sql_text)
+        self.assertIn("information_schema.columns", sql_text)
+        self.assertNotIn("sqlite_master", sql_text)
+        self.assertNotIn("PRAGMA", sql_text)
+
+    def test_postgres_scalar_helpers_accept_dict_rows(self):
+        class FakeCursor:
+            def __init__(self, row):
+                self._row = row
+
+            def fetchone(self):
+                return self._row
+
+        class FakePostgresConnection:
+            def execute(self, sql, params=()):
+                normalized = " ".join(str(sql).split())
+                if normalized.startswith("SELECT COUNT(*) AS row_count"):
+                    return FakeCursor({"row_count": 3})
+                if normalized.startswith("SELECT MIN(created_at) AS oldest_value"):
+                    return FakeCursor({"oldest_value": "2026-01-01T00:00:00"})
+                raise AssertionError(f"Unexpected SQL: {normalized}")
+
+        conn = FakePostgresConnection()
+
+        self.assertEqual(3, ledger._count_status(conn, "email_outbox", "status", ("queued",)))
+        self.assertEqual(
+            "2026-01-01T00:00:00",
+            ledger._oldest_time(conn, "email_outbox", "status", ("queued",), "created_at"),
+        )
 
 
 if __name__ == "__main__":

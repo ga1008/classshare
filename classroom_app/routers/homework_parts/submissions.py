@@ -290,7 +290,7 @@ async def add_submission_files(
 
         with get_db_connection() as conn:
             try:
-                conn.execute("BEGIN IMMEDIATE")
+                begin_immediate_transaction(conn)
                 current_submission = _get_submission_for_teacher(conn, int(submission_id), int(user["id"]))
                 _ensure_submission_files_manageable(current_submission)
                 current_files = [
@@ -420,7 +420,7 @@ async def delete_submission_file(file_id: int, user: dict = Depends(get_current_
                 cleaned_answers_json = None
 
         try:
-            conn.execute("BEGIN IMMEDIATE")
+            begin_immediate_transaction(conn)
             current_submission = _get_submission_for_teacher(conn, int(file_dict["submission_id"]), int(user["id"]))
             _ensure_submission_files_manageable(current_submission)
             conn.execute("DELETE FROM submission_files WHERE id = ?", (int(file_id),))

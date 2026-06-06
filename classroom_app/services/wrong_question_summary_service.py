@@ -13,6 +13,8 @@ from fastapi import HTTPException
 
 from ..core import ai_client
 from ..database import get_db_connection
+from ..db.connection import get_configured_db_engine
+from ..db.errors import DatabaseProgrammingError
 from .assignment_lifecycle_service import close_overdue_assignments, refresh_assignment_runtime_status
 
 
@@ -37,6 +39,44 @@ LOCAL_TEXT_CLUSTER_MAX_DISTINCT_ANSWERS = 2
 
 _active_wrong_summary_jobs: set[str] = set()
 
+WRONG_SUMMARY_POSTGRES_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
+    "assignment_wrong_answer_ai_cache": (
+        "id",
+        "assignment_id",
+        "question_key",
+        "answer_signature",
+        "prompt_version",
+        "result_json",
+        "created_at",
+        "updated_at",
+    ),
+    "exam_paper_difficulty_ai_cache": (
+        "id",
+        "exam_paper_id",
+        "questions_signature",
+        "prompt_version",
+        "result_json",
+        "created_at",
+        "updated_at",
+    ),
+    "assignment_wrong_summary_jobs": (
+        "id",
+        "assignment_id",
+        "teacher_id",
+        "questions_signature",
+        "prompt_version",
+        "status",
+        "pending_text_questions",
+        "pending_difficulty",
+        "error_message",
+        "created_at",
+        "run_token",
+        "started_at",
+        "completed_at",
+        "updated_at",
+    ),
+}
+
 QUESTION_TYPE_LABELS = {
     "radio": "单选题",
     "checkbox": "多选题",
@@ -46,6 +86,13 @@ QUESTION_TYPE_LABELS = {
 
 
 def ensure_wrong_summary_cache_tables(conn) -> None:
+    engine = get_configured_db_engine()
+    if engine == "postgres":
+        _validate_wrong_summary_postgres_tables(conn)
+        return
+    if engine != "sqlite":
+        raise ValueError(f"Unsupported wrong-summary database engine: {engine!r}")
+
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS assignment_wrong_answer_ai_cache (
@@ -114,6 +161,30 @@ def ensure_wrong_summary_cache_tables(conn) -> None:
         "CREATE INDEX IF NOT EXISTS idx_wrong_summary_jobs_assignment "
         "ON assignment_wrong_summary_jobs (assignment_id, questions_signature, status, updated_at DESC)"
     )
+
+
+def _validate_wrong_summary_postgres_tables(conn) -> None:
+    missing: dict[str, list[str]] = {}
+    for table_name, required_columns in WRONG_SUMMARY_POSTGRES_REQUIRED_COLUMNS.items():
+        rows = conn.execute(
+            """
+            SELECT column_name AS name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = ?
+            """,
+            (table_name,),
+        ).fetchall()
+        actual_columns = {str(row["name"] if hasattr(row, "keys") else row[0]) for row in rows}
+        missing_columns = [column for column in required_columns if column not in actual_columns]
+        if missing_columns:
+            missing[table_name] = missing_columns
+    if missing:
+        details = "; ".join(f"{table}: {', '.join(columns)}" for table, columns in sorted(missing.items()))
+        raise DatabaseProgrammingError(
+            "PostgreSQL wrong-summary runtime tables are not ready. "
+            f"Missing required columns: {details}. Refusing to run SQLite schema initialization."
+        )
 
 
 def expire_interrupted_wrong_summary_jobs() -> int:
@@ -803,9 +874,69 @@ def _is_wrong_summary_job_token_current(assignment_id: str, questions_signature:
 
 def _mark_wrong_summary_job_running(assignment_id: str, questions_signature: str, run_token: str) -> bool:
     now = datetime.now().isoformat(timespec="seconds")
+    engine = get_configured_db_engine()
     with get_db_connection() as conn:
         ensure_wrong_summary_cache_tables(conn)
-        cursor = conn.execute(
+        return _mark_wrong_summary_job_running_with_connection(
+            conn,
+            assignment_id=assignment_id,
+            questions_signature=questions_signature,
+            run_token=run_token,
+            now=now,
+            engine=engine,
+        )
+
+
+def _mark_wrong_summary_job_running_with_connection(
+    conn,
+    *,
+    assignment_id: str,
+    questions_signature: str,
+    run_token: str,
+    now: str,
+    engine: str,
+) -> bool:
+    if engine == "postgres":
+        row = conn.execute(
+            """
+            WITH candidate AS (
+                SELECT id
+                FROM assignment_wrong_summary_jobs
+                WHERE assignment_id = ?
+                  AND questions_signature = ?
+                  AND prompt_version = ?
+                  AND run_token = ?
+                  AND status = ?
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE assignment_wrong_summary_jobs
+            SET status = ?,
+                started_at = COALESCE(started_at, ?),
+                error_message = '',
+                updated_at = ?
+            FROM candidate
+            WHERE assignment_wrong_summary_jobs.id = candidate.id
+            RETURNING assignment_wrong_summary_jobs.id
+            """,
+            (
+                assignment_id,
+                questions_signature,
+                PROMPT_VERSION,
+                str(run_token or ""),
+                WRONG_SUMMARY_JOB_STATUS_QUEUED,
+                WRONG_SUMMARY_JOB_STATUS_RUNNING,
+                now,
+                now,
+            ),
+        ).fetchone()
+        conn.commit()
+        return row is not None
+
+    if engine != "sqlite":
+        raise ValueError(f"Unsupported wrong-summary database engine: {engine!r}")
+
+    cursor = conn.execute(
             """
             UPDATE assignment_wrong_summary_jobs
             SET status = ?,
@@ -816,6 +947,7 @@ def _mark_wrong_summary_job_running(assignment_id: str, questions_signature: str
               AND questions_signature = ?
               AND prompt_version = ?
               AND run_token = ?
+              AND status = ?
             """,
             (
                 WRONG_SUMMARY_JOB_STATUS_RUNNING,
@@ -825,9 +957,10 @@ def _mark_wrong_summary_job_running(assignment_id: str, questions_signature: str
                 questions_signature,
                 PROMPT_VERSION,
                 str(run_token or ""),
+                WRONG_SUMMARY_JOB_STATUS_QUEUED,
             ),
         )
-        conn.commit()
+    conn.commit()
     return int(cursor.rowcount or 0) > 0
 
 

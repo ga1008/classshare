@@ -15,6 +15,7 @@ from ..config import (
     AGENT_TASK_RUNTIME_TOKEN,
     AGENT_TASK_RUNTIME_URL,
 )
+from ..db.connection import execute_insert_returning_id
 from ..time_utils import local_iso
 from .email_notification_service import decrypt_secret, encrypt_secret
 
@@ -364,7 +365,8 @@ async def create_agent_api_key(conn, payload: dict[str, Any], *, teacher_id: int
     now = local_iso()
     fingerprint = _fingerprint(api_key)
     try:
-        cursor = conn.execute(
+        key_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO agent_runtime_api_keys (
                 provider, key_label, key_fingerprint, key_encrypted, key_suffix,
@@ -396,7 +398,6 @@ async def create_agent_api_key(conn, payload: dict[str, Any], *, teacher_id: int
             raise ValueError("这个 API Key 已经保存过。") from exc
         raise
 
-    key_id = int(cursor.lastrowid)
     if test_result:
         conn.execute(
             """

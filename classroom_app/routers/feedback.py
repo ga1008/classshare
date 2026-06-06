@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
 from ..database import get_db_connection
+from ..db.connection import execute_insert_returning_id
 from ..dependencies import get_current_user
 from ..services.file_service import global_file_write_path, resolve_global_file_path
 from ..services.message_center_service import create_app_feedback_notifications, is_super_admin_teacher
@@ -67,7 +68,8 @@ async def submit_feedback(request: Request, user: dict = Depends(get_current_use
     page_url = _clean_text(body.get("page_url"))[:MAX_PAGE_URL_LENGTH]
 
     with get_db_connection() as conn:
-        cursor = conn.execute(
+        feedback_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO app_feedback (user_id, user_role, user_name, feedback_type, section, title, description, page_url)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -83,7 +85,6 @@ async def submit_feedback(request: Request, user: dict = Depends(get_current_use
                 page_url,
             ),
         )
-        feedback_id = cursor.lastrowid
         notification_count = create_app_feedback_notifications(conn, feedback_id)
         conn.commit()
 
@@ -150,7 +151,8 @@ async def upload_feedback_attachment(
         file_path.write_bytes(content)
 
     with get_db_connection() as conn:
-        cursor = conn.execute(
+        attachment_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO app_feedback_attachments (feedback_id, file_hash, original_filename, file_size, mime_type)
             VALUES (?, ?, ?, ?, ?)
@@ -158,7 +160,6 @@ async def upload_feedback_attachment(
             (feedback_id, file_hash, original_filename, file_size, content_type),
         )
         conn.commit()
-        attachment_id = cursor.lastrowid
 
     return JSONResponse(
         {

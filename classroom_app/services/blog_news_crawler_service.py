@@ -26,6 +26,7 @@ from PIL import Image, UnidentifiedImageError
 
 from ..config import AI_ASSISTANT_URL
 from ..database import get_db_connection
+from ..db.connection import begin_immediate_transaction, execute_insert_returning_id, get_configured_db_engine
 from .blog_service import (
     AUTHOR_DISPLAY_REAL,
     POST_STATUS_DRAFT,
@@ -603,7 +604,16 @@ class _RobotsCache:
 
 
 def load_blog_news_crawler_config(conn) -> dict[str, Any]:
-    conn.execute("INSERT OR IGNORE INTO blog_news_crawler_config (id) VALUES (1)")
+    if get_configured_db_engine() == "postgres":
+        conn.execute(
+            """
+            INSERT INTO blog_news_crawler_config (id)
+            VALUES (1)
+            ON CONFLICT (id) DO NOTHING
+            """
+        )
+    else:
+        conn.execute("INSERT OR IGNORE INTO blog_news_crawler_config (id) VALUES (1)")
     row = conn.execute("SELECT * FROM blog_news_crawler_config WHERE id = 1").fetchone()
     data = dict(row) if row else {}
     custom_source_templates = _normalize_source_templates(
@@ -831,22 +841,25 @@ def enqueue_blog_news_crawler_run(
     if existing is not None and trigger_source == TRIGGER_MANUAL:
         return _serialize_run_row(existing)
     now = _now_iso()
-    cursor = conn.execute(
+    engine = get_configured_db_engine()
+    params = (
+        trigger_source,
+        str(scheduled_for or now),
+        str(worker_id or ""),
+        now,
+        now,
+    )
+    run_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO blog_news_crawler_runs (
             trigger_source, status, scheduled_for, worker_id, created_at, updated_at
         )
         VALUES (?, 'pending', ?, ?, ?, ?)
         """,
-        (
-            trigger_source,
-            str(scheduled_for or now),
-            str(worker_id or ""),
-            now,
-            now,
-        ),
+        params,
+        engine=engine,
     )
-    run_id = int(cursor.lastrowid)
     row = conn.execute("SELECT * FROM blog_news_crawler_runs WHERE id = ?", (run_id,)).fetchone()
     return _serialize_run_row(row)
 
@@ -875,6 +888,75 @@ def mark_blog_news_crawler_heartbeat(conn, *, worker_id: str, status: str) -> No
     )
 
 
+def _claim_due_blog_news_crawler_run(
+    conn,
+    *,
+    worker_id: str,
+    now: str,
+    engine: str,
+) -> dict[str, Any] | None:
+    worker_id = str(worker_id or "")
+    if engine == "postgres":
+        row = conn.execute(
+            """
+            UPDATE blog_news_crawler_runs
+            SET status = ?,
+                worker_id = ?,
+                started_at = COALESCE(NULLIF(started_at, ''), ?),
+                updated_at = ?
+            WHERE id IN (
+                SELECT id
+                FROM blog_news_crawler_runs
+                WHERE status = ?
+                  AND COALESCE(scheduled_for, '') <= ?
+                ORDER BY scheduled_for ASC, created_at ASC, id ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING *
+            """,
+            (RUN_STATUS_RUNNING, worker_id, now, now, RUN_STATUS_PENDING, now),
+        ).fetchone()
+        conn.commit()
+        return dict(row) if row else None
+
+    if engine != "sqlite":
+        raise ValueError(f"Unsupported blog crawler database engine: {engine!r}")
+
+    begin_immediate_transaction(conn)
+    row = conn.execute(
+        """
+        SELECT *
+        FROM blog_news_crawler_runs
+        WHERE status = ?
+          AND COALESCE(scheduled_for, '') <= ?
+        ORDER BY scheduled_for ASC, created_at ASC, id ASC
+        LIMIT 1
+        """,
+        (RUN_STATUS_PENDING, now),
+    ).fetchone()
+    if row is None:
+        conn.commit()
+        return None
+    run_id = int(row["id"])
+    cursor = conn.execute(
+        """
+        UPDATE blog_news_crawler_runs
+        SET status = ?, worker_id = ?, started_at = COALESCE(NULLIF(started_at, ''), ?), updated_at = ?
+        WHERE id = ?
+          AND status = ?
+          AND COALESCE(scheduled_for, '') <= ?
+        """,
+        (RUN_STATUS_RUNNING, worker_id, now, now, run_id, RUN_STATUS_PENDING, now),
+    )
+    if not cursor.rowcount:
+        conn.commit()
+        return None
+    claimed = conn.execute("SELECT * FROM blog_news_crawler_runs WHERE id = ?", (run_id,)).fetchone()
+    conn.commit()
+    return dict(claimed) if claimed else None
+
+
 async def run_blog_news_crawler_job(run_id: int, *, worker_id: str = "") -> dict[str, Any]:
     logs: list[dict[str, Any]] = []
     worker_id = worker_id or _default_worker_id()
@@ -898,7 +980,7 @@ async def run_blog_news_crawler_job(run_id: int, *, worker_id: str = "") -> dict
             conn.execute(
                 """
                 UPDATE blog_news_crawler_runs
-                SET status = ?, worker_id = ?, started_at = ?, updated_at = ?, keywords_json = ?
+                SET status = ?, worker_id = ?, started_at = COALESCE(NULLIF(started_at, ''), ?), updated_at = ?, keywords_json = ?
                 WHERE id = ?
                 """,
                 (
@@ -1009,24 +1091,15 @@ async def run_blog_news_crawler_job(run_id: int, *, worker_id: str = "") -> dict
 
 async def process_due_blog_news_crawler_runs_once(*, worker_id: str = "") -> dict[str, Any]:
     worker_id = worker_id or _default_worker_id()
+    engine = get_configured_db_engine()
     with get_db_connection() as conn:
         _mark_stale_running_runs(conn)
         config = load_blog_news_crawler_config(conn)
         mark_blog_news_crawler_heartbeat(conn, worker_id=worker_id, status="polling")
         _ensure_scheduled_run(conn, config, worker_id=worker_id)
         now = _now_iso()
-        row = conn.execute(
-            """
-            SELECT *
-            FROM blog_news_crawler_runs
-            WHERE status = 'pending'
-              AND COALESCE(scheduled_for, '') <= ?
-            ORDER BY scheduled_for ASC, created_at ASC, id ASC
-            LIMIT 1
-            """,
-            (now,),
-        ).fetchone()
         conn.commit()
+        row = _claim_due_blog_news_crawler_run(conn, worker_id=worker_id, now=now, engine=engine)
 
     if row is None:
         return {"status": "idle", "worker_id": worker_id}
@@ -1496,6 +1569,7 @@ def _store_candidates(conn, run_id: int, candidates: list[NewsCandidate]) -> tup
     stored: list[dict[str, Any]] = []
     duplicate_count = 0
     reusable_ids: set[int] = set()
+    engine = get_configured_db_engine()
     for candidate in candidates:
         existing = conn.execute(
             """
@@ -1518,40 +1592,45 @@ def _store_candidates(conn, run_id: int, candidates: list[NewsCandidate]) -> tup
                 stored.append(existing_item)
             continue
         now = _now_iso()
-        try:
-            cursor = conn.execute(
-                """
-                INSERT INTO blog_news_crawler_items (
-                    run_id, keyword, course_names_json, source_name, title, url, canonical_url,
-                    url_hash, content_hash, summary, published_at, fetched_at, media_json,
-                    score, raw_json, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    run_id,
-                    candidate.keyword,
-                    _json_dumps(candidate.course_names),
-                    candidate.source_name,
-                    candidate.title,
-                    candidate.url,
-                    candidate.canonical_url,
-                    candidate.url_hash,
-                    candidate.content_hash,
-                    candidate.summary,
-                    candidate.published_at,
-                    candidate.fetched_at,
-                    _json_dumps(candidate.media),
-                    float(candidate.score or 0.0),
-                    _json_dumps(candidate.as_raw_payload()),
-                    now,
-                    now,
-                ),
+        insert_sql = """
+            INSERT INTO blog_news_crawler_items (
+                run_id, keyword, course_names_json, source_name, title, url, canonical_url,
+                url_hash, content_hash, summary, published_at, fetched_at, media_json,
+                score, raw_json, created_at, updated_at
             )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+        insert_params = (
+            run_id,
+            candidate.keyword,
+            _json_dumps(candidate.course_names),
+            candidate.source_name,
+            candidate.title,
+            candidate.url,
+            candidate.canonical_url,
+            candidate.url_hash,
+            candidate.content_hash,
+            candidate.summary,
+            candidate.published_at,
+            candidate.fetched_at,
+            _json_dumps(candidate.media),
+            float(candidate.score or 0.0),
+            _json_dumps(candidate.as_raw_payload()),
+            now,
+            now,
+        )
+        try:
+            if engine == "postgres":
+                row = conn.execute(f"{insert_sql} ON CONFLICT DO NOTHING RETURNING *", insert_params).fetchone()
+                if row is None:
+                    duplicate_count += 1
+                    continue
+            else:
+                item_id = execute_insert_returning_id(conn, insert_sql, insert_params, engine=engine)
+                row = conn.execute("SELECT * FROM blog_news_crawler_items WHERE id = ?", (item_id,)).fetchone()
         except sqlite3.IntegrityError:
             duplicate_count += 1
             continue
-        row = conn.execute("SELECT * FROM blog_news_crawler_items WHERE id = ?", (int(cursor.lastrowid),)).fetchone()
         if row is not None:
             stored.append(_serialize_item_row(row))
     return stored, duplicate_count

@@ -13,6 +13,7 @@ import aiofiles
 from fastapi import UploadFile
 
 from ..config import SIGNATURES_DIR, SIGNATURES_LEGACY_DIRS
+from ..db.connection import execute_insert_returning_id
 from ..storage_paths import unique_paths
 from .message_center_service import is_super_admin_teacher
 from .organization_management_service import list_school_options
@@ -1065,7 +1066,8 @@ async def create_signature_from_upload(
     clean_subject_name = _clean_text(subject_name, 80) or actor.get("name") or clean_name
     owner_scope = _owner_scope_for_upload(actor, normalized_scope)
 
-    cursor = conn.execute(
+    signature_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO electronic_signatures (
             name, subject_name, subject_role, scope_level,
@@ -1101,7 +1103,6 @@ async def create_signature_from_upload(
             _safe_json({"original_filename": original_filename}),
         ),
     )
-    signature_id = int(cursor.lastrowid)
     row, refreshed_actor = get_signature_row_for_actor(conn, user, signature_id)
     return serialize_signature(row, refreshed_actor, conn)
 
@@ -1258,7 +1259,8 @@ def create_signature_access_request(
             raise SignatureServiceError(409, "This request has already been approved.")
         raise SignatureServiceError(403, "Current account cannot request this signature.")
     try:
-        cursor = conn.execute(
+        request_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO signature_access_requests (
                 signature_id, requester_teacher_id, owner_role, owner_id,
@@ -1277,8 +1279,7 @@ def create_signature_access_request(
                 _clean_text(context_label, 120),
             ),
         )
-        request_id = int(cursor.lastrowid)
-    except sqlite3.IntegrityError as exc:
+    except Exception as exc:
         state = _signature_request_state(conn, actor, row)
         if state:
             raise SignatureServiceError(409, "A request for this signature already exists.") from exc

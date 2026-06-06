@@ -6,6 +6,7 @@ from typing import Iterable
 
 from fastapi import HTTPException
 
+from ..db.connection import get_configured_db_engine
 from .file_preview_service import (
     TEXT_PREVIEW_TYPES,
     TEXTUAL_BASENAME_HINTS,
@@ -711,18 +712,33 @@ def sync_classroom_learning_material_assignments(
         if anchor_id <= 0 or anchor_id in assigned_anchor_ids:
             continue
 
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO course_material_assignments (
-                material_id,
-                class_offering_id,
-                assigned_by_teacher_id,
-                created_at
+        if get_configured_db_engine() == "postgres":
+            conn.execute(
+                """
+                INSERT INTO course_material_assignments (
+                    material_id,
+                    class_offering_id,
+                    assigned_by_teacher_id,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (material_id, class_offering_id) DO NOTHING
+                """,
+                (anchor_id, class_offering_id, teacher_id, now),
             )
-            VALUES (?, ?, ?, ?)
-            """,
-            (anchor_id, class_offering_id, teacher_id, now),
-        )
+        else:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO course_material_assignments (
+                    material_id,
+                    class_offering_id,
+                    assigned_by_teacher_id,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (anchor_id, class_offering_id, teacher_id, now),
+            )
         assigned_anchor_ids.add(anchor_id)
         existing_assignments.append(anchor)
         inserted_anchors.append(anchor)

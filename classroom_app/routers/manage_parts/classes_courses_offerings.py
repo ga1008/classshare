@@ -101,7 +101,8 @@ async def api_save_class_offering(
                 offering_id = int(payload["offering_id"])
                 action_text = "更新"
             else:
-                cursor = conn.execute(
+                offering_id = execute_insert_returning_id(
+                    conn,
                     """
                     INSERT INTO class_offerings (
                         class_id,
@@ -140,7 +141,6 @@ async def api_save_class_offering(
                         else "",
                     ),
                 )
-                offering_id = int(cursor.lastrowid)
                 action_text = "开设"
 
             replace_offering_sessions(
@@ -195,7 +195,8 @@ async def api_create_class_offering(
                 semester_id=semester_id,
                 textbook_id=textbook_id,
             )
-            conn.execute(
+            offering_id = execute_insert_returning_id(
+                conn,
                 """
                 INSERT INTO class_offerings (
                     class_id,
@@ -225,6 +226,7 @@ async def api_create_class_offering(
     return {
         "status": "success",
         "message": f"课堂已开设，并绑定学期“{semester_row['name']}”和教材“{textbook_row['title']}”",
+        "class_offering_id": offering_id,
     }
 
 

@@ -1,5 +1,6 @@
 from .common import *
 from .generation_helpers import *
+from ...db.connection import get_configured_db_engine
 
 
 def _material_ai_import_status_message(row: dict, *, queue_position: int | None = None) -> str:
@@ -174,10 +175,68 @@ def _mark_material_ai_import_failed(record_id: int, status: str, message: str) -
                 completed_at = COALESCE(completed_at, ?),
                 failed_at = COALESCE(failed_at, ?)
             WHERE id = ?
+              AND parse_status IN ('queued', 'running')
             """,
             (status, message[:500], now, now, now, int(record_id)),
         )
         conn.commit()
+
+
+def _claim_material_ai_import_record(
+    conn,
+    record_id: int,
+    *,
+    engine: str | None = None,
+) -> dict | None:
+    db_engine = (engine or get_configured_db_engine()).strip().lower()
+    if db_engine not in {"sqlite", "postgres"}:
+        raise ValueError(f"Unsupported material AI import database engine: {db_engine}")
+    now = datetime.now().isoformat()
+    if db_engine == "postgres":
+        cursor = conn.execute(
+            """
+            UPDATE material_ai_import_records
+            SET parse_status = 'running',
+                started_at = COALESCE(started_at, ?),
+                updated_at = ?,
+                error_message = ''
+            WHERE id IN (
+                SELECT id
+                FROM material_ai_import_records
+                WHERE id = ?
+                  AND parse_status = 'queued'
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING *
+            """,
+            (now, now, int(record_id)),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        conn.commit()
+        return dict(row)
+
+    cursor = conn.execute(
+        """
+        UPDATE material_ai_import_records
+        SET parse_status = 'running',
+            started_at = COALESCE(started_at, ?),
+            updated_at = ?,
+            error_message = ''
+        WHERE id = ?
+          AND parse_status = 'queued'
+        """,
+        (now, now, int(record_id)),
+    )
+    if int(cursor.rowcount or 0) <= 0:
+        return None
+    row = conn.execute(
+        "SELECT * FROM material_ai_import_records WHERE id = ?",
+        (int(record_id),),
+    ).fetchone()
+    conn.commit()
+    return dict(row) if row is not None else None
 
 
 async def _material_ai_import_worker_loop(worker_no: int) -> None:
@@ -198,31 +257,9 @@ async def _material_ai_import_worker_loop(worker_no: int) -> None:
 async def _run_material_ai_import_record(record_id: int) -> None:
     record_id = int(record_id)
     with get_db_connection() as conn:
-        row = conn.execute(
-            "SELECT * FROM material_ai_import_records WHERE id = ?",
-            (record_id,),
-        ).fetchone()
-        if not row:
+        record = _claim_material_ai_import_record(conn, record_id)
+        if not record:
             return
-        if str(row["parse_status"] or "").lower() not in MATERIAL_AI_IMPORT_ACTIVE_STATUSES:
-            return
-        now = datetime.now().isoformat()
-        conn.execute(
-            """
-            UPDATE material_ai_import_records
-            SET parse_status = 'running',
-                started_at = COALESCE(started_at, ?),
-                updated_at = ?,
-                error_message = ''
-            WHERE id = ?
-            """,
-            (now, now, record_id),
-        )
-        conn.commit()
-        record = dict(row)
-        record["parse_status"] = "running"
-        record["started_at"] = record.get("started_at") or now
-        record["updated_at"] = now
 
     try:
         file_hash = str(record.get("source_file_hash") or "").strip()

@@ -75,6 +75,22 @@ class ApiContractSchemaTests(unittest.TestCase):
         self.assertIsInstance(body["detail"], list)
         self.assertIsInstance(body["error"]["details"]["errors"], list)
 
+    def test_internal_health_and_metrics_include_database_backend_state(self):
+        client = TestClient(app)
+        try:
+            health_response = client.get("/api/internal/health")
+            metrics_response = client.get("/api/internal/metrics")
+        finally:
+            client.close()
+
+        self.assertEqual(200, health_response.status_code)
+        self.assertEqual(200, metrics_response.status_code)
+        health_backend = health_response.json()["database_backend"]
+        metrics_backend = metrics_response.json()["database_backend"]
+        self.assertEqual("sqlite", health_backend["engine"])
+        self.assertTrue(health_backend["configured"])
+        self.assertEqual(health_backend["engine"], metrics_backend["engine"])
+
     def test_message_center_contract_fixtures(self):
         summary = MessageCenterSummaryResponse.model_validate(
             {

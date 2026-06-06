@@ -13,6 +13,8 @@ from fastapi import WebSocket
 
 from ..config import CHAT_LOG_DIR
 from ..database import get_db_connection
+from ..db.connection import execute_insert_returning_id, get_configured_db_engine
+from ..db.errors import DatabaseProgrammingError
 from ..time_utils import aware_local_now, format_local_time, local_iso, local_now
 from .discussion_attachment_service import normalize_discussion_attachment_payloads
 
@@ -43,6 +45,89 @@ _chat_log_migration_lock = threading.Lock()
 _room_log_locks: Dict[int, asyncio.Lock] = {}
 _room_log_locks_guard = asyncio.Lock()
 
+CHAT_LOG_REQUIRED_COLUMNS = (
+    "id",
+    "class_offering_id",
+    "user_id",
+    "user_name",
+    "user_role",
+    "message",
+    "timestamp",
+    "logged_at",
+    "message_type",
+    "emoji_payload_json",
+    "attachments_json",
+    "quote_message_id",
+    "quote_payload_json",
+)
+
+CHAT_LOG_MIGRATION_REQUIRED_COLUMNS = (
+    "class_offering_id",
+    "migrated_at",
+)
+
+
+def _row_value(row, key: str, fallback_index: int = 0):
+    try:
+        if hasattr(row, "keys") and key in row.keys():
+            return row[key]
+        return row[fallback_index]
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
+def _postgres_table_columns(conn, table_name: str) -> set[str]:
+    rows = conn.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = ?
+          AND table_name = ?
+        """,
+        ("public", table_name),
+    ).fetchall()
+    return {str(_row_value(row, "column_name", 0) or "") for row in rows}
+
+
+def _validate_chat_log_postgres_schema(conn) -> None:
+    required_by_table = {
+        "chat_logs": CHAT_LOG_REQUIRED_COLUMNS,
+        "chat_log_migrations": CHAT_LOG_MIGRATION_REQUIRED_COLUMNS,
+    }
+    missing: dict[str, list[str]] = {}
+    for table_name, required_columns in required_by_table.items():
+        actual_columns = _postgres_table_columns(conn, table_name)
+        missing_columns = [column for column in required_columns if column not in actual_columns]
+        if missing_columns:
+            missing[table_name] = missing_columns
+    if missing:
+        details = "; ".join(f"{table}: {', '.join(columns)}" for table, columns in sorted(missing.items()))
+        raise DatabaseProgrammingError(
+            "PostgreSQL chat log schema validation failed. "
+            f"Missing required columns: {details}. Refusing to run SQLite chat schema initialization."
+        )
+
+
+def _mark_room_history_migrated(conn, room_id: int) -> None:
+    engine = get_configured_db_engine()
+    if engine == "postgres":
+        conn.execute(
+            """
+            INSERT INTO chat_log_migrations (class_offering_id, migrated_at)
+            VALUES (?, ?)
+            ON CONFLICT (class_offering_id) DO UPDATE SET
+                migrated_at = excluded.migrated_at
+            """,
+            (room_id, local_iso()),
+        )
+        return
+    if engine != "sqlite":
+        raise ValueError(f"Unsupported chat log database engine: {engine!r}")
+    conn.execute(
+        "INSERT OR REPLACE INTO chat_log_migrations (class_offering_id, migrated_at) VALUES (?, ?)",
+        (room_id, local_iso()),
+    )
+
 
 def ensure_chat_log_schema() -> None:
     global _chat_log_schema_ready
@@ -53,7 +138,15 @@ def ensure_chat_log_schema() -> None:
         if _chat_log_schema_ready:
             return
 
+        engine = get_configured_db_engine()
         with get_db_connection() as conn:
+            if engine == "postgres":
+                _validate_chat_log_postgres_schema(conn)
+                _chat_log_schema_ready = True
+                return
+            if engine != "sqlite":
+                raise ValueError(f"Unsupported chat log database engine: {engine!r}")
+
             try:
                 conn.execute("ALTER TABLE chat_logs ADD COLUMN logged_at TEXT")
             except Exception:
@@ -251,10 +344,7 @@ def ensure_room_history_migrated(room_id: int) -> None:
         log_file = get_log_path_for_room(room_id)
         if not log_file.exists():
             with get_db_connection() as conn:
-                conn.execute(
-                    "INSERT OR REPLACE INTO chat_log_migrations (class_offering_id, migrated_at) VALUES (?, ?)",
-                    (room_id, local_iso()),
-                )
+                _mark_room_history_migrated(conn, room_id)
                 conn.commit()
             _migrated_rooms.add(room_id)
             return
@@ -315,20 +405,14 @@ def ensure_room_history_migrated(room_id: int) -> None:
                                 """,
                                 row,
                             )
-                    conn.execute(
-                        "INSERT OR REPLACE INTO chat_log_migrations (class_offering_id, migrated_at) VALUES (?, ?)",
-                        (room_id, local_iso()),
-                    )
+                    _mark_room_history_migrated(conn, room_id)
                     conn.commit()
             except Exception as exc:
                 print(f"[ERROR] 迁移课堂聊天日志失败 (课堂: {room_id}): {exc}", file=sys.stderr)
                 return
         else:
             with get_db_connection() as conn:
-                conn.execute(
-                    "INSERT OR REPLACE INTO chat_log_migrations (class_offering_id, migrated_at) VALUES (?, ?)",
-                    (room_id, local_iso()),
-                )
+                _mark_room_history_migrated(conn, room_id)
                 conn.commit()
 
         _migrated_rooms.add(room_id)
@@ -541,7 +625,8 @@ def _save_chat_message_sync(room_id: int, message: dict) -> dict:
 
     try:
         with get_db_connection() as conn:
-            cursor = conn.execute(
+            message_id = execute_insert_returning_id(
+                conn,
                 """
                 INSERT INTO chat_logs
                 (
@@ -576,7 +661,6 @@ def _save_chat_message_sync(room_id: int, message: dict) -> dict:
                 ),
             )
             conn.commit()
-            message_id = cursor.lastrowid
     except Exception as exc:
         print(f"[ERROR] 保存课堂聊天记录到数据库失败 (课堂: {room_id}): {exc}", file=sys.stderr)
         raise

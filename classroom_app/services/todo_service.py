@@ -4,6 +4,7 @@ import sqlite3
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
+from ..db.connection import execute_insert_returning_id
 from .academic_service import china_now, parse_date_input
 from .academic_course_exam_sync_service import ensure_course_exam_schema
 from .assignment_lifecycle_service import submission_effective_status, submission_resubmission_accepts
@@ -802,7 +803,8 @@ def create_manual_todo(
         raise TodoValidationError("截止时间不能早于开始时间")
 
     timestamp = _now_iso()
-    cursor = conn.execute(
+    todo_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO classroom_todos (
             class_offering_id, owner_role, owner_user_pk,
@@ -822,7 +824,6 @@ def create_manual_todo(
             timestamp,
         ),
     )
-    todo_id = int(cursor.lastrowid)
     if due_at:
         create_todo_notification(
             conn,

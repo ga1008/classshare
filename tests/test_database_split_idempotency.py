@@ -3,8 +3,10 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from classroom_app import config, database
+from classroom_app.db.errors import DatabaseConfigurationError
 
 
 KEY_BUSINESS_TABLES = (
@@ -107,6 +109,47 @@ class DatabaseSplitIdempotencyTests(unittest.TestCase):
             finally:
                 config.DB_PATH = original_config_db_path
                 database.DB_PATH = original_database_db_path
+
+    def test_postgres_engine_requires_explicit_database_url_without_sqlite_fallback(self):
+        original_engine = config.DB_ENGINE
+        original_database_url = config.DATABASE_URL
+        original_postgres_ready = config.POSTGRES_BACKEND_READY
+        config.DB_ENGINE = "postgres"
+        config.DATABASE_URL = ""
+        config.POSTGRES_BACKEND_READY = False
+        try:
+            with self.assertRaises(DatabaseConfigurationError):
+                database.get_db_connection()
+        finally:
+            config.DB_ENGINE = original_engine
+            config.DATABASE_URL = original_database_url
+            config.POSTGRES_BACKEND_READY = original_postgres_ready
+
+    def test_postgres_engine_uses_adapter_only_when_explicitly_ready(self):
+        original_engine = config.DB_ENGINE
+        original_database_url = config.DATABASE_URL
+        original_postgres_ready = config.POSTGRES_BACKEND_READY
+        sentinel_connection = object()
+        config.DB_ENGINE = "postgres"
+        config.DATABASE_URL = "postgresql://user@db.example/lanshare"
+        config.POSTGRES_BACKEND_READY = True
+        try:
+            with patch("classroom_app.db.connection.connect_postgres", return_value=sentinel_connection) as mocked:
+                self.assertIs(database.get_db_connection(), sentinel_connection)
+                mocked.assert_called_once_with()
+        finally:
+            config.DB_ENGINE = original_engine
+            config.DATABASE_URL = original_database_url
+            config.POSTGRES_BACKEND_READY = original_postgres_ready
+
+    def test_unknown_database_engine_fails_closed(self):
+        original_engine = config.DB_ENGINE
+        config.DB_ENGINE = "mysql"
+        try:
+            with self.assertRaises(DatabaseConfigurationError):
+                database.get_db_connection()
+        finally:
+            config.DB_ENGINE = original_engine
 
 
 if __name__ == "__main__":

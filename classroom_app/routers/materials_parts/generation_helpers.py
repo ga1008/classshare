@@ -1,4 +1,5 @@
 from .common import *
+from ...db.connection import execute_insert_returning_id, get_configured_db_engine
 
 
 def _normalize_uploaded_filename(filename: str | None, fallback: str = "material") -> str:
@@ -18,8 +19,8 @@ def _insert_material_folder_row(
     owner_scope: dict,
     now: str,
 ) -> tuple[int, int]:
-    cursor = conn.execute(
-        """
+    db_engine = get_configured_db_engine()
+    insert_sql = """
         INSERT INTO course_materials
         (teacher_id, parent_id, root_id, material_path, name, node_type, mime_type,
          preview_type, ai_capability, file_ext, file_hash, file_size,
@@ -27,7 +28,10 @@ def _insert_material_folder_row(
          school_code, school_name, college, department, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, 'folder', 'inode/directory', 'folder', 'none', '', NULL, 0,
                 'idle', 'idle', 'teacher', ?, 'private', ?, ?, ?, ?, ?, ?)
-        """,
+    """
+    folder_id = execute_insert_returning_id(
+        conn,
+        insert_sql,
         (
             user["id"],
             parent_id,
@@ -42,8 +46,8 @@ def _insert_material_folder_row(
             now,
             now,
         ),
+        engine=db_engine,
     )
-    folder_id = int(cursor.lastrowid)
     actual_root_id = int(inherited_root_id or folder_id)
     if inherited_root_id is None:
         conn.execute("UPDATE course_materials SET root_id = ? WHERE id = ?", (actual_root_id, folder_id))
@@ -57,7 +61,7 @@ def _insert_material_file_row(
     name: str,
     material_path: str,
     parent_id: int,
-    root_id: int,
+    root_id: int | None,
     file_profile: dict,
     file_hash: str,
     file_size: int,
@@ -66,8 +70,8 @@ def _insert_material_file_row(
     ai_parse_status: str = "idle",
     ai_parse_result_json: str | None = None,
 ) -> int:
-    cursor = conn.execute(
-        """
+    db_engine = get_configured_db_engine()
+    insert_sql = """
         INSERT INTO course_materials
         (teacher_id, parent_id, root_id, material_path, name, node_type, mime_type,
          preview_type, ai_capability, file_ext, file_hash, file_size,
@@ -75,7 +79,10 @@ def _insert_material_file_row(
          school_code, school_name, college, department, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, 'file', ?, ?, ?, ?, ?, ?, ?, ?, 'idle',
                 'teacher', ?, 'private', ?, ?, ?, ?, ?, ?)
-        """,
+    """
+    file_id = execute_insert_returning_id(
+        conn,
+        insert_sql,
         (
             user["id"],
             parent_id,
@@ -98,8 +105,11 @@ def _insert_material_file_row(
             now,
             now,
         ),
+        engine=db_engine,
     )
-    return int(cursor.lastrowid)
+    if root_id is None:
+        conn.execute("UPDATE course_materials SET root_id = ? WHERE id = ?", (file_id, file_id))
+    return file_id
 
 
 def _fetch_material_response_item(conn, material_id: int, user: dict) -> dict | None:

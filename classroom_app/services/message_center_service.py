@@ -10,6 +10,8 @@ from urllib.parse import quote
 
 from ..core import ai_client
 from ..database import get_db_connection
+from ..db.connection import execute_insert_returning_id, get_configured_db_engine
+from ..db.errors import DatabaseProgrammingError
 from .chat_image_derivatives import (
     CHAT_IMAGE_DERIVATIVE_MIME_TYPE,
     CHAT_IMAGE_TYPES,
@@ -91,6 +93,22 @@ PRIVATE_MESSAGE_ATTACHMENT_EXTRA_COLUMNS = {
     "preview_width": "INTEGER",
     "preview_height": "INTEGER",
 }
+
+PRIVATE_MESSAGE_ATTACHMENT_REQUIRED_COLUMNS = (
+    "id",
+    "message_id",
+    "conversation_key",
+    "class_offering_id",
+    "uploaded_by_identity",
+    "uploaded_by_role",
+    "file_hash",
+    "original_filename",
+    "mime_type",
+    "file_size",
+    "attachment_kind",
+    "created_at",
+    *PRIVATE_MESSAGE_ATTACHMENT_EXTRA_COLUMNS.keys(),
+)
 
 PRIVATE_MESSAGE_VARIANT_COLUMNS = {
     "thumbnail": {
@@ -357,6 +375,30 @@ def _personalize_student_learning_body(
 
 
 def ensure_private_message_attachment_schema(conn) -> None:
+    db_engine = get_configured_db_engine()
+    if db_engine == "postgres":
+        rows = conn.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = ?
+              AND table_name = ?
+            """,
+            ("public", "private_message_attachments"),
+        ).fetchall()
+        columns = {
+            str(row["column_name"] if hasattr(row, "keys") and "column_name" in row.keys() else row[0])
+            for row in rows
+        }
+        missing = [column for column in PRIVATE_MESSAGE_ATTACHMENT_REQUIRED_COLUMNS if column not in columns]
+        if missing:
+            raise DatabaseProgrammingError(
+                "PostgreSQL private_message_attachments schema validation failed; missing columns: "
+                + ", ".join(missing)
+            )
+        return
+    if db_engine != "sqlite":
+        raise ValueError(f"Unsupported private message attachment database engine: {db_engine!r}")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS private_message_attachments
@@ -1467,8 +1509,8 @@ def _build_notification_payload(
 
 
 def _insert_notification(conn, payload: dict[str, Any]) -> int:
-    cursor = conn.execute(
-        """
+    db_engine = get_configured_db_engine()
+    insert_sql = """
         INSERT INTO message_center_notifications (
             recipient_identity, recipient_role, recipient_user_pk,
             category, severity, actor_identity, actor_role, actor_user_pk, actor_display_name,
@@ -1476,7 +1518,10 @@ def _insert_notification(conn, payload: dict[str, Any]) -> int:
             ref_type, ref_id, metadata_json, created_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    """
+    notification_id = execute_insert_returning_id(
+        conn,
+        insert_sql,
         (
             payload["recipient_identity"],
             payload["recipient_role"],
@@ -1496,8 +1541,8 @@ def _insert_notification(conn, payload: dict[str, Any]) -> int:
             payload["metadata_json"],
             payload["created_at"],
         ),
+        engine=db_engine,
     )
-    notification_id = int(cursor.lastrowid)
     try:
         queue_notification_email_if_applicable(conn, notification_id=notification_id, payload=payload)
     except Exception as exc:
@@ -1523,8 +1568,8 @@ def _insert_private_message(
     created_at: Optional[str] = None,
 ) -> dict[str, Any]:
     timestamp = created_at or _now_iso()
-    cursor = conn.execute(
-        """
+    db_engine = get_configured_db_engine()
+    insert_sql = """
         INSERT INTO private_messages (
             conversation_key, class_offering_id,
             sender_identity, sender_role, sender_user_pk, sender_display_name,
@@ -1532,7 +1577,10 @@ def _insert_private_message(
             content, read_at, created_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    """
+    message_id = execute_insert_returning_id(
+        conn,
+        insert_sql,
         (
             conversation_key,
             class_offering_id,
@@ -1548,9 +1596,10 @@ def _insert_private_message(
             read_at,
             timestamp,
         ),
+        engine=db_engine,
     )
     return {
-        "id": int(cursor.lastrowid),
+        "id": message_id,
         "conversation_key": conversation_key,
         "class_offering_id": class_offering_id,
         "sender_identity": sender_identity,
@@ -1576,10 +1625,12 @@ def _insert_private_message_attachments(
     if not prepared:
         return []
     ensure_private_message_attachment_schema(conn)
+    db_engine = get_configured_db_engine()
+    if db_engine not in {"sqlite", "postgres"}:
+        raise ValueError(f"Unsupported private message attachment insert database engine: {db_engine!r}")
     inserted_ids: list[int] = []
     for item in prepared:
-        cursor = conn.execute(
-            """
+        insert_sql = """
             INSERT INTO private_message_attachments (
                 message_id, conversation_key, class_offering_id,
                 uploaded_by_identity, uploaded_by_role,
@@ -1589,7 +1640,10 @@ def _insert_private_message_attachments(
                 preview_file_hash, preview_mime_type, preview_file_size, preview_width, preview_height
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        """
+        attachment_id = execute_insert_returning_id(
+            conn,
+            insert_sql,
             (
                 int(message_row["id"]),
                 str(message_row["conversation_key"]),
@@ -1614,8 +1668,9 @@ def _insert_private_message_attachments(
                 int(item.get("preview_width") or 0) if item.get("preview_width") is not None else None,
                 int(item.get("preview_height") or 0) if item.get("preview_height") is not None else None,
             ),
+            engine=db_engine,
         )
-        inserted_ids.append(int(cursor.lastrowid))
+        inserted_ids.append(attachment_id)
 
     placeholders = ",".join("?" for _ in inserted_ids)
     rows = conn.execute(
@@ -2289,15 +2344,18 @@ def create_private_ai_reply_job(
 ) -> dict[str, Any]:
     current_user_pk, current_role, current_identity = _ensure_user_identity(user)
     timestamp = _now_iso()
-    cursor = conn.execute(
-        """
+    engine = get_configured_db_engine()
+    insert_sql = """
         INSERT INTO private_message_ai_jobs (
             conversation_key, class_offering_id, request_message_id,
             requester_identity, requester_role, requester_user_pk,
             status, created_at, updated_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    """
+    job_id = execute_insert_returning_id(
+        conn,
+        insert_sql,
         (
             conversation_key,
             class_offering_id,
@@ -2309,6 +2367,7 @@ def create_private_ai_reply_job(
             timestamp,
             timestamp,
         ),
+        engine=engine,
     )
     row = conn.execute(
         """
@@ -2317,7 +2376,7 @@ def create_private_ai_reply_job(
         WHERE id = ?
         LIMIT 1
         """,
-        (int(cursor.lastrowid),),
+        (job_id,),
     ).fetchone()
     return _serialize_private_ai_reply_job(row)
 
@@ -3136,8 +3195,49 @@ def _build_private_ai_job_user_snapshot(conn, *, requester_identity: str) -> dic
     }
 
 
-def _claim_private_ai_reply_job(conn, job_id: int | str) -> Optional[dict[str, Any]]:
+def _claim_private_ai_reply_job(
+    conn,
+    job_id: int | str,
+    *,
+    engine: str | None = None,
+) -> Optional[dict[str, Any]]:
     timestamp = _now_iso()
+    db_engine = (engine or get_configured_db_engine()).strip().lower()
+    if db_engine not in {"sqlite", "postgres"}:
+        raise ValueError(f"Unsupported private AI reply job database engine: {db_engine}")
+    if db_engine == "postgres":
+        cursor = conn.execute(
+            """
+            UPDATE private_message_ai_jobs
+            SET status = ?,
+                started_at = COALESCE(started_at, ?),
+                finished_at = NULL,
+                updated_at = ?,
+                error_message = '',
+                attempt_count = attempt_count + 1
+            WHERE id IN (
+                SELECT id
+                FROM private_message_ai_jobs
+                WHERE id = ?
+                  AND status = ?
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING *
+            """,
+            (
+                AI_REPLY_JOB_STATUS_RUNNING,
+                timestamp,
+                timestamp,
+                int(job_id),
+                AI_REPLY_JOB_STATUS_PENDING,
+            ),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        conn.commit()
+        return dict(row)
+
     cursor = conn.execute(
         """
         UPDATE private_message_ai_jobs
@@ -3180,9 +3280,9 @@ def _finish_private_ai_reply_job(
     status: str,
     reply_message_id: Optional[int] = None,
     error_message: str = "",
-) -> None:
+) -> bool:
     timestamp = _now_iso()
-    conn.execute(
+    cursor = conn.execute(
         """
         UPDATE private_message_ai_jobs
         SET status = ?,
@@ -3191,6 +3291,7 @@ def _finish_private_ai_reply_job(
             finished_at = ?,
             updated_at = ?
         WHERE id = ?
+          AND status = ?
         """,
         (
             str(status or AI_REPLY_JOB_STATUS_FAILED),
@@ -3199,19 +3300,13 @@ def _finish_private_ai_reply_job(
             timestamp,
             timestamp,
             int(job_id),
+            AI_REPLY_JOB_STATUS_RUNNING,
         ),
     )
+    return int(cursor.rowcount or 0) == 1
 
 
-async def process_private_ai_reply_job(job_id: int | str) -> Optional[dict[str, Any]]:
-    def _claim_job_sync() -> Optional[dict[str, Any]]:
-        with get_db_connection() as conn:
-            return _claim_private_ai_reply_job(conn, job_id)
-
-    job_row = await asyncio.to_thread(_claim_job_sync)
-    if job_row is None:
-        return None
-
+async def _process_claimed_private_ai_reply_job_row(job_row: dict[str, Any]) -> Optional[dict[str, Any]]:
     try:
         def _load_user_sync() -> dict[str, Any]:
             with get_db_connection() as conn:
@@ -3254,8 +3349,65 @@ async def process_private_ai_reply_job(job_id: int | str) -> Optional[dict[str, 
         return None
 
 
+async def process_private_ai_reply_job(job_id: int | str) -> Optional[dict[str, Any]]:
+    def _claim_job_sync() -> Optional[dict[str, Any]]:
+        with get_db_connection() as conn:
+            return _claim_private_ai_reply_job(conn, job_id)
+
+    job_row = await asyncio.to_thread(_claim_job_sync)
+    if job_row is None:
+        return None
+    return await _process_claimed_private_ai_reply_job_row(job_row)
+
+
+def _claim_pending_private_ai_reply_jobs_for_schedule(
+    conn,
+    *,
+    limit: int,
+    engine: str | None = None,
+) -> list[dict[str, Any]]:
+    db_engine = (engine or get_configured_db_engine()).strip().lower()
+    if db_engine not in {"sqlite", "postgres"}:
+        raise ValueError(f"Unsupported private AI reply schedule database engine: {db_engine}")
+    if db_engine != "postgres":
+        raise ValueError("batch schedule claiming is only supported for PostgreSQL")
+    timestamp = _now_iso()
+    cursor = conn.execute(
+        """
+        UPDATE private_message_ai_jobs
+        SET status = ?,
+            started_at = COALESCE(started_at, ?),
+            finished_at = NULL,
+            updated_at = ?,
+            error_message = '',
+            attempt_count = attempt_count + 1
+        WHERE id IN (
+            SELECT id
+            FROM private_message_ai_jobs
+            WHERE status = ?
+            ORDER BY created_at ASC, id ASC
+            LIMIT ?
+            FOR UPDATE SKIP LOCKED
+        )
+        RETURNING *
+        """,
+        (
+            AI_REPLY_JOB_STATUS_RUNNING,
+            timestamp,
+            timestamp,
+            AI_REPLY_JOB_STATUS_PENDING,
+            max(1, min(int(limit), 256)),
+        ),
+    )
+    rows = [dict(row) for row in cursor.fetchall()]
+    conn.commit()
+    return rows
+
+
 def schedule_pending_private_ai_reply_jobs(limit: int = 64) -> int:
     timestamp = _now_iso()
+    engine = get_configured_db_engine()
+    claimed_jobs: list[dict[str, Any]] = []
     with get_db_connection() as conn:
         conn.execute(
             """
@@ -3270,24 +3422,34 @@ def schedule_pending_private_ai_reply_jobs(limit: int = 64) -> int:
                 AI_REPLY_JOB_STATUS_RUNNING,
             ),
         )
-        rows = conn.execute(
-            """
-            SELECT id
-            FROM private_message_ai_jobs
-            WHERE status = ?
-            ORDER BY created_at ASC, id ASC
-            LIMIT ?
-            """,
-            (
-                AI_REPLY_JOB_STATUS_PENDING,
-                max(1, min(int(limit), 256)),
-            ),
-        ).fetchall()
-        conn.commit()
+        if engine == "postgres":
+            claimed_jobs = _claim_pending_private_ai_reply_jobs_for_schedule(
+                conn,
+                limit=limit,
+                engine=engine,
+            )
+            rows = []
+        else:
+            rows = conn.execute(
+                """
+                SELECT id
+                FROM private_message_ai_jobs
+                WHERE status = ?
+                ORDER BY created_at ASC, id ASC
+                LIMIT ?
+                """,
+                (
+                    AI_REPLY_JOB_STATUS_PENDING,
+                    max(1, min(int(limit), 256)),
+                ),
+            ).fetchall()
+            conn.commit()
 
+    for job_row in claimed_jobs:
+        asyncio.create_task(_process_claimed_private_ai_reply_job_row(job_row))
     for row in rows:
         asyncio.create_task(process_private_ai_reply_job(int(row["id"])))
-    return len(rows)
+    return len(claimed_jobs) if claimed_jobs else len(rows)
 
 
 async def send_private_message_and_maybe_reply(

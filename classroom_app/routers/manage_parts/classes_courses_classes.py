@@ -30,7 +30,6 @@ async def api_create_class(request: Request, class_name: str = Form(), file: Upl
 
     # 3. 存入数据库 (使用事务)
     conn = get_db_connection()
-    cursor = conn.cursor()
     try:
         # 创建班级
         normalized_department = normalize_department(department) or infer_department_from_text(class_name)
@@ -41,7 +40,8 @@ async def api_create_class(request: Request, class_name: str = Form(), file: Upl
             college=college,
             department=normalized_department,
         )
-        cursor.execute(
+        class_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO classes (
                 name, department, created_by_teacher_id,
@@ -58,7 +58,6 @@ async def api_create_class(request: Request, class_name: str = Form(), file: Upl
                 org_scope["college"],
             ),
         )
-        class_id = cursor.lastrowid
 
         # 批量插入学生
         students_to_insert = [
@@ -76,7 +75,7 @@ async def api_create_class(request: Request, class_name: str = Form(), file: Upl
             )
             for s in students_data
         ]
-        cursor.executemany(
+        conn.executemany(
             """
             INSERT INTO students (
                 student_id_number, name, class_id, gender, email, phone,
@@ -364,7 +363,8 @@ async def api_create_class_student(
             department=class_row["department"] if "department" in class_row.keys() else "",
         )
         try:
-            cursor = conn.execute(
+            student_id = execute_insert_returning_id(
+                conn,
                 """
                 INSERT INTO students (
                     student_id_number, name, class_id, gender, email, phone,
@@ -386,7 +386,6 @@ async def api_create_class_student(
                     class_scope["department"],
                 ),
             )
-            student_id = int(cursor.lastrowid)
             conn.commit()
         except sqlite3.IntegrityError as exc:
             conn.rollback()

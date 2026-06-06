@@ -44,7 +44,8 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
             if not owned_course:
                 raise HTTPException(404, "课程不存在或您无权操作")
 
-        cursor = conn.execute(
+        new_id = insert_and_get_id(
+            conn,
             """
             INSERT INTO assignments (
                 course_id, title, status, requirements_md, rubric_md, grading_mode,
@@ -81,7 +82,6 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
                 learning_stage_key,
             )
         )
-        new_id = cursor.lastrowid
         if schedule_fields["status"] == "published":
             try:
                 create_assignment_published_notifications(

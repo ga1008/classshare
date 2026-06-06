@@ -200,11 +200,23 @@ try {
     Require-Command tar
     Require-Command ssh
     Require-Command scp
+    Require-Command python
     if (-not (Test-Path -LiteralPath $SshKey)) {
         throw "SSH key not found: $SshKey"
     }
     if (-not (Test-Path -LiteralPath (Join-Path $repoRoot "docker-compose.yml"))) {
         throw "docker-compose.yml was not found under $repoRoot."
+    }
+
+    Write-Step "Checking PostgreSQL deployment gates"
+    Push-Location $repoRoot
+    try {
+        & python tools\deploy\postgres_preflight.py --json-output (Join-Path $localWorkDir "postgres-preflight.json")
+        if ($LASTEXITCODE -ne 0) {
+            throw "PostgreSQL deployment preflight failed. See $(Join-Path $localWorkDir "postgres-preflight.json")."
+        }
+    } finally {
+        Pop-Location
     }
 
     Write-Step "Building deploy manifest"
@@ -294,6 +306,22 @@ fi
 cd "$remote_path"
 ts="$(date +%Y%m%d-%H%M%S)"
 
+configure_compose_cmd() {
+  compose_cmd=(docker compose)
+  compose_files_description="docker-compose.yml"
+  local db_engine=""
+  if [ -f "$remote_path/docker.env" ]; then
+    db_engine="$(awk -F= '$1 == "DB_ENGINE" {print $2; exit}' "$remote_path/docker.env" | tr -d ' "\r')"
+  fi
+  if [ "$db_engine" = "postgres" ] && [ -f "$remote_path/docker-compose.postgres.yml" ]; then
+    compose_cmd=(docker compose -f docker-compose.yml -f docker-compose.postgres.yml)
+    compose_files_description="docker-compose.yml + docker-compose.postgres.yml"
+  fi
+  echo "COMPOSE_FILES=$compose_files_description"
+}
+
+configure_compose_cmd
+
 echo "Backing up remote code to $backup_dir"
 code_backup="$backup_dir/code-$ts.tgz"
 tar --ignore-failed-read \
@@ -322,7 +350,7 @@ echo "CODE_BACKUP=$code_backup"
 if [ "$skip_database_backup" != "True" ]; then
   db_path=""
   if command -v docker >/dev/null 2>&1; then
-    container_db="$(docker compose exec -T app python -c 'from classroom_app.config import DB_PATH; print(DB_PATH)' 2>/dev/null | tr -d '\r' || true)"
+    container_db="$("${compose_cmd[@]}" exec -T app python -c 'from classroom_app.config import DB_PATH; print(DB_PATH)' 2>/dev/null | tr -d '\r' || true)"
     case "$container_db" in
       /app/data/*) db_path="$remote_path/data/${container_db#/app/data/}" ;;
     esac
@@ -370,6 +398,7 @@ tar -xzf "$archive" -C "$remote_path"
 if [ -f "$remote_path/deployment/docker/entrypoint.sh" ]; then
   chmod +x "$remote_path/deployment/docker/entrypoint.sh"
 fi
+configure_compose_cmd
 
 echo "Preparing Agent runtime data directories"
 mkdir -p "$remote_path/data/agent_tasks/deepseek_home"
@@ -445,27 +474,27 @@ PY
 fi
 
 echo "Checking Docker Compose configuration"
-docker compose config --quiet
+"${compose_cmd[@]}" config --quiet
 
 echo "Rebuilding and starting Docker Compose in the background"
-docker compose up -d --build
+"${compose_cmd[@]}" up -d --build
 echo "Restarting nginx to refresh upstream service addresses"
-docker compose restart nginx
-docker compose ps
+"${compose_cmd[@]}" restart nginx
+"${compose_cmd[@]}" ps
 
 if [ "$skip_health_check" != "True" ]; then
   echo "Checking health endpoints"
   curl -fsS http://127.0.0.1/api/internal/health
   echo
-  docker compose exec -T app python - <<'PY'
+  "${compose_cmd[@]}" exec -T app python - <<'PY'
 import urllib.request
 print(urllib.request.urlopen("http://127.0.0.1:8000/api/internal/health", timeout=8).read().decode())
 PY
-  docker compose exec -T ai python - <<'PY'
+  "${compose_cmd[@]}" exec -T ai python - <<'PY'
 import urllib.request
 print(urllib.request.urlopen("http://127.0.0.1:8001/api/internal/health", timeout=8).read().decode())
 PY
-  if docker compose logs --tail=120 app ai mailer | grep -Ei 'traceback|exception|critical|failed|error'; then
+  if "${compose_cmd[@]}" logs --tail=120 app ai mailer | grep -Ei 'traceback|exception|critical|failed|error'; then
     echo "WARNING: recent logs contain error-like lines; inspect the output above." >&2
   else
     echo "NO_RECENT_ERROR_LOGS"

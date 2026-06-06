@@ -3,6 +3,7 @@ from .generation_helpers import *
 from .ai_import_helpers import *
 from .final_material_helpers import *
 from .rewrite_helpers import *
+from ...db.connection import get_configured_db_engine
 from ...services.base_resource_modes_service import (
     build_material_delete_blockers,
     build_mode_permissions,
@@ -508,35 +509,16 @@ async def upload_materials(
                     else:
                         inherited_root_id = created_roots[parent_path]
 
-                cursor = conn.execute(
-                    """
-                    INSERT INTO course_materials
-                    (teacher_id, parent_id, root_id, material_path, name, node_type, mime_type,
-                     preview_type, ai_capability, file_ext, file_hash, file_size,
-                     ai_parse_status, ai_optimize_status, owner_role, owner_user_pk, scope_level,
-                     school_code, school_name, college, department, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, 'folder', 'inode/directory', 'folder', 'none', '', NULL, 0,
-                            'idle', 'idle', 'teacher', ?, 'private', ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        user["id"],
-                        folder_parent_id,
-                        inherited_root_id,
-                        folder_path,
-                        folder_name,
-                        user["id"],
-                        owner_scope["school_code"],
-                        owner_scope["school_name"],
-                        owner_scope["college"],
-                        owner_scope["department"],
-                        now,
-                        now,
-                    ),
+                folder_id, actual_root_id = _insert_material_folder_row(
+                    conn,
+                    user=user,
+                    name=folder_name,
+                    material_path=folder_path,
+                    parent_id=folder_parent_id,
+                    inherited_root_id=inherited_root_id,
+                    owner_scope=owner_scope,
+                    now=now,
                 )
-                folder_id = cursor.lastrowid
-                actual_root_id = inherited_root_id or folder_id
-                if inherited_root_id is None:
-                    conn.execute("UPDATE course_materials SET root_id = ? WHERE id = ?", (actual_root_id, folder_id))
 
                 created_paths[folder_path] = folder_id
                 created_roots[folder_path] = actual_root_id
@@ -562,41 +544,20 @@ async def upload_materials(
             if not file_info:
                 raise HTTPException(500, f"保存材料失败: {file.filename}")
 
-            cursor = conn.execute(
-                """
-                INSERT INTO course_materials
-                (teacher_id, parent_id, root_id, material_path, name, node_type, mime_type,
-                 preview_type, ai_capability, file_ext, file_hash, file_size,
-                  ai_parse_status, ai_optimize_status, owner_role, owner_user_pk, scope_level,
-                  school_code, school_name, college, department, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'file', ?, ?, ?, ?, ?, ?, 'idle', 'idle',
-                        'teacher', ?, 'private', ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    user["id"],
-                    file_parent_id,
-                    inherited_root_id,
-                    full_path,
-                    full_segments[-1],
-                    file_profile["mime_type"],
-                    file_profile["preview_type"],
-                    file_profile["ai_capability"],
-                    file_profile["file_ext"],
-                    file_info["hash"],
-                    file_info["size"],
-                    user["id"],
-                    owner_scope["school_code"],
-                    owner_scope["school_name"],
-                    owner_scope["college"],
-                    owner_scope["department"],
-                    now,
-                    now,
-                ),
+            file_id = _insert_material_file_row(
+                conn,
+                user=user,
+                name=full_segments[-1],
+                material_path=full_path,
+                parent_id=file_parent_id,
+                root_id=inherited_root_id,
+                file_profile=file_profile,
+                file_hash=file_info["hash"],
+                file_size=file_info["size"],
+                owner_scope=owner_scope,
+                now=now,
             )
-            file_id = cursor.lastrowid
             actual_root_id = inherited_root_id or file_id
-            if inherited_root_id is None:
-                conn.execute("UPDATE course_materials SET root_id = ? WHERE id = ?", (actual_root_id, file_id))
 
             created_paths[full_path] = file_id
             created_roots[full_path] = actual_root_id
@@ -677,13 +638,23 @@ async def assign_material_to_classrooms(
             )
 
         for class_offering_id in add_ids:
-            conn.execute(
-                """
-                INSERT INTO course_material_assignments (material_id, class_offering_id, assigned_by_teacher_id, created_at)
-                VALUES (?, ?, ?, ?)
-                """,
-                (material_id, class_offering_id, user["id"], now),
-            )
+            if get_configured_db_engine() == "postgres":
+                conn.execute(
+                    """
+                    INSERT INTO course_material_assignments (material_id, class_offering_id, assigned_by_teacher_id, created_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT (material_id, class_offering_id) DO NOTHING
+                    """,
+                    (material_id, class_offering_id, user["id"], now),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO course_material_assignments (material_id, class_offering_id, assigned_by_teacher_id, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (material_id, class_offering_id, user["id"], now),
+                )
 
         conn.commit()
 

@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from ..db.connection import get_configured_db_engine
 from .course_planning_service import load_course_lessons_by_course_id, serialize_course_row
 from .organization_scope_service import apply_teacher_scope_to_org, load_teacher_org_scope
 from .resource_access_service import (
@@ -98,6 +99,21 @@ def _count(conn: sqlite3.Connection, sql: str, params: tuple[Any, ...]) -> int:
 
 
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    engine = get_configured_db_engine()
+    if engine == "postgres":
+        row = conn.execute(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = ?
+              AND table_name = ?
+            LIMIT 1
+            """,
+            ("public", table_name),
+        ).fetchone()
+        return row is not None
+    if engine != "sqlite":
+        raise ValueError(f"Unsupported base resource database engine: {engine!r}")
     row = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
         (table_name,),

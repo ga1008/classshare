@@ -15,6 +15,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from fastapi import HTTPException
 
 from ..config import SECRET_KEY
+from ..db.connection import execute_insert_returning_id
 from .file_service import delete_global_file, global_file_write_path, resolve_global_file_path
 from .materials_service import infer_material_profile, is_git_internal_material_path, serialize_material_row
 
@@ -862,7 +863,8 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[
                     summary["unchanged"] += 1
                 continue
 
-            cursor = conn.execute(
+            row_id = execute_insert_returning_id(
+                conn,
                 """
                 INSERT INTO course_materials
                 (teacher_id, parent_id, root_id, material_path, name, node_type, mime_type,
@@ -882,14 +884,14 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[
                     now,
                 ),
             )
-            path_to_id[relative_path] = int(cursor.lastrowid)
+            path_to_id[relative_path] = int(row_id)
             summary["inserted"] += 1
             changed_entries.append(
                 _serialize_changed_entry(
                     status="inserted",
                     relative_path=relative_path,
                     material_path=material_path,
-                    row_id=int(cursor.lastrowid),
+                    row_id=int(row_id),
                     node_type="folder",
                     name=folder_name,
                     preview_type="folder",
@@ -957,7 +959,8 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[
                 summary["unchanged"] += 1
             continue
 
-        cursor = conn.execute(
+        row_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO course_materials
             (teacher_id, parent_id, root_id, material_path, name, node_type, mime_type,
@@ -982,14 +985,14 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[
                 now,
             ),
         )
-        path_to_id[relative_path] = int(cursor.lastrowid)
+        path_to_id[relative_path] = int(row_id)
         summary["inserted"] += 1
         changed_entries.append(
             _serialize_changed_entry(
                 status="inserted",
                 relative_path=relative_path,
                 material_path=material_path,
-                row_id=int(cursor.lastrowid),
+                row_id=int(row_id),
                 node_type="file",
                 name=file_path.name,
                 preview_type=profile["preview_type"],

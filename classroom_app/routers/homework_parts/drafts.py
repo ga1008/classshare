@@ -163,7 +163,7 @@ async def save_assignment_draft(
                     final_dir=draft_dir,
                     backup_dir=move_backup_dir,
                 )
-            conn.execute("BEGIN IMMEDIATE")
+            begin_immediate_transaction(conn)
             draft = _ensure_submission_draft(
                 conn,
                 assignment_id=assignment_id,

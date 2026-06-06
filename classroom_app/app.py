@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from urllib.parse import parse_qs
 import anyio.to_thread
+from dataclasses import asdict
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -24,6 +25,7 @@ from .config import (
     ensure_runtime_directories,
 )
 from .database import init_database
+from .db.connection import database_backend_state
 from .dependencies import build_login_redirect_url, build_permission_warning_url
 from .dependencies import clear_access_token_cookie, get_active_user_from_request
 from .dependencies import infer_required_role_from_path
@@ -234,6 +236,7 @@ async def internal_health():
         "service": "main",
         "ai_assistant_url": AI_ASSISTANT_URL,
         "database_path": str(DB_PATH),
+        "database_backend": asdict(database_backend_state()),
         "timezone": app_timezone_name(),
         "server_local_time": local_iso(),
         "threadpool_tokens": int(thread_limiter.total_tokens),
@@ -256,6 +259,7 @@ async def internal_metrics():
         "status": "ok",
         "service": "main",
         "database_path": str(DB_PATH),
+        "database_backend": asdict(database_backend_state()),
         "runtime": get_runtime_metrics_snapshot(),
         "background_tasks": build_background_task_health_summary(),
         "discussion_runtime": {

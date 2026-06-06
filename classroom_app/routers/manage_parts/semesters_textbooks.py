@@ -89,24 +89,24 @@ async def api_save_semester(
                     saved_semester_id = int(existing_row["id"])
                     action_text = "复用"
                 else:
-                    cursor = conn.execute(
-                    """
-                    INSERT INTO academic_semesters (
-                        teacher_id, school_code, school_name, name, start_date, end_date, week_count
+                    saved_semester_id = execute_insert_returning_id(
+                        conn,
+                        """
+                        INSERT INTO academic_semesters (
+                            teacher_id, school_code, school_name, name, start_date, end_date, week_count
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            user["id"],
+                            teacher_scope["school_code"],
+                            teacher_scope["school_name"],
+                            semester_name,
+                            start_date_value.isoformat(),
+                            end_date_value.isoformat(),
+                            week_count,
+                        ),
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        user["id"],
-                        teacher_scope["school_code"],
-                        teacher_scope["school_name"],
-                        semester_name,
-                        start_date_value.isoformat(),
-                        end_date_value.isoformat(),
-                        week_count,
-                    ),
-                    )
-                    saved_semester_id = int(cursor.lastrowid)
                     action_text = "创建"
                     should_sync_calendar = True
             if saved_semester_id and should_sync_calendar:
@@ -340,7 +340,8 @@ async def api_save_textbook(
                 attachment_path = str(attachment_info["stored_path"] or "") if attachment_info else ""
                 attachment_size = int(Path(attachment_path).stat().st_size) if attachment_path else 0
                 attachment_mime_type = str(attachment.content_type or "") if attachment_info else ""
-                cursor = conn.execute(
+                persisted_textbook_id = execute_insert_returning_id(
+                    conn,
                     """
                     INSERT INTO textbooks (
                         teacher_id,
@@ -373,7 +374,6 @@ async def api_save_textbook(
                         json.dumps(tags, ensure_ascii=False),
                     ),
                 )
-                persisted_textbook_id = int(cursor.lastrowid)
                 action_text = "创建"
 
             conn.commit()

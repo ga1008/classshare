@@ -62,7 +62,8 @@ async def api_save_course(
                     user["id"],
                     department=payload["department"],
                 )
-                cursor = conn.execute(
+                course_id = execute_insert_returning_id(
+                    conn,
                     """
                     INSERT INTO courses (
                         name, description, sect_name, department, credits, total_hours,
@@ -83,7 +84,6 @@ async def api_save_course(
                         org_scope["college"],
                     ),
                 )
-                course_id = int(cursor.lastrowid)
                 action_text = "创建"
 
             replace_course_lessons(conn, course_id=course_id, lessons=payload["lessons"])
@@ -244,7 +244,8 @@ async def api_create_course(
                 user["id"],
                 department=normalized_department,
             )
-            conn.execute(
+            course_id = execute_insert_returning_id(
+                conn,
                 """
                 INSERT INTO courses (
                     name, description, sect_name, department, credits, created_by_teacher_id,
@@ -271,7 +272,7 @@ async def api_create_course(
         print(f"创建课程错误: {str(e)}")  # 添加错误日志
         raise HTTPException(500, f"创建课程失败: {str(e)}")
 
-    return {"status": "success", "message": f"课程 '{name}' 创建成功。"}
+    return {"status": "success", "message": f"课程 '{name}' 创建成功。", "course_id": course_id}
 
 
 @router.delete("/courses/{course_id}", response_class=JSONResponse)

@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse
 from ..config import MAX_UPLOAD_SIZE_MB, MAX_UPLOAD_SIZE_BYTES
 from ..core import ai_client
 from ..database import get_db_connection
+from ..db.connection import execute_insert_returning_id
 from ..dependencies import get_current_teacher, get_current_user
 from ..services.behavior_tracking_service import record_behavior_event
 from ..services.message_center_service import (
@@ -329,9 +330,10 @@ async def handle_ai_grading_callback(request: Request):
             if current_status != "grading":
                 conn.commit()
                 return {"status": "ignored_non_grading_submission", "current_status": current_status}
+            stored_attempt_fingerprint = str(submission["grading_attempt_fingerprint"] or "").strip()
             expected_fingerprint = str(data.get("submission_fingerprint") or "").strip()
             if expected_fingerprint:
-                current_fingerprint = str(submission["grading_attempt_fingerprint"] or "").strip()
+                current_fingerprint = stored_attempt_fingerprint
                 if not current_fingerprint:
                     file_rows = [
                         dict(row)
@@ -383,8 +385,7 @@ async def handle_ai_grading_callback(request: Request):
                     feedback_md = append_late_policy_feedback(feedback_md, late_adjustment)
             elif feedback_md:
                 feedback_md = sanitize_student_feedback_text(feedback_md)
-            conn.execute(
-                """
+            update_sql = """
                 UPDATE submissions
                 SET status = ?,
                     score = ?,
@@ -395,17 +396,33 @@ async def handle_ai_grading_callback(request: Request):
                     grading_started_at = NULL,
                     grading_attempt_fingerprint = NULL
                 WHERE id = ?
-                """,
-                (
-                    status,
-                    score,
-                    feedback_md,
-                    late_adjustment.get("original_score") if late_adjustment.get("applied") else None,
-                    late_adjustment.get("penalty_points") or 0,
-                    1 if late_adjustment.get("score_cap_applied") else 0,
-                    submission_id,
-                ),
+                  AND status = 'grading'
+                  AND COALESCE(resubmission_allowed, 0) = 0
+            """
+            update_params = [
+                status,
+                score,
+                feedback_md,
+                late_adjustment.get("original_score") if late_adjustment.get("applied") else None,
+                late_adjustment.get("penalty_points") or 0,
+                1 if late_adjustment.get("score_cap_applied") else 0,
+                submission_id,
+            ]
+            if expected_fingerprint:
+                if stored_attempt_fingerprint:
+                    update_sql += " AND grading_attempt_fingerprint = ?"
+                    update_params.append(stored_attempt_fingerprint)
+                else:
+                    update_sql += " AND COALESCE(grading_attempt_fingerprint, '') = ''"
+            else:
+                update_sql += " AND COALESCE(grading_attempt_fingerprint, '') = ''"
+            cursor = conn.execute(
+                update_sql,
+                tuple(update_params),
             )
+            if cursor.rowcount != 1:
+                conn.commit()
+                return {"status": "ignored_stale_grading_result"}
             if status == 'graded':
                 try:
                     create_student_grading_notification(
@@ -1610,14 +1627,14 @@ async def create_new_ai_chat_session(class_offering_id: int, user: dict = Depend
     try:
         with get_db_connection() as conn:
             _ensure_classroom_access(conn, class_offering_id, user_pk, user_role)
-            cursor = conn.execute(
+            session_id = execute_insert_returning_id(
+                conn,
                 """
                 INSERT INTO ai_chat_sessions (session_uuid, class_offering_id, user_pk, user_role, title, context_prompt)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (new_uuid, class_offering_id, user_pk, user_role, default_title, user_context_prompt)
             )
-            session_id = cursor.lastrowid
             conn.commit()
 
         return {

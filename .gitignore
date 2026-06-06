@@ -83,7 +83,11 @@ docs/_build/
 
 # PyBuilder
 .pybuilder/
-target/
+target/*
+!target/target03/
+target/target03/*
+!target/target03/P01/
+!target/target03/P01/**
 
 # Jupyter Notebook
 .ipynb_checkpoints

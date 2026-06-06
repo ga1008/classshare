@@ -14,6 +14,7 @@ import httpx
 
 from ..config import AI_ASSISTANT_URL
 from ..database import get_db_connection
+from ..db.connection import execute_insert_returning_id
 from .academic_integration_service import (
     load_teacher_academic_access_method,
     open_authenticated_academic_client,
@@ -796,7 +797,8 @@ async def prepare_current_semester_from_academic_system(teacher_id: int) -> dict
                     action = "shared_reused"
                     should_sync_calendar = False
             else:
-                cursor = conn.execute(
+                semester_id = execute_insert_returning_id(
+                    conn,
                     """
                     INSERT INTO academic_semesters (
                         teacher_id, school_code, school_name, name, start_date, end_date, week_count,
@@ -817,7 +819,6 @@ async def prepare_current_semester_from_academic_system(teacher_id: int) -> dict
                         _json_dumps(academic_sources),
                     ),
                 )
-                semester_id = int(cursor.lastrowid)
                 action = "created"
                 should_sync_calendar = True
             conn.commit()

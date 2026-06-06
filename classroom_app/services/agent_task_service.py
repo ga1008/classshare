@@ -14,6 +14,7 @@ from ..config import (
     AGENT_TASK_RUNTIME_WORKSPACE_PREFIX,
     AGENT_TASK_WORKSPACE_ROOT,
 )
+from ..db.connection import begin_immediate_transaction, execute_insert_returning_id, get_configured_db_engine
 
 
 TASK_STATUS_QUEUED = "queued"
@@ -32,6 +33,8 @@ TASK_STATUS_LABELS = {
     TASK_STATUS_FAILED: "失败",
     TASK_STATUS_CANCELED: "已取消",
 }
+
+AGENT_TASK_ADVISORY_LOCK_KEYS = (752712, 41001)
 
 TASK_TYPE_DEFINITIONS: dict[str, dict[str, str]] = {
     "course_material_digest": {
@@ -725,7 +728,8 @@ def create_agent_task(conn, user: dict[str, Any], payload: dict[str, Any]) -> di
     public_summary = _public_summary_for_task(task_type)
 
     now = utcnow_iso()
-    cursor = conn.execute(
+    task_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO agent_tasks (
             task_uuid, teacher_id, teacher_name, task_type, title, public_summary,
@@ -747,7 +751,6 @@ def create_agent_task(conn, user: dict[str, Any], payload: dict[str, Any]) -> di
             now,
         ),
     )
-    task_id = int(cursor.lastrowid)
     append_task_event(
         conn,
         task_id,
@@ -1217,9 +1220,8 @@ def cancel_agent_task(conn, task_id: int, *, teacher_id: int) -> dict[str, Any]:
     return get_agent_task(conn, task_id, teacher_id=teacher_id)
 
 
-def claim_next_agent_task(conn, *, worker_id: str) -> dict[str, Any] | None:
-    now = utcnow_iso()
-    conn.execute("BEGIN IMMEDIATE")
+def _claim_next_agent_task_sqlite(conn, *, worker_id: str, now: str) -> dict[str, Any] | None:
+    begin_immediate_transaction(conn)
     running = conn.execute(
         "SELECT id FROM agent_tasks WHERE status = ? LIMIT 1",
         (TASK_STATUS_RUNNING,),
@@ -1252,6 +1254,59 @@ def claim_next_agent_task(conn, *, worker_id: str) -> dict[str, Any] | None:
     append_task_event(conn, task_id, "started", "Agent 执行器已领取任务。", {"worker_id": worker_id}, commit=False)
     conn.commit()
     return dict(conn.execute("SELECT * FROM agent_tasks WHERE id = ?", (task_id,)).fetchone())
+
+
+def _claim_next_agent_task_postgres(conn, *, worker_id: str, now: str) -> dict[str, Any] | None:
+    lock_row = conn.execute(
+        "SELECT pg_try_advisory_xact_lock(?, ?) AS acquired",
+        AGENT_TASK_ADVISORY_LOCK_KEYS,
+    ).fetchone()
+    acquired = bool(lock_row.get("acquired") if isinstance(lock_row, dict) else lock_row[0])
+    if not acquired:
+        conn.commit()
+        return None
+
+    row = conn.execute(
+        """
+        WITH candidate AS (
+            SELECT id
+            FROM agent_tasks
+            WHERE status = ?
+            ORDER BY priority DESC, created_at ASC, id ASC
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+        )
+        UPDATE agent_tasks
+        SET status = ?, started_at = COALESCE(started_at, ?), updated_at = ?, worker_id = ?
+        FROM candidate
+        WHERE agent_tasks.id = candidate.id
+          AND NOT EXISTS (
+              SELECT 1
+              FROM agent_tasks running
+              WHERE running.status = ?
+          )
+        RETURNING agent_tasks.*
+        """,
+        (TASK_STATUS_QUEUED, TASK_STATUS_RUNNING, now, now, worker_id, TASK_STATUS_RUNNING),
+    ).fetchone()
+    if not row:
+        conn.commit()
+        return None
+
+    task_id = int(row["id"])
+    append_task_event(conn, task_id, "started", "Agent 执行器已领取任务。", {"worker_id": worker_id}, commit=False)
+    conn.commit()
+    return dict(row)
+
+
+def claim_next_agent_task(conn, *, worker_id: str) -> dict[str, Any] | None:
+    now = utcnow_iso()
+    engine = get_configured_db_engine()
+    if engine == "postgres":
+        return _claim_next_agent_task_postgres(conn, worker_id=worker_id, now=now)
+    if engine == "sqlite":
+        return _claim_next_agent_task_sqlite(conn, worker_id=worker_id, now=now)
+    raise ValueError(f"Unsupported agent task database engine: {engine!r}")
 
 
 def mark_task_runtime_started(

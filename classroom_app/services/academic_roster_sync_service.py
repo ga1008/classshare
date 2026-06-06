@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 from ..database import get_db_connection
+from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
 from .academic_integration_service import (
     load_teacher_academic_access_method,
@@ -503,7 +504,8 @@ def _upsert_class(
     message = f"由教务系统同步：{student.college or student.major or class_name}"
     metadata = _json_dumps(_class_metadata(student, rosters))
     if row is None:
-        cursor = conn.execute(
+        class_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO classes (
                 name, department, created_by_teacher_id,
@@ -533,7 +535,7 @@ def _upsert_class(
             ),
         )
         stats["classes_created"] += 1
-        return int(cursor.lastrowid)
+        return class_id
 
     if int(row["created_by_teacher_id"]) != int(teacher_id):
         warnings.append(f"班级“{class_name}”已属于其他教师，已跳过以避免误改。")
@@ -648,7 +650,8 @@ def _upsert_student(
     metadata = _json_dumps(_student_metadata(student, roster))
     message = f"由教务系统同步：{roster.course_name or roster.teaching_class_name}"
     if existing is None:
-        cursor = conn.execute(
+        student_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO students (
                 student_id_number, name, class_id, gender, email, phone,
@@ -689,7 +692,7 @@ def _upsert_student(
             ),
         )
         stats["students_created"] += 1
-        return int(cursor.lastrowid)
+        return student_id
 
     if int(existing["current_teacher_id"]) != int(teacher_id):
         warnings.append(f"学生“{student.name} / {student.student_number}”已属于其他教师的班级，已跳过。")
@@ -790,8 +793,7 @@ def _upsert_roster_item(
     synced_at: str,
     source_url: str,
 ) -> int:
-    cursor = conn.execute(
-        """
+    sql = """
         INSERT INTO teacher_academic_roster_sync_items (
             teacher_id, semester_id, course_id, school_code,
             academic_year, academic_year_name, academic_term, academic_term_name,
@@ -821,48 +823,36 @@ def _upsert_roster_item(
             source_url = excluded.source_url,
             synced_at = excluded.synced_at,
             updated_at = excluded.updated_at
-        """,
-        (
-            int(teacher_id),
-            int(semester["id"]),
-            course_id,
-            roster.academic_year,
-            roster.academic_year_name,
-            roster.academic_term,
-            roster.academic_term_name,
-            roster.course_code,
-            roster.course_name,
-            roster.teaching_class_id,
-            roster.teaching_class_name,
-            roster.class_composition,
-            roster.college,
-            roster.teacher_name,
-            roster.schedule_text,
-            roster.location_text,
-            roster.declared_student_count,
-            roster.selected_student_count,
-            _json_dumps(roster.raw_json),
-            source_url,
-            synced_at,
-            synced_at,
-        ),
+        """
+    params = (
+        int(teacher_id),
+        int(semester["id"]),
+        course_id,
+        roster.academic_year,
+        roster.academic_year_name,
+        roster.academic_term,
+        roster.academic_term_name,
+        roster.course_code,
+        roster.course_name,
+        roster.teaching_class_id,
+        roster.teaching_class_name,
+        roster.class_composition,
+        roster.college,
+        roster.teacher_name,
+        roster.schedule_text,
+        roster.location_text,
+        roster.declared_student_count,
+        roster.selected_student_count,
+        _json_dumps(roster.raw_json),
+        source_url,
+        synced_at,
+        synced_at,
     )
-    if cursor.lastrowid:
-        row = conn.execute(
-            """
-            SELECT id
-            FROM teacher_academic_roster_sync_items
-            WHERE teacher_id = ?
-              AND school_code = 'gxufl'
-              AND academic_year = ?
-              AND academic_term = ?
-              AND teaching_class_id = ?
-            LIMIT 1
-            """,
-            (int(teacher_id), roster.academic_year, roster.academic_term, roster.teaching_class_id),
-        ).fetchone()
-        if row:
-            return int(row["id"])
+    if get_configured_db_engine() == "postgres":
+        row = conn.execute(f"{sql} RETURNING id", params).fetchone()
+        return int(row["id"]) if row else 0
+
+    conn.execute(sql, params)
     row = conn.execute(
         """
         SELECT id

@@ -12,6 +12,8 @@ from typing import Any
 import httpx
 
 from ..database import get_db_connection
+from ..db.connection import execute_insert_returning_id, get_configured_db_engine
+from ..db.errors import DatabaseProgrammingError
 from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
 from .academic_integration_service import (
     load_teacher_academic_access_method,
@@ -38,7 +40,48 @@ FOLLOW_UP_ITEMS = [
 ]
 
 
+def _fetch_postgres_column_names(conn, table_name: str) -> set[str]:
+    rows = conn.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = ? AND table_name = ?
+        """,
+        ("public", table_name),
+    ).fetchall()
+    return {str(row["column_name"] if isinstance(row, dict) else row[0]) for row in rows}
+
+
 def ensure_course_exam_schema(conn: sqlite3.Connection) -> None:
+    if get_configured_db_engine() == "postgres":
+        required_columns = {
+            "id",
+            "teacher_id",
+            "semester_id",
+            "class_offering_id",
+            "course_id",
+            "class_id",
+            "school_code",
+            "academic_year",
+            "academic_term",
+            "exam_key",
+            "course_code",
+            "course_name",
+            "teaching_class_name",
+            "starts_at",
+            "ends_at",
+            "sync_status",
+            "synced_at",
+        }
+        actual_columns = _fetch_postgres_column_names(conn, "teacher_academic_course_exam_items")
+        missing = sorted(required_columns - actual_columns)
+        if missing:
+            raise DatabaseProgrammingError(
+                "PostgreSQL schema validation failed for teacher_academic_course_exam_items: "
+                + ", ".join(missing)
+            )
+        return
+
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS teacher_academic_course_exam_items
@@ -793,7 +836,8 @@ def _upsert_calendar_event(
         synced_at,
     )
     if existing is None:
-        cursor = conn.execute(
+        event_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO teacher_calendar_events (
                 teacher_id, semester_id, source_type, source_id, source_key,
@@ -804,7 +848,7 @@ def _upsert_calendar_event(
             """,
             (*params, synced_at),
         )
-        return True, False, int(cursor.lastrowid)
+        return True, False, event_id
 
     changed = any(
         str(existing[key] or "") != str(value or "")

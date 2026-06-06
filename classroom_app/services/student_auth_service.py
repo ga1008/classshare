@@ -6,6 +6,7 @@ from typing import Optional
 from jose import JWTError, jwt
 
 from ..config import ALGORITHM, SECRET_KEY
+from ..db.connection import execute_insert_returning_id
 from ..dependencies import normalize_ip
 
 PASSWORD_MIN_LENGTH = 8
@@ -240,7 +241,8 @@ def create_password_reset_request(
         raise ValueError("教师已通过您的找回密码申请，请直接使用姓名和学号重新设置密码。")
 
     device_meta = parse_user_agent(requester_user_agent)
-    cursor = conn.execute(
+    return execute_insert_returning_id(
+        conn,
         """
         INSERT INTO student_password_reset_requests (
             student_id, class_id, teacher_id, status,
@@ -266,7 +268,6 @@ def create_password_reset_request(
             datetime.now().isoformat(),
         ),
     )
-    return cursor.lastrowid
 
 
 def mark_latest_approved_reset_request_completed(

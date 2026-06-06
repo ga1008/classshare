@@ -10,6 +10,7 @@ from fastapi import HTTPException
 
 from ..config import AGENT_TASK_MAX_RUNTIME_SECONDS, AGENT_TASK_RUNTIME_POLL_SECONDS, HOMEWORK_SUBMISSIONS_DIR
 from ..database import get_db_connection
+from ..db.connection import execute_insert_returning_id
 from .agent_task_service import (
     TASK_STATUS_COMPLETED,
     TASK_STATUS_FAILED,
@@ -327,7 +328,8 @@ def _create_teacher_blog_draft(conn, *, teacher_id: int, title: str, content_md:
         raise HTTPException(404, "教师账户不存在，无法创建博客草稿。")
     display_name = _safe_text(teacher["name"] or teacher["nickname"], max_chars=80) or f"教师{teacher_id}"
     now = utcnow_iso()
-    cursor = conn.execute(
+    post_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO blog_posts (
             author_identity, author_role, author_user_pk, author_display_name, author_display_mode,
@@ -356,7 +358,7 @@ def _create_teacher_blog_draft(conn, *, teacher_id: int, title: str, content_md:
             now,
         ),
     )
-    return {"id": int(cursor.lastrowid), "status": "draft", "created_at": now}
+    return {"id": post_id, "status": "draft", "created_at": now}
 
 
 def _instruction_is_exam_like(text: str) -> bool:
@@ -373,7 +375,8 @@ def _create_assignment_draft(
     rubric_md: str,
 ) -> dict[str, Any]:
     now = utcnow_iso()
-    cursor = conn.execute(
+    assignment_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO assignments (
             course_id,
@@ -399,7 +402,6 @@ def _create_assignment_draft(
             "[]",
         ),
     )
-    assignment_id = int(cursor.lastrowid)
     try:
         (HOMEWORK_SUBMISSIONS_DIR / str(course_id) / str(assignment_id)).mkdir(parents=True, exist_ok=True)
     except OSError:

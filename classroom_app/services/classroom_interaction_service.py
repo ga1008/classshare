@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Iterable, Optional
 
 from fastapi import HTTPException
+from ..db.connection import execute_insert_returning_id
 from .resource_access_service import ensure_classroom_access as ensure_scoped_classroom_access
 
 
@@ -239,7 +240,8 @@ def create_activity(
     options = _normalize_options(payload.get("options"), kind=kind)
     now = _now_iso()
 
-    cursor = conn.execute(
+    activity_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO classroom_live_activities (
             class_offering_id, kind, title, prompt, status,
@@ -266,7 +268,6 @@ def create_activity(
             }),
         ),
     )
-    activity_id = int(cursor.lastrowid)
     for option in options:
         conn.execute(
             """
@@ -394,7 +395,8 @@ def submit_question(
     allow_anonymous = bool(activity["allow_anonymous"])
     is_anonymous = _coerce_bool(payload.get("is_anonymous"), default=allow_anonymous) and allow_anonymous
     now = _now_iso()
-    cursor = conn.execute(
+    question_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO classroom_live_questions (
             activity_id, class_offering_id, student_id, display_name,
@@ -413,7 +415,7 @@ def submit_question(
             now,
         ),
     )
-    return load_question(conn, int(cursor.lastrowid), user)
+    return load_question(conn, question_id, user)
 
 
 def resolve_question(
@@ -513,7 +515,8 @@ def set_help_signal(
             (signal_type, message, _actor_name(user), now, signal_id),
         )
     else:
-        cursor = conn.execute(
+        signal_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO classroom_live_help_signals (
                 class_offering_id, student_id, display_name,
@@ -523,7 +526,6 @@ def set_help_signal(
             """,
             (int(class_offering_id), student_id, _actor_name(user), signal_type, message, now, now),
         )
-        signal_id = int(cursor.lastrowid)
     return load_signal(conn, signal_id, user)
 
 

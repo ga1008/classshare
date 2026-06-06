@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from ...config import ROSTER_DIR, TEXTBOOK_ATTACHMENT_DIR, TEXTBOOK_ATTACHMENT_LEGACY_DIRS
 from ...core import ai_client
 from ...database import get_db_connection
+from ...db.connection import execute_insert_returning_id
 from ...dependencies import get_current_teacher, invalidate_session_for_user
 from ...services.academic_service import (
     build_classroom_ai_context,

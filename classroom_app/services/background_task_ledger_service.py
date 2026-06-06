@@ -11,6 +11,7 @@ from ..config import (
     EMAIL_WORKER_HEARTBEAT_TIMEOUT_SECONDS,
 )
 from ..database import get_db_connection
+from ..db.connection import get_configured_db_engine
 from .background_task_registry_service import BACKGROUND_TASK_DEFINITIONS, BackgroundTaskDefinition
 from .behavior_tracking_service import get_behavior_write_pipeline_stats
 
@@ -87,7 +88,38 @@ def _row_dict(row: Any) -> dict[str, Any]:
         return {}
 
 
+def _row_scalar(row: Any, key: str, default: Any = None) -> Any:
+    if row is None:
+        return default
+    try:
+        return row[key]
+    except (KeyError, TypeError, IndexError):
+        pass
+    try:
+        return row[0]
+    except (KeyError, TypeError, IndexError):
+        pass
+    if isinstance(row, dict):
+        return next(iter(row.values()), default)
+    return default
+
+
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    engine = get_configured_db_engine()
+    if engine == "postgres":
+        row = conn.execute(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = ?
+              AND table_name = ?
+            LIMIT 1
+            """,
+            ("public", table_name),
+        ).fetchone()
+        return row is not None
+    if engine != "sqlite":
+        raise ValueError(f"Unsupported background ledger database engine: {engine!r}")
     row = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
         (table_name,),
@@ -98,6 +130,22 @@ def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
 def _column_exists(conn: sqlite3.Connection, table_name: str, column_name: str) -> bool:
     if not _table_exists(conn, table_name):
         return False
+    engine = get_configured_db_engine()
+    if engine == "postgres":
+        row = conn.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = ?
+              AND table_name = ?
+              AND column_name = ?
+            LIMIT 1
+            """,
+            ("public", table_name, column_name),
+        ).fetchone()
+        return row is not None
+    if engine != "sqlite":
+        raise ValueError(f"Unsupported background ledger database engine: {engine!r}")
     rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
     return any(str(_row_dict(row).get("name") or row[1]) == column_name for row in rows)
 
@@ -107,10 +155,10 @@ def _count_status(conn: sqlite3.Connection, table_name: str, status_column: str,
         return 0
     placeholders = ",".join("?" for _ in statuses)
     row = conn.execute(
-        f"SELECT COUNT(*) FROM {table_name} WHERE {status_column} IN ({placeholders})",
+        f"SELECT COUNT(*) AS row_count FROM {table_name} WHERE {status_column} IN ({placeholders})",
         statuses,
     ).fetchone()
-    return int((row[0] if row else 0) or 0)
+    return int(_row_scalar(row, "row_count", 0) or 0)
 
 
 def _oldest_time(
@@ -125,13 +173,13 @@ def _oldest_time(
     placeholders = ",".join("?" for _ in statuses)
     row = conn.execute(
         f"""
-        SELECT MIN({time_column})
+        SELECT MIN({time_column}) AS oldest_value
         FROM {table_name}
         WHERE {status_column} IN ({placeholders})
         """,
         statuses,
     ).fetchone()
-    return str((row[0] if row else "") or "")
+    return str(_row_scalar(row, "oldest_value", "") or "")
 
 
 def _latest_error(
@@ -219,19 +267,17 @@ def _build_ai_grading_item(conn: sqlite3.Connection, definition: BackgroundTaskD
     started_column = "grading_started_at" if _column_exists(conn, "submissions", "grading_started_at") else "submitted_at"
     item["running_count"] = _count_status(conn, "submissions", "status", ("grading",))
     item["failed_count"] = _count_status(conn, "submissions", "status", ("grading_failed",))
-    item["stale_count"] = int(
-        conn.execute(
-            f"""
-            SELECT COUNT(*)
-            FROM submissions
-            WHERE status = 'grading'
-              AND COALESCE({started_column}, submitted_at, '') <> ''
-              AND COALESCE({started_column}, submitted_at) < ?
-            """,
-            (_cutoff(minutes=AI_GRADING_STALE_MINUTES),),
-        ).fetchone()[0]
-        or 0
-    )
+    row = conn.execute(
+        f"""
+        SELECT COUNT(*) AS row_count
+        FROM submissions
+        WHERE status = 'grading'
+          AND COALESCE({started_column}, submitted_at, '') <> ''
+          AND COALESCE({started_column}, submitted_at) < ?
+        """,
+        (_cutoff(minutes=AI_GRADING_STALE_MINUTES),),
+    ).fetchone()
+    item["stale_count"] = int(_row_scalar(row, "row_count", 0) or 0)
     item["oldest_queued_at"] = _oldest_time(conn, "submissions", "status", ("grading",), started_column)
     if _column_exists(conn, "submissions", "feedback_md"):
         item["last_error_at"], item["last_error"] = _latest_error(
@@ -257,19 +303,17 @@ def _build_material_ai_import_item(conn: sqlite3.Connection, definition: Backgro
         "parse_status",
         ("failed", "ai_failed", "quality_failed", "unsupported"),
     )
-    item["stale_count"] = int(
-        conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM material_ai_import_records
-            WHERE parse_status = 'running'
-              AND COALESCE(updated_at, started_at, created_at, '') <> ''
-              AND COALESCE(updated_at, started_at, created_at) < ?
-            """,
-            (_cutoff(minutes=_material_import_stale_minutes()),),
-        ).fetchone()[0]
-        or 0
-    )
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS row_count
+        FROM material_ai_import_records
+        WHERE parse_status = 'running'
+          AND COALESCE(updated_at, started_at, created_at, '') <> ''
+          AND COALESCE(updated_at, started_at, created_at) < ?
+        """,
+        (_cutoff(minutes=_material_import_stale_minutes()),),
+    ).fetchone()
+    item["stale_count"] = int(_row_scalar(row, "row_count", 0) or 0)
     item["oldest_queued_at"] = _oldest_time(conn, "material_ai_import_records", "parse_status", ("queued",), "created_at")
     item["last_error_at"], item["last_error"] = _latest_error(
         conn,
@@ -297,19 +341,17 @@ def _build_session_material_generation_item(
     item["queue_depth"] = _count_status(conn, "session_material_generation_tasks", "status", ("queued",))
     item["running_count"] = _count_status(conn, "session_material_generation_tasks", "status", ("running",))
     item["failed_count"] = _count_status(conn, "session_material_generation_tasks", "status", ("failed",))
-    item["stale_count"] = int(
-        conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM session_material_generation_tasks
-            WHERE status = 'running'
-              AND COALESCE(updated_at, started_at, created_at, '') <> ''
-              AND COALESCE(updated_at, started_at, created_at) < ?
-            """,
-            (_cutoff(minutes=SESSION_MATERIAL_GENERATION_STALE_MINUTES),),
-        ).fetchone()[0]
-        or 0
-    )
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS row_count
+        FROM session_material_generation_tasks
+        WHERE status = 'running'
+          AND COALESCE(updated_at, started_at, created_at, '') <> ''
+          AND COALESCE(updated_at, started_at, created_at) < ?
+        """,
+        (_cutoff(minutes=SESSION_MATERIAL_GENERATION_STALE_MINUTES),),
+    ).fetchone()
+    item["stale_count"] = int(_row_scalar(row, "row_count", 0) or 0)
     item["oldest_queued_at"] = _oldest_time(
         conn,
         "session_material_generation_tasks",
@@ -335,19 +377,17 @@ def _build_private_message_ai_reply_item(conn: sqlite3.Connection, definition: B
     item["queue_depth"] = _count_status(conn, "private_message_ai_jobs", "status", ("pending",))
     item["running_count"] = _count_status(conn, "private_message_ai_jobs", "status", ("running",))
     item["failed_count"] = _count_status(conn, "private_message_ai_jobs", "status", ("failed",))
-    item["stale_count"] = int(
-        conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM private_message_ai_jobs
-            WHERE status = 'running'
-              AND COALESCE(updated_at, started_at, created_at, '') <> ''
-              AND COALESCE(updated_at, started_at, created_at) < ?
-            """,
-            (_cutoff(minutes=PRIVATE_MESSAGE_AI_REPLY_STALE_MINUTES),),
-        ).fetchone()[0]
-        or 0
-    )
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS row_count
+        FROM private_message_ai_jobs
+        WHERE status = 'running'
+          AND COALESCE(updated_at, started_at, created_at, '') <> ''
+          AND COALESCE(updated_at, started_at, created_at) < ?
+        """,
+        (_cutoff(minutes=PRIVATE_MESSAGE_AI_REPLY_STALE_MINUTES),),
+    ).fetchone()
+    item["stale_count"] = int(_row_scalar(row, "row_count", 0) or 0)
     item["oldest_queued_at"] = _oldest_time(conn, "private_message_ai_jobs", "status", ("pending",), "created_at")
     item["last_error_at"], item["last_error"] = _latest_error(
         conn,
@@ -410,19 +450,17 @@ def _build_blog_news_crawler_item(conn: sqlite3.Connection, definition: Backgrou
     item["queue_depth"] = _count_status(conn, "blog_news_crawler_runs", "status", ("pending",))
     item["running_count"] = _count_status(conn, "blog_news_crawler_runs", "status", ("running",))
     item["failed_count"] = _count_status(conn, "blog_news_crawler_runs", "status", ("failed",))
-    item["stale_count"] = int(
-        conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM blog_news_crawler_runs
-            WHERE status = 'running'
-              AND COALESCE(updated_at, started_at, created_at, '') <> ''
-              AND COALESCE(updated_at, started_at, created_at) < ?
-            """,
-            (_cutoff(seconds=BLOG_NEWS_CRAWLER_HEARTBEAT_STALE_SECONDS),),
-        ).fetchone()[0]
-        or 0
-    )
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS row_count
+        FROM blog_news_crawler_runs
+        WHERE status = 'running'
+          AND COALESCE(updated_at, started_at, created_at, '') <> ''
+          AND COALESCE(updated_at, started_at, created_at) < ?
+        """,
+        (_cutoff(seconds=BLOG_NEWS_CRAWLER_HEARTBEAT_STALE_SECONDS),),
+    ).fetchone()
+    item["stale_count"] = int(_row_scalar(row, "row_count", 0) or 0)
     item["oldest_queued_at"] = _oldest_time(conn, "blog_news_crawler_runs", "status", ("pending",), "created_at")
     item["last_error_at"], item["last_error"] = _latest_error(
         conn,
@@ -457,19 +495,17 @@ def _build_agent_task_item(conn: sqlite3.Connection, definition: BackgroundTaskD
     item["queue_depth"] = _count_status(conn, "agent_tasks", "status", ("queued",))
     item["running_count"] = _count_status(conn, "agent_tasks", "status", ("running",))
     item["failed_count"] = _count_status(conn, "agent_tasks", "status", ("failed",))
-    item["stale_count"] = int(
-        conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM agent_tasks
-            WHERE status = 'running'
-              AND COALESCE(updated_at, started_at, created_at, '') <> ''
-              AND COALESCE(updated_at, started_at, created_at) < ?
-            """,
-            (_cutoff(seconds=AGENT_TASK_MAX_RUNTIME_SECONDS),),
-        ).fetchone()[0]
-        or 0
-    )
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS row_count
+        FROM agent_tasks
+        WHERE status = 'running'
+          AND COALESCE(updated_at, started_at, created_at, '') <> ''
+          AND COALESCE(updated_at, started_at, created_at) < ?
+        """,
+        (_cutoff(seconds=AGENT_TASK_MAX_RUNTIME_SECONDS),),
+    ).fetchone()
+    item["stale_count"] = int(_row_scalar(row, "row_count", 0) or 0)
     item["oldest_queued_at"] = _oldest_time(conn, "agent_tasks", "status", ("queued",), "created_at")
     item["last_error_at"], item["last_error"] = _latest_error(
         conn,

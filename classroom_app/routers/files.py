@@ -27,6 +27,7 @@ from typing import Optional
 from pathlib import Path
 
 from ..database import get_db_connection
+from ..db.connection import execute_insert_returning_id
 from ..time_utils import local_now
 from ..services.discussion_ai_service import (
     DISCUSSION_AI_ASSISTANT_NAME,
@@ -784,7 +785,7 @@ async def check_file_exists(
                         is_teacher_resource=False,
                     )
                     timestamp = datetime.now().isoformat()
-                    conn.execute("""
+                    new_id = execute_insert_returning_id(conn, """
                                  INSERT INTO course_files
                                  (course_id, file_name, file_hash, file_size, is_public, is_teacher_resource,
                                   description, original_link, uploaded_by_teacher_id,
@@ -800,7 +801,6 @@ async def check_file_exists(
                                        scope_payload["school_name"], scope_payload["college"],
                                        scope_payload["department"], timestamp, timestamp))
                     conn.commit()
-                    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
                 except Exception as e:
                     raise HTTPException(500, f"关联文件失败: {e}")
 
@@ -970,7 +970,7 @@ async def complete_chunked_upload(
                 is_teacher_resource=bool(upload['is_teacher_resource']),
             )
             timestamp = datetime.now().isoformat()
-            cursor = conn.execute("""
+            file_id = execute_insert_returning_id(conn, """
                 INSERT INTO course_files
                 (course_id, file_name, file_hash, file_size,
                  is_public, is_teacher_resource, description, original_link, uploaded_by_teacher_id,
@@ -988,7 +988,6 @@ async def complete_chunked_upload(
                 timestamp if upload['is_public'] else None,
                 timestamp,
             ))
-            file_id = cursor.lastrowid
             conn.execute(
                 "UPDATE chunked_uploads SET status = 'completed' WHERE upload_id = ?",
                 (req.upload_id,)

@@ -50,7 +50,8 @@ async def api_create_onboarding_class(request: Request, user: dict = Depends(get
                 college=data.get("college") or "",
                 department=department,
             )
-            cursor = conn.execute(
+            class_id = execute_insert_returning_id(
+                conn,
                 """
                 INSERT INTO classes (
                     name, department, description, created_by_teacher_id,
@@ -68,7 +69,6 @@ async def api_create_onboarding_class(request: Request, user: dict = Depends(get
                     org_scope["college"],
                 ),
             )
-            class_id = int(cursor.lastrowid)
             conn.commit()
         except sqlite3.IntegrityError as exc:
             conn.rollback()
@@ -253,7 +253,8 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                     teacher_id,
                     department=course_payload["department"],
                 )
-                cursor = conn.execute(
+                course_id = execute_insert_returning_id(
+                    conn,
                     """
                     INSERT INTO courses (
                         name, description, sect_name, department, credits, total_hours,
@@ -274,7 +275,6 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                         org_scope["college"],
                     ),
                 )
-                course_id = int(cursor.lastrowid)
                 course_action = "创建"
 
             replace_course_lessons(conn, course_id=course_id, lessons=course_payload["lessons"])
@@ -351,7 +351,8 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                 )
                 offering_action = "更新"
             else:
-                cursor = conn.execute(
+                offering_id = execute_insert_returning_id(
+                    conn,
                     """
                     INSERT INTO class_offerings (
                         class_id,
@@ -390,7 +391,6 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                         else "",
                     ),
                 )
-                offering_id = int(cursor.lastrowid)
                 offering_action = "开设"
 
             replace_offering_sessions(

@@ -4,6 +4,7 @@ import sqlite3
 from datetime import datetime
 from typing import Any
 
+from ..db.connection import get_configured_db_engine
 from .organization_scope_service import (
     DEFAULT_SCHOOL_NAME,
     normalize_org_text,
@@ -28,6 +29,21 @@ def _safe_int(value: Any, default: int = 0) -> int:
 
 
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    engine = get_configured_db_engine()
+    if engine == "postgres":
+        row = conn.execute(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = ?
+              AND table_name = ?
+            LIMIT 1
+            """,
+            ("public", table_name),
+        ).fetchone()
+        return row is not None
+    if engine != "sqlite":
+        raise ValueError(f"Unsupported organization management database engine: {engine!r}")
     row = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
         (table_name,),

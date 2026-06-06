@@ -74,6 +74,9 @@ try {
     Invoke-PreflightStep "manifest-check" {
         python tools\deploy\check_manifest.py --json-output (Join-Path $ReportDir "manifest-check.json")
     }
+    Invoke-PreflightStep "postgres-deploy-preflight" {
+        python tools\deploy\postgres_preflight.py --json-output (Join-Path $ReportDir "postgres-preflight.json")
+    }
     Invoke-PreflightStep "migration-dry-run" {
         python tools\deploy\migration_dry_run.py --json-output (Join-Path $ReportDir "migration-dry-run.json")
     }

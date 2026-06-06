@@ -18,6 +18,7 @@ from classroom_app.services.wrong_question_summary_service import (
     _clear_assignment_wrong_summary_ai_state,
     _extract_exam_questions,
     _get_answer_record,
+    _mark_wrong_summary_job_running_with_connection,
     _score_based_difficulty_summary,
     ensure_wrong_summary_cache_tables,
     expire_interrupted_wrong_summary_jobs,
@@ -40,6 +41,13 @@ def _feedback(*scores: tuple[int, float, float]) -> str:
 
 
 class WrongQuestionSummaryServiceTests(unittest.TestCase):
+    def _patch_engine(self, value: str):
+        import classroom_app.services.wrong_question_summary_service as service
+
+        original = service.get_configured_db_engine
+        service.get_configured_db_engine = lambda: value
+        return service, original
+
     def test_counts_only_non_full_scores_and_builds_choice_option_bars(self):
         questions = _extract_exam_questions(
             {
@@ -1123,6 +1131,158 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
                 os.remove(db_path)
             except OSError:
                 pass
+
+    def test_wrong_summary_postgres_schema_validation_does_not_run_sqlite_ddl(self):
+        import classroom_app.services.wrong_question_summary_service as service
+
+        class FakeCursor:
+            def __init__(self, rows):
+                self._rows = rows
+
+            def fetchall(self):
+                return list(self._rows)
+
+        class FakeConnection:
+            def __init__(self):
+                self.sql_calls: list[str] = []
+
+            def execute(self, sql, params=()):
+                normalized = " ".join(str(sql).split())
+                self.sql_calls.append(normalized)
+                if "information_schema.columns" not in normalized:
+                    raise AssertionError(f"Unexpected SQL: {normalized}")
+                table = params[0]
+                return FakeCursor([{"name": column} for column in service.WRONG_SUMMARY_POSTGRES_REQUIRED_COLUMNS[table]])
+
+        conn = FakeConnection()
+        service_module, original = self._patch_engine("postgres")
+        try:
+            ensure_wrong_summary_cache_tables(conn)
+        finally:
+            service_module.get_configured_db_engine = original
+
+        sql_text = "\n".join(conn.sql_calls)
+        self.assertIn("information_schema.columns", sql_text)
+        self.assertNotIn("CREATE TABLE", sql_text)
+        self.assertNotIn("PRAGMA", sql_text)
+
+    def test_wrong_summary_schema_rejects_unsupported_engine_before_sqlite_ddl(self):
+        class FakeConnection:
+            def execute(self, sql, params=()):
+                raise AssertionError(f"SQLite DDL must not run for unsupported engine: {sql}")
+
+        service_module, original = self._patch_engine("mysql")
+        try:
+            with self.assertRaisesRegex(ValueError, "Unsupported wrong-summary database engine"):
+                ensure_wrong_summary_cache_tables(FakeConnection())
+        finally:
+            service_module.get_configured_db_engine = original
+
+    def test_wrong_summary_sqlite_claim_requires_queued_status(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            ensure_wrong_summary_cache_tables(conn)
+            conn.execute(
+                """
+                INSERT INTO assignment_wrong_summary_jobs (
+                    assignment_id, teacher_id, questions_signature, prompt_version,
+                    status, run_token
+                ) VALUES ('assignment-1', 1, 'paper-sig', ?, 'queued', 'token-1')
+                """,
+                (PROMPT_VERSION,),
+            )
+            conn.execute(
+                """
+                INSERT INTO assignment_wrong_summary_jobs (
+                    assignment_id, teacher_id, questions_signature, prompt_version,
+                    status, run_token
+                ) VALUES ('assignment-2', 1, 'paper-sig', ?, 'completed', 'token-2')
+                """,
+                (PROMPT_VERSION,),
+            )
+            conn.commit()
+
+            claimed = _mark_wrong_summary_job_running_with_connection(
+                conn,
+                assignment_id="assignment-1",
+                questions_signature="paper-sig",
+                run_token="token-1",
+                now="2026-01-01T00:10:00",
+                engine="sqlite",
+            )
+            completed_claim = _mark_wrong_summary_job_running_with_connection(
+                conn,
+                assignment_id="assignment-2",
+                questions_signature="paper-sig",
+                run_token="token-2",
+                now="2026-01-01T00:10:00",
+                engine="sqlite",
+            )
+            rows = conn.execute(
+                "SELECT assignment_id, status, started_at FROM assignment_wrong_summary_jobs ORDER BY assignment_id"
+            ).fetchall()
+
+            self.assertTrue(claimed)
+            self.assertFalse(completed_claim)
+            self.assertEqual("running", rows[0]["status"])
+            self.assertEqual("2026-01-01T00:10:00", rows[0]["started_at"])
+            self.assertEqual("completed", rows[1]["status"])
+        finally:
+            conn.close()
+
+    def test_wrong_summary_postgres_claim_uses_skip_locked_and_returning(self):
+        class FakeCursor:
+            def __init__(self, row):
+                self._row = row
+
+            def fetchone(self):
+                return self._row
+
+        class FakeConnection:
+            def __init__(self):
+                self.calls: list[tuple[str, tuple]] = []
+                self.commits = 0
+
+            def execute(self, sql, params=()):
+                normalized = " ".join(str(sql).split())
+                self.calls.append((normalized, tuple(params)))
+                return FakeCursor({"id": 9})
+
+            def commit(self):
+                self.commits += 1
+
+        conn = FakeConnection()
+
+        claimed = _mark_wrong_summary_job_running_with_connection(
+            conn,
+            assignment_id="assignment-1",
+            questions_signature="paper-sig",
+            run_token="token-1",
+            now="2026-01-01T00:10:00",
+            engine="postgres",
+        )
+
+        self.assertTrue(claimed)
+        self.assertEqual(1, conn.commits)
+        self.assertEqual(1, len(conn.calls))
+        sql, params = conn.calls[0]
+        self.assertIn("FOR UPDATE SKIP LOCKED", sql)
+        self.assertIn("RETURNING assignment_wrong_summary_jobs.id", sql)
+        self.assertIn("AND status = ?", sql)
+        self.assertEqual(
+            (
+                "assignment-1",
+                "paper-sig",
+                PROMPT_VERSION,
+                "token-1",
+                "queued",
+                "running",
+                "2026-01-01T00:10:00",
+                "2026-01-01T00:10:00",
+            ),
+            params,
+        )
 
 
 if __name__ == "__main__":

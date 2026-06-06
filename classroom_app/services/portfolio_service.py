@@ -588,7 +588,7 @@ def add_portfolio_item(
         "recommended_reason": candidate.get("recommended_reason") or "",
     }
     now = _now_iso()
-    cursor = conn.execute(
+    conn.execute(
         """
         INSERT INTO student_portfolio_items (
             student_id, class_offering_id, course_id, source_type, source_id,
@@ -637,7 +637,9 @@ def add_portfolio_item(
         """,
         (int(student_id), normalized_source_type, str(candidate["source_id"])),
     ).fetchone()
-    item_id = int(row["id"] if row else cursor.lastrowid)
+    if row is None:
+        raise RuntimeError("Portfolio item upsert did not return a persisted row.")
+    item_id = int(row["id"])
     _record_growth_event(
         conn,
         student_id=int(student_id),

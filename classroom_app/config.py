@@ -237,9 +237,25 @@ def ensure_runtime_directories() -> None:
         directory.mkdir(parents=True, exist_ok=True)
 
 # --- SQLite ---
+DB_ENGINE = str(os.getenv("DB_ENGINE", "sqlite") or "sqlite").strip().lower()
+DATABASE_URL = str(os.getenv("DATABASE_URL", "") or "").strip()
 SQLITE_BUSY_TIMEOUT_MS = int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", 30000))
 SQLITE_CACHE_SIZE_KB = int(os.getenv("SQLITE_CACHE_SIZE_KB", 8192))
 SQLITE_WAL_AUTOCHECKPOINT_PAGES = int(os.getenv("SQLITE_WAL_AUTOCHECKPOINT_PAGES", 2000))
+
+# --- PostgreSQL ---
+POSTGRES_POOL_MIN = max(1, int(os.getenv("POSTGRES_POOL_MIN", 1)))
+POSTGRES_POOL_MAX = max(
+    POSTGRES_POOL_MIN,
+    int(os.getenv("POSTGRES_POOL_MAX", max(4, MAIN_WORKERS * 4))),
+)
+POSTGRES_STATEMENT_TIMEOUT_MS = max(0, int(os.getenv("POSTGRES_STATEMENT_TIMEOUT_MS", 30000)))
+POSTGRES_LOCK_TIMEOUT_MS = max(0, int(os.getenv("POSTGRES_LOCK_TIMEOUT_MS", 5000)))
+POSTGRES_IDLE_IN_TRANSACTION_TIMEOUT_MS = max(
+    0,
+    int(os.getenv("POSTGRES_IDLE_IN_TRANSACTION_TIMEOUT_MS", 30000)),
+)
+POSTGRES_BACKEND_READY = _read_bool_env("POSTGRES_BACKEND_READY", False)
 
 # --- Behavior tracking ---
 BEHAVIOR_WRITE_QUEUE_SIZE = int(os.getenv("BEHAVIOR_WRITE_QUEUE_SIZE", 20000))

@@ -5,6 +5,7 @@ import sqlite3
 from datetime import datetime
 from typing import Any
 
+from ..db.connection import execute_insert_returning_id
 from ..dependencies import get_password_hash
 from .organization_scope_service import build_org_scope, normalize_org_text, organization_label
 
@@ -581,7 +582,8 @@ def create_teacher_account(
             ),
         )
     else:
-        cursor = conn.execute(
+        teacher_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO teachers (
                 name, email, hashed_password, password_updated_at,
@@ -604,7 +606,6 @@ def create_teacher_account(
                 timestamp,
             ),
         )
-        teacher_id = int(cursor.lastrowid)
 
     upsert_teacher_membership(
         conn,

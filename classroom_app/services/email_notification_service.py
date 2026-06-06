@@ -32,6 +32,7 @@ from ..config import (
     SITE_DISPLAY_NAME,
 )
 from ..database import get_db_connection
+from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 
 NOTIFICATION_SEVERITY_NORMAL = "normal"
 NOTIFICATION_SEVERITY_IMPORTANT = "important"
@@ -85,6 +86,22 @@ EMAIL_ADDRESS_RE = re.compile(
     r"(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$",
     re.IGNORECASE,
 )
+
+
+def _row_scalar(row: Any, key: str = "row_count", default: Any = None) -> Any:
+    if row is None:
+        return default
+    try:
+        return row[key]
+    except (KeyError, TypeError, IndexError):
+        pass
+    try:
+        return row[0]
+    except (KeyError, TypeError, IndexError):
+        pass
+    if isinstance(row, dict):
+        return next(iter(row.values()), default)
+    return default
 
 EMAIL_PROVIDER_QQ = "qq"
 EMAIL_PROVIDER_163 = "netease_163"
@@ -541,7 +558,8 @@ def create_teacher_email_config(conn, teacher_id: int | str, payload: dict[str, 
         data["is_default"] = 1
 
     now = _now_iso()
-    cursor = conn.execute(
+    config_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO teacher_email_configs (
             teacher_id, label, provider, smtp_host, smtp_port, smtp_security, smtp_username,
@@ -575,7 +593,7 @@ def create_teacher_email_config(conn, teacher_id: int | str, payload: dict[str, 
             now,
         ),
     )
-    return _serialize_email_config(conn, get_teacher_email_config(conn, teacher_id_int, int(cursor.lastrowid)))
+    return _serialize_email_config(conn, get_teacher_email_config(conn, teacher_id_int, config_id))
 
 
 def update_teacher_email_config(conn, teacher_id: int | str, config_id: int | str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -968,10 +986,83 @@ def _build_email_content(payload: dict[str, Any], recipient_name: str, *, notifi
       <p style="margin:22px 0 0;font-size:12px;line-height:1.7;color:#64748b;">若按钮无法打开，请复制此链接到浏览器：<br><span style="word-break:break-all;">{safe_action_url}</span></p>
     </div>
     <p style="margin:14px 2px 0;font-size:12px;line-height:1.7;color:#64748b;">普通通知仅保留站内提醒，重要与系统类通知才会发送邮件。</p>
-  </div>
+    </div>
 </body>
 </html>"""
     return text_body, html_body
+
+
+def _insert_email_outbox_job_if_absent(
+    conn,
+    *,
+    config_id: int,
+    teacher_id: int,
+    notification_id: int,
+    dedupe_key: str,
+    recipient_identity: str,
+    recipient_role: str,
+    recipient_user_pk: int,
+    recipient_email: str,
+    subject: str,
+    body_text: str,
+    body_html: str,
+    category: str,
+    severity: str,
+    now: str,
+    engine: str | None = None,
+) -> int | None:
+    db_engine = (engine or get_configured_db_engine()).strip().lower()
+    if db_engine not in {"sqlite", "postgres"}:
+        raise ValueError(f"Unsupported email outbox database engine: {db_engine!r}")
+    if db_engine == "postgres":
+        insert_sql = """
+            INSERT INTO email_outbox (
+                config_id, teacher_id, notification_id, dedupe_key,
+                recipient_identity, recipient_role, recipient_user_pk, recipient_email,
+                subject, body_text, body_html, category, severity, status, next_attempt_at,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)
+            ON CONFLICT (dedupe_key) DO NOTHING
+            RETURNING id
+        """
+    else:
+        insert_sql = """
+            INSERT OR IGNORE INTO email_outbox (
+                config_id, teacher_id, notification_id, dedupe_key,
+                recipient_identity, recipient_role, recipient_user_pk, recipient_email,
+                subject, body_text, body_html, category, severity, status, next_attempt_at,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)
+        """
+    cursor = conn.execute(
+        insert_sql,
+        (
+            int(config_id),
+            int(teacher_id),
+            int(notification_id),
+            dedupe_key,
+            recipient_identity,
+            recipient_role,
+            int(recipient_user_pk),
+            recipient_email,
+            subject,
+            body_text,
+            body_html,
+            category,
+            severity,
+            now,
+            now,
+            now,
+        ),
+    )
+    if db_engine == "postgres":
+        inserted = cursor.fetchone()
+        if inserted:
+            return int(inserted["id"])
+    row = conn.execute("SELECT id FROM email_outbox WHERE dedupe_key = ? LIMIT 1", (dedupe_key,)).fetchone()
+    return int(row["id"]) if row else None
 
 
 def queue_notification_email_if_applicable(conn, *, notification_id: int, payload: dict[str, Any]) -> bool:
@@ -1010,85 +1101,120 @@ def queue_notification_email_if_applicable(conn, *, notification_id: int, payloa
     body_text, body_html = _build_email_content(payload, recipient["name"], notification_id=int(notification_id))
     dedupe_key = f"notification:{int(notification_id)}:{recipient['email']}"
     now = _now_iso()
-    conn.execute(
-        """
-        INSERT OR IGNORE INTO email_outbox (
-            config_id, teacher_id, notification_id, dedupe_key,
-            recipient_identity, recipient_role, recipient_user_pk, recipient_email,
-            subject, body_text, body_html, category, severity, status, next_attempt_at,
-            created_at, updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)
-        """,
-        (
-            int(config["id"]),
-            int(teacher_id),
-            int(notification_id),
-            dedupe_key,
-            str(payload.get("recipient_identity") or f"{recipient_role}:{recipient_user_pk}"),
-            recipient_role,
-            recipient_user_pk,
-            recipient["email"],
-            subject,
-            body_text,
-            body_html,
-            category,
-            severity,
-            now,
-            now,
-            now,
-        ),
+    job_id = _insert_email_outbox_job_if_absent(
+        conn,
+        config_id=int(config["id"]),
+        teacher_id=int(teacher_id),
+        notification_id=int(notification_id),
+        dedupe_key=dedupe_key,
+        recipient_identity=str(payload.get("recipient_identity") or f"{recipient_role}:{recipient_user_pk}"),
+        recipient_role=recipient_role,
+        recipient_user_pk=recipient_user_pk,
+        recipient_email=recipient["email"],
+        subject=subject,
+        body_text=body_text,
+        body_html=body_html,
+        category=category,
+        severity=severity,
+        now=now,
     )
-    row = conn.execute("SELECT id FROM email_outbox WHERE dedupe_key = ? LIMIT 1", (dedupe_key,)).fetchone()
-    if row:
-        _mark_notification_email_status(conn, int(notification_id), EMAIL_STATUS_QUEUED, job_id=int(row["id"]))
+    if job_id:
+        _mark_notification_email_status(conn, int(notification_id), EMAIL_STATUS_QUEUED, job_id=job_id)
         return True
     return False
+
+
+def _claim_due_jobs_with_connection(
+    conn,
+    *,
+    limit: int,
+    now: str,
+    stale_cutoff: str,
+    engine: str,
+) -> list[dict[str, Any]]:
+    safe_limit = max(1, min(int(limit), 100))
+    if engine == "postgres":
+        rows = conn.execute(
+            """
+            UPDATE email_outbox
+            SET status = 'sending', locked_at = ?, updated_at = ?
+            WHERE id IN (
+                SELECT id
+                FROM email_outbox
+                WHERE (
+                    status = 'queued'
+                    AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                ) OR (
+                    status = 'sending'
+                    AND (locked_at IS NULL OR locked_at <= ?)
+                )
+                ORDER BY created_at ASC, id ASC
+                LIMIT ?
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING *
+            """,
+            (now, now, now, stale_cutoff, safe_limit),
+        ).fetchall()
+        conn.commit()
+        return [dict(row) for row in rows]
+
+    if engine != "sqlite":
+        raise ValueError(f"Unsupported email claim database engine: {engine!r}")
+
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM email_outbox
+        WHERE (
+            status = 'queued'
+            AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+        ) OR (
+            status = 'sending'
+            AND (locked_at IS NULL OR locked_at <= ?)
+        )
+        ORDER BY created_at ASC, id ASC
+        LIMIT ?
+        """,
+        (now, stale_cutoff, safe_limit),
+    ).fetchall()
+    claimed: list[dict[str, Any]] = []
+    for row in rows:
+        cursor = conn.execute(
+            """
+            UPDATE email_outbox
+            SET status = 'sending', locked_at = ?, updated_at = ?
+            WHERE id = ?
+              AND (
+                (
+                    status = 'queued'
+                    AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                ) OR (
+                    status = 'sending'
+                    AND (locked_at IS NULL OR locked_at <= ?)
+                )
+              )
+            """,
+            (now, now, int(row["id"]), now, stale_cutoff),
+        )
+        if cursor.rowcount:
+            claimed.append(dict(row))
+    conn.commit()
+    return claimed
 
 
 def _claim_due_jobs(limit: int = EMAIL_WORKER_BATCH_SIZE) -> list[dict[str, Any]]:
     now = _now_iso()
     stale_cutoff = (datetime.now() - timedelta(minutes=15)).isoformat(timespec="seconds")
+    engine = get_configured_db_engine()
     with get_db_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT *
-            FROM email_outbox
-            WHERE (
-                status = 'queued'
-                AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
-            ) OR (
-                status = 'sending'
-                AND (locked_at IS NULL OR locked_at <= ?)
-            )
-            ORDER BY created_at ASC, id ASC
-            LIMIT ?
-            """,
-            (now, stale_cutoff, max(1, min(int(limit), 100))),
-        ).fetchall()
-        claimed: list[dict[str, Any]] = []
-        for row in rows:
-            cursor = conn.execute(
-                """
-                UPDATE email_outbox
-                SET status = 'sending', locked_at = ?, updated_at = ?
-                WHERE id = ?
-                  AND (
-                    (
-                        status = 'queued'
-                        AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
-                    ) OR (
-                        status = 'sending'
-                        AND (locked_at IS NULL OR locked_at <= ?)
-                    )
-                  )
-                """,
-                (now, now, int(row["id"]), now, stale_cutoff),
-            )
-            if cursor.rowcount:
-                claimed.append(dict(row))
-        conn.commit()
-    return claimed
+        return _claim_due_jobs_with_connection(
+            conn,
+            limit=limit,
+            now=now,
+            stale_cutoff=stale_cutoff,
+            engine=engine,
+        )
 
 
 def _rate_limit_delay_seconds(conn, config) -> int:
@@ -1098,16 +1224,16 @@ def _rate_limit_delay_seconds(conn, config) -> int:
     now_dt = datetime.now()
     minute_start = (now_dt - timedelta(seconds=60)).isoformat(timespec="seconds")
     day_start = now_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
-    minute_count = int(conn.execute(
-        "SELECT COUNT(*) FROM email_outbox WHERE config_id = ? AND status = 'sent' AND sent_at >= ?",
+    minute_count = int(_row_scalar(conn.execute(
+        "SELECT COUNT(*) AS row_count FROM email_outbox WHERE config_id = ? AND status = 'sent' AND sent_at >= ?",
         (config_id, minute_start),
-    ).fetchone()[0] or 0)
+    ).fetchone()) or 0)
     if minute_count >= per_minute:
         return 60
-    day_count = int(conn.execute(
-        "SELECT COUNT(*) FROM email_outbox WHERE config_id = ? AND status = 'sent' AND sent_at >= ?",
+    day_count = int(_row_scalar(conn.execute(
+        "SELECT COUNT(*) AS row_count FROM email_outbox WHERE config_id = ? AND status = 'sent' AND sent_at >= ?",
         (config_id, day_start),
-    ).fetchone()[0] or 0)
+    ).fetchone()) or 0)
     if day_count >= daily_limit:
         return 60 * 60
     last_sent = conn.execute(
@@ -1265,9 +1391,9 @@ def process_due_email_jobs_once(limit: int = EMAIL_WORKER_BATCH_SIZE) -> dict[st
 
 def update_email_worker_heartbeat(worker_id: str, *, status: str, last_error: str = "") -> None:
     with get_db_connection() as conn:
-        queue_depth = int(conn.execute(
-            "SELECT COUNT(*) FROM email_outbox WHERE status IN ('queued', 'sending')"
-        ).fetchone()[0] or 0)
+        queue_depth = int(_row_scalar(conn.execute(
+            "SELECT COUNT(*) AS row_count FROM email_outbox WHERE status IN ('queued', 'sending')"
+        ).fetchone()) or 0)
         now = _now_iso()
         conn.execute(
             """
@@ -1294,9 +1420,9 @@ def email_worker_health_snapshot() -> dict[str, Any]:
             LIMIT 1
             """
         ).fetchone()
-        queue_depth = int(conn.execute(
-            "SELECT COUNT(*) FROM email_outbox WHERE status IN ('queued', 'sending')"
-        ).fetchone()[0] or 0)
+        queue_depth = int(_row_scalar(conn.execute(
+            "SELECT COUNT(*) AS row_count FROM email_outbox WHERE status IN ('queued', 'sending')"
+        ).fetchone()) or 0)
     if not row:
         return {"ok": False, "queue_depth": queue_depth, "status": "missing", "updated_at": "", "last_error": ""}
     updated_at = datetime.fromisoformat(str(row["updated_at"]))

@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Optional
 from urllib.parse import quote
 
+from ..db.connection import execute_insert_returning_id
 from .academic_service import china_today
 from .learning_progress_service import build_student_public_cultivation_badge
 
@@ -618,7 +619,8 @@ def create_post(
     author_snapshot = _build_post_author_snapshot(conn, user, author_display_mode=author_display_mode)
 
     now = _now_iso()
-    cursor = conn.execute(
+    post_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO blog_posts (
             author_identity, author_role, author_user_pk, author_display_name, author_display_mode,
@@ -651,7 +653,6 @@ def create_post(
             now,
         ),
     )
-    post_id = int(cursor.lastrowid)
     _sync_post_attachments(conn, post_id, media_assets)
     return {"id": post_id, "status": normalized_status, "created_at": now}
 
@@ -1388,7 +1389,8 @@ def add_comment(
     display_name = str(author_display_name or user.get("name") or "").strip()
     if not display_name and role == "assistant":
         display_name = "管家"
-    cursor = conn.execute(
+    comment_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO blog_comments (
             post_id, parent_comment_id,
@@ -1411,7 +1413,6 @@ def add_comment(
             now,
         ),
     )
-    comment_id = int(cursor.lastrowid)
     conn.execute(
         "UPDATE blog_posts SET comment_count = comment_count + 1, updated_at = ? WHERE id = ?",
         (now, post_id),
@@ -1678,7 +1679,8 @@ def add_attachment(
         (post_id,),
     ).fetchone()
     next_order = int(max_order_row["max_order"] or 0) + 1 if max_order_row else 1
-    cursor = conn.execute(
+    return execute_insert_returning_id(
+        conn,
         """
         INSERT INTO blog_attachments (post_id, file_hash, original_filename, mime_type, file_size, image_width, image_height, display_order)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -1694,7 +1696,6 @@ def add_attachment(
             next_order,
         ),
     )
-    return int(cursor.lastrowid)
 
 
 def list_attachments(conn, post_id: int) -> list[dict]:

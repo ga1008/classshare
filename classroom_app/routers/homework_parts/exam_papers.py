@@ -507,7 +507,8 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
             )
 
         allowed_file_types_json = encode_allowed_file_types_json(_get_allowed_file_types(data))
-        cursor = conn.execute(
+        new_assignment_id = insert_and_get_id(
+            conn,
             """
             INSERT INTO assignments (
                 course_id, title, status, requirements_md, rubric_md, grading_mode,
@@ -546,7 +547,6 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
                 learning_stage_key,
             )
         )
-        new_assignment_id = cursor.lastrowid
         if schedule_fields["status"] == "published":
             try:
                 create_assignment_published_notifications(

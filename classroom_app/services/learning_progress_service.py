@@ -12,6 +12,7 @@ import httpx
 from ..config import DATA_DIR, HOMEWORK_SUBMISSIONS_DIR
 from ..core import ai_client
 from ..database import get_db_connection
+from ..db.connection import begin_immediate_transaction, execute_insert_returning_id
 from .exam_json_service import EXAM_JSON_TEMPLATE, normalize_exam_json_payload
 from .message_center_service import (
     AI_ASSISTANT_LABEL,
@@ -1844,7 +1845,7 @@ async def create_personal_stage_exam(class_offering_id: int, student_id: int, st
 
     generation_attempt_id = 0
     with get_db_connection() as conn:
-        conn.execute("BEGIN IMMEDIATE")
+        begin_immediate_transaction(conn)
         offering = _load_offering(conn, int(class_offering_id))
         if not offering:
             raise ValueError("课堂不存在")
@@ -1889,7 +1890,8 @@ async def create_personal_stage_exam(class_offering_id: int, student_id: int, st
             progress=progress,
         )
         timestamp = now_iso()
-        cursor = conn.execute(
+        generation_attempt_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO learning_stage_exam_attempts (
                 class_offering_id, student_id, stage_key, status, generated_at, metadata_json
@@ -1904,7 +1906,6 @@ async def create_personal_stage_exam(class_offering_id: int, student_id: int, st
                 json.dumps({"level_name": level["name"], "pass_score": PASSING_STAGE_SCORE}, ensure_ascii=False),
             ),
         )
-        generation_attempt_id = int(cursor.lastrowid)
         conn.execute(
             """
             UPDATE learning_stage_status
@@ -1977,7 +1978,8 @@ async def create_personal_stage_exam(class_offering_id: int, student_id: int, st
                 timestamp,
             ),
         )
-        cursor = conn.execute(
+        assignment_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO assignments (
                 course_id, title, status, requirements_md, rubric_md, grading_mode,
@@ -1995,7 +1997,6 @@ async def create_personal_stage_exam(class_offering_id: int, student_id: int, st
                 int(class_offering_id),
             ),
         )
-        assignment_id = int(cursor.lastrowid)
         conn.execute(
             """
             UPDATE learning_stage_exam_attempts
@@ -2055,7 +2056,7 @@ def delete_personal_stage_exam(class_offering_id: int, student_id: int, stage_ke
 
     storage_roots: list[Path] = []
     with get_db_connection() as conn:
-        conn.execute("BEGIN IMMEDIATE")
+        begin_immediate_transaction(conn)
         row = conn.execute(
             """
             SELECT lsea.*,
@@ -2307,7 +2308,8 @@ def _ensure_stage_certificate(
         f"{int(student_id):05d}-{level['key'].upper()}-"
         f"{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
     )
-    cursor = conn.execute(
+    certificate_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO learning_certificates (
             class_offering_id, student_id, stage_key, level_key, level_name,
@@ -2338,7 +2340,7 @@ def _ensure_stage_certificate(
         ),
     )
     return {
-        "id": int(cursor.lastrowid),
+        "id": certificate_id,
         "certificate_code": cert_code,
         "title": level["certificate_title"],
         "level_name": level["name"],
@@ -2558,7 +2560,8 @@ def handle_stage_exam_grading_complete(conn, submission_id: int | str) -> Option
             f"{int(attempt['student_id']):05d}-{level['key'].upper()}-"
             f"{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
         )
-        cursor = conn.execute(
+        certificate_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO learning_certificates (
                 class_offering_id, student_id, stage_key, level_key, level_name,
@@ -2588,7 +2591,7 @@ def handle_stage_exam_grading_complete(conn, submission_id: int | str) -> Option
             ),
         )
         certificate = {
-            "id": int(cursor.lastrowid),
+            "id": certificate_id,
             "certificate_code": cert_code,
             "title": level["certificate_title"],
             "level_name": level["name"],

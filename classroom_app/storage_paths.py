@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path, PurePosixPath
 from typing import Iterable, Sequence
+from urllib.parse import unquote
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -162,6 +163,27 @@ def extract_relative_after_markers(stored_path: str, markers: Sequence[str]) -> 
     return None
 
 
+def relative_path_variants(relative_path: str) -> tuple[str, ...]:
+    """Return safe legacy filename variants for migrated runtime file lookup."""
+    normalized = str(relative_path or "").replace("\\", "/").strip("/")
+    if not normalized:
+        return ()
+    parts = PurePosixPath(normalized).parts
+    variants: list[str] = []
+    seen: set[str] = set()
+
+    def add(candidate_parts: Sequence[str]) -> None:
+        candidate = "/".join(str(part).strip("/") for part in candidate_parts if str(part).strip("/"))
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            variants.append(candidate)
+
+    add(parts)
+    add(tuple(part.replace("%", "%25") for part in parts))
+    add(tuple(unquote(part) for part in parts))
+    return tuple(variants)
+
+
 def resolve_migrated_file_path(
     stored_path: str,
     *,
@@ -179,18 +201,20 @@ def resolve_migrated_file_path(
     search_roots = unique_paths((active_root, *legacy_roots))
     relative_path = extract_relative_after_markers(stored_path, markers)
     if relative_path:
-        for root in search_roots:
-            candidate = root.joinpath(*PurePosixPath(relative_path).parts)
-            if candidate.is_file():
-                return candidate
+        for variant in relative_path_variants(relative_path):
+            for root in search_roots:
+                candidate = root.joinpath(*PurePosixPath(variant).parts)
+                if candidate.is_file():
+                    return candidate
 
     if not direct_path.is_absolute():
         normalized_relative = str(stored_path).replace("\\", "/").strip("/")
         if normalized_relative:
-            for root in search_roots:
-                candidate = root.joinpath(*PurePosixPath(normalized_relative).parts)
-                if candidate.is_file():
-                    return candidate
+            for variant in relative_path_variants(normalized_relative):
+                for root in search_roots:
+                    candidate = root.joinpath(*PurePosixPath(variant).parts)
+                    if candidate.is_file():
+                        return candidate
 
     return None
 

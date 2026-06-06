@@ -5,7 +5,7 @@ import threading
 import time
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -15,7 +15,7 @@ RECENT_WS_ERROR_LIMIT = 64
 
 
 def _utcnow_iso() -> str:
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _normalize_route(route_path: str | None, fallback_path: str | None = None) -> str:

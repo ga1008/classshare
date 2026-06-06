@@ -1,6 +1,64 @@
 from .common import *
 from .generation_helpers import *
 from .ai_import_helpers import *
+from ...db.connection import execute_insert_returning_id, get_configured_db_engine
+
+
+def _insert_completed_material_ai_import_record(
+    conn,
+    *,
+    user_id: int,
+    package_id: int,
+    parsed_id: int,
+    parent_id: int | None,
+    parse_result,
+    source_file_name: str,
+    metadata_json: str,
+    parse_payload_json: str,
+    export_payload_json: str,
+    warnings_json: str,
+    content_quality_json: str,
+    now: str,
+) -> int:
+    db_engine = get_configured_db_engine()
+    insert_sql = """
+        INSERT INTO material_ai_import_records
+        (teacher_id, package_material_id, source_material_id, parsed_material_id,
+         parent_material_id, document_group, document_type, document_type_label,
+         parse_status, parse_mode, extraction_method, source_file_name,
+         source_file_hash, source_file_size, source_mime_type, metadata_json, content_markdown,
+         parsed_payload_json, export_payload_json, warnings_json, content_quality_status,
+         content_quality_json, error_message, created_at, updated_at, completed_at)
+        VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, '', 0, 'application/json',
+                ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)
+    """
+    return execute_insert_returning_id(
+        conn,
+        insert_sql,
+        (
+            int(user_id),
+            int(package_id),
+            int(parsed_id),
+            parent_id,
+            parse_result.document_group,
+            parse_result.document_type,
+            parse_result.document_type_label,
+            "ai_generated" if parse_result.ai_used else "local_fallback",
+            parse_result.extraction_method,
+            source_file_name,
+            metadata_json,
+            parse_result.content_markdown,
+            parse_payload_json,
+            export_payload_json,
+            warnings_json,
+            parse_result.content_quality.get("status", "ok"),
+            content_quality_json,
+            now,
+            now,
+            now,
+        ),
+        engine=db_engine,
+    )
 
 
 def _build_manage_final_material_context(
@@ -758,50 +816,40 @@ async def _create_generated_final_material_package(
             ai_parse_status="completed",
             ai_parse_result_json=parse_payload_json,
         )
-        cursor = conn.execute(
-            """
-            INSERT INTO material_ai_import_records
-            (teacher_id, package_material_id, source_material_id, parsed_material_id,
-             parent_material_id, document_group, document_type, document_type_label,
-             parse_status, parse_mode, extraction_method, source_file_name,
-             source_file_hash, source_file_size, source_mime_type, metadata_json, content_markdown,
-             parsed_payload_json, export_payload_json, warnings_json, content_quality_status,
-             content_quality_json, error_message, created_at, updated_at, completed_at)
-            VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, '', 0, 'application/json',
-                    ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)
-            """,
-            (
-                user["id"],
-                package_id,
-                parsed_id,
-                base_parent["id"] if base_parent else None,
-                parse_result.document_group,
-                parse_result.document_type,
-                parse_result.document_type_label,
-                "ai_generated" if parse_result.ai_used else "local_fallback",
-                parse_result.extraction_method,
-                f"{parse_result.document_type_label}-{course_name or '期末材料'}.json",
-                metadata_json,
-                parse_result.content_markdown,
-                parse_payload_json,
-                export_payload_json,
-                warnings_json,
-                parse_result.content_quality.get("status", "ok"),
-                content_quality_json,
-                now,
-                now,
-                now,
-            ),
+        record_id = _insert_completed_material_ai_import_record(
+            conn,
+            user_id=int(user["id"]),
+            package_id=int(package_id),
+            parsed_id=int(parsed_id),
+            parent_id=base_parent["id"] if base_parent else None,
+            parse_result=parse_result,
+            source_file_name=f"{parse_result.document_type_label}-{course_name or '期末材料'}.json",
+            metadata_json=metadata_json,
+            parse_payload_json=parse_payload_json,
+            export_payload_json=export_payload_json,
+            warnings_json=warnings_json,
+            content_quality_json=content_quality_json,
+            now=now,
         )
-        record_id = int(cursor.lastrowid)
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO course_material_assignments
-            (material_id, class_offering_id, assigned_by_teacher_id, created_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            (package_id, int(class_offering_id), user["id"], now),
-        )
+        if get_configured_db_engine() == "postgres":
+            conn.execute(
+                """
+                INSERT INTO course_material_assignments
+                (material_id, class_offering_id, assigned_by_teacher_id, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (material_id, class_offering_id) DO NOTHING
+                """,
+                (package_id, int(class_offering_id), user["id"], now),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO course_material_assignments
+                (material_id, class_offering_id, assigned_by_teacher_id, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (package_id, int(class_offering_id), user["id"], now),
+            )
         refresh_root_git_metadata(conn, package_root_id)
         conn.commit()
         record = conn.execute(
@@ -874,42 +922,21 @@ async def _create_generated_final_material_library_package(
             ai_parse_status="completed",
             ai_parse_result_json=parse_payload_json,
         )
-        cursor = conn.execute(
-            """
-            INSERT INTO material_ai_import_records
-            (teacher_id, package_material_id, source_material_id, parsed_material_id,
-             parent_material_id, document_group, document_type, document_type_label,
-             parse_status, parse_mode, extraction_method, source_file_name,
-             source_file_hash, source_file_size, source_mime_type, metadata_json, content_markdown,
-             parsed_payload_json, export_payload_json, warnings_json, content_quality_status,
-             content_quality_json, error_message, created_at, updated_at, completed_at)
-            VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, '', 0, 'application/json',
-                    ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)
-            """,
-            (
-                user["id"],
-                package_id,
-                parsed_id,
-                base_parent["id"] if base_parent else None,
-                parse_result.document_group,
-                parse_result.document_type,
-                parse_result.document_type_label,
-                "ai_generated" if parse_result.ai_used else "local_fallback",
-                parse_result.extraction_method,
-                f"{parse_result.document_type_label}-{course_name or '期末材料'}.json",
-                metadata_json,
-                parse_result.content_markdown,
-                parse_payload_json,
-                export_payload_json,
-                warnings_json,
-                parse_result.content_quality.get("status", "ok"),
-                content_quality_json,
-                now,
-                now,
-                now,
-            ),
+        record_id = _insert_completed_material_ai_import_record(
+            conn,
+            user_id=int(user["id"]),
+            package_id=int(package_id),
+            parsed_id=int(parsed_id),
+            parent_id=base_parent["id"] if base_parent else None,
+            parse_result=parse_result,
+            source_file_name=f"{parse_result.document_type_label}-{course_name or '期末材料'}.json",
+            metadata_json=metadata_json,
+            parse_payload_json=parse_payload_json,
+            export_payload_json=export_payload_json,
+            warnings_json=warnings_json,
+            content_quality_json=content_quality_json,
+            now=now,
         )
-        record_id = int(cursor.lastrowid)
         refresh_root_git_metadata(conn, package_root_id)
         conn.commit()
         record = conn.execute(

@@ -12,6 +12,7 @@ import httpx
 from fastapi import HTTPException, UploadFile
 
 from ..core import ai_client
+from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 from .file_service import global_file_write_path, resolve_global_file_path
 from .materials_git_service import refresh_root_git_metadata
 from .materials_service import (
@@ -399,8 +400,8 @@ def create_generation_task(
     payload = {
         "example_documents": list(example_documents or []),
     }
-    cursor = conn.execute(
-        """
+    engine = get_configured_db_engine()
+    insert_sql = """
         INSERT INTO session_material_generation_tasks (
             class_offering_id,
             session_id,
@@ -413,7 +414,10 @@ def create_generation_task(
             updated_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    """
+    task_id = execute_insert_returning_id(
+        conn,
+        insert_sql,
         (
             int(class_offering_id),
             int(session_id),
@@ -425,10 +429,11 @@ def create_generation_task(
             json.dumps(payload, ensure_ascii=False),
             now,
         ),
+        engine=engine,
     )
     row = conn.execute(
         "SELECT * FROM session_material_generation_tasks WHERE id = ?",
-        (cursor.lastrowid,),
+        (task_id,),
     ).fetchone()
     task = serialize_generation_task(row)
     task["already_running"] = False
@@ -928,7 +933,9 @@ def _create_folder_row(
     name: str,
     now: str,
 ) -> dict[str, Any]:
-    cursor = conn.execute(
+    db_engine = get_configured_db_engine()
+    folder_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO course_materials (
             teacher_id,
@@ -951,8 +958,8 @@ def _create_folder_row(
         VALUES (?, ?, ?, ?, ?, 'folder', 'inode/directory', 'folder', 'none', '', NULL, 0, 'idle', 'idle', ?, ?)
         """,
         (teacher_id, parent_id, root_id, material_path, name, now, now),
+        engine=db_engine,
     )
-    folder_id = int(cursor.lastrowid)
     actual_root_id = int(root_id or 0) or folder_id
     if not root_id:
         conn.execute(
@@ -981,7 +988,9 @@ def _create_file_row(
 ) -> dict[str, Any]:
     file_hash, file_size = _store_markdown_bytes(content)
     file_profile = infer_material_profile(name, "text/markdown")
-    cursor = conn.execute(
+    db_engine = get_configured_db_engine()
+    file_id = execute_insert_returning_id(
+        conn,
         """
         INSERT INTO course_materials (
             teacher_id,
@@ -1018,8 +1027,8 @@ def _create_file_row(
             now,
             now,
         ),
+        engine=db_engine,
     )
-    file_id = int(cursor.lastrowid)
     actual_root_id = int(root_id or 0) or file_id
     if not root_id:
         conn.execute(
@@ -1225,57 +1234,95 @@ def get_teacher_session_with_material_state(
     return items[0]
 
 
+def _load_generation_task_context(conn, task_id: int):
+    return conn.execute(
+        """
+        SELECT t.*,
+               s.order_index,
+               s.title AS session_title,
+               s.content AS session_content,
+               s.section_count,
+               s.session_date,
+               o.teacher_id,
+               o.schedule_info,
+               c.name AS course_name,
+               c.description AS course_description,
+               cl.name AS class_name,
+               cl.description AS class_description,
+               sem.name AS semester_name,
+               teacher.name AS teacher_name
+        FROM session_material_generation_tasks t
+        JOIN class_offering_sessions s ON s.id = t.session_id
+        JOIN class_offerings o ON o.id = t.class_offering_id
+        JOIN courses c ON c.id = o.course_id
+        JOIN classes cl ON cl.id = o.class_id
+        JOIN teachers teacher ON teacher.id = o.teacher_id
+        LEFT JOIN academic_semesters sem ON sem.id = o.semester_id
+        WHERE t.id = ?
+        LIMIT 1
+        """,
+        (int(task_id),),
+    ).fetchone()
+
+
+def _claim_generation_task_for_run(
+    conn,
+    task_id: int,
+    *,
+    engine: str | None = None,
+):
+    db_engine = (engine or get_configured_db_engine()).strip().lower()
+    if db_engine not in {"sqlite", "postgres"}:
+        raise ValueError(f"Unsupported session material generation database engine: {db_engine}")
+    now = _now_iso()
+    if db_engine == "postgres":
+        cursor = conn.execute(
+            """
+            UPDATE session_material_generation_tasks
+            SET status = ?,
+                started_at = COALESCE(started_at, ?),
+                updated_at = ?
+            WHERE id IN (
+                SELECT id
+                FROM session_material_generation_tasks
+                WHERE id = ?
+                  AND status = ?
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING id
+            """,
+            (TASK_STATUS_RUNNING, now, now, int(task_id), TASK_STATUS_QUEUED),
+        )
+        if cursor.fetchone() is None:
+            return None
+    else:
+        cursor = conn.execute(
+            """
+            UPDATE session_material_generation_tasks
+            SET status = ?,
+                started_at = COALESCE(started_at, ?),
+                updated_at = ?
+            WHERE id = ?
+              AND status = ?
+            """,
+            (TASK_STATUS_RUNNING, now, now, int(task_id), TASK_STATUS_QUEUED),
+        )
+        if int(cursor.rowcount or 0) <= 0:
+            return None
+    task_row = _load_generation_task_context(conn, int(task_id))
+    conn.commit()
+    return task_row
+
+
 async def run_generation_task(task_id: int) -> None:
     task_id = int(task_id)
     try:
         from ..database import get_db_connection
 
         with get_db_connection() as conn:
-            task_row = conn.execute(
-                """
-                SELECT t.*,
-                       s.order_index,
-                       s.title AS session_title,
-                       s.content AS session_content,
-                       s.section_count,
-                       s.session_date,
-                       o.teacher_id,
-                       o.schedule_info,
-                       c.name AS course_name,
-                       c.description AS course_description,
-                       cl.name AS class_name,
-                       cl.description AS class_description,
-                       sem.name AS semester_name,
-                       teacher.name AS teacher_name
-                FROM session_material_generation_tasks t
-                JOIN class_offering_sessions s ON s.id = t.session_id
-                JOIN class_offerings o ON o.id = t.class_offering_id
-                JOIN courses c ON c.id = o.course_id
-                JOIN classes cl ON cl.id = o.class_id
-                JOIN teachers teacher ON teacher.id = o.teacher_id
-                LEFT JOIN academic_semesters sem ON sem.id = o.semester_id
-                WHERE t.id = ?
-                LIMIT 1
-                """,
-                (task_id,),
-            ).fetchone()
+            task_row = _claim_generation_task_for_run(conn, task_id)
             if not task_row:
                 return
-            if str(task_row["status"] or "").lower() not in ACTIVE_TASK_STATUSES:
-                return
-
-            now = _now_iso()
-            conn.execute(
-                """
-                UPDATE session_material_generation_tasks
-                SET status = ?,
-                    started_at = COALESCE(started_at, ?),
-                    updated_at = ?
-                WHERE id = ?
-                """,
-                (TASK_STATUS_RUNNING, now, now, task_id),
-            )
-            conn.commit()
 
             request_payload = _load_json_payload(task_row["request_payload_json"])
             example_documents = list(request_payload.get("example_documents") or [])
@@ -1410,6 +1457,7 @@ async def run_generation_task(task_id: int) -> None:
                     completed_at = ?,
                     updated_at = ?
                 WHERE id = ?
+                  AND status = ?
                 """,
                 (
                     TASK_STATUS_COMPLETED,
@@ -1419,6 +1467,7 @@ async def run_generation_task(task_id: int) -> None:
                     now,
                     now,
                     task_id,
+                    TASK_STATUS_RUNNING,
                 ),
             )
             conn.commit()
@@ -1437,6 +1486,7 @@ async def run_generation_task(task_id: int) -> None:
                         completed_at = COALESCE(completed_at, ?),
                         updated_at = ?
                     WHERE id = ?
+                      AND status = ?
                     """,
                     (
                         TASK_STATUS_FAILED,
@@ -1444,6 +1494,7 @@ async def run_generation_task(task_id: int) -> None:
                         now,
                         now,
                         task_id,
+                        TASK_STATUS_RUNNING,
                     ),
                 )
                 conn.commit()

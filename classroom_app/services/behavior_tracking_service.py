@@ -23,6 +23,7 @@ from ..config import (
 )
 from ..core import ai_client
 from ..database import get_db_connection
+from ..db.connection import begin_immediate_transaction, execute_insert_returning_id
 from .psych_profile_service import (
     build_explicit_user_profile_prompt,
     format_classroom_summary,
@@ -164,7 +165,7 @@ class _BehaviorWritePipeline:
                 try:
                     outcomes: list[tuple[_BehaviorWriteRequest, Optional[dict[str, Any]], Optional[Exception]]] = []
                     with get_db_connection() as conn:
-                        conn.execute("BEGIN IMMEDIATE")
+                        begin_immediate_transaction(conn)
                         for index, request in enumerate(pending):
                             if request.is_barrier:
                                 outcomes.append((request, {"flushed": True}, None))
@@ -694,7 +695,8 @@ def _record_behavior_batch_in_connection(
             if not summary_text:
                 continue
 
-        cursor = conn.execute(
+        event_id = execute_insert_returning_id(
+            conn,
             """
             INSERT INTO classroom_behavior_events (
                 class_offering_id, user_pk, user_role, display_name,
@@ -713,7 +715,7 @@ def _record_behavior_batch_in_connection(
                 now_text,
             ),
         )
-        logged_event_ids.append(int(cursor.lastrowid))
+        logged_event_ids.append(event_id)
         conn.execute(
             """
             UPDATE classroom_behavior_states
