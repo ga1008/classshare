@@ -5,6 +5,7 @@ services:
     image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     restart: unless-stopped
     init: true
+    shm_size: ${POSTGRES_SHM_SIZE:-256mb}
     env_file:
       - ./docker.env
     environment:
@@ -13,6 +14,29 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_DB: ${POSTGRES_DB:-lanshare}
       PGDATA: /var/lib/postgresql/data/pgdata
+    # Tuned for the small shared host (2 cores / 4 GB / SSD) running ~200 users.
+    # random_page_cost/effective_io_concurrency are SSD-aware so the planner
+    # actually uses the performance indexes instead of falling back to seq
+    # scans; the memory knobs stay modest because the app, AI and workers share
+    # the same 4 GB. Override any value via docker.env if needed.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-192MB}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-1GB}
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:-8MB}
+      - -c
+      - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-128MB}
+      - -c
+      - random_page_cost=${POSTGRES_RANDOM_PAGE_COST:-1.1}
+      - -c
+      - effective_io_concurrency=${POSTGRES_EFFECTIVE_IO_CONCURRENCY:-200}
+      - -c
+      - wal_compression=${POSTGRES_WAL_COMPRESSION:-on}
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
     volumes:
       - ${POSTGRES_HOST_DATA_DIR:-./data/postgres}:/var/lib/postgresql/data
       - ./data/postgres-backups:/backups

@@ -526,6 +526,16 @@ if [ -d "$remote_path/data" ]; then
   echo "DATA_DIR_SIZE=$(du -sh "$remote_path/data" | cut -f1)"
 fi
 
+# Reclaim Docker build cache and dangling images so repeated --build deploys
+# do not fill the small disk. Keep a little cache for faster rebuilds. On the
+# 2c/4GB/70GB host the build cache had grown to ~19GB before this was added.
+echo "Reclaiming Docker build cache and dangling images"
+docker builder prune -f --keep-storage=3GB >/dev/null 2>&1 || docker builder prune -f >/dev/null 2>&1 || true
+docker image prune -f >/dev/null 2>&1 || true
+if command -v df >/dev/null 2>&1; then
+  echo "ROOT_DISK_USAGE=$(df -h / | awk 'NR==2{print $5" used, "$4" free"}')"
+fi
+
 rm -f "$archive" "$list" "$0"
 echo "DEPLOY_DONE"
 '@
