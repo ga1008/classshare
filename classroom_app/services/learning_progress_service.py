@@ -12,8 +12,8 @@ import httpx
 from ..config import DATA_DIR, HOMEWORK_SUBMISSIONS_DIR
 from ..core import ai_client
 from ..database import get_db_connection
-from ..db.connection import begin_immediate_transaction, execute_insert_returning_id
-from .exam_json_service import EXAM_JSON_TEMPLATE, normalize_exam_json_payload
+from ..db.connection import begin_immediate_transaction, execute_insert_returning_id, get_configured_db_engine
+from .exam_json_service import EXAM_JSON_TEMPLATE, normalize_exam_json_payload, normalize_exam_scoring_payload
 from .message_center_service import (
     AI_ASSISTANT_LABEL,
     AI_ASSISTANT_ROLE,
@@ -40,6 +40,11 @@ STAGE_EXAM_TEMPLATE_PATH = DATA_DIR / "exam_templates" / "learning_stage_exam_te
 STAGE_EXAM_TEMPLATE: dict[str, Any] = {
     "title": "课程名称 · 境界名称破境试炼",
     "description": "本试炼满分 100 分，建议作答时间 60-90 分钟。试卷只覆盖当前境界及之前已学习的课堂知识点。",
+    "grading": {
+        "total_score": 100,
+        "description": "Grade by the reference answer, reasoning quality, course terminology, and required evidence for each question.",
+        "style": "medium",
+    },
     "pages": [
         {
             "name": "第一部分：单项选择题",
@@ -1548,8 +1553,16 @@ def record_material_learning_progress(
         or active_seconds >= MATERIAL_COMPLETE_ACTIVE_SECONDS
         or duration_seconds >= MATERIAL_COMPLETE_TOTAL_SECONDS
     )
-    conn.execute(
+    if get_configured_db_engine() == "postgres":
+        view_count_increment_sql = """
+                WHEN (excluded.last_viewed_at::timestamp - learning_material_progress.last_viewed_at::timestamp) > INTERVAL '1800 seconds' THEN 1
         """
+    else:
+        view_count_increment_sql = """
+                WHEN (julianday(excluded.last_viewed_at) - julianday(learning_material_progress.last_viewed_at)) * 86400 > 1800 THEN 1
+        """
+    conn.execute(
+        f"""
         INSERT INTO learning_material_progress (
             class_offering_id, student_id, material_id, session_id,
             view_count, accumulated_seconds, active_seconds, max_scroll_ratio,
@@ -1561,12 +1574,16 @@ def record_material_learning_progress(
             session_id = COALESCE(excluded.session_id, learning_material_progress.session_id),
             view_count = learning_material_progress.view_count + CASE
                 WHEN learning_material_progress.last_viewed_at IS NULL THEN 1
-                WHEN (julianday(excluded.last_viewed_at) - julianday(learning_material_progress.last_viewed_at)) * 86400 > 1800 THEN 1
+{view_count_increment_sql.rstrip()}
                 ELSE 0
             END,
             accumulated_seconds = learning_material_progress.accumulated_seconds + excluded.accumulated_seconds,
             active_seconds = learning_material_progress.active_seconds + excluded.active_seconds,
-            max_scroll_ratio = MAX(learning_material_progress.max_scroll_ratio, excluded.max_scroll_ratio),
+            max_scroll_ratio = CASE
+                WHEN COALESCE(learning_material_progress.max_scroll_ratio, 0) >= COALESCE(excluded.max_scroll_ratio, 0)
+                    THEN learning_material_progress.max_scroll_ratio
+                ELSE excluded.max_scroll_ratio
+            END,
             completed = CASE WHEN learning_material_progress.completed = 1 OR excluded.completed = 1 THEN 1 ELSE 0 END,
             last_viewed_at = excluded.last_viewed_at,
             updated_at = excluded.updated_at,
@@ -1623,6 +1640,104 @@ def _load_stage_exam_template_text() -> str:
     return json.dumps(template, ensure_ascii=False, indent=2)
 
 
+def _stage_answer_has_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return any(_stage_answer_has_value(item) for item in value)
+    if isinstance(value, dict):
+        return any(_stage_answer_has_value(item) for item in value.values())
+    return True
+
+
+def _flatten_stage_exam_questions(exam_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    questions: list[dict[str, Any]] = []
+    for page in exam_payload.get("pages", []) or []:
+        if not isinstance(page, dict):
+            continue
+        for question in page.get("questions", []) or []:
+            if isinstance(question, dict):
+                questions.append(question)
+    return questions
+
+
+def _score_value(value: Any) -> float | None:
+    try:
+        if value in (None, ""):
+            return None
+        score = float(value)
+    except (TypeError, ValueError):
+        return None
+    return score if score > 0 else None
+
+
+def _format_stage_points(value: float) -> int | float:
+    rounded = round(float(value), 2)
+    return int(rounded) if rounded.is_integer() else rounded
+
+
+def _ensure_stage_exam_scoring_payload(exam_payload: dict[str, Any]) -> dict[str, Any]:
+    """Make AI-generated personal stage exams safe for automatic grading."""
+    normalized = normalize_exam_scoring_payload(exam_payload, require_complete=False)
+    questions = _flatten_stage_exam_questions(normalized)
+    if not questions:
+        return normalize_exam_scoring_payload(normalized, require_complete=True)
+
+    existing_points = [_score_value(question.get("points")) for question in questions]
+    total_points = sum(point or 0 for point in existing_points)
+    has_missing_points = any(point is None for point in existing_points) or total_points <= 0
+    if has_missing_points:
+        raw_share = 100 / len(questions)
+        assigned_total = 0.0
+        for index, question in enumerate(questions, start=1):
+            if index == len(questions):
+                points = max(1.0, 100 - assigned_total)
+            else:
+                points = round(raw_share, 2)
+                assigned_total += points
+            question["points"] = _format_stage_points(points)
+    elif abs(total_points - 100) > 0.01:
+        assigned_total = 0.0
+        for index, (question, point) in enumerate(zip(questions, existing_points), start=1):
+            if index == len(questions):
+                points = max(1.0, 100 - assigned_total)
+            else:
+                points = round(float(point or 0) * 100 / total_points, 2)
+                assigned_total += points
+            question["points"] = _format_stage_points(points)
+
+    default_guidance = (
+        "Grade by the reference answer, explanation, prompt requirements, course terminology, "
+        "reasoning process, and supporting evidence."
+    )
+    default_deductions = (
+        "Deduct for incorrect core concepts, missing key steps, unsupported conclusions, "
+        "insufficient evidence, or answers that drift away from the prompt."
+    )
+    for question in questions:
+        if not _stage_answer_has_value(question.get("answer")):
+            question["answer"] = question.get("explanation") or "Use the question requirements and scoring guidance as the reference answer."
+        if not str(question.get("grading_guidance") or "").strip():
+            question["grading_guidance"] = default_guidance
+        if not str(question.get("deduction_points") or "").strip():
+            question["deduction_points"] = default_deductions
+        question["grading"] = {
+            "points": question["points"],
+            "guidance": question["grading_guidance"],
+            "deduction_points": question["deduction_points"],
+        }
+
+    grading = normalized.get("grading") if isinstance(normalized.get("grading"), dict) else {}
+    grading = dict(grading)
+    grading["total_score"] = 100
+    grading["description"] = str(grading.get("description") or default_guidance)
+    grading["style"] = str(grading.get("style") or "medium")
+    normalized["grading"] = grading
+    return normalize_exam_scoring_payload(normalized, require_complete=True)
+
+
 def _normalize_exam_payload(payload: Any) -> dict[str, Any]:
     data = payload
     if isinstance(data, dict) and isinstance(data.get("exam_data"), dict):
@@ -1633,7 +1748,7 @@ def _normalize_exam_payload(payload: Any) -> dict[str, Any]:
         imported = normalize_exam_json_payload(data)
     except ValueError as exc:
         raise ValueError(f"AI 返回的试卷结构不符合原生 JSON 模板：{exc}") from exc
-    questions = dict(imported["questions"])
+    questions = _ensure_stage_exam_scoring_payload(dict(imported["questions"]))
     questions["meta"] = {
         **(questions.get("meta") if isinstance(questions.get("meta"), dict) else {}),
         "generated_for": "learning_stage",
@@ -2370,7 +2485,11 @@ def _mark_stage_passed_by_certificate(
         ON CONFLICT(class_offering_id, student_id, stage_key)
         DO UPDATE SET
             status = 'passed',
-            progress_score = MAX(learning_stage_status.progress_score, excluded.progress_score),
+            progress_score = CASE
+                WHEN COALESCE(learning_stage_status.progress_score, 0) >= COALESCE(excluded.progress_score, 0)
+                    THEN learning_stage_status.progress_score
+                ELSE excluded.progress_score
+            END,
             readiness_score = 100,
             unlocked_at = COALESCE(learning_stage_status.unlocked_at, excluded.unlocked_at),
             passed_at = COALESCE(learning_stage_status.passed_at, excluded.passed_at),
@@ -2535,11 +2654,14 @@ def handle_stage_exam_grading_complete(conn, submission_id: int | str) -> Option
             """
             UPDATE learning_stage_status
             SET status = 'challenge_ready',
-                progress_score = MAX(progress_score, ?),
+                progress_score = CASE
+                    WHEN COALESCE(progress_score, 0) >= ? THEN progress_score
+                    ELSE ?
+                END,
                 last_calculated_at = ?
             WHERE class_offering_id = ? AND student_id = ? AND stage_key = ?
             """,
-            (score, timestamp, attempt["class_offering_id"], attempt["student_id"], attempt["stage_key"]),
+            (score, score, timestamp, attempt["class_offering_id"], attempt["student_id"], attempt["stage_key"]),
         )
         return {"status": "failed", "stage": level, "score": score}
 
@@ -2612,7 +2734,10 @@ def handle_stage_exam_grading_complete(conn, submission_id: int | str) -> Option
         """
         UPDATE learning_stage_status
         SET status = 'passed',
-            progress_score = MAX(progress_score, ?),
+            progress_score = CASE
+                WHEN COALESCE(progress_score, 0) >= ? THEN progress_score
+                ELSE ?
+            END,
             readiness_score = 100,
             passed_at = ?,
             certificate_id = ?,
@@ -2621,6 +2746,7 @@ def handle_stage_exam_grading_complete(conn, submission_id: int | str) -> Option
         WHERE class_offering_id = ? AND student_id = ? AND stage_key = ?
         """,
         (
+            score,
             score,
             timestamp,
             certificate["id"],

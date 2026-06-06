@@ -147,6 +147,26 @@ POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = 
         "student_portfolio_reflections",
         ("portfolio_item_id",),
     ),
+    (
+        "idx_student_feedback_review_notes_unique_question",
+        "student_feedback_review_notes",
+        ("student_id", "submission_id", "question_key"),
+    ),
+    (
+        "idx_email_outbox_unique_dedupe_key",
+        "email_outbox",
+        ("dedupe_key",),
+    ),
+    (
+        "idx_email_worker_heartbeats_unique_worker",
+        "email_worker_heartbeats",
+        ("worker_id",),
+    ),
+    (
+        "idx_private_message_blocks_unique_pair",
+        "private_message_blocks",
+        ("owner_identity", "blocked_identity"),
+    ),
 )
 
 

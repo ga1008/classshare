@@ -215,6 +215,12 @@ FILTER_LABELS = {
     "today": "仅今日",
 }
 
+def _created_today_condition(column_sql: str = "created_at") -> str:
+    if get_configured_db_engine() == "postgres":
+        return f"{column_sql}::date = CURRENT_DATE"
+    return f"date({column_sql}) = date('now', 'localtime')"
+
+
 BROADCAST_DISCUSSION_TOKENS = (
     "@所有人",
     "@全体",
@@ -1544,8 +1550,15 @@ def _insert_notification(conn, payload: dict[str, Any]) -> int:
         engine=db_engine,
     )
     try:
+        conn.execute("SAVEPOINT notification_email_enqueue")
         queue_notification_email_if_applicable(conn, notification_id=notification_id, payload=payload)
+        conn.execute("RELEASE SAVEPOINT notification_email_enqueue")
     except Exception as exc:
+        try:
+            conn.execute("ROLLBACK TO SAVEPOINT notification_email_enqueue")
+            conn.execute("RELEASE SAVEPOINT notification_email_enqueue")
+        except Exception:
+            pass
         print(f"[EMAIL] queue notification email failed: {exc}")
     return notification_id
 
@@ -1970,7 +1983,7 @@ def list_message_center_items(
         conditions.append("severity = ?")
         params.append(normalized_filter)
     elif normalized_filter == "today":
-        conditions.append("date(created_at) = date('now', 'localtime')")
+        conditions.append(_created_today_condition("created_at"))
 
     normalized_keyword = str(keyword or "").strip()
     if normalized_keyword:

@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import quote, urlsplit
 
+from ..db.connection import get_configured_db_engine
 from .message_center_service import (
     MESSAGE_CATEGORY_PRIVATE,
     build_user_identity,
@@ -62,6 +63,12 @@ def _query_scalar(conn, sql: str, params: tuple[Any, ...] = (), default: int | f
         return default
     value = row[0]
     return default if value is None else value
+
+
+def _today_date_condition(column_sql: str) -> str:
+    if get_configured_db_engine() == "postgres":
+        return f"{column_sql}::date = CURRENT_DATE"
+    return f"date({column_sql}) = date('now', 'localtime')"
 
 
 def _normalize_text(value: Any, *, limit: int, multiline: bool = False) -> str:
@@ -496,12 +503,12 @@ def _build_teacher_overview(conn, profile: dict[str, Any], user: dict) -> dict[s
     today_login_count = int(
         _query_scalar(
             conn,
-            """
+            f"""
             SELECT COUNT(*)
             FROM student_login_audit_logs logs
             JOIN class_offerings o ON o.class_id = logs.class_id
             WHERE o.teacher_id = ?
-              AND date(logs.logged_at) = date('now', 'localtime')
+              AND {_today_date_condition("logs.logged_at")}
             """,
             (teacher_id,),
         )

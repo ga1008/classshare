@@ -105,7 +105,13 @@ def classroom_main(
             )
         else:
             files_cursor = conn.execute(
-                "SELECT * FROM course_files WHERE course_id = ? AND is_public = TRUE AND is_teacher_resource = FALSE",
+                """
+                SELECT *
+                FROM course_files
+                WHERE course_id = ?
+                  AND LOWER(COALESCE(is_public, '0')) IN ('1', 'true', 't', 'yes')
+                  AND LOWER(COALESCE(is_teacher_resource, '0')) NOT IN ('1', 'true', 't', 'yes')
+                """,
                 (course_id,)
             )
 

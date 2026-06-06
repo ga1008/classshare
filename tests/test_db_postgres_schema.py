@@ -148,6 +148,10 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             "idx_smart_attendance_daily_tasks_unique_task",
             "idx_smart_attendance_student_advice_unique_fingerprint",
             "idx_class_offering_sessions_unique_order",
+            "idx_student_feedback_review_notes_unique_question",
+            "idx_email_outbox_unique_dedupe_key",
+            "idx_email_worker_heartbeats_unique_worker",
+            "idx_private_message_blocks_unique_pair",
         }
 
         self.assertTrue(expected.issubset(runtime_index_names))

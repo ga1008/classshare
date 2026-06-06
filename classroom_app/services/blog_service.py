@@ -1469,8 +1469,16 @@ def delete_comment(conn, user: dict, comment_id: int) -> dict:
     )
     conn.execute(f"DELETE FROM blog_comments WHERE id IN ({placeholders})", subtree_ids)
     conn.execute(
-        "UPDATE blog_posts SET comment_count = MAX(comment_count - ?, 0), updated_at = ? WHERE id = ?",
-        (len(subtree_ids), _now_iso(), int(comment["post_id"])),
+        """
+        UPDATE blog_posts
+        SET comment_count = CASE
+                WHEN COALESCE(comment_count, 0) <= ? THEN 0
+                ELSE comment_count - ?
+            END,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (len(subtree_ids), len(subtree_ids), _now_iso(), int(comment["post_id"])),
     )
     return {"id": comment_id, "deleted": True, "deleted_count": len(subtree_ids)}
 
@@ -1516,7 +1524,17 @@ def toggle_like(conn, user: dict, target_type: str, target_id: int, *, hot_notif
 
     if existing:
         conn.execute("DELETE FROM blog_likes WHERE id = ?", (int(existing["id"]),))
-        conn.execute(f"UPDATE {count_table} SET like_count = MAX(like_count - 1, 0) WHERE id = ?", (target_id,))
+        conn.execute(
+            f"""
+            UPDATE {count_table}
+            SET like_count = CASE
+                    WHEN COALESCE(like_count, 0) <= 0 THEN 0
+                    ELSE like_count - 1
+                END
+            WHERE id = ?
+            """,
+            (target_id,),
+        )
         row = conn.execute(f"SELECT like_count FROM {count_table} WHERE id = ?", (target_id,)).fetchone()
         return {
             "liked": False,
@@ -1563,7 +1581,17 @@ def toggle_bookmark(conn, user: dict, post_id: int) -> dict:
     ).fetchone()
     if existing:
         conn.execute("DELETE FROM blog_bookmarks WHERE id = ?", (int(existing["id"]),))
-        conn.execute("UPDATE blog_posts SET bookmark_count = MAX(bookmark_count - 1, 0) WHERE id = ?", (post_id,))
+        conn.execute(
+            """
+            UPDATE blog_posts
+            SET bookmark_count = CASE
+                    WHEN COALESCE(bookmark_count, 0) <= 0 THEN 0
+                    ELSE bookmark_count - 1
+                END
+            WHERE id = ?
+            """,
+            (post_id,),
+        )
         row = conn.execute("SELECT bookmark_count FROM blog_posts WHERE id = ?", (post_id,)).fetchone()
         return {"bookmarked": False, "post_id": post_id, "bookmark_count": int(row["bookmark_count"] or 0) if row else 0}
 
