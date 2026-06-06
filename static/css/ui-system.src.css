@@ -40599,3 +40599,328 @@ body.has-teaching-session-modal {
 .classroom-page .interaction-side-card:has(.interaction-signal-grid) .interaction-side-head strong {
     color: #0f766e;
 }
+
+/* ==========================================================================
+   Dashboard agenda reminder widget (2026-06): replaces the single-item dark
+   "spotlight" / cockpit-primary square with a scrollable, nearest-first list
+   of upcoming reminders (监考 / 考试 / 作业 / 待办) + a click-to-detail popover.
+   ========================================================================== */
+.agenda-reminder {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+    min-height: 0;
+    padding: 18px;
+    border-radius: var(--dashboard-radius-panel, 18px);
+    background:
+        linear-gradient(145deg, rgba(17, 24, 39, 0.97), rgba(31, 41, 55, 0.94)),
+        linear-gradient(45deg, rgba(15, 118, 110, 0.24), rgba(180, 83, 9, 0.16));
+    color: #e5e7eb;
+    box-shadow: 0 22px 44px -34px rgba(15, 23, 42, 0.62);
+}
+
+.agenda-reminder--cockpit {
+    grid-area: primary;
+    min-height: 276px;
+}
+
+.agenda-reminder--spotlight {
+    max-height: 320px;
+}
+
+.agenda-reminder__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.agenda-reminder__heading {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.agenda-reminder__eyebrow {
+    font-size: 0.74rem;
+    font-weight: 750;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(148, 163, 184, 0.92);
+}
+
+.agenda-reminder__lead {
+    font-size: 1.04rem;
+    font-weight: 750;
+    color: #f8fafc;
+}
+
+.agenda-reminder__bell {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.14);
+}
+
+.agenda-reminder__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0 -6px -2px 0;
+    padding: 2px 6px 2px 0;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
+}
+
+.agenda-reminder__list::-webkit-scrollbar {
+    width: 7px;
+}
+.agenda-reminder__list::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.4);
+    border-radius: 999px;
+}
+.agenda-reminder__list::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.6);
+}
+
+.agenda-reminder__item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 13px;
+    background: rgba(255, 255, 255, 0.05);
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.agenda-reminder__item:hover,
+.agenda-reminder__item.is-active {
+    transform: translateX(2px);
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(148, 163, 184, 0.34);
+}
+
+.agenda-reminder__item.is-next {
+    border-color: rgba(251, 191, 36, 0.4);
+    background: rgba(251, 191, 36, 0.08);
+}
+
+.agenda-reminder__item:focus-visible {
+    outline: 2px solid #fbbf24;
+    outline-offset: 2px;
+}
+
+.agenda-reminder__kind {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 9px;
+    border-radius: 7px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    background: rgba(148, 163, 184, 0.22);
+    color: #cbd5e1;
+}
+
+.agenda-reminder__body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.agenda-reminder__body strong {
+    font-size: 0.92rem;
+    font-weight: 650;
+    color: #f1f5f9;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agenda-reminder__body small {
+    font-size: 0.76rem;
+    color: rgba(148, 163, 184, 0.92);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agenda-reminder__when {
+    flex: 0 0 auto;
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: rgba(203, 213, 225, 0.9);
+    white-space: nowrap;
+}
+
+.agenda-reminder__when.is-now {
+    color: #fca5a5;
+}
+
+.agenda-reminder__empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 4px;
+}
+
+.agenda-reminder__empty strong {
+    font-size: 0.98rem;
+    color: #f1f5f9;
+}
+
+.agenda-reminder__empty p {
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    color: rgba(148, 163, 184, 0.92);
+}
+
+/* Kind colours on the dark widget. */
+.agenda-reminder__item.kind-invigilation .agenda-reminder__kind { background: rgba(245, 158, 11, 0.18); color: #fbbf24; }
+.agenda-reminder__item.kind-exam .agenda-reminder__kind { background: rgba(248, 113, 113, 0.2); color: #fca5a5; }
+.agenda-reminder__item.kind-assignment .agenda-reminder__kind { background: rgba(167, 139, 250, 0.2); color: #c4b5fd; }
+.agenda-reminder__item.kind-todo .agenda-reminder__kind { background: rgba(56, 189, 248, 0.18); color: #7dd3fc; }
+.agenda-reminder__item.kind-class .agenda-reminder__kind { background: rgba(45, 212, 191, 0.18); color: #5eead4; }
+
+/* ----- Detail popover (light, contrasts with the dark widget) ----- */
+.agenda-popover {
+    position: fixed;
+    z-index: 5300;
+    width: min(320px, calc(100vw - 24px));
+    padding: 16px 16px 14px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 16px;
+    background: #ffffff;
+    box-shadow: 0 24px 60px -24px rgba(15, 23, 42, 0.45);
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.agenda-popover.is-open {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+.agenda-popover__close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 8px;
+    background: rgba(148, 163, 184, 0.14);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+}
+.agenda-popover__close:hover { background: rgba(148, 163, 184, 0.26); }
+
+.agenda-popover__kind {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 10px;
+    border-radius: 7px;
+    font-size: 0.74rem;
+    font-weight: 800;
+    background: rgba(148, 163, 184, 0.2);
+    color: #475569;
+}
+.agenda-popover__kind.kind-invigilation { background: rgba(245, 158, 11, 0.16); color: #b45309; }
+.agenda-popover__kind.kind-exam { background: rgba(239, 68, 68, 0.14); color: #dc2626; }
+.agenda-popover__kind.kind-assignment { background: rgba(139, 92, 246, 0.16); color: #7c3aed; }
+.agenda-popover__kind.kind-todo { background: rgba(14, 165, 233, 0.16); color: #0284c7; }
+.agenda-popover__kind.kind-class { background: rgba(13, 148, 136, 0.16); color: #0f766e; }
+
+.agenda-popover__title {
+    display: block;
+    margin: 10px 0 4px;
+    padding-right: 24px;
+    font-size: 1.04rem;
+    font-weight: 750;
+    line-height: 1.35;
+    color: var(--text-primary, #0f172a);
+}
+
+.agenda-popover__subtitle {
+    margin: 0 0 10px;
+    font-size: 0.86rem;
+    line-height: 1.55;
+    color: var(--text-secondary);
+}
+
+.agenda-popover__meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.agenda-popover__when {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-primary, #0f172a);
+}
+
+.agenda-popover__relative {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 9px;
+    border-radius: 999px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    background: rgba(37, 99, 235, 0.1);
+    color: #2563eb;
+}
+
+.agenda-popover__go {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 9px 14px;
+    border-radius: 11px;
+    background: var(--primary-color, #2563eb);
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 0.9rem;
+    text-decoration: none;
+    transition: filter var(--transition-fast), transform var(--transition-fast);
+}
+.agenda-popover__go:hover { filter: brightness(1.06); }
+.agenda-popover__go:active { transform: scale(0.98); }
+.agenda-popover__go.is-disabled { opacity: 0.5; pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+    .agenda-reminder__item,
+    .agenda-popover,
+    .agenda-popover__go { transition: none; }
+    .agenda-reminder__item:hover,
+    .agenda-reminder__item.is-active { transform: none; }
+}

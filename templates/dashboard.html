@@ -65,20 +65,9 @@
         </div>
 
         <div class="student-cockpit__layout">
-            <a href="{{ student_cockpit.primary.href }}" class="student-cockpit__primary student-cockpit__primary--{{ student_cockpit.primary.tone }}">
-                <span class="student-cockpit__primary-kicker">{{ student_cockpit.primary.eyebrow }}</span>
-                <strong>{{ student_cockpit.primary.title }}</strong>
-                <p>{{ student_cockpit.primary.description }}</p>
-                <div class="student-cockpit__today-feedback" data-cockpit-completion="{{ student_cockpit.today.completion_percent }}">
-                    <span>{{ student_cockpit.today.label }}</span>
-                    <strong>{{ student_cockpit.today.title }}</strong>
-                    <small>{{ student_cockpit.today.description }}</small>
-                    <div class="student-cockpit__today-meter" aria-label="今日计划完成度 {{ student_cockpit.today.completion_percent }}%">
-                        <span style="--cockpit-progress: {{ student_cockpit.today.completion_percent }}%;"></span>
-                    </div>
-                </div>
-                <span class="student-cockpit__primary-meta">{{ student_cockpit.primary.meta }}</span>
-            </a>
+            {% with agenda_widget_extra_class='agenda-reminder--cockpit', agenda_widget_title='待办与提醒' %}
+                {% include "partials/dashboard_agenda_widget.html" %}
+            {% endwith %}
 
             <div class="student-cockpit__stats" aria-label="今日学习概览">
                 {% for stat in student_cockpit.stats %}
@@ -184,14 +173,9 @@
                 {% endfor %}
             </section>
 
-            <div class="dashboard-hero__spotlight">
-                <span class="dashboard-spotlight__label">{{ dashboard_hero.spotlight.label }}</span>
-                <div class="dashboard-spotlight__value-wrap">
-                    <strong class="dashboard-spotlight__value">{{ dashboard_hero.spotlight.value }}</strong>
-                    <span class="dashboard-spotlight__suffix">{{ dashboard_hero.spotlight.suffix }}</span>
-                </div>
-                <p class="dashboard-spotlight__note">{{ dashboard_hero.spotlight.note }}</p>
-            </div>
+            {% with agenda_widget_extra_class='agenda-reminder--spotlight', agenda_widget_title='待办与提醒' %}
+                {% include "partials/dashboard_agenda_widget.html" %}
+            {% endwith %}
         </div>
     </section>
     {% endif %}
@@ -510,4 +494,5 @@
 </script>
 {{ vite_entry_tags('frontend/src/islands/dashboard-quick-actions.tsx') }}
 <script type="module" src="/static/js/dashboard.js?v=dashboard-card-nav-20260606"></script>
+<script type="module" src="/static/js/dashboard_agenda_widget.js?v=agenda-widget-20260607"></script>
 {% endblock %}

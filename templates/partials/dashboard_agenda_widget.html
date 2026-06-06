@@ -1,0 +1,61 @@
+{#
+  Reusable "待办提醒" agenda widget for the dashboard.
+  Renders the nearest-first upcoming items from dashboard_agenda_events
+  (teacher: 监考/考试/待办; student: 考试/作业/上课/待办).
+
+  Params:
+    agenda_widget_extra_class  - placement modifier (e.g. spotlight / cockpit)
+    agenda_widget_title        - eyebrow label (default 待办提醒)
+#}
+{% set _kind_labels = {'class': '上课', 'invigilation': '监考', 'exam': '考试', 'assignment': '作业', 'todo': '待办'} %}
+{% set _reminders = (dashboard_agenda_events | default([]) | rejectattr('status', 'equalto', 'completed') | sort(attribute='starts_at')) %}
+<section
+    class="agenda-reminder {{ agenda_widget_extra_class | default('') }}"
+    data-agenda-reminder
+    aria-label="{{ agenda_widget_title | default('待办提醒') }}"
+>
+    <header class="agenda-reminder__head">
+        <div class="agenda-reminder__heading">
+            <span class="agenda-reminder__eyebrow">{{ agenda_widget_title | default('待办提醒') }}</span>
+            <strong class="agenda-reminder__lead">
+                {% if _reminders %}最近 {{ _reminders|length }} 项待跟进{% else %}暂无临近待办{% endif %}
+            </strong>
+        </div>
+        <span class="agenda-reminder__bell" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        </span>
+    </header>
+
+    {% if _reminders %}
+    <div class="agenda-reminder__list" role="list">
+        {% for ev in _reminders[:50] %}
+        <button
+            type="button"
+            class="agenda-reminder__item is-{{ ev.status }} kind-{{ ev.kind }}{% if loop.first %} is-next{% endif %}"
+            role="listitem"
+            data-agenda-item
+            data-kind="{{ ev.kind }}"
+            data-kind-label="{{ _kind_labels.get(ev.kind, '日程') }}"
+            data-title="{{ ev.title }}"
+            data-subtitle="{{ ev.subtitle }}"
+            data-when="{{ ev.date_label }} {{ ev.weekday_label }} {{ ev.hour_label }}"
+            data-relative="{{ ev.relative_label }}"
+            data-status="{{ ev.status }}"
+            data-href="{{ ev.href }}"
+        >
+            <span class="agenda-reminder__kind">{{ _kind_labels.get(ev.kind, '日程') }}</span>
+            <span class="agenda-reminder__body">
+                <strong>{{ ev.title }}</strong>
+                {% if ev.subtitle %}<small>{{ ev.subtitle }}</small>{% endif %}
+            </span>
+            <span class="agenda-reminder__when{% if ev.status == 'current' %} is-now{% endif %}">{{ ev.relative_label or ev.date_label }}</span>
+        </button>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="agenda-reminder__empty">
+        <strong>这会儿没有临近的安排</strong>
+        <p>监考、考试、作业截止等提醒会自动出现在这里，最紧要的排在最前面。</p>
+    </div>
+    {% endif %}
+</section>
