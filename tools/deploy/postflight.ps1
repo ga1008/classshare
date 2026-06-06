@@ -145,6 +145,8 @@ if expected_engine and not state.get('configured'):
     sys.exit(3)
 PY
 "@
+    $DbCommand = $DbCommand -replace "`r`n", "`n"
+    $DbCommand = $DbCommand -replace "`r", "`n"
     $DbSshArgs = @()
     $DbSshArgs += @("-o", "BatchMode=yes", "-o", "ConnectTimeout=20")
     if ($SshKeyPath) {

@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from collections.abc import Mapping
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
+from ..db.connection import get_configured_db_engine
 from .message_center_service import CATEGORY_LABELS, get_message_center_summary
 from .academic_service import (
     build_semester_calendar_payload,
@@ -886,20 +888,7 @@ def _build_teacher_dashboard_context(
         """,
         (teacher_id,),
     )
-    today_login_count = _query_scalar(
-        conn,
-        """
-        SELECT COUNT(*)
-        FROM student_login_audit_logs logs
-        JOIN (
-            SELECT DISTINCT class_id
-            FROM class_offerings
-            WHERE teacher_id = ?
-        ) active_classes ON active_classes.class_id = logs.class_id
-        WHERE date(logged_at) = date('now', 'localtime')
-        """,
-        (teacher_id,),
-    )
+    today_login_count = _query_scalar(conn, _teacher_today_login_count_sql(), (teacher_id,))
     pending_reset_count = _query_scalar(
         conn,
         """
@@ -2570,7 +2559,36 @@ def _query_scalar(conn, sql: str, params: tuple[Any, ...]) -> int:
     row = conn.execute(sql, params).fetchone()
     if not row:
         return 0
+    if isinstance(row, Mapping):
+        for key in ("row_count", "count", "total", "cnt"):
+            if key in row:
+                return int(row[key] or 0)
+        return int(next(iter(row.values()), 0) or 0)
     return int(row[0] or 0)
+
+
+def _teacher_today_login_count_sql() -> str:
+    if get_configured_db_engine() == "postgres":
+        return """
+        SELECT COUNT(*)
+        FROM student_login_audit_logs logs
+        JOIN (
+            SELECT DISTINCT class_id
+            FROM class_offerings
+            WHERE teacher_id = ?
+        ) active_classes ON active_classes.class_id = logs.class_id
+        WHERE logged_at::date = CURRENT_DATE
+        """
+    return """
+    SELECT COUNT(*)
+    FROM student_login_audit_logs logs
+    JOIN (
+        SELECT DISTINCT class_id
+        FROM class_offerings
+        WHERE teacher_id = ?
+    ) active_classes ON active_classes.class_id = logs.class_id
+    WHERE date(logged_at) = date('now', 'localtime')
+    """
 
 
 def _normalize_dashboard_filter(role: str, value: Any) -> str:
