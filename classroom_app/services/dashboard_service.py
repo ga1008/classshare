@@ -915,6 +915,14 @@ def _build_teacher_calendar_agenda_events(
     except sqlite3.Error:
         return []
 
+    try:
+        teacher_name_row = conn.execute(
+            "SELECT name FROM teachers WHERE id = ? LIMIT 1", (int(teacher_id),)
+        ).fetchone()
+        teacher_name = str(teacher_name_row["name"] or "") if teacher_name_row else ""
+    except sqlite3.Error:
+        teacher_name = ""
+
     events: list[dict[str, Any]] = []
     for row in rows:
         item = dict(row)
@@ -933,8 +941,10 @@ def _build_teacher_calendar_agenda_events(
 
         if kind in {"invigilation", "exam"}:
             # Structured, de-cluttered detail (科目/日期/时间/教室/校区/监考分工)
-            # reused by the popover and the email reminder.
-            detail = build_event_reminder_detail(item)
+            # reused by the popover and the email reminder. Pass conn + teacher
+            # name so the two invigilators and "我的角色" resolve even for events
+            # synced before the metadata carried them.
+            detail = build_event_reminder_detail(item, conn=conn, teacher_name=teacher_name)
             title = detail["subject"]
             # Concise list line: place + time (subject already in the title).
             place = " ".join(part for part in (detail["campus"], detail["classroom"]) if part)

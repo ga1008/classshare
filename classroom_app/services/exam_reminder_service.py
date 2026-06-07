@@ -61,21 +61,68 @@ def _strip_subject_prefix(title: Any) -> str:
     return re.sub(r"^教务(?:考试|监考)[：:]\s*|^监考[：:]\s*", "", _text(title)).strip()
 
 
+def _compose_pair(chief: Any, assistant: Any) -> str:
+    parts = []
+    if _text(chief):
+        parts.append(f"主监考：{_text(chief)}")
+    if _text(assistant):
+        parts.append(f"副监考：{_text(assistant)}")
+    return "；".join(parts)
+
+
 def _compose_invigilators(metadata: dict[str, Any]) -> str:
     invigilators = _text(metadata.get("invigilators"))
     if invigilators:
         return invigilators
-    chief = _text(metadata.get("chief_invigilator"))
-    assistant = _text(metadata.get("assistant_invigilator"))
-    parts = []
-    if chief:
-        parts.append(f"主监考：{chief}")
-    if assistant:
-        parts.append(f"副监考：{assistant}")
-    return "；".join(parts)
+    return _compose_pair(metadata.get("chief_invigilator"), metadata.get("assistant_invigilator"))
 
 
-def build_event_reminder_detail(event: dict[str, Any]) -> dict[str, Any]:
+def _backfill_invigilators(conn, *, kind: str, metadata: dict[str, Any]) -> str:
+    """Read the two invigilators from the source item table for calendar events
+    whose metadata predates the invigilator enrichment (avoids forcing a resync)."""
+    if conn is None:
+        return ""
+    try:
+        if kind == "invigilation":
+            item_id = metadata.get("invigilation_item_id")
+            if not item_id:
+                return ""
+            row = conn.execute(
+                "SELECT invigilation_teachers FROM teacher_academic_invigilation_items WHERE id = ?",
+                (int(item_id),),
+            ).fetchone()
+            return _text(row["invigilation_teachers"]) if row else ""
+        item_id = metadata.get("course_exam_item_id")
+        if not item_id:
+            return ""
+        row = conn.execute(
+            "SELECT chief_invigilator, assistant_invigilator FROM teacher_academic_course_exam_items WHERE id = ?",
+            (int(item_id),),
+        ).fetchone()
+        return _compose_pair(row["chief_invigilator"], row["assistant_invigilator"]) if row else ""
+    except Exception:  # noqa: BLE001 - backfill is best-effort
+        return ""
+
+
+def _role_for_teacher(invigilators: str, teacher_name: str, fallback: str) -> str:
+    """Determine 主监考/副监考 by matching the logged-in teacher against the pair."""
+    name = _text(teacher_name)
+    if name and invigilators:
+        for segment in re.split(r"[；;]", invigilators):
+            if name in segment:
+                if segment.startswith("主监考"):
+                    return "主监考"
+                if segment.startswith("副监考"):
+                    return "副监考"
+    return fallback or ("监考" if invigilators else "")
+
+
+def build_event_reminder_detail(
+    event: dict[str, Any],
+    *,
+    conn=None,
+    teacher_name: str = "",
+) -> dict[str, Any]:
     """Normalise a teacher_calendar_events row into structured reminder fields."""
     metadata = _safe_metadata(event.get("metadata_json") or event.get("metadata"))
     source_type = _text(event.get("source_type"))
@@ -112,6 +159,17 @@ def build_event_reminder_detail(event: dict[str, Any]) -> dict[str, Any]:
     if campus and classroom.startswith(campus):
         classroom = classroom[len(campus):].strip(" ·-")
 
+    # Invigilation rows always carry both 主监考/副监考; surface them, falling back
+    # to the source item table for events synced before metadata enrichment.
+    invigilators = _compose_invigilators(metadata)
+    if not invigilators:
+        invigilators = _backfill_invigilators(conn, kind=kind, metadata=metadata)
+    role = _text(metadata.get("role"))
+    if kind == "invigilation":
+        role = _role_for_teacher(invigilators, teacher_name, role)
+    else:
+        role = ""
+
     return {
         "kind": kind,
         "subject": subject,
@@ -121,11 +179,19 @@ def build_event_reminder_detail(event: dict[str, Any]) -> dict[str, Any]:
         "campus": campus,
         "classroom": classroom,
         "teaching_class": _text(metadata.get("teaching_class_name")),
-        "invigilators": _compose_invigilators(metadata),
-        "role": _text(metadata.get("role")),
+        "invigilators": invigilators,
+        "role": role,
         "start_at": start_dt.isoformat(timespec="minutes") if start_dt else "",
         "link_url": _text(event.get("link_url")) or "/dashboard#dashboard-semester",
     }
+
+
+def _load_teacher_name(conn, teacher_id: int) -> str:
+    try:
+        row = conn.execute("SELECT name FROM teachers WHERE id = ? LIMIT 1", (int(teacher_id),)).fetchone()
+    except Exception:  # noqa: BLE001
+        return ""
+    return _text(row["name"]) if row else ""
 
 
 def _load_owned_event(conn, *, teacher_id: int, calendar_event_id: int) -> dict[str, Any] | None:
@@ -170,7 +236,8 @@ def schedule_exam_email_reminder(
         event = _load_owned_event(conn, teacher_id=int(teacher_id), calendar_event_id=int(calendar_event_id))
         if not event:
             return {"status": "not_found", "message": "未找到对应的监考/考试安排，可能已被更新，请刷新后重试。"}
-        detail = build_event_reminder_detail(event)
+        teacher_name = _load_teacher_name(conn, int(teacher_id))
+        detail = build_event_reminder_detail(event, conn=conn, teacher_name=teacher_name)
         start_dt = _parse_dt(event.get("starts_at")) or _parse_dt(event.get("due_at"))
         if not start_dt:
             return {"status": "no_start_time", "message": "该安排暂无明确开始时间，无法设置定时提醒。"}

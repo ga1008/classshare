@@ -41117,3 +41117,9 @@ body.has-teaching-session-modal {
 .agenda-popover__remind-status[data-tone="success"] { color: #15803d; }
 .agenda-popover__remind-status[data-tone="error"] { color: #b91c1c; }
 .agenda-popover__remind-status[data-tone="info"] { color: #2563eb; }
+
+/* The popover toggles visibility via the [hidden] attribute, but several of
+   these elements set an explicit display (flex/grid), which would otherwise win
+   over the UA [hidden] rule and leave the go-button / form always visible.
+   Make [hidden] authoritative within the popover. */
+.agenda-popover [hidden] { display: none !important; }

@@ -189,12 +189,13 @@ function initAgendaWidget() {
     activeEventId = data.eventId || '';
     const canRemind = Boolean(data.canReminder === '1' && activeEventId && activeEndpoint);
 
-    collapseForm();
     setStatus('', '');
     remindCancel.hidden = true;
-    remindBtn.hidden = !canRemind;
-    // For invigilation/exam the reminder is the primary action; the old "前往学期日历"
-    // link led nowhere useful, so it is replaced by the email-reminder button.
+    // Invigilation/exam: show the email-reminder form inline (the only action) —
+    // no extra toggle button, no dead-end "前往学期日历" link. Other kinds keep
+    // their jump link.
+    remindBtn.hidden = true;
+    remindForm.hidden = !canRemind;
     const href = data.href || '#';
     goEl.hidden = canRemind;
     goEl.setAttribute('href', href);
@@ -206,7 +207,12 @@ function initAgendaWidget() {
     item.classList.add('is-active');
     positionPopover(pop, item);
     pop.classList.add('is-open');
-    (canRemind ? remindBtn : goEl).focus({ preventScroll: true });
+    if (canRemind) {
+      fetchReminderState();
+      remindValue.focus({ preventScroll: true });
+    } else {
+      goEl.focus({ preventScroll: true });
+    }
   };
 
   const fetchReminderState = async () => {
@@ -225,19 +231,6 @@ function initAgendaWidget() {
       /* prefill is best-effort */
     }
   };
-
-  remindBtn.addEventListener('click', () => {
-    const expanded = !remindForm.hidden;
-    if (expanded) {
-      collapseForm();
-      return;
-    }
-    remindForm.hidden = false;
-    remindBtn.setAttribute('aria-expanded', 'true');
-    positionPopover(pop, activeItem);
-    remindValue.focus({ preventScroll: true });
-    fetchReminderState();
-  });
 
   remindForm.addEventListener('submit', async (event) => {
     event.preventDefault();
