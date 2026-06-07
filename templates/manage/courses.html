@@ -1156,31 +1156,31 @@
             </div>
         </div>
         <div class="academic-card-body course-list-body">
-            <div class="academic-toolbar academic-toolbar-between course-list-toolbar">
-                <label class="academic-search" for="courseSearchInput">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <div class="filter-bar">
+                <label class="filter-bar__search" for="courseSearchInput">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="11" cy="11" r="8"></circle>
                         <path d="m21 21-4.35-4.35"></path>
                     </svg>
-                    <input id="courseSearchInput" class="form-control" type="search" placeholder="搜索课程名称、简介或课堂设置">
+                    <input id="courseSearchInput" type="search" placeholder="搜索课程名称、简介或课堂设置">
                 </label>
-                <div class="course-toolbar-actions">
-                    <div class="filter-group">
-                        <span class="filter-group__label">状态筛选</span>
-                        <div class="filter-chips" data-filter-chips data-filter-target="#courseFilterSelect">
-                            <button type="button" class="filter-chip is-active" data-value="all">全部<span class="filter-chip__count">{{ course_stats.course_count }}</span></button>
-                            <button type="button" class="filter-chip" data-value="active">已开课<span class="filter-chip__count">{{ course_stats.active_course_count }}</span></button>
-                            <button type="button" class="filter-chip" data-value="complete">结构完整<span class="filter-chip__count">{{ _course_complete }}</span></button>
-                            <button type="button" class="filter-chip" data-value="idle">未开课<span class="filter-chip__count">{{ course_stats.course_count - course_stats.active_course_count }}</span></button>
-                        </div>
-                        <select id="courseFilterSelect" class="form-control" hidden aria-hidden="true">
-                            <option value="all">全部课程</option>
-                            <option value="active">已开设课堂</option>
-                            <option value="complete">结构完整</option>
-                            <option value="pending">待完善</option>
-                            <option value="idle">未开课</option>
-                        </select>
+                <div class="filter-group">
+                    <span class="filter-group__label">状态筛选</span>
+                    <div class="filter-chips" data-filter-chips data-filter-target="#courseFilterSelect">
+                        <button type="button" class="filter-chip is-active" data-value="all">全部<span class="filter-chip__count">{{ course_stats.course_count }}</span></button>
+                        <button type="button" class="filter-chip" data-value="active">已开课<span class="filter-chip__count">{{ course_stats.active_course_count }}</span></button>
+                        <button type="button" class="filter-chip" data-value="complete">结构完整<span class="filter-chip__count">{{ _course_complete }}</span></button>
+                        <button type="button" class="filter-chip" data-value="idle">未开课<span class="filter-chip__count">{{ course_stats.course_count - course_stats.active_course_count }}</span></button>
                     </div>
+                    <select id="courseFilterSelect" class="filter-proxy-select" aria-hidden="true" tabindex="-1">
+                        <option value="all">全部课程</option>
+                        <option value="active">已开设课堂</option>
+                        <option value="complete">结构完整</option>
+                        <option value="pending">待完善</option>
+                        <option value="idle">未开课</option>
+                    </select>
+                </div>
+                <div class="filter-bar__actions">
                     <button type="button" class="btn btn-outline" id="toolbarCourseAcademicSyncBtn">从教务系统同步</button>
                     <button type="button" class="btn btn-primary" id="toolbarCourseCreateBtn">新增课程</button>
                 </div>

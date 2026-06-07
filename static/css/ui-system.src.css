@@ -7916,8 +7916,8 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
 }
 
 .materials-library-controls {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    display: flex;
+    flex-direction: column;
     gap: var(--spacing-3);
     padding: var(--spacing-4);
     border-bottom: 1px solid var(--border-color);
@@ -7965,17 +7965,16 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
 }
 
 .materials-sort-controls {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: var(--spacing-2);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+    gap: var(--spacing-2) var(--spacing-3);
 }
 
 .materials-inline-field {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    min-width: 150px;
+    gap: 6px;
+    min-width: 0;
 }
 
 .materials-inline-field span {
@@ -41259,4 +41258,22 @@ body.has-teaching-session-modal {
 
 @media (prefers-reduced-motion: reduce) {
     .insight-ring__fill, .insight-bar__track > i, .insight-meter__track > i { transition: none; }
+}
+
+/* Proxy <select> behind filter chips must stay hidden even though .form-control
+   sets an explicit display (which would override the [hidden] attribute). */
+.filter-proxy-select { display: none !important; }
+
+/* Filter-bar action cluster + a tidy responsive grid of select fields. */
+.filter-bar__actions { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+.filter-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    width: 100%;
+}
+.filter-field { display: grid; gap: 5px; min-width: 0; }
+.filter-field > span {
+    font-size: 0.7rem; font-weight: 800; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--text-muted);
 }
