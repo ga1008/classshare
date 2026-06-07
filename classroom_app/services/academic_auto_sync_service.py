@@ -476,6 +476,58 @@ def _summarize_auto_sync(stages: list[dict[str, Any]]) -> tuple[str, str]:
     )
 
 
+async def sync_teacher_dashboard_reminders(teacher_id: int) -> dict[str, Any]:
+    """Refresh the academic data that drives the teacher dashboard reminders.
+
+    Scoped to the two feeds behind the 待办与提醒 widget — invigilation
+    assignments and course exams — so the dashboard bell can resync quickly
+    without rerunning the full course/roster/place chain.
+    """
+    stages = [
+        await _run_stage(
+            teacher_id=teacher_id,
+            key="invigilations",
+            label="监考安排",
+            runner=sync_current_teacher_invigilations_from_academic_system,
+            count_builder=_compact_invigilation_counts,
+        ),
+        await _run_stage(
+            teacher_id=teacher_id,
+            key="course_exams",
+            label="任课考试",
+            runner=sync_current_teacher_course_exams_from_academic_system,
+            count_builder=_compact_course_exam_counts,
+        ),
+    ]
+    success_count = sum(1 for stage in stages if stage.get("status") == "success")
+    invigilation_counts = next((s.get("counts") or {} for s in stages if s.get("key") == "invigilations"), {})
+    course_exam_counts = next((s.get("counts") or {} for s in stages if s.get("key") == "course_exams"), {})
+    if success_count == len(stages):
+        status = "success"
+        message = (
+            "已刷新教务提醒："
+            f"监考 {invigilation_counts.get('invigilation_count', 0)} 条、"
+            f"任课考试 {course_exam_counts.get('course_exam_count', 0)} 条。"
+        )
+    elif success_count:
+        status = "partial_success"
+        message = "已刷新部分教务提醒，其余未完成的项目可稍后重试。"
+    else:
+        status = "failed"
+        # Surface the first stage message so credential/term issues are actionable.
+        first_message = next((s.get("message") for s in stages if s.get("message")), "")
+        message = first_message or "教务提醒刷新未完成，请稍后重试或检查教务账号。"
+    warnings: list[str] = []
+    for stage in stages:
+        warnings.extend(stage.get("warnings") or [])
+    return {
+        "status": status,
+        "message": message,
+        "stages": stages,
+        "warnings": warnings[:12],
+    }
+
+
 async def sync_teacher_academic_data_after_credential_verified(teacher_id: int) -> dict[str, Any]:
     """Run the post-credential sync chain without making credential persistence transactional.
 

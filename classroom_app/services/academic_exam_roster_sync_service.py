@@ -19,6 +19,7 @@ from ..database import get_db_connection
 from ..db.connection import get_configured_db_engine
 from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
 from .academic_classroom_sync_service import load_teacher_teaching_place_by_key
+from .academic_location_service import compose_exam_location
 from .academic_integration_service import (
     load_teacher_academic_access_method,
     open_authenticated_academic_client,
@@ -902,7 +903,7 @@ def _invigilation_default(
         return "", ""
     row = conn.execute(
         f"""
-        SELECT starts_at, exam_date, location
+        SELECT starts_at, exam_date, campus, building, location
         FROM teacher_academic_invigilation_items
         WHERE {' AND '.join(where)}
         ORDER BY COALESCE(starts_at, exam_date, synced_at) DESC, id DESC
@@ -915,7 +916,7 @@ def _invigilation_default(
     starts_at = _datetime_local(row["starts_at"])
     if not starts_at and row["exam_date"]:
         starts_at = f"{row['exam_date']}T08:00"
-    return starts_at, _normalize_space(row["location"])
+    return starts_at, compose_exam_location(row["campus"], row["building"], row["location"])
 
 
 def _default_export_fields(

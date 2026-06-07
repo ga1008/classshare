@@ -43,6 +43,17 @@ async def api_probe_integration_request(request: Request, user: dict = Depends(g
         raise HTTPException(status_code=502, detail=f"对接系统请求失败：{str(exc)[:180]}") from exc
 
 
+@router.post("/system/academic-reminders/sync-current", response_class=JSONResponse)
+async def api_sync_academic_dashboard_reminders(user: dict = Depends(get_current_teacher)):
+    """Resync the academic feeds behind the teacher dashboard reminder widget."""
+    result = await sync_teacher_dashboard_reminders(int(user["id"]))
+    return {
+        "status": result.get("status") or "unknown",
+        "message": result.get("message") or "教务提醒刷新已完成。",
+        "result": result,
+    }
+
+
 @router.post("/system/academic-invigilations/sync-current", response_class=JSONResponse)
 async def api_sync_academic_invigilations(user: dict = Depends(get_current_teacher)):
     """Manually sync current-term invigilation assignments into teacher calendar events."""

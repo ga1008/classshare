@@ -173,7 +173,7 @@
                 {% endfor %}
             </section>
 
-            {% with agenda_widget_extra_class='agenda-reminder--spotlight', agenda_widget_title='待办与提醒' %}
+            {% with agenda_widget_extra_class='agenda-reminder--spotlight', agenda_widget_title='待办与提醒', agenda_widget_can_sync=True %}
                 {% include "partials/dashboard_agenda_widget.html" %}
             {% endwith %}
         </div>
@@ -494,5 +494,5 @@
 </script>
 {{ vite_entry_tags('frontend/src/islands/dashboard-quick-actions.tsx') }}
 <script type="module" src="/static/js/dashboard.js?v=dashboard-card-nav-20260606"></script>
-<script type="module" src="/static/js/dashboard_agenda_widget.js?v=agenda-widget-20260607"></script>
+<script type="module" src="/static/js/dashboard_agenda_widget.js?v=agenda-widget-20260607-sync"></script>
 {% endblock %}

@@ -125,8 +125,70 @@ function initAgendaWidget() {
   window.addEventListener('scroll', () => { if (activeItem) positionPopover(pop, activeItem); }, { passive: true });
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initAgendaWidget);
-} else {
+// Bell → sync affordance: hovering the bell reveals a sync icon; clicking it
+// resyncs the teacher's invigilation + course-exam reminders from the academic
+// system in the background, spins while running, flashes on completion, then
+// reloads so the freshly synced reminders render.
+const SYNC_FLASH_MS = 1100;
+
+function notify(message, type) {
+  const toast = window.showToast || window.UI?.showToast;
+  if (typeof toast === 'function') {
+    toast(message, type);
+  }
+}
+
+function initAgendaReminderSync() {
+  const buttons = Array.from(document.querySelectorAll('[data-agenda-sync]'));
+  if (!buttons.length) return;
+
+  buttons.forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (button.classList.contains('is-syncing')) return;
+      const endpoint = button.dataset.syncEndpoint;
+      if (!endpoint) return;
+
+      button.classList.remove('is-synced');
+      button.classList.add('is-syncing');
+      button.disabled = true;
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { Accept: 'application/json' },
+          credentials: 'same-origin',
+        });
+        let payload = {};
+        try {
+          payload = await response.json();
+        } catch {
+          payload = {};
+        }
+        if (!response.ok || (payload.status && payload.status === 'failed')) {
+          throw new Error(payload.message || '教务提醒刷新未完成，请稍后重试。');
+        }
+
+        button.classList.remove('is-syncing');
+        button.classList.add('is-synced');
+        notify(payload.message || '教务提醒已刷新。', 'success');
+        // Hold the completion flash briefly, then reload so the new reminders show.
+        window.setTimeout(() => window.location.reload(), SYNC_FLASH_MS);
+      } catch (error) {
+        button.classList.remove('is-syncing');
+        button.disabled = false;
+        notify(error instanceof Error ? error.message : '教务提醒刷新失败。', 'error');
+      }
+    });
+  });
+}
+
+function initAgendaReminderWidget() {
   initAgendaWidget();
+  initAgendaReminderSync();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initAgendaReminderWidget);
+} else {
+  initAgendaReminderWidget();
 }

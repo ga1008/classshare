@@ -14,6 +14,11 @@ import httpx
 from ..database import get_db_connection
 from ..db.connection import execute_insert_returning_id
 from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
+from .academic_location_service import (
+    compose_exam_location,
+    enrich_campus_building,
+    load_teaching_place_location_index,
+)
 from .academic_integration_service import (
     load_teacher_academic_access_method,
     open_authenticated_academic_client,
@@ -299,7 +304,7 @@ def _item_from_row(
         student_college=_field(row, "xsxy"),
         course_college=_field(row, "kkxy"),
         campus=_field(row, "xqmc"),
-        building=_field(row, "jxlmc"),
+        building=_field(row, "jxlmc", "lh"),
         location=_field(row, "cdmc"),
         location_short_name=_field(row, "cdjc"),
         location_type=_field(row, "cdlbmc"),
@@ -530,10 +535,14 @@ def _event_title(item: AcademicInvigilationItem) -> str:
     return f"监考：{target}"
 
 
+def _full_location(item: AcademicInvigilationItem) -> str:
+    return compose_exam_location(item.campus, item.building, item.location)
+
+
 def _event_notes(item: AcademicInvigilationItem) -> str:
     parts = [
         item.exam_time_text,
-        item.location,
+        _full_location(item),
         item.teaching_class_name,
         item.class_composition,
         f"{item.exam_student_count} 人" if item.exam_student_count else "",
@@ -576,10 +585,15 @@ def _upsert_calendar_event(
         "student_count": item.exam_student_count,
         "exam_time_text": item.exam_time_text,
         "role": item.invigilation_role,
+        "campus": item.campus,
+        "building": item.building,
+        "room": item.location,
+        "location_full": _full_location(item),
     }
     title = _event_title(item)
     subtitle = item.exam_name or "教务系统监考"
     notes = _event_notes(item)
+    full_location = _full_location(item)
     starts_at = item.starts_at or None
     ends_at = item.ends_at or item.starts_at or None
     due_at = item.starts_at or item.exam_date or None
@@ -595,7 +609,7 @@ def _upsert_calendar_event(
         starts_at,
         ends_at,
         due_at,
-        item.location,
+        full_location,
         "active",
         "invigilation",
         "/dashboard#dashboard-semester",
@@ -623,7 +637,7 @@ def _upsert_calendar_event(
         for key, value in {
             "starts_at": starts_at,
             "ends_at": ends_at,
-            "location": item.location,
+            "location": full_location,
             "title": title,
             "status": "active",
         }.items()
@@ -658,7 +672,7 @@ def _upsert_calendar_event(
             starts_at,
             ends_at,
             due_at,
-            item.location,
+            full_location,
             "/dashboard#dashboard-semester",
             _json_dumps(metadata),
             synced_at,
@@ -702,7 +716,9 @@ def _maybe_create_invigilation_notification(
             "source": ACADEMIC_INVIGILATION_SOURCE,
             "source_key": _source_key(item),
             "starts_at": item.starts_at,
-            "location": item.location,
+            "campus": item.campus,
+            "building": item.building,
+            "location": _full_location(item),
         },
     )
 
@@ -807,8 +823,18 @@ def _persist_invigilations(
     event_updated_count = 0
     notification_count = 0
     seen_keys: set[str] = set()
+    place_index = load_teaching_place_location_index(conn, int(teacher_id))
     for item in items:
         seen_keys.add(item.invigilation_key)
+        # Backfill campus/building when the invigilation feed omits them, so a
+        # bare room name stays unambiguous across multiple campuses.
+        item.campus, item.building = enrich_campus_building(
+            place_index,
+            campus=item.campus,
+            building=item.building,
+            location=item.location,
+            location_short_name=item.location_short_name,
+        )
         existing = conn.execute(
             """
             SELECT id

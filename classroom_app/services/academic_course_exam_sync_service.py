@@ -15,6 +15,11 @@ from ..database import get_db_connection
 from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 from ..db.errors import DatabaseProgrammingError
 from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
+from .academic_location_service import (
+    compose_exam_location,
+    enrich_campus_building,
+    load_teaching_place_location_index,
+)
 from .academic_integration_service import (
     load_teacher_academic_access_method,
     open_authenticated_academic_client,
@@ -747,10 +752,14 @@ def _event_title(item: AcademicCourseExamItem) -> str:
     return f"教务考试：{target}"
 
 
+def _full_location(item: AcademicCourseExamItem) -> str:
+    return compose_exam_location(item.campus, item.building, item.location)
+
+
 def _event_notes(item: AcademicCourseExamItem) -> str:
     parts = [
         item.exam_time_text,
-        item.location,
+        _full_location(item),
         item.teaching_class_name,
         item.class_composition,
         f"{item.exam_student_count} 人" if item.exam_student_count else "",
@@ -806,11 +815,16 @@ def _upsert_calendar_event(
         "student_count": item.exam_student_count,
         "exam_time_text": item.exam_time_text,
         "class_offering_id": item.class_offering_id,
+        "campus": item.campus,
+        "building": item.building,
+        "room": item.location,
+        "location_full": _full_location(item),
         "signature": _signature(item),
     }
     title = _event_title(item)
     subtitle = item.exam_name or "教务系统任课考试"
     notes = _event_notes(item)
+    full_location = _full_location(item)
     starts_at = item.starts_at or None
     ends_at = item.ends_at or item.starts_at or None
     due_at = item.starts_at or item.exam_date or None
@@ -827,7 +841,7 @@ def _upsert_calendar_event(
         starts_at,
         ends_at,
         due_at,
-        item.location,
+        full_location,
         "active",
         "academic_exam",
         link_url,
@@ -855,7 +869,7 @@ def _upsert_calendar_event(
         for key, value in {
             "starts_at": starts_at,
             "ends_at": ends_at,
-            "location": item.location,
+            "location": full_location,
             "title": title,
             "status": "active",
         }.items()
@@ -890,7 +904,7 @@ def _upsert_calendar_event(
             starts_at,
             ends_at,
             due_at,
-            item.location,
+            full_location,
             link_url,
             _json_dumps(metadata),
             synced_at,
@@ -955,7 +969,9 @@ def _maybe_notify_students(
                 "source_key": _source_key(item),
                 "starts_at": item.starts_at,
                 "ends_at": item.ends_at,
-                "location": item.location,
+                "campus": item.campus,
+                "building": item.building,
+                "location": _full_location(item),
                 "course_name": item.course_name,
                 "exam_name": item.exam_name,
             },
@@ -1078,8 +1094,17 @@ def _persist_course_exams(
     event_updated_count = 0
     student_notification_count = 0
     seen_keys: set[str] = set()
+    place_index = load_teaching_place_location_index(conn, int(teacher_id))
 
     for item in items:
+        # Backfill campus/building when the exam feed omits them so the
+        # location reads unambiguously across multiple campuses.
+        item.campus, item.building = enrich_campus_building(
+            place_index,
+            campus=item.campus,
+            building=item.building,
+            location=item.location,
+        )
         score = _attach_best_offering(item, contexts)
         if score:
             matched_offering_count += 1
@@ -1318,6 +1343,9 @@ def _serialize_course_exam_row(row: sqlite3.Row | dict[str, Any]) -> dict[str, A
         "campus": str(item.get("campus") or ""),
         "building": str(item.get("building") or ""),
         "location": str(item.get("location") or ""),
+        "location_full": compose_exam_location(
+            item.get("campus"), item.get("building"), item.get("location")
+        ),
         "location_type": str(item.get("location_type") or ""),
         "exam_student_count": int(item.get("exam_student_count") or 0),
         "seat_count": int(item.get("seat_count") or 0),
@@ -1396,6 +1424,11 @@ def _serialize_related_invigilation(row: sqlite3.Row | dict[str, Any]) -> dict[s
         "campus": str(item.get("campus") or ""),
         "building": str(item.get("building") or ""),
         "location": str(item.get("location") or item.get("location_short_name") or ""),
+        "location_full": compose_exam_location(
+            item.get("campus"),
+            item.get("building"),
+            item.get("location") or item.get("location_short_name"),
+        ),
         "location_short_name": str(item.get("location_short_name") or ""),
         "exam_time_text": str(item.get("exam_time_text") or ""),
         "exam_date": str(item.get("exam_date") or ""),
@@ -1570,10 +1603,13 @@ def build_course_exam_timeline_entry(item: dict[str, Any]) -> dict[str, Any]:
         progress_state = "current"
         status_label = "今天考试"
     title = item.get("course_name") or item.get("course_display_name") or item.get("exam_name") or "课程考试"
+    exam_location_full = item.get("location_full") or compose_exam_location(
+        item.get("campus"), item.get("building"), item.get("location")
+    )
     detail_lines = [
         item.get("exam_name") or "",
         item.get("exam_time_text") or "",
-        item.get("location") or "",
+        exam_location_full,
         item.get("teaching_class_name") or item.get("class_composition") or "",
         f"座位 {item.get('seat_count')} / 考生 {item.get('exam_student_count')}" if item.get("seat_count") or item.get("exam_student_count") else "",
     ]
@@ -1589,7 +1625,7 @@ def build_course_exam_timeline_entry(item: dict[str, Any]) -> dict[str, Any]:
                     for part in [
                         invigilation.get("invigilation_role") or "监考",
                         invigilation.get("exam_time_text") or "",
-                        invigilation.get("location") or "",
+                        invigilation.get("location_full") or invigilation.get("location") or "",
                         invigilation.get("teaching_class_name") or invigilation.get("class_composition") or "",
                     ]
                     if part
@@ -1625,7 +1661,7 @@ def build_course_exam_timeline_entry(item: dict[str, Any]) -> dict[str, Any]:
         "detail_content": detail_content,
         "detail_summary": detail_content,
         "content_preview": detail_content,
-        "detail_meta": " · ".join(part for part in [item.get("exam_time_text"), item.get("location"), item.get("exam_name")] if part),
+        "detail_meta": " · ".join(part for part in [item.get("exam_time_text"), exam_location_full, item.get("exam_name")] if part),
         "detail_hint": "该考试来自教务系统任课教师考试查询，重新同步会更新本卡片。",
         "section_count": 0,
         "slot_section_count": 0,
@@ -1638,7 +1674,7 @@ def build_course_exam_timeline_entry(item: dict[str, Any]) -> dict[str, Any]:
         "exam_item": item,
         "exam_name": item.get("exam_name") or "",
         "exam_time_text": item.get("exam_time_text") or "",
-        "exam_location": item.get("location") or "",
+        "exam_location": exam_location_full,
         "exam_status_label": status_label,
         "related_invigilations": related_invigilations,
         "related_invigilation_count": len(related_invigilations),

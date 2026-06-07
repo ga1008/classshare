@@ -152,6 +152,7 @@ from ...services.academic_calendar_sync_service import (
 from ...services.academic_auto_sync_service import (
     build_academic_sync_capabilities,
     sync_teacher_academic_data_after_credential_verified,
+    sync_teacher_dashboard_reminders,
 )
 from ...services.academic_classroom_sync_service import (
     count_teacher_teaching_places,

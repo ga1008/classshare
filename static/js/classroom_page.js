@@ -1393,7 +1393,7 @@ function initTeachingTimelineLegacy() {
     const formatInvigilationBrief = (item = {}) => [
         item.invigilation_role || '监考',
         item.exam_time_text || '',
-        item.location || item.location_short_name || '',
+        item.location_full || item.location || item.location_short_name || '',
     ].filter(Boolean).join(' · ');
     const getSessionViewerUrl = (session) => String(
         isHomeEntry(session)
@@ -2056,7 +2056,7 @@ function initTeachingTimeline() {
     const formatInvigilationBrief = (item = {}) => [
         item.invigilation_role || '监考',
         item.exam_time_text || '',
-        item.location || item.location_short_name || '',
+        item.location_full || item.location || item.location_short_name || '',
     ].filter(Boolean).join(' · ');
     const getSessionViewerUrl = (session) => String(
         isHomeEntry(session)

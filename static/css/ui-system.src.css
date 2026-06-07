@@ -40924,3 +40924,69 @@ body.has-teaching-session-modal {
     .agenda-reminder__item:hover,
     .agenda-reminder__item.is-active { transform: none; }
 }
+
+/* Bell → sync button on the teacher 待办与提醒 widget. Hover swaps the bell for
+   a sync icon; clicking spins it during the background sync, then flashes once
+   on completion before the page reloads with fresh reminders. */
+.agenda-reminder__bell--sync {
+    position: relative;
+    cursor: pointer;
+    border: 0;
+    padding: 0;
+    appearance: none;
+    transition: background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+}
+.agenda-reminder__bell--sync:hover { background: rgba(251, 191, 36, 0.22); }
+.agenda-reminder__bell--sync:active { transform: scale(0.94); }
+.agenda-reminder__bell--sync:focus-visible {
+    outline: 2px solid rgba(251, 191, 36, 0.7);
+    outline-offset: 2px;
+}
+.agenda-reminder__bell--sync:disabled { cursor: progress; }
+
+.agenda-reminder__icon {
+    grid-area: 1 / 1;
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+.agenda-reminder__bell--sync {
+    display: grid;
+    place-items: center;
+}
+/* Default: show the bell, hide the sync icon. */
+.agenda-reminder__icon--sync { opacity: 0; transform: rotate(-45deg); }
+/* Hover / syncing / synced: reveal the sync icon, hide the bell. */
+.agenda-reminder__bell--sync:hover .agenda-reminder__icon--bell,
+.agenda-reminder__bell--sync.is-syncing .agenda-reminder__icon--bell,
+.agenda-reminder__bell--sync.is-synced .agenda-reminder__icon--bell {
+    opacity: 0;
+}
+.agenda-reminder__bell--sync:hover .agenda-reminder__icon--sync,
+.agenda-reminder__bell--sync.is-syncing .agenda-reminder__icon--sync,
+.agenda-reminder__bell--sync.is-synced .agenda-reminder__icon--sync {
+    opacity: 1;
+    transform: rotate(0deg);
+}
+.agenda-reminder__bell--sync.is-syncing .agenda-reminder__icon--sync {
+    animation: agenda-sync-spin 0.85s linear infinite;
+}
+.agenda-reminder__bell--sync.is-synced {
+    color: #34d399;
+    background: rgba(52, 211, 153, 0.2);
+    animation: agenda-sync-flash 0.55s ease;
+}
+
+@keyframes agenda-sync-spin {
+    to { transform: rotate(360deg); }
+}
+@keyframes agenda-sync-flash {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); }
+    45% { transform: scale(1.18); box-shadow: 0 0 0 7px rgba(52, 211, 153, 0); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .agenda-reminder__icon,
+    .agenda-reminder__bell--sync { transition: none; }
+    .agenda-reminder__bell--sync.is-syncing .agenda-reminder__icon--sync { animation: none; }
+    .agenda-reminder__bell--sync.is-synced { animation: none; }
+}
