@@ -23,10 +23,6 @@ def init_database():
         conn = get_db_connection()
         try:
             runtime_constraint_report = ensure_postgres_runtime_constraints(conn)
-            # The unified scheduler tables are managed at runtime (engine-aware,
-            # idempotent) rather than via the central migration, so ensure them
-            # on the PostgreSQL path too before validation.
-            ensure_scheduler_schema(conn)
             conn.commit()
             report = validate_postgres_schema(conn)
             report["runtime_constraints"] = runtime_constraint_report
@@ -54,6 +50,21 @@ def init_database():
             )
         except Exception as exc:
             print(f"[DB] PostgreSQL performance index step skipped: {exc}")
+        # The unified scheduler tables are managed at runtime (engine-aware,
+        # idempotent). Isolated in their own connection and tolerant of the rare
+        # concurrent CREATE race between worker containers — the loser simply
+        # finds the tables already present, and the scheduler service also
+        # ensures the schema lazily on first use.
+        try:
+            scheduler_conn = get_db_connection()
+            try:
+                ensure_scheduler_schema(scheduler_conn)
+                scheduler_conn.commit()
+            finally:
+                scheduler_conn.close()
+            print("[DB] PostgreSQL scheduler tables ensured")
+        except Exception as exc:
+            print(f"[DB] PostgreSQL scheduler schema step skipped: {exc}")
         print(
             "[DB] PostgreSQL schema verified: "
             f"{report['present_required_table_count']}/{report['required_table_count']} required tables"
