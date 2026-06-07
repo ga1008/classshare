@@ -63,6 +63,11 @@ services:
       postgres:
         condition: service_healthy
 
+  scheduler:
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   blog-crawler:
     depends_on:
       postgres:

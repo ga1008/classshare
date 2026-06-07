@@ -30,7 +30,7 @@ class BackgroundTaskPermissionTests(unittest.TestCase):
             payload = asyncio.run(system_config.api_get_background_tasks(user={"id": 1, "role": "teacher"}))
 
         self.assertEqual(payload["status"], "success")
-        self.assertEqual(len(payload["items"]), 8)
+        self.assertEqual(len(payload["items"]), 9)
 
     def test_regular_teacher_cannot_read_background_task_ledger(self):
         with patch.object(system_config, "get_db_connection", return_value=self._conn_context()), patch.object(

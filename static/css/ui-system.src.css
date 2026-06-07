@@ -40990,3 +40990,130 @@ body.has-teaching-session-modal {
     .agenda-reminder__bell--sync.is-syncing .agenda-reminder__icon--sync { animation: none; }
     .agenda-reminder__bell--sync.is-synced { animation: none; }
 }
+
+/* Structured invigilation/exam reminder popover: labelled facts + the inline
+   "设置邮件提醒" form (replaces the old, dead-end "前往学期日历" link). */
+.agenda-popover__facts {
+    margin: 4px 0 12px;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+}
+.agenda-popover__fact {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 8px;
+    align-items: baseline;
+    margin: 0;
+}
+.agenda-popover__fact dt {
+    margin: 0;
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #94a3b8;
+    white-space: nowrap;
+}
+.agenda-popover__fact dd {
+    margin: 0;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: #0f172a;
+    line-height: 1.45;
+    word-break: break-word;
+}
+.agenda-popover__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+}
+.agenda-popover__remind {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    width: 100%;
+    padding: 9px 14px;
+    border: 0;
+    border-radius: 11px;
+    background: var(--primary-color, #2563eb);
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: filter var(--transition-fast), transform var(--transition-fast);
+}
+.agenda-popover__remind:hover { filter: brightness(1.06); }
+.agenda-popover__remind:active { transform: scale(0.98); }
+
+.agenda-popover__remind-form {
+    margin-top: 10px;
+    padding: 12px;
+    border-radius: 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    display: grid;
+    gap: 10px;
+}
+.agenda-popover__remind-form.is-busy { opacity: 0.7; pointer-events: none; }
+.agenda-popover__remind-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 0.86rem;
+    color: #334155;
+    font-weight: 600;
+}
+.agenda-popover__remind-row input[data-remind-value] {
+    width: 64px;
+    padding: 6px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    text-align: center;
+}
+.agenda-popover__remind-row select[data-remind-unit] {
+    padding: 6px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    background: #ffffff;
+}
+.agenda-popover__remind-actions {
+    display: flex;
+    gap: 8px;
+}
+.agenda-popover__remind-submit {
+    flex: 1;
+    padding: 8px 12px;
+    border: 0;
+    border-radius: 9px;
+    background: var(--primary-color, #2563eb);
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 0.86rem;
+    cursor: pointer;
+}
+.agenda-popover__remind-submit:hover { filter: brightness(1.06); }
+.agenda-popover__remind-cancel {
+    padding: 8px 12px;
+    border: 1px solid #fecaca;
+    border-radius: 9px;
+    background: #fff1f2;
+    color: #b91c1c;
+    font-weight: 700;
+    font-size: 0.86rem;
+    cursor: pointer;
+}
+.agenda-popover__remind-cancel:hover { background: #ffe4e6; }
+.agenda-popover__remind-status {
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    min-height: 1em;
+    color: #64748b;
+}
+.agenda-popover__remind-status[data-tone="success"] { color: #15803d; }
+.agenda-popover__remind-status[data-tone="error"] { color: #b91c1c; }
+.agenda-popover__remind-status[data-tone="info"] { color: #2563eb; }

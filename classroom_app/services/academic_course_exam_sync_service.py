@@ -815,6 +815,8 @@ def _upsert_calendar_event(
         "student_count": item.exam_student_count,
         "exam_time_text": item.exam_time_text,
         "class_offering_id": item.class_offering_id,
+        "chief_invigilator": item.chief_invigilator,
+        "assistant_invigilator": item.assistant_invigilator,
         "campus": item.campus,
         "building": item.building,
         "room": item.location,

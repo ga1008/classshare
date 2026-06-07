@@ -1124,6 +1124,133 @@ def queue_notification_email_if_applicable(conn, *, notification_id: int, payloa
     return False
 
 
+def queue_custom_teacher_email(
+    conn,
+    *,
+    teacher_id: int,
+    subject: str,
+    body_text: str,
+    dedupe_key: str,
+    body_html: str = "",
+    category: str = "academic_exam",
+    severity: str = NOTIFICATION_SEVERITY_IMPORTANT,
+    recipient_email: str = "",
+    recipient_name: str = "",
+    recipient_role: str = "teacher",
+    recipient_user_pk: int | None = None,
+    send_at: Optional[datetime] = None,
+) -> dict[str, Any]:
+    """Queue a standalone email (not tied to a message-center notification).
+
+    Reuses the proven ``email_outbox`` pipeline: the mailer worker sends it with
+    the teacher's default SMTP config, rate limiting and retries. Used by the
+    scheduler's reminder handler. ``send_at`` defers the send via
+    ``next_attempt_at`` (defaults to now). Raises ValueError when the teacher has
+    no enabled email config or no resolvable recipient address.
+    """
+    teacher_id_int = int(teacher_id)
+    config = _load_default_email_config(conn, teacher_id_int)
+    if not config:
+        raise ValueError("教师尚未配置可用邮箱，无法发送邮件提醒。请先在“我的-资料与设置”中配置发信邮箱。")
+
+    target_email = _normalize_email(recipient_email) if recipient_email else ""
+    target_name = _normalize_text(recipient_name, limit=80)
+    if not target_email:
+        recipient = _load_recipient_email(
+            conn,
+            role=str(recipient_role or "teacher").strip().lower(),
+            user_pk=int(recipient_user_pk or teacher_id_int),
+        )
+        if not recipient:
+            raise ValueError("收件人邮箱不可用，请先在账号资料中填写有效邮箱。")
+        target_email = recipient["email"]
+        target_name = target_name or recipient["name"]
+
+    now = _now_iso()
+    next_attempt_at = _to_iso_minutes(send_at) if send_at else now
+    normalized_pk = int(recipient_user_pk or teacher_id_int)
+    engine = get_configured_db_engine().strip().lower()
+    if engine == "postgres":
+        insert_sql = """
+            INSERT INTO email_outbox (
+                config_id, teacher_id, notification_id, dedupe_key,
+                recipient_identity, recipient_role, recipient_user_pk, recipient_email,
+                subject, body_text, body_html, category, severity, status, next_attempt_at,
+                created_at, updated_at
+            )
+            VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)
+            ON CONFLICT (dedupe_key) DO UPDATE SET
+                subject = excluded.subject,
+                body_text = excluded.body_text,
+                body_html = excluded.body_html,
+                next_attempt_at = excluded.next_attempt_at,
+                status = 'queued',
+                attempt_count = 0,
+                last_error = '',
+                updated_at = excluded.updated_at
+            RETURNING id
+        """
+    else:
+        insert_sql = """
+            INSERT INTO email_outbox (
+                config_id, teacher_id, notification_id, dedupe_key,
+                recipient_identity, recipient_role, recipient_user_pk, recipient_email,
+                subject, body_text, body_html, category, severity, status, next_attempt_at,
+                created_at, updated_at
+            )
+            VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)
+            ON CONFLICT (dedupe_key) DO UPDATE SET
+                subject = excluded.subject,
+                body_text = excluded.body_text,
+                body_html = excluded.body_html,
+                next_attempt_at = excluded.next_attempt_at,
+                status = 'queued',
+                attempt_count = 0,
+                last_error = '',
+                updated_at = excluded.updated_at
+        """
+    cursor = conn.execute(
+        insert_sql,
+        (
+            int(config["id"]),
+            teacher_id_int,
+            dedupe_key,
+            f"{recipient_role}:{normalized_pk}",
+            str(recipient_role or "teacher").strip().lower(),
+            normalized_pk,
+            target_email,
+            _normalize_text(subject, limit=200),
+            str(body_text or ""),
+            str(body_html or ""),
+            str(category or "academic_exam"),
+            str(severity or NOTIFICATION_SEVERITY_IMPORTANT),
+            next_attempt_at,
+            now,
+            now,
+        ),
+    )
+    job_id = None
+    if engine == "postgres":
+        inserted = cursor.fetchone()
+        if inserted:
+            job_id = int(inserted["id"])
+    if job_id is None:
+        row = conn.execute(
+            "SELECT id FROM email_outbox WHERE dedupe_key = ? LIMIT 1", (dedupe_key,)
+        ).fetchone()
+        job_id = int(row["id"]) if row else None
+    return {
+        "job_id": job_id,
+        "recipient_email": target_email,
+        "next_attempt_at": next_attempt_at,
+        "config_id": int(config["id"]),
+    }
+
+
+def _to_iso_minutes(value: datetime) -> str:
+    return value.replace(second=0, microsecond=0).isoformat(timespec="seconds")
+
+
 def _claim_due_jobs_with_connection(
     conn,
     *,

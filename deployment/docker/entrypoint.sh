@@ -35,6 +35,10 @@ case "$service" in
     shift || true
     exec python -u agent_task_worker.py "$@"
     ;;
+  scheduler)
+    shift || true
+    exec python -u scheduled_task_dispatcher.py "$@"
+    ;;
   *)
     exec "$@"
     ;;

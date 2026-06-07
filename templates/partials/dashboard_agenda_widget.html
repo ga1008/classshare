@@ -12,6 +12,7 @@
 <section
     class="agenda-reminder {{ agenda_widget_extra_class | default('') }}"
     data-agenda-reminder
+    {% if agenda_widget_can_sync %}data-reminder-endpoint="/api/manage/system/exam-reminders/email"{% endif %}
     aria-label="{{ agenda_widget_title | default('待办提醒') }}"
 >
     <header class="agenda-reminder__head">
@@ -56,6 +57,20 @@
             data-relative="{{ ev.relative_label }}"
             data-status="{{ ev.status }}"
             data-href="{{ ev.href }}"
+            {% if ev.detail %}
+            data-subject="{{ ev.detail.subject }}"
+            data-date="{{ ev.detail.date_label }}"
+            data-time="{{ ev.detail.time_label }}"
+            data-campus="{{ ev.detail.campus }}"
+            data-classroom="{{ ev.detail.classroom }}"
+            data-teaching-class="{{ ev.detail.teaching_class }}"
+            data-invigilators="{{ ev.detail.invigilators }}"
+            data-role="{{ ev.detail.role }}"
+            {% endif %}
+            {% if agenda_widget_can_sync and ev.can_email_reminder and ev.event_id %}
+            data-event-id="{{ ev.event_id }}"
+            data-can-reminder="1"
+            {% endif %}
         >
             <span class="agenda-reminder__kind">{{ _kind_labels.get(ev.kind, '日程') }}</span>
             <span class="agenda-reminder__body">

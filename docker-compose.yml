@@ -108,6 +108,27 @@ services:
       BLOG_NEWS_CRAWLER_POLL_SECONDS: "60"
       AI_ASSISTANT_URL: http://ai:8001
 
+  scheduler:
+    <<: *lanshare-service
+    command: ["scheduler"]
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      <<: *lanshare-timezone
+      SCHEDULER_WORKER_ID: scheduler-compose
+      SCHEDULER_POLL_SECONDS: "20"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - from classroom_app.services.scheduled_task_service import scheduler_health_snapshot; import sys; snapshot=scheduler_health_snapshot(); sys.exit(0 if snapshot.get('ok') else 1)
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
   deepseek-runtime:
     image: ghcr.io/hmbown/deepseek-tui:${DEEPSEEK_TUI_TAG:-latest}
     restart: unless-stopped

@@ -17,6 +17,7 @@ from .academic_service import (
     load_teacher_semester_rows,
     parse_date_input,
 )
+from .exam_reminder_service import build_event_reminder_detail
 from .student_auth_service import build_student_security_summary
 from .ui_copy_service import get_ui_copy_block, render_ui_copy_block
 from .prompt_utils import polite_address
@@ -929,6 +930,38 @@ def _build_teacher_calendar_agenda_events(
             kind = "exam"
         else:
             kind = "todo"
+
+        if kind in {"invigilation", "exam"}:
+            # Structured, de-cluttered detail (科目/日期/时间/教室/校区/监考分工)
+            # reused by the popover and the email reminder.
+            detail = build_event_reminder_detail(item)
+            title = detail["subject"]
+            # Concise list line: place + time (subject already in the title).
+            place = " ".join(part for part in (detail["campus"], detail["classroom"]) if part)
+            subtitle = " · ".join(part for part in (place, detail["time_label"]) if part)
+            event = _dashboard_agenda_event(
+                kind=kind,
+                when=when,
+                title=title,
+                subtitle=subtitle,
+                href=item.get("link_url") or "/dashboard#dashboard-semester",
+                today=today,
+            )
+            event["event_id"] = _dashboard_int(item.get("id"))
+            event["can_email_reminder"] = True
+            event["detail"] = {
+                "subject": detail["subject"],
+                "date_label": detail["date_label"],
+                "time_label": detail["time_label"],
+                "campus": detail["campus"],
+                "classroom": detail["classroom"],
+                "teaching_class": detail["teaching_class"],
+                "invigilators": detail["invigilators"],
+                "role": detail["role"],
+            }
+            events.append(event)
+            continue
+
         metadata = _dashboard_safe_json(item.get("metadata_json"))
         subtitle = " · ".join(
             part

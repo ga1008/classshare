@@ -82,6 +82,14 @@ BACKGROUND_TASK_DEFINITIONS: tuple[BackgroundTaskDefinition, ...] = (
         owner="agent",
     ),
     BackgroundTaskDefinition(
+        task_type="scheduled_task",
+        display_name="定时任务调度",
+        source="scheduled_tasks + scheduled_task_worker_heartbeats",
+        recoverable=True,
+        recovery_action="due tasks persist with run_at; stale running tasks are reclaimed after lock timeout and retried with backoff",
+        owner="platform",
+    ),
+    BackgroundTaskDefinition(
         task_type="behavior_write_pipeline",
         display_name="行为写入管线",
         source="behavior write pipeline runtime queue",

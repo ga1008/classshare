@@ -154,6 +154,11 @@ from ...services.academic_auto_sync_service import (
     sync_teacher_academic_data_after_credential_verified,
     sync_teacher_dashboard_reminders,
 )
+from ...services.exam_reminder_service import (
+    cancel_exam_email_reminder,
+    get_exam_email_reminder_state,
+    schedule_exam_email_reminder,
+)
 from ...services.academic_classroom_sync_service import (
     count_teacher_teaching_places,
     load_free_classroom_options_from_academic_system,

@@ -585,6 +585,7 @@ def _upsert_calendar_event(
         "student_count": item.exam_student_count,
         "exam_time_text": item.exam_time_text,
         "role": item.invigilation_role,
+        "invigilators": item.invigilation_teachers,
         "campus": item.campus,
         "building": item.building,
         "room": item.location,
@@ -997,6 +998,29 @@ def _persist_invigilations(
     }
 
 
+async def _maybe_ai_tidy_unparsed_times(items: list[AcademicInvigilationItem]) -> None:
+    """Best-effort: ask the fast model to parse times the regex parser missed."""
+    from .academic_ai_tidy_service import (
+        AI_TIDY_MAX_ITEMS,
+        ai_tidy_enabled,
+        tidy_exam_time_with_fast_ai,
+    )
+
+    if not ai_tidy_enabled():
+        return
+    pending = [item for item in items if not item.starts_at and item.exam_time_text][:AI_TIDY_MAX_ITEMS]
+    for item in pending:
+        try:
+            tidied = await tidy_exam_time_with_fast_ai(item.exam_time_text)
+        except Exception:  # noqa: BLE001 - never let the AI helper break a sync
+            tidied = None
+        if not tidied:
+            continue
+        item.exam_date = item.exam_date or tidied.get("exam_date", "")
+        item.starts_at = tidied.get("starts_at", "") or item.starts_at
+        item.ends_at = tidied.get("ends_at", "") or item.ends_at
+
+
 async def sync_current_teacher_invigilations_from_academic_system(teacher_id: int) -> dict[str, Any]:
     with get_db_connection() as conn:
         access_payload = load_teacher_academic_access_method(conn, teacher_id, school_code="gxufl")
@@ -1033,6 +1057,8 @@ async def sync_current_teacher_invigilations_from_academic_system(teacher_id: in
             "status": "academic_login_failed",
             "message": f"教务系统登录或监考信息访问失败：{str(exc)[:180]}",
         }
+
+    await _maybe_ai_tidy_unparsed_times(items)
 
     synced_at = _now_iso()
     with get_db_connection() as conn:

@@ -160,6 +160,7 @@ class BackgroundTaskLedgerTests(unittest.TestCase):
                 "email_outbox",
                 "blog_news_crawler",
                 "agent_task",
+                "scheduled_task",
                 "behavior_write_pipeline",
             })
             self.assertEqual(items["material_ai_import"]["queue_depth"], 1)
@@ -182,7 +183,7 @@ class BackgroundTaskLedgerTests(unittest.TestCase):
                 behavior_stats_provider=lambda: {"alive": False, "queue_depth": 0, "queue_capacity": 512},
             )
 
-            self.assertEqual(len(snapshot["items"]), 8)
+            self.assertEqual(len(snapshot["items"]), 9)
             self.assertTrue(
                 any(item["status"] == "missing_source" for item in snapshot["items"]),
                 snapshot,

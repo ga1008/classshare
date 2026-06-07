@@ -20,6 +20,7 @@ MATERIAL_AI_IMPORT_STALE_MINUTES_FALLBACK = 45
 SESSION_MATERIAL_GENERATION_STALE_MINUTES = 90
 PRIVATE_MESSAGE_AI_REPLY_STALE_MINUTES = 15
 BLOG_NEWS_CRAWLER_HEARTBEAT_STALE_SECONDS = 300
+SCHEDULER_HEARTBEAT_TIMEOUT_SECONDS = 180
 MAX_ERROR_CHARS = 260
 MAX_WORKER_IDS = 6
 
@@ -443,6 +444,49 @@ def _build_email_outbox_item(conn: sqlite3.Connection, definition: BackgroundTas
     return item
 
 
+def _build_scheduled_task_item(conn: sqlite3.Connection, definition: BackgroundTaskDefinition) -> dict[str, Any]:
+    if not _table_exists(conn, "scheduled_tasks"):
+        return _missing_source_item(definition, "scheduled_tasks")
+    item = _base_item(definition)
+    item["queue_depth"] = _count_status(conn, "scheduled_tasks", "status", ("pending",))
+    item["running_count"] = _count_status(conn, "scheduled_tasks", "status", ("running",))
+    item["failed_count"] = _count_status(conn, "scheduled_tasks", "status", ("failed",))
+    item["oldest_queued_at"] = _oldest_time(conn, "scheduled_tasks", "status", ("pending",), "run_at")
+    item["last_error_at"], item["last_error"] = _latest_error(
+        conn,
+        "scheduled_tasks",
+        error_column="last_error",
+        time_column="updated_at",
+        status_column="status",
+        statuses=("failed", "pending", "running"),
+    )
+    if _table_exists(conn, "scheduled_task_worker_heartbeats"):
+        heartbeat_cutoff = _cutoff(seconds=SCHEDULER_HEARTBEAT_TIMEOUT_SECONDS)
+        rows = conn.execute(
+            """
+            SELECT worker_id, updated_at
+            FROM scheduled_task_worker_heartbeats
+            WHERE updated_at >= ?
+            ORDER BY updated_at DESC
+            LIMIT ?
+            """,
+            (heartbeat_cutoff, MAX_WORKER_IDS),
+        ).fetchall()
+        workers = [_safe_worker_id(_row_dict(row).get("worker_id")) for row in rows]
+        item["worker_ids"] = [worker for worker in workers if worker]
+        item["active_worker_count"] = len(item["worker_ids"])
+        latest = conn.execute(
+            "SELECT updated_at, last_error FROM scheduled_task_worker_heartbeats ORDER BY updated_at DESC LIMIT 1"
+        ).fetchone()
+        latest_data = _row_dict(latest)
+        item["last_heartbeat_at"] = str(latest_data.get("updated_at") or "")
+        heartbeat_error = _sanitize_text(latest_data.get("last_error"))
+        if heartbeat_error and not item["last_error"]:
+            item["last_error"] = heartbeat_error
+            item["last_error_at"] = item["last_heartbeat_at"]
+    return item
+
+
 def _build_blog_news_crawler_item(conn: sqlite3.Connection, definition: BackgroundTaskDefinition) -> dict[str, Any]:
     if not _table_exists(conn, "blog_news_crawler_runs"):
         return _missing_source_item(definition, "blog_news_crawler_runs")
@@ -570,6 +614,7 @@ _DB_BUILDERS: dict[str, Callable[[sqlite3.Connection, BackgroundTaskDefinition],
     "email_outbox": _build_email_outbox_item,
     "blog_news_crawler": _build_blog_news_crawler_item,
     "agent_task": _build_agent_task_item,
+    "scheduled_task": _build_scheduled_task_item,
 }
 
 

@@ -10,6 +10,7 @@ from .schema_classroom_activity import ensure_classroom_activity_schema
 from .schema_foundation import ensure_foundation_schema
 from .schema_learning_blog import ensure_learning_blog_signature_schema
 from .schema_materials_integrations import ensure_materials_integrations_schema
+from .schema_scheduler import ensure_scheduler_schema
 from .seeds import init_default_exam_paper
 
 
@@ -22,6 +23,10 @@ def init_database():
         conn = get_db_connection()
         try:
             runtime_constraint_report = ensure_postgres_runtime_constraints(conn)
+            # The unified scheduler tables are managed at runtime (engine-aware,
+            # idempotent) rather than via the central migration, so ensure them
+            # on the PostgreSQL path too before validation.
+            ensure_scheduler_schema(conn)
             conn.commit()
             report = validate_postgres_schema(conn)
             report["runtime_constraints"] = runtime_constraint_report
@@ -64,6 +69,7 @@ def init_database():
             ensure_classroom_activity_schema(conn)
             ensure_materials_integrations_schema(conn)
             ensure_learning_blog_signature_schema(conn)
+            ensure_scheduler_schema(conn)
             conn.commit()
         except Exception:
             conn.rollback()

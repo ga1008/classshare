@@ -43,6 +43,48 @@ async def api_probe_integration_request(request: Request, user: dict = Depends(g
         raise HTTPException(status_code=502, detail=f"对接系统请求失败：{str(exc)[:180]}") from exc
 
 
+@router.get("/system/exam-reminders/email", response_class=JSONResponse)
+async def api_get_exam_email_reminder(event_id: int, user: dict = Depends(get_current_teacher)):
+    """Return whether the teacher already has an email reminder for an event."""
+    state = get_exam_email_reminder_state(teacher_id=int(user["id"]), calendar_event_id=int(event_id))
+    return {"status": "success", **state}
+
+
+@router.post("/system/exam-reminders/email", response_class=JSONResponse)
+async def api_set_exam_email_reminder(request: Request, user: dict = Depends(get_current_teacher)):
+    """Schedule a one-shot email reminder fired before an invigilation/exam starts."""
+    payload = await _parse_json_request(request)
+    try:
+        event_id = int(payload.get("event_id") or 0)
+        lead_value = int(payload.get("lead_value") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="请求参数无效。")
+    lead_unit = str(payload.get("lead_unit") or "").strip().lower()
+    if not event_id:
+        raise HTTPException(status_code=400, detail="缺少提醒对应的安排标识。")
+    try:
+        result = schedule_exam_email_reminder(
+            teacher_id=int(user["id"]),
+            calendar_event_id=event_id,
+            lead_value=lead_value,
+            lead_unit=lead_unit,
+        )
+    except ValueError as exc:
+        # No email configured / no recipient — actionable client message.
+        return {"status": "email_not_configured", "message": str(exc)}
+    status_code = 200 if result.get("status") == "success" else 400
+    if result.get("status") in {"not_found"}:
+        status_code = 404
+    return JSONResponse(result, status_code=status_code)
+
+
+@router.delete("/system/exam-reminders/email", response_class=JSONResponse)
+async def api_cancel_exam_email_reminder(event_id: int, user: dict = Depends(get_current_teacher)):
+    """Cancel a previously scheduled email reminder for an event."""
+    result = cancel_exam_email_reminder(teacher_id=int(user["id"]), calendar_event_id=int(event_id))
+    return {"status": "success", **result}
+
+
 @router.post("/system/academic-reminders/sync-current", response_class=JSONResponse)
 async def api_sync_academic_dashboard_reminders(user: dict = Depends(get_current_teacher)):
     """Resync the academic feeds behind the teacher dashboard reminder widget."""
