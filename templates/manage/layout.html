@@ -34,91 +34,247 @@
         }
 
         .manage-sidebar {
-            width: 260px;
-            background-color: rgba(255, 255, 255, 0.93);
+            --rail-pad: 14px;
+            width: 264px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
             border-right: 1px solid var(--border-color);
-            box-shadow: var(--shadow-md);
+            box-shadow: 0 12px 40px -28px rgba(15, 23, 42, 0.5);
             display: flex;
             flex-direction: column;
             position: sticky;
             top: 0;
             height: 100vh;
             z-index: 20;
+            transition: width 0.22s ease;
         }
 
         .manage-brand {
-            padding: var(--spacing-5) var(--spacing-6);
+            padding: 18px var(--rail-pad) 14px;
             border-bottom: 1px solid var(--border-color);
             display: flex;
             align-items: center;
-            gap: var(--spacing-3);
-            font-size: 1.25rem;
-            font-weight: 700;
+            gap: 10px;
             color: var(--primary-color);
             text-decoration: none;
         }
 
-        .manage-nav {
-            padding: var(--spacing-4) 0;
-            flex: 1;
-            overflow-y: auto;
+        .manage-brand__mark {
+            flex: 0 0 auto;
+            width: 38px;
+            height: 38px;
+            border-radius: 11px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            background: linear-gradient(135deg, #4f46e5, #6366f1);
+            box-shadow: 0 8px 20px -10px rgba(79, 70, 229, 0.7);
         }
 
-        .manage-nav-section-title {
-            padding: var(--spacing-3) var(--spacing-6);
-            font-size: 0.75rem;
+        .manage-brand__copy {
+            display: grid;
+            gap: 1px;
+            min-width: 0;
+        }
+
+        .manage-brand__copy strong {
+            font-size: 1.02rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            line-height: 1.15;
+        }
+
+        .manage-brand__copy small {
+            font-size: 0.72rem;
             font-weight: 700;
             color: var(--text-muted);
+            letter-spacing: 0.02em;
+        }
+
+        .manage-sidebar-collapse {
+            margin-left: auto;
+            flex: 0 0 auto;
+            width: 28px;
+            height: 28px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            background: rgba(255, 255, 255, 0.9);
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: background var(--transition-fast), color var(--transition-fast), transform 0.22s ease;
+        }
+
+        .manage-sidebar-collapse:hover {
+            background: rgba(79, 70, 229, 0.1);
+            color: var(--primary-color);
+        }
+
+        .manage-nav-search {
+            position: relative;
+            padding: 12px var(--rail-pad) 6px;
+        }
+
+        .manage-nav-search svg {
+            position: absolute;
+            left: calc(var(--rail-pad) + 11px);
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            pointer-events: none;
+        }
+
+        .manage-nav-search input {
+            width: 100%;
+            padding: 8px 12px 8px 34px;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.85);
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+        }
+
+        .manage-nav-search input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.14);
+        }
+
+        .manage-nav {
+            padding: 6px 8px 14px;
+            flex: 1;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+        }
+
+        .manage-nav::-webkit-scrollbar { width: 7px; }
+        .manage-nav::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.4); border-radius: 999px; }
+
+        .manage-nav-group { margin-top: 4px; }
+        .manage-nav-group.is-empty { display: none; }
+
+        .manage-nav-section-title {
+            padding: 12px 12px 5px;
+            font-size: 0.68rem;
+            font-weight: 800;
+            color: var(--text-muted);
             text-transform: uppercase;
-            letter-spacing: 0.08em;
-            margin-top: var(--spacing-2);
+            letter-spacing: 0.09em;
         }
 
         .manage-nav-item {
+            position: relative;
             display: flex;
             align-items: center;
-            gap: var(--spacing-3);
-            padding: var(--spacing-3) var(--spacing-6);
+            gap: 11px;
+            padding: 9px 11px;
             color: var(--text-secondary);
             text-decoration: none;
-            font-weight: 500;
-            transition: all var(--transition-fast);
-            border-left: 3px solid transparent;
-            border-radius: 0 var(--radius-md) var(--radius-md) 0;
-            margin-right: var(--spacing-sm);
+            font-weight: 600;
+            font-size: 0.9rem;
+            white-space: nowrap;
+            border-radius: 10px;
+            transition: background var(--transition-fast), color var(--transition-fast);
         }
+
+        .manage-nav-item__icon {
+            flex: 0 0 auto;
+            width: 30px;
+            height: 30px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 9px;
+            background: rgba(148, 163, 184, 0.14);
+            color: var(--text-muted);
+            transition: background var(--transition-fast), color var(--transition-fast);
+        }
+
+        .manage-nav-item__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
         .manage-nav-item:hover {
             background-color: rgba(79, 70, 229, 0.08);
             color: var(--text-primary);
         }
 
-        .manage-nav-item.active {
-            background-color: rgba(79, 70, 229, 0.12);
+        .manage-nav-item:hover .manage-nav-item__icon {
+            background: rgba(79, 70, 229, 0.14);
             color: var(--primary-color);
-            box-shadow: inset 0 0 0 1px rgba(79, 70, 229, 0.18);
-            border-left-color: var(--primary-color);
         }
 
+        .manage-nav-item.active {
+            background: linear-gradient(135deg, rgba(79, 70, 229, 0.14), rgba(99, 102, 241, 0.1));
+            color: var(--primary-color);
+            box-shadow: inset 0 0 0 1px rgba(79, 70, 229, 0.16);
+        }
+
+        .manage-nav-item.active::before {
+            content: "";
+            position: absolute;
+            left: -8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 3px;
+            height: 20px;
+            border-radius: 0 3px 3px 0;
+            background: var(--primary-color);
+        }
+
+        .manage-nav-item.active .manage-nav-item__icon {
+            background: var(--primary-color);
+            color: #fff;
+            box-shadow: 0 8px 18px -10px rgba(79, 70, 229, 0.8);
+        }
+
+        /* Admin group: amber accent so privileged tools read as distinct. */
+        .manage-nav-group--admin .manage-nav-section-title { color: #b45309; }
+        .manage-nav-group--admin .manage-nav-item.active {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(217, 119, 6, 0.1));
+            color: #b45309;
+            box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.22);
+        }
+        .manage-nav-group--admin .manage-nav-item.active::before { background: #d97706; }
+        .manage-nav-group--admin .manage-nav-item.active .manage-nav-item__icon {
+            background: #d97706;
+            box-shadow: 0 8px 18px -10px rgba(217, 119, 6, 0.8);
+        }
+        .manage-nav-group--admin .manage-nav-item:hover { background: rgba(245, 158, 11, 0.1); color: #92400e; }
+        .manage-nav-group--admin .manage-nav-item:hover .manage-nav-item__icon { background: rgba(245, 158, 11, 0.18); color: #b45309; }
+
+        .manage-nav-empty {
+            display: none;
+            padding: 18px 14px;
+            font-size: 0.84rem;
+            color: var(--text-muted);
+            text-align: center;
+        }
+        .manage-nav-empty.is-visible { display: block; }
+
         .manage-user {
-            padding: var(--spacing-4) var(--spacing-6);
+            padding: 12px var(--rail-pad);
             border-top: 1px solid var(--border-color);
             display: flex;
             align-items: center;
-            gap: var(--spacing-3);
+            gap: 11px;
         }
 
         .manage-user-avatar {
-            width: 40px;
-            height: 40px;
+            flex: 0 0 auto;
+            width: 38px;
+            height: 38px;
             border-radius: var(--radius-full);
-            background-color: var(--primary-color);
+            background: linear-gradient(135deg, #4f46e5, #6366f1);
             color: white;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: 700;
-            font-size: 1.2rem;
+            font-size: 1.1rem;
         }
 
         .manage-user-info {
@@ -127,7 +283,7 @@
         }
 
         .manage-user-name {
-            font-weight: 600;
+            font-weight: 700;
             color: var(--text-primary);
             white-space: nowrap;
             overflow: hidden;
@@ -135,9 +291,29 @@
         }
 
         .manage-user-role {
-            font-size: 0.75rem;
+            font-size: 0.74rem;
             color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
+
+        /* Collapsed icon-rail (desktop) */
+        .manage-sidebar.is-collapsed { width: 76px; }
+        .manage-sidebar.is-collapsed .manage-brand { justify-content: center; padding-left: 0; padding-right: 0; }
+        .manage-sidebar.is-collapsed .manage-brand__copy,
+        .manage-sidebar.is-collapsed .manage-nav-search,
+        .manage-sidebar.is-collapsed .manage-nav-section-title,
+        .manage-sidebar.is-collapsed .manage-nav-item__label,
+        .manage-sidebar.is-collapsed .manage-user-info,
+        .manage-sidebar.is-collapsed .manage-user .btn,
+        .manage-sidebar.is-collapsed .manage-nav-empty { display: none; }
+        .manage-sidebar.is-collapsed .manage-sidebar-collapse { transform: rotate(180deg); margin-left: 0; }
+        .manage-sidebar.is-collapsed .manage-brand__mark { display: none; }
+        .manage-sidebar.is-collapsed .manage-nav { padding-left: 0; padding-right: 0; }
+        .manage-sidebar.is-collapsed .manage-nav-item { justify-content: center; padding: 9px 0; gap: 0; }
+        .manage-sidebar.is-collapsed .manage-nav-item.active::before { display: none; }
+        .manage-sidebar.is-collapsed .manage-user { justify-content: center; }
 
         .manage-main {
             flex: 1;
@@ -409,106 +585,131 @@
     {% if not embedded_mode %}
     <div class="manage-layout">
         <aside class="manage-sidebar" id="sidebar">
-            <a href="/dashboard" class="manage-brand">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>
-                课堂平台
-            </a>
+            <div class="manage-brand">
+                <a href="/dashboard" class="manage-brand__mark" aria-label="返回仪表盘" title="返回仪表盘">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path><path d="M9 7h6"></path><path d="M9 11h6"></path></svg>
+                </a>
+                <a href="/dashboard" class="manage-brand__copy">
+                    <strong>课堂平台</strong>
+                    <small>教师管理中心</small>
+                </a>
+                <button type="button" class="manage-sidebar-collapse" id="sidebarCollapseBtn" aria-label="折叠或展开菜单" title="折叠 / 展开菜单">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5"></path><path d="m18 17-5-5 5-5"></path></svg>
+                </button>
+            </div>
 
-            <nav class="manage-nav">
-                <a href="/dashboard" class="manage-nav-item">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
-                    返回仪表盘
-                </a>
+            <div class="manage-nav-search">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                <input type="search" id="manageNavSearch" placeholder="搜索菜单…" autocomplete="off" spellcheck="false" aria-label="搜索菜单项">
+            </div>
 
-                <div class="manage-nav-section-title">流程工作台</div>
-                <a href="/manage" class="manage-nav-item {{ 'active' if active_page == 'workflow' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h4"></path><path d="M10 12h4"></path><path d="M16 12h4"></path><circle cx="4" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="20" cy="12" r="2"></circle></svg>
-                    流程工作台
-                </a>
+            <nav class="manage-nav" id="manageNav">
+                <div class="manage-nav-group">
+                    <a href="/dashboard" class="manage-nav-item" data-nav-text="返回仪表盘 首页 dashboard home" title="返回仪表盘">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg></span>
+                        <span class="manage-nav-item__label">返回仪表盘</span>
+                    </a>
+                    <a href="/manage" class="manage-nav-item {{ 'active' if active_page == 'workflow' }}" data-nav-text="流程工作台 开课向导 workflow" title="流程工作台">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h4"></path><path d="M10 12h4"></path><path d="M16 12h4"></path><circle cx="4" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="20" cy="12" r="2"></circle></svg></span>
+                        <span class="manage-nav-item__label">流程工作台</span>
+                    </a>
+                </div>
 
-                <div class="manage-nav-section-title">流程阶段</div>
-                <a href="/manage/semesters" class="manage-nav-item {{ 'active' if active_page == 'semesters' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="M8 14h.01"></path><path d="M12 14h.01"></path><path d="M16 14h.01"></path><path d="M8 18h.01"></path><path d="M12 18h.01"></path></svg>
-                    确认学期
-                </a>
-                <a href="/manage/offerings" class="manage-nav-item {{ 'active' if active_page == 'offerings' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                    开设课堂
-                </a>
-                <a href="/manage/ai" class="manage-nav-item {{ 'active' if active_page == 'ai' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path><line x1="8" y1="16" x2="8" y2="16"></line><line x1="16" y1="16" x2="16" y2="16"></line></svg>
-                    配置 AI 助教
-                </a>
+                <div class="manage-nav-group">
+                    <div class="manage-nav-section-title">教学准备</div>
+                    <a href="/manage/semesters" class="manage-nav-item {{ 'active' if active_page == 'semesters' }}" data-nav-text="确认学期 学期 semester" title="确认学期">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="M8 14h.01"></path><path d="M12 14h.01"></path><path d="M16 14h.01"></path><path d="M8 18h.01"></path><path d="M12 18h.01"></path></svg></span>
+                        <span class="manage-nav-item__label">确认学期</span>
+                    </a>
+                    <a href="/manage/offerings" class="manage-nav-item {{ 'active' if active_page == 'offerings' }}" data-nav-text="开设课堂 课堂 offering" title="开设课堂">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></span>
+                        <span class="manage-nav-item__label">开设课堂</span>
+                    </a>
+                    <a href="/manage/ai" class="manage-nav-item {{ 'active' if active_page == 'ai' }}" data-nav-text="配置 AI 助教 人工智能 ai" title="配置 AI 助教">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path><line x1="8" y1="16" x2="8" y2="16"></line><line x1="16" y1="16" x2="16" y2="16"></line></svg></span>
+                        <span class="manage-nav-item__label">配置 AI 助教</span>
+                    </a>
+                </div>
 
-                <div class="manage-nav-section-title">基础资源</div>
-                <a href="/manage/classes" class="manage-nav-item {{ 'active' if active_page == 'classes' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                    班级
-                </a>
-                <a href="/manage/courses" class="manage-nav-item {{ 'active' if active_page == 'courses' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
-                    课程
-                </a>
-                <a href="/manage/classrooms" class="manage-nav-item {{ 'active' if active_page == 'classrooms' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"></rect><path d="M9 22v-4h6v4"></path><path d="M8 6h.01"></path><path d="M12 6h.01"></path><path d="M16 6h.01"></path><path d="M8 10h.01"></path><path d="M12 10h.01"></path><path d="M16 10h.01"></path><path d="M8 14h.01"></path><path d="M12 14h.01"></path><path d="M16 14h.01"></path></svg>
-                    教室
-                </a>
-                <a href="/manage/textbooks" class="manage-nav-item {{ 'active' if active_page == 'textbooks' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><path d="M8 7h8"></path><path d="M8 11h8"></path><path d="M8 15h5"></path></svg>
-                    教材
-                </a>
-                <a href="/manage/exams" class="manage-nav-item {{ 'active' if active_page == 'exams' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                    试卷
-                </a>
-                <a href="/manage/signatures" class="manage-nav-item {{ 'active' if active_page == 'signatures' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20c4-1 6-4 7-8"></path><path d="M8 13c2 2 4 3 7 2"></path><path d="M14 15c1 2 3 3 6 2"></path><path d="M16 4c2-1 4 1 3 3l-7 7-4 1 1-4 7-7z"></path></svg>
-                    签名
-                </a>
-                <a href="/manage/materials" class="manage-nav-item {{ 'active' if active_page == 'materials' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><path d="M9 7h6"></path><path d="M9 11h6"></path><path d="M9 15h4"></path></svg>
-                    材料
-                </a>
+                <div class="manage-nav-group">
+                    <div class="manage-nav-section-title">基础资源</div>
+                    <a href="/manage/classes" class="manage-nav-item {{ 'active' if active_page == 'classes' }}" data-nav-text="班级 class" title="班级">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span>
+                        <span class="manage-nav-item__label">班级</span>
+                    </a>
+                    <a href="/manage/courses" class="manage-nav-item {{ 'active' if active_page == 'courses' }}" data-nav-text="课程 course" title="课程">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg></span>
+                        <span class="manage-nav-item__label">课程</span>
+                    </a>
+                    <a href="/manage/classrooms" class="manage-nav-item {{ 'active' if active_page == 'classrooms' }}" data-nav-text="教室 教学场地 classroom" title="教室">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"></rect><path d="M9 22v-4h6v4"></path><path d="M8 6h.01"></path><path d="M12 6h.01"></path><path d="M16 6h.01"></path><path d="M8 10h.01"></path><path d="M12 10h.01"></path><path d="M16 10h.01"></path><path d="M8 14h.01"></path><path d="M12 14h.01"></path><path d="M16 14h.01"></path></svg></span>
+                        <span class="manage-nav-item__label">教室</span>
+                    </a>
+                    <a href="/manage/textbooks" class="manage-nav-item {{ 'active' if active_page == 'textbooks' }}" data-nav-text="教材 textbook" title="教材">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><path d="M8 7h8"></path><path d="M8 11h8"></path><path d="M8 15h5"></path></svg></span>
+                        <span class="manage-nav-item__label">教材</span>
+                    </a>
+                    <a href="/manage/exams" class="manage-nav-item {{ 'active' if active_page == 'exams' }}" data-nav-text="试卷 题库 考试 exam" title="试卷">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg></span>
+                        <span class="manage-nav-item__label">试卷</span>
+                    </a>
+                    <a href="/manage/signatures" class="manage-nav-item {{ 'active' if active_page == 'signatures' }}" data-nav-text="签名 signature" title="签名">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20c4-1 6-4 7-8"></path><path d="M8 13c2 2 4 3 7 2"></path><path d="M14 15c1 2 3 3 6 2"></path><path d="M16 4c2-1 4 1 3 3l-7 7-4 1 1-4 7-7z"></path></svg></span>
+                        <span class="manage-nav-item__label">签名</span>
+                    </a>
+                    <a href="/manage/materials" class="manage-nav-item {{ 'active' if active_page == 'materials' }}" data-nav-text="材料 资料 material" title="材料">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><path d="M9 7h6"></path><path d="M9 11h6"></path><path d="M9 15h4"></path></svg></span>
+                        <span class="manage-nav-item__label">材料</span>
+                    </a>
+                </div>
 
-                <div class="manage-nav-section-title">系统</div>
-                <a href="/manage/system/academic-integrations" class="manage-nav-item {{ 'active' if active_page == 'system_academic_integrations' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"></rect><path d="M6 10h4"></path><path d="M6 14h8"></path><path d="M17 10h1"></path><path d="M17 14h1"></path></svg>
-                    教务对接
-                </a>
-                <a href="/manage/system/smart-classroom-integrations" class="manage-nav-item {{ 'active' if active_page == 'system_smart_classroom_integrations' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"></path><path d="M8 17V9"></path><path d="M12 19V7"></path><path d="M16 15v-4"></path><path d="M20 17V9"></path></svg>
-                    智慧课堂
-                </a>
+                <div class="manage-nav-group">
+                    <div class="manage-nav-section-title">对接与申请</div>
+                    <a href="/manage/system/academic-integrations" class="manage-nav-item {{ 'active' if active_page == 'system_academic_integrations' }}" data-nav-text="教务对接 教务系统 academic" title="教务对接">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"></rect><path d="M6 10h4"></path><path d="M6 14h8"></path><path d="M17 10h1"></path><path d="M17 14h1"></path></svg></span>
+                        <span class="manage-nav-item__label">教务对接</span>
+                    </a>
+                    <a href="/manage/system/smart-classroom-integrations" class="manage-nav-item {{ 'active' if active_page == 'system_smart_classroom_integrations' }}" data-nav-text="智慧课堂 点名 smart classroom" title="智慧课堂">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"></path><path d="M8 17V9"></path><path d="M12 19V7"></path><path d="M16 15v-4"></path><path d="M20 17V9"></path></svg></span>
+                        <span class="manage-nav-item__label">智慧课堂</span>
+                    </a>
+                    <a href="/manage/system/password-resets" class="manage-nav-item {{ 'active' if active_page == 'system_password_resets' }}" data-nav-text="找回申请 密码 password" title="找回申请">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></span>
+                        <span class="manage-nav-item__label">找回申请</span>
+                    </a>
+                </div>
+
                 {% if current_teacher_is_super_admin %}
-                <a href="/manage/system/users" class="manage-nav-item {{ 'active' if active_page == 'system_users' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="19" y1="8" x2="19" y2="14"></line><line x1="22" y1="11" x2="16" y2="11"></line></svg>
-                    用户管理
-                </a>
-                <a href="/manage/system/organizations" class="manage-nav-item {{ 'active' if active_page == 'system_organizations' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"></path><path d="M5 21V7l8-4 6 4v14"></path><path d="M9 21v-6h6v6"></path><path d="M9 9h.01"></path><path d="M13 9h.01"></path><path d="M17 9h.01"></path><path d="M9 12h.01"></path><path d="M13 12h.01"></path><path d="M17 12h.01"></path></svg>
-                    学校组织
-                </a>
-                <a href="/manage/system/feedback" class="manage-nav-item {{ 'active' if active_page == 'system_feedback' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-                    问题反馈
-                </a>
-                <a href="/manage/system/blog-crawler" class="manage-nav-item {{ 'active' if active_page == 'system_blog_crawler' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a8 8 0 0 1 16 0"></path><path d="M4 11v5a3 3 0 0 0 3 3h1"></path><path d="M20 11v5a3 3 0 0 1-3 3h-1"></path><path d="M8 19h8"></path><path d="M9 15h.01"></path><path d="M15 15h.01"></path></svg>
-                    AI博客管家
-                </a>
-                <a href="/manage/system/agent-keys" class="manage-nav-item {{ 'active' if active_page == 'system_agent_keys' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2"></path><path d="M19 4l-6.5 6.5"></path><circle cx="9" cy="15" r="4"></circle><path d="M7 17l-4 4"></path><path d="M11 13l3 3"></path></svg>
-                    Agent Key
-                </a>
-                <a href="/manage/system/diagnostics" class="manage-nav-item {{ 'active' if active_page == 'system_diagnostics' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"></path><path d="M18 20V4"></path><path d="M6 20v-4"></path></svg>
-                    压测诊断
-                </a>
+                <div class="manage-nav-group manage-nav-group--admin">
+                    <div class="manage-nav-section-title">管理员</div>
+                    <a href="/manage/system/users" class="manage-nav-item {{ 'active' if active_page == 'system_users' }}" data-nav-text="用户管理 账号 user" title="用户管理">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="19" y1="8" x2="19" y2="14"></line><line x1="22" y1="11" x2="16" y2="11"></line></svg></span>
+                        <span class="manage-nav-item__label">用户管理</span>
+                    </a>
+                    <a href="/manage/system/organizations" class="manage-nav-item {{ 'active' if active_page == 'system_organizations' }}" data-nav-text="学校组织 organization" title="学校组织">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"></path><path d="M5 21V7l8-4 6 4v14"></path><path d="M9 21v-6h6v6"></path><path d="M9 9h.01"></path><path d="M13 9h.01"></path><path d="M17 9h.01"></path><path d="M9 12h.01"></path><path d="M13 12h.01"></path><path d="M17 12h.01"></path></svg></span>
+                        <span class="manage-nav-item__label">学校组织</span>
+                    </a>
+                    <a href="/manage/system/feedback" class="manage-nav-item {{ 'active' if active_page == 'system_feedback' }}" data-nav-text="问题反馈 feedback" title="问题反馈">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg></span>
+                        <span class="manage-nav-item__label">问题反馈</span>
+                    </a>
+                    <a href="/manage/system/blog-crawler" class="manage-nav-item {{ 'active' if active_page == 'system_blog_crawler' }}" data-nav-text="AI博客管家 爬虫 blog" title="AI博客管家">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a8 8 0 0 1 16 0"></path><path d="M4 11v5a3 3 0 0 0 3 3h1"></path><path d="M20 11v5a3 3 0 0 1-3 3h-1"></path><path d="M8 19h8"></path><path d="M9 15h.01"></path><path d="M15 15h.01"></path></svg></span>
+                        <span class="manage-nav-item__label">AI博客管家</span>
+                    </a>
+                    <a href="/manage/system/agent-keys" class="manage-nav-item {{ 'active' if active_page == 'system_agent_keys' }}" data-nav-text="Agent Key 密钥 token" title="Agent Key">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2"></path><path d="M19 4l-6.5 6.5"></path><circle cx="9" cy="15" r="4"></circle><path d="M7 17l-4 4"></path><path d="M11 13l3 3"></path></svg></span>
+                        <span class="manage-nav-item__label">Agent Key</span>
+                    </a>
+                    <a href="/manage/system/diagnostics" class="manage-nav-item {{ 'active' if active_page == 'system_diagnostics' }}" data-nav-text="压测诊断 性能 diagnostics" title="压测诊断">
+                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"></path><path d="M18 20V4"></path><path d="M6 20v-4"></path></svg></span>
+                        <span class="manage-nav-item__label">压测诊断</span>
+                    </a>
+                </div>
                 {% endif %}
-                <a href="/manage/system/password-resets" class="manage-nav-item {{ 'active' if active_page == 'system_password_resets' }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                    找回申请
-                </a>
+
+                <div class="manage-nav-empty" id="manageNavEmpty">没有匹配的菜单项</div>
             </nav>
 
             <div class="manage-user">
@@ -607,6 +808,60 @@
         };
 
         centerActiveManageNavItem();
+
+        const initManageSidebar = () => {
+            const sidebar = document.getElementById('sidebar');
+            const collapseBtn = document.getElementById('sidebarCollapseBtn');
+            const search = document.getElementById('manageNavSearch');
+            const nav = document.getElementById('manageNav');
+            const empty = document.getElementById('manageNavEmpty');
+            const STORAGE_KEY = 'lanshare:manage-sidebar-collapsed';
+
+            // Restore the collapsed icon-rail (desktop only).
+            if (sidebar && window.innerWidth > 768) {
+                try {
+                    if (localStorage.getItem(STORAGE_KEY) === '1') {
+                        sidebar.classList.add('is-collapsed');
+                    }
+                } catch (_) { /* private mode */ }
+            }
+
+            collapseBtn?.addEventListener('click', () => {
+                if (!sidebar) return;
+                const collapsed = sidebar.classList.toggle('is-collapsed');
+                try { localStorage.setItem(STORAGE_KEY, collapsed ? '1' : '0'); } catch (_) {}
+            });
+
+            if (search && nav) {
+                const items = Array.from(nav.querySelectorAll('.manage-nav-item'));
+                const groups = Array.from(nav.querySelectorAll('.manage-nav-group'));
+                const apply = () => {
+                    const q = search.value.trim().toLowerCase();
+                    let anyVisible = false;
+                    items.forEach((item) => {
+                        const text = (item.dataset.navText || item.textContent || '').toLowerCase();
+                        const match = !q || text.includes(q);
+                        item.style.display = match ? '' : 'none';
+                        if (match) anyVisible = true;
+                    });
+                    groups.forEach((group) => {
+                        const hasVisible = Array.from(group.querySelectorAll('.manage-nav-item'))
+                            .some((i) => i.style.display !== 'none');
+                        group.classList.toggle('is-empty', !hasVisible);
+                    });
+                    empty?.classList.toggle('is-visible', !anyVisible);
+                    // Expand the rail while searching so labels are readable.
+                    if (q && sidebar?.classList.contains('is-collapsed')) {
+                        sidebar.classList.remove('is-collapsed');
+                    }
+                };
+                search.addEventListener('input', apply);
+                search.addEventListener('keydown', (event) => {
+                    if (event.key === 'Escape') { search.value = ''; apply(); search.blur(); }
+                });
+            }
+        };
+        initManageSidebar();
 
         window.handleFormSubmit = async function(event, successCallback) {
             event.preventDefault();
