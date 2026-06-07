@@ -50,26 +50,16 @@
     hidden
 ></div>
 
-<section class="materials-overview">
-    <div class="materials-overview-copy">
-        <div class="materials-overview-eyebrow">教师管理中心 / 课程材料</div>
-        <h2>统一管理课程资料、文档目录与 Git 教学仓库</h2>
-        <p>
-            支持批量上传、目录化浏览、模糊搜索、按名称/创建时间/更新时间排序，
-            并保留课堂分配、AI 解析、源文件编辑、仓库同步等现有能力。
-        </p>
-        <div class="materials-overview-pills">
-            <span class="materials-overview-pill">README 文档视图</span>
-            <span class="materials-overview-pill">AI 解析与优化</span>
-            <span class="materials-overview-pill">Git 仓库同步</span>
-        </div>
-        <div class="materials-overview-updated">
-            最近更新：
-            <strong id="materials-latest-updated">{{ material_stats.latest_updated_at or '暂无记录' }}</strong>
+<section class="manage-pagehead" style="margin-bottom: 18px;">
+    <div class="manage-pagehead__intro">
+        <div>
+            <div class="academic-eyebrow">Material Library</div>
+            <h2>课程资料与 Git 教学仓库</h2>
+            <p class="manage-pagehead__lead">批量上传、目录浏览、模糊搜索与排序，保留课堂分配、AI 解析与仓库同步。</p>
         </div>
     </div>
-
     <div hidden aria-hidden="true">
+        <span id="materials-latest-updated">{{ material_stats.latest_updated_at or '暂无记录' }}</span>
         <span id="materials-root-count">{{ material_stats.root_count }}</span>
         <span id="materials-total-count">{{ material_stats.total_count }}</span>
         <span id="materials-folder-file-summary">文件夹 {{ material_stats.folder_count }} / 文件 {{ material_stats.file_count }}</span>
@@ -77,16 +67,8 @@
         <span id="materials-classroom-count">覆盖 {{ material_stats.classroom_count }} 个课堂</span>
         <span id="materials-total-size">{{ material_stats.total_size or 0 }} B</span>
     </div>
-</section>
-
-<section class="academic-card" aria-label="材料概览" style="margin-bottom: 18px;">
-    <div class="academic-card-header">
-        <div>
-            <h3 class="academic-card-title">信息归集</h3>
-            <p class="academic-card-subtitle">用图表呈现材料规模、文件构成与课堂分配覆盖。</p>
-        </div>
-    </div>
-    <div class="academic-card-body">
+    <div class="manage-pagehead__insights">
+        <span class="manage-pagehead__sub">信息归集</span>
         <div class="insight-board">
             {{ insight_meter('材料总数', material_stats.total_count, 100,
                 '文件夹 ' ~ material_stats.folder_count ~ ' · 文件 ' ~ material_stats.file_count ~ ' · 根目录 ' ~ material_stats.root_count,

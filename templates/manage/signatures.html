@@ -534,30 +534,23 @@
     data-actor-school-code="{{ signature_actor.school_code }}"
     data-actor-school-name="{{ signature_actor.school_name }}"
 >
-    <div class="signature-overview">
-        <div class="signature-overview-copy">
-            <div class="signature-eyebrow">基础资源 / 电子签名</div>
-            <h2>签名库</h2>
-            <p>
-                签名按学校与系部隔离，同系部教师可查看；引用他人签名需要归属人审批，归属人和超管可维护属性与删除。
-            </p>
-        </div>
-        <div hidden aria-hidden="true">
-            <span id="signature-stat-total">{{ signature_stats.visible_total }}</span>
-            <span id="signature-stat-mine">{{ signature_stats.mine }}</span>
-            <span id="signature-stat-college">{{ signature_stats.college }}</span>
-            <span id="signature-stat-usage">{{ signature_stats.usage_total }}</span>
-        </div>
+    <div hidden aria-hidden="true">
+        <span id="signature-stat-total">{{ signature_stats.visible_total }}</span>
+        <span id="signature-stat-mine">{{ signature_stats.mine }}</span>
+        <span id="signature-stat-college">{{ signature_stats.college }}</span>
+        <span id="signature-stat-usage">{{ signature_stats.usage_total }}</span>
     </div>
 
-    <div class="academic-card" aria-label="签名概览">
-        <div class="academic-card-header">
+    <div class="manage-pagehead">
+        <div class="manage-pagehead__intro">
             <div>
-                <h3 class="academic-card-title">信息归集</h3>
-                <p class="academic-card-subtitle">用图表呈现可见签名规模、归属构成与调用情况。</p>
+                <div class="academic-eyebrow">Signature Library</div>
+                <h2>签名库</h2>
+                <p class="manage-pagehead__lead">签名按学校与系部隔离；引用他人签名需归属人审批。</p>
             </div>
         </div>
-        <div class="academic-card-body">
+        <div class="manage-pagehead__insights">
+            <span class="manage-pagehead__sub">信息归集</span>
             <div class="insight-board">
                 {{ insight_meter('可见签名', signature_stats.visible_total, 100,
                     '我的归属 ' ~ signature_stats.mine ~ ' 个 · 系部可见 ' ~ signature_stats.college ~ ' 个', 'indigo', '个') }}

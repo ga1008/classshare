@@ -138,28 +138,19 @@
 {% endif %}
 {% endfor %}
 <div class="academic-shell">
-    <section class="academic-hero">
-        <div class="academic-eyebrow">Textbook Library</div>
-        <h2>教材管理</h2>
-        <p>
-            统一管理教材信息，包括名称、作者、出版社、简介、目录和附件。开设课堂时可直接引用已录入的教材。
-        </p>
-        <div class="academic-hero-actions">
-            <button type="button" class="btn btn-primary" id="heroTextbookCreateBtn">新建教材</button>
-            <span class="academic-badge is-success">教材可直接绑定课堂</span>
-            <span class="academic-badge is-accent">简介和目录用于课堂参考</span>
-            <span class="academic-badge">附件仅提供下载</span>
-        </div>
-    </section>
-
-    <section class="academic-card">
-        <div class="academic-card-header">
+    <section class="manage-pagehead">
+        <div class="manage-pagehead__intro">
             <div>
-                <h3 class="academic-card-title">信息归集</h3>
-                <p class="academic-card-subtitle">用图表呈现教材规模、附件完整度与出版社分布。</p>
+                <div class="academic-eyebrow">Textbook Library</div>
+                <h2>教材管理</h2>
+                <p class="manage-pagehead__lead">统一维护教材信息与附件，开设课堂时可直接引用。</p>
+            </div>
+            <div class="manage-pagehead__actions">
+                <button type="button" class="btn btn-primary" id="heroTextbookCreateBtn">新建教材</button>
             </div>
         </div>
-        <div class="academic-card-body">
+        <div class="manage-pagehead__insights">
+            <span class="manage-pagehead__sub">信息归集</span>
             <div class="insight-board">
                 {{ insight_meter('教材总数', _tb_total, 100,
                     '最近维护：' ~ (textbooks[0].updated_at[:10] if textbooks and textbooks[0].updated_at else '暂无'),

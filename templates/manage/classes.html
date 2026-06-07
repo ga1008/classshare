@@ -20,29 +20,21 @@
 {% if _cnt %}{% set _dept_ns.dist = _dept_ns.dist + [{'label': department, 'value': _cnt}] %}{% endif %}
 {% endfor %}
 <div class="academic-shell class-page-shell">
-    <section class="class-hero">
-        <div class="class-hero-copy">
-            <div class="academic-eyebrow">Class Library</div>
-            <h2>班级与学生名册工作台</h2>
-            <p>
-                将班级、系别和学生名单集中维护；开设课堂、查看学生详情、追踪通知可达性都从这里进入。
-            </p>
-        </div>
-        <div class="class-hero-actions">
-            <button type="button" class="btn btn-outline" id="syncAcademicRosterBtn">从教务系统同步</button>
-            <button type="button" class="btn btn-primary" id="heroClassCreateBtn">导入新班级</button>
-            <button type="button" class="btn btn-outline" id="heroTemplateDownloadBtn">名单模板</button>
-        </div>
-    </section>
-
-    <section class="academic-card" aria-label="班级管理概览">
-        <div class="academic-card-header">
+    <section class="manage-pagehead">
+        <div class="manage-pagehead__intro">
             <div>
-                <h3 class="academic-card-title">信息归集</h3>
-                <p class="academic-card-subtitle">用图表掌握名单规模、邮箱可达性、开课进度与系别分布。</p>
+                <div class="academic-eyebrow">Class Library</div>
+                <h2>班级与学生名册工作台</h2>
+                <p class="manage-pagehead__lead">集中维护班级、系别与学生名单，开课、查看学生与通知可达性都从这里进入。</p>
+            </div>
+            <div class="manage-pagehead__actions">
+                <button type="button" class="btn btn-outline" id="syncAcademicRosterBtn">从教务系统同步</button>
+                <button type="button" class="btn btn-outline" id="heroTemplateDownloadBtn">名单模板</button>
+                <button type="button" class="btn btn-primary" id="heroClassCreateBtn">导入新班级</button>
             </div>
         </div>
-        <div class="academic-card-body">
+        <div class="manage-pagehead__insights">
+            <span class="manage-pagehead__sub">信息归集</span>
             <div class="insight-board">
                 {{ insight_meter('在读学生', class_stats.student_count, 100,
                     class_stats.class_count ~ ' 个班 · 平均 ' ~ avg_class_size ~ ' 人/班' ~ ((' · ' ~ class_stats.suspended_student_count ~ ' 人休学') if class_stats.suspended_student_count else ''),

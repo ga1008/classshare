@@ -1306,31 +1306,19 @@
 ] %}
 
 <div class="exam-page-shell">
-    <section class="exam-hero-panel" aria-label="试卷库概览">
-        <div>
-            <div class="exam-kicker">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>
-                试卷资产管理
-            </div>
-            <h2 class="exam-hero-title">按状态、题型、来源和标签快速整理试卷</h2>
-            <p class="exam-hero-copy">筛选用于缩小范围，排序用于确定处理优先级，归集用于把同类试卷折叠成清晰的工作区。</p>
-        </div>
-        <div class="exam-hero-actions">
-            <a href="/exam/new" class="btn btn-primary">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-                新建试卷
-            </a>
-        </div>
-    </section>
-
-    <section class="academic-card" aria-label="试卷统计">
-        <div class="academic-card-header">
+    <section class="manage-pagehead">
+        <div class="manage-pagehead__intro">
             <div>
-                <h3 class="academic-card-title">信息归集</h3>
-                <p class="academic-card-subtitle">用图表呈现试卷可用率、分配进度与题型结构。</p>
+                <div class="academic-eyebrow">Exam Library</div>
+                <h2>试卷资产管理</h2>
+                <p class="manage-pagehead__lead">按状态、题型、来源与标签整理试卷，归集同类试卷成清晰工作区。</p>
+            </div>
+            <div class="manage-pagehead__actions">
+                <a href="/exam/new" class="btn btn-primary">新建试卷</a>
             </div>
         </div>
-        <div class="academic-card-body">
+        <div class="manage-pagehead__insights">
+            <span class="manage-pagehead__sub">信息归集</span>
             <div class="insight-board">
                 {{ insight_ring('可用率', exam_stats.ready, papers|length,
                     ((exam_stats.generating ~ ' 份生成中 · ' ~ exam_stats.failed ~ ' 份失败') if (exam_stats.generating or exam_stats.failed) else '试卷均已就绪，可直接分配。'),

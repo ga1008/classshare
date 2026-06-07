@@ -41277,3 +41277,77 @@ body.has-teaching-session-modal {
     font-size: 0.7rem; font-weight: 800; letter-spacing: 0.05em;
     text-transform: uppercase; color: var(--text-muted);
 }
+
+/* ===== Unified manage page header — hero + 信息归集 in one block ===== */
+.manage-pagehead {
+    border-radius: 22px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: #ffffff;
+    box-shadow: 0 18px 44px -34px rgba(15, 23, 42, 0.5);
+    overflow: hidden;
+    animation: manage-fade-in 0.42s ease both;
+}
+.manage-pagehead__intro {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px 24px;
+    flex-wrap: wrap;
+    padding: 20px 24px;
+    background:
+        radial-gradient(circle at 0% 0%, rgba(79, 70, 229, 0.08), transparent 44%),
+        radial-gradient(circle at 100% 0%, rgba(13, 148, 136, 0.07), transparent 42%),
+        linear-gradient(180deg, rgba(248, 250, 252, 0.55), rgba(255, 255, 255, 0.9));
+}
+.manage-pagehead__intro > div:first-child { min-width: 0; }
+.manage-pagehead__intro h2 {
+    margin: 5px 0 0;
+    font-size: 1.36rem;
+    font-weight: 850;
+    color: var(--text-primary);
+    line-height: 1.25;
+}
+.manage-pagehead__lead {
+    margin: 7px 0 0;
+    max-width: 64ch;
+    font-size: 0.88rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+.manage-pagehead__actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.manage-pagehead__insights {
+    padding: 16px 24px 22px;
+    border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+.manage-pagehead__sub {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+@keyframes manage-fade-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* Interactivity: insight panels lift on hover. */
+.insight-panel { transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
+.insight-panel:hover {
+    transform: translateY(-2px);
+    border-color: rgba(79, 70, 229, 0.22);
+    box-shadow: 0 22px 46px -30px rgba(15, 23, 42, 0.55);
+}
+
+@media (max-width: 720px) {
+    .manage-pagehead__intro,
+    .manage-pagehead__insights { padding-left: 16px; padding-right: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .manage-pagehead { animation: none; }
+    .insight-panel { transition: none; }
+    .insight-panel:hover { transform: none; }
+}

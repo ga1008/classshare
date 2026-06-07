@@ -1107,32 +1107,21 @@
 {% block content %}
 {% from "macros/manage_insights.html" import insight_ring, insight_bars, insight_meter %}
 <div class="academic-shell course-page-shell">
-    <section class="academic-hero">
-        <div class="academic-eyebrow">Course Studio</div>
-        <h2>课程管理与课堂模板</h2>
-        <p>
-            在这里统一维护课程简介、学分学时和课堂拆分模板。每门课程都可以沉淀成可复用的教学结构，后续开设课堂时直接继承并生成时间轴。
-        </p>
-        <div class="academic-hero-actions">
-            <button type="button" class="btn btn-primary" id="heroCourseCreateBtn">新增课程</button>
-            <button type="button" class="btn btn-outline" id="heroCourseAcademicSyncBtn">从教务系统同步</button>
-            <span class="academic-badge is-success">支持 AI 拆课</span>
-            <span class="academic-badge is-success">教务课表对接</span>
-            <span class="academic-badge">卡片式检索</span>
-            <span class="academic-badge is-accent">宗门称号隔离到课程</span>
-            <span class="academic-badge is-accent">模板复用到课堂排期</span>
-        </div>
-    </section>
-
     {% set _course_complete = my_courses | selectattr('coverage_status', 'equalto', 'complete') | list | length %}
-    <section class="academic-card">
-        <div class="academic-card-header">
+    <section class="manage-pagehead">
+        <div class="manage-pagehead__intro">
             <div>
-                <h3 class="academic-card-title">信息归集</h3>
-                <p class="academic-card-subtitle">用图表直观呈现课程模板的复用、完整度与教务对接情况。</p>
+                <div class="academic-eyebrow">Course Studio</div>
+                <h2>课程管理与课堂模板</h2>
+                <p class="manage-pagehead__lead">沉淀可复用的课程模板，开课时直接继承并生成排课时间轴。</p>
+            </div>
+            <div class="manage-pagehead__actions">
+                <button type="button" class="btn btn-outline" id="heroCourseAcademicSyncBtn">从教务系统同步</button>
+                <button type="button" class="btn btn-primary" id="heroCourseCreateBtn">新增课程</button>
             </div>
         </div>
-        <div class="academic-card-body">
+        <div class="manage-pagehead__insights">
+            <span class="manage-pagehead__sub">信息归集</span>
             <div class="insight-board">
                 {{ insight_ring('模板复用率', course_stats.active_course_count, course_stats.course_count,
                     '门课程已用于开设课堂，可直接生成排课时间轴。', 'teal',

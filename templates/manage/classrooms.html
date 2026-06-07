@@ -537,23 +537,6 @@
 {% set options = stats.options or {} %}
 {% set _cr_active = stats.active_count or 0 %}
 <div class="academic-shell classroom-page-shell">
-    <section class="classroom-hero">
-        <div>
-            <div class="academic-eyebrow">Classroom Atlas</div>
-            <h2>教室与空闲场地工作台</h2>
-            <p>教学场地来自教务系统同步，空闲教室按当前学期、周次、星期和节次实时查询。</p>
-        </div>
-        <div class="classroom-hero-actions">
-            <button type="button" class="btn btn-primary" id="syncClassroomsBtn">从教务系统同步</button>
-            <button type="button" class="btn btn-outline" id="focusFreeRoomBtn">查询空闲教室</button>
-        </div>
-    </section>
-
-    <div class="classroom-sync-status" id="classroomSyncStatus" role="status" aria-live="polite"></div>
-
-    {# Hidden holder keeps the original stat IDs so the live-update JS (setText)
-       still has targets after an in-place sync; the visible charts render the
-       server snapshot. #}
     <div hidden aria-hidden="true">
         <span id="classroomStatActive">{{ stats.active_count or 0 }}</span>
         <span id="classroomStatSchedulable">{{ stats.schedulable_count or 0 }}</span>
@@ -563,14 +546,21 @@
         <span id="classroomStatStale">{{ stats.stale_count or 0 }} 条待复核</span>
     </div>
 
-    <section class="academic-card" aria-label="教室管理概览">
-        <div class="academic-card-header">
+    <section class="manage-pagehead">
+        <div class="manage-pagehead__intro">
             <div>
-                <h3 class="academic-card-title">信息归集</h3>
-                <p class="academic-card-subtitle">用图表呈现场地同步规模与可排课、可借用、考试可用的占比。</p>
+                <div class="academic-eyebrow">Classroom Atlas</div>
+                <h2>教室与空闲场地工作台</h2>
+                <p class="manage-pagehead__lead">教学场地来自教务系统同步，空闲教室按学期、周次、星期、节次实时查询。</p>
+            </div>
+            <div class="manage-pagehead__actions">
+                <button type="button" class="btn btn-outline" id="focusFreeRoomBtn">查询空闲教室</button>
+                <button type="button" class="btn btn-primary" id="syncClassroomsBtn">从教务系统同步</button>
             </div>
         </div>
-        <div class="academic-card-body">
+        <div class="classroom-sync-status" id="classroomSyncStatus" role="status" aria-live="polite"></div>
+        <div class="manage-pagehead__insights">
+            <span class="manage-pagehead__sub">信息归集</span>
             <div class="insight-board">
                 {{ insight_meter('已同步场地', _cr_active, 100,
                     '总记录 ' ~ (stats.total_count or 0) ~ ' · ' ~ (stats.stale_count or 0) ~ ' 条待复核 · 上次同步 ' ~ ((stats.last_synced_at or '')[:10] or '—'),
