@@ -42,6 +42,7 @@
 {% endblock %}
 
 {% block content %}
+{% from "macros/manage_insights.html" import insight_ring, insight_meter %}
 <div
     data-materials-manage-page-app
     data-lanshare-island="materials-manage-page"
@@ -68,31 +69,38 @@
         </div>
     </div>
 
-    <div class="materials-stat-grid materials-stat-grid--overview">
-        <article class="materials-stat-card">
-            <div class="materials-stat-label">根目录</div>
-            <div class="materials-stat-value" id="materials-root-count">{{ material_stats.root_count }}</div>
-            <div class="materials-stat-help">顶层材料入口数</div>
-        </article>
-        <article class="materials-stat-card">
-            <div class="materials-stat-label">材料总数</div>
-            <div class="materials-stat-value" id="materials-total-count">{{ material_stats.total_count }}</div>
-            <div class="materials-stat-help" id="materials-folder-file-summary">
-                文件夹 {{ material_stats.folder_count }} / 文件 {{ material_stats.file_count }}
-            </div>
-        </article>
-        <article class="materials-stat-card">
-            <div class="materials-stat-label">已分配材料</div>
-            <div class="materials-stat-value" id="materials-assignment-count">{{ material_stats.assigned_material_count }}</div>
-            <div class="materials-stat-help" id="materials-classroom-count">
-                覆盖 {{ material_stats.classroom_count }} 个课堂
-            </div>
-        </article>
-        <article class="materials-stat-card">
-            <div class="materials-stat-label">总容量</div>
-            <div class="materials-stat-value" id="materials-total-size">{{ material_stats.total_size or 0 }} B</div>
-            <div class="materials-stat-help">自动汇总全部文件体积</div>
-        </article>
+    <div hidden aria-hidden="true">
+        <span id="materials-root-count">{{ material_stats.root_count }}</span>
+        <span id="materials-total-count">{{ material_stats.total_count }}</span>
+        <span id="materials-folder-file-summary">文件夹 {{ material_stats.folder_count }} / 文件 {{ material_stats.file_count }}</span>
+        <span id="materials-assignment-count">{{ material_stats.assigned_material_count }}</span>
+        <span id="materials-classroom-count">覆盖 {{ material_stats.classroom_count }} 个课堂</span>
+        <span id="materials-total-size">{{ material_stats.total_size or 0 }} B</span>
+    </div>
+</section>
+
+<section class="academic-card" aria-label="材料概览" style="margin-bottom: 18px;">
+    <div class="academic-card-header">
+        <div>
+            <h3 class="academic-card-title">信息归集</h3>
+            <p class="academic-card-subtitle">用图表呈现材料规模、文件构成与课堂分配覆盖。</p>
+        </div>
+    </div>
+    <div class="academic-card-body">
+        <div class="insight-board">
+            {{ insight_meter('材料总数', material_stats.total_count, 100,
+                '文件夹 ' ~ material_stats.folder_count ~ ' · 文件 ' ~ material_stats.file_count ~ ' · 根目录 ' ~ material_stats.root_count,
+                'indigo', '项') }}
+            {{ insight_ring('文件占比', material_stats.file_count, material_stats.total_count,
+                '实际文件（非文件夹）在材料库中的占比。', 'teal',
+                material_stats.file_count ~ ' / ' ~ material_stats.total_count ~ ' 项') }}
+            {{ insight_ring('分配覆盖率', material_stats.assigned_material_count, material_stats.total_count,
+                '已分配到课堂的材料占比，覆盖 ' ~ material_stats.classroom_count ~ ' 个课堂。', 'violet',
+                material_stats.assigned_material_count ~ ' / ' ~ material_stats.total_count ~ ' 项') }}
+            {{ insight_meter('根目录入口', material_stats.root_count, 100,
+                '顶层材料入口 · 最近更新 ' ~ ((material_stats.latest_updated_at or '')[:10] or '暂无'),
+                'amber', '个') }}
+        </div>
     </div>
 </section>
 

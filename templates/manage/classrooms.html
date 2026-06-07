@@ -532,8 +532,10 @@
 {% endblock %}
 
 {% block content %}
+{% from "macros/manage_insights.html" import insight_ring, insight_meter %}
 {% set stats = classroom_dashboard or {} %}
 {% set options = stats.options or {} %}
+{% set _cr_active = stats.active_count or 0 %}
 <div class="academic-shell classroom-page-shell">
     <section class="classroom-hero">
         <div>
@@ -549,32 +551,41 @@
 
     <div class="classroom-sync-status" id="classroomSyncStatus" role="status" aria-live="polite"></div>
 
-    <section class="classroom-stat-grid" aria-label="教室管理概览">
-        <article class="classroom-stat-card">
-            <span>已同步场地</span>
-            <strong id="classroomStatActive">{{ stats.active_count or 0 }}</strong>
-            <small>总记录 {{ stats.total_count or 0 }}</small>
-        </article>
-        <article class="classroom-stat-card">
-            <span>可排课</span>
-            <strong id="classroomStatSchedulable">{{ stats.schedulable_count or 0 }}</strong>
-            <small>教务排课状态</small>
-        </article>
-        <article class="classroom-stat-card">
-            <span>可借用</span>
-            <strong id="classroomStatBorrowable">{{ stats.borrowable_count or 0 }}</strong>
-            <small>实时查询仍以教务为准</small>
-        </article>
-        <article class="classroom-stat-card">
-            <span>考试可用</span>
-            <strong id="classroomStatExam">{{ stats.exam_count or 0 }}</strong>
-            <small>考试排考字段</small>
-        </article>
-        <article class="classroom-stat-card is-live">
-            <span>上次同步</span>
-            <strong id="classroomStatSync">{{ (stats.last_synced_at or '')[:10] or '-' }}</strong>
-            <small id="classroomStatStale">{{ stats.stale_count or 0 }} 条待复核</small>
-        </article>
+    {# Hidden holder keeps the original stat IDs so the live-update JS (setText)
+       still has targets after an in-place sync; the visible charts render the
+       server snapshot. #}
+    <div hidden aria-hidden="true">
+        <span id="classroomStatActive">{{ stats.active_count or 0 }}</span>
+        <span id="classroomStatSchedulable">{{ stats.schedulable_count or 0 }}</span>
+        <span id="classroomStatBorrowable">{{ stats.borrowable_count or 0 }}</span>
+        <span id="classroomStatExam">{{ stats.exam_count or 0 }}</span>
+        <span id="classroomStatSync">{{ (stats.last_synced_at or '')[:10] or '-' }}</span>
+        <span id="classroomStatStale">{{ stats.stale_count or 0 }} 条待复核</span>
+    </div>
+
+    <section class="academic-card" aria-label="教室管理概览">
+        <div class="academic-card-header">
+            <div>
+                <h3 class="academic-card-title">信息归集</h3>
+                <p class="academic-card-subtitle">用图表呈现场地同步规模与可排课、可借用、考试可用的占比。</p>
+            </div>
+        </div>
+        <div class="academic-card-body">
+            <div class="insight-board">
+                {{ insight_meter('已同步场地', _cr_active, 100,
+                    '总记录 ' ~ (stats.total_count or 0) ~ ' · ' ~ (stats.stale_count or 0) ~ ' 条待复核 · 上次同步 ' ~ ((stats.last_synced_at or '')[:10] or '—'),
+                    'sky', '间') }}
+                {{ insight_ring('可排课比例', stats.schedulable_count or 0, _cr_active,
+                    '可用于教务排课的教学场地占比。', 'teal',
+                    (stats.schedulable_count or 0) ~ ' / ' ~ _cr_active ~ ' 间') }}
+                {{ insight_ring('可借用比例', stats.borrowable_count or 0, _cr_active,
+                    '可申请借用的场地，实时查询仍以教务为准。', 'indigo',
+                    (stats.borrowable_count or 0) ~ ' / ' ~ _cr_active ~ ' 间') }}
+                {{ insight_ring('考试可用比例', stats.exam_count or 0, _cr_active,
+                    '带考试排考字段、可用于排考的场地占比。', 'amber',
+                    (stats.exam_count or 0) ~ ' / ' ~ _cr_active ~ ' 间') }}
+            </div>
+        </div>
     </section>
 
     <section class="classroom-control-panel" aria-label="教学场地筛选">

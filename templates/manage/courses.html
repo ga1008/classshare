@@ -1105,6 +1105,7 @@
 {% endblock %}
 
 {% block content %}
+{% from "macros/manage_insights.html" import insight_ring, insight_bars, insight_meter %}
 <div class="academic-shell course-page-shell">
     <section class="academic-hero">
         <div class="academic-eyebrow">Course Studio</div>
@@ -1123,58 +1124,26 @@
         </div>
     </section>
 
-    <section class="academic-stat-grid">
-        <article class="academic-stat-card">
-            <div class="academic-stat-label">课程总数</div>
-            <div class="academic-stat-value">{{ course_stats.course_count }}</div>
-            <div class="academic-stat-help">当前教师可使用的课程模板数量，包含同系共享课程。</div>
-        </article>
-        <article class="academic-stat-card">
-            <div class="academic-stat-label">已开设课堂</div>
-            <div class="academic-stat-value">{{ course_stats.active_course_count }}</div>
-            <div class="academic-stat-help">已被课堂复用的课程模板数量。</div>
-        </article>
-        <article class="academic-stat-card">
-            <div class="academic-stat-label">课堂设置</div>
-            <div class="academic-stat-value">{{ course_stats.lesson_count }}</div>
-            <div class="academic-stat-help">所有课程累计配置的课堂条目数。</div>
-        </article>
-        <article class="academic-stat-card">
-            <div class="academic-stat-label">总学时</div>
-            <div class="academic-stat-value">{{ course_stats.total_hours }}</div>
-            <div class="academic-stat-help">课程模板中显式登记的课程总学时。</div>
-        </article>
-    </section>
-
+    {% set _course_complete = my_courses | selectattr('coverage_status', 'equalto', 'complete') | list | length %}
     <section class="academic-card">
         <div class="academic-card-header">
             <div>
                 <h3 class="academic-card-title">信息归集</h3>
-                <p class="academic-card-subtitle">聚合查看课程模板完整度、教学结构和后续开课状态。</p>
+                <p class="academic-card-subtitle">用图表直观呈现课程模板的复用、完整度与教务对接情况。</p>
             </div>
         </div>
         <div class="academic-card-body">
-            <div class="course-info-grid">
-                <article class="course-info-tile">
-                    <span>模板复用</span>
-                    <strong>{{ course_stats.active_course_count }} 门课程已用于课堂开设</strong>
-                    <p>当课程模板完善后，开设课堂时会自动生成对应的排课时间轴和任务列表。</p>
-                </article>
-                <article class="course-info-tile">
-                    <span>结构质量</span>
-                    <strong>{{ my_courses | selectattr('coverage_status', 'equalto', 'complete') | list | length }} 门课程结构完整</strong>
-                    <p>课程总学时与课堂设置合计小节数一致时，可直接无缝用于后续开课。</p>
-                </article>
-                <article class="course-info-tile">
-                    <span>AI 拆课</span>
-                    <strong>{{ textbooks_json|length }} 本教材可作为拆课依据</strong>
-                    <p>选择教材后可调用思考模型自动生成课堂设置，再按需做人工微调。</p>
-                </article>
-                <article class="course-info-tile">
-                    <span>教务同步</span>
-                    <strong>{{ course_stats.academic_synced_course_count }} 门课程已对接教务课表</strong>
-                    <p>同步会归集课程号、周次、节次、地点和教学班信息，后续仍需补齐教材与平台班级。</p>
-                </article>
+            <div class="insight-board">
+                {{ insight_ring('模板复用率', course_stats.active_course_count, course_stats.course_count,
+                    '门课程已用于开设课堂，可直接生成排课时间轴。', 'teal',
+                    course_stats.active_course_count ~ ' / ' ~ course_stats.course_count ~ ' 门') }}
+                {{ insight_ring('结构完整率', _course_complete, course_stats.course_count,
+                    '总学时与课堂设置小节数一致，可无缝用于开课。', 'indigo',
+                    _course_complete ~ ' / ' ~ course_stats.course_count ~ ' 门') }}
+                {{ insight_ring('教务对接率', course_stats.academic_synced_course_count, course_stats.course_count,
+                    '已归集课程号、周次、节次与教学班信息。', 'sky',
+                    course_stats.academic_synced_course_count ~ ' / ' ~ course_stats.course_count ~ ' 门') }}
+                {{ insight_meter('教学总量', course_stats.total_hours, 100, course_stats.lesson_count ~ ' 条课堂设置 · ' ~ (textbooks_json|length) ~ ' 本教材可作拆课依据', 'amber', '学时') }}
             </div>
         </div>
     </section>
@@ -1196,16 +1165,22 @@
                     <input id="courseSearchInput" class="form-control" type="search" placeholder="搜索课程名称、简介或课堂设置">
                 </label>
                 <div class="course-toolbar-actions">
-                    <label class="academic-filter-field" for="courseFilterSelect">
-                        <span>状态筛选</span>
-                        <select id="courseFilterSelect" class="form-control">
+                    <div class="filter-group">
+                        <span class="filter-group__label">状态筛选</span>
+                        <div class="filter-chips" data-filter-chips data-filter-target="#courseFilterSelect">
+                            <button type="button" class="filter-chip is-active" data-value="all">全部<span class="filter-chip__count">{{ course_stats.course_count }}</span></button>
+                            <button type="button" class="filter-chip" data-value="active">已开课<span class="filter-chip__count">{{ course_stats.active_course_count }}</span></button>
+                            <button type="button" class="filter-chip" data-value="complete">结构完整<span class="filter-chip__count">{{ _course_complete }}</span></button>
+                            <button type="button" class="filter-chip" data-value="idle">未开课<span class="filter-chip__count">{{ course_stats.course_count - course_stats.active_course_count }}</span></button>
+                        </div>
+                        <select id="courseFilterSelect" class="form-control" hidden aria-hidden="true">
                             <option value="all">全部课程</option>
                             <option value="active">已开设课堂</option>
                             <option value="complete">结构完整</option>
                             <option value="pending">待完善</option>
                             <option value="idle">未开课</option>
                         </select>
-                    </label>
+                    </div>
                     <button type="button" class="btn btn-outline" id="toolbarCourseAcademicSyncBtn">从教务系统同步</button>
                     <button type="button" class="btn btn-primary" id="toolbarCourseCreateBtn">新增课程</button>
                 </div>

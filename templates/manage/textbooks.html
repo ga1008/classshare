@@ -126,6 +126,17 @@
 {% endblock %}
 
 {% block content %}
+{% from "macros/manage_insights.html" import insight_ring, insight_bars, insight_meter %}
+{% set _tb_total = textbooks | length %}
+{% set _tb_attach = textbooks | selectattr('has_attachment') | list | length %}
+{% set _tb_pubs = textbooks | map(attribute='publisher') | reject('equalto', '') | list %}
+{% set _pub_ns = namespace(dist=[], seen=[]) %}
+{% for _p in _tb_pubs %}
+{% if _p not in _pub_ns.seen %}
+{% set _pub_ns.seen = _pub_ns.seen + [_p] %}
+{% set _pub_ns.dist = _pub_ns.dist + [{'label': _p, 'value': (_tb_pubs | select('equalto', _p) | list | length)}] %}
+{% endif %}
+{% endfor %}
 <div class="academic-shell">
     <section class="academic-hero">
         <div class="academic-eyebrow">Textbook Library</div>
@@ -141,27 +152,27 @@
         </div>
     </section>
 
-    <section class="academic-stat-grid">
-        <article class="academic-stat-card">
-            <div class="academic-stat-label">教材总数</div>
-            <div class="academic-stat-value">{{ textbooks|length }}</div>
-            <div class="academic-stat-help">当前教师名下已创建的教材数量。</div>
-        </article>
-        <article class="academic-stat-card">
-            <div class="academic-stat-label">出版社</div>
-            <div class="academic-stat-value">{{ textbooks|map(attribute='publisher')|reject('equalto', '')|list|length }}</div>
-            <div class="academic-stat-help">至少填写过一次的出版社记录总数。</div>
-        </article>
-        <article class="academic-stat-card">
-            <div class="academic-stat-label">带附件</div>
-            <div class="academic-stat-value">{{ textbooks|selectattr('has_attachment')|list|length }}</div>
-            <div class="academic-stat-help">已上传附件的教材数量。</div>
-        </article>
-        <article class="academic-stat-card">
-            <div class="academic-stat-label">最近维护</div>
-            <div class="academic-stat-value" style="font-size: 1.08rem;">{{ textbooks[0].updated_at if textbooks else '暂无' }}</div>
-            <div class="academic-stat-help">最近一次更新教材的时间。</div>
-        </article>
+    <section class="academic-card">
+        <div class="academic-card-header">
+            <div>
+                <h3 class="academic-card-title">信息归集</h3>
+                <p class="academic-card-subtitle">用图表呈现教材规模、附件完整度与出版社分布。</p>
+            </div>
+        </div>
+        <div class="academic-card-body">
+            <div class="insight-board">
+                {{ insight_meter('教材总数', _tb_total, 100,
+                    '最近维护：' ~ (textbooks[0].updated_at[:10] if textbooks and textbooks[0].updated_at else '暂无'),
+                    'amber', '本') }}
+                {{ insight_ring('附件完整度', _tb_attach, _tb_total,
+                    '已上传附件、可供课堂下载参考的教材占比。', 'teal',
+                    _tb_attach ~ ' / ' ~ _tb_total ~ ' 本') }}
+                {{ insight_ring('出版社登记率', (_tb_pubs | length), _tb_total,
+                    '已登记出版社信息的教材占比。', 'indigo',
+                    (_tb_pubs | length) ~ ' / ' ~ _tb_total ~ ' 本') }}
+                {{ insight_bars('教材按出版社', _pub_ns.dist, (_pub_ns.seen | length) ~ ' 家出版社', 'violet') }}
+            </div>
+        </div>
     </section>
 
     <section class="academic-card">

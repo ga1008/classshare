@@ -1286,14 +1286,24 @@
 </style>
 
 {% if papers %}
-{% set exam_stats = namespace(assigned=0, generating=0, failed=0, ready=0, question_total=0) %}
+{% from "macros/manage_insights.html" import insight_ring, insight_bars, insight_meter %}
+{% set exam_stats = namespace(assigned=0, generating=0, failed=0, ready=0, question_total=0, objective=0, subjective=0, mixed=0, ai=0) %}
 {% for paper in papers %}
     {% if paper.assigned_count|int > 0 %}{% set exam_stats.assigned = exam_stats.assigned + 1 %}{% endif %}
     {% if paper.ai_gen_status in ('pending', 'running') %}{% set exam_stats.generating = exam_stats.generating + 1 %}{% endif %}
     {% if paper.ai_gen_status == 'failed' %}{% set exam_stats.failed = exam_stats.failed + 1 %}{% endif %}
     {% if paper.status in ('ready', 'published') and paper.ai_gen_status not in ('pending', 'running', 'failed') %}{% set exam_stats.ready = exam_stats.ready + 1 %}{% endif %}
     {% set exam_stats.question_total = exam_stats.question_total + (paper.question_count|default(0)|int) %}
+    {% if paper.question_profile == 'objective' %}{% set exam_stats.objective = exam_stats.objective + 1 %}{% endif %}
+    {% if paper.question_profile == 'subjective' %}{% set exam_stats.subjective = exam_stats.subjective + 1 %}{% endif %}
+    {% if paper.question_profile == 'mixed' %}{% set exam_stats.mixed = exam_stats.mixed + 1 %}{% endif %}
+    {% if paper.source_type == 'ai' %}{% set exam_stats.ai = exam_stats.ai + 1 %}{% endif %}
 {% endfor %}
+{% set _exam_profile_dist = [
+    {'label': '客观题', 'value': exam_stats.objective, 'tone': '#0d9488'},
+    {'label': '主观题', 'value': exam_stats.subjective, 'tone': '#7c3aed'},
+    {'label': '主客观混合', 'value': exam_stats.mixed, 'tone': '#4f46e5'}
+] %}
 
 <div class="exam-page-shell">
     <section class="exam-hero-panel" aria-label="试卷库概览">
@@ -1313,22 +1323,25 @@
         </div>
     </section>
 
-    <section class="exam-stat-grid" aria-label="试卷统计">
-        <div class="exam-stat-card">
-            <div class="exam-stat-label">试卷总数</div>
-            <div class="exam-stat-value">{{ papers|length }}</div>
+    <section class="academic-card" aria-label="试卷统计">
+        <div class="academic-card-header">
+            <div>
+                <h3 class="academic-card-title">信息归集</h3>
+                <p class="academic-card-subtitle">用图表呈现试卷可用率、分配进度与题型结构。</p>
+            </div>
         </div>
-        <div class="exam-stat-card">
-            <div class="exam-stat-label">可用于分配</div>
-            <div class="exam-stat-value">{{ exam_stats.ready }}</div>
-        </div>
-        <div class="exam-stat-card">
-            <div class="exam-stat-label">已分配试卷</div>
-            <div class="exam-stat-value">{{ exam_stats.assigned }}</div>
-        </div>
-        <div class="exam-stat-card">
-            <div class="exam-stat-label">生成中 / 失败</div>
-            <div class="exam-stat-value {% if exam_stats.failed %}is-danger{% elif exam_stats.generating %}is-warm{% endif %}">{{ exam_stats.generating }} / {{ exam_stats.failed }}</div>
+        <div class="academic-card-body">
+            <div class="insight-board">
+                {{ insight_ring('可用率', exam_stats.ready, papers|length,
+                    ((exam_stats.generating ~ ' 份生成中 · ' ~ exam_stats.failed ~ ' 份失败') if (exam_stats.generating or exam_stats.failed) else '试卷均已就绪，可直接分配。'),
+                    'teal', exam_stats.ready ~ ' / ' ~ (papers|length) ~ ' 份') }}
+                {{ insight_ring('已分配率', exam_stats.assigned, papers|length,
+                    '已用于课堂作业/考试的试卷占比。', 'indigo',
+                    exam_stats.assigned ~ ' / ' ~ (papers|length) ~ ' 份') }}
+                {{ insight_bars('题型结构', _exam_profile_dist, exam_stats.ai ~ ' 份由 AI 生成', 'violet') }}
+                {{ insight_meter('题目总量', exam_stats.question_total, 100,
+                    (papers|length) ~ ' 份试卷累计题目数。', 'amber', '题') }}
+            </div>
         </div>
     </section>
 

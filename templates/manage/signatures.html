@@ -525,6 +525,7 @@
 {% endblock %}
 
 {% block content %}
+{% from "macros/manage_insights.html" import insight_ring, insight_meter %}
 <section
     class="signature-page"
     data-signature-page
@@ -541,23 +542,34 @@
                 签名按学校与系部隔离，同系部教师可查看；引用他人签名需要归属人审批，归属人和超管可维护属性与删除。
             </p>
         </div>
-        <div class="signature-stat-grid" aria-label="签名概览">
-            <article class="signature-stat-card">
-                <span>可见签名</span>
-                <strong id="signature-stat-total">{{ signature_stats.visible_total }}</strong>
-            </article>
-            <article class="signature-stat-card">
-                <span>我的归属</span>
-                <strong id="signature-stat-mine">{{ signature_stats.mine }}</strong>
-            </article>
-            <article class="signature-stat-card">
-                <span>系部可见</span>
-                <strong id="signature-stat-college">{{ signature_stats.college }}</strong>
-            </article>
-            <article class="signature-stat-card">
-                <span>调用记录</span>
-                <strong id="signature-stat-usage">{{ signature_stats.usage_total }}</strong>
-            </article>
+        <div hidden aria-hidden="true">
+            <span id="signature-stat-total">{{ signature_stats.visible_total }}</span>
+            <span id="signature-stat-mine">{{ signature_stats.mine }}</span>
+            <span id="signature-stat-college">{{ signature_stats.college }}</span>
+            <span id="signature-stat-usage">{{ signature_stats.usage_total }}</span>
+        </div>
+    </div>
+
+    <div class="academic-card" aria-label="签名概览">
+        <div class="academic-card-header">
+            <div>
+                <h3 class="academic-card-title">信息归集</h3>
+                <p class="academic-card-subtitle">用图表呈现可见签名规模、归属构成与调用情况。</p>
+            </div>
+        </div>
+        <div class="academic-card-body">
+            <div class="insight-board">
+                {{ insight_meter('可见签名', signature_stats.visible_total, 100,
+                    '我的归属 ' ~ signature_stats.mine ~ ' 个 · 系部可见 ' ~ signature_stats.college ~ ' 个', 'indigo', '个') }}
+                {{ insight_ring('我的归属占比', signature_stats.mine, signature_stats.visible_total,
+                    '由我归属、可自行维护与授权的签名占比。', 'teal',
+                    signature_stats.mine ~ ' / ' ~ signature_stats.visible_total ~ ' 个') }}
+                {{ insight_ring('系部共享占比', signature_stats.college, signature_stats.visible_total,
+                    '同系部可见、可在审批后引用的签名占比。', 'violet',
+                    signature_stats.college ~ ' / ' ~ signature_stats.visible_total ~ ' 个') }}
+                {{ insight_meter('调用记录', signature_stats.usage_total, 100,
+                    '签名被课堂材料引用的累计次数。', 'amber', '次') }}
+            </div>
         </div>
     </div>
 

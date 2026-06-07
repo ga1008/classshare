@@ -1,0 +1,73 @@
+{#
+  Chart-first 信息归集 helpers for the manage sub-pages (charts over numbers).
+  Pure CSS/SVG — no JS. Pair with the .insight-* styles in ui-system.src.css.
+#}
+
+{# Donut ring: a value/total completeness ring with a legend. #}
+{% macro insight_ring(title, value, total, caption, tone='indigo', value_label='') %}
+{% set v = (value | int) %}
+{% set t = (total | int) %}
+{% set pct = ((v / t * 100) | round | int) if t > 0 else 0 %}
+<article class="insight-panel insight-tone-{{ tone }}">
+    <div class="insight-panel__head"><span class="insight-panel__title">{{ title }}</span></div>
+    <div class="insight-ring-wrap">
+        <div class="insight-ring" role="img" aria-label="{{ title }} {{ v }} / {{ t }}">
+            <svg viewBox="0 0 36 36" aria-hidden="true">
+                <circle class="insight-ring__track" cx="18" cy="18" r="15.9155"></circle>
+                <circle class="insight-ring__fill" cx="18" cy="18" r="15.9155" pathLength="100" style="--ring-pct: {{ pct }};"></circle>
+            </svg>
+            <div class="insight-ring__center">
+                <strong>{{ pct }}%</strong>
+            </div>
+        </div>
+        <div class="insight-ring-legend">
+            <b>{{ value_label if value_label else (v ~ ' / ' ~ t) }}</b>
+            {% if caption %}<span>{{ caption }}</span>{% endif %}
+        </div>
+    </div>
+</article>
+{% endmacro %}
+
+{# Horizontal bar chart for a small category distribution.
+   items: list of {label, value}. Auto-scales to the largest value. #}
+{% macro insight_bars(title, items, caption='', tone='indigo', limit=6) %}
+{% set rows = (items | list)[:limit] %}
+{% set maxv = (rows | map(attribute='value') | map('int') | list | max) if rows else 0 %}
+<article class="insight-panel insight-tone-{{ tone }}">
+    <div class="insight-panel__head">
+        <span class="insight-panel__title">{{ title }}</span>
+        {% if caption %}<p class="insight-panel__caption">{{ caption }}</p>{% endif %}
+    </div>
+    {% if rows %}
+    <div class="insight-bars">
+        {% for row in rows %}
+        {% set val = row.value | int %}
+        {% set pct = ((val / maxv * 100) | round | int) if maxv > 0 else 0 %}
+        <div class="insight-bar">
+            <span class="insight-bar__label" title="{{ row.label }}">{{ row.label }}</span>
+            <span class="insight-bar__track"><i style="--bar-pct: {{ pct if pct > 0 else 0 }};{% if row.tone %} --bar-tone: {{ row.tone }};{% endif %}"></i></span>
+            <span class="insight-bar__value">{{ val }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="insight-bars--empty">暂无可统计的数据。</div>
+    {% endif %}
+</article>
+{% endmacro %}
+
+{# Single headline metric with a contextual progress meter. #}
+{% macro insight_meter(title, value, percent, caption='', tone='indigo', unit='', delta='') %}
+{% set p = (percent | int) %}
+<article class="insight-panel insight-tone-{{ tone }}">
+    <div class="insight-panel__head"><span class="insight-panel__title">{{ title }}</span></div>
+    <div class="insight-meter">
+        <div class="insight-meter__row">
+            <span class="insight-meter__value">{{ value }}{% if unit %}<small>{{ unit }}</small>{% endif %}</span>
+            {% if delta %}<span class="insight-meter__delta">{{ delta }}</span>{% endif %}
+        </div>
+        <div class="insight-meter__track"><i style="--meter-pct: {{ p if p <= 100 else 100 }};"></i></div>
+        {% if caption %}<p class="insight-panel__caption">{{ caption }}</p>{% endif %}
+    </div>
+</article>
+{% endmacro %}

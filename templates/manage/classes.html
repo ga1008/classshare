@@ -11,7 +11,14 @@
 {% endblock %}
 
 {% block content %}
+{% from "macros/manage_insights.html" import insight_ring, insight_bars, insight_meter %}
 {% set avg_class_size = ((class_stats.student_count / class_stats.class_count) | round(1)) if class_stats.class_count else 0 %}
+{% set _email_covered = class_stats.student_count - class_stats.missing_email_count %}
+{% set _dept_ns = namespace(dist=[]) %}
+{% for department in department_options %}
+{% set _cnt = my_classes | selectattr('department_label', 'equalto', department) | list | length %}
+{% if _cnt %}{% set _dept_ns.dist = _dept_ns.dist + [{'label': department, 'value': _cnt}] %}{% endif %}
+{% endfor %}
 <div class="academic-shell class-page-shell">
     <section class="class-hero">
         <div class="class-hero-copy">
@@ -28,37 +35,29 @@
         </div>
     </section>
 
-    <section class="class-stat-grid" aria-label="班级管理概览">
-        <article class="class-stat-card">
-            <span>班级数量</span>
-            <strong>{{ class_stats.class_count }}</strong>
-            <small>{{ class_stats.department_count }} 个系别分组</small>
-        </article>
-        <article class="class-stat-card">
-            <span>在读学生</span>
-            <strong>{{ class_stats.student_count }}</strong>
-            <small>
-                平均 {{ avg_class_size }} 人 / 班
-                {% if class_stats.suspended_student_count %}
-                · {{ class_stats.suspended_student_count }} 人休学
-                {% endif %}
-            </small>
-        </article>
-        <article class="class-stat-card{% if class_stats.missing_email_count %} is-warning{% endif %}">
-            <span>缺少邮箱</span>
-            <strong>{{ class_stats.missing_email_count }}</strong>
-            <small>{% if class_stats.missing_email_count %}这些学生可能错过邮件通知{% else %}名单邮箱覆盖完整{% endif %}</small>
-        </article>
-        <article class="class-stat-card">
-            <span>已绑定课堂</span>
-            <strong>{{ class_stats.active_class_count }}</strong>
-            <small>已进入教学流程的班级</small>
-        </article>
-        <article class="class-stat-card{% if class_stats.academic_synced_class_count %} is-academic{% endif %}">
-            <span>教务同步</span>
-            <strong>{{ class_stats.academic_synced_class_count }}</strong>
-            <small>{{ class_stats.academic_synced_student_count }} 条教务学生记录</small>
-        </article>
+    <section class="academic-card" aria-label="班级管理概览">
+        <div class="academic-card-header">
+            <div>
+                <h3 class="academic-card-title">信息归集</h3>
+                <p class="academic-card-subtitle">用图表掌握名单规模、邮箱可达性、开课进度与系别分布。</p>
+            </div>
+        </div>
+        <div class="academic-card-body">
+            <div class="insight-board">
+                {{ insight_meter('在读学生', class_stats.student_count, 100,
+                    class_stats.class_count ~ ' 个班 · 平均 ' ~ avg_class_size ~ ' 人/班' ~ ((' · ' ~ class_stats.suspended_student_count ~ ' 人休学') if class_stats.suspended_student_count else ''),
+                    'indigo', '人') }}
+                {{ insight_ring('邮箱可达率', _email_covered, class_stats.student_count,
+                    (class_stats.missing_email_count ~ ' 名学生缺少邮箱，可能漏收通知。') if class_stats.missing_email_count else '名单邮箱覆盖完整。',
+                    ('emerald' if not class_stats.missing_email_count else 'amber'),
+                    _email_covered ~ ' / ' ~ class_stats.student_count ~ ' 人') }}
+                {{ insight_ring('已绑定课堂', class_stats.active_class_count, class_stats.class_count,
+                    '已进入教学流程的班级，可直接开课与布置任务。', 'teal',
+                    class_stats.active_class_count ~ ' / ' ~ class_stats.class_count ~ ' 个班') }}
+                {{ insight_bars('班级按系别', _dept_ns.dist,
+                    class_stats.academic_synced_class_count ~ ' 个班已教务同步（' ~ class_stats.academic_synced_student_count ~ ' 条学生记录）。', 'violet') }}
+            </div>
+        </div>
     </section>
 
     <section class="class-control-panel" aria-label="班级筛选与搜索">

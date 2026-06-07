@@ -41123,3 +41123,140 @@ body.has-teaching-session-modal {
    over the UA [hidden] rule and leave the go-button / form always visible.
    Make [hidden] authoritative within the popover. */
 .agenda-popover [hidden] { display: none !important; }
+
+/* ===== Manage insights toolkit — chart-first 信息归集 (charts over numbers) =====
+   Pure CSS/SVG, no JS lib. Shared by the manage sub-page top sections. */
+.insight-board {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 14px;
+}
+.insight-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
+    box-shadow: 0 16px 38px -32px rgba(15, 23, 42, 0.5);
+}
+.insight-panel__head { display: flex; flex-direction: column; gap: 2px; }
+.insight-panel__title {
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.insight-panel__caption { margin: 0; font-size: 0.8rem; line-height: 1.5; color: var(--text-secondary); }
+
+/* Donut / ring metric */
+.insight-ring-wrap { display: flex; align-items: center; gap: 14px; }
+.insight-ring { position: relative; width: 86px; height: 86px; flex: 0 0 auto; }
+.insight-ring svg { width: 100%; height: 100%; display: block; }
+.insight-ring__track { fill: none; stroke: rgba(148, 163, 184, 0.22); stroke-width: 3.4; }
+.insight-ring__fill {
+    fill: none;
+    stroke: var(--ring-tone, #4f46e5);
+    stroke-width: 3.4;
+    stroke-linecap: round;
+    transform: rotate(-90deg);
+    transform-origin: 50% 50%;
+    stroke-dasharray: var(--ring-pct, 0) 100;
+    transition: stroke-dasharray 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.insight-ring__center {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    text-align: center;
+    gap: 0;
+}
+.insight-ring__center strong { font-size: 1.18rem; font-weight: 850; color: var(--text-primary); line-height: 1.05; }
+.insight-ring__center small { font-size: 0.66rem; font-weight: 700; color: var(--text-muted); }
+.insight-ring-legend { display: grid; gap: 6px; min-width: 0; }
+.insight-ring-legend b { font-size: 1.32rem; font-weight: 850; color: var(--text-primary); line-height: 1; }
+.insight-ring-legend span { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.45; }
+
+/* Horizontal category bars */
+.insight-bars { display: grid; gap: 9px; }
+.insight-bar { display: grid; grid-template-columns: minmax(56px, 38%) 1fr auto; align-items: center; gap: 10px; }
+.insight-bar__label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.insight-bar__track { height: 9px; border-radius: 999px; background: rgba(148, 163, 184, 0.16); overflow: hidden; }
+.insight-bar__track > i {
+    display: block;
+    height: 100%;
+    width: calc(var(--bar-pct, 0) * 1%);
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--bar-tone, #4f46e5), color-mix(in srgb, var(--bar-tone, #4f46e5) 70%, #ffffff));
+    transition: width 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.insight-bar__value { font-size: 0.82rem; font-weight: 800; color: var(--text-primary); min-width: 1.4em; text-align: right; }
+.insight-bars--empty { font-size: 0.82rem; color: var(--text-muted); padding: 6px 0; }
+
+/* Meter (single metric with context) */
+.insight-meter { display: grid; gap: 8px; }
+.insight-meter__row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.insight-meter__value { font-size: 1.5rem; font-weight: 850; color: var(--text-primary); line-height: 1; }
+.insight-meter__value small { font-size: 0.82rem; font-weight: 700; color: var(--text-muted); margin-left: 3px; }
+.insight-meter__delta { font-size: 0.76rem; font-weight: 800; color: var(--text-muted); }
+.insight-meter__track { height: 10px; border-radius: 999px; background: rgba(148, 163, 184, 0.16); overflow: hidden; }
+.insight-meter__track > i {
+    display: block; height: 100%; width: calc(var(--meter-pct, 0) * 1%);
+    border-radius: 999px; background: var(--meter-tone, #4f46e5);
+    transition: width 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Tone helpers */
+.insight-tone-indigo { --ring-tone: #4f46e5; --bar-tone: #4f46e5; --meter-tone: #4f46e5; }
+.insight-tone-teal   { --ring-tone: #0d9488; --bar-tone: #0d9488; --meter-tone: #0d9488; }
+.insight-tone-sky    { --ring-tone: #0284c7; --bar-tone: #0284c7; --meter-tone: #0284c7; }
+.insight-tone-amber  { --ring-tone: #d97706; --bar-tone: #d97706; --meter-tone: #d97706; }
+.insight-tone-rose   { --ring-tone: #e11d48; --bar-tone: #e11d48; --meter-tone: #e11d48; }
+.insight-tone-violet { --ring-tone: #7c3aed; --bar-tone: #7c3aed; --meter-tone: #7c3aed; }
+.insight-tone-emerald{ --ring-tone: #059669; --bar-tone: #059669; --meter-tone: #059669; }
+
+/* Selection-based filter bar — segmented chips (selection over typing) */
+.filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.filter-bar__search {
+    position: relative; flex: 1 1 240px; min-width: 200px;
+    display: inline-flex; align-items: center;
+}
+.filter-bar__search svg { position: absolute; left: 12px; color: var(--text-muted); pointer-events: none; }
+.filter-bar__search input {
+    width: 100%; padding: 9px 12px 9px 36px;
+    border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 11px;
+    background: rgba(255, 255, 255, 0.9); font-size: 0.88rem; color: var(--text-primary);
+}
+.filter-bar__search input:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.14); }
+.filter-group { display: inline-flex; flex-direction: column; gap: 5px; min-width: 0; }
+.filter-group__label { font-size: 0.7rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
+.filter-chips { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.filter-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 999px; cursor: pointer;
+    border: 1px solid rgba(148, 163, 184, 0.28); background: rgba(248, 250, 252, 0.9);
+    color: var(--text-secondary); font-size: 0.82rem; font-weight: 700; line-height: 1.1;
+    transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.filter-chip:hover { background: rgba(79, 70, 229, 0.08); color: var(--text-primary); }
+.filter-chip.is-active { background: var(--primary-color); border-color: var(--primary-color); color: #fff; }
+.filter-chip__count {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+    background: rgba(148, 163, 184, 0.22); color: inherit; font-size: 0.7rem; font-weight: 800;
+}
+.filter-chip.is-active .filter-chip__count { background: rgba(255, 255, 255, 0.26); }
+
+@media (prefers-reduced-motion: reduce) {
+    .insight-ring__fill, .insight-bar__track > i, .insight-meter__track > i { transition: none; }
+}
