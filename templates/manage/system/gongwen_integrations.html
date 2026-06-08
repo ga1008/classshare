@@ -97,12 +97,12 @@
             <div>
                 <p class="gw-kicker">OFFICIAL DOCUMENTS</p>
                 <h2>校园公文通对接</h2>
-                <p>保存账号前会先通过统一认证登录校验，登录页验证码由平台多模态模型自动识别。校验通过后，系统会顺序同步收件箱内的全部公文，拆解文号、发文单位、分类与附件并下载到本地，供检索与后续提醒使用。</p>
+                <p>保存账号前会先通过统一认证登录校验，登录页验证码由平台多模态模型自动识别。校验通过后系统会同步收件箱公文，拆解文号、发文单位、分类与附件，供检索与后续提醒使用。之后每 6 小时按账号错峰自动增量同步（仅拉取新增、按公文编号匹配、分页限速），无需手动操作。</p>
                 <div class="gw-chip-row">
                     <span class="gw-chip">验证码识别</span>
-                    <span class="gw-chip">公文同步</span>
-                    <span class="gw-chip">附件下载</span>
-                    <span class="gw-chip">只读不回写</span>
+                    <span class="gw-chip">增量同步</span>
+                    <span class="gw-chip">每6小时自动</span>
+                    <span class="gw-chip">限速·只读不回写</span>
                 </div>
                 <div class="gw-hero-actions">
                     <button type="button" class="btn btn-outline" id="gw-account-manage-btn">账号管理</button>
@@ -193,5 +193,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_gongwen_integrations.js?v=gongwen-20260608b"></script>
+<script type="module" src="/static/js/manage_gongwen_integrations.js?v=gongwen-20260609"></script>
 {% endblock %}

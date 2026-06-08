@@ -11,10 +11,11 @@ Also exposes content-retrieval and search interfaces (``get_gongwen_document_con
 
 from __future__ import annotations
 
+import asyncio
 import html as html_lib
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,15 @@ from .gongwen_integration_service import (
 GONGWEN_ATTACHMENT_DIR = Path(DATA_DIR) / "gongwen_attachments"
 PAGE_SIZE = 50
 MAX_PAGES = 40
+# Be a courteous client: pace page requests and walk the inbox newest-first,
+# stopping once a whole page is already in our DB (incremental). The first sync
+# of an empty DB naturally walks to the end (full), but still paced.
+PAGE_DELAY_SECONDS = 0.4
+# Recurring auto-sync: low frequency, staggered per teacher so syncs don't all
+# hit the upstream at once. Manual 立即同步 is the on-demand top-up.
+GONGWEN_SYNC_TASK_KIND = "gongwen_incremental_sync"
+GONGWEN_SYNC_INTERVAL_SECONDS = 6 * 3600
+GONGWEN_SYNC_STAGGER_MINUTES = 180
 MAX_DOWNLOAD_BYTES = 60 * 1024 * 1024
 DOWNLOAD_TIMEOUT_SECONDS = 60.0
 # Only these hosts may be cached/redirected to — the school document CDN.
@@ -187,12 +197,27 @@ def _upsert_document(conn, teacher_id: int, credential_id: int | None, system_co
     return dict(row) if row else None
 
 
-async def sync_current_teacher_gongwen_documents(teacher_id: int) -> dict[str, Any]:
-    """Sync the teacher's inbox document metadata. Fast: page fetches + upsert only.
+def _load_existing_remote_ids(conn, teacher_id: int, system_code: str) -> set[str]:
+    rows = conn.execute(
+        "SELECT remote_id FROM gongwen_documents WHERE teacher_id = ? AND system_code = ?",
+        (int(teacher_id), system_code),
+    ).fetchall()
+    return {str(dict(r)["remote_id"]) for r in rows}
 
-    Attachments are NOT bulk-downloaded here (that would block the request on a
-    large inbox). They are public on the document CDN and are cached lazily on
-    first download via ``ensure_local_attachment``.
+
+async def sync_current_teacher_gongwen_documents(teacher_id: int, *, full: bool = False) -> dict[str, Any]:
+    """Incrementally sync the teacher's inbox document metadata.
+
+    Strategy (courteous data replication, not scraping):
+    - Walk the inbox newest-first, paced by ``PAGE_DELAY_SECONDS``.
+    - Match by stable ``remote_id`` (the snowflake id), never by date.
+    - Stop as soon as a whole page contains nothing new (we've reached
+      already-synced territory) unless ``full`` forces a complete sweep.
+    - The first sync of an empty DB naturally walks to ``lastPage`` (full),
+      so no extra "first full" code path is needed.
+
+    Attachments are not bulk-downloaded here; they are public on the CDN and
+    cached lazily on first download via ``ensure_local_attachment``.
     """
     with get_db_connection() as conn:
         ensure_gongwen_schema(conn)
@@ -207,8 +232,11 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int) -> dict[str, A
 
     profile = get_gongwen_system_profile(access.get("system_code") or "gxufl")
     credential_id = access.get("credential_id")
-    counts = {"fetched": 0, "stored": 0, "pages": 0}
+    with get_db_connection() as conn:
+        known_ids = _load_existing_remote_ids(conn, teacher_id, profile.system_code)
+    counts = {"fetched": 0, "stored": 0, "new": 0, "pages": 0}
     warnings: list[str] = []
+    mode = "全量" if (full or not known_ids) else "增量"
 
     try:
         async with open_authenticated_gongwen_client(access) as (client, profile, _token):
@@ -229,6 +257,7 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int) -> dict[str, A
                     break
                 counts["pages"] += 1
 
+                new_in_page = 0
                 with get_db_connection() as conn:
                     ensure_gongwen_schema(conn)
                     for item in items:
@@ -236,6 +265,9 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int) -> dict[str, A
                             continue
                         counts["fetched"] += 1
                         fields = _extract_document_fields(item, profile.base_url)
+                        if fields["remote_id"] and fields["remote_id"] not in known_ids:
+                            new_in_page += 1
+                            counts["new"] += 1
                         row = _upsert_document(conn, teacher_id, credential_id, profile.system_code, fields, item)
                         if row:
                             counts["stored"] += 1
@@ -243,9 +275,14 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int) -> dict[str, A
 
                 if result.get("lastPage"):
                     break
+                # Incremental stop: this whole page was already known -> older
+                # pages are too (feed is newest-first), so we're caught up.
+                if not full and known_ids and new_in_page == 0:
+                    break
                 page_no += 1
+                await asyncio.sleep(PAGE_DELAY_SECONDS)
             if page_no > MAX_PAGES:
-                warnings.append(f"公文数量较多，本次同步最多读取 {MAX_PAGES * PAGE_SIZE} 条。")
+                warnings.append(f"公文数量较多，本次最多读取 {MAX_PAGES * PAGE_SIZE} 条，可再次同步继续。")
     except ValueError as exc:
         return {"status": "failed", "message": str(exc), "counts": counts, "warnings": warnings}
     except httpx.HTTPError as exc:
@@ -257,12 +294,67 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int) -> dict[str, A
         }
 
     status = "success" if counts["stored"] else "empty"
-    message = (
-        f"已同步 {counts['stored']} 条公文。附件在首次下载时按需缓存。"
-        if counts["stored"]
-        else "未发现可同步的公文。"
-    )
+    if counts["stored"]:
+        message = f"{mode}同步完成：新增 {counts['new']} 条，更新 {counts['stored']} 条。附件首次下载时按需缓存。"
+    else:
+        message = "未发现可同步的公文。"
     return {"status": status, "message": message, "counts": counts, "warnings": warnings}
+
+
+# --------------------------------------------------------------------------- #
+# Scheduled auto-sync (recurring, staggered) — keeps the local copy fresh for
+# secondary stats & reminders without manual clicks, and without hammering the
+# upstream (low frequency + per-teacher jitter + incremental).
+# --------------------------------------------------------------------------- #
+
+
+def schedule_gongwen_auto_sync(conn, teacher_id: int) -> int:
+    """Arm/refresh the recurring incremental sync for a teacher. Idempotent."""
+    from .scheduled_task_service import schedule_task
+
+    teacher_id = int(teacher_id)
+    # Stagger the first fire so simultaneously-onboarded teachers don't sync in
+    # lockstep; subsequent fires recur every GONGWEN_SYNC_INTERVAL_SECONDS.
+    offset_minutes = 30 + (teacher_id % GONGWEN_SYNC_STAGGER_MINUTES)
+    run_at = datetime.now() + timedelta(minutes=offset_minutes)
+    return schedule_task(
+        conn,
+        task_kind=GONGWEN_SYNC_TASK_KIND,
+        run_at=run_at,
+        payload={"teacher_id": teacher_id},
+        dedupe_key=f"gongwen-sync:{teacher_id}",
+        recurrence_seconds=GONGWEN_SYNC_INTERVAL_SECONDS,
+        owner_role="teacher",
+        owner_user_pk=teacher_id,
+        title="公文增量同步",
+        replace=True,
+    )
+
+
+def cancel_gongwen_auto_sync(conn, teacher_id: int) -> int:
+    from .scheduled_task_service import cancel_tasks_by_dedupe
+
+    return cancel_tasks_by_dedupe(conn, f"gongwen-sync:{int(teacher_id)}")
+
+
+async def handle_gongwen_sync_task(task: dict[str, Any]) -> str:
+    """Scheduler handler: run one incremental sync; self-cancel if the
+    credential was removed so we stop logging into the upstream."""
+    payload = task.get("payload") or {}
+    teacher_id = int(payload.get("teacher_id") or 0)
+    if not teacher_id:
+        return "skipped: missing teacher"
+    with get_db_connection() as conn:
+        ensure_gongwen_schema(conn)
+        access = load_teacher_gongwen_access_method(conn, teacher_id)
+    if not access:
+        with get_db_connection() as conn:
+            cancel_gongwen_auto_sync(conn, teacher_id)
+            conn.commit()
+        return "cancelled: credential removed"
+    result = await sync_current_teacher_gongwen_documents(teacher_id)
+    counts = result.get("counts") or {}
+    return f"{result.get('status')}: new={counts.get('new', 0)} stored={counts.get('stored', 0)}"
 
 
 async def ensure_local_attachment(teacher_id: int, document_id: int, which: str = "primary") -> dict[str, Any]:
@@ -374,10 +466,10 @@ def build_gongwen_sync_capabilities(conn, teacher_id: int) -> list[dict[str, Any
         {
             "key": "documents",
             "label": "公文收件箱",
-            "description": "同步统一认证账号收到的全部公文，含文号、发文单位、分类与附件。",
+            "description": "增量同步统一认证账号收到的公文（按公文编号匹配、分页限速），含文号、发文单位、分类与附件。每 6 小时按账号错峰自动同步一次。",
             "endpoint": "GET /user/doc/page",
             "method": "GET",
-            "scope": "当前账号收件箱内的全部公文",
+            "scope": "当前账号收件箱内的公文（增量）",
             "has_synced": total > 0,
             "last_synced_at": last_synced_at,
             "status_text": "已同步" if total > 0 else "未同步",
@@ -386,7 +478,7 @@ def build_gongwen_sync_capabilities(conn, teacher_id: int) -> list[dict[str, Any
                 {"label": "未读", "value": int(data.get("unread") or 0)},
                 {"label": "含附件", "value": int(data.get("with_file") or 0)},
             ],
-            "safe_note": "同步仅读取公文列表与附件，不会回写、标记已读或反馈。",
+            "safe_note": "增量、限速、错峰，仅读取列表与公开附件，不回写/标记已读/反馈。",
         }
     ]
 

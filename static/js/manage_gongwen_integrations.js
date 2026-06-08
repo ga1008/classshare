@@ -59,6 +59,7 @@ const syncStatusLabels = {
 };
 
 const countLabels = {
+    new: '新增',
     fetched: '抓取',
     stored: '入库',
     pages: '页数',

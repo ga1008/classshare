@@ -406,6 +406,7 @@ async def api_save_gongwen_credential(request: Request, user: dict = Depends(get
     with get_db_connection() as conn:
         try:
             credential = save_verified_gongwen_credential(conn, int(user["id"]), payload, verification)
+            schedule_gongwen_auto_sync(conn, int(user["id"]))
             credentials = list_teacher_gongwen_credentials(conn, int(user["id"]))
             conn.commit()
         except ValueError as exc:
@@ -444,6 +445,8 @@ async def api_verify_gongwen_credential(credential_id: int, user: dict = Depends
             credential = update_gongwen_credential_verification_status(
                 conn, int(user["id"]), credential_id, verification
             )
+            if verification.get("ok"):
+                schedule_gongwen_auto_sync(conn, int(user["id"]))
             credentials = list_teacher_gongwen_credentials(conn, int(user["id"]))
             conn.commit()
         except ValueError as exc:
@@ -474,6 +477,9 @@ async def api_delete_gongwen_credential(credential_id: int, user: dict = Depends
     with get_db_connection() as conn:
         try:
             removed_count = delete_teacher_gongwen_credential(conn, int(user["id"]), credential_id)
+            # Stop the recurring sync once the teacher has no 公文 credential left.
+            if not list_teacher_gongwen_credentials(conn, int(user["id"])):
+                cancel_gongwen_auto_sync(conn, int(user["id"]))
             credentials = list_teacher_gongwen_credentials(conn, int(user["id"]))
             conn.commit()
         except ValueError as exc:

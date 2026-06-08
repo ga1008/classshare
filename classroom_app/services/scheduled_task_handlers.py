@@ -155,3 +155,13 @@ def handle_exam_email_reminder(task: dict[str, Any]) -> str:
 
 
 register_task_handler(TASK_KIND_EXAM_EMAIL_REMINDER, handle_exam_email_reminder)
+
+
+# 校园公文通 recurring incremental sync (keeps the local copy fresh for stats /
+# reminders). The handler is async; the dispatcher awaits coroutine results.
+from .gongwen_document_sync_service import (  # noqa: E402
+    GONGWEN_SYNC_TASK_KIND,
+    handle_gongwen_sync_task,
+)
+
+register_task_handler(GONGWEN_SYNC_TASK_KIND, handle_gongwen_sync_task)
