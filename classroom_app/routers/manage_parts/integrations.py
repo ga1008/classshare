@@ -553,26 +553,19 @@ async def api_download_gongwen_document_file(
     which: str = "primary",
     user: dict = Depends(get_current_teacher),
 ):
-    """Stream the locally-downloaded file, or redirect to the remote original."""
+    """Serve the document attachment: cache the public CDN file locally on first
+    access, then stream it; fall back to a host-validated redirect on failure."""
     from fastapi.responses import RedirectResponse
 
-    with get_db_connection() as conn:
-        document = get_gongwen_document_content(conn, int(user["id"]), document_id)
-        row = conn.execute(
-            "SELECT local_file_path, local_attachment_path, file_url, attachment_url "
-            "FROM gongwen_documents WHERE id = ? AND teacher_id = ? LIMIT 1",
-            (int(document_id), int(user["id"])),
-        ).fetchone()
-    if document is None or row is None:
+    which = "attachment" if str(which) == "attachment" else "primary"
+    result = await ensure_local_attachment(int(user["id"]), int(document_id), which)
+    status = result.get("status")
+    if status == "not_found":
         raise HTTPException(status_code=404, detail="公文不存在或无权访问。")
-    row = dict(row)
-    if str(which) == "attachment":
-        local_path, remote_url = row.get("local_attachment_path"), row.get("attachment_url")
-    else:
-        local_path, remote_url = row.get("local_file_path"), row.get("file_url")
-    local_path = str(local_path or "")
-    if local_path and Path(local_path).exists():
-        return FileResponse(local_path, filename=Path(local_path).name)
-    if remote_url:
-        return RedirectResponse(url=str(remote_url), status_code=302)
-    raise HTTPException(status_code=404, detail="该公文暂无可下载的附件。")
+    if status == "no_file":
+        raise HTTPException(status_code=404, detail="该公文暂无可下载的附件。")
+    if status == "local":
+        path = Path(result["local_path"])
+        return FileResponse(str(path), filename=path.name)
+    # status == "redirect": cache failed but the CDN file is public.
+    return RedirectResponse(url=str(result.get("remote_url")), status_code=302)

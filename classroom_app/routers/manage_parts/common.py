@@ -206,6 +206,7 @@ from ...services.gongwen_integration_service import (
 from ...services.gongwen_document_sync_service import (
     build_gongwen_sync_capabilities,
     count_teacher_gongwen_documents,
+    ensure_local_attachment,
     get_gongwen_document_content,
     list_teacher_gongwen_categories,
     list_teacher_gongwen_documents,

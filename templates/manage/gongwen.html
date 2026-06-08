@@ -51,8 +51,9 @@
             <p>统一认证账号收件箱内的公文已同步到本地，可检索、查看与下载附件。后续可基于公文内容设置提醒。</p>
         </div>
         <div class="gwlist-toolbar">
+            <span class="gwlist-time" id="gw-doc-last-sync">{% if summary.last_synced_at %}上次同步：{{ summary.last_synced_at[:16] }}{% else %}尚未同步{% endif %}</span>
             <button type="button" class="btn btn-outline" id="gw-doc-refresh">刷新</button>
-            <a class="btn btn-primary" href="/manage/system/gongwen-integrations">立即同步</a>
+            <button type="button" class="btn btn-primary" id="gw-doc-sync">立即同步</button>
         </div>
     </div>
 
@@ -102,7 +103,10 @@
                 </tbody>
             </table>
         </div>
-        <div class="gwlist-foot" id="gw-doc-foot"></div>
+        <div class="gwlist-foot">
+            <span id="gw-doc-count"></span>
+            <button type="button" class="btn btn-outline btn-sm" id="gw-doc-more" style="display:none;margin-left:10px;">加载更多</button>
+        </div>
     </div>
 </section>
 
@@ -111,5 +115,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260608"></script>
+<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260608b"></script>
 {% endblock %}

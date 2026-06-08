@@ -61,8 +61,7 @@ const syncStatusLabels = {
 const countLabels = {
     fetched: '抓取',
     stored: '入库',
-    downloaded: '下载附件',
-    download_failed: '附件失败',
+    pages: '页数',
 };
 
 function currentProfile() {

@@ -45,7 +45,7 @@ from .academic_integration_service import (
 
 GONGWEN_HTTP_TIMEOUT_SECONDS = 25.0
 CAPTCHA_MAX_ATTEMPTS = 4
-AI_OCR_TIMEOUT_SECONDS = 40.0
+AI_OCR_TIMEOUT_SECONDS = 20.0
 
 
 @dataclass(frozen=True)

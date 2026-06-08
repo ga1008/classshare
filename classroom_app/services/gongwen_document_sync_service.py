@@ -36,10 +36,26 @@ PAGE_SIZE = 50
 MAX_PAGES = 40
 MAX_DOWNLOAD_BYTES = 60 * 1024 * 1024
 DOWNLOAD_TIMEOUT_SECONDS = 60.0
+# Only these hosts may be cached/redirected to — the school document CDN.
+ALLOWED_FILE_HOSTS = {"doc.gxufl.com", "doc_api.gxufl.com"}
 
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def is_allowed_file_url(url: Any) -> bool:
+    """Guard against open-redirect / SSRF: only allow the document CDN hosts."""
+    raw = str(url or "").strip()
+    if raw.startswith("//"):
+        raw = "https:" + raw
+    try:
+        from urllib.parse import urlparse
+
+        host = (urlparse(raw).hostname or "").lower()
+    except ValueError:
+        return False
+    return host in ALLOWED_FILE_HOSTS
 
 
 def _strip_html(raw_html: Any) -> str:
@@ -171,24 +187,13 @@ def _upsert_document(conn, teacher_id: int, credential_id: int | None, system_co
     return dict(row) if row else None
 
 
-async def _download_to(client: httpx.AsyncClient, url: str, dest: Path, base_url: str) -> str:
-    response = await client.get(
-        url,
-        headers={"Referer": f"{base_url}/", "Origin": base_url},
-        follow_redirects=True,
-        timeout=DOWNLOAD_TIMEOUT_SECONDS,
-    )
-    response.raise_for_status()
-    content = response.content
-    if not content or len(content) > MAX_DOWNLOAD_BYTES:
-        raise ValueError("文件为空或超过下载上限。")
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(content)
-    return str(dest)
-
-
 async def sync_current_teacher_gongwen_documents(teacher_id: int) -> dict[str, Any]:
-    """Fetch + store the teacher's inbox documents. Returns a structured result."""
+    """Sync the teacher's inbox document metadata. Fast: page fetches + upsert only.
+
+    Attachments are NOT bulk-downloaded here (that would block the request on a
+    large inbox). They are public on the document CDN and are cached lazily on
+    first download via ``ensure_local_attachment``.
+    """
     with get_db_connection() as conn:
         ensure_gongwen_schema(conn)
         access = load_teacher_gongwen_access_method(conn, teacher_id)
@@ -202,13 +207,12 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int) -> dict[str, A
 
     profile = get_gongwen_system_profile(access.get("system_code") or "gxufl")
     credential_id = access.get("credential_id")
-    counts = {"fetched": 0, "stored": 0, "downloaded": 0, "download_failed": 0}
+    counts = {"fetched": 0, "stored": 0, "pages": 0}
     warnings: list[str] = []
 
     try:
         async with open_authenticated_gongwen_client(access) as (client, profile, _token):
             page_no = 1
-            pending_downloads: list[tuple[int, str, Path]] = []
             while page_no <= MAX_PAGES:
                 resp = await client.get(
                     f"{profile.api_base_url}/user/doc/page",
@@ -223,6 +227,7 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int) -> dict[str, A
                 items = result.get("list") or []
                 if not items:
                     break
+                counts["pages"] += 1
 
                 with get_db_connection() as conn:
                     ensure_gongwen_schema(conn)
@@ -232,45 +237,15 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int) -> dict[str, A
                         counts["fetched"] += 1
                         fields = _extract_document_fields(item, profile.base_url)
                         row = _upsert_document(conn, teacher_id, credential_id, profile.system_code, fields, item)
-                        if not row:
-                            continue
-                        counts["stored"] += 1
-                        doc_id = int(row["id"])
-                        teacher_dir = GONGWEN_ATTACHMENT_DIR / str(teacher_id)
-                        if fields["file_url"] and not row.get("local_file_path"):
-                            name = _safe_filename(fields["file_url"], f"{fields['remote_id']}_file")
-                            pending_downloads.append((doc_id, "primary", teacher_dir / name, fields["file_url"]))
-                        if fields["attachment_url"] and not row.get("local_attachment_path"):
-                            name = _safe_filename(fields["attachment_url"], f"{fields['remote_id']}_att")
-                            pending_downloads.append((doc_id, "attachment", teacher_dir / name, fields["attachment_url"]))
+                        if row:
+                            counts["stored"] += 1
                     conn.commit()
 
                 if result.get("lastPage"):
                     break
                 page_no += 1
-
-            # Download attachments after metadata is committed.
-            for doc_id, which, dest, url in pending_downloads:
-                try:
-                    saved = await _download_to(client, url, dest, profile.base_url)
-                    column = "local_file_path" if which == "primary" else "local_attachment_path"
-                    with get_db_connection() as conn:
-                        conn.execute(
-                            f"UPDATE gongwen_documents SET {column} = ?, file_download_status = 'done', "
-                            "file_download_error = '', updated_at = ? WHERE id = ?",
-                            (saved, _now_iso(), doc_id),
-                        )
-                        conn.commit()
-                    counts["downloaded"] += 1
-                except (httpx.HTTPError, ValueError, OSError) as exc:
-                    counts["download_failed"] += 1
-                    with get_db_connection() as conn:
-                        conn.execute(
-                            "UPDATE gongwen_documents SET file_download_status = 'failed', "
-                            "file_download_error = ?, updated_at = ? WHERE id = ?",
-                            (str(exc)[:300], _now_iso(), doc_id),
-                        )
-                        conn.commit()
+            if page_no > MAX_PAGES:
+                warnings.append(f"公文数量较多，本次同步最多读取 {MAX_PAGES * PAGE_SIZE} 条。")
     except ValueError as exc:
         return {"status": "failed", "message": str(exc), "counts": counts, "warnings": warnings}
     except httpx.HTTPError as exc:
@@ -281,15 +256,71 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int) -> dict[str, A
             "warnings": warnings,
         }
 
-    if counts["download_failed"]:
-        warnings.append(f"{counts['download_failed']} 个附件未能下载，可稍后重试同步。")
     status = "success" if counts["stored"] else "empty"
     message = (
-        f"已同步 {counts['stored']} 条公文，下载附件 {counts['downloaded']} 个。"
+        f"已同步 {counts['stored']} 条公文。附件在首次下载时按需缓存。"
         if counts["stored"]
         else "未发现可同步的公文。"
     )
     return {"status": status, "message": message, "counts": counts, "warnings": warnings}
+
+
+async def ensure_local_attachment(teacher_id: int, document_id: int, which: str = "primary") -> dict[str, Any]:
+    """Lazily cache a document's public attachment to local disk on first access.
+
+    Returns ``{"status", "local_path"?, "remote_url"?, "message"?}``. The caller
+    serves the local file when present, otherwise redirects to ``remote_url``.
+    Never raises — failures degrade to a redirect.
+    """
+    column = "local_file_path" if which != "attachment" else "local_attachment_path"
+    url_column = "file_url" if which != "attachment" else "attachment_url"
+    with get_db_connection() as conn:
+        ensure_gongwen_schema(conn)
+        row = conn.execute(
+            f"SELECT id, {column} AS local_path, {url_column} AS remote_url, remote_id "
+            "FROM gongwen_documents WHERE id = ? AND teacher_id = ? LIMIT 1",
+            (int(document_id), int(teacher_id)),
+        ).fetchone()
+    if row is None:
+        return {"status": "not_found"}
+    row = dict(row)
+    local_path = str(row.get("local_path") or "")
+    remote_url = str(row.get("remote_url") or "")
+    if local_path and Path(local_path).exists():
+        return {"status": "local", "local_path": local_path}
+    if not remote_url:
+        return {"status": "no_file"}
+    if not is_allowed_file_url(remote_url):
+        # Refuse to touch/redirect to an unexpected host.
+        return {"status": "no_file"}
+
+    dest = GONGWEN_ATTACHMENT_DIR / str(teacher_id) / _safe_filename(remote_url, f"{row.get('remote_id')}_{which}")
+    try:
+        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=DOWNLOAD_TIMEOUT_SECONDS) as client:
+            response = await client.get(remote_url, headers={"User-Agent": "LanShare-Gongwen/1.0"})
+            response.raise_for_status()
+            content = response.content
+            if not content or len(content) > MAX_DOWNLOAD_BYTES:
+                raise ValueError("文件为空或超过下载上限。")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(content)
+        with get_db_connection() as conn:
+            conn.execute(
+                f"UPDATE gongwen_documents SET {column} = ?, file_download_status = 'done', "
+                "file_download_error = '', updated_at = ? WHERE id = ? AND teacher_id = ?",
+                (str(dest), _now_iso(), int(document_id), int(teacher_id)),
+            )
+            conn.commit()
+        return {"status": "local", "local_path": str(dest)}
+    except (httpx.HTTPError, ValueError, OSError) as exc:
+        with get_db_connection() as conn:
+            conn.execute(
+                "UPDATE gongwen_documents SET file_download_status = 'failed', file_download_error = ?, "
+                "updated_at = ? WHERE id = ? AND teacher_id = ?",
+                (str(exc)[:300], _now_iso(), int(document_id), int(teacher_id)),
+            )
+            conn.commit()
+        return {"status": "redirect", "remote_url": remote_url, "message": str(exc)[:160]}
 
 
 def _build_auto_sync_payload(result: dict[str, Any]) -> dict[str, Any]:
