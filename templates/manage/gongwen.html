@@ -1,0 +1,115 @@
+{% extends "manage/layout.html" %}
+{% from "macros/manage_insights.html" import insight_ring, insight_bars %}
+
+{% block title %}公文材料{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('公文同步', '对接统一认证账号', 'refresh-cw', href='/manage/system/gongwen-integrations', variant='solid', tone='rose') }}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    .gwlist-shell { display: grid; gap: var(--spacing-lg); }
+    .gwlist-hero { display: flex; flex-wrap: wrap; gap: var(--spacing-md); align-items: flex-end; justify-content: space-between; }
+    .gwlist-hero h1 { margin: 0; font-size: 1.4rem; font-weight: 850; color: var(--text-primary); }
+    .gwlist-hero p { margin: 6px 0 0; color: var(--text-secondary); font-size: 0.9rem; }
+    .gwlist-toolbar { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); align-items: center; }
+    .gwlist-search { position: relative; flex: 1 1 240px; min-width: 200px; }
+    .gwlist-search input { width: 100%; padding: 9px 12px; border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 10px; background: #fff; font-size: 0.88rem; }
+    .gwlist-card { border: 1px solid rgba(148, 163, 184, 0.2); border-radius: var(--radius-lg); background: #fff; box-shadow: var(--shadow-sm); overflow: hidden; }
+    .gwlist-card-head { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); align-items: center; justify-content: space-between; padding: var(--spacing-md) var(--spacing-lg); border-bottom: 1px solid rgba(226, 232, 240, 0.9); }
+    .gwlist-card-head h3 { margin: 0; font-size: 1rem; font-weight: 800; color: var(--text-primary); }
+    .gwlist-table-wrap { overflow-x: auto; }
+    table.gwlist-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    table.gwlist-table th, table.gwlist-table td { padding: 12px var(--spacing-lg); text-align: left; border-bottom: 1px solid rgba(226, 232, 240, 0.8); vertical-align: top; }
+    table.gwlist-table th { color: var(--text-muted); font-size: 0.74rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; background: rgba(248, 250, 252, 0.7); white-space: nowrap; }
+    table.gwlist-table tr:hover td { background: rgba(248, 250, 252, 0.6); }
+    .gwlist-title { color: var(--text-primary); font-weight: 700; }
+    .gwlist-sn { display: inline-block; margin-right: 6px; color: #b91c1c; font-weight: 800; }
+    .gwlist-unread-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; background: #ef4444; margin-right: 6px; vertical-align: middle; }
+    .gwlist-cat { display: inline-flex; padding: 3px 8px; border-radius: var(--radius-full); background: rgba(99, 102, 241, 0.1); color: #4f46e5; font-size: 0.74rem; font-weight: 800; white-space: nowrap; }
+    .gwlist-time { color: var(--text-muted); white-space: nowrap; }
+    .gwlist-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .gwlist-empty { padding: var(--spacing-2xl); text-align: center; color: var(--text-muted); }
+    .gwlist-empty strong { display: block; color: var(--text-primary); font-size: 1.02rem; margin-bottom: 6px; }
+    .gwlist-chip { display: inline-flex; align-items: center; padding: 5px 10px; border-radius: var(--radius-full); border: 1px solid rgba(148, 163, 184, 0.3); background: #fff; color: var(--text-secondary); font-size: 0.8rem; font-weight: 700; cursor: pointer; }
+    .gwlist-chip.is-active { background: rgba(79, 70, 229, 0.12); border-color: rgba(79, 70, 229, 0.3); color: #4f46e5; }
+    .gwlist-foot { padding: var(--spacing-md) var(--spacing-lg); color: var(--text-muted); font-size: 0.82rem; text-align: center; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set summary = gongwen_summary or {} %}
+{% set read_count = (summary.total | int) - (summary.unread | int) %}
+{% set cat_bars = [] %}
+{% for cat in gongwen_categories or [] %}{% set _ = cat_bars.append({'label': cat.name, 'value': cat.total}) %}{% endfor %}
+<section class="gwlist-shell">
+    <div class="gwlist-hero">
+        <div>
+            <h1>公文材料</h1>
+            <p>统一认证账号收件箱内的公文已同步到本地，可检索、查看与下载附件。后续可基于公文内容设置提醒。</p>
+        </div>
+        <div class="gwlist-toolbar">
+            <button type="button" class="btn btn-outline" id="gw-doc-refresh">刷新</button>
+            <a class="btn btn-primary" href="/manage/system/gongwen-integrations">立即同步</a>
+        </div>
+    </div>
+
+    <div class="insight-board">
+        {{ insight_ring('已读进度', read_count, summary.total | int, '已读 / 全部公文', 'rose', (read_count ~ ' / ' ~ (summary.total | int))) }}
+        {{ insight_bars('分类分布', cat_bars, '按发文分类统计的公文数量', 'indigo', 6) }}
+        {{ insight_ring('含附件公文', summary.with_file | int, summary.total | int, '可下载附件的公文占比', 'sky', ((summary.with_file | int) ~ ' / ' ~ (summary.total | int))) }}
+    </div>
+
+    <div class="gwlist-card">
+        <div class="gwlist-card-head">
+            <h3>收件箱公文</h3>
+            <div class="gwlist-toolbar">
+                <div class="gwlist-search">
+                    <input type="search" id="gw-doc-search" placeholder="搜索标题 / 文号 / 发文单位 / 内容…" autocomplete="off">
+                </div>
+                <select class="form-control" id="gw-doc-category" style="width:auto;min-width:130px;">
+                    <option value="">全部分类</option>
+                    {% for cat in gongwen_categories or [] %}
+                    <option value="{{ cat.name }}">{{ cat.name }}（{{ cat.total }}）</option>
+                    {% endfor %}
+                </select>
+                <button type="button" class="gwlist-chip" id="gw-doc-unread" data-active="0">仅看未读</button>
+            </div>
+        </div>
+        <div class="gwlist-table-wrap">
+            <table class="gwlist-table">
+                <thead>
+                    <tr>
+                        <th>标题</th>
+                        <th>发文单位</th>
+                        <th>发送人</th>
+                        <th>分类</th>
+                        <th>时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="gw-doc-tbody">
+                    {% if not gongwen_documents %}
+                    <tr><td colspan="6">
+                        <div class="gwlist-empty">
+                            <strong>还没有同步任何公文</strong>
+                            前往「公文同步」保存统一认证账号并完成验证码识别登录后，系统会自动同步收件箱公文。
+                        </div>
+                    </td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+        <div class="gwlist-foot" id="gw-doc-foot"></div>
+    </div>
+</section>
+
+<script type="application/json" id="gw-documents-data">{{ gongwen_documents | tojson }}</script>
+<script type="application/json" id="gw-documents-total">{{ gongwen_total | tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260608"></script>
+{% endblock %}

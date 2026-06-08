@@ -11,6 +11,7 @@ from .schema_foundation import ensure_foundation_schema
 from .schema_learning_blog import ensure_learning_blog_signature_schema
 from .schema_materials_integrations import ensure_materials_integrations_schema
 from .schema_scheduler import ensure_scheduler_schema
+from .schema_gongwen import ensure_gongwen_schema
 from .seeds import init_default_exam_paper
 
 
@@ -65,6 +66,17 @@ def init_database():
             print("[DB] PostgreSQL scheduler tables ensured")
         except Exception as exc:
             print(f"[DB] PostgreSQL scheduler schema step skipped: {exc}")
+        # The 公文 integration tables follow the same runtime-managed pattern.
+        try:
+            gongwen_conn = get_db_connection()
+            try:
+                ensure_gongwen_schema(gongwen_conn)
+                gongwen_conn.commit()
+            finally:
+                gongwen_conn.close()
+            print("[DB] PostgreSQL gongwen tables ensured")
+        except Exception as exc:
+            print(f"[DB] PostgreSQL gongwen schema step skipped: {exc}")
         print(
             "[DB] PostgreSQL schema verified: "
             f"{report['present_required_table_count']}/{report['required_table_count']} required tables"
@@ -81,6 +93,7 @@ def init_database():
             ensure_materials_integrations_schema(conn)
             ensure_learning_blog_signature_schema(conn)
             ensure_scheduler_schema(conn)
+            ensure_gongwen_schema(conn)
             conn.commit()
         except Exception:
             conn.rollback()

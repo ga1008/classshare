@@ -1,0 +1,196 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}校园公文通对接{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('公文材料', '查看已同步公文', 'file-text', href='/manage/gongwen', variant='outline', tone='slate') }}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    .gw-shell { display: grid; gap: var(--spacing-lg); }
+    .gw-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+        gap: var(--spacing-lg);
+        align-items: stretch;
+    }
+    .gw-card {
+        min-width: 0;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: var(--radius-lg);
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: var(--shadow-sm);
+    }
+    .gw-intro { padding: var(--spacing-xl); display: flex; gap: var(--spacing-lg); align-items: flex-start; }
+    .gw-mark {
+        width: 58px; height: 58px; border-radius: 18px; flex: 0 0 auto;
+        display: inline-flex; align-items: center; justify-content: center;
+        color: #b91c1c; background: rgba(220, 38, 38, 0.1);
+    }
+    .gw-kicker { margin: 0 0 8px; color: #b91c1c; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+    .gw-intro h2, .gw-card h3 { margin: 0; color: var(--text-primary); font-size: 1.16rem; font-weight: 800; }
+    .gw-intro p, .gw-card p, .gw-help { margin: var(--spacing-sm) 0 0; color: var(--text-secondary); font-size: 0.9rem; line-height: 1.7; }
+    .gw-chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: var(--spacing-lg); }
+    .gw-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: var(--radius-full); background: rgba(220, 38, 38, 0.08); color: #b91c1c; font-size: 0.78rem; font-weight: 800; }
+    .gw-hero-actions, .gw-modal-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); margin-top: var(--spacing-md); }
+    .gw-profile { padding: var(--spacing-lg); display: grid; align-content: start; gap: var(--spacing-sm); }
+    .gw-profile-meta { display: grid; gap: 8px; margin-top: var(--spacing-sm); }
+    .gw-profile-meta div { display: flex; justify-content: space-between; gap: var(--spacing-md); color: var(--text-muted); font-size: 0.82rem; }
+    .gw-profile-meta strong { color: var(--text-primary); text-align: right; word-break: break-word; }
+    .gw-sync-board { padding: var(--spacing-lg); }
+    .gw-sync-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: var(--spacing-md); }
+    .gw-sync-card { display: grid; gap: 10px; padding: var(--spacing-lg); border: 1px solid rgba(148, 163, 184, 0.22); border-radius: 8px; background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.86)); box-shadow: 0 18px 36px -32px rgba(15, 23, 42, 0.5); text-align: left; }
+    .gw-sync-card h4 { margin: 0; color: var(--text-primary); font-size: 1rem; font-weight: 850; }
+    .gw-sync-card p { margin: 0; }
+    .gw-sync-card-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+    .gw-sync-card-meta span { padding: 4px 8px; border-radius: var(--radius-full); background: rgba(14, 165, 233, 0.09); color: #0369a1; font-size: 0.74rem; font-weight: 800; }
+    .gw-sync-card-meta span.is-muted { background: rgba(148, 163, 184, 0.14); color: #64748b; }
+    .gw-empty { padding: var(--spacing-xl); text-align: center; color: var(--text-muted); border: 1px dashed rgba(148, 163, 184, 0.36); border-radius: var(--radius-lg); background: rgba(248, 250, 252, 0.74); }
+    .gw-list { display: grid; gap: var(--spacing-md); }
+    .gw-credential { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--spacing-md); align-items: start; padding: var(--spacing-lg); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: var(--radius-lg); background: rgba(248, 250, 252, 0.72); }
+    .gw-credential h4 { margin: 8px 0 0; color: var(--text-primary); font-size: 1rem; font-weight: 800; }
+    .gw-badge { display: inline-flex; align-items: center; padding: 4px 9px; border-radius: var(--radius-full); background: rgba(148, 163, 184, 0.13); color: #475569; font-size: 0.76rem; font-weight: 800; }
+    .gw-badge.is-verified { background: rgba(16, 185, 129, 0.12); color: #047857; }
+    .gw-badge.is-failed { background: rgba(244, 63, 94, 0.12); color: #be123c; }
+    .gw-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; color: var(--text-muted); font-size: 0.82rem; }
+    .gw-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); justify-content: flex-end; }
+    .gw-password-mask { letter-spacing: 0.16em; color: var(--text-primary); }
+    .gw-sync-panel { display: grid; gap: var(--spacing-sm); margin-top: var(--spacing-md); padding: var(--spacing-md); border: 1px solid rgba(220, 38, 38, 0.18); border-radius: var(--radius-lg); background: rgba(254, 242, 242, 0.68); }
+    .gw-sync-panel[hidden] { display: none; }
+    .gw-stage-list { display: grid; gap: 8px; }
+    .gw-stage { padding: 10px; border: 1px solid rgba(148, 163, 184, 0.18); border-radius: var(--radius-md); background: rgba(255, 255, 255, 0.9); }
+    .gw-stage strong, .gw-stage small { display: block; }
+    .gw-stage strong { color: var(--text-primary); font-size: 0.9rem; }
+    .gw-stage small { margin-top: 4px; color: var(--text-muted); line-height: 1.5; }
+    .gw-counts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .gw-counts span { padding: 4px 8px; border-radius: var(--radius-full); background: rgba(14, 165, 233, 0.08); color: #0369a1; font-size: 0.76rem; font-weight: 800; }
+    .gw-modal-backdrop { position: fixed; inset: 0; z-index: 1100; display: grid; place-items: center; padding: 20px; background: rgba(15, 23, 42, 0.42); backdrop-filter: blur(10px); }
+    .gw-modal-backdrop[hidden] { display: none; }
+    .gw-modal { width: min(900px, 100%); max-height: calc(100vh - 40px); overflow: auto; border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.24); background: #fff; box-shadow: 0 26px 80px -40px rgba(15, 23, 42, 0.72); }
+    .gw-modal-head { padding: var(--spacing-lg); display: flex; align-items: flex-start; justify-content: space-between; gap: var(--spacing-md); border-bottom: 1px solid rgba(226, 232, 240, 0.95); }
+    .gw-modal-head h3 { margin: 4px 0 0; }
+    .gw-modal-body { padding: var(--spacing-lg); }
+    .gw-modal-close { width: 38px; height: 38px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 999px; background: #fff; color: #64748b; font-size: 1.3rem; cursor: pointer; }
+    .gw-account-grid { display: grid; grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr); gap: var(--spacing-lg); align-items: start; }
+    .gw-account-form, .gw-account-list { min-width: 0; padding: var(--spacing-lg); border: 1px solid rgba(226, 232, 240, 0.9); border-radius: 8px; background: rgba(248, 250, 252, 0.74); }
+    .gw-account-form form { display: grid; gap: var(--spacing-md); margin-top: var(--spacing-md); }
+    .gw-account-toolbar { display: flex; justify-content: space-between; gap: var(--spacing-sm); align-items: center; margin-bottom: var(--spacing-md); }
+    @media (max-width: 960px) {
+        .gw-hero { grid-template-columns: 1fr; }
+        .gw-credential { grid-template-columns: 1fr; }
+        .gw-actions { justify-content: flex-start; }
+        .gw-account-grid { grid-template-columns: 1fr; }
+        .gw-modal-head { flex-direction: column; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="gw-shell">
+    <div class="gw-hero">
+        <article class="gw-card gw-intro">
+            <div class="gw-mark" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+            </div>
+            <div>
+                <p class="gw-kicker">OFFICIAL DOCUMENTS</p>
+                <h2>校园公文通对接</h2>
+                <p>保存账号前会先通过统一认证登录校验，登录页验证码由平台多模态模型自动识别。校验通过后，系统会顺序同步收件箱内的全部公文，拆解文号、发文单位、分类与附件并下载到本地，供检索与后续提醒使用。</p>
+                <div class="gw-chip-row">
+                    <span class="gw-chip">验证码识别</span>
+                    <span class="gw-chip">公文同步</span>
+                    <span class="gw-chip">附件下载</span>
+                    <span class="gw-chip">只读不回写</span>
+                </div>
+                <div class="gw-hero-actions">
+                    <button type="button" class="btn btn-outline" id="gw-account-manage-btn">账号管理</button>
+                    <button type="button" class="btn btn-primary" id="gw-sync-all-btn">立即同步</button>
+                    <button type="button" class="btn btn-outline" id="gw-capability-refresh-btn">刷新同步状态</button>
+                    <a class="btn btn-ghost" href="/manage/gongwen">查看公文材料</a>
+                </div>
+            </div>
+        </article>
+
+        <aside class="gw-card gw-profile">
+            <h3>当前适配器</h3>
+            <p id="gw-profile-note">正在读取平台对接方式。</p>
+            <div class="gw-profile-meta">
+                <div><span>系统</span><strong id="gw-profile-system">-</strong></div>
+                <div><span>登录入口</span><strong id="gw-profile-login">-</strong></div>
+                <div><span>认证方式</span><strong id="gw-profile-method">-</strong></div>
+            </div>
+        </aside>
+    </div>
+
+    <section class="gw-card gw-sync-board">
+        <div style="margin-bottom: var(--spacing-md);">
+            <h3>可同步功能</h3>
+            <p class="gw-help">同步过程会顺序访问公文通，避免高频并发；仅读取公文与附件，不会回写、标记已读或反馈。</p>
+        </div>
+        <div class="gw-sync-cards" id="gw-capability-list">
+            <div class="gw-empty">正在读取可同步功能。</div>
+        </div>
+    </section>
+
+    <div class="gw-modal-backdrop" id="gw-account-modal" hidden>
+        <article class="gw-modal" role="dialog" aria-modal="true" aria-labelledby="gw-account-modal-title">
+            <div class="gw-modal-head">
+                <div>
+                    <p class="gw-kicker">ACCOUNT</p>
+                    <h3 id="gw-account-modal-title">账号管理</h3>
+                </div>
+                <button type="button" class="gw-modal-close" id="gw-account-modal-close" aria-label="关闭">&times;</button>
+            </div>
+            <div class="gw-modal-body">
+                <div class="gw-account-grid">
+                    <section class="gw-account-form">
+                        <h3>统一认证账号</h3>
+                        <p class="gw-help">使用学校统一认证账号（学号/工号）。已保存密码按安全策略掩码显示；如需修改，请重新填写密码并验证保存。</p>
+                        <form id="gw-credential-form" autocomplete="off">
+                            <div class="form-group">
+                                <label class="form-label" for="gw-system-code">系统</label>
+                                <select class="form-control" id="gw-system-code" name="system_code" required>
+                                    {% for profile in gongwen_profiles %}
+                                    <option value="{{ profile.system_code }}">{{ profile.system_name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="gw-username">统一认证账号</label>
+                                <input class="form-control" type="text" id="gw-username" name="username" autocomplete="username" placeholder="请输入学号 / 工号 / 统一账号" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="gw-password">统一认证密码</label>
+                                <input class="form-control" type="password" id="gw-password" name="password" autocomplete="current-password" placeholder="重新验证时填写新密码" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="gw-save-btn">验证并保存</button>
+                        </form>
+                        <div class="gw-sync-panel" id="gw-auto-sync-panel" hidden>
+                            <h3 id="gw-auto-sync-title">公文自动同步</h3>
+                            <p id="gw-auto-sync-message"></p>
+                            <div class="gw-stage-list" id="gw-auto-sync-stages"></div>
+                        </div>
+                    </section>
+
+                    <section class="gw-account-list">
+                        <div class="gw-account-toolbar">
+                            <h3>已对接信息</h3>
+                            <button type="button" class="btn btn-outline btn-sm" id="gw-refresh-btn">刷新</button>
+                        </div>
+                        <div class="gw-list" id="gw-credential-list"></div>
+                    </section>
+                </div>
+            </div>
+        </article>
+    </div>
+</section>
+
+<script type="application/json" id="gw-profiles-data">{{ gongwen_profiles | tojson }}</script>
+<script type="application/json" id="gw-credentials-data">{{ gongwen_credentials | tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/manage_gongwen_integrations.js?v=gongwen-20260608"></script>
+{% endblock %}

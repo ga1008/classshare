@@ -133,6 +133,15 @@ from ...services.smart_classroom_integration_service import (
     list_smart_classroom_profiles,
     list_teacher_smart_classroom_credentials,
 )
+from ...services.gongwen_integration_service import (
+    list_gongwen_system_profiles,
+    list_teacher_gongwen_credentials,
+)
+from ...services.gongwen_document_sync_service import (
+    count_teacher_gongwen_documents,
+    list_teacher_gongwen_categories,
+    list_teacher_gongwen_documents,
+)
 from ...services.signature_service import build_signature_dashboard_context
 from ...services.organization_management_service import list_organization_tree
 from ...services.resource_access_service import (

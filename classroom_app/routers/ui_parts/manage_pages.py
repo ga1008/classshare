@@ -574,6 +574,55 @@ async def get_manage_system_smart_classroom_integrations_page(request: Request, 
     )
 
 
+@router.get("/manage/system/gongwen-integrations", response_class=HTMLResponse)
+async def get_manage_system_gongwen_integrations_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """教师个人校园公文通账号与公文同步管理页面。"""
+    profiles = list_gongwen_system_profiles()
+    with get_db_connection() as conn:
+        credentials = list_teacher_gongwen_credentials(conn, int(user["id"]))
+
+    return templates.TemplateResponse(
+        request,
+        "manage/system/gongwen_integrations.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="校园公文通对接",
+            active_page="system_gongwen_integrations",
+            extra={
+                "gongwen_profiles": profiles,
+                "gongwen_credentials": credentials,
+            },
+        ),
+    )
+
+
+@router.get("/manage/gongwen", response_class=HTMLResponse)
+async def get_manage_gongwen_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """公文材料列表页（基础资源）。"""
+    with get_db_connection() as conn:
+        listing = list_teacher_gongwen_documents(conn, int(user["id"]), limit=60)
+        summary = count_teacher_gongwen_documents(conn, int(user["id"]))
+        categories = list_teacher_gongwen_categories(conn, int(user["id"]))
+
+    return templates.TemplateResponse(
+        request,
+        "manage/gongwen.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="公文材料",
+            active_page="gongwen",
+            extra={
+                "gongwen_documents": listing["documents"],
+                "gongwen_total": listing["total"],
+                "gongwen_summary": summary,
+                "gongwen_categories": categories,
+            },
+        ),
+    )
+
+
 @router.get("/manage/system/users", response_class=HTMLResponse)
 async def get_manage_system_users_page(request: Request, user: dict = Depends(get_current_teacher)):
     """教师账号与超管授权管理页面。"""

@@ -194,6 +194,25 @@ from ...services.smart_classroom_integration_service import (
     update_smart_classroom_credential_verification_status,
     verify_smart_classroom_credential,
 )
+from ...services.gongwen_integration_service import (
+    build_saved_gongwen_verification_payload,
+    delete_teacher_gongwen_credential,
+    get_teacher_gongwen_credential,
+    list_teacher_gongwen_credentials,
+    save_verified_gongwen_credential,
+    update_gongwen_credential_verification_status,
+    verify_gongwen_credential,
+)
+from ...services.gongwen_document_sync_service import (
+    build_gongwen_sync_capabilities,
+    count_teacher_gongwen_documents,
+    get_gongwen_document_content,
+    list_teacher_gongwen_categories,
+    list_teacher_gongwen_documents,
+    search_gongwen_documents,
+    sync_current_teacher_gongwen_documents,
+    sync_teacher_gongwen_data_after_credential_verified,
+)
 from ...services.integration_request_probe_service import probe_integration_request
 from ...storage_paths import resolve_migrated_file_path
 from ...time_utils import local_iso

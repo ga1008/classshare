@@ -357,3 +357,222 @@ async def api_delete_smart_classroom_credential(credential_id: int, user: dict =
         "removed_count": removed_count,
         "credentials": credentials,
     }
+
+
+# --------------------------------------------------------------------------- #
+# 校园公文通 (official-document) integration
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/system/gongwen-credentials", response_class=JSONResponse)
+async def api_list_gongwen_credentials(user: dict = Depends(get_current_teacher)):
+    """List the current teacher's saved 校园公文通 credentials."""
+    with get_db_connection() as conn:
+        credentials = list_teacher_gongwen_credentials(conn, int(user["id"]))
+    return {"status": "success", "credentials": credentials}
+
+
+@router.get("/system/gongwen-sync-capabilities", response_class=JSONResponse)
+async def api_list_gongwen_sync_capabilities(user: dict = Depends(get_current_teacher)):
+    """Return the syncable 公文 features and their latest local sync state."""
+    with get_db_connection() as conn:
+        capabilities = build_gongwen_sync_capabilities(conn, int(user["id"]))
+    return {"status": "success", "capabilities": capabilities}
+
+
+@router.post("/system/gongwen-sync", response_class=JSONResponse)
+async def api_sync_gongwen_documents(user: dict = Depends(get_current_teacher)):
+    """Manually rerun the 公文 document sync with the saved credential."""
+    auto_sync = await sync_teacher_gongwen_data_after_credential_verified(int(user["id"]))
+    return {
+        "status": auto_sync.get("status") or "unknown",
+        "message": auto_sync.get("message") or "公文同步已完成。",
+        "auto_sync": auto_sync,
+    }
+
+
+@router.post("/system/gongwen-credentials", response_class=JSONResponse)
+async def api_save_gongwen_credential(request: Request, user: dict = Depends(get_current_teacher)):
+    """Verify (login via unified-auth + captcha) and save a 公文 credential."""
+    payload = await _parse_json_request(request)
+    try:
+        verification = await verify_gongwen_credential(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not verification.get("ok"):
+        raise HTTPException(status_code=400, detail=verification.get("message") or "校园公文通账号校验失败。")
+
+    with get_db_connection() as conn:
+        try:
+            credential = save_verified_gongwen_credential(conn, int(user["id"]), payload, verification)
+            credentials = list_teacher_gongwen_credentials(conn, int(user["id"]))
+            conn.commit()
+        except ValueError as exc:
+            conn.rollback()
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    auto_sync = await sync_teacher_gongwen_data_after_credential_verified(int(user["id"]))
+
+    return {
+        "status": "success",
+        "message": auto_sync.get("message") or "校园公文通账号已验证并保存。",
+        "verification": verification,
+        "credential": credential,
+        "credentials": credentials,
+        "auto_sync": auto_sync,
+    }
+
+
+@router.post("/system/gongwen-credentials/{credential_id}/verify", response_class=JSONResponse)
+async def api_verify_gongwen_credential(credential_id: int, user: dict = Depends(get_current_teacher)):
+    """Re-verify a saved 公文 credential using the stored encrypted password."""
+    with get_db_connection() as conn:
+        try:
+            row = get_teacher_gongwen_credential(conn, int(user["id"]), credential_id)
+            payload = build_saved_gongwen_verification_payload(row)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        verification = await verify_gongwen_credential(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    with get_db_connection() as conn:
+        try:
+            credential = update_gongwen_credential_verification_status(
+                conn, int(user["id"]), credential_id, verification
+            )
+            credentials = list_teacher_gongwen_credentials(conn, int(user["id"]))
+            conn.commit()
+        except ValueError as exc:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    auto_sync = None
+    if verification.get("ok"):
+        auto_sync = await sync_teacher_gongwen_data_after_credential_verified(int(user["id"]))
+
+    return {
+        "status": "success" if verification.get("ok") else "failed",
+        "message": (
+            auto_sync.get("message")
+            if auto_sync
+            else verification.get("message") or "校园公文通连接校验完成。"
+        ),
+        "verification": verification,
+        "credential": credential,
+        "credentials": credentials,
+        "auto_sync": auto_sync,
+    }
+
+
+@router.delete("/system/gongwen-credentials/{credential_id}", response_class=JSONResponse)
+async def api_delete_gongwen_credential(credential_id: int, user: dict = Depends(get_current_teacher)):
+    """Delete one of the current teacher's 公文 credentials."""
+    with get_db_connection() as conn:
+        try:
+            removed_count = delete_teacher_gongwen_credential(conn, int(user["id"]), credential_id)
+            credentials = list_teacher_gongwen_credentials(conn, int(user["id"]))
+            conn.commit()
+        except ValueError as exc:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "status": "success",
+        "message": "校园公文通对接已删除。",
+        "removed_count": removed_count,
+        "credentials": credentials,
+    }
+
+
+@router.get("/gongwen/documents", response_class=JSONResponse)
+async def api_list_gongwen_documents(
+    request: Request,
+    keyword: str = "",
+    category: str = "",
+    unread: int = 0,
+    favorite: int = 0,
+    limit: int = 60,
+    offset: int = 0,
+    user: dict = Depends(get_current_teacher),
+):
+    """List the teacher's synced 公文 documents with optional filters."""
+    limit = max(1, min(int(limit or 60), 200))
+    offset = max(0, int(offset or 0))
+    with get_db_connection() as conn:
+        result = list_teacher_gongwen_documents(
+            conn,
+            int(user["id"]),
+            keyword=keyword,
+            category=category,
+            unread_only=bool(int(unread or 0)),
+            favorite_only=bool(int(favorite or 0)),
+            limit=limit,
+            offset=offset,
+        )
+        summary = count_teacher_gongwen_documents(conn, int(user["id"]))
+        categories = list_teacher_gongwen_categories(conn, int(user["id"]))
+    return {
+        "status": "success",
+        "documents": result["documents"],
+        "total": result["total"],
+        "summary": summary,
+        "categories": categories,
+    }
+
+
+@router.get("/gongwen/documents/search", response_class=JSONResponse)
+async def api_search_gongwen_documents(
+    q: str = "",
+    category: str = "",
+    limit: int = 20,
+    user: dict = Depends(get_current_teacher),
+):
+    """Keyword search interface across synced documents (reminders/retrieval)."""
+    limit = max(1, min(int(limit or 20), 100))
+    with get_db_connection() as conn:
+        documents = search_gongwen_documents(conn, int(user["id"]), q, category=category, limit=limit)
+    return {"status": "success", "documents": documents}
+
+
+@router.get("/gongwen/documents/{document_id}", response_class=JSONResponse)
+async def api_get_gongwen_document(document_id: int, user: dict = Depends(get_current_teacher)):
+    """Return one document with full content — retrieval interface for reminders."""
+    with get_db_connection() as conn:
+        document = get_gongwen_document_content(conn, int(user["id"]), document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="公文不存在或无权访问。")
+    return {"status": "success", "document": document}
+
+
+@router.get("/gongwen/documents/{document_id}/file")
+async def api_download_gongwen_document_file(
+    document_id: int,
+    which: str = "primary",
+    user: dict = Depends(get_current_teacher),
+):
+    """Stream the locally-downloaded file, or redirect to the remote original."""
+    from fastapi.responses import RedirectResponse
+
+    with get_db_connection() as conn:
+        document = get_gongwen_document_content(conn, int(user["id"]), document_id)
+        row = conn.execute(
+            "SELECT local_file_path, local_attachment_path, file_url, attachment_url "
+            "FROM gongwen_documents WHERE id = ? AND teacher_id = ? LIMIT 1",
+            (int(document_id), int(user["id"])),
+        ).fetchone()
+    if document is None or row is None:
+        raise HTTPException(status_code=404, detail="公文不存在或无权访问。")
+    row = dict(row)
+    if str(which) == "attachment":
+        local_path, remote_url = row.get("local_attachment_path"), row.get("attachment_url")
+    else:
+        local_path, remote_url = row.get("local_file_path"), row.get("file_url")
+    local_path = str(local_path or "")
+    if local_path and Path(local_path).exists():
+        return FileResponse(local_path, filename=Path(local_path).name)
+    if remote_url:
+        return RedirectResponse(url=str(remote_url), status_code=302)
+    raise HTTPException(status_code=404, detail="该公文暂无可下载的附件。")
