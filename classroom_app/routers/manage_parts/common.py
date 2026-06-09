@@ -206,16 +206,18 @@ from ...services.gongwen_integration_service import (
 from ...services.gongwen_document_sync_service import (
     build_gongwen_sync_capabilities,
     cancel_gongwen_auto_sync,
-    count_teacher_gongwen_documents,
+    count_visible_gongwen_documents,
     ensure_local_attachment,
-    get_gongwen_document_content,
-    list_teacher_gongwen_categories,
-    list_teacher_gongwen_documents,
+    get_visible_gongwen_document,
+    list_visible_gongwen_categories,
+    list_visible_gongwen_documents,
     schedule_gongwen_auto_sync,
-    search_gongwen_documents,
+    search_visible_gongwen_documents,
+    set_gongwen_document_scope,
     sync_current_teacher_gongwen_documents,
     sync_teacher_gongwen_data_after_credential_verified,
 )
+from ...services.material_scope_service import openness_options as gongwen_openness_options
 from ...services.integration_request_probe_service import probe_integration_request
 from ...storage_paths import resolve_migrated_file_path
 from ...time_utils import local_iso

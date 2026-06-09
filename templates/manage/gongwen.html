@@ -36,6 +36,24 @@
     .gwlist-chip { display: inline-flex; align-items: center; padding: 5px 10px; border-radius: var(--radius-full); border: 1px solid rgba(148, 163, 184, 0.3); background: #fff; color: var(--text-secondary); font-size: 0.8rem; font-weight: 700; cursor: pointer; }
     .gwlist-chip.is-active { background: rgba(79, 70, 229, 0.12); border-color: rgba(79, 70, 229, 0.3); color: #4f46e5; }
     .gwlist-foot { padding: var(--spacing-md) var(--spacing-lg); color: var(--text-muted); font-size: 0.82rem; text-align: center; }
+    .gwlist-scope { display: grid; gap: 4px; }
+    .gwlist-attr { color: var(--text-secondary); font-size: 0.82rem; }
+    .gwlist-open { display: inline-flex; padding: 2px 8px; border-radius: var(--radius-full); font-size: 0.72rem; font-weight: 800; width: fit-content; }
+    .gwlist-open.lvl-public { background: rgba(16,185,129,0.12); color: #047857; }
+    .gwlist-open.lvl-school { background: rgba(14,165,233,0.12); color: #0369a1; }
+    .gwlist-open.lvl-college { background: rgba(217,119,6,0.14); color: #b45309; }
+    .gwlist-open.lvl-department { background: rgba(244,63,94,0.12); color: #be123c; }
+    .gw-scope-backdrop { position: fixed; inset: 0; z-index: 1100; display: grid; place-items: center; padding: 20px; background: rgba(15,23,42,0.42); backdrop-filter: blur(8px); }
+    .gw-scope-backdrop[hidden] { display: none; }
+    .gw-scope-modal { width: min(520px, 100%); border-radius: 12px; border: 1px solid rgba(148,163,184,0.24); background: #fff; box-shadow: 0 26px 80px -40px rgba(15,23,42,0.72); }
+    .gw-scope-head { padding: var(--spacing-lg); border-bottom: 1px solid rgba(226,232,240,0.95); display: flex; justify-content: space-between; align-items: flex-start; gap: var(--spacing-md); }
+    .gw-scope-head h3 { margin: 0; font-size: 1.05rem; font-weight: 800; }
+    .gw-scope-head small { color: var(--text-muted); }
+    .gw-scope-body { padding: var(--spacing-lg); display: grid; gap: var(--spacing-md); }
+    .gw-scope-body .form-group { margin: 0; }
+    .gw-scope-body .form-group[hidden] { display: none !important; }
+    .gw-scope-actions { display: flex; justify-content: flex-end; gap: var(--spacing-sm); padding: 0 var(--spacing-lg) var(--spacing-lg); }
+    .gw-scope-close { width: 34px; height: 34px; border: 1px solid rgba(148,163,184,0.28); border-radius: 999px; background: #fff; color: #64748b; font-size: 1.2rem; cursor: pointer; }
 </style>
 {% endblock %}
 
@@ -88,12 +106,13 @@
                         <th>发送人</th>
                         <th>分类</th>
                         <th>时间</th>
+                        <th>归属 / 开放</th>
                         <th>操作</th>
                     </tr>
                 </thead>
                 <tbody id="gw-doc-tbody">
                     {% if not gongwen_documents %}
-                    <tr><td colspan="6">
+                    <tr><td colspan="7">
                         <div class="gwlist-empty">
                             <strong>还没有同步任何公文</strong>
                             前往「公文同步」保存统一认证账号并完成验证码识别登录后，系统会自动同步收件箱公文。
@@ -110,10 +129,49 @@
     </div>
 </section>
 
+<div class="gw-scope-backdrop" id="gw-scope-modal" hidden>
+    <article class="gw-scope-modal" role="dialog" aria-modal="true" aria-labelledby="gw-scope-title">
+        <div class="gw-scope-head">
+            <div>
+                <h3 id="gw-scope-title">设置归属与开放范围</h3>
+                <small id="gw-scope-subtitle"></small>
+            </div>
+            <button type="button" class="gw-scope-close" id="gw-scope-close" aria-label="关闭">&times;</button>
+        </div>
+        <div class="gw-scope-body">
+            <div class="form-group">
+                <label class="form-label" for="gw-scope-level">归属级别</label>
+                <select class="form-control" id="gw-scope-level">
+                    <option value="school">学校（校级）</option>
+                    <option value="college">学院（院级）</option>
+                    <option value="department">系部</option>
+                </select>
+            </div>
+            <div class="form-group" id="gw-scope-college-group" hidden>
+                <label class="form-label" for="gw-scope-college">归属学院</label>
+                <input class="form-control" type="text" id="gw-scope-college" placeholder="请输入学院名称">
+            </div>
+            <div class="form-group" id="gw-scope-department-group" hidden>
+                <label class="form-label" for="gw-scope-department">归属系部</label>
+                <input class="form-control" type="text" id="gw-scope-department" placeholder="请输入系部名称">
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="gw-scope-openness">开放范围</label>
+                <select class="form-control" id="gw-scope-openness"></select>
+                <p class="gwlist-time" style="margin-top:6px;">开放范围从归属级别起向上可选：系部归属可选本系部/本院级/本校/完全公开，院级归属从本院级起，校级归属从本校起。</p>
+            </div>
+        </div>
+        <div class="gw-scope-actions">
+            <button type="button" class="btn btn-outline" id="gw-scope-cancel">取消</button>
+            <button type="button" class="btn btn-primary" id="gw-scope-save">保存</button>
+        </div>
+    </article>
+</div>
+
 <script type="application/json" id="gw-documents-data">{{ gongwen_documents | tojson }}</script>
 <script type="application/json" id="gw-documents-total">{{ gongwen_total | tojson }}</script>
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260609"></script>
+<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260609c"></script>
 {% endblock %}

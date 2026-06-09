@@ -493,6 +493,12 @@ async def api_delete_gongwen_credential(credential_id: int, user: dict = Depends
     }
 
 
+def _gongwen_viewer(conn, user: dict) -> tuple[dict[str, str], bool]:
+    """Resolve the requesting teacher's org scope + super-admin flag."""
+    teacher_id = int(user["id"])
+    return load_teacher_org_scope(conn, teacher_id), bool(is_super_admin_teacher(conn, teacher_id))
+
+
 @router.get("/gongwen/documents", response_class=JSONResponse)
 async def api_list_gongwen_documents(
     request: Request,
@@ -504,13 +510,15 @@ async def api_list_gongwen_documents(
     offset: int = 0,
     user: dict = Depends(get_current_teacher),
 ):
-    """List the teacher's synced 公文 documents with optional filters."""
+    """List campus-visible 公文 for the teacher (归属 + 开放范围 filtered)."""
     limit = max(1, min(int(limit or 60), 200))
     offset = max(0, int(offset or 0))
     with get_db_connection() as conn:
-        result = list_teacher_gongwen_documents(
+        scope, is_admin = _gongwen_viewer(conn, user)
+        result = list_visible_gongwen_documents(
             conn,
-            int(user["id"]),
+            scope,
+            is_super_admin=is_admin,
             keyword=keyword,
             category=category,
             unread_only=bool(int(unread or 0)),
@@ -518,8 +526,8 @@ async def api_list_gongwen_documents(
             limit=limit,
             offset=offset,
         )
-        summary = count_teacher_gongwen_documents(conn, int(user["id"]))
-        categories = list_teacher_gongwen_categories(conn, int(user["id"]))
+        summary = count_visible_gongwen_documents(conn, scope, is_super_admin=is_admin)
+        categories = list_visible_gongwen_categories(conn, scope, is_super_admin=is_admin)
     return {
         "status": "success",
         "documents": result["documents"],
@@ -536,21 +544,68 @@ async def api_search_gongwen_documents(
     limit: int = 20,
     user: dict = Depends(get_current_teacher),
 ):
-    """Keyword search interface across synced documents (reminders/retrieval)."""
+    """Keyword search interface across visible documents (reminders/retrieval)."""
     limit = max(1, min(int(limit or 20), 100))
     with get_db_connection() as conn:
-        documents = search_gongwen_documents(conn, int(user["id"]), q, category=category, limit=limit)
+        scope, is_admin = _gongwen_viewer(conn, user)
+        documents = search_visible_gongwen_documents(conn, scope, q, is_super_admin=is_admin, category=category, limit=limit)
     return {"status": "success", "documents": documents}
+
+
+@router.get("/gongwen/scope-options", response_class=JSONResponse)
+async def api_gongwen_scope_options(user: dict = Depends(get_current_teacher)):
+    """Org options (current teacher college/department) + openness levels per
+    attribution level, for the 归属/开放 editor."""
+    with get_db_connection() as conn:
+        scope = load_teacher_org_scope(conn, int(user["id"]))
+    return {
+        "status": "success",
+        "teacher_org": {
+            "school_code": scope.get("school_code", ""),
+            "school_name": scope.get("school_name", ""),
+            "college": scope.get("college", ""),
+            "department": scope.get("department", ""),
+        },
+        "openness_by_level": {
+            "school": gongwen_openness_options("school"),
+            "college": gongwen_openness_options("college"),
+            "department": gongwen_openness_options("department"),
+        },
+    }
 
 
 @router.get("/gongwen/documents/{document_id}", response_class=JSONResponse)
 async def api_get_gongwen_document(document_id: int, user: dict = Depends(get_current_teacher)):
-    """Return one document with full content — retrieval interface for reminders."""
+    """Return one visible document with full content — retrieval for reminders."""
     with get_db_connection() as conn:
-        document = get_gongwen_document_content(conn, int(user["id"]), document_id)
+        scope, is_admin = _gongwen_viewer(conn, user)
+        document = get_visible_gongwen_document(conn, scope, document_id, is_super_admin=is_admin)
     if document is None:
         raise HTTPException(status_code=404, detail="公文不存在或无权访问。")
     return {"status": "success", "document": document}
+
+
+@router.post("/gongwen/documents/{document_id}/scope", response_class=JSONResponse)
+async def api_set_gongwen_document_scope(document_id: int, request: Request, user: dict = Depends(get_current_teacher)):
+    """Set a document's 归属 (学院/系部) and 开放范围 (campus-restricted)."""
+    payload = await _parse_json_request(request)
+    with get_db_connection() as conn:
+        scope, is_admin = _gongwen_viewer(conn, user)
+        try:
+            document = set_gongwen_document_scope(
+                conn,
+                scope,
+                int(document_id),
+                college=payload.get("college"),
+                department=payload.get("department"),
+                openness=payload.get("openness"),
+                is_super_admin=is_admin,
+            )
+            conn.commit()
+        except ValueError as exc:
+            conn.rollback()
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "success", "message": "已更新公文归属与开放范围。", "document": document}
 
 
 @router.get("/gongwen/documents/{document_id}/file")
@@ -564,7 +619,9 @@ async def api_download_gongwen_document_file(
     from fastapi.responses import RedirectResponse
 
     which = "attachment" if str(which) == "attachment" else "primary"
-    result = await ensure_local_attachment(int(user["id"]), int(document_id), which)
+    with get_db_connection() as conn:
+        scope, is_admin = _gongwen_viewer(conn, user)
+    result = await ensure_local_attachment(scope, int(document_id), which, is_super_admin=is_admin)
     status = result.get("status")
     if status == "not_found":
         raise HTTPException(status_code=404, detail="公文不存在或无权访问。")

@@ -1,13 +1,16 @@
 """Schema for the 校园公文通 (official-document) teacher integration.
 
 Teachers connect their unified-auth account; the platform logs into the school
-公文通 (``doc.gxufl.com``) via OAuth2 + captcha and syncs their inbox documents
-into ``gongwen_documents`` for local search, download and (later) reminders.
+公文通 (``doc.gxufl.com``) and syncs inbox documents. 公文 are **campus-scoped**
+shared records — deduped per (school, system, remote_id), so each campus only
+syncs a given document once. Visibility within a campus is governed by the
+unified 归属 + 开放范围 model (``material_scope_service``): every document carries
+``attr_school_code / attr_college / attr_department / attr_level / openness``.
 
-The DDL is engine-aware and idempotent (``CREATE TABLE IF NOT EXISTS`` on both
-SQLite and PostgreSQL) so it can be ensured lazily at runtime without touching
-the central PostgreSQL migration — mirrors ``schema_scheduler.ensure_scheduler_schema``.
-Timestamps are stored as ISO-8601 / source TEXT to match the rest of the codebase.
+Engine-aware, idempotent DDL (mirrors ``schema_scheduler``). Includes a one-time
+migration from the original per-teacher shape to the campus-scoped shape: the
+feature is new and all data is re-syncable, so an old-shape table is dropped and
+recreated rather than risking a fragile in-place unique-index swap.
 """
 
 from __future__ import annotations
@@ -16,8 +19,33 @@ from typing import Any
 
 from .connection import get_configured_db_engine
 
-# Per-process guard so hot paths don't re-issue DDL once the tables exist.
 _SCHEMA_READY = False
+
+
+def _gongwen_documents_needs_recreate(conn: Any, engine: str) -> bool:
+    """True when an old per-teacher ``gongwen_documents`` predates the campus
+    scope (no ``attr_school_code`` column). Uses schema metadata (never a failing
+    SELECT) so it is safe inside a PostgreSQL transaction."""
+    if engine == "postgres":
+        table_there = conn.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = 'gongwen_documents' LIMIT 1"
+        ).fetchone() is not None
+        if not table_there:
+            return False
+        col_there = conn.execute(
+            "SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' "
+            "AND table_name = 'gongwen_documents' AND column_name = 'attr_school_code' LIMIT 1"
+        ).fetchone() is not None
+        return not col_there
+    # sqlite
+    table_there = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'gongwen_documents' LIMIT 1"
+    ).fetchone() is not None
+    if not table_there:
+        return False
+    info = conn.execute("PRAGMA table_info(gongwen_documents)").fetchall()
+    return not any((row[1] if not hasattr(row, "keys") else row["name"]) == "attr_school_code" for row in info)
 
 
 def ensure_gongwen_schema(conn: Any) -> None:
@@ -69,15 +97,29 @@ def ensure_gongwen_schema(conn: Any) -> None:
         "ON teacher_gongwen_credentials (teacher_id, enabled, updated_at)"
     )
 
-    # --- Synced inbox documents ---
+    # --- One-time migration of the legacy per-teacher documents table ---
+    try:
+        if _gongwen_documents_needs_recreate(conn, engine):
+            conn.execute("DROP TABLE gongwen_documents")
+    except Exception:
+        # Detection/drop is best-effort; a fresh CREATE below still applies.
+        pass
+
+    # --- Campus-scoped synced inbox documents (归属 + 开放范围) ---
     conn.execute(
         f"""
         CREATE TABLE IF NOT EXISTS gongwen_documents (
             {id_column},
-            teacher_id INTEGER NOT NULL,
-            credential_id INTEGER,
             system_code TEXT NOT NULL DEFAULT 'gxufl',
             remote_id TEXT NOT NULL,
+            attr_school_code TEXT NOT NULL DEFAULT '',
+            attr_school_name TEXT NOT NULL DEFAULT '',
+            attr_college TEXT NOT NULL DEFAULT '',
+            attr_department TEXT NOT NULL DEFAULT '',
+            attr_level TEXT NOT NULL DEFAULT 'school',
+            openness TEXT NOT NULL DEFAULT 'school',
+            synced_by_teacher_id INTEGER,
+            synced_by_credential_id INTEGER,
             sn TEXT NOT NULL DEFAULT '',
             title TEXT NOT NULL DEFAULT '',
             subhead TEXT NOT NULL DEFAULT '',
@@ -106,6 +148,7 @@ def ensure_gongwen_schema(conn: Any) -> None:
             publish_time TEXT NOT NULL DEFAULT '',
             remote_created_at TEXT NOT NULL DEFAULT '',
             remote_updated_at TEXT NOT NULL DEFAULT '',
+            scope_overridden INTEGER NOT NULL DEFAULT 0,
             reminder_status TEXT NOT NULL DEFAULT 'none',
             raw_json TEXT NOT NULL DEFAULT '{{}}',
             synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -115,23 +158,23 @@ def ensure_gongwen_schema(conn: Any) -> None:
         """
     )
     conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_gongwen_documents_unique_remote "
-        "ON gongwen_documents (teacher_id, system_code, remote_id)"
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_gongwen_documents_unique_campus "
+        "ON gongwen_documents (attr_school_code, system_code, remote_id)"
     )
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_gongwen_documents_teacher_time "
-        "ON gongwen_documents (teacher_id, publish_time)"
+        "CREATE INDEX IF NOT EXISTS idx_gongwen_documents_school_time "
+        "ON gongwen_documents (attr_school_code, publish_time)"
     )
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_gongwen_documents_teacher_category "
-        "ON gongwen_documents (teacher_id, category_name)"
+        "CREATE INDEX IF NOT EXISTS idx_gongwen_documents_school_open "
+        "ON gongwen_documents (attr_school_code, openness, attr_college, attr_department)"
     )
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_gongwen_documents_teacher_read "
-        "ON gongwen_documents (teacher_id, is_read, publish_time)"
+        "CREATE INDEX IF NOT EXISTS idx_gongwen_documents_school_category "
+        "ON gongwen_documents (attr_school_code, category_name)"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_gongwen_documents_reminder "
-        "ON gongwen_documents (teacher_id, reminder_status)"
+        "ON gongwen_documents (attr_school_code, reminder_status)"
     )
     _SCHEMA_READY = True

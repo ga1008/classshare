@@ -601,9 +601,11 @@ async def get_manage_system_gongwen_integrations_page(request: Request, user: di
 async def get_manage_gongwen_page(request: Request, user: dict = Depends(get_current_teacher)):
     """公文材料列表页（基础资源）。"""
     with get_db_connection() as conn:
-        listing = list_teacher_gongwen_documents(conn, int(user["id"]), limit=60)
-        summary = count_teacher_gongwen_documents(conn, int(user["id"]))
-        categories = list_teacher_gongwen_categories(conn, int(user["id"]))
+        scope = load_teacher_org_scope(conn, int(user["id"]))
+        is_admin = is_super_admin_teacher(conn, int(user["id"]))
+        listing = list_visible_gongwen_documents(conn, scope, is_super_admin=is_admin, limit=60)
+        summary = count_visible_gongwen_documents(conn, scope, is_super_admin=is_admin)
+        categories = list_visible_gongwen_categories(conn, scope, is_super_admin=is_admin)
 
     return templates.TemplateResponse(
         request,

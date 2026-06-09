@@ -20,6 +20,8 @@ const state = {
     category: '',
     unread: false,
     offset: 0,
+    scopeOptions: null,
+    editingId: null,
 };
 
 const refs = {
@@ -32,6 +34,17 @@ const refs = {
     refresh: document.getElementById('gw-doc-refresh'),
     sync: document.getElementById('gw-doc-sync'),
     lastSync: document.getElementById('gw-doc-last-sync'),
+    scopeModal: document.getElementById('gw-scope-modal'),
+    scopeClose: document.getElementById('gw-scope-close'),
+    scopeCancel: document.getElementById('gw-scope-cancel'),
+    scopeSave: document.getElementById('gw-scope-save'),
+    scopeSubtitle: document.getElementById('gw-scope-subtitle'),
+    scopeLevel: document.getElementById('gw-scope-level'),
+    scopeCollegeGroup: document.getElementById('gw-scope-college-group'),
+    scopeCollege: document.getElementById('gw-scope-college'),
+    scopeDepartmentGroup: document.getElementById('gw-scope-department-group'),
+    scopeDepartment: document.getElementById('gw-scope-department'),
+    scopeOpenness: document.getElementById('gw-scope-openness'),
 };
 
 function formatDateTime(value) {
@@ -50,6 +63,7 @@ function fileButtons(doc) {
     if (!buttons.length) {
         buttons.push('<span class="gwlist-time">无附件</span>');
     }
+    buttons.push(`<button type="button" class="btn btn-ghost btn-sm" data-scope-edit="${doc.id}">归属</button>`);
     return buttons.join('');
 }
 
@@ -57,6 +71,7 @@ function rowHtml(doc) {
     const unreadDot = doc.is_read ? '' : '<span class="gwlist-unread-dot" title="未读"></span>';
     const sn = doc.sn ? `<span class="gwlist-sn">${escapeHtml(doc.sn)}</span>` : '';
     const cat = doc.category_name ? `<span class="gwlist-cat">${escapeHtml(doc.category_name)}</span>` : '';
+    const openLevel = doc.openness || 'school';
     return `
         <tr>
             <td><span class="gwlist-title">${unreadDot}${sn}${escapeHtml(doc.title || '(无标题)')}</span></td>
@@ -64,6 +79,12 @@ function rowHtml(doc) {
             <td>${escapeHtml(doc.sender_name || '-')}</td>
             <td>${cat}</td>
             <td class="gwlist-time">${escapeHtml(formatDateTime(doc.publish_time))}</td>
+            <td>
+                <div class="gwlist-scope">
+                    <span class="gwlist-attr">${escapeHtml(doc.attribution_label || '本校')}</span>
+                    <span class="gwlist-open lvl-${escapeHtml(openLevel)}">${escapeHtml(doc.openness_label || '本校可见')}</span>
+                </div>
+            </td>
             <td><div class="gwlist-row-actions">${fileButtons(doc)}</div></td>
         </tr>`;
 }
@@ -72,7 +93,7 @@ function render() {
     if (!refs.tbody) return;
     if (!state.documents.length) {
         refs.tbody.innerHTML = `
-            <tr><td colspan="6">
+            <tr><td colspan="7">
                 <div class="gwlist-empty">
                     <strong>没有匹配的公文</strong>
                     调整筛选条件，或点击「立即同步」从统一认证账号拉取收件箱公文。
@@ -82,9 +103,7 @@ function render() {
         refs.tbody.innerHTML = state.documents.map(rowHtml).join('');
     }
     if (refs.count) {
-        refs.count.textContent = state.total
-            ? `显示 ${state.documents.length} / ${state.total} 条公文`
-            : '';
+        refs.count.textContent = state.total ? `显示 ${state.documents.length} / ${state.total} 条公文` : '';
     }
     if (refs.more) {
         refs.more.style.display = state.documents.length < state.total ? '' : 'none';
@@ -157,6 +176,89 @@ async function syncNow() {
     }
 }
 
+// --- 归属 / 开放范围 editor ---
+
+async function ensureScopeOptions() {
+    if (state.scopeOptions) return state.scopeOptions;
+    state.scopeOptions = await apiFetch('/api/manage/gongwen/scope-options');
+    return state.scopeOptions;
+}
+
+function fillOpennessOptions(level, selected) {
+    const options = (state.scopeOptions?.openness_by_level?.[level]) || [];
+    refs.scopeOpenness.innerHTML = options
+        .map((opt) => `<option value="${escapeHtml(opt.value)}"${opt.value === selected ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`)
+        .join('');
+    if (!options.some((opt) => opt.value === selected) && options.length) {
+        refs.scopeOpenness.value = options[0].value;
+    }
+}
+
+function applyLevelVisibility(level) {
+    refs.scopeCollegeGroup.hidden = level === 'school';
+    refs.scopeDepartmentGroup.hidden = level !== 'department';
+}
+
+async function openScopeEditor(doc) {
+    try {
+        await ensureScopeOptions();
+    } catch (error) {
+        showMessage(error.message || '读取归属选项失败。', 'error');
+        return;
+    }
+    state.editingId = doc.id;
+    const teacherOrg = state.scopeOptions?.teacher_org || {};
+    refs.scopeSubtitle.textContent = doc.title || '';
+    const level = doc.attr_level || 'school';
+    refs.scopeLevel.value = level;
+    refs.scopeCollege.value = doc.attr_college || teacherOrg.college || '';
+    refs.scopeDepartment.value = doc.attr_department || teacherOrg.department || '';
+    applyLevelVisibility(level);
+    fillOpennessOptions(level, doc.openness || 'school');
+    refs.scopeModal.hidden = false;
+}
+
+function closeScopeEditor() {
+    refs.scopeModal.hidden = true;
+    state.editingId = null;
+}
+
+async function saveScope() {
+    if (!state.editingId) return;
+    const level = refs.scopeLevel.value;
+    const college = refs.scopeCollege.value.trim();
+    const department = refs.scopeDepartment.value.trim();
+    if ((level === 'college' || level === 'department') && !college) {
+        showMessage('请填写归属学院。', 'warning');
+        return;
+    }
+    if (level === 'department' && !department) {
+        showMessage('请填写归属系部。', 'warning');
+        return;
+    }
+    const payload = {
+        college: level === 'school' ? '' : college,
+        department: level === 'department' ? department : '',
+        openness: refs.scopeOpenness.value,
+    };
+    setBusy(refs.scopeSave, true, '保存中');
+    try {
+        const result = await apiFetch(`/api/manage/gongwen/documents/${state.editingId}/scope`, { method: 'POST', body: payload });
+        const updated = result.document;
+        const idx = state.documents.findIndex((d) => String(d.id) === String(state.editingId));
+        if (idx >= 0 && updated) {
+            state.documents[idx] = { ...state.documents[idx], ...updated };
+        }
+        render();
+        closeScopeEditor();
+        showMessage(result.message || '已更新归属与开放范围。', 'success');
+    } catch (error) {
+        showMessage(error.message || '更新失败。', 'error');
+    } finally {
+        setBusy(refs.scopeSave, false);
+    }
+}
+
 function setBusy(button, busy, label) {
     if (!button) return;
     if (busy) {
@@ -187,6 +289,23 @@ refs.unread?.addEventListener('click', () => {
 refs.refresh?.addEventListener('click', reload);
 refs.more?.addEventListener('click', loadMore);
 refs.sync?.addEventListener('click', syncNow);
+refs.tbody?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-scope-edit]');
+    if (!btn) return;
+    const doc = state.documents.find((d) => String(d.id) === String(btn.dataset.scopeEdit));
+    if (doc) openScopeEditor(doc);
+});
+refs.scopeLevel?.addEventListener('change', () => {
+    const level = refs.scopeLevel.value;
+    applyLevelVisibility(level);
+    fillOpennessOptions(level, refs.scopeOpenness.value);
+});
+refs.scopeClose?.addEventListener('click', closeScopeEditor);
+refs.scopeCancel?.addEventListener('click', closeScopeEditor);
+refs.scopeSave?.addEventListener('click', saveScope);
+refs.scopeModal?.addEventListener('click', (event) => {
+    if (event.target === refs.scopeModal) closeScopeEditor();
+});
 
 state.offset = state.documents.length;
 render();
