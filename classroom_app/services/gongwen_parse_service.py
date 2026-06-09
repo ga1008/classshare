@@ -41,6 +41,11 @@ PARSE_ITEM_DELAY_SECONDS = 1.0
 PARSE_MAX_ATTEMPTS = 4
 PARSE_STALE_MINUTES = 30
 STRUCTURE_INPUT_LIMIT = 9000
+# Documents published in this year or later get the full AI pipeline (fast-AI
+# verify + multimodal fallback + AI structure). Older docs (≤ AI_PARSE_MIN_YEAR-1,
+# i.e. 2023 and earlier) only get simple metadata + logic extraction — no AI —
+# since there are far too many old documents to be worth AI analysis.
+AI_PARSE_MIN_YEAR = 2024
 
 # Internal worker has no requesting teacher — bypass visibility for parsing only.
 _ADMIN_SCOPE: dict[str, str] = {}
@@ -48,6 +53,22 @@ _ADMIN_SCOPE: dict[str, str] = {}
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def _doc_year(publish_time: Any) -> int | None:
+    """Parse the leading year from a publish/create timestamp like '2026-06-08 …'."""
+    text = str(publish_time or "").strip()
+    if len(text) >= 4 and text[:4].isdigit():
+        return int(text[:4])
+    return None
+
+
+def doc_uses_ai_parse(data: dict[str, Any]) -> bool:
+    """AI parsing only for docs published in AI_PARSE_MIN_YEAR or later.
+
+    Unknown date → treat as recent (parse fully) since such docs are rare."""
+    year = _doc_year(data.get("publish_time") or data.get("remote_created_at"))
+    return year is None or year >= AI_PARSE_MIN_YEAR
 
 
 async def _structure_with_ai(text: str) -> dict[str, str]:
@@ -121,6 +142,7 @@ async def parse_document(document_id: int, *, force: bool = False) -> dict[str, 
         )
         conn.commit()
 
+    use_ai = doc_uses_ai_parse(data)
     try:
         parts: list[dict[str, Any]] = []
         source_name, source_type = "", ""
@@ -128,7 +150,7 @@ async def parse_document(document_id: int, *, force: bool = False) -> dict[str, 
             url = str(data.get(url_col) or "")
             if not url:
                 continue
-            part = await build_file_part(_ADMIN_SCOPE, int(document_id), which, url, is_super_admin=True)
+            part = await build_file_part(_ADMIN_SCOPE, int(document_id), which, url, is_super_admin=True, use_ai=use_ai)
             parts.append(part)
             if which == "primary":
                 source_name = part.get("name") or ""
@@ -142,7 +164,8 @@ async def parse_document(document_id: int, *, force: bool = False) -> dict[str, 
                 text_chunks.append(f"【{part['label']}：{part['name']}】\n{part['text'].strip()}")
         parsed_text = "\n\n".join(text_chunks)[:PARSED_TEXT_LIMIT]
 
-        struct = await _structure_with_ai(parsed_text) if parsed_text.strip() else {}
+        # Old docs: logic extraction only, no AI structuring.
+        struct = await _structure_with_ai(parsed_text) if (use_ai and parsed_text.strip()) else {}
         parsed_title = struct.get("title") or str(data.get("title") or "")
         parsed_summary = struct.get("summary") or str(data.get("summary") or "")
         parsed_signature = struct.get("signature") or ""

@@ -182,6 +182,7 @@ async def build_file_part(
     url: str,
     *,
     is_super_admin: bool,
+    use_ai: bool = True,
 ) -> dict[str, Any]:
     name = _filename_from_url(url, f"{which}")
     ext = Path(name).suffix.lower()
@@ -229,18 +230,21 @@ async def build_file_part(
     part["warnings"].extend(_clean_warnings(getattr(extraction, "warnings", [])))
 
     pages = max(1, len(images)) if ext in PDF_EXTS else 1
-    # Escalate to multimodal OCR when (a) the text layer is weak (scanned PDFs)
-    # or (b) the fast verifier flags the extracted text as garbled/incomplete.
-    need_ocr = _text_is_weak(text, pages=pages)
-    if not need_ocr and images and text.strip() and ext in PDF_EXTS:
-        if not await verify_text_with_ai(text):
-            need_ocr = True
-    if need_ocr and images:
-        ocr_text = await _ocr_images_with_ai(images, f"文件名：{name}")
-        if len(ocr_text.strip()) > len(text.strip()):
-            text = ocr_text
-            part["ai_used"] = True
-            part["warnings"].append("已用多模态模型识别页面图片以补全/校正内容。")
+    # AI-assisted quality ladder — only for documents within the AI window
+    # (old docs get logic-only extraction). Escalate to multimodal OCR when
+    # (a) the text layer is weak (scanned PDFs) or (b) the fast verifier flags
+    # the extracted text as garbled/incomplete.
+    if use_ai:
+        need_ocr = _text_is_weak(text, pages=pages)
+        if not need_ocr and images and text.strip() and ext in PDF_EXTS:
+            if not await verify_text_with_ai(text):
+                need_ocr = True
+        if need_ocr and images:
+            ocr_text = await _ocr_images_with_ai(images, f"文件名：{name}")
+            if len(ocr_text.strip()) > len(text.strip()):
+                text = ocr_text
+                part["ai_used"] = True
+                part["warnings"].append("已用多模态模型识别页面图片以补全/校正内容。")
 
     if len(text) > DISPLAY_TEXT_LIMIT:
         text = text[:DISPLAY_TEXT_LIMIT]
