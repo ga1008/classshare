@@ -45,7 +45,9 @@ from .academic_integration_service import (
 
 GONGWEN_HTTP_TIMEOUT_SECONDS = 25.0
 CAPTCHA_MAX_ATTEMPTS = 4
-AI_OCR_TIMEOUT_SECONDS = 20.0
+# Captcha OCR uses the LIGHT vision model (fast); the deep multimodal model can
+# take ~20s+ on a tiny captcha which both wastes time and risks request timeouts.
+AI_OCR_TIMEOUT_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
@@ -249,7 +251,7 @@ async def _ocr_captcha(image_bytes: bytes, content_type: str) -> str:
         "image_inputs": [{"url": data_url, "label": "验证码图片"}],
         "file_texts": [],
         "model_capability": "vision",
-        "task_type": "vision",
+        "task_type": "vision_light",
         "response_format": "json",
         "task_priority": "interactive",
         "task_label": "gongwen_captcha_ocr",

@@ -376,7 +376,8 @@ async def api_list_gongwen_credentials(user: dict = Depends(get_current_teacher)
 async def api_list_gongwen_sync_capabilities(user: dict = Depends(get_current_teacher)):
     """Return the syncable 公文 features and their latest local sync state."""
     with get_db_connection() as conn:
-        capabilities = build_gongwen_sync_capabilities(conn, int(user["id"]))
+        scope, is_admin = _gongwen_viewer(conn, user)
+        capabilities = build_gongwen_sync_capabilities(conn, scope, is_super_admin=is_admin)
     return {"status": "success", "capabilities": capabilities}
 
 
