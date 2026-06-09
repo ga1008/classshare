@@ -55,6 +55,18 @@
     .gw-scope-actions { display: flex; justify-content: flex-end; gap: var(--spacing-sm); padding: 0 var(--spacing-lg) var(--spacing-lg); }
     .gw-scope-close { width: 34px; height: 34px; border: 1px solid rgba(148,163,184,0.28); border-radius: 999px; background: #fff; color: #64748b; font-size: 1.2rem; cursor: pointer; }
     .gwlist-select { width: auto; min-width: 120px; max-width: 200px; }
+    .gwlist-parse { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 1px 7px; border-radius: var(--radius-full); font-size: 0.68rem; font-weight: 800; vertical-align: middle; }
+    .gwlist-parse.st-done { background: rgba(16,185,129,0.12); color: #047857; }
+    .gwlist-parse.st-pending, .gwlist-parse.st-parsing { background: rgba(245,158,11,0.14); color: #b45309; }
+    .gwlist-parse.st-failed { background: rgba(244,63,94,0.12); color: #be123c; }
+    .gwlist-parse .gw-dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+    .gwlist-parse.st-parsing .gw-dot, .gwlist-parse.st-pending .gw-dot { animation: gwPulse 1.2s ease-in-out infinite; }
+    @keyframes gwPulse { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
+    .gw-reader-struct { display: grid; gap: 8px; padding: var(--spacing-md) var(--spacing-lg); border-bottom: 1px solid rgba(226,232,240,0.9); background: rgba(248,250,252,0.4); }
+    .gw-reader-struct .gw-struct-row { display: grid; grid-template-columns: 72px 1fr; gap: 10px; font-size: 0.86rem; }
+    .gw-reader-struct .gw-struct-row span { color: var(--text-muted); font-weight: 700; }
+    .gw-reader-struct .gw-struct-row strong { color: var(--text-primary); font-weight: 600; line-height: 1.6; }
+    .gw-reader-pending { padding: var(--spacing-lg); text-align: center; color: #b45309; background: rgba(245,158,11,0.06); }
     .gwlist-title { cursor: pointer; }
     .gwlist-title:hover { color: #4f46e5; text-decoration: underline; }
     .gwlist-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--spacing-sm); }
@@ -149,6 +161,12 @@
                     {% for s in (gongwen_facets.senders if gongwen_facets else []) %}
                     <option value="{{ s.name }}">{{ s.name }}（{{ s.total }}）</option>
                     {% endfor %}
+                </select>
+                <select class="form-control gwlist-select" id="gw-doc-parse">
+                    <option value="">全部解析状态</option>
+                    <option value="done">已解析</option>
+                    <option value="pending">未解析 / 解析中</option>
+                    <option value="failed">解析失败</option>
                 </select>
                 <button type="button" class="gwlist-chip" id="gw-doc-attach" data-active="0">含附件</button>
                 <button type="button" class="gwlist-chip" id="gw-doc-unread" data-active="0">仅看未读</button>
@@ -260,5 +278,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260609e"></script>
+<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260609f"></script>
 {% endblock %}

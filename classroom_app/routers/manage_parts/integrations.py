@@ -407,6 +407,7 @@ async def api_save_gongwen_credential(request: Request, user: dict = Depends(get
         try:
             credential = save_verified_gongwen_credential(conn, int(user["id"]), payload, verification)
             schedule_gongwen_auto_sync(conn, int(user["id"]))
+            schedule_gongwen_parse_worker(conn)
             credentials = list_teacher_gongwen_credentials(conn, int(user["id"]))
             conn.commit()
         except ValueError as exc:
@@ -506,6 +507,7 @@ async def api_list_gongwen_documents(
     category: str = "",
     author: str = "",
     sender: str = "",
+    parse_status: str = "",
     has_attachment: int = 0,
     unread: int = 0,
     favorite: int = 0,
@@ -527,6 +529,7 @@ async def api_list_gongwen_documents(
             category=category,
             author=author,
             sender=sender,
+            parse_status=parse_status,
             has_attachment=bool(int(has_attachment or 0)),
             unread_only=bool(int(unread or 0)),
             favorite_only=bool(int(favorite or 0)),
@@ -534,6 +537,7 @@ async def api_list_gongwen_documents(
             offset=offset,
         )
         summary = count_visible_gongwen_documents(conn, scope, is_super_admin=is_admin)
+        summary["pending_parses"] = count_pending_parses(conn)
         facets = build_gongwen_facets(conn, scope, is_super_admin=is_admin) if int(with_facets or 0) else None
     payload = {
         "status": "success",

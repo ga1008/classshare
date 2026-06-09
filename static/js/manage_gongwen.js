@@ -18,6 +18,7 @@ const state = {
     category: '',
     author: '',
     sender: '',
+    parseStatus: '',
     hasAttachment: false,
     unread: false,
     page: 1,
@@ -33,6 +34,7 @@ const refs = {
     category: document.getElementById('gw-doc-category'),
     author: document.getElementById('gw-doc-author'),
     sender: document.getElementById('gw-doc-sender'),
+    parse: document.getElementById('gw-doc-parse'),
     attach: document.getElementById('gw-doc-attach'),
     unread: document.getElementById('gw-doc-unread'),
     refresh: document.getElementById('gw-doc-refresh'),
@@ -95,6 +97,15 @@ function fileButtons(doc) {
     return buttons.join('');
 }
 
+const PARSE_LABELS = { done: '已解析', pending: '未解析', parsing: '解析中', failed: '解析失败' };
+
+function parseBadge(status) {
+    const st = status || 'pending';
+    if (st === 'done') return '';
+    const label = PARSE_LABELS[st] || '未解析';
+    return `<span class="gwlist-parse st-${escapeHtml(st)}"><span class="gw-dot"></span>${escapeHtml(label)}</span>`;
+}
+
 function rowHtml(doc) {
     const unreadDot = doc.is_read ? '' : '<span class="gwlist-unread-dot" title="未读"></span>';
     const sn = doc.sn ? `<span class="gwlist-sn">${escapeHtml(doc.sn)}</span>` : '';
@@ -102,7 +113,7 @@ function rowHtml(doc) {
     const openLevel = doc.openness || 'school';
     return `
         <tr>
-            <td><span class="gwlist-title" data-open-reader="${doc.id}" title="点击查看原文">${unreadDot}${sn}${escapeHtml(doc.title || '(无标题)')}</span></td>
+            <td><span class="gwlist-title" data-open-reader="${doc.id}" title="点击查看原文">${unreadDot}${sn}${escapeHtml(doc.title || '(无标题)')}</span>${parseBadge(doc.parse_status)}</td>
             <td>${escapeHtml(doc.author || '-')}</td>
             <td>${escapeHtml(doc.sender_name || '-')}</td>
             <td>${cat}</td>
@@ -147,6 +158,7 @@ function buildParams() {
     if (state.category) params.set('category', state.category);
     if (state.author) params.set('author', state.author);
     if (state.sender) params.set('sender', state.sender);
+    if (state.parseStatus) params.set('parse_status', state.parseStatus);
     if (state.hasAttachment) params.set('has_attachment', '1');
     if (state.unread) params.set('unread', '1');
     params.set('limit', String(state.pageSize));
@@ -169,9 +181,11 @@ async function reload() {
             state.total = retry.total || 0;
         }
         if (refs.lastSync && result.summary) {
-            refs.lastSync.textContent = result.summary.last_synced_at
+            const pending = Number(result.summary.pending_parses || 0);
+            const base = result.summary.last_synced_at
                 ? `上次同步：${formatDateTime(result.summary.last_synced_at)}`
                 : '尚未同步';
+            refs.lastSync.textContent = pending > 0 ? `${base} · 待解析 ${pending}` : base;
         }
         render();
     } catch (error) {
@@ -270,12 +284,25 @@ function renderReader(doc) {
         metaRow('开放', doc.openness_label),
     ].join('');
 
+    // Structured fields extracted by the parse pipeline (正文标题/摘要/落款).
+    const structRows = [
+        doc.parsed_title ? `<div class="gw-struct-row"><span>正文标题</span><strong>${escapeHtml(doc.parsed_title)}</strong></div>` : '',
+        doc.parsed_summary ? `<div class="gw-struct-row"><span>内容摘要</span><strong>${escapeHtml(doc.parsed_summary)}</strong></div>` : '',
+        doc.parsed_signature ? `<div class="gw-struct-row"><span>落款</span><strong>${escapeHtml(doc.parsed_signature)}</strong></div>` : '',
+    ].filter(Boolean).join('');
+    const existingStruct = refs.readerMeta.parentElement.querySelector('.gw-reader-struct');
+    if (existingStruct) existingStruct.remove();
+    if (structRows) {
+        refs.readerMeta.insertAdjacentHTML('afterend', `<div class="gw-reader-struct">${structRows}</div>`);
+    }
+
     const blocks = [];
+    if ((doc.parse_status || '') === 'pending' || (doc.parse_status || '') === 'parsing') {
+        blocks.push('<div class="gw-reader-pending">该公文正在后台解析，稍后可点击右上角「重新解析」查看完整内容。</div>');
+    }
     const contentHtml = (doc.content_html || '').trim();
     if (contentHtml) {
         blocks.push(`<section class="gw-reader-part"><div class="gw-reader-part-head"><strong>公文正文</strong></div><div class="gw-reader-html">${contentHtml}</div></section>`);
-    } else if ((doc.summary || '').trim()) {
-        blocks.push(`<section class="gw-reader-part"><div class="gw-reader-part-head"><strong>摘要</strong></div><div class="gw-reader-html">${escapeHtml(doc.summary)}</div></section>`);
     }
     (doc.parts || []).forEach((part) => blocks.push(renderPart(part)));
     if (!blocks.length) {
@@ -398,6 +425,7 @@ refs.search?.addEventListener('input', () => {
 refs.category?.addEventListener('change', () => { state.category = refs.category.value; applyFilters(); });
 refs.author?.addEventListener('change', () => { state.author = refs.author.value; applyFilters(); });
 refs.sender?.addEventListener('change', () => { state.sender = refs.sender.value; applyFilters(); });
+refs.parse?.addEventListener('change', () => { state.parseStatus = refs.parse.value; applyFilters(); });
 refs.attach?.addEventListener('click', () => {
     state.hasAttachment = !state.hasAttachment;
     refs.attach.classList.toggle('is-active', state.hasAttachment);

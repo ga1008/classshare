@@ -134,7 +134,48 @@ def _text_is_weak(text: str, *, pages: int = 1) -> bool:
     return len(stripped) < max(40, pages * 10)
 
 
-async def _parse_file_part(
+async def verify_text_with_ai(text: str) -> bool:
+    """Fast-model sanity check: True if the extracted text looks complete/clean.
+
+    Cheap gate before the expensive multimodal fallback. Degrades to True (accept)
+    when the AI service is unavailable so parsing never hard-blocks on it. Uses
+    background priority so it never starves interactive AI (queue health)."""
+    sample = (text or "").strip()
+    if not sample:
+        return False
+    if len(sample) > 4000:
+        sample = sample[:2600] + "\n……\n" + sample[-1200:]
+    payload = {
+        "system_prompt": (
+            "你是公文解析质检助手。判断给定文本是否解析正常：没有明显乱码（连续问号/方块/无法识别字符）、"
+            "没有大段缺失、整体可读。只输出 JSON：{\"ok\": true/false}。"
+        ),
+        "messages": [],
+        "new_message": sample,
+        "base64_urls": [],
+        "file_texts": [],
+        "model_capability": "standard",
+        "task_type": "fast_text_response",
+        "response_format": "json",
+        "task_priority": "background",
+        "task_label": "gongwen_parse_verify",
+    }
+    try:
+        from ..core import ai_client
+        import httpx
+
+        resp = await ai_client.post("/api/ai/chat", json=payload, timeout=40.0)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:  # noqa: BLE001 — never block parsing on the verifier
+        return True
+    parsed = data.get("response_json") if isinstance(data, dict) else None
+    if isinstance(parsed, dict) and "ok" in parsed:
+        return bool(parsed.get("ok"))
+    return True
+
+
+async def build_file_part(
     teacher_scope: dict[str, str],
     document_id: int,
     which: str,
@@ -188,13 +229,18 @@ async def _parse_file_part(
     part["warnings"].extend(_clean_warnings(getattr(extraction, "warnings", [])))
 
     pages = max(1, len(images)) if ext in PDF_EXTS else 1
-    # Escalate to multimodal OCR when the text layer is weak (e.g. scanned PDFs).
-    if _text_is_weak(text, pages=pages) and images:
+    # Escalate to multimodal OCR when (a) the text layer is weak (scanned PDFs)
+    # or (b) the fast verifier flags the extracted text as garbled/incomplete.
+    need_ocr = _text_is_weak(text, pages=pages)
+    if not need_ocr and images and text.strip() and ext in PDF_EXTS:
+        if not await verify_text_with_ai(text):
+            need_ocr = True
+    if need_ocr and images:
         ocr_text = await _ocr_images_with_ai(images, f"文件名：{name}")
         if len(ocr_text.strip()) > len(text.strip()):
             text = ocr_text
             part["ai_used"] = True
-            part["warnings"].append("正文文字较少，已用多模态模型识别页面图片补全内容。")
+            part["warnings"].append("已用多模态模型识别页面图片以补全/校正内容。")
 
     if len(text) > DISPLAY_TEXT_LIMIT:
         text = text[:DISPLAY_TEXT_LIMIT]
@@ -212,68 +258,15 @@ async def _parse_file_part(
     return part
 
 
-def _assemble(data: dict[str, Any], parts: list[dict[str, Any]]) -> dict[str, Any]:
+def assemble_reader(data: dict[str, Any], parts: list[dict[str, Any]]) -> dict[str, Any]:
     meta = serialize_gongwen_document(data, include_content=True)
     meta["parts"] = parts
-    meta["parsed_status"] = str(data.get("parsed_status") or "idle")
+    meta["parsed_status"] = str(data.get("parsed_status") or "pending")
     meta["parsed_at"] = str(data.get("parsed_at") or "")
+    meta["parsed_title"] = str(data.get("parsed_title") or "")
+    meta["parsed_summary"] = str(data.get("parsed_summary") or "")
+    meta["parsed_signature"] = str(data.get("parsed_signature") or "")
     return meta
-
-
-async def build_gongwen_document_reader(
-    teacher_scope: dict[str, str],
-    document_id: int,
-    *,
-    is_super_admin: bool = False,
-    refresh: bool = False,
-) -> dict[str, Any] | None:
-    """Return the document metadata + content + parsed file parts for the reader."""
-    with get_db_connection() as conn:
-        ensure_gongwen_schema(conn)
-        row = conn.execute("SELECT * FROM gongwen_documents WHERE id = ? LIMIT 1", (int(document_id),)).fetchone()
-    if row is None:
-        return None
-    data = dict(row)
-    if not ms.can_view(data, teacher_scope, is_super_admin=is_super_admin):
-        return None
-
-    # Serve cached parse unless a refresh was requested.
-    if not refresh and str(data.get("parsed_status") or "") in {"done", "partial"}:
-        try:
-            cached = json.loads(data.get("parsed_payload_json") or "{}")
-        except (TypeError, ValueError):
-            cached = {}
-        if isinstance(cached.get("parts"), list):
-            return _assemble(data, cached["parts"])
-
-    parts: list[dict[str, Any]] = []
-    for which, url_col in (("primary", "file_url"), ("attachment", "attachment_url")):
-        url = str(data.get(url_col) or "")
-        if not url:
-            continue
-        parts.append(await _parse_file_part(teacher_scope, document_id, which, url, is_super_admin=is_super_admin))
-
-    # AI-ready plain text = 正文 + every parsed file's text.
-    text_chunks: list[str] = []
-    if str(data.get("content_text") or "").strip():
-        text_chunks.append(str(data["content_text"]).strip())
-    for part in parts:
-        if part.get("text", "").strip():
-            text_chunks.append(f"【{part['label']}：{part['name']}】\n{part['text'].strip()}")
-    parsed_text = "\n\n".join(text_chunks)[:PARSED_TEXT_LIMIT]
-
-    any_text = any(p.get("kind") in {"text", "pdf", "table"} and p.get("text", "").strip() for p in parts)
-    status = "done" if (parts and (any_text or all(p.get("kind") == "image" for p in parts))) else ("partial" if parts else "done")
-
-    with get_db_connection() as conn:
-        conn.execute(
-            "UPDATE gongwen_documents SET parsed_status = ?, parsed_text = ?, parsed_payload_json = ?, parsed_at = ?, "
-            "updated_at = ? WHERE id = ?",
-            (status, parsed_text, json.dumps({"parts": parts}, ensure_ascii=False)[:600_000], _now_iso(), _now_iso(), int(document_id)),
-        )
-        conn.commit()
-        fresh = dict(conn.execute("SELECT * FROM gongwen_documents WHERE id = ? LIMIT 1", (int(document_id),)).fetchone())
-    return _assemble(fresh, parts)
 
 
 def get_gongwen_document_parsed_text(conn, teacher_scope: dict[str, str], document_id: int, *, is_super_admin: bool = False) -> str | None:

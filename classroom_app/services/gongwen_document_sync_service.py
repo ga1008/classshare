@@ -243,7 +243,8 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int, *, full: bool 
     try:
         async with open_authenticated_gongwen_client(access) as (client, profile, _token):
             page_no = 1
-            while page_no <= MAX_PAGES:
+            total_pages = MAX_PAGES  # refined from the first response
+            while page_no <= min(total_pages, MAX_PAGES):
                 resp = await client.get(
                     f"{profile.api_base_url}/user/doc/page",
                     params={"pageNo": page_no, "pageSize": PAGE_SIZE},
@@ -258,6 +259,17 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int, *, full: bool 
                 if not items:
                     break
                 counts["pages"] += 1
+                # Drive pagination by totalPage/totalRow — the API's firstPage /
+                # lastPage flags are unreliable (page 2 can report firstPage=true).
+                if page_no == 1:
+                    try:
+                        total_rows = int(result.get("totalRow") or 0)
+                        total_pages = int(result.get("totalPage") or 0) or ((total_rows + PAGE_SIZE - 1) // PAGE_SIZE)
+                    except (TypeError, ValueError):
+                        total_pages = MAX_PAGES
+                    if total_pages <= 0:
+                        total_pages = MAX_PAGES
+                    counts["total_row"] = int(result.get("totalRow") or 0)
 
                 new_in_page = 0
                 with get_db_connection() as conn:
@@ -284,22 +296,35 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int, *, full: bool 
                             counts["stored"] += 1
                     conn.commit()
 
-                if result.get("lastPage"):
-                    break
+                # Incremental: once a whole page is already known (and we're not
+                # forcing a full sweep), older pages are too — stop early.
                 if not full and known_ids and new_in_page == 0:
                     break
                 page_no += 1
                 await asyncio.sleep(PAGE_DELAY_SECONDS)
-            if page_no > MAX_PAGES:
-                warnings.append(f"公文数量较多，本次最多读取 {MAX_PAGES * PAGE_SIZE} 条，可再次同步继续。")
+            if total_pages > MAX_PAGES:
+                warnings.append(f"公文较多（约 {counts.get('total_row', 0)} 条），本次最多读取 {MAX_PAGES * PAGE_SIZE} 条，可再次同步继续。")
     except ValueError as exc:
         return {"status": "failed", "message": str(exc), "counts": counts, "warnings": warnings}
     except httpx.HTTPError as exc:
         return {"status": "failed", "message": f"同步公文时连接异常：{str(exc)[:160]}", "counts": counts, "warnings": warnings}
 
+    # New/updated docs are marked 'pending'; arm the parse worker to drain them.
+    if counts["stored"]:
+        try:
+            from .gongwen_parse_service import schedule_gongwen_parse_worker
+
+            with get_db_connection() as conn:
+                schedule_gongwen_parse_worker(conn)
+                conn.commit()
+        except Exception:  # noqa: BLE001
+            pass
+
     status = "success" if counts["stored"] else "empty"
     message = (
-        f"{mode}同步完成（{school_name or school_code}）：新增 {counts['new']} 条，更新 {counts['stored']} 条。附件首次下载时按需缓存。"
+        f"{mode}同步完成（{school_name or school_code}）：新增 {counts['new']} 条，更新 {counts['stored']} 条"
+        + (f"，共约 {counts.get('total_row', 0)} 条。" if counts.get('total_row') else "。")
+        + "源文件与附件将在后台逐条下载并解析入库。"
         if counts["stored"]
         else "未发现可同步的公文。"
     )
@@ -460,10 +485,16 @@ def serialize_gongwen_document(row: Any, *, include_content: bool = False) -> di
         "openness": summary["openness"],
         "openness_label": summary["openness_label"],
         "scope_overridden": bool(item.get("scope_overridden")),
+        "parse_status": str(item.get("parsed_status") or "pending"),
+        "parsed_title": str(item.get("parsed_title") or ""),
+        "parsed_summary": str(item.get("parsed_summary") or ""),
+        "source_file_name": str(item.get("source_file_name") or ""),
+        "source_file_type": str(item.get("source_file_type") or ""),
     }
     if include_content:
         payload["content_html"] = str(item.get("content_html") or "")
         payload["content_text"] = str(item.get("content_text") or "")
+        payload["parsed_signature"] = str(item.get("parsed_signature") or "")
     return payload
 
 
@@ -476,6 +507,7 @@ def list_visible_gongwen_documents(
     category: str = "",
     author: str = "",
     sender: str = "",
+    parse_status: str = "",
     has_attachment: bool = False,
     unread_only: bool = False,
     favorite_only: bool = False,
@@ -499,6 +531,12 @@ def list_visible_gongwen_documents(
     if sender:
         where.append("sender_name = ?")
         params.append(str(sender))
+    if parse_status in {"pending", "parsing", "done", "failed"}:
+        if parse_status == "pending":
+            where.append("parsed_status IN ('pending','parsing')")
+        else:
+            where.append("parsed_status = ?")
+            params.append(parse_status)
     if has_attachment:
         where.append("(file_url <> '' OR attachment_url <> '')")
     if unread_only:

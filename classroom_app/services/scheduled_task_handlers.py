@@ -165,3 +165,11 @@ from .gongwen_document_sync_service import (  # noqa: E402
 )
 
 register_task_handler(GONGWEN_SYNC_TASK_KIND, handle_gongwen_sync_task)
+
+# 校园公文通 parse queue worker — drains the pending parse backlog in paced batches.
+from .gongwen_parse_service import (  # noqa: E402
+    GONGWEN_PARSE_TASK_KIND,
+    handle_gongwen_parse_task,
+)
+
+register_task_handler(GONGWEN_PARSE_TASK_KIND, handle_gongwen_parse_task)

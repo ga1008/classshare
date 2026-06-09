@@ -149,7 +149,14 @@ def ensure_gongwen_schema(conn: Any) -> None:
             remote_created_at TEXT NOT NULL DEFAULT '',
             remote_updated_at TEXT NOT NULL DEFAULT '',
             scope_overridden INTEGER NOT NULL DEFAULT 0,
-            parsed_status TEXT NOT NULL DEFAULT 'idle',
+            source_file_name TEXT NOT NULL DEFAULT '',
+            source_file_type TEXT NOT NULL DEFAULT '',
+            parsed_status TEXT NOT NULL DEFAULT 'pending',
+            parse_attempts INTEGER NOT NULL DEFAULT 0,
+            parse_error TEXT NOT NULL DEFAULT '',
+            parsed_title TEXT NOT NULL DEFAULT '',
+            parsed_summary TEXT NOT NULL DEFAULT '',
+            parsed_signature TEXT NOT NULL DEFAULT '',
             parsed_text TEXT NOT NULL DEFAULT '',
             parsed_payload_json TEXT NOT NULL DEFAULT '{{}}',
             parsed_at TEXT,
@@ -189,11 +196,22 @@ def ensure_gongwen_schema(conn: Any) -> None:
         engine,
         "gongwen_documents",
         (
-            ("parsed_status", "TEXT NOT NULL DEFAULT 'idle'"),
+            ("parsed_status", "TEXT NOT NULL DEFAULT 'pending'"),
             ("parsed_text", "TEXT NOT NULL DEFAULT ''"),
             ("parsed_payload_json", "TEXT NOT NULL DEFAULT '{}'"),
             ("parsed_at", "TEXT"),
+            ("source_file_name", "TEXT NOT NULL DEFAULT ''"),
+            ("source_file_type", "TEXT NOT NULL DEFAULT ''"),
+            ("parse_attempts", "INTEGER NOT NULL DEFAULT 0"),
+            ("parse_error", "TEXT NOT NULL DEFAULT ''"),
+            ("parsed_title", "TEXT NOT NULL DEFAULT ''"),
+            ("parsed_summary", "TEXT NOT NULL DEFAULT ''"),
+            ("parsed_signature", "TEXT NOT NULL DEFAULT ''"),
         ),
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_gongwen_documents_parse_status "
+        "ON gongwen_documents (parsed_status, parse_attempts)"
     )
     _SCHEMA_READY = True
 

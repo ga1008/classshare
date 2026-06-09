@@ -203,7 +203,11 @@ from ...services.gongwen_integration_service import (
     update_gongwen_credential_verification_status,
     verify_gongwen_credential,
 )
-from ...services.gongwen_content_service import build_gongwen_document_reader
+from ...services.gongwen_parse_service import (
+    build_gongwen_document_reader,
+    count_pending_parses,
+    schedule_gongwen_parse_worker,
+)
 from ...services.gongwen_document_sync_service import (
     build_gongwen_facets,
     build_gongwen_sync_capabilities,
