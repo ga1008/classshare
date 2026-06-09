@@ -504,14 +504,18 @@ async def api_list_gongwen_documents(
     request: Request,
     keyword: str = "",
     category: str = "",
+    author: str = "",
+    sender: str = "",
+    has_attachment: int = 0,
     unread: int = 0,
     favorite: int = 0,
-    limit: int = 60,
+    limit: int = 20,
     offset: int = 0,
+    with_facets: int = 0,
     user: dict = Depends(get_current_teacher),
 ):
     """List campus-visible 公文 for the teacher (归属 + 开放范围 filtered)."""
-    limit = max(1, min(int(limit or 60), 200))
+    limit = max(1, min(int(limit or 20), 100))
     offset = max(0, int(offset or 0))
     with get_db_connection() as conn:
         scope, is_admin = _gongwen_viewer(conn, user)
@@ -521,20 +525,43 @@ async def api_list_gongwen_documents(
             is_super_admin=is_admin,
             keyword=keyword,
             category=category,
+            author=author,
+            sender=sender,
+            has_attachment=bool(int(has_attachment or 0)),
             unread_only=bool(int(unread or 0)),
             favorite_only=bool(int(favorite or 0)),
             limit=limit,
             offset=offset,
         )
         summary = count_visible_gongwen_documents(conn, scope, is_super_admin=is_admin)
-        categories = list_visible_gongwen_categories(conn, scope, is_super_admin=is_admin)
-    return {
+        facets = build_gongwen_facets(conn, scope, is_super_admin=is_admin) if int(with_facets or 0) else None
+    payload = {
         "status": "success",
         "documents": result["documents"],
         "total": result["total"],
         "summary": summary,
-        "categories": categories,
     }
+    if facets is not None:
+        payload["facets"] = facets
+        payload["categories"] = facets["categories"]
+    return payload
+
+
+@router.get("/gongwen/documents/{document_id}/reader", response_class=JSONResponse)
+async def api_gongwen_document_reader(
+    document_id: int,
+    refresh: int = 0,
+    user: dict = Depends(get_current_teacher),
+):
+    """Parsed, in-page reader view of a 公文 (正文 + 附件 文本/表格/PDF)."""
+    with get_db_connection() as conn:
+        scope, is_admin = _gongwen_viewer(conn, user)
+    reader = await build_gongwen_document_reader(
+        scope, int(document_id), is_super_admin=is_admin, refresh=bool(int(refresh or 0))
+    )
+    if reader is None:
+        raise HTTPException(status_code=404, detail="公文不存在或无权访问。")
+    return {"status": "success", "document": reader}
 
 
 @router.get("/gongwen/documents/search", response_class=JSONResponse)

@@ -149,6 +149,10 @@ def ensure_gongwen_schema(conn: Any) -> None:
             remote_created_at TEXT NOT NULL DEFAULT '',
             remote_updated_at TEXT NOT NULL DEFAULT '',
             scope_overridden INTEGER NOT NULL DEFAULT 0,
+            parsed_status TEXT NOT NULL DEFAULT 'idle',
+            parsed_text TEXT NOT NULL DEFAULT '',
+            parsed_payload_json TEXT NOT NULL DEFAULT '{{}}',
+            parsed_at TEXT,
             reminder_status TEXT NOT NULL DEFAULT 'none',
             raw_json TEXT NOT NULL DEFAULT '{{}}',
             synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -177,4 +181,30 @@ def ensure_gongwen_schema(conn: Any) -> None:
         "CREATE INDEX IF NOT EXISTS idx_gongwen_documents_reminder "
         "ON gongwen_documents (attr_school_code, reminder_status)"
     )
+
+    # Additively backfill parsed-content columns onto already-migrated
+    # campus-shape tables (these post-date the campus migration).
+    _ensure_columns(
+        conn,
+        engine,
+        "gongwen_documents",
+        (
+            ("parsed_status", "TEXT NOT NULL DEFAULT 'idle'"),
+            ("parsed_text", "TEXT NOT NULL DEFAULT ''"),
+            ("parsed_payload_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ("parsed_at", "TEXT"),
+        ),
+    )
     _SCHEMA_READY = True
+
+
+def _ensure_columns(conn: Any, engine: str, table: str, columns) -> None:
+    for name, definition in columns:
+        try:
+            if engine == "postgres":
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {name} {definition}")
+            else:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+        except Exception:
+            # Column already exists (sqlite raises) — safe to ignore.
+            pass

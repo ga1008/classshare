@@ -138,8 +138,8 @@ from ...services.gongwen_integration_service import (
     list_teacher_gongwen_credentials,
 )
 from ...services.gongwen_document_sync_service import (
+    build_gongwen_facets,
     count_visible_gongwen_documents,
-    list_visible_gongwen_categories,
     list_visible_gongwen_documents,
 )
 from ...services.signature_service import build_signature_dashboard_context

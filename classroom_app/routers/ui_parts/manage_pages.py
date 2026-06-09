@@ -603,9 +603,9 @@ async def get_manage_gongwen_page(request: Request, user: dict = Depends(get_cur
     with get_db_connection() as conn:
         scope = load_teacher_org_scope(conn, int(user["id"]))
         is_admin = is_super_admin_teacher(conn, int(user["id"]))
-        listing = list_visible_gongwen_documents(conn, scope, is_super_admin=is_admin, limit=60)
+        listing = list_visible_gongwen_documents(conn, scope, is_super_admin=is_admin, limit=20)
         summary = count_visible_gongwen_documents(conn, scope, is_super_admin=is_admin)
-        categories = list_visible_gongwen_categories(conn, scope, is_super_admin=is_admin)
+        facets = build_gongwen_facets(conn, scope, is_super_admin=is_admin)
 
     return templates.TemplateResponse(
         request,
@@ -619,7 +619,8 @@ async def get_manage_gongwen_page(request: Request, user: dict = Depends(get_cur
                 "gongwen_documents": listing["documents"],
                 "gongwen_total": listing["total"],
                 "gongwen_summary": summary,
-                "gongwen_categories": categories,
+                "gongwen_categories": facets["categories"],
+                "gongwen_facets": facets,
             },
         ),
     )

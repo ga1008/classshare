@@ -344,6 +344,14 @@ async def ensure_local_attachment(
             content = response.content
             if not content or len(content) > MAX_DOWNLOAD_BYTES:
                 raise ValueError("文件为空或超过下载上限。")
+            # Guard: a deleted/unknown CDN path returns the SPA index.html (200).
+            # Don't cache an HTML error page as a binary document.
+            ext = Path(_safe_filename(remote_url, "")).suffix.lower()
+            content_type = (response.headers.get("content-type") or "").split(";")[0].strip().lower()
+            if ext not in {".txt", ".html", ".htm", ".csv", ".md"} and (
+                content_type in {"text/html", "application/xhtml+xml"} or content[:15].lstrip().lower().startswith(b"<!doctype html")
+            ):
+                raise ValueError("远端未返回有效文件（可能已被删除或需重新登录）。")
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(content)
         with get_db_connection() as conn:
@@ -466,9 +474,12 @@ def list_visible_gongwen_documents(
     is_super_admin: bool = False,
     keyword: str = "",
     category: str = "",
+    author: str = "",
+    sender: str = "",
+    has_attachment: bool = False,
     unread_only: bool = False,
     favorite_only: bool = False,
-    limit: int = 100,
+    limit: int = 20,
     offset: int = 0,
 ) -> dict[str, Any]:
     ensure_gongwen_schema(conn)
@@ -477,11 +488,19 @@ def list_visible_gongwen_documents(
     keyword = str(keyword or "").strip()
     if keyword:
         like = f"%{keyword}%"
-        where.append("(title LIKE ? OR sn LIKE ? OR author LIKE ? OR content_text LIKE ? OR keywords LIKE ?)")
-        params.extend([like, like, like, like, like])
+        where.append("(title LIKE ? OR sn LIKE ? OR author LIKE ? OR content_text LIKE ? OR parsed_text LIKE ? OR keywords LIKE ?)")
+        params.extend([like, like, like, like, like, like])
     if category:
         where.append("category_name = ?")
         params.append(str(category))
+    if author:
+        where.append("author = ?")
+        params.append(str(author))
+    if sender:
+        where.append("sender_name = ?")
+        params.append(str(sender))
+    if has_attachment:
+        where.append("(file_url <> '' OR attachment_url <> '')")
     if unread_only:
         where.append("is_read = 0")
     if favorite_only:
@@ -519,19 +538,34 @@ def count_visible_gongwen_documents(conn, teacher_scope: dict[str, str], *, is_s
     }
 
 
-def list_visible_gongwen_categories(conn, teacher_scope: dict[str, str], *, is_super_admin: bool = False) -> list[dict[str, Any]]:
-    ensure_gongwen_schema(conn)
+def _visible_facet(conn, teacher_scope, column, *, is_super_admin: bool, limit: int = 50) -> list[dict[str, Any]]:
     visibility_sql, params = ms.build_visibility_filter(teacher_scope, is_super_admin=is_super_admin)
     rows = conn.execute(
         f"""
-        SELECT category_name AS name, COUNT(*) AS total
+        SELECT {column} AS name, COUNT(*) AS total
         FROM gongwen_documents
-        WHERE {visibility_sql} AND category_name <> ''
-        GROUP BY category_name ORDER BY total DESC, category_name ASC
+        WHERE {visibility_sql} AND {column} <> ''
+        GROUP BY {column} ORDER BY total DESC, {column} ASC
+        LIMIT ?
         """,
-        params,
+        [*params, int(limit)],
     ).fetchall()
     return [{"name": str(dict(r)["name"]), "total": int(dict(r)["total"])} for r in rows]
+
+
+def list_visible_gongwen_categories(conn, teacher_scope: dict[str, str], *, is_super_admin: bool = False) -> list[dict[str, Any]]:
+    ensure_gongwen_schema(conn)
+    return _visible_facet(conn, teacher_scope, "category_name", is_super_admin=is_super_admin)
+
+
+def build_gongwen_facets(conn, teacher_scope: dict[str, str], *, is_super_admin: bool = False) -> dict[str, Any]:
+    """Distinct categories / 发文单位 / 发送人 for the filter controls."""
+    ensure_gongwen_schema(conn)
+    return {
+        "categories": _visible_facet(conn, teacher_scope, "category_name", is_super_admin=is_super_admin),
+        "authors": _visible_facet(conn, teacher_scope, "author", is_super_admin=is_super_admin),
+        "senders": _visible_facet(conn, teacher_scope, "sender_name", is_super_admin=is_super_admin),
+    }
 
 
 def build_gongwen_sync_capabilities(conn, teacher_scope: dict[str, str], *, is_super_admin: bool = False) -> list[dict[str, Any]]:
