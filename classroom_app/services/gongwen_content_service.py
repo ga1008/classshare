@@ -26,8 +26,15 @@ from .gongwen_document_sync_service import ensure_local_attachment, serialize_go
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 PDF_EXTS = {".pdf"}
+EXCEL_EXTS = {".xlsx", ".xls", ".csv"}
 DISPLAY_TEXT_LIMIT = 120_000
 PARSED_TEXT_LIMIT = 240_000
+MAX_TABLE_ROWS = 300
+MAX_TABLE_COLS = 30
+AI_OCR_MAX_IMAGES = 8
+AI_OCR_TIMEOUT_SECONDS = 150.0
+# Drop extractor warnings that are noise for the reader (we use the text/tables).
+_SUPPRESSED_WARNINGS = ("已将 Office 文档渲染为页面图片用于视觉兜底",)
 
 
 def _now_iso() -> str:
@@ -39,15 +46,92 @@ def _filename_from_url(url: str, fallback: str) -> str:
     return name or fallback
 
 
-def _extract_text_safe(path: Path, name: str) -> tuple[str, list[str]]:
-    """Run the shared extractor; never raise — degrade to a warning."""
+def _clean_warnings(warnings) -> list[str]:
+    return [w for w in (warnings or []) if not any(s in str(w) for s in _SUPPRESSED_WARNINGS)]
+
+
+def _run_extractor(path: Path, name: str):
+    """Run the shared extractor; never raise."""
     try:
         from .material_ai_import_service import extract_material_content
 
-        extraction = extract_material_content(path, name)
-        return str(extraction.text or ""), list(extraction.warnings or [])
+        return extract_material_content(path, name)
     except Exception as exc:  # noqa: BLE001 — extraction must never break the reader
-        return "", [f"在线解析失败：{str(exc)[:140]}"]
+
+        class _Empty:
+            text = ""
+            warnings = [f"在线解析失败：{str(exc)[:140]}"]
+            images: list[dict[str, str]] = []
+            quality: dict[str, Any] = {}
+
+        return _Empty()
+
+
+def _parse_excel(path: Path) -> tuple[list[dict[str, Any]], str]:
+    """Parse a workbook into structured sheets for a real HTML table render."""
+    sheets: list[dict[str, Any]] = []
+    text_lines: list[str] = []
+    try:
+        import openpyxl
+
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        for ws in wb.worksheets[:6]:
+            rows: list[list[str]] = []
+            for raw in ws.iter_rows(values_only=True):
+                cells = ["" if c is None else str(c).strip() for c in raw][:MAX_TABLE_COLS]
+                if any(cells):
+                    rows.append(cells)
+                if len(rows) >= MAX_TABLE_ROWS:
+                    break
+            if rows:
+                width = max(len(r) for r in rows)
+                rows = [r + [""] * (width - len(r)) for r in rows]
+                sheets.append({"sheet": str(ws.title), "rows": rows})
+                text_lines.append(f"## 工作表：{ws.title}")
+                text_lines.extend("\t".join(r).strip() for r in rows)
+        wb.close()
+    except Exception as exc:  # noqa: BLE001
+        return [], ""
+    return sheets, "\n".join(text_lines).strip()
+
+
+async def _ocr_images_with_ai(images: list[dict[str, str]], hint: str) -> str:
+    """Transcribe rendered page images with the multimodal model (scanned docs)."""
+    usable = [img for img in (images or []) if str(img.get("data_url") or "").startswith("data:")][:AI_OCR_MAX_IMAGES]
+    if not usable:
+        return ""
+    from ..core import ai_client
+
+    payload = {
+        "system_prompt": (
+            "你是公文 OCR 与版式还原助手。请把图片中的公文内容按阅读顺序完整转写为整洁文本："
+            "保留标题、文号、条款编号与层级；表格请用 Markdown 表格还原。只输出转写内容本身，不要解释。"
+        ),
+        "messages": [],
+        "new_message": f"请完整转写这些公文页面图片中的全部文字内容。{hint}",
+        "base64_urls": [],
+        "image_inputs": [{"url": img["data_url"], "label": img.get("filename", "")} for img in usable],
+        "file_texts": [],
+        "model_capability": "vision",
+        "task_type": "vision",
+        "response_format": "text",
+        "task_priority": "interactive",
+        "task_label": "gongwen_ocr",
+    }
+    try:
+        import httpx
+
+        resp = await ai_client.post("/api/ai/chat", json=payload, timeout=AI_OCR_TIMEOUT_SECONDS)
+        resp.raise_for_status()
+        data = resp.json()
+    except (httpx.HTTPError, ValueError, KeyError):
+        return ""
+    return str((data or {}).get("response_text") or "").strip()
+
+
+def _text_is_weak(text: str, *, pages: int = 1) -> bool:
+    stripped = (text or "").strip()
+    return len(stripped) < max(40, pages * 10)
 
 
 async def _parse_file_part(
@@ -69,32 +153,56 @@ async def _parse_file_part(
         "label": label,
         "kind": "unsupported",
         "text": "",
+        "tables": [],
         "warnings": [],
-        "view_url": view_url,
+        "view_url": f"{view_url}&inline=1",
         "download_url": view_url,
         "truncated": False,
+        "ai_used": False,
     }
 
     cache = await ensure_local_attachment(teacher_scope, document_id, which, is_super_admin=is_super_admin)
     if cache.get("status") != "local":
-        # Could not cache a local copy; still let the user view/download the CDN file.
         part["kind"] = "pdf" if ext in PDF_EXTS else ("image" if ext in IMAGE_EXTS else "unsupported")
         part["warnings"].append("未能获取本地副本，暂不能在线解析，可点击下载查看。")
         return part
 
     path = Path(cache["local_path"])
+
     if ext in IMAGE_EXTS:
         part["kind"] = "image"
         return part
 
-    text, warnings = await asyncio.to_thread(_extract_text_safe, path, name)
-    part["warnings"].extend(warnings)
+    if ext in EXCEL_EXTS:
+        sheets, text = await asyncio.to_thread(_parse_excel, path)
+        if sheets:
+            part["kind"] = "table"
+            part["tables"] = sheets
+            part["text"] = text[:DISPLAY_TEXT_LIMIT]
+            return part
+        # fall through to generic extractor if openpyxl produced nothing
+
+    extraction = await asyncio.to_thread(_run_extractor, path, name)
+    text = str(getattr(extraction, "text", "") or "")
+    images = list(getattr(extraction, "images", []) or [])
+    part["warnings"].extend(_clean_warnings(getattr(extraction, "warnings", [])))
+
+    pages = max(1, len(images)) if ext in PDF_EXTS else 1
+    # Escalate to multimodal OCR when the text layer is weak (e.g. scanned PDFs).
+    if _text_is_weak(text, pages=pages) and images:
+        ocr_text = await _ocr_images_with_ai(images, f"文件名：{name}")
+        if len(ocr_text.strip()) > len(text.strip()):
+            text = ocr_text
+            part["ai_used"] = True
+            part["warnings"].append("正文文字较少，已用多模态模型识别页面图片补全内容。")
+
     if len(text) > DISPLAY_TEXT_LIMIT:
         text = text[:DISPLAY_TEXT_LIMIT]
         part["truncated"] = True
     part["text"] = text
+
     if ext in PDF_EXTS:
-        part["kind"] = "pdf"  # inline iframe + extracted text
+        part["kind"] = "pdf"
     elif text.strip():
         part["kind"] = "text"
     else:
@@ -154,7 +262,7 @@ async def build_gongwen_document_reader(
             text_chunks.append(f"【{part['label']}：{part['name']}】\n{part['text'].strip()}")
     parsed_text = "\n\n".join(text_chunks)[:PARSED_TEXT_LIMIT]
 
-    any_text = any(p.get("kind") in {"text", "pdf"} and p.get("text", "").strip() for p in parts)
+    any_text = any(p.get("kind") in {"text", "pdf", "table"} and p.get("text", "").strip() for p in parts)
     status = "done" if (parts and (any_text or all(p.get("kind") == "image" for p in parts))) else ("partial" if parts else "done")
 
     with get_db_connection() as conn:

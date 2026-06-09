@@ -639,10 +639,13 @@ async def api_set_gongwen_document_scope(document_id: int, request: Request, use
 async def api_download_gongwen_document_file(
     document_id: int,
     which: str = "primary",
+    inline: int = 0,
     user: dict = Depends(get_current_teacher),
 ):
     """Serve the document attachment: cache the public CDN file locally on first
-    access, then stream it; fall back to a host-validated redirect on failure."""
+    access, then stream it; fall back to a host-validated redirect on failure.
+    ``inline=1`` serves with ``Content-Disposition: inline`` so a PDF renders in
+    the reader's iframe instead of triggering a download."""
     from fastapi.responses import RedirectResponse
 
     which = "attachment" if str(which) == "attachment" else "primary"
@@ -656,6 +659,7 @@ async def api_download_gongwen_document_file(
         raise HTTPException(status_code=404, detail="该公文暂无可下载的附件。")
     if status == "local":
         path = Path(result["local_path"])
-        return FileResponse(str(path), filename=path.name)
+        disposition = "inline" if int(inline or 0) else "attachment"
+        return FileResponse(str(path), filename=path.name, content_disposition_type=disposition)
     # status == "redirect": cache failed but the CDN file is public.
     return RedirectResponse(url=str(result.get("remote_url")), status_code=302)

@@ -91,6 +91,12 @@
     .gw-reader-warn { padding: 8px var(--spacing-md); color: #b45309; background: rgba(245,158,11,0.08); font-size: 0.8rem; }
     .gw-reader-unsupported { padding: var(--spacing-lg); text-align: center; color: var(--text-muted); }
     details.gw-reader-extract > summary { padding: 8px var(--spacing-md); cursor: pointer; color: var(--text-secondary); font-weight: 700; font-size: 0.82rem; }
+    .gw-reader-sheet-name { padding: 8px var(--spacing-md) 0; font-weight: 800; font-size: 0.82rem; color: var(--text-secondary); }
+    .gw-reader-table-wrap { overflow-x: auto; padding: var(--spacing-md); }
+    table.gw-reader-table { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
+    table.gw-reader-table th, table.gw-reader-table td { border: 1px solid rgba(148,163,184,0.4); padding: 6px 9px; text-align: left; vertical-align: top; white-space: pre-wrap; word-break: break-word; min-width: 60px; }
+    table.gw-reader-table th { background: rgba(248,250,252,0.9); font-weight: 800; color: var(--text-primary); }
+    table.gw-reader-table tr:nth-child(even) td { background: rgba(248,250,252,0.5); }
     @media (max-width: 768px) { .gw-reader-iframe { height: 50vh; } }
 </style>
 {% endblock %}
@@ -254,5 +260,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260609d"></script>
+<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260609e"></script>
 {% endblock %}

@@ -230,8 +230,11 @@ function renderPart(part) {
     if (part.kind === 'pdf') {
         inner = `<iframe class="gw-reader-iframe" src="${escapeHtml(part.view_url)}" title="${escapeHtml(part.name || 'PDF')}"></iframe>`;
         if (part.text && part.text.trim()) {
-            inner += `<details class="gw-reader-extract"><summary>查看解析文本</summary><pre class="gw-reader-text">${escapeHtml(part.text)}</pre></details>`;
+            inner += `<details class="gw-reader-extract" open><summary>解析文本（用于检索 / 智能提醒）</summary><pre class="gw-reader-text">${escapeHtml(part.text)}</pre></details>`;
         }
+    } else if (part.kind === 'table') {
+        inner = (part.tables || []).map(renderSheet).join('');
+        if (!inner) inner = `<pre class="gw-reader-text">${escapeHtml(part.text || '')}</pre>`;
     } else if (part.kind === 'image') {
         inner = `<img class="gw-reader-img" src="${escapeHtml(part.view_url)}" alt="${escapeHtml(part.name || '图片')}">`;
     } else if (part.kind === 'text') {
@@ -240,6 +243,18 @@ function renderPart(part) {
         inner = `<div class="gw-reader-unsupported">该文件暂不支持在线解析，请点击右上角「下载」查看。</div>`;
     }
     return `<section class="gw-reader-part">${head}${warn}${inner}</section>`;
+}
+
+function renderSheet(sheet) {
+    const rows = sheet.rows || [];
+    if (!rows.length) return '';
+    const body = rows.map((row, idx) => {
+        const tag = idx === 0 ? 'th' : 'td';
+        const cells = row.map((cell) => `<${tag}>${escapeHtml(cell)}</${tag}>`).join('');
+        return `<tr>${cells}</tr>`;
+    }).join('');
+    const name = sheet.sheet ? `<div class="gw-reader-sheet-name">${escapeHtml(sheet.sheet)}</div>` : '';
+    return `${name}<div class="gw-reader-table-wrap"><table class="gw-reader-table">${body}</table></div>`;
 }
 
 function renderReader(doc) {
