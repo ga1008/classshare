@@ -277,8 +277,11 @@ async def _exchange_code_for_token(
 ) -> str:
     """After a successful doLogin, follow authorize to capture the OAuth code."""
     code = ""
+    authorize_query = urlparse.parse_qs(urlparse.urlparse(authorize_url).query)
+    scope = (authorize_query.get("scope") or ["userinfo"])[0]
     current = authorize_url
-    for _ in range(6):
+    confirmed = False
+    for _ in range(8):
         response = await client.get(current, headers={"Referer": authorize_url})
         location = response.headers.get("location", "")
         if response.status_code in (301, 302, 303, 307, 308) and location:
@@ -288,6 +291,24 @@ async def _exchange_code_for_token(
                 break
             current = location if location.startswith("http") else profile.sso_base_url + location
             continue
+        # A 200 page on first authorization is the consent ("确认授权") screen.
+        # The 同意 button GETs /oauth2/doConfirm, after which authorize redirects
+        # with the code. Grant consent once, then retry the authorize request.
+        page = response.text or ""
+        if not confirmed and ("doConfirm" in page or "确认授权" in page or "是否同意授权" in page):
+            try:
+                confirm = await client.get(
+                    f"{profile.sso_base_url}/oauth2/doConfirm",
+                    params={"client_id": profile.client_id, "scope": scope},
+                    headers={"X-Requested-With": "XMLHttpRequest", "Referer": authorize_url},
+                )
+                confirm_ok = (confirm.json() or {}).get("code") in (200, "200")
+            except (httpx.HTTPError, ValueError, json.JSONDecodeError):
+                confirm_ok = False
+            if confirm_ok:
+                confirmed = True
+                current = authorize_url
+                continue
         break
     if not code:
         raise ValueError("统一认证已登录，但未能获取授权码，请稍后重试。")
