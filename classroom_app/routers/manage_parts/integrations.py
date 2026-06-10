@@ -512,12 +512,15 @@ async def api_list_gongwen_documents(
     has_attachment: int = 0,
     unread: int = 0,
     favorite: int = 0,
+    follow: int = 0,
     limit: int = 20,
     offset: int = 0,
     with_facets: int = 0,
     user: dict = Depends(get_current_teacher),
 ):
     """List campus-visible 公文 for the teacher (归属 + 开放范围 filtered)."""
+    from ...services.gongwen_follow_service import load_follow_hits_for_documents
+
     limit = max(1, min(int(limit or 20), 100))
     offset = max(0, int(offset or 0))
     with get_db_connection() as conn:
@@ -534,9 +537,15 @@ async def api_list_gongwen_documents(
             has_attachment=bool(int(has_attachment or 0)),
             unread_only=bool(int(unread or 0)),
             favorite_only=bool(int(favorite or 0)),
+            follow_teacher_id=int(user["id"]) if int(follow or 0) else None,
             limit=limit,
             offset=offset,
         )
+        hits = load_follow_hits_for_documents(
+            conn, int(user["id"]), [doc["id"] for doc in result["documents"]]
+        )
+        for doc in result["documents"]:
+            doc["follow_hit"] = hits.get(doc["id"])
         summary = count_visible_gongwen_documents(conn, scope, is_super_admin=is_admin)
         summary["pending_parses"] = count_pending_parses(conn)
         facets = build_gongwen_facets(conn, scope, is_super_admin=is_admin) if int(with_facets or 0) else None
@@ -559,6 +568,8 @@ async def api_gongwen_document_reader(
     user: dict = Depends(get_current_teacher),
 ):
     """Parsed, in-page reader view of a 公文 (正文 + 附件 文本/表格/PDF)."""
+    from ...services.gongwen_follow_service import mark_follow_hit_seen
+
     with get_db_connection() as conn:
         scope, is_admin = _gongwen_viewer(conn, user)
     reader = await build_gongwen_document_reader(
@@ -566,6 +577,10 @@ async def api_gongwen_document_reader(
     )
     if reader is None:
         raise HTTPException(status_code=404, detail="公文不存在或无权访问。")
+    # 打开阅览即视为已查看该公文的关注命中（首页「您的关注」计数随之减少）。
+    with get_db_connection() as conn:
+        mark_follow_hit_seen(conn, int(user["id"]), int(document_id))
+        conn.commit()
     return {"status": "success", "document": reader}
 
 
@@ -604,6 +619,55 @@ async def api_gongwen_scope_options(user: dict = Depends(get_current_teacher)):
             "department": gongwen_openness_options("department"),
         },
     }
+
+
+@router.get("/gongwen/follow-settings", response_class=JSONResponse)
+async def api_get_gongwen_follow_settings(user: dict = Depends(get_current_teacher)):
+    """当前教师的公文关注设置（关注项目 + 关注关键字）。"""
+    from ...services.gongwen_follow_service import get_teacher_follow_settings
+
+    with get_db_connection() as conn:
+        settings = get_teacher_follow_settings(conn, int(user["id"]))
+    return {"status": "success", "settings": settings}
+
+
+@router.post("/gongwen/follow-settings", response_class=JSONResponse)
+async def api_save_gongwen_follow_settings(request: Request, user: dict = Depends(get_current_teacher)):
+    """保存公文关注设置，并确保后台匹配 worker 已启动。"""
+    from ...services.gongwen_follow_service import (
+        save_teacher_follow_settings,
+        schedule_gongwen_follow_worker,
+    )
+
+    payload = await _parse_json_request(request)
+    with get_db_connection() as conn:
+        try:
+            settings = save_teacher_follow_settings(
+                conn,
+                int(user["id"]),
+                items=payload.get("items"),
+                keywords=payload.get("keywords"),
+                enabled=bool(payload.get("enabled", True)),
+            )
+            if settings["items"] or settings["keywords"]:
+                schedule_gongwen_follow_worker(conn)
+            conn.commit()
+        except ValueError as exc:
+            conn.rollback()
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "success", "message": "关注设置已保存，新解析的公文将自动匹配并提醒。", "settings": settings}
+
+
+@router.get("/gongwen/follow-hits", response_class=JSONResponse)
+async def api_list_gongwen_follow_hits(limit: int = 20, user: dict = Depends(get_current_teacher)):
+    """当前教师的关注命中记录（「您的关注」列表）。"""
+    from ...services.gongwen_follow_service import count_unseen_follow_hits, list_teacher_follow_hits
+
+    limit = max(1, min(int(limit or 20), 100))
+    with get_db_connection() as conn:
+        hits = list_teacher_follow_hits(conn, int(user["id"]), limit=limit)
+        unseen = count_unseen_follow_hits(conn, int(user["id"]))
+    return {"status": "success", "hits": hits, "unseen": unseen}
 
 
 @router.get("/gongwen/documents/{document_id}", response_class=JSONResponse)

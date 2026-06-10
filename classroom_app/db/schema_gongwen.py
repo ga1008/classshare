@@ -209,11 +209,57 @@ def ensure_gongwen_schema(conn: Any) -> None:
             ("parsed_summary", "TEXT NOT NULL DEFAULT ''"),
             ("parsed_signature", "TEXT NOT NULL DEFAULT ''"),
             ("parsed_keywords", "TEXT NOT NULL DEFAULT ''"),
+            ("reminder_status", "TEXT NOT NULL DEFAULT 'none'"),
         ),
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_gongwen_documents_parse_status "
         "ON gongwen_documents (parsed_status, parse_attempts)"
+    )
+
+    # --- Per-teacher 关注 settings (关注项目 = AI 语义匹配, 关键字 = 硬匹配) ---
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS teacher_gongwen_follow_settings (
+            {id_column},
+            teacher_id INTEGER NOT NULL,
+            follow_items_json TEXT NOT NULL DEFAULT '[]',
+            follow_keywords_json TEXT NOT NULL DEFAULT '[]',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_gongwen_follow_settings_teacher "
+        "ON teacher_gongwen_follow_settings (teacher_id)"
+    )
+
+    # --- 关注命中记录 (one row per teacher per document, dedupes notifications) ---
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS gongwen_follow_hits (
+            {id_column},
+            teacher_id INTEGER NOT NULL,
+            document_id INTEGER NOT NULL,
+            match_type TEXT NOT NULL DEFAULT 'keyword',
+            matched_keywords_json TEXT NOT NULL DEFAULT '[]',
+            matched_items_json TEXT NOT NULL DEFAULT '[]',
+            ai_reason TEXT NOT NULL DEFAULT '',
+            notified INTEGER NOT NULL DEFAULT 0,
+            seen_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_gongwen_follow_hits_unique "
+        "ON gongwen_follow_hits (teacher_id, document_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_gongwen_follow_hits_teacher_seen "
+        "ON gongwen_follow_hits (teacher_id, seen_at, created_at)"
     )
     _SCHEMA_READY = True
 

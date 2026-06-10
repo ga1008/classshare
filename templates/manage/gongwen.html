@@ -151,6 +151,28 @@
     table.gw-reader-table th { background: rgba(248,250,252,0.9); font-weight: 800; color: var(--text-primary); }
     table.gw-reader-table tr:nth-child(even) td { background: rgba(248,250,252,0.5); }
     @media (max-width: 768px) { .gw-reader-iframe { height: 50vh; } }
+    /* 关注命中徽标 + 关注设置浮窗 */
+    .gwlist-follow { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 1px 7px; border-radius: var(--radius-full); background: rgba(217,119,6,0.14); color: #b45309; font-size: 0.68rem; font-weight: 800; vertical-align: middle; cursor: help; }
+    .gw-follow-backdrop { position: fixed; inset: 0; z-index: 1100; display: grid; place-items: center; padding: 20px; background: rgba(15,23,42,0.42); backdrop-filter: blur(8px); }
+    .gw-follow-backdrop[hidden] { display: none; }
+    .gw-follow-modal { width: min(560px, 100%); max-height: 90vh; display: flex; flex-direction: column; border-radius: 12px; border: 1px solid rgba(148,163,184,0.24); background: #fff; box-shadow: 0 26px 80px -40px rgba(15,23,42,0.72); overflow: hidden; }
+    .gw-follow-head { padding: var(--spacing-lg); border-bottom: 1px solid rgba(226,232,240,0.95); display: flex; justify-content: space-between; align-items: flex-start; gap: var(--spacing-md); }
+    .gw-follow-head h3 { margin: 0; font-size: 1.05rem; font-weight: 800; }
+    .gw-follow-head small { color: var(--text-muted); }
+    .gw-follow-body { padding: var(--spacing-lg); display: grid; gap: var(--spacing-lg); overflow-y: auto; }
+    .gw-follow-section h4 { margin: 0 0 4px; font-size: 0.9rem; font-weight: 800; color: var(--text-primary); }
+    .gw-follow-section p { margin: 0 0 10px; color: var(--text-muted); font-size: 0.8rem; line-height: 1.6; }
+    .gw-follow-items { display: grid; gap: 8px; }
+    .gw-follow-item-row { display: flex; gap: 8px; align-items: center; }
+    .gw-follow-item-row input { flex: 1; padding: 8px 11px; border: 1px solid rgba(148,163,184,0.3); border-radius: 9px; font-size: 0.86rem; }
+    .gw-follow-item-remove { width: 30px; height: 30px; flex: 0 0 auto; border: 1px solid rgba(148,163,184,0.28); border-radius: 999px; background: #fff; color: #64748b; font-size: 1rem; line-height: 1; cursor: pointer; }
+    .gw-follow-item-remove:hover { color: #be123c; border-color: rgba(244,63,94,0.4); }
+    .gw-follow-add { margin-top: 8px; }
+    .gw-follow-tags { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border: 1px solid rgba(148,163,184,0.3); border-radius: 10px; background: #fff; }
+    .gw-follow-tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 10px; border-radius: var(--radius-full); background: rgba(79,70,229,0.1); color: #4f46e5; font-size: 0.8rem; font-weight: 700; }
+    .gw-follow-tag button { border: 0; background: transparent; color: inherit; font-size: 0.95rem; line-height: 1; cursor: pointer; padding: 0; }
+    .gw-follow-tags input { flex: 1; min-width: 140px; border: 0; outline: none; font-size: 0.84rem; padding: 4px; background: transparent; }
+    .gw-follow-actions { display: flex; justify-content: flex-end; gap: var(--spacing-sm); padding: 0 var(--spacing-lg) var(--spacing-lg); }
 </style>
 {% endblock %}
 
@@ -168,6 +190,7 @@
         <div class="gwlist-toolbar">
             <span class="gwlist-time" id="gw-doc-last-sync">{% if summary.last_synced_at %}上次同步：{{ summary.last_synced_at[:16] }}{% else %}尚未同步{% endif %}</span>
             <button type="button" class="btn btn-outline" id="gw-doc-refresh">刷新</button>
+            <button type="button" class="btn btn-outline" id="gw-follow-open">关注设置</button>
             <button type="button" class="btn btn-primary" id="gw-doc-sync">立即同步</button>
         </div>
     </div>
@@ -211,6 +234,7 @@
                 </select>
                 <button type="button" class="gwlist-chip" id="gw-doc-attach" data-active="0">含附件</button>
                 <button type="button" class="gwlist-chip" id="gw-doc-unread" data-active="0">仅看未读</button>
+                <button type="button" class="gwlist-chip" id="gw-doc-follow" data-active="0">我的关注</button>
             </div>
         </div>
         <div class="gwlist-table-wrap">
@@ -347,10 +371,41 @@
     </article>
 </div>
 
+<div class="gw-follow-backdrop" id="gw-follow-modal" hidden>
+    <article class="gw-follow-modal" role="dialog" aria-modal="true" aria-labelledby="gw-follow-title">
+        <div class="gw-follow-head">
+            <div>
+                <h3 id="gw-follow-title">公文关注设置</h3>
+                <small>新公文解析完成后自动匹配，命中即发送站内提醒与邮件，并在首页「您的关注」汇总。</small>
+            </div>
+            <button type="button" class="gw-scope-close" id="gw-follow-close" aria-label="关闭">&times;</button>
+        </div>
+        <div class="gw-follow-body">
+            <section class="gw-follow-section">
+                <h4>关注项目（AI 智能匹配）</h4>
+                <p>填写你关心的主题或事项（如「师范专业认证」「青年教师教学比赛」），由快速 AI 判断新公文是否与之相关。</p>
+                <div class="gw-follow-items" id="gw-follow-items"></div>
+                <button type="button" class="btn btn-outline btn-sm gw-follow-add" id="gw-follow-add-item">＋ 新增关注项</button>
+            </section>
+            <section class="gw-follow-section">
+                <h4>关注关键字（硬匹配）</h4>
+                <p>公文标题、正文或附件解析文本中出现关键字即提醒（不分大小写）。输入后按回车添加。</p>
+                <div class="gw-follow-tags" id="gw-follow-tags">
+                    <input type="text" id="gw-follow-keyword-input" placeholder="输入关键字后按回车" maxlength="40" autocomplete="off">
+                </div>
+            </section>
+        </div>
+        <div class="gw-follow-actions">
+            <button type="button" class="btn btn-outline" id="gw-follow-cancel">取消</button>
+            <button type="button" class="btn btn-primary" id="gw-follow-save">保存</button>
+        </div>
+    </article>
+</div>
+
 <script type="application/json" id="gw-documents-data">{{ gongwen_documents | tojson }}</script>
 <script type="application/json" id="gw-documents-total">{{ gongwen_total | tojson }}</script>
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260610b"></script>
+<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260610c"></script>
 {% endblock %}

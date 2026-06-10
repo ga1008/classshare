@@ -21,6 +21,8 @@ const state = {
     parseStatus: '',
     hasAttachment: false,
     unread: false,
+    follow: false,
+    followKeywords: [],
     page: 1,
     pageSize: 20,
     scopeOptions: null,
@@ -42,6 +44,17 @@ const refs = {
     parse: document.getElementById('gw-doc-parse'),
     attach: document.getElementById('gw-doc-attach'),
     unread: document.getElementById('gw-doc-unread'),
+    follow: document.getElementById('gw-doc-follow'),
+    // follow settings modal
+    followOpen: document.getElementById('gw-follow-open'),
+    followModal: document.getElementById('gw-follow-modal'),
+    followClose: document.getElementById('gw-follow-close'),
+    followCancel: document.getElementById('gw-follow-cancel'),
+    followSave: document.getElementById('gw-follow-save'),
+    followItems: document.getElementById('gw-follow-items'),
+    followAddItem: document.getElementById('gw-follow-add-item'),
+    followTags: document.getElementById('gw-follow-tags'),
+    followKeywordInput: document.getElementById('gw-follow-keyword-input'),
     refresh: document.getElementById('gw-doc-refresh'),
     sync: document.getElementById('gw-doc-sync'),
     lastSync: document.getElementById('gw-doc-last-sync'),
@@ -125,6 +138,13 @@ function parseBadge(status) {
     return `<span class="gwlist-parse st-${escapeHtml(st)}"><span class="gw-dot"></span>${escapeHtml(label)}</span>`;
 }
 
+function followBadge(hit) {
+    if (!hit) return '';
+    const matched = [...(hit.matched_keywords || []), ...(hit.matched_items || [])];
+    const detail = [matched.length ? `命中：${matched.join('、')}` : '', hit.ai_reason || ''].filter(Boolean).join('；');
+    return `<span class="gwlist-follow" title="${escapeHtml(detail || '命中了你的关注设置')}">★ 关注命中</span>`;
+}
+
 function rowHtml(doc) {
     const unreadDot = doc.is_read ? '' : '<span class="gwlist-unread-dot" title="未读"></span>';
     const sn = doc.sn ? `<span class="gwlist-sn">${escapeHtml(doc.sn)}</span>` : '';
@@ -132,7 +152,7 @@ function rowHtml(doc) {
     const openLevel = doc.openness || 'school';
     return `
         <tr>
-            <td><span class="gwlist-title" data-open-reader="${doc.id}" title="点击查看原文">${unreadDot}${sn}${escapeHtml(doc.title || '(无标题)')}</span>${parseBadge(doc.parse_status)}</td>
+            <td><span class="gwlist-title" data-open-reader="${doc.id}" title="点击查看原文">${unreadDot}${sn}${escapeHtml(doc.title || '(无标题)')}</span>${parseBadge(doc.parse_status)}${followBadge(doc.follow_hit)}</td>
             <td>${escapeHtml(doc.author || '-')}</td>
             <td>${escapeHtml(doc.sender_name || '-')}</td>
             <td>${cat}</td>
@@ -180,6 +200,7 @@ function buildParams() {
     if (state.parseStatus) params.set('parse_status', state.parseStatus);
     if (state.hasAttachment) params.set('has_attachment', '1');
     if (state.unread) params.set('unread', '1');
+    if (state.follow) params.set('follow', '1');
     params.set('limit', String(state.pageSize));
     params.set('offset', String((state.page - 1) * state.pageSize));
     return params;
@@ -484,6 +505,94 @@ function closeReader() {
     state.attachParts = [];
 }
 
+// ---------------- 关注设置（关注项目 + 关注关键字） ----------------
+
+function followItemRowHtml(value = '') {
+    return `
+        <div class="gw-follow-item-row">
+            <input type="text" value="${escapeHtml(value)}" maxlength="60" placeholder="如：师范专业认证 / 教学比赛 / 实验室安全">
+            <button type="button" class="gw-follow-item-remove" data-follow-remove-item title="删除该关注项">&times;</button>
+        </div>`;
+}
+
+function addFollowItemRow(value = '') {
+    if (!refs.followItems) return;
+    refs.followItems.insertAdjacentHTML('beforeend', followItemRowHtml(value));
+    if (!value) {
+        const inputs = refs.followItems.querySelectorAll('input');
+        inputs[inputs.length - 1]?.focus();
+    }
+}
+
+function renderFollowKeywordTags() {
+    if (!refs.followTags) return;
+    refs.followTags.querySelectorAll('.gw-follow-tag').forEach((el) => el.remove());
+    state.followKeywords.forEach((keyword, index) => {
+        refs.followKeywordInput.insertAdjacentHTML('beforebegin', `
+            <span class="gw-follow-tag">${escapeHtml(keyword)}
+                <button type="button" data-follow-remove-keyword="${index}" title="删除关键字">&times;</button>
+            </span>`);
+    });
+}
+
+function addFollowKeyword(raw) {
+    const keyword = String(raw || '').trim();
+    if (!keyword) return;
+    if (state.followKeywords.some((k) => k.toLowerCase() === keyword.toLowerCase())) return;
+    if (state.followKeywords.length >= 30) {
+        showMessage('关注关键字最多 30 个。', 'warning');
+        return;
+    }
+    state.followKeywords = [...state.followKeywords, keyword];
+    renderFollowKeywordTags();
+}
+
+async function openFollowModal() {
+    if (!refs.followModal) return;
+    setBusy(refs.followOpen, true, '加载中');
+    try {
+        const result = await apiFetch('/api/manage/gongwen/follow-settings');
+        const settings = result.settings || {};
+        refs.followItems.innerHTML = '';
+        (settings.items || []).forEach((item) => addFollowItemRow(item));
+        if (!(settings.items || []).length) addFollowItemRow('');
+        state.followKeywords = [...(settings.keywords || [])];
+        renderFollowKeywordTags();
+        refs.followKeywordInput.value = '';
+        refs.followModal.hidden = false;
+    } catch (error) {
+        showMessage(error.message || '读取关注设置失败。', 'error');
+    } finally {
+        setBusy(refs.followOpen, false);
+    }
+}
+
+function closeFollowModal() {
+    if (refs.followModal) refs.followModal.hidden = true;
+}
+
+async function saveFollowSettings() {
+    // 输入框里尚未回车的关键字也一并保存，避免用户误以为已添加。
+    addFollowKeyword(refs.followKeywordInput?.value);
+    if (refs.followKeywordInput) refs.followKeywordInput.value = '';
+    const items = Array.from(refs.followItems?.querySelectorAll('input') || [])
+        .map((input) => input.value.trim())
+        .filter(Boolean);
+    setBusy(refs.followSave, true, '保存中');
+    try {
+        const result = await apiFetch('/api/manage/gongwen/follow-settings', {
+            method: 'POST',
+            body: { items, keywords: state.followKeywords },
+        });
+        closeFollowModal();
+        showMessage(result.message || '关注设置已保存。', 'success');
+    } catch (error) {
+        showMessage(error.message || '保存关注设置失败。', 'error');
+    } finally {
+        setBusy(refs.followSave, false);
+    }
+}
+
 // ---------------- 归属 / 开放范围 editor ----------------
 
 async function ensureScopeOptions() {
@@ -589,6 +698,34 @@ refs.unread?.addEventListener('click', () => {
     refs.unread.classList.toggle('is-active', state.unread);
     applyFilters();
 });
+refs.follow?.addEventListener('click', () => {
+    state.follow = !state.follow;
+    refs.follow.classList.toggle('is-active', state.follow);
+    applyFilters();
+});
+refs.followOpen?.addEventListener('click', openFollowModal);
+refs.followClose?.addEventListener('click', closeFollowModal);
+refs.followCancel?.addEventListener('click', closeFollowModal);
+refs.followSave?.addEventListener('click', saveFollowSettings);
+refs.followModal?.addEventListener('click', (event) => { if (event.target === refs.followModal) closeFollowModal(); });
+refs.followAddItem?.addEventListener('click', () => addFollowItemRow(''));
+refs.followItems?.addEventListener('click', (event) => {
+    const removeBtn = event.target.closest('[data-follow-remove-item]');
+    if (removeBtn) removeBtn.closest('.gw-follow-item-row')?.remove();
+});
+refs.followKeywordInput?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ',') return;
+    event.preventDefault();
+    addFollowKeyword(refs.followKeywordInput.value);
+    refs.followKeywordInput.value = '';
+});
+refs.followTags?.addEventListener('click', (event) => {
+    const removeBtn = event.target.closest('[data-follow-remove-keyword]');
+    if (!removeBtn) return;
+    const index = parseInt(removeBtn.dataset.followRemoveKeyword, 10);
+    state.followKeywords = state.followKeywords.filter((_, i) => i !== index);
+    renderFollowKeywordTags();
+});
 refs.refresh?.addEventListener('click', reload);
 refs.sync?.addEventListener('click', syncNow);
 refs.pagesize?.addEventListener('change', () => {
@@ -639,6 +776,7 @@ document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     if (refs.fullModal && !refs.fullModal.hidden) { closeFullscreen(); return; }
     if (refs.attachModal && !refs.attachModal.hidden) { closeAttachModal(); return; }
+    if (refs.followModal && !refs.followModal.hidden) { closeFollowModal(); return; }
     if (refs.reader && !refs.reader.hidden) closeReader();
 });
 
@@ -653,3 +791,14 @@ refs.scopeSave?.addEventListener('click', saveScope);
 refs.scopeModal?.addEventListener('click', (event) => { if (event.target === refs.scopeModal) closeScopeEditor(); });
 
 render();
+
+// 入口参数：?follow=1 直接进入「我的关注」视图；?doc=ID 自动打开该公文的阅览
+// （配合首页「您的关注」与通知中心的跳转链接形成闭环）。
+const initialParams = new URLSearchParams(window.location.search);
+if (initialParams.get('follow') === '1' && refs.follow) {
+    state.follow = true;
+    refs.follow.classList.add('is-active');
+    reload();
+}
+const initialDocId = initialParams.get('doc');
+if (initialDocId) openReader(initialDocId);

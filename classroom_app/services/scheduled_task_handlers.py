@@ -173,3 +173,12 @@ from .gongwen_parse_service import (  # noqa: E402
 )
 
 register_task_handler(GONGWEN_PARSE_TASK_KIND, handle_gongwen_parse_task)
+
+# 公文关注匹配 worker — matches freshly parsed documents against teacher follow
+# settings (AI 语义项 + 硬关键字) and sends notifications/emails on hits.
+from .gongwen_follow_service import (  # noqa: E402
+    GONGWEN_FOLLOW_TASK_KIND,
+    handle_gongwen_follow_task,
+)
+
+register_task_handler(GONGWEN_FOLLOW_TASK_KIND, handle_gongwen_follow_task)

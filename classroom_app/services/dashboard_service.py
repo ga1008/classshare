@@ -1342,6 +1342,19 @@ def _build_teacher_dashboard_context(
     ]
 
     focus_items = _load_teacher_academic_focus_items(conn, teacher_id=teacher_id, limit=3)
+    try:
+        from .gongwen_follow_service import count_unseen_follow_hits
+
+        follow_unseen_count = count_unseen_follow_hits(conn, teacher_id)
+    except Exception:  # noqa: BLE001 — 关注模块异常不能拖垮首页
+        follow_unseen_count = 0
+    if follow_unseen_count > 0:
+        focus_items.insert(0, {
+            "title": "您的关注：公文命中提醒",
+            "description": f"有 {follow_unseen_count} 篇新公文命中了你的关注项目或关键字，点击查看。",
+            "href": "/manage/gongwen?follow=1",
+            "tone": "primary",
+        })
     if pending_reset_count > 0:
         focus_items.append({
             "title": "学生找回密码审核",

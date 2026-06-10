@@ -1536,6 +1536,30 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/gongwen/follow-hits",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_gongwen_follow_hits",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/gongwen/follow-settings",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_gongwen_follow_settings",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/gongwen/follow-settings",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_save_gongwen_follow_settings",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/gongwen/scope-options",
     "methods": [
       "GET"

@@ -388,6 +388,11 @@ def schedule_gongwen_parse_worker(conn) -> int:
     """Arm the recurring parse worker (idempotent, one global task)."""
     from .scheduled_task_service import schedule_task
 
+    # 关注匹配 worker 紧随解析 worker：解析完成的公文随即匹配教师关注并提醒。
+    from .gongwen_follow_service import schedule_gongwen_follow_worker
+
+    schedule_gongwen_follow_worker(conn)
+
     run_at = datetime.now() + timedelta(seconds=45)
     return schedule_task(
         conn,

@@ -52,6 +52,7 @@ IMPORTANT_NOTIFICATION_CATEGORIES = {
     "learning_progress",
     "attendance_alert",
     "academic_exam",
+    "gongwen_follow",
 }
 
 SYSTEM_NOTIFICATION_CATEGORIES = {
@@ -67,6 +68,7 @@ EMAIL_ELIGIBLE_CATEGORIES = {
     "grading_result",
     "learning_progress",
     "academic_exam",
+    "gongwen_follow",
     "ai_feedback",
     "app_feedback",
     "password_reset_request",

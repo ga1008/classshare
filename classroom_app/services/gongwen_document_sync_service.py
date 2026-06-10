@@ -548,6 +548,7 @@ def list_visible_gongwen_documents(
     has_attachment: bool = False,
     unread_only: bool = False,
     favorite_only: bool = False,
+    follow_teacher_id: int | None = None,
     limit: int = 20,
     offset: int = 0,
 ) -> dict[str, Any]:
@@ -583,6 +584,13 @@ def list_visible_gongwen_documents(
         where.append("is_read = 0")
     if favorite_only:
         where.append("is_fav = 1")
+    if follow_teacher_id is not None:
+        # 「我的关注」：只看命中了当前教师关注项/关键字的公文。
+        where.append(
+            "EXISTS (SELECT 1 FROM gongwen_follow_hits h "
+            "WHERE h.document_id = gongwen_documents.id AND h.teacher_id = ?)"
+        )
+        params.append(int(follow_teacher_id))
     where_sql = " AND ".join(where)
     total = int((conn.execute(f"SELECT COUNT(*) AS c FROM gongwen_documents WHERE {where_sql}", params).fetchone() or {"c": 0})["c"])
     rows = conn.execute(
