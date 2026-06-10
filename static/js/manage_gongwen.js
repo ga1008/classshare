@@ -129,12 +129,14 @@ function fileButtons(doc) {
     return buttons.join('');
 }
 
-const PARSE_LABELS = { done: '已解析', pending: '未解析', parsing: '解析中', failed: '解析失败' };
+const PARSE_LABELS = { done: '已解析', pending: '未解析', idle: '未解析', parsing: '解析中', failed: '解析失败' };
+const ACTIVE_PARSE_STATES = ['pending', 'idle', 'parsing'];
 
-function parseBadge(status) {
+function parseBadge(status, justParsed) {
     const st = status || 'pending';
-    if (st === 'done') return '';
-    const label = PARSE_LABELS[st] || '未解析';
+    // 已解析常态下不占视觉；刚转为完成的本次会话内短暂亮绿标。
+    if (st === 'done' && !justParsed) return '';
+    const label = st === 'done' ? '解析完成' : (PARSE_LABELS[st] || '未解析');
     return `<span class="gwlist-parse st-${escapeHtml(st)}"><span class="gw-dot"></span>${escapeHtml(label)}</span>`;
 }
 
@@ -152,7 +154,7 @@ function rowHtml(doc) {
     const openLevel = doc.openness || 'school';
     return `
         <tr>
-            <td><span class="gwlist-title" data-open-reader="${doc.id}" title="点击查看原文">${unreadDot}${sn}${escapeHtml(doc.title || '(无标题)')}</span>${parseBadge(doc.parse_status)}${followBadge(doc.follow_hit)}</td>
+            <td><span class="gwlist-title" data-open-reader="${doc.id}" title="点击查看原文">${unreadDot}${sn}${escapeHtml(doc.title || '(无标题)')}</span>${parseBadge(doc.parse_status, doc._justParsed)}${followBadge(doc.follow_hit)}</td>
             <td>${escapeHtml(doc.author || '-')}</td>
             <td>${escapeHtml(doc.sender_name || '-')}</td>
             <td>${cat}</td>
@@ -220,19 +222,80 @@ async function reload() {
             state.documents = retry.documents || [];
             state.total = retry.total || 0;
         }
-        if (refs.lastSync && result.summary) {
-            const pending = Number(result.summary.pending_parses || 0);
-            const base = result.summary.last_synced_at
-                ? `上次同步：${formatDateTime(result.summary.last_synced_at)}`
-                : '尚未同步';
-            refs.lastSync.textContent = pending > 0 ? `${base} · 待解析 ${pending}` : base;
-        }
+        updateSummaryLine(result.summary);
         render();
+        scheduleParsePoll();
     } catch (error) {
         showMessage(error.message || '读取公文失败。', 'error');
     } finally {
         setBusy(refs.refresh, false);
     }
+}
+
+function updateSummaryLine(summary) {
+    if (!refs.lastSync || !summary) return;
+    const pending = Number(summary.pending_parses || 0);
+    const base = summary.last_synced_at
+        ? `上次同步：${formatDateTime(summary.last_synced_at)}`
+        : '尚未同步';
+    refs.lastSync.textContent = pending > 0 ? `${base} · 待解析 ${pending}` : base;
+}
+
+// --------- live parse-status refresh（后台解析时列表标签实时变化） ---------
+
+const PARSE_POLL_MS = 10000;
+let parsePollTimer = null;
+
+function hasActiveParses() {
+    return state.documents.some((doc) => ACTIVE_PARSE_STATES.includes(String(doc.parse_status || '')));
+}
+
+function scheduleParsePoll() {
+    if (parsePollTimer) {
+        window.clearTimeout(parsePollTimer);
+        parsePollTimer = null;
+    }
+    if (!hasActiveParses()) return;
+    parsePollTimer = window.setTimeout(pollParseStatuses, PARSE_POLL_MS);
+}
+
+async function pollParseStatuses() {
+    parsePollTimer = null;
+    if (document.hidden) {
+        // 标签页不在前台时不打接口，回到前台后下个周期继续。
+        parsePollTimer = window.setTimeout(pollParseStatuses, PARSE_POLL_MS);
+        return;
+    }
+    try {
+        const result = await apiFetch(`/api/manage/gongwen/documents?${buildParams().toString()}`);
+        const previous = new Map(state.documents.map((doc) => [doc.id, String(doc.parse_status || '')]));
+        const fresh = (result.documents || []).map((doc) => {
+            const before = previous.get(doc.id);
+            const now = String(doc.parse_status || '');
+            if (before && before !== 'done' && now === 'done') return { ...doc, _justParsed: true };
+            return doc;
+        });
+        const doneDocs = fresh.filter((doc) => doc._justParsed);
+        const failedCount = fresh.filter((doc) => {
+            const before = previous.get(doc.id);
+            return before && before !== 'failed' && String(doc.parse_status || '') === 'failed';
+        }).length;
+        state.documents = fresh;
+        state.total = result.total || state.total;
+        updateSummaryLine(result.summary);
+        render();
+        if (doneDocs.length === 1) {
+            showMessage(`《${doneDocs[0].title || doneDocs[0].sn || '公文'}》解析完成。`, 'success');
+        } else if (doneDocs.length > 1) {
+            showMessage(`${doneDocs.length} 篇公文解析完成。`, 'success');
+        }
+        if (failedCount > 0) {
+            showMessage(`${failedCount} 篇公文解析失败，打开阅览页可重试。`, 'warning');
+        }
+    } catch (error) {
+        // 轮询失败不打扰用户，下个周期重试。
+    }
+    scheduleParsePoll();
 }
 
 function goPage(delta) {
@@ -367,7 +430,7 @@ function renderReader(doc) {
     state.attachParts = parts.filter((p) => p.which !== 'primary' || p.kind === 'archive');
 
     const blocks = [];
-    if ((doc.parse_status || '') === 'pending' || (doc.parse_status || '') === 'parsing') {
+    if (ACTIVE_PARSE_STATES.includes(String(doc.parse_status || ''))) {
         blocks.push('<div class="gw-reader-pending">该公文正在后台解析，稍后可点击右上角「重新解析」查看完整内容。</div>');
     }
     const contentHtml = (doc.content_html || '').trim();

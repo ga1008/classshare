@@ -216,6 +216,14 @@ def ensure_gongwen_schema(conn: Any) -> None:
         "CREATE INDEX IF NOT EXISTS idx_gongwen_documents_parse_status "
         "ON gongwen_documents (parsed_status, parse_attempts)"
     )
+    # Heal a legacy deployment where parsed_status defaulted to 'idle' (a value
+    # the parse worker never claims) — docs ingested there sat unparsed forever.
+    try:
+        if engine == "postgres":
+            conn.execute("ALTER TABLE gongwen_documents ALTER COLUMN parsed_status SET DEFAULT 'pending'")
+        conn.execute("UPDATE gongwen_documents SET parsed_status = 'pending' WHERE parsed_status = 'idle'")
+    except Exception:
+        pass
 
     # --- Per-teacher 关注 settings (关注项目 = AI 语义匹配, 关键字 = 硬匹配) ---
     conn.execute(

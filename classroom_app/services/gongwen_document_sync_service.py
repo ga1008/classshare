@@ -267,14 +267,18 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int, *, full: bool 
     sweep = bool(full or not known_ids or not backfilled)
     mode = "全量" if full else ("回填" if (known_ids and sweep) else ("全量" if sweep else "增量"))
 
+    seen_this_run: set[str] = set()
     try:
         async with open_authenticated_gongwen_client(access) as (client, profile, _token):
             page_no = 1
             total_pages = MAX_PAGES  # refined from the first response
             while page_no <= min(total_pages, MAX_PAGES):
+                # NOTE: the pagination param is ``page`` — the API silently
+                # ignores ``pageNo``/``pageNumber`` and returns page 1, which
+                # once made a 16-page sweep store the same newest page 16 times.
                 resp = await client.get(
                     f"{profile.api_base_url}/user/doc/page",
-                    params={"pageNo": page_no, "pageSize": PAGE_SIZE},
+                    params={"page": page_no, "pageSize": PAGE_SIZE},
                     headers={"Origin": profile.base_url, "Referer": f"{profile.base_url}/"},
                 )
                 resp.raise_for_status()
@@ -284,6 +288,12 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int, *, full: bool 
                     break
                 items = result.get("list") or []
                 if not items:
+                    break
+                # Guard against the server ignoring pagination again: it echoes
+                # the effective page as ``pageNumber``.
+                echoed_page = result.get("pageNumber")
+                if echoed_page is not None and int(echoed_page or 0) != page_no:
+                    warnings.append(f"上游分页异常（请求第 {page_no} 页返回第 {echoed_page} 页），已提前停止，请稍后重试。")
                     break
                 counts["pages"] += 1
                 # Drive pagination by totalPage/totalRow — the API's firstPage /
@@ -310,6 +320,12 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int, *, full: bool 
                             continue
                         counts["fetched"] += 1
                         fields = _extract_document_fields(item, profile.base_url)
+                        # A doc can drift across page boundaries between paced
+                        # requests — upsert it once per run, count it once.
+                        if fields["remote_id"] and fields["remote_id"] in seen_this_run:
+                            continue
+                        if fields["remote_id"]:
+                            seen_this_run.add(fields["remote_id"])
                         if fields["remote_id"] and fields["remote_id"] not in known_ids:
                             new_in_page += 1
                             counts["new"] += 1

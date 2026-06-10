@@ -57,10 +57,11 @@
     .gwlist-select { width: auto; min-width: 120px; max-width: 200px; }
     .gwlist-parse { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 1px 7px; border-radius: var(--radius-full); font-size: 0.68rem; font-weight: 800; vertical-align: middle; }
     .gwlist-parse.st-done { background: rgba(16,185,129,0.12); color: #047857; }
-    .gwlist-parse.st-pending, .gwlist-parse.st-parsing { background: rgba(245,158,11,0.14); color: #b45309; }
+    .gwlist-parse.st-pending, .gwlist-parse.st-idle { background: rgba(100,116,139,0.12); color: #475569; }
+    .gwlist-parse.st-parsing { background: rgba(59,130,246,0.14); color: #1d4ed8; }
     .gwlist-parse.st-failed { background: rgba(244,63,94,0.12); color: #be123c; }
     .gwlist-parse .gw-dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
-    .gwlist-parse.st-parsing .gw-dot, .gwlist-parse.st-pending .gw-dot { animation: gwPulse 1.2s ease-in-out infinite; }
+    .gwlist-parse.st-parsing .gw-dot { animation: gwPulse 1.2s ease-in-out infinite; }
     @keyframes gwPulse { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
     .gw-reader-struct { display: grid; gap: 8px; padding: var(--spacing-md) var(--spacing-lg); border-bottom: 1px solid rgba(226,232,240,0.9); background: rgba(248,250,252,0.4); }
     .gw-reader-struct .gw-struct-row { display: grid; grid-template-columns: 72px 1fr; gap: 10px; font-size: 0.86rem; }
@@ -407,5 +408,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260610c"></script>
+<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260610d"></script>
 {% endblock %}

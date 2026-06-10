@@ -348,9 +348,9 @@ def _claim_pending_ids(conn, limit: int) -> list[int]:
     rows = conn.execute(
         """
         SELECT id FROM gongwen_documents
-        WHERE parsed_status = 'pending'
+        WHERE parsed_status IN ('pending', 'idle')
            OR (parsed_status = 'failed' AND parse_attempts < ?)
-        ORDER BY (parsed_status = 'pending') DESC, publish_time DESC, id DESC
+        ORDER BY (parsed_status IN ('pending', 'idle')) DESC, publish_time DESC, id DESC
         LIMIT ?
         """,
         (PARSE_MAX_ATTEMPTS, int(limit)),
@@ -365,7 +365,7 @@ async def parse_pending_batch(limit: int = PARSE_BATCH_SIZE) -> dict[str, Any]:
         _reset_stale_parsing(conn)
         conn.commit()
         ids = _claim_pending_ids(conn, limit)
-        remaining = int((conn.execute("SELECT COUNT(*) AS c FROM gongwen_documents WHERE parsed_status = 'pending'").fetchone() or {"c": 0})["c"])
+        remaining = int((conn.execute("SELECT COUNT(*) AS c FROM gongwen_documents WHERE parsed_status IN ('pending', 'idle')").fetchone() or {"c": 0})["c"])
     done = 0
     for index, doc_id in enumerate(ids):
         try:
@@ -409,5 +409,5 @@ def schedule_gongwen_parse_worker(conn) -> int:
 
 def count_pending_parses(conn) -> int:
     ensure_gongwen_schema(conn)
-    row = conn.execute("SELECT COUNT(*) AS c FROM gongwen_documents WHERE parsed_status IN ('pending', 'parsing')").fetchone()
+    row = conn.execute("SELECT COUNT(*) AS c FROM gongwen_documents WHERE parsed_status IN ('pending', 'idle', 'parsing')").fetchone()
     return int(dict(row)["c"]) if row else 0
