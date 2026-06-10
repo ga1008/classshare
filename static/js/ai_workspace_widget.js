@@ -444,10 +444,17 @@ function currentChatSurface() {
         sendBtn: chatComponent?.sendBtn || $('#ai-chat-btn-send'),
         attachBtn: chatComponent?.attachBtn || $('#ai-chat-btn-attach'),
         deepThinkBtn: chatComponent?.deepThinkBtn || $('#ai-deep-think-btn'),
-        scrollToBottom: () => {
+        scrollToBottom: (force = false) => {
             if (chatComponent?.scrollToBottom) {
-                chatComponent.scrollToBottom();
-            } else if (messagesBox) {
+                chatComponent.scrollToBottom(force);
+                return;
+            }
+            if (!messagesBox) {
+                return;
+            }
+            // 无 chatComponent 时的粘性兜底：用户已上翻就不要拽回底部。
+            const nearBottom = messagesBox.scrollHeight - messagesBox.scrollTop - messagesBox.clientHeight <= 80;
+            if (force || nearBottom) {
                 messagesBox.scrollTop = messagesBox.scrollHeight;
             }
         },
@@ -775,8 +782,8 @@ function buildAgentTaskDetailHtml(task) {
     `;
 }
 
-function renderTaskDetail(task) {
-    return renderAgentTaskMessage(task);
+function renderTaskDetail(task, options = {}) {
+    return renderAgentTaskMessage(task, options);
 }
 
 function getAgentTaskMessageNode(taskId) {
@@ -803,10 +810,11 @@ function getAgentTaskMessageNode(taskId) {
     return msgDiv;
 }
 
-function renderAgentTaskMessage(task) {
+function renderAgentTaskMessage(task, { autoScroll = false } = {}) {
     if (!task?.id) {
         return;
     }
+    const isNew = !agentTaskMessages.get(Number(task.id))?.isConnected;
     const msgDiv = getAgentTaskMessageNode(task.id);
     if (!msgDiv) {
         return;
@@ -817,17 +825,13 @@ function renderAgentTaskMessage(task) {
     if (!bubble.parentNode) {
         msgDiv.appendChild(bubble);
     }
-    currentChatSurface().scrollToBottom();
+    // 轮询刷新只做粘性跟随（force=false），不打断用户向上浏览输出内容。
+    currentChatSurface().scrollToBottom(autoScroll || isNew);
 }
 
-function focusTaskDetailIfCompact() {
-    currentChatSurface().scrollToBottom();
-}
-
-async function loadTaskDetail(taskId) {
+async function loadTaskDetail(taskId, { autoScroll = false } = {}) {
     const data = await apiJson(`/api/agent-tasks/${taskId}`);
-    renderTaskDetail(data.task);
-    focusTaskDetailIfCompact();
+    renderTaskDetail(data.task, { autoScroll });
     return data.task;
 }
 
@@ -894,7 +898,7 @@ async function refreshTasks({ silent = false } = {}) {
         const activeOwnTask = (data.tasks || []).find((task) => task.is_owner && task.is_active);
         if (!selectedTaskId && activeOwnTask) {
             selectedTaskId = activeOwnTask.id;
-            await loadTaskDetail(activeOwnTask.id);
+            await loadTaskDetail(activeOwnTask.id, { autoScroll: true });
         }
     } catch (error) {
         if (!silent) {
@@ -1107,7 +1111,7 @@ async function submitAgentTaskFromChat() {
         });
         selectedTaskId = data.task?.id || null;
         if (data.task) {
-            renderAgentTaskMessage(data.task);
+            renderAgentTaskMessage(data.task, { autoScroll: true });
         }
         await refreshTasks({ silent: true });
         notify('Agent 任务已加入全平台队列。', 'success');
@@ -1165,7 +1169,7 @@ function bindTaskCenter() {
         selectedTaskId = Number(button.dataset.agentTaskId);
         renderTaskList(lastTaskPayload.tasks || []);
         try {
-            await loadTaskDetail(selectedTaskId);
+            await loadTaskDetail(selectedTaskId, { autoScroll: true });
         } catch (error) {
             notify(error.message || '任务详情加载失败', 'error');
         }

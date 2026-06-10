@@ -106,6 +106,11 @@ class AIChatComponent {
         this.newSessionBtn = document.getElementById('ai-chat-btn-new');
         this.fullscreenBtn = document.getElementById('ai-chat-btn-fullscreen');
         this.messagesBox = document.getElementById('ai-chat-messages-box');
+        // 粘性滚动：默认跟随到底部；用户主动往上滚时停止跟随，滚回底部附近恢复。
+        this.autoFollowScroll = true;
+        this.messagesBox?.addEventListener('scroll', () => {
+            this.autoFollowScroll = this.isNearBottom();
+        }, { passive: true });
         this.textarea = document.getElementById('ai-chat-textarea');
         this.sendBtn = document.getElementById('ai-chat-btn-send');
         this.attachBtn = document.getElementById('ai-chat-btn-attach');
@@ -174,7 +179,7 @@ class AIChatComponent {
 
             msgDiv.appendChild(bubble);
             this.messagesBox.appendChild(msgDiv);
-            this.scrollToBottom();
+            this.scrollToBottom(true);
         }
     }
 
@@ -486,8 +491,22 @@ class AIChatComponent {
         }
     }
 
-    scrollToBottom() {
-        this.messagesBox.scrollTop = this.messagesBox.scrollHeight;
+    isNearBottom(threshold = 80) {
+        const box = this.messagesBox;
+        if (!box) {
+            return true;
+        }
+        return box.scrollHeight - box.scrollTop - box.clientHeight <= threshold;
+    }
+
+    scrollToBottom(force = false) {
+        if (!this.messagesBox) {
+            return;
+        }
+        if (force || this.autoFollowScroll) {
+            this.messagesBox.scrollTop = this.messagesBox.scrollHeight;
+            this.autoFollowScroll = true;
+        }
     }
 
     /**
@@ -547,7 +566,7 @@ class AIChatComponent {
         const loading = this.messagesBox.querySelector('.loading');
         if (loading) loading.remove();
 
-        this.scrollToBottom();
+        this.scrollToBottom(true);
     }
 
     getThinkingStatusMeta(status) {
@@ -964,7 +983,7 @@ class AIChatComponent {
         aiBubble.innerHTML = '<span class="streaming-cursor"></span>';
         aiMsgDiv.appendChild(aiBubble);
         this.messagesBox.appendChild(aiMsgDiv);
-        this.scrollToBottom();
+        this.scrollToBottom(true);
 
         // 重置思考过程状态
         const streamState = this.createStreamState();
@@ -1246,7 +1265,7 @@ class AIChatComponent {
         this.addCodeCopyButtons(bubble);
         this.addMessageActions(messageDiv, finalAnswer);
 
-        this.scrollToBottom();
+        this.scrollToBottom(true);
     }
 
     // ==========================================================
