@@ -157,6 +157,7 @@ def ensure_gongwen_schema(conn: Any) -> None:
             parsed_title TEXT NOT NULL DEFAULT '',
             parsed_summary TEXT NOT NULL DEFAULT '',
             parsed_signature TEXT NOT NULL DEFAULT '',
+            parsed_keywords TEXT NOT NULL DEFAULT '',
             parsed_text TEXT NOT NULL DEFAULT '',
             parsed_payload_json TEXT NOT NULL DEFAULT '{{}}',
             parsed_at TEXT,
@@ -207,6 +208,7 @@ def ensure_gongwen_schema(conn: Any) -> None:
             ("parsed_title", "TEXT NOT NULL DEFAULT ''"),
             ("parsed_summary", "TEXT NOT NULL DEFAULT ''"),
             ("parsed_signature", "TEXT NOT NULL DEFAULT ''"),
+            ("parsed_keywords", "TEXT NOT NULL DEFAULT ''"),
         ),
     )
     conn.execute(

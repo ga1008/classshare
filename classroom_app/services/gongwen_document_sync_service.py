@@ -45,6 +45,11 @@ ALLOWED_FILE_HOSTS = {"doc.gxufl.com", "doc_api.gxufl.com"}
 GONGWEN_SYNC_TASK_KIND = "gongwen_incremental_sync"
 GONGWEN_SYNC_INTERVAL_SECONDS = 6 * 3600
 GONGWEN_SYNC_STAGGER_MINUTES = 180
+# Coverage floor: the local pool must reach back to this year. Until the sweep
+# has seen a pre-SYNC_MIN_YEAR page (or the whole inbox), incremental syncs keep
+# sweeping instead of early-stopping — this backfills pools that were first
+# synced with the old early-stop bug (which left only the newest pages).
+SYNC_MIN_YEAR = 2024
 
 
 def _now_iso() -> str:
@@ -217,6 +222,25 @@ def _load_existing_remote_ids(conn, school_code: str, system_code: str) -> set[s
     return {str(dict(r)["remote_id"]) for r in rows}
 
 
+def _item_year(item: dict[str, Any]) -> int | None:
+    text = str(item.get("publishTime") or item.get("createAt") or "").strip()
+    if len(text) >= 4 and text[:4].isdigit():
+        return int(text[:4])
+    return None
+
+
+def _backfilled_to_min_year(conn, school_code: str, system_code: str) -> bool:
+    """True once the pool already holds a pre-SYNC_MIN_YEAR document — proof the
+    sweep reached the coverage floor (publish_time is 'YYYY-MM-DD …', so string
+    comparison against the year works)."""
+    row = conn.execute(
+        "SELECT 1 FROM gongwen_documents WHERE attr_school_code = ? AND system_code = ? "
+        "AND publish_time <> '' AND publish_time < ? LIMIT 1",
+        (school_code, system_code, str(SYNC_MIN_YEAR)),
+    ).fetchone()
+    return row is not None
+
+
 async def sync_current_teacher_gongwen_documents(teacher_id: int, *, full: bool = False) -> dict[str, Any]:
     """Incrementally sync the teacher's inbox into the *campus* document pool.
 
@@ -236,9 +260,12 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int, *, full: bool 
     credential_id = access.get("credential_id")
     with get_db_connection() as conn:
         known_ids = _load_existing_remote_ids(conn, school_code, profile.system_code)
+        backfilled = _backfilled_to_min_year(conn, school_code, profile.system_code)
     counts = {"fetched": 0, "stored": 0, "new": 0, "pages": 0}
     warnings: list[str] = []
-    mode = "全量" if (full or not known_ids) else "增量"
+    # Sweep（不早停）当：手动全量 / 空库 / 历史尚未回填到 SYNC_MIN_YEAR。
+    sweep = bool(full or not known_ids or not backfilled)
+    mode = "全量" if full else ("回填" if (known_ids and sweep) else ("全量" if sweep else "增量"))
 
     try:
         async with open_authenticated_gongwen_client(access) as (client, profile, _token):
@@ -270,6 +297,10 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int, *, full: bool 
                     if total_pages <= 0:
                         total_pages = MAX_PAGES
                     counts["total_row"] = int(result.get("totalRow") or 0)
+                    # 整个收件箱都已入库 → 回填其实已完成，按增量走。
+                    if sweep and not full and known_ids and len(known_ids) >= counts["total_row"] > 0:
+                        sweep = False
+                        mode = "增量"
 
                 new_in_page = 0
                 with get_db_connection() as conn:
@@ -297,8 +328,13 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int, *, full: bool 
                     conn.commit()
 
                 # Incremental: once a whole page is already known (and we're not
-                # forcing a full sweep), older pages are too — stop early.
-                if not full and known_ids and new_in_page == 0:
+                # sweeping), older pages are too — stop early.
+                if not sweep and known_ids and new_in_page == 0:
+                    break
+                # Sweep（回填/全量）：整页都早于覆盖下限年份 → 该页已入库作为
+                # 回填完成的标记，更早的不再继续抓取。
+                years = [_item_year(item) for item in items if isinstance(item, dict)]
+                if sweep and years and all(y is not None and y < SYNC_MIN_YEAR for y in years):
                     break
                 page_no += 1
                 await asyncio.sleep(PAGE_DELAY_SECONDS)
@@ -309,16 +345,16 @@ async def sync_current_teacher_gongwen_documents(teacher_id: int, *, full: bool 
     except httpx.HTTPError as exc:
         return {"status": "failed", "message": f"同步公文时连接异常：{str(exc)[:160]}", "counts": counts, "warnings": warnings}
 
-    # New/updated docs are marked 'pending'; arm the parse worker to drain them.
-    if counts["stored"]:
-        try:
-            from .gongwen_parse_service import schedule_gongwen_parse_worker
+    # Arm the parse worker after every sync (idempotent, dedupe-replaced):
+    # new docs are 'pending', and an older backlog may also still be waiting.
+    try:
+        from .gongwen_parse_service import schedule_gongwen_parse_worker
 
-            with get_db_connection() as conn:
-                schedule_gongwen_parse_worker(conn)
-                conn.commit()
-        except Exception:  # noqa: BLE001
-            pass
+        with get_db_connection() as conn:
+            schedule_gongwen_parse_worker(conn)
+            conn.commit()
+    except Exception:  # noqa: BLE001
+        pass
 
     status = "success" if counts["stored"] else "empty"
     message = (
@@ -488,6 +524,7 @@ def serialize_gongwen_document(row: Any, *, include_content: bool = False) -> di
         "parse_status": str(item.get("parsed_status") or "pending"),
         "parsed_title": str(item.get("parsed_title") or ""),
         "parsed_summary": str(item.get("parsed_summary") or ""),
+        "parsed_keywords": str(item.get("parsed_keywords") or ""),
         "source_file_name": str(item.get("source_file_name") or ""),
         "source_file_type": str(item.get("source_file_type") or ""),
     }
@@ -520,8 +557,11 @@ def list_visible_gongwen_documents(
     keyword = str(keyword or "").strip()
     if keyword:
         like = f"%{keyword}%"
-        where.append("(title LIKE ? OR sn LIKE ? OR author LIKE ? OR content_text LIKE ? OR parsed_text LIKE ? OR keywords LIKE ?)")
-        params.extend([like, like, like, like, like, like])
+        where.append(
+            "(title LIKE ? OR sn LIKE ? OR author LIKE ? OR content_text LIKE ? "
+            "OR parsed_text LIKE ? OR keywords LIKE ? OR parsed_keywords LIKE ?)"
+        )
+        params.extend([like, like, like, like, like, like, like])
     if category:
         where.append("category_name = ?")
         params.append(str(category))

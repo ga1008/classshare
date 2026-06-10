@@ -26,8 +26,10 @@ const state = {
     scopeOptions: null,
     editingId: null,
     readerId: null,
+    allParts: [],
     attachParts: [],
     attachIndex: 0,
+    fullIndex: null,
 };
 
 const refs = {
@@ -72,6 +74,15 @@ const refs = {
     attachClose: document.getElementById('gw-attach-close'),
     attachList: document.getElementById('gw-attach-list'),
     attachView: document.getElementById('gw-attach-view'),
+    // fullscreen part viewer + parsed-text editor
+    fullModal: document.getElementById('gw-full-modal'),
+    fullClose: document.getElementById('gw-full-close'),
+    fullTitle: document.getElementById('gw-full-title'),
+    fullGrid: document.getElementById('gw-full-grid'),
+    fullContent: document.getElementById('gw-full-content'),
+    fullEditor: document.getElementById('gw-full-editor-text'),
+    fullSave: document.getElementById('gw-full-save'),
+    fullDownload: document.getElementById('gw-full-download'),
 };
 
 function formatDateTime(value) {
@@ -276,11 +287,16 @@ function partBodyHtml(part) {
     return '<div class="gw-reader-unsupported">该文件暂不支持在线解析，可点击「下载」查看。</div>';
 }
 
+function fullscreenButtonHtml(part) {
+    if (typeof part._idx !== 'number') return '';
+    return `<button type="button" class="btn btn-ghost btn-sm" data-fullscreen="${part._idx}" title="全屏阅览 / 编辑解析文本">全屏</button>`;
+}
+
 function renderPart(part) {
     const headBadge = part.truncated ? '<span class="gwlist-cat">已截断</span>' : '';
     const download = part.download_url ? `<a class="btn btn-outline btn-sm" href="${escapeHtml(part.download_url)}" download>下载</a>` : '';
     const head = `<div class="gw-reader-part-head"><strong>${escapeHtml(part.label || '内容')}${part.name ? '：' + escapeHtml(part.name) : ''}</strong>
-        <span>${headBadge}${download}</span></div>`;
+        <span>${headBadge}${fullscreenButtonHtml(part)}${download}</span></div>`;
     return `<section class="gw-reader-part">${head}${partNoteHtml(part)}${partBodyHtml(part)}</section>`;
 }
 
@@ -309,10 +325,11 @@ function renderReader(doc) {
         metaRow('开放', doc.openness_label),
     ].join('');
 
-    // Structured fields extracted by the parse pipeline (正文标题/摘要/落款).
+    // Structured fields extracted by the parse pipeline (正文标题/摘要/关键词/落款).
     const structRows = [
         doc.parsed_title ? `<div class="gw-struct-row"><span>正文标题</span><strong>${escapeHtml(doc.parsed_title)}</strong></div>` : '',
         doc.parsed_summary ? `<div class="gw-struct-row"><span>内容摘要</span><strong>${escapeHtml(doc.parsed_summary)}</strong></div>` : '',
+        doc.parsed_keywords ? `<div class="gw-struct-row"><span>关键词</span><strong>${escapeHtml(doc.parsed_keywords)}</strong></div>` : '',
         doc.parsed_signature ? `<div class="gw-struct-row"><span>落款</span><strong>${escapeHtml(doc.parsed_signature)}</strong></div>` : '',
     ].filter(Boolean).join('');
     const existingStruct = refs.readerMeta.parentElement.querySelector('.gw-reader-struct');
@@ -321,7 +338,9 @@ function renderReader(doc) {
         refs.readerMeta.insertAdjacentHTML('afterend', `<div class="gw-reader-struct">${structRows}</div>`);
     }
 
-    const parts = doc.parts || [];
+    // _idx = 该 part 在解析存档 parts 数组中的下标（全屏编辑保存时定位用）。
+    const parts = (doc.parts || []).map((p, i) => ({ ...p, _idx: i }));
+    state.allParts = parts;
     // 正文 = content_html + 正文文件；其余（附件 / 压缩包及其解压内容）走二级附件浮窗。
     const bodyParts = parts.filter((p) => p.which === 'primary' && p.kind !== 'archive');
     state.attachParts = parts.filter((p) => p.which !== 'primary' || p.kind === 'archive');
@@ -365,7 +384,7 @@ function selectAttachment(index) {
     });
     const download = part.download_url ? `<a class="btn btn-outline btn-sm" href="${escapeHtml(part.download_url)}" download>下载</a>` : '';
     refs.attachView.innerHTML = `
-        <div class="gw-attach-view-head"><strong>${escapeHtml(part.name || '附件')}</strong>${download}</div>
+        <div class="gw-attach-view-head"><strong>${escapeHtml(part.name || '附件')}</strong><span>${fullscreenButtonHtml(part)}${download}</span></div>
         ${partNoteHtml(part)}${partBodyHtml(part)}`;
     refs.attachView.scrollTop = 0;
 }
@@ -385,9 +404,63 @@ function closeAttachModal() {
     if (refs.attachModal) refs.attachModal.hidden = true;
 }
 
+// ---------------- fullscreen part viewer + parsed-text editor ----------------
+
+function openFullscreen(index) {
+    const part = state.allParts.find((p) => p._idx === index);
+    if (!part || !refs.fullModal) return;
+    state.fullIndex = index;
+    refs.fullTitle.textContent = `${part.label || '内容'}：${part.name || ''}`;
+    refs.fullContent.innerHTML = partNoteHtml(part) + partBodyHtml(part);
+    refs.fullContent.scrollTop = 0;
+    refs.fullEditor.value = part.text || '';
+    // 图片没有可编辑的解析文本 → 只展示内容（全宽）。
+    const editable = part.kind !== 'image';
+    refs.fullGrid.classList.toggle('no-editor', !editable);
+    refs.fullSave.hidden = !editable;
+    if (part.download_url) {
+        refs.fullDownload.href = part.download_url;
+        refs.fullDownload.hidden = false;
+    } else {
+        refs.fullDownload.hidden = true;
+    }
+    refs.fullModal.hidden = false;
+}
+
+function closeFullscreen() {
+    if (refs.fullModal) refs.fullModal.hidden = true;
+    state.fullIndex = null;
+}
+
+async function saveFullscreenText() {
+    const index = state.fullIndex;
+    const part = state.allParts.find((p) => p._idx === index);
+    if (part == null || !state.readerId) return;
+    setBusy(refs.fullSave, true, '保存中');
+    try {
+        const result = await apiFetch(`/api/manage/gongwen/documents/${state.readerId}/parts/${index}/text`, {
+            method: 'POST',
+            body: { text: refs.fullEditor.value },
+        });
+        part.text = refs.fullEditor.value;
+        part.edited = true;
+        // 同步刷新底层视图（reader / 附件浮窗）里这个 part 的渲染。
+        if (!refs.attachModal.hidden && state.attachParts[state.attachIndex]?._idx === index) {
+            selectAttachment(state.attachIndex);
+        }
+        showMessage(result.message || '解析文本已保存。', 'success');
+    } catch (error) {
+        showMessage(error.message || '保存失败。', 'error');
+    } finally {
+        setBusy(refs.fullSave, false);
+    }
+}
+
 async function openReader(id, refresh = false) {
     state.readerId = id;
+    state.allParts = [];
     state.attachParts = [];
+    closeFullscreen();
     closeAttachModal();
     refs.reader.hidden = false;
     refs.readerSn.textContent = '';
@@ -403,9 +476,11 @@ async function openReader(id, refresh = false) {
 }
 
 function closeReader() {
+    closeFullscreen();
     closeAttachModal();
     refs.reader.hidden = true;
     state.readerId = null;
+    state.allParts = [];
     state.attachParts = [];
 }
 
@@ -539,6 +614,11 @@ refs.readerClose?.addEventListener('click', closeReader);
 refs.readerRefresh?.addEventListener('click', () => { if (state.readerId) openReader(state.readerId, true); });
 refs.reader?.addEventListener('click', (event) => { if (event.target === refs.reader) closeReader(); });
 refs.readerBody?.addEventListener('click', (event) => {
+    const full = event.target.closest('[data-fullscreen]');
+    if (full) {
+        openFullscreen(parseInt(full.dataset.fullscreen, 10));
+        return;
+    }
     const opener = event.target.closest('[data-attach-open]');
     if (opener) openAttachModal(parseInt(opener.dataset.attachOpen, 10) || 0);
 });
@@ -546,10 +626,18 @@ refs.attachList?.addEventListener('click', (event) => {
     const item = event.target.closest('[data-attach-index]');
     if (item) selectAttachment(parseInt(item.dataset.attachIndex, 10) || 0);
 });
+refs.attachView?.addEventListener('click', (event) => {
+    const full = event.target.closest('[data-fullscreen]');
+    if (full) openFullscreen(parseInt(full.dataset.fullscreen, 10));
+});
 refs.attachClose?.addEventListener('click', closeAttachModal);
 refs.attachModal?.addEventListener('click', (event) => { if (event.target === refs.attachModal) closeAttachModal(); });
+refs.fullClose?.addEventListener('click', closeFullscreen);
+refs.fullSave?.addEventListener('click', saveFullscreenText);
+refs.fullModal?.addEventListener('click', (event) => { if (event.target === refs.fullModal) closeFullscreen(); });
 document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
+    if (refs.fullModal && !refs.fullModal.hidden) { closeFullscreen(); return; }
     if (refs.attachModal && !refs.attachModal.hidden) { closeAttachModal(); return; }
     if (refs.reader && !refs.reader.hidden) closeReader();
 });

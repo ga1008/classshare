@@ -74,7 +74,7 @@ def doc_uses_ai_parse(data: dict[str, Any]) -> bool:
 
 
 async def _structure_with_ai(text: str) -> dict[str, str]:
-    """Extract 正文标题 / 摘要 / 落款 from the document text (fast model)."""
+    """Extract 正文标题 / 摘要 / 关键词 / 落款 from the document text (fast model)."""
     head = (text or "").strip()
     if not head:
         return {}
@@ -84,6 +84,7 @@ async def _structure_with_ai(text: str) -> dict[str, str]:
         "system_prompt": (
             "你是公文信息抽取助手。从给定公文文本中抽取要点，只输出 JSON："
             "{\"title\": \"正文标题（无则留空）\", \"summary\": \"120字以内中文摘要\", "
+            "\"keywords\": \"3至6个中文关键词，用逗号分隔\", "
             "\"signature\": \"落款（发文单位与日期，无则留空）\"}。不要编造内容。"
         ),
         "messages": [],
@@ -108,9 +109,13 @@ async def _structure_with_ai(text: str) -> dict[str, str]:
     parsed = data.get("response_json") if isinstance(data, dict) else None
     if not isinstance(parsed, dict):
         return {}
+    keywords = parsed.get("keywords")
+    if isinstance(keywords, list):
+        keywords = "，".join(str(k).strip() for k in keywords if str(k).strip())
     return {
         "title": str(parsed.get("title") or "").strip()[:300],
         "summary": str(parsed.get("summary") or "").strip()[:600],
+        "keywords": str(keywords or "").strip()[:300],
         "signature": str(parsed.get("signature") or "").strip()[:300],
     }
 
@@ -203,6 +208,7 @@ async def parse_document(document_id: int, *, force: bool = False) -> dict[str, 
         struct = await _structure_with_ai(parsed_text) if (use_ai and parsed_text.strip()) else {}
         parsed_title = struct.get("title") or str(data.get("title") or "")
         parsed_summary = struct.get("summary") or str(data.get("summary") or "")
+        parsed_keywords = struct.get("keywords") or str(data.get("keywords") or "")
         parsed_signature = struct.get("signature") or ""
 
         has_content = bool(parsed_text.strip()) or any(p.get("kind") == "image" for p in parts)
@@ -214,7 +220,7 @@ async def parse_document(document_id: int, *, force: bool = False) -> dict[str, 
                 """
                 UPDATE gongwen_documents
                 SET parsed_status = ?, parsed_text = ?, parsed_payload_json = ?,
-                    parsed_title = ?, parsed_summary = ?, parsed_signature = ?,
+                    parsed_title = ?, parsed_summary = ?, parsed_keywords = ?, parsed_signature = ?,
                     source_file_name = CASE WHEN source_file_name = '' THEN ? ELSE source_file_name END,
                     source_file_type = CASE WHEN source_file_type = '' THEN ? ELSE source_file_type END,
                     parse_error = ?, parsed_at = ?, updated_at = ?
@@ -222,7 +228,7 @@ async def parse_document(document_id: int, *, force: bool = False) -> dict[str, 
                 """,
                 (
                     status, parsed_text, json.dumps({"parts": parts}, ensure_ascii=False)[:600_000],
-                    parsed_title, parsed_summary, parsed_signature,
+                    parsed_title, parsed_summary, parsed_keywords, parsed_signature,
                     source_name, source_type, error, _now_iso(), _now_iso(), int(document_id),
                 ),
             )
@@ -260,6 +266,68 @@ async def build_gongwen_document_reader(
     # Pending/parsing/failed, or a forced refresh → parse now (instant gratification;
     # the background worker would otherwise get to it eventually).
     return await parse_document(int(document_id), force=refresh)
+
+
+def _rebuild_parsed_text(data: dict[str, Any], parts: list[dict[str, Any]]) -> str:
+    """content_text + 各 part 文本 → AI 可读全文（与 parse_document 的聚合一致）。"""
+    chunks: list[str] = []
+    if str(data.get("content_text") or "").strip():
+        chunks.append(str(data["content_text"]).strip())
+    for part in parts:
+        text = str(part.get("text") or "").strip()
+        if text:
+            chunks.append(f"【{part.get('label') or '附件'}：{part.get('name') or ''}】\n{text}")
+    return "\n\n".join(chunks)[:PARSED_TEXT_LIMIT]
+
+
+def update_gongwen_part_text(
+    conn,
+    teacher_scope: dict[str, str],
+    document_id: int,
+    part_index: int,
+    text: str,
+    *,
+    is_super_admin: bool = False,
+) -> dict[str, Any]:
+    """人工校正某个 part 的解析文本（全屏编辑器保存），并重建 parsed_text。
+
+    仅本校区教师（或超管）可改 —— 与归属编辑同一规则。"""
+    from .organization_scope_service import normalize_school_code
+
+    ensure_gongwen_schema(conn)
+    row = conn.execute("SELECT * FROM gongwen_documents WHERE id = ? LIMIT 1", (int(document_id),)).fetchone()
+    if row is None:
+        raise ValueError("公文不存在。")
+    data = dict(row)
+    if not ms.can_view(data, teacher_scope, is_super_admin=is_super_admin):
+        raise ValueError("公文不存在或无权访问。")
+    if not is_super_admin and normalize_school_code(data.get("attr_school_code")) != normalize_school_code(
+        teacher_scope.get("school_code")
+    ):
+        raise ValueError("只能编辑本校区公文的解析文本。")
+
+    try:
+        cached = json.loads(data.get("parsed_payload_json") or "{}")
+    except (TypeError, ValueError):
+        cached = {}
+    parts = cached.get("parts") if isinstance(cached, dict) else None
+    if not isinstance(parts, list) or not (0 <= int(part_index) < len(parts)):
+        raise ValueError("该公文尚未完成解析，暂不能编辑解析文本。")
+
+    part = dict(parts[int(part_index)])
+    part["text"] = str(text or "")[:120_000]
+    part["edited"] = True
+    parts = [*parts[: int(part_index)], part, *parts[int(part_index) + 1:]]
+    conn.execute(
+        "UPDATE gongwen_documents SET parsed_payload_json = ?, parsed_text = ?, updated_at = ? WHERE id = ?",
+        (
+            json.dumps({"parts": parts}, ensure_ascii=False)[:600_000],
+            _rebuild_parsed_text(data, parts),
+            _now_iso(),
+            int(document_id),
+        ),
+    )
+    return {k: v for k, v in part.items() if k != "local_path"}
 
 
 # --------------------------------------------------------------------------- #

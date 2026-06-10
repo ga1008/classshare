@@ -1512,6 +1512,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/gongwen/documents/{document_id}/parts/{part_index}/text",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_update_gongwen_part_text",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/gongwen/documents/{document_id}/reader",
     "methods": [
       "GET"

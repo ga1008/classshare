@@ -640,6 +640,31 @@ async def api_set_gongwen_document_scope(document_id: int, request: Request, use
     return {"status": "success", "message": "已更新公文归属与开放范围。", "document": document}
 
 
+@router.post("/gongwen/documents/{document_id}/parts/{part_index}/text", response_class=JSONResponse)
+async def api_update_gongwen_part_text(
+    document_id: int,
+    part_index: int,
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    """Save a manually corrected parsed text for one reader part (fullscreen editor)."""
+    from ...services.gongwen_parse_service import update_gongwen_part_text
+
+    payload = await _parse_json_request(request)
+    with get_db_connection() as conn:
+        scope, is_admin = _gongwen_viewer(conn, user)
+        try:
+            part = update_gongwen_part_text(
+                conn, scope, int(document_id), int(part_index),
+                str(payload.get("text") or ""), is_super_admin=is_admin,
+            )
+            conn.commit()
+        except ValueError as exc:
+            conn.rollback()
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "success", "message": "解析文本已保存。", "part": part}
+
+
 @router.get("/gongwen/documents/{document_id}/file")
 async def api_download_gongwen_document_file(
     document_id: int,
