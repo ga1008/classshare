@@ -293,7 +293,12 @@
                 throw new Error('marked is unavailable');
             }
 
-            return sanitizeHtml(markedRuntime.parse(normalized));
+            const markedOptions = { gfm: true };
+            if (config.breaks) {
+                // 聊天/AI 流式输出以单换行表达换行意图。
+                markedOptions.breaks = true;
+            }
+            return sanitizeHtml(markedRuntime.parse(normalized, markedOptions));
         } catch (error) {
             if (!config.silent) {
                 console.error('Markdown render failed:', error);

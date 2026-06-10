@@ -41351,3 +41351,200 @@ body.has-teaching-session-modal {
     .insight-panel { transition: none; }
     .insight-panel:hover { transform: none; }
 }
+
+/* ============================================================
+   AI 工作台全屏布局重设计（2026-06-11）
+   目标：全屏 = 沉浸式对话页。内容列居中、输入区悬浮居中、
+   Agent 历史变成真正的右侧栏，不再出现"半宽窗口 + 大片留白"。
+   ============================================================ */
+
+/* 全屏铺满视口；!important 防止浮窗模式残留的内联几何样式覆盖布局 */
+.ai-chat-container.fullscreen,
+.ai-workspace-container.fullscreen {
+    inset: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-width: none !important;
+    max-height: none !important;
+    border: none;
+    border-radius: 0;
+    background:
+        radial-gradient(1100px 500px at 50% -180px, rgba(37, 99, 235, 0.07), transparent 70%),
+        linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+}
+
+.ai-chat-container.fullscreen {
+    --ai-fs-col: min(880px, calc(100vw - 48px));
+}
+
+/* 头部：贴顶通栏 + 内容列对齐 */
+.ai-chat-container.fullscreen .ai-chat-header {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 12px max(24px, calc((100vw - var(--ai-fs-col)) / 2));
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(255, 255, 255, 0.86);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+/* 消息区：居中阅读列，更大的呼吸感 */
+.ai-chat-container.fullscreen .ai-chat-messages {
+    width: var(--ai-fs-col);
+    max-width: none;
+    margin: 0 auto;
+    padding: 28px 0 16px;
+    background: transparent;
+    font-size: 1.0rem;
+}
+
+.ai-chat-container.fullscreen .ai-chat-message {
+    margin-bottom: 18px;
+}
+
+.ai-chat-container.fullscreen .ai-chat-message.assistant .bubble {
+    max-width: 100%;
+    padding: 18px 22px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 16px;
+    background: #ffffff;
+    box-shadow: 0 14px 30px -26px rgba(15, 23, 42, 0.35);
+    line-height: 1.75;
+}
+
+.ai-chat-container.fullscreen .ai-chat-message.user .bubble {
+    max-width: 78%;
+    margin-left: auto;
+    padding: 13px 18px;
+    border-radius: 16px 16px 4px 16px;
+    box-shadow: 0 12px 24px -20px rgba(37, 99, 235, 0.55);
+}
+
+.ai-chat-container.fullscreen .ai-chat-message.system .bubble {
+    margin: 0 auto;
+    background: rgba(226, 232, 240, 0.55);
+    color: var(--text-muted);
+}
+
+/* Agent 任务卡在全屏下用满阅读列 */
+.ai-chat-container.fullscreen .ai-chat-message.agent-task-message .bubble {
+    width: 100%;
+    max-width: 100%;
+}
+
+/* 输入区：悬浮居中卡片 */
+.ai-chat-container.fullscreen .ai-chat-input-area {
+    width: var(--ai-fs-col);
+    max-width: none;
+    margin: 0 auto;
+    padding: 10px 0 26px;
+    border-top: none;
+    background: transparent;
+}
+
+.ai-chat-container.fullscreen .ai-chat-input-area .input-row {
+    padding: 10px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 18px;
+    background: #ffffff;
+    box-shadow: 0 22px 44px -30px rgba(15, 23, 42, 0.5);
+}
+
+.ai-chat-container.fullscreen .ai-chat-input-area .input-row:focus-within {
+    border-color: rgba(37, 99, 235, 0.4);
+    box-shadow: 0 22px 44px -28px rgba(37, 99, 235, 0.45);
+}
+
+.ai-chat-container.fullscreen .ai-chat-input-area textarea {
+    height: auto;
+    min-height: 3.2rem;
+    max-height: 11rem;
+    font-size: 1rem;
+}
+
+.ai-chat-container.fullscreen .ai-chat-attachment-previews {
+    width: var(--ai-fs-col);
+    margin: 0 auto;
+    background: transparent;
+}
+
+/* 模式切换条：全屏下收成紧凑分段控件，左对齐于输入列 */
+.ai-chat-container.fullscreen .ai-workspace-modebar {
+    display: inline-grid;
+    grid-template-columns: auto auto;
+    gap: 4px;
+    margin: 0 0 8px;
+    padding: 4px;
+    border-radius: 999px;
+    background: rgba(241, 245, 249, 0.92);
+    border-color: rgba(148, 163, 184, 0.22);
+}
+
+.ai-chat-container.fullscreen .ai-workspace-mode-option {
+    min-height: 36px;
+    padding: 4px 14px 4px 8px;
+    border-radius: 999px;
+}
+
+.ai-chat-container.fullscreen .ai-workspace-mode-option__icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+}
+
+.ai-chat-container.fullscreen .ai-workspace-mode-option__copy strong {
+    font-size: 0.8rem;
+}
+
+.ai-chat-container.fullscreen .ai-workspace-mode-option__copy small {
+    display: none;
+}
+
+.ai-chat-container.fullscreen .ai-workspace-mode-option.is-active small {
+    display: inline-flex;
+}
+
+/* Agent 历史：全屏下是真正的右侧栏 */
+.ai-chat-container.fullscreen .ai-agent-history-drawer {
+    top: 76px;
+    right: 20px;
+    bottom: 20px;
+    width: min(340px, calc(100vw - var(--ai-fs-col) - 72px));
+    min-width: 280px;
+    border-radius: 16px;
+}
+
+/* 屏幕不够宽放不下侧栏时，退回浮层表现 */
+@media (max-width: 1320px) {
+    .ai-chat-container.fullscreen .ai-agent-history-drawer {
+        width: min(340px, calc(100vw - 40px));
+    }
+}
+
+/* 全屏下消息操作条与思考过程的微调 */
+.ai-chat-container.fullscreen .message-actions {
+    width: 100%;
+    max-width: 100%;
+}
+
+.ai-chat-container.fullscreen .thinking-container {
+    border-radius: 12px;
+}
+
+/* 窄屏全屏：列宽贴边 */
+@media (max-width: 920px) {
+    .ai-chat-container.fullscreen {
+        --ai-fs-col: calc(100vw - 28px);
+    }
+
+    .ai-chat-container.fullscreen .ai-chat-header {
+        padding: 10px 14px;
+    }
+
+    .ai-chat-container.fullscreen .ai-chat-message.user .bubble {
+        max-width: 92%;
+    }
+}

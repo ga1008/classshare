@@ -1309,6 +1309,14 @@ function initFallbackShell() {
         const button = $('#ai-chat-btn-fullscreen');
         const isFullscreen = container.classList.toggle('fullscreen');
         document.body.classList.toggle('ai-chat-fullscreen-active', isFullscreen);
+        if (isFullscreen) {
+            // 清掉浮窗模式留下的内联几何样式，否则全屏布局会被覆盖。
+            ['width', 'height', 'top', 'bottom', 'left', 'right'].forEach((prop) => {
+                container.style[prop] = '';
+            });
+        } else {
+            window.setTimeout(ensureWorkspaceWindowVisible, 0);
+        }
         if (button) {
             button.title = isFullscreen ? '退出全屏' : '全屏';
             button.setAttribute('aria-label', button.title);

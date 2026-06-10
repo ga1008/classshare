@@ -58,6 +58,10 @@ from ..services.learning_progress_service import (
     handle_stage_exam_grading_complete,
 )
 from ..services.student_support_service import build_student_support_signal_prompt
+from ..services.platform_knowledge_service import (
+    build_platform_overview_block,
+    build_user_knowledge_block,
+)
 from ..services.prompt_utils import (
     polite_address,
     build_time_context_text,
@@ -1057,12 +1061,15 @@ def format_system_prompt_teacher(user_id: int, class_offering_id: int) -> str:
             course_names = ", ".join([row['name'] for row in courses_taught])
             prompt_parts.append(f"- 教授的课程(示例): {course_names}")
 
-    # 添加时间上下文
+    # 添加时间上下文与平台认知
     prompt_parts.append(f"\n--- 当前环境信息 ---")
     prompt_parts.append(build_time_context_text())
     prompt_parts.append(build_system_info_text())
+    prompt_parts.append("")
+    prompt_parts.append(build_platform_overview_block("teacher"))
 
     prompt_parts.append("\n请根据以上信息，辅助教师进行教学管理、课程答疑或内容生成。")
+    prompt_parts.append("给跳转建议时直接用站内路径的 Markdown 链接，如 [公文中心](/manage/gongwen)。")
     prompt_parts.append('称呼用户时请使用"X老师"的格式（X为姓氏），不要直呼全名。语气可以自然轻松、偶尔幽默。')
     return "\n".join(prompt_parts)
 
@@ -1181,10 +1188,12 @@ def format_system_prompt_student(user_id: int, class_offering_id: int) -> str:
                 prompt_parts.append("")
                 prompt_parts.append(support_signal_prompt)
 
-    # 添加时间上下文
+    # 添加时间上下文与平台认知
     prompt_parts.append(f"\n--- 当前环境信息 ---")
     prompt_parts.append(build_time_context_text())
     prompt_parts.append(build_system_info_text())
+    prompt_parts.append("")
+    prompt_parts.append(build_platform_overview_block("student"))
 
     prompt_parts.append("\n请根据以上信息，并结合你掌握的课程大纲和知识点（RAG材料）来回答问题。")
     prompt_parts.append('称呼用户时请优先使用上方“修仙称呼”（例如“炼气修士张三”“筑基修士张三”），不要直呼全名；语气要像陪伴修行的课堂助教，轻松鼓励但不夸张。')
@@ -1820,11 +1829,21 @@ async def handle_ai_workspace_chat(
         "如果用户要求修改核心代码、部署、删除数据库或越权访问，应拒绝并给出安全替代建议。"
         "回答要使用结构清晰的 Markdown：标题、列表、表格、分隔线和代码块必须换行完整；"
         "不要把 `---`、`##`、表格管道符或列表项挤在同一段里。"
+        "给用户跳转建议时，直接给出平台站内路径（Markdown 链接形式，如 [公文中心](/manage/gongwen)）。"
     )
     if user_role == "teacher":
         system_prompt += "当前用户是教师，可以提供备课、材料整理、作业设计和课堂运营建议。"
     else:
         system_prompt += "当前用户是学生，只提供学习支持和课堂答疑，不展示教师任务中心能力。"
+    try:
+        platform_block = build_platform_overview_block(user_role)
+        with get_db_connection() as _pk_conn:
+            user_block = build_user_knowledge_block(_pk_conn, user_pk, user_role)
+        system_prompt += "\n\n" + platform_block
+        if user_block:
+            system_prompt += "\n\n" + user_block
+    except Exception as exc:
+        print(f"[AI_WORKSPACE_CHAT] 平台认知注入失败（已降级）: {exc}")
     if deep_thinking:
         system_prompt += "本轮已开启深度思考，请进行更充分的推理、校验和风险检查，但最终回答仍要简洁清楚。"
     if extra_context:

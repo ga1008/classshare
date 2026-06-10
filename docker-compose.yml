@@ -159,6 +159,9 @@ services:
       AGENT_TASK_RUNTIME_URL: http://deepseek-runtime:7878
       AGENT_TASK_RUNTIME_WORKSPACE_PREFIX: /workspace/tasks
       AGENT_TASK_WORKER_ID: agent-worker-compose
+      # 允许运行时使用 shell：Agent 通过 curl 调平台桥接接口（只读）并可直接联网
+      AGENT_TASK_ALLOW_RUNTIME_SHELL: "1"
+      AGENT_BRIDGE_BASE_URL: http://app:8000
 
   nginx:
     image: nginx:1.27-alpine

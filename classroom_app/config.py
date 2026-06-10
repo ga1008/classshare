@@ -180,6 +180,8 @@ AGENT_TASK_RUNTIME_POLL_SECONDS = max(2, int(os.getenv("AGENT_TASK_RUNTIME_POLL_
 AGENT_TASK_MAX_RUNTIME_SECONDS = max(60, int(os.getenv("AGENT_TASK_MAX_RUNTIME_SECONDS", 1800)))
 AGENT_TASK_DEEPSEEK_AUTO_APPROVE = _read_bool_env("AGENT_TASK_DEEPSEEK_AUTO_APPROVE", False)
 AGENT_TASK_ALLOW_RUNTIME_SHELL = _read_bool_env("AGENT_TASK_ALLOW_RUNTIME_SHELL", False)
+# Agent 桥接：运行时容器回连主应用的内网地址（compose 网络里是 http://app:8000）
+AGENT_BRIDGE_BASE_URL = (_read_url_env("AGENT_BRIDGE_BASE_URL") or "http://app:8000").rstrip("/")
 
 # --- Email notification worker ---
 EMAIL_WORKER_POLL_SECONDS = max(1, int(os.getenv("EMAIL_WORKER_POLL_SECONDS", 5)))

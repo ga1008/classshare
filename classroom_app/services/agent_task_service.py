@@ -11,6 +11,8 @@ from typing import Any
 from fastapi import HTTPException
 
 from ..config import (
+    AGENT_BRIDGE_BASE_URL,
+    AGENT_TASK_MAX_RUNTIME_SECONDS,
     AGENT_TASK_RUNTIME_WORKSPACE_PREFIX,
     AGENT_TASK_WORKSPACE_ROOT,
 )
@@ -1510,6 +1512,46 @@ def task_workspace_paths(task: dict[str, Any]) -> tuple[Path, str]:
     return host_path, runtime_path
 
 
+def _bridge_doc_text(task_id: int, token: str) -> str:
+    base = AGENT_BRIDGE_BASE_URL
+    return f"""# LanShare Agent Bridge（平台即工具）
+
+你可以通过下面的只读 HTTP 接口把 LanShare 平台当成工具使用。
+所有请求都带上请求头：`Authorization: Bearer {token}`
+
+## 1. 平台与用户认知
+curl -s -H "Authorization: Bearer {token}" {base}/api/agent-bridge/meta
+
+返回：平台总览（域名/路由/功能/当前时间）+ 任务发起教师的全量画像。
+
+## 2. 数据库结构速查
+curl -s -H "Authorization: Bearer {token}" {base}/api/agent-bridge/schema
+
+返回：全部业务表及列名（凭据/会话类敏感表已排除）。
+
+## 3. 只读 SQL 查询（最常用）
+curl -s -X POST -H "Authorization: Bearer {token}" -H "Content-Type: application/json" \\
+  -d '{{"sql": "SELECT id, name FROM courses ORDER BY id DESC LIMIT 20", "limit": 50}}' \\
+  {base}/api/agent-bridge/query
+
+规则：单条 SELECT/WITH；最多返回 200 行；敏感列自动脱敏。占位符不支持，直接写常量。
+查询技巧：先查 /schema 确认列名；统计用 COUNT/GROUP BY；时间列多为 'YYYY-MM-DD HH:MM:SS' 文本。
+
+## 4. 读取平台文件（材料/共享文件/教材附件/任务工作区）
+curl -s -X POST -H "Authorization: Bearer {token}" -H "Content-Type: application/json" \\
+  -d '{{"path": "/app/data/files/legacy_shared/xxx.md"}}' {base}/api/agent-bridge/file
+
+## 5. 访问互联网（服务端代理抓取，需要最新外部信息时使用）
+curl -s -X POST -H "Authorization: Bearer {token}" -H "Content-Type: application/json" \\
+  -d '{{"url": "https://example.com", "mode": "text"}}' {base}/api/agent-bridge/web
+
+## 边界（必须遵守）
+- 以上接口全部只读：平台数据与代码一律不可写入、修改、删除。
+- 不要尝试绕过接口直接连数据库或改平台文件。
+- 查询到的学生/教师个人信息仅用于完成本任务，输出时注意隐私最小化。
+"""
+
+
 def write_task_workspace(task: dict[str, Any]) -> str:
     host_path, runtime_path = task_workspace_paths(task)
     host_path.mkdir(parents=True, exist_ok=True)
@@ -1528,14 +1570,25 @@ def write_task_workspace(task: dict[str, Any]) -> str:
 {context_text[:MAX_CONTEXT_TEXT_CHARS]}
 ```
 
+## Platform Tools
+
+平台桥接接口（只读 SQL / 文件 / 互联网）见同目录 BRIDGE.md。
+
 ## Safety Boundary
 
 - Do not modify LanShare core source code, deployment files, database schema, or runtime configuration.
-- Work only with the task context and produce business-facing drafts, checklists, or validated action proposals.
+- Platform access is READ-ONLY: query, read, fetch — never write.
 - If platform state changes are needed, describe the exact whitelisted action and wait for LanShare to execute it.
 """
     (host_path / "TASK.md").write_text(readme, encoding="utf-8")
     (host_path / "context.json").write_text(context_text, encoding="utf-8")
+    try:
+        from .agent_bridge_service import issue_bridge_token
+
+        token = issue_bridge_token(int(task.get("id") or 0), ttl_seconds=AGENT_TASK_MAX_RUNTIME_SECONDS)
+        (host_path / "BRIDGE.md").write_text(_bridge_doc_text(int(task.get("id") or 0), token), encoding="utf-8")
+    except Exception as exc:
+        print(f"[AGENT_TASK] bridge token issue failed for task {task.get('id')}: {exc}")
     return runtime_path
 
 
@@ -1554,26 +1607,55 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
         f"- {item['name']}：{item['agent_capability']} 安全边界：{item['guardrail']}"
         for item in AGENT_TEACHER_WORKFLOWS
     )
-    return f"""
-你是 LanShare 内置的教师任务中心 Agent，当前任务类型是：{definition["label"]}。
 
-必须遵守：
-1. 只处理教学业务相关任务：课程材料整理、学习文档草案、作业/考试草案、博客草稿、学生通知草稿、教学事务分析。
-2. 严禁修改、生成补丁、删除、重构或部署 LanShare 核心代码；严禁修改数据库结构、Docker 配置、运行脚本、源码目录。
-3. 你所在 workspace 是隔离任务目录：{runtime_workspace}。只能在此目录内阅读上下文、整理产物。
-4. 涉及发布博客、发送通知、创建作业/考试等平台状态变更时，先输出结构化草案和执行建议，不要假装已经修改平台数据。
-5. 输出必须面向教师，清楚列出：任务理解、已使用的上下文、执行结果/草案、需要教师确认的动作、风险提醒。
+    platform_block = ""
+    user_block = ""
+    try:
+        from .platform_knowledge_service import build_platform_overview_block, build_user_knowledge_block
+
+        platform_block = build_platform_overview_block("teacher")
+        teacher_id = int(task.get("teacher_id") or 0)
+        if teacher_id:
+            from ..database import get_db_connection
+
+            with get_db_connection() as conn:
+                user_block = build_user_knowledge_block(conn, teacher_id, "teacher")
+    except Exception as exc:
+        print(f"[AGENT_TASK] platform knowledge injection failed: {exc}")
+
+    return f"""
+你是 LanShare 平台的常驻 Agent —— 整个平台随时待命的「灵魂」。教师把任务交给你，你利用平台数据、平台文件和互联网，给出最优质、最落地的结果。当前任务类型：{definition["label"]}。
+
+{platform_block}
+
+{user_block}
+
+你的工具（平台即工具，全部只读）：
+1. 你所在 workspace 是隔离任务目录：{runtime_workspace}，其中 TASK.md 是任务说明，context.json 是页面上下文，BRIDGE.md 是平台桥接接口完整文档（含访问令牌）。
+2. 平台桥接接口（先读 BRIDGE.md，再用 curl 调用）：
+   - GET  /api/agent-bridge/meta   —— 平台总览 + 任务发起教师全量画像
+   - GET  /api/agent-bridge/schema —— 数据库全部业务表与列名
+   - POST /api/agent-bridge/query  —— 只读 SQL（单条 SELECT/WITH，≤200 行），用于一切信息查找与统计
+   - POST /api/agent-bridge/file   —— 读取平台材料/共享文件/教材附件等文本文件
+   - POST /api/agent-bridge/web    —— 访问互联网抓取网页正文（需要最新外部信息时主动使用）
+3. 如果运行时允许 shell，你也可以直接联网（如 curl 外部网站）获取即时信息。
+4. 公文检索：学校/学院红头文件在表 gongwen_documents（页面 /manage/gongwen），可直接用 /query 按标题、文号、正文关键词检索。
+
+必须遵守的边界：
+1. 平台数据与代码只读：严禁任何写入、修改、删除——不改数据库、不改平台文件、不改部署配置。产物只写在你的任务目录里。
+2. 涉及发布博客、发送通知、创建作业/考试等平台状态变更时，先输出结构化草案和执行建议，不要假装已经修改平台数据。
+3. 查询到的师生个人信息仅用于完成本任务，输出时做隐私最小化。
+4. 用数据说话：能查库就查库验证，不要编造不存在的数据；上下文不足时明确说明缺什么。
+5. 输出必须面向教师，使用规范 Markdown，清楚列出：任务理解、已使用的数据/来源、执行结果、需要教师确认的动作、风险提醒。给站内跳转用相对路径链接（如 /manage/gongwen）。
 6. {thinking_line}
 
 你能安全接管的教师业务流程边界：
 {workflow_lines}
 
-平台公文说明：学校/学院的红头文件、通知、规定等公文存放在平台「公文中心」（页面 /manage/gongwen，数据表 gongwen_documents），按教师可见范围控制。你所在的运行时无法直接连接平台数据库；如果任务需要检索公文内容，请说明应使用「查找公文/规定」任务类型，由平台内置公文检索服务直接完成。
-
 教师任务：
 {instruction}
 
-平台已验证的页面和课堂上下文如下，若上下文不足请明确说明，不要编造不存在的数据：
+平台已验证的页面和课堂上下文如下，若上下文不足可用桥接接口查库补全：
 ```json
 {json.dumps(context, ensure_ascii=False, indent=2)[:MAX_CONTEXT_TEXT_CHARS]}
 ```
