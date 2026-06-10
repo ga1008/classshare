@@ -3993,7 +3993,7 @@
 
 </script>
 {% if exam_ai_allowed and user_info.role == 'student' and assignment.class_offering_id %}
-<script src="/static/js/ai_chat_component.js"></script>
+<script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
 {% endif %}
 </body>
 </html>

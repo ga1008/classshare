@@ -1326,6 +1326,69 @@ def _decode_stream_event(line: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+async def _gongwen_retrieval_events(
+    user_role: str,
+    teacher_id: int,
+    message: str,
+    chat_payload: Dict[str, Any],
+) -> AsyncIterator[str]:
+    """教师消息的公文检索前置步骤。
+
+    粗筛命中时：yield ``search_status`` 流事件（前端显示「正在搜索/整理」），
+    快速 AI 判定意图 → 检索可见公文 → 把命中公文上下文拼进
+    ``chat_payload["system_prompt"]``。任何故障只打日志并降级为普通对话。
+    """
+    if user_role != "teacher":
+        return
+    try:
+        from ..services.gongwen_ai_search_service import (
+            detect_gongwen_intent,
+            message_may_mention_gongwen,
+            run_gongwen_retrieval,
+            summarize_retrieval_for_log,
+        )
+
+        if not message_may_mention_gongwen(message):
+            return
+        yield _encode_stream_event(
+            "search_status", stage="detecting", message="正在判断是否需要检索校园公文..."
+        )
+        intent = await detect_gongwen_intent(message)
+        if not intent:
+            yield _encode_stream_event("search_status", stage="none", message="")
+            return
+        yield _encode_stream_event(
+            "search_status", stage="searching", message="正在检索相关校园公文..."
+        )
+        result = await run_gongwen_retrieval(int(teacher_id), message, intent=intent)
+        if result and result.get("doc_count"):
+            yield _encode_stream_event(
+                "search_status",
+                stage="organizing",
+                message=f"已找到 {result['doc_count']} 篇相关公文，正在整理回答...",
+                doc_count=int(result["doc_count"]),
+                documents=result.get("documents") or [],
+            )
+            chat_payload["system_prompt"] = (
+                str(chat_payload.get("system_prompt") or "") + "\n\n" + str(result.get("context_block") or "")
+            )
+        else:
+            yield _encode_stream_event(
+                "search_status",
+                stage="empty",
+                message="公文库中暂未找到直接相关的公文，将按常规方式回答...",
+                doc_count=0,
+            )
+        print(f"[GONGWEN-AI-SEARCH] teacher={teacher_id} {summarize_retrieval_for_log(result)}")
+    except Exception as exc:  # noqa: BLE001 — 公文检索故障不拖垮普通对话
+        print(f"[GONGWEN-AI-SEARCH] retrieval failed for teacher {teacher_id}: {exc}")
+        yield _encode_stream_event(
+            "search_status",
+            stage="failed",
+            message="公文检索暂时不可用，将按常规方式回答...",
+        )
+
+
 async def _aiter_ai_response_lines_with_keepalive(
     response: httpx.Response,
     *,
@@ -1805,6 +1868,8 @@ async def handle_ai_workspace_chat(
             message="connecting",
             thinking_requested=bool(deep_thinking),
         )
+        async for search_event in _gongwen_retrieval_events(user_role, user_pk, cleaned_message, chat_payload):
+            yield search_event
         try:
             async with ai_client.stream(
                     "POST",
@@ -2199,6 +2264,8 @@ async def handle_ai_chat(
             message="connecting",
             thinking_requested=bool(deep_thinking),
         )
+        async for search_event in _gongwen_retrieval_events(user_role, user_pk, message, chat_payload):
+            yield search_event
 
         try:
             async with ai_client.stream(

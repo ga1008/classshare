@@ -844,6 +844,155 @@ def _execute_student_notification_task(task: dict[str, Any]) -> None:
     )
 
 
+async def _execute_gongwen_lookup_task(task: dict[str, Any]) -> None:
+    """公文检索任务：进程内直连公文库（无需外部运行时/数据库连接）。
+
+    复用对话同款链路：意图提炼 → 可见范围候选 → AI 相关性筛选，
+    再用一次 AI 调用把命中公文整理成面向教师的解读报告。"""
+    from .gongwen_ai_search_service import (
+        build_gongwen_context_block,
+        detect_gongwen_intent,
+        search_gongwen_for_question,
+    )
+
+    task_id = int(task["id"])
+    teacher_id = int(task["teacher_id"])
+    instruction = _safe_text(task.get("private_instruction"), max_chars=4000)
+
+    with get_db_connection() as conn:
+        _set_agent_runtime_state(conn, task_id, provider="lanshare-business-agent", runtime_status="searching")
+        append_task_event(
+            conn,
+            task_id,
+            "platform_action_started",
+            "正在公文中心检索相关公文（标题/文号/解析正文均参与匹配）。",
+            {"platform_action": "gongwen_lookup"},
+            commit=False,
+        )
+        conn.commit()
+
+    # 这是显式的公文检索任务：即使意图 AI 判定「无关」或不可用，也按指令本身检索。
+    intent = await detect_gongwen_intent(instruction)
+    if not intent:
+        from .gongwen_ai_search_service import _extract_local_keywords
+
+        intent = {
+            "related": True,
+            "query": instruction[:80],
+            "keywords": _extract_local_keywords(instruction),
+            "recent_months": 0,
+            "fallback": True,
+        }
+    result = await search_gongwen_for_question(teacher_id, instruction, intent)
+    docs = result["documents"]
+
+    if not docs:
+        _finish_platform_business_task(
+            task_id,
+            platform_action="gongwen_lookup",
+            result_summary="公文库中未找到与该问题直接相关的公文。",
+            detail={
+                "display_title": "公文检索",
+                "markdown": (
+                    "## 检索结果\n\n未在你可见范围内的公文库中找到直接相关的公文。\n\n"
+                    "## 建议\n\n- 换用公文标题中的关键词重试；\n"
+                    "- 到 [公文中心](/manage/gongwen) 直接搜索或筛选；\n"
+                    "- 如果公文尚未同步，请先在「对接与申请 → 公文同步」配置凭据并同步。"
+                ),
+                "metrics": [
+                    {"label": "候选公文", "value": int(result.get("candidate_count") or 0)},
+                    {"label": "命中", "value": 0},
+                ],
+                "links": [{"label": "打开公文中心", "url": "/manage/gongwen"}],
+                "next_actions": ["调整关键词后重新提交，或到公文中心人工检索。"],
+            },
+            event_message="公文检索完成：无直接命中。",
+        )
+        return
+
+    context_block = build_gongwen_context_block(docs, intent=intent)
+    interpretation = ""
+    try:
+        from ..core import ai_client
+
+        resp = await ai_client.post(
+            "/api/ai/chat",
+            json={
+                "system_prompt": (
+                    "你是 LanShare 平台的公文解读助手。基于给定的公文检索结果回答教师的问题，"
+                    "输出结构清晰的 Markdown：先直接回答，再分公文列出要点（标题、文号、时间、"
+                    "关键要求/截止时间），最后给出建议。不要编造公文内容；内容不足时如实说明。"
+                ),
+                "messages": [],
+                "new_message": f"【教师的问题】\n{instruction}\n\n{context_block}",
+                "base64_urls": [],
+                "file_texts": [],
+                "model_capability": "standard",
+                "task_type": "fast_text_response",
+                "task_priority": "background",
+                "task_label": "gongwen_agent_lookup",
+            },
+            timeout=120.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if isinstance(data, dict) and data.get("status") == "success":
+            interpretation = _safe_text(data.get("response_text") or data.get("text"), max_chars=12000)
+    except Exception as exc:  # noqa: BLE001 — 解读 AI 故障时退化为纯检索清单
+        print(f"[AGENT_TASK] gongwen lookup interpretation failed for task {task_id}: {exc}")
+
+    doc_items = [
+        {
+            "title": f"《{doc.get('title') or '(无标题)'}》",
+            "meta": " · ".join(
+                piece
+                for piece in (
+                    str(doc.get("sn") or ""),
+                    str(doc.get("author") or ""),
+                    str(doc.get("publish_time") or "")[:10],
+                )
+                if piece
+            ),
+            "note": str(doc.get("relevance_reason") or doc.get("parsed_summary") or "")[:200],
+        }
+        for doc in docs
+    ]
+    doc_list_md = "\n".join(
+        f"- 《{doc.get('title') or '(无标题)'}》 {doc.get('sn') or ''} "
+        f"（{str(doc.get('publish_time') or '')[:10]}） → [查看原文](/manage/gongwen?doc={int(doc['id'])})"
+        for doc in docs
+    )
+    markdown = (
+        (interpretation + "\n\n" if interpretation else "")
+        + f"## 命中公文（{len(docs)} 篇）\n\n{doc_list_md}\n\n"
+        + "## 安全边界\n\n- 本次只读公文库，未修改任何公文或归属范围。\n- 解读仅供参考，正式执行以公文原文为准。"
+    )
+    _finish_platform_business_task(
+        task_id,
+        platform_action="gongwen_lookup",
+        result_summary=f"已检索公文库并命中 {len(docs)} 篇相关公文" + ("，附 AI 解读。" if interpretation else "。"),
+        detail={
+            "display_title": "公文检索与解读",
+            "markdown": markdown,
+            "items": doc_items,
+            "metrics": [
+                {"label": "候选公文", "value": int(result.get("candidate_count") or 0)},
+                {"label": "命中", "value": len(docs)},
+                {"label": "AI 筛选", "value": "是" if result.get("ai_selected") else "关键词兜底"},
+            ],
+            "links": [
+                {"label": "打开公文中心", "url": "/manage/gongwen"},
+                *(
+                    {"label": f"《{str(doc.get('title') or '')[:30]}》", "url": f"/manage/gongwen?doc={int(doc['id'])}"}
+                    for doc in docs[:4]
+                ),
+            ],
+            "next_actions": ["点击公文链接查看原文与附件。", "需要持续跟踪某主题时，可在公文中心设置「关注」自动提醒。"],
+        },
+        event_message=f"公文检索完成：候选 {int(result.get('candidate_count') or 0)} 篇，命中 {len(docs)} 篇。",
+    )
+
+
 def _execute_general_teaching_task(task: dict[str, Any]) -> None:
     task_id = int(task["id"])
     instruction = _safe_text(task.get("private_instruction"), max_chars=4000)
@@ -1133,6 +1282,7 @@ async def try_execute_platform_agent_task(task: dict[str, Any]) -> bool:
         "assignment_blueprint",
         "blog_draft",
         "student_notification",
+        "gongwen_lookup",
         "general_teaching_task",
     }:
         return False
@@ -1143,11 +1293,14 @@ async def try_execute_platform_agent_task(task: dict[str, Any]) -> bool:
         "assignment_blueprint": "assignment_blueprint",
         "blog_draft": "blog_draft",
         "student_notification": "student_notification",
+        "gongwen_lookup": "gongwen_lookup",
         "general_teaching_task": "teaching_workflow_plan",
     }.get(task_type, task_type)
     try:
         if task_type == "lesson_document":
             await _execute_lesson_document_task(task)
+        elif task_type == "gongwen_lookup":
+            await _execute_gongwen_lookup_task(task)
         elif task_type == "course_material_digest":
             _execute_course_material_digest_task(task)
         elif task_type == "assignment_blueprint":
@@ -1157,7 +1310,13 @@ async def try_execute_platform_agent_task(task: dict[str, Any]) -> bool:
         elif task_type == "student_notification":
             _execute_student_notification_task(task)
         elif task_type == "general_teaching_task":
-            _execute_general_teaching_task(task)
+            from .gongwen_ai_search_service import message_may_mention_gongwen
+
+            # 通用教学事务里明确问公文/规定/通知的，直接走公文检索（不再只给流程建议）。
+            if message_may_mention_gongwen(_safe_text(task.get("private_instruction"), max_chars=4000)):
+                await _execute_gongwen_lookup_task(task)
+            else:
+                _execute_general_teaching_task(task)
     except Exception as exc:
         error_message = exc.detail if isinstance(exc, HTTPException) else str(exc)
         with get_db_connection() as conn:

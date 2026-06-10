@@ -415,6 +415,9 @@ function setQueueState(queueState = {}, counts = {}) {
 
 function inferAgentTaskType(instruction, context = collectPageContext()) {
     const text = `${instruction || ''} ${context.page?.title || ''} ${context.page?.activeArea || ''}`.toLowerCase();
+    if (/公文|红头|文号|校发|院发|教学发|(学校|学院).{0,6}(规定|通知|文件|要求)|规章|办法|细则/.test(text)) {
+        return 'gongwen_lookup';
+    }
     if (/学习文档|导学|下一节课|下次课|第\s*\d+\s*(课|次)|lesson|document/.test(text)) {
         return 'lesson_document';
     }

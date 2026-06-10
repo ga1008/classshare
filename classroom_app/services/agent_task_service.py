@@ -62,6 +62,11 @@ TASK_TYPE_DEFINITIONS: dict[str, dict[str, str]] = {
         "verb": "通知",
         "placeholder": "给某考试低于指定分数的学生拟定通知内容和名单规则。",
     },
+    "gongwen_lookup": {
+        "label": "查找公文/规定",
+        "verb": "检索",
+        "placeholder": "例如：最近有哪些关于师范认证的公文？学校对监考有什么规定？",
+    },
     "general_teaching_task": {
         "label": "教学事务",
         "verb": "处理",
@@ -185,6 +190,18 @@ AGENT_TEACHER_WORKFLOWS: tuple[dict[str, Any], ...] = (
         ],
         "agent_capability": "可安全创建博客草稿；不会自动公开发布。",
         "guardrail": "只以当前教师身份创建草稿，不代学生发言，不公开敏感学生信息。",
+    },
+    {
+        "key": "gongwen_lookup",
+        "name": "校园公文检索与解读",
+        "steps": [
+            "公文存放在平台公文中心（页面 /manage/gongwen，数据表 gongwen_documents），由教师凭据从校园公文通同步，按校区共享、按归属/开放范围控制可见",
+            "理解教师的问题，提炼检索关键词和时间范围（如「最近三个月」）",
+            "通过平台内置公文检索服务（gongwen_ai_search_service）在教师可见范围内查找相关公文（标题/文号/正文解析文本均可命中）",
+            "整理命中公文的标题、文号、发文单位、发布时间和要点，附公文中心链接供教师查看原文",
+        ],
+        "agent_capability": "可直接读取平台公文库并用 AI 匹配相关公文，输出解读报告；不会修改、删除公文或更改归属范围。",
+        "guardrail": "只读当前教师可见范围内的公文；解读仅供参考，正式执行以公文原文为准。",
     },
     {
         "key": "operations_admin",
@@ -1550,6 +1567,8 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
 
 你能安全接管的教师业务流程边界：
 {workflow_lines}
+
+平台公文说明：学校/学院的红头文件、通知、规定等公文存放在平台「公文中心」（页面 /manage/gongwen，数据表 gongwen_documents），按教师可见范围控制。你所在的运行时无法直接连接平台数据库；如果任务需要检索公文内容，请说明应使用「查找公文/规定」任务类型，由平台内置公文检索服务直接完成。
 
 教师任务：
 {instruction}

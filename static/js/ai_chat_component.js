@@ -698,6 +698,7 @@ class AIChatComponent {
             thinkingState: 'none',
             statusText: '\u6b63\u5728\u8fde\u63a5 AI \u52a9\u624b...',
             errorMessage: '',
+            searchStatusActive: false,
             meta: null
         };
     }
@@ -715,8 +716,14 @@ class AIChatComponent {
                         : '\u6b63\u5728\u8fde\u63a5 AI \u52a9\u624b...';
                 }
                 break;
+            case 'search_status':
+                if (!streamState.finalAnswer && !streamState.thinkingContent && event.message) {
+                    streamState.statusText = event.message;
+                    streamState.searchStatusActive = true;
+                }
+                break;
             case 'queue_keepalive':
-                if (!streamState.finalAnswer && !streamState.thinkingContent) {
+                if (!streamState.finalAnswer && !streamState.thinkingContent && !streamState.searchStatusActive) {
                     streamState.statusText = event.thinking_requested
                         ? '\u6a21\u578b\u6b63\u5728\u6392\u961f\u6216\u601d\u8003\uff0c\u8bf7\u7a0d\u5019...'
                         : '\u6b63\u5728\u7b49\u5f85 AI \u6d41\u5f0f\u8f93\u51fa...';
