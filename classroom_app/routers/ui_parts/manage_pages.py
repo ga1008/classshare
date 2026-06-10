@@ -606,6 +606,12 @@ async def get_manage_gongwen_page(request: Request, user: dict = Depends(get_cur
         listing = list_visible_gongwen_documents(conn, scope, is_super_admin=is_admin, limit=20)
         summary = count_visible_gongwen_documents(conn, scope, is_super_admin=is_admin)
         facets = build_gongwen_facets(conn, scope, is_super_admin=is_admin)
+        try:
+            from ...services.gongwen_follow_service import count_follow_hits
+
+            follow_stats = count_follow_hits(conn, int(user["id"]))
+        except Exception:  # noqa: BLE001 — 关注统计异常不阻塞列表页
+            follow_stats = {"total": 0, "unseen": 0}
 
     return templates.TemplateResponse(
         request,
@@ -621,6 +627,7 @@ async def get_manage_gongwen_page(request: Request, user: dict = Depends(get_cur
                 "gongwen_summary": summary,
                 "gongwen_categories": facets["categories"],
                 "gongwen_facets": facets,
+                "gongwen_follow_stats": follow_stats,
             },
         ),
     )

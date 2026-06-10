@@ -31,6 +31,14 @@ GONGWEN_FOLLOW_TASK_KIND = "gongwen_follow_scan"
 GONGWEN_FOLLOW_INTERVAL_SECONDS = 180
 FOLLOW_SCAN_BATCH_SIZE = 8
 FOLLOW_SCAN_ITEM_DELAY_SECONDS = 0.5
+# 重新发现：把当前教师可见的所有已解析公文重新过一遍关注项/关键字。
+# 关键字硬匹配用全文；AI 项匹配为控制调用量用「标题+文号+关键词+摘要」摘要体，
+# 每次 AI 调用打包 RESCAN_AI_CHUNK_SIZE 篇。
+GONGWEN_FOLLOW_RESCAN_TASK_KIND = "gongwen_follow_rescan"
+RESCAN_FETCH_CHUNK_SIZE = 100
+RESCAN_AI_CHUNK_SIZE = 20
+RESCAN_DIGEST_MAX_CHARS = 240
+RESCAN_CHUNK_DELAY_SECONDS = 0.3
 # 仅匹配「新」公文：发布超过该天数的视为历史公文，标记 skipped 不回扫，
 # 避免首次启用时把几百篇旧公文一次性轰炸成提醒。
 FOLLOW_SCAN_MAX_AGE_DAYS = 30
@@ -81,6 +89,42 @@ def _normalize_terms(values: Any, *, max_count: int, max_length: int, label: str
     if len(normalized) > max_count:
         raise ValueError(f"{label}最多保存 {max_count} 个，请精简后再试。")
     return normalized
+
+
+def get_teacher_display_name(conn, teacher_id: int) -> str:
+    """教师姓名（自动加入关键字关注；过短/缺失时返回空串不参与匹配）。"""
+    try:
+        row = conn.execute("SELECT name FROM teachers WHERE id = ? LIMIT 1", (int(teacher_id),)).fetchone()
+    except Exception:  # noqa: BLE001 — 姓名拿不到时退化为只用配置的关键字
+        return ""
+    name = str(dict(row).get("name") or "").strip() if row else ""
+    return name if len(name) >= 2 else ""
+
+
+def _load_teacher_names(conn, teacher_ids: list[int]) -> dict[int, str]:
+    ids = [int(tid) for tid in teacher_ids]
+    if not ids:
+        return {}
+    placeholders = ", ".join("?" for _ in ids)
+    try:
+        rows = conn.execute(f"SELECT id, name FROM teachers WHERE id IN ({placeholders})", ids).fetchall()
+    except Exception:  # noqa: BLE001 — 姓名拿不到时退化为只用配置的关键字
+        return {}
+    result: dict[int, str] = {}
+    for row in rows:
+        data = dict(row)
+        name = str(data.get("name") or "").strip()
+        if len(name) >= 2:
+            result[int(data["id"])] = name
+    return result
+
+
+def effective_keywords(keywords: list[str], teacher_name: str) -> list[str]:
+    """配置的关键字 + 教师本人姓名（自动、去重）。"""
+    merged = list(keywords)
+    if teacher_name and teacher_name.lower() not in {k.lower() for k in merged}:
+        merged.append(teacher_name)
+    return merged
 
 
 # --------------------------------------------------------------------------- #
@@ -142,7 +186,7 @@ def save_teacher_follow_settings(
 
 
 def _load_active_follow_settings(conn) -> list[dict[str, Any]]:
-    """All teachers with at least one follow term (the matching candidates)."""
+    """启用了关注的教师（匹配候选）。空配置也算 —— 教师姓名会自动作为关键字。"""
     ensure_gongwen_schema(conn)
     rows = conn.execute(
         "SELECT teacher_id, follow_items_json, follow_keywords_json "
@@ -151,10 +195,13 @@ def _load_active_follow_settings(conn) -> list[dict[str, Any]]:
     result = []
     for row in rows:
         data = dict(row)
-        items = _safe_json_list(data.get("follow_items_json"))
-        keywords = _safe_json_list(data.get("follow_keywords_json"))
-        if items or keywords:
-            result.append({"teacher_id": int(data["teacher_id"]), "items": items, "keywords": keywords})
+        result.append(
+            {
+                "teacher_id": int(data["teacher_id"]),
+                "items": _safe_json_list(data.get("follow_items_json")),
+                "keywords": _safe_json_list(data.get("follow_keywords_json")),
+            }
+        )
     return result
 
 
@@ -250,6 +297,7 @@ def _insert_follow_hit(
     matched_keywords: list[str],
     matched_items: list[str],
     ai_reason: str,
+    notified: int = 0,
 ) -> bool:
     """Insert a hit (idempotent on the unique index). Returns True when new."""
     if matched_keywords and matched_items:
@@ -267,7 +315,7 @@ def _insert_follow_hit(
         {verb} INTO gongwen_follow_hits
             (teacher_id, document_id, match_type, matched_keywords_json, matched_items_json,
              ai_reason, notified, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, 0, ?) {conflict}
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?) {conflict}
         """,
         (
             int(teacher_id),
@@ -276,6 +324,7 @@ def _insert_follow_hit(
             json.dumps(matched_keywords, ensure_ascii=False),
             json.dumps(matched_items, ensure_ascii=False),
             str(ai_reason or "")[:400],
+            int(notified),
             _now_iso(),
         ),
     )
@@ -352,6 +401,7 @@ async def match_document_for_followers(document_id: int) -> dict[str, Any]:
     text = build_document_match_text(doc)
     candidates: list[dict[str, Any]] = []
     with get_db_connection() as conn:
+        names = _load_teacher_names(conn, [f["teacher_id"] for f in followers])
         for follower in followers:
             try:
                 scope = load_teacher_org_scope(conn, follower["teacher_id"])
@@ -369,7 +419,8 @@ async def match_document_for_followers(document_id: int) -> dict[str, Any]:
     new_hits = 0
     with get_db_connection() as conn:
         for follower in candidates:
-            matched_keywords = match_keywords(text, follower["keywords"])
+            keywords = effective_keywords(follower["keywords"], names.get(follower["teacher_id"], ""))
+            matched_keywords = match_keywords(text, keywords)
             matched_items = [item for item in follower["items"] if item in ai_matches]
             if not matched_keywords and not matched_items:
                 continue
@@ -491,6 +542,205 @@ def schedule_gongwen_follow_worker(conn) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# 重新发现：把可见的所有已解析公文重新过一遍当前教师的关注设置
+# --------------------------------------------------------------------------- #
+
+
+def _doc_digest(doc: dict[str, Any]) -> str:
+    """AI 批量匹配用的公文摘要体（标题/文号/分类/关键词/摘要，控制 token）。"""
+    summary = str(doc.get("parsed_summary") or doc.get("summary") or "")[:RESCAN_DIGEST_MAX_CHARS]
+    pieces = [
+        str(doc.get("title") or ""),
+        str(doc.get("sn") or ""),
+        str(doc.get("category_name") or ""),
+        str(doc.get("parsed_keywords") or doc.get("keywords") or ""),
+        summary,
+    ]
+    return "｜".join(piece.strip() for piece in pieces if piece.strip())
+
+
+async def ai_match_follow_items_bulk(docs: list[dict[str, Any]], items: list[str]) -> dict[int, dict[str, str]]:
+    """一次 AI 调用对多篇公文摘要做关注项匹配 → {doc_id: {命中条目: 理由}}。
+
+    与单篇匹配一样：AI 不可用 / 输出异常返回 {}，编造的 doc/item 被白名单过滤。"""
+    unique_items = list(dict.fromkeys(item for item in items if item.strip()))
+    if not docs or not unique_items:
+        return {}
+    item_lines = "\n".join(f"- {item}" for item in unique_items)
+    doc_lines = "\n".join(f"[{int(doc['id'])}] {_doc_digest(doc)}" for doc in docs)
+    payload = {
+        "system_prompt": (
+            "你是公文关注匹配助手。给定教师的关注项列表和多篇公文的摘要（每行以 [公文ID] 开头），"
+            "判断每篇公文是否与某些关注项实质相关（主题、对象、活动或要求相关才算，仅出现个别字眼不算）。"
+            "只输出 JSON：{\"matches\": [{\"doc\": 公文ID数字, \"item\": \"命中的关注项原文\", \"reason\": \"30字以内理由\"}]}。"
+            "没有命中时输出 {\"matches\": []}。不要编造公文ID或关注项。"
+        ),
+        "messages": [],
+        "new_message": f"【关注项列表】\n{item_lines}\n\n【公文列表】\n{doc_lines}",
+        "base64_urls": [],
+        "file_texts": [],
+        "model_capability": "standard",
+        "task_type": "fast_text_response",
+        "response_format": "json",
+        "task_priority": "background",
+        "task_label": "gongwen_follow_rescan",
+    }
+    try:
+        from ..core import ai_client
+
+        resp = await ai_client.post("/api/ai/chat", json=payload, timeout=90.0)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:  # noqa: BLE001 — AI 故障降级为只有关键字匹配
+        return {}
+    parsed = data.get("response_json") if isinstance(data, dict) else None
+    matches = parsed.get("matches") if isinstance(parsed, dict) else None
+    if not isinstance(matches, list):
+        return {}
+    allowed_items = {item.lower(): item for item in unique_items}
+    allowed_ids = {int(doc["id"]) for doc in docs}
+    result: dict[int, dict[str, str]] = {}
+    for entry in matches:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            doc_id = int(entry.get("doc"))
+        except (TypeError, ValueError):
+            continue
+        canonical = allowed_items.get(str(entry.get("item") or "").strip().lower())
+        if doc_id not in allowed_ids or not canonical:
+            continue
+        result.setdefault(doc_id, {})[canonical] = str(entry.get("reason") or "").strip()[:120]
+    return result
+
+
+def _notify_rescan_summary(conn, *, teacher_id: int, new_hits: int, scanned: int) -> None:
+    """重新发现只发一条汇总提醒（避免几十条命中逐条轰炸站内信/邮箱）。"""
+    from .message_center_service import (
+        MESSAGE_CATEGORY_GONGWEN_FOLLOW,
+        _build_notification_payload,
+        _insert_notification,
+    )
+
+    payload = _build_notification_payload(
+        recipient_role="teacher",
+        recipient_user_pk=int(teacher_id),
+        category=MESSAGE_CATEGORY_GONGWEN_FOLLOW,
+        title=f"公文重新发现完成：新命中 {new_hits} 篇",
+        body_preview=f"已重新扫描 {scanned} 篇已解析公文，新发现 {new_hits} 篇与你的关注项/关键字相关，点击查看。",
+        actor_role="",
+        actor_user_pk=None,
+        actor_display_name="公文中心",
+        link_url="/manage/gongwen?follow=1",
+        ref_type="gongwen_follow_rescan",
+        ref_id="",
+        metadata={"new_hits": int(new_hits), "scanned": int(scanned)},
+    )
+    _insert_notification(conn, payload)
+
+
+async def rescan_teacher_follow_matches(teacher_id: int) -> dict[str, Any]:
+    """重新发现：当前教师可见的全部已解析公文 × 关注项/关键字。
+
+    关键字（含自动加入的教师姓名）用全文硬匹配；关注项用 AI 批量摘要匹配
+    （每 RESCAN_AI_CHUNK_SIZE 篇一次调用）。命中直接落库（notified=1，
+    不逐篇提醒），最后发一条汇总站内信（→ 邮件）。"""
+    from .organization_scope_service import load_teacher_org_scope
+
+    with get_db_connection() as conn:
+        ensure_gongwen_schema(conn)
+        settings = get_teacher_follow_settings(conn, int(teacher_id))
+        name = get_teacher_display_name(conn, int(teacher_id))
+        keywords = effective_keywords(settings["keywords"], name)
+        items = settings["items"]
+        if not settings["enabled"] or (not items and not keywords):
+            return {"status": "no_settings", "scanned": 0, "new_hits": 0}
+        scope = load_teacher_org_scope(conn, int(teacher_id))
+        visibility_sql, params = ms.build_visibility_filter(scope, is_super_admin=False)
+        id_rows = conn.execute(
+            f"SELECT id FROM gongwen_documents WHERE {visibility_sql} AND parsed_status = 'done' "
+            "ORDER BY publish_time DESC, id DESC",
+            params,
+        ).fetchall()
+        doc_ids = [int(dict(row)["id"]) for row in id_rows]
+
+    scanned = 0
+    new_hits = 0
+    for start in range(0, len(doc_ids), RESCAN_FETCH_CHUNK_SIZE):
+        chunk_ids = doc_ids[start : start + RESCAN_FETCH_CHUNK_SIZE]
+        with get_db_connection() as conn:
+            placeholders = ", ".join("?" for _ in chunk_ids)
+            rows = conn.execute(
+                f"SELECT * FROM gongwen_documents WHERE id IN ({placeholders})", chunk_ids
+            ).fetchall()
+        docs = [dict(row) for row in rows]
+
+        ai_matches: dict[int, dict[str, str]] = {}
+        if items:
+            for ai_start in range(0, len(docs), RESCAN_AI_CHUNK_SIZE):
+                ai_chunk = docs[ai_start : ai_start + RESCAN_AI_CHUNK_SIZE]
+                ai_matches.update(await ai_match_follow_items_bulk(ai_chunk, items))
+                await asyncio.sleep(RESCAN_CHUNK_DELAY_SECONDS)
+
+        with get_db_connection() as conn:
+            for doc in docs:
+                scanned += 1
+                matched_keywords = match_keywords(build_document_match_text(doc), keywords)
+                doc_ai = ai_matches.get(int(doc["id"]), {})
+                matched_items = [item for item in items if item in doc_ai]
+                if not matched_keywords and not matched_items:
+                    continue
+                reason = "；".join(filter(None, (doc_ai.get(item, "") for item in matched_items)))[:200]
+                inserted = _insert_follow_hit(
+                    conn,
+                    teacher_id=int(teacher_id),
+                    document_id=int(doc["id"]),
+                    matched_keywords=matched_keywords,
+                    matched_items=matched_items,
+                    ai_reason=reason,
+                    notified=1,
+                )
+                if inserted:
+                    new_hits += 1
+            conn.commit()
+
+    if new_hits > 0:
+        with get_db_connection() as conn:
+            try:
+                _notify_rescan_summary(conn, teacher_id=int(teacher_id), new_hits=new_hits, scanned=scanned)
+                conn.commit()
+            except Exception as exc:  # noqa: BLE001 — 命中已落库，汇总通知失败不回滚
+                print(f"[GONGWEN-FOLLOW] rescan summary notify teacher {teacher_id} failed: {exc}")
+    return {"status": "done", "scanned": scanned, "new_hits": new_hits}
+
+
+async def handle_gongwen_follow_rescan_task(task: dict[str, Any]) -> str:
+    payload = task.get("payload") if isinstance(task.get("payload"), dict) else {}
+    teacher_id = int(payload.get("teacher_id") or 0)
+    if teacher_id <= 0:
+        return "skipped: no teacher_id"
+    result = await rescan_teacher_follow_matches(teacher_id)
+    return f"status={result['status']} scanned={result['scanned']} new_hits={result['new_hits']}"
+
+
+def schedule_gongwen_follow_rescan(conn, teacher_id: int) -> int:
+    """One-shot rescan task（按教师去重，重复点击只保留一个）。"""
+    from .scheduled_task_service import schedule_task
+
+    return schedule_task(
+        conn,
+        task_kind=GONGWEN_FOLLOW_RESCAN_TASK_KIND,
+        run_at=datetime.now(),
+        payload={"teacher_id": int(teacher_id)},
+        dedupe_key=f"gongwen-follow-rescan:{int(teacher_id)}",
+        owner_role="teacher",
+        owner_user_pk=int(teacher_id),
+        title="公文关注重新发现",
+        replace=True,
+    )
+
+
+# --------------------------------------------------------------------------- #
 # Read interfaces (dashboard「您的关注」 + 列表页「我的关注」)
 # --------------------------------------------------------------------------- #
 
@@ -550,6 +800,18 @@ def list_teacher_follow_hits(conn, teacher_id: int, *, limit: int = 20) -> list[
         )
         result.append(payload)
     return result
+
+
+def count_follow_hits(conn, teacher_id: int) -> dict[str, int]:
+    """命中总数 + 未读数（统计板块用）。"""
+    ensure_gongwen_schema(conn)
+    row = conn.execute(
+        "SELECT COUNT(*) AS total, SUM(CASE WHEN seen_at IS NULL THEN 1 ELSE 0 END) AS unseen "
+        "FROM gongwen_follow_hits WHERE teacher_id = ?",
+        (int(teacher_id),),
+    ).fetchone()
+    data = dict(row) if row else {}
+    return {"total": int(data.get("total") or 0), "unseen": int(data.get("unseen") or 0)}
 
 
 def count_unseen_follow_hits(conn, teacher_id: int) -> int:

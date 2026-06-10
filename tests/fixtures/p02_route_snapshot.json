@@ -1544,6 +1544,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/gongwen/follow-rescan",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_rescan_gongwen_follow",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/gongwen/follow-settings",
     "methods": [
       "GET"

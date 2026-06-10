@@ -173,7 +173,10 @@
     .gw-follow-tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 10px; border-radius: var(--radius-full); background: rgba(79,70,229,0.1); color: #4f46e5; font-size: 0.8rem; font-weight: 700; }
     .gw-follow-tag button { border: 0; background: transparent; color: inherit; font-size: 0.95rem; line-height: 1; cursor: pointer; padding: 0; }
     .gw-follow-tags input { flex: 1; min-width: 140px; border: 0; outline: none; font-size: 0.84rem; padding: 4px; background: transparent; }
-    .gw-follow-actions { display: flex; justify-content: flex-end; gap: var(--spacing-sm); padding: 0 var(--spacing-lg) var(--spacing-lg); }
+    .gw-follow-actions { display: flex; align-items: center; gap: var(--spacing-sm); padding: 0 var(--spacing-lg) var(--spacing-lg); }
+    .gw-follow-actions-spacer { flex: 1; }
+    .gw-follow-tag--auto { background: rgba(100,116,139,0.14); color: #475569; }
+    .gw-follow-tag--auto small { font-weight: 600; opacity: 0.75; }
 </style>
 {% endblock %}
 
@@ -196,10 +199,14 @@
         </div>
     </div>
 
+    {% set follow_stats = gongwen_follow_stats or {'total': 0, 'unseen': 0} %}
+    {% set follow_pct = ((follow_stats.total | int) / (summary.total | int) * 100) | round | int if (summary.total | int) > 0 else 0 %}
+    {% set follow_caption = ('未读命中 ' ~ (follow_stats.unseen | int) ~ ' 篇 · ') if (follow_stats.unseen | int) > 0 else '' %}
     <div class="insight-board">
         {{ insight_ring('已读进度', read_count, summary.total | int, '已读 / 全部公文', 'rose', (read_count ~ ' / ' ~ (summary.total | int))) }}
         {{ insight_bars('分类分布', cat_bars, '按发文分类统计的公文数量', 'indigo', 6) }}
         {{ insight_ring('含附件公文', summary.with_file | int, summary.total | int, '可下载附件的公文占比', 'sky', ((summary.with_file | int) ~ ' / ' ~ (summary.total | int))) }}
+        {{ insight_meter('我的关注', follow_stats.total | int, follow_pct, follow_caption ~ ('上次同步 ' ~ summary.last_synced_at[:16] if summary.last_synced_at else '尚未同步'), 'amber', ' 篇命中') }}
     </div>
 
     <div class="gwlist-card">
@@ -390,13 +397,15 @@
             </section>
             <section class="gw-follow-section">
                 <h4>关注关键字（硬匹配）</h4>
-                <p>公文标题、正文或附件解析文本中出现关键字即提醒（不分大小写）。输入后按回车添加。</p>
+                <p>公文标题、正文或附件解析文本中出现关键字即提醒（不分大小写）。输入后按回车添加。<strong>你的姓名已自动加入关注</strong>，无需手动配置。</p>
                 <div class="gw-follow-tags" id="gw-follow-tags">
                     <input type="text" id="gw-follow-keyword-input" placeholder="输入关键字后按回车" maxlength="40" autocomplete="off">
                 </div>
             </section>
         </div>
         <div class="gw-follow-actions">
+            <button type="button" class="btn btn-outline gw-follow-rescan" id="gw-follow-rescan" title="把所有已解析公文重新匹配一遍当前关注设置，完成后站内信汇总提醒">重新发现</button>
+            <span class="gw-follow-actions-spacer"></span>
             <button type="button" class="btn btn-outline" id="gw-follow-cancel">取消</button>
             <button type="button" class="btn btn-primary" id="gw-follow-save">保存</button>
         </div>
@@ -408,5 +417,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260610d"></script>
+<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260610e"></script>
 {% endblock %}

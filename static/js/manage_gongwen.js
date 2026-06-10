@@ -23,6 +23,7 @@ const state = {
     unread: false,
     follow: false,
     followKeywords: [],
+    followAutoKeywords: [],
     page: 1,
     pageSize: 20,
     scopeOptions: null,
@@ -51,6 +52,7 @@ const refs = {
     followClose: document.getElementById('gw-follow-close'),
     followCancel: document.getElementById('gw-follow-cancel'),
     followSave: document.getElementById('gw-follow-save'),
+    followRescan: document.getElementById('gw-follow-rescan'),
     followItems: document.getElementById('gw-follow-items'),
     followAddItem: document.getElementById('gw-follow-add-item'),
     followTags: document.getElementById('gw-follow-tags'),
@@ -590,6 +592,11 @@ function addFollowItemRow(value = '') {
 function renderFollowKeywordTags() {
     if (!refs.followTags) return;
     refs.followTags.querySelectorAll('.gw-follow-tag').forEach((el) => el.remove());
+    // 系统自动关注的关键字（教师姓名）：置顶展示、不可删除。
+    (state.followAutoKeywords || []).forEach((keyword) => {
+        refs.followKeywordInput.insertAdjacentHTML('beforebegin', `
+            <span class="gw-follow-tag gw-follow-tag--auto" title="系统自动关注你的姓名，无需配置、不可删除">${escapeHtml(keyword)} <small>自动</small></span>`);
+    });
     state.followKeywords.forEach((keyword, index) => {
         refs.followKeywordInput.insertAdjacentHTML('beforebegin', `
             <span class="gw-follow-tag">${escapeHtml(keyword)}
@@ -620,6 +627,7 @@ async function openFollowModal() {
         (settings.items || []).forEach((item) => addFollowItemRow(item));
         if (!(settings.items || []).length) addFollowItemRow('');
         state.followKeywords = [...(settings.keywords || [])];
+        state.followAutoKeywords = [...(settings.auto_keywords || [])];
         renderFollowKeywordTags();
         refs.followKeywordInput.value = '';
         refs.followModal.hidden = false;
@@ -653,6 +661,18 @@ async function saveFollowSettings() {
         showMessage(error.message || '保存关注设置失败。', 'error');
     } finally {
         setBusy(refs.followSave, false);
+    }
+}
+
+async function rescanFollowMatches() {
+    setBusy(refs.followRescan, true, '提交中');
+    try {
+        const result = await apiFetch('/api/manage/gongwen/follow-rescan', { method: 'POST' });
+        showMessage(result.message || '已开始重新发现，完成后将通过站内信提醒。', 'success');
+    } catch (error) {
+        showMessage(error.message || '重新发现启动失败。', 'error');
+    } finally {
+        setBusy(refs.followRescan, false);
     }
 }
 
@@ -770,6 +790,7 @@ refs.followOpen?.addEventListener('click', openFollowModal);
 refs.followClose?.addEventListener('click', closeFollowModal);
 refs.followCancel?.addEventListener('click', closeFollowModal);
 refs.followSave?.addEventListener('click', saveFollowSettings);
+refs.followRescan?.addEventListener('click', rescanFollowMatches);
 refs.followModal?.addEventListener('click', (event) => { if (event.target === refs.followModal) closeFollowModal(); });
 refs.followAddItem?.addEventListener('click', () => addFollowItemRow(''));
 refs.followItems?.addEventListener('click', (event) => {

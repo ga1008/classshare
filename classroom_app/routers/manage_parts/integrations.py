@@ -624,10 +624,13 @@ async def api_gongwen_scope_options(user: dict = Depends(get_current_teacher)):
 @router.get("/gongwen/follow-settings", response_class=JSONResponse)
 async def api_get_gongwen_follow_settings(user: dict = Depends(get_current_teacher)):
     """当前教师的公文关注设置（关注项目 + 关注关键字）。"""
-    from ...services.gongwen_follow_service import get_teacher_follow_settings
+    from ...services.gongwen_follow_service import get_teacher_display_name, get_teacher_follow_settings
 
     with get_db_connection() as conn:
         settings = get_teacher_follow_settings(conn, int(user["id"]))
+        name = get_teacher_display_name(conn, int(user["id"]))
+    # 教师姓名自动作为关键字参与匹配（系统项，前端只展示不可删）。
+    settings["auto_keywords"] = [name] if name else []
     return {"status": "success", "settings": settings}
 
 
@@ -649,13 +652,38 @@ async def api_save_gongwen_follow_settings(request: Request, user: dict = Depend
                 keywords=payload.get("keywords"),
                 enabled=bool(payload.get("enabled", True)),
             )
-            if settings["items"] or settings["keywords"]:
+            # 教师姓名自动作为关键字 → 只要启用了关注就武装后台匹配 worker。
+            if settings["enabled"]:
                 schedule_gongwen_follow_worker(conn)
             conn.commit()
         except ValueError as exc:
             conn.rollback()
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "success", "message": "关注设置已保存，新解析的公文将自动匹配并提醒。", "settings": settings}
+
+
+@router.post("/gongwen/follow-rescan", response_class=JSONResponse)
+async def api_rescan_gongwen_follow(user: dict = Depends(get_current_teacher)):
+    """重新发现：后台把所有已解析公文重新过一遍当前教师的关注设置。"""
+    from ...services.gongwen_follow_service import (
+        effective_keywords,
+        get_teacher_display_name,
+        get_teacher_follow_settings,
+        schedule_gongwen_follow_rescan,
+    )
+
+    with get_db_connection() as conn:
+        settings = get_teacher_follow_settings(conn, int(user["id"]))
+        name = get_teacher_display_name(conn, int(user["id"]))
+        keywords = effective_keywords(settings["keywords"], name)
+        if not settings["enabled"] or (not settings["items"] and not keywords):
+            raise HTTPException(status_code=400, detail="请先保存至少一个关注项目或关键字，再执行重新发现。")
+        schedule_gongwen_follow_rescan(conn, int(user["id"]))
+        conn.commit()
+    return {
+        "status": "success",
+        "message": "已开始重新发现：后台将扫描全部已解析公文并匹配你的关注设置，完成后通过站内信（含邮件）汇总提醒。",
+    }
 
 
 @router.get("/gongwen/follow-hits", response_class=JSONResponse)
