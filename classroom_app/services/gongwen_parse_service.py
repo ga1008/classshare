@@ -28,9 +28,11 @@ from typing import Any
 from ..database import get_db_connection
 from ..db.schema_gongwen import ensure_gongwen_schema
 from . import material_scope_service as ms
+from .gongwen_archive_service import extracted_root_for
 from .gongwen_content_service import (
     PARSED_TEXT_LIMIT,
     assemble_reader,
+    build_archive_entry_parts,
     build_file_part,
 )
 
@@ -122,6 +124,37 @@ def _assemble_from_stored(data: dict[str, Any]) -> dict[str, Any]:
     return assemble_reader(data, parts if isinstance(parts, list) else [])
 
 
+async def _expand_archive(
+    data: dict[str, Any],
+    document_id: int,
+    which: str,
+    archive_part: dict[str, Any],
+    *,
+    use_ai: bool,
+) -> list[dict[str, Any]]:
+    """压缩附件 → 解压为独立"附件"条目；确认完整后删除原包、清空本地路径。"""
+    extract_root = extracted_root_for(data.get("attr_school_code"), data.get("remote_id"))
+    entry_parts, complete = await build_archive_entry_parts(
+        document_id, which, archive_part, Path(archive_part["local_path"]), extract_root, use_ai=use_ai
+    )
+    if not complete:
+        return entry_parts
+    column = "local_file_path" if which == "primary" else "local_attachment_path"
+    try:
+        Path(archive_part["local_path"]).unlink(missing_ok=True)
+    except OSError:
+        return entry_parts  # 删不掉就保留原包，路径仍有效
+    archive_part["local_path"] = ""
+    archive_part["note"] = "已自动解压为附件条目，原压缩包已清理。"
+    with get_db_connection() as conn:
+        conn.execute(
+            f"UPDATE gongwen_documents SET {column} = '', updated_at = ? WHERE id = ?",
+            (_now_iso(), int(document_id)),
+        )
+        conn.commit()
+    return entry_parts
+
+
 async def parse_document(document_id: int, *, force: bool = False) -> dict[str, Any] | None:
     """Run the full parse pipeline for one document, store results, set status."""
     with get_db_connection() as conn:
@@ -155,6 +188,8 @@ async def parse_document(document_id: int, *, force: bool = False) -> dict[str, 
             if which == "primary":
                 source_name = part.get("name") or ""
                 source_type = part.get("ext") or ""
+            if part.get("kind") == "archive" and part.get("local_path"):
+                parts.extend(await _expand_archive(data, int(document_id), which, part, use_ai=use_ai))
 
         text_chunks: list[str] = []
         if str(data.get("content_text") or "").strip():

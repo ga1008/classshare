@@ -644,14 +644,31 @@ async def api_set_gongwen_document_scope(document_id: int, request: Request, use
 async def api_download_gongwen_document_file(
     document_id: int,
     which: str = "primary",
+    entry: str = "",
     inline: int = 0,
     user: dict = Depends(get_current_teacher),
 ):
     """Serve the document attachment: cache the public CDN file locally on first
     access, then stream it; fall back to a host-validated redirect on failure.
     ``inline=1`` serves with ``Content-Disposition: inline`` so a PDF renders in
-    the reader's iframe instead of triggering a download."""
+    the reader's iframe instead of triggering a download. ``which=extracted``
+    serves a file unpacked from a compressed attachment (``entry`` = the safe
+    relative path inside the document's extraction directory)."""
     from fastapi.responses import RedirectResponse
+
+    disposition = "inline" if int(inline or 0) else "attachment"
+    if str(which) == "extracted":
+        from ...services.gongwen_archive_service import resolve_extracted_file
+
+        with get_db_connection() as conn:
+            scope, is_admin = _gongwen_viewer(conn, user)
+            document = get_visible_gongwen_document(conn, scope, int(document_id), is_super_admin=is_admin)
+        if document is None:
+            raise HTTPException(status_code=404, detail="公文不存在或无权访问。")
+        resolved = resolve_extracted_file(document, entry)
+        if resolved is None:
+            raise HTTPException(status_code=404, detail="解压文件不存在或已被清理，可重新解析该公文。")
+        return FileResponse(str(resolved), filename=resolved.name, content_disposition_type=disposition)
 
     which = "attachment" if str(which) == "attachment" else "primary"
     with get_db_connection() as conn:

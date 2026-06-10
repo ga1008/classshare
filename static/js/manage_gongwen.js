@@ -25,6 +25,9 @@ const state = {
     pageSize: 20,
     scopeOptions: null,
     editingId: null,
+    readerId: null,
+    attachParts: [],
+    attachIndex: 0,
 };
 
 const refs = {
@@ -64,6 +67,11 @@ const refs = {
     readerTitle: document.getElementById('gw-reader-title'),
     readerMeta: document.getElementById('gw-reader-meta'),
     readerBody: document.getElementById('gw-reader-body'),
+    // attachment viewer (secondary modal above the reader)
+    attachModal: document.getElementById('gw-attach-modal'),
+    attachClose: document.getElementById('gw-attach-close'),
+    attachList: document.getElementById('gw-attach-list'),
+    attachView: document.getElementById('gw-attach-view'),
 };
 
 function formatDateTime(value) {
@@ -235,28 +243,45 @@ function metaRow(label, value) {
     return `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
 }
 
-function renderPart(part) {
-    const headBadge = part.truncated ? '<span class="gwlist-cat">已截断</span>' : '';
-    const head = `<div class="gw-reader-part-head"><strong>${escapeHtml(part.label || '内容')}${part.name ? '：' + escapeHtml(part.name) : ''}</strong>
-        <span>${headBadge}<a class="btn btn-outline btn-sm" href="${escapeHtml(part.download_url || '#')}" download>下载</a></span></div>`;
+function partNoteHtml(part) {
     const warn = (part.warnings || []).length ? `<div class="gw-reader-warn">${escapeHtml(part.warnings.join('；'))}</div>` : '';
-    let inner = '';
+    const note = part.note ? `<div class="gw-reader-note">${escapeHtml(part.note)}</div>` : '';
+    return note + warn;
+}
+
+function partBodyHtml(part) {
     if (part.kind === 'pdf') {
-        inner = `<iframe class="gw-reader-iframe" src="${escapeHtml(part.view_url)}" title="${escapeHtml(part.name || 'PDF')}"></iframe>`;
+        let inner = `<iframe class="gw-reader-iframe" src="${escapeHtml(part.view_url)}" title="${escapeHtml(part.name || 'PDF')}"></iframe>`;
         if (part.text && part.text.trim()) {
             inner += `<details class="gw-reader-extract" open><summary>解析文本（用于检索 / 智能提醒）</summary><pre class="gw-reader-text">${escapeHtml(part.text)}</pre></details>`;
         }
-    } else if (part.kind === 'table') {
-        inner = (part.tables || []).map(renderSheet).join('');
-        if (!inner) inner = `<pre class="gw-reader-text">${escapeHtml(part.text || '')}</pre>`;
-    } else if (part.kind === 'image') {
-        inner = `<img class="gw-reader-img" src="${escapeHtml(part.view_url)}" alt="${escapeHtml(part.name || '图片')}">`;
-    } else if (part.kind === 'text') {
-        inner = `<pre class="gw-reader-text">${escapeHtml(part.text || '')}</pre>`;
-    } else {
-        inner = `<div class="gw-reader-unsupported">该文件暂不支持在线解析，请点击右上角「下载」查看。</div>`;
+        return inner;
     }
-    return `<section class="gw-reader-part">${head}${warn}${inner}</section>`;
+    if (part.kind === 'table') {
+        const inner = (part.tables || []).map(renderSheet).join('');
+        return inner || `<pre class="gw-reader-text">${escapeHtml(part.text || '')}</pre>`;
+    }
+    if (part.kind === 'image') {
+        return `<img class="gw-reader-img" src="${escapeHtml(part.view_url)}" alt="${escapeHtml(part.name || '图片')}">`;
+    }
+    if (part.kind === 'text') {
+        return `<pre class="gw-reader-text">${escapeHtml(part.text || '')}</pre>`;
+    }
+    if (part.kind === 'archive') {
+        const listing = (part.text || '').trim()
+            ? `<pre class="gw-reader-text">${escapeHtml(part.text)}</pre>`
+            : '<div class="gw-reader-unsupported">压缩包内容尚未解压，重新解析后可自动展开。</div>';
+        return listing;
+    }
+    return '<div class="gw-reader-unsupported">该文件暂不支持在线解析，可点击「下载」查看。</div>';
+}
+
+function renderPart(part) {
+    const headBadge = part.truncated ? '<span class="gwlist-cat">已截断</span>' : '';
+    const download = part.download_url ? `<a class="btn btn-outline btn-sm" href="${escapeHtml(part.download_url)}" download>下载</a>` : '';
+    const head = `<div class="gw-reader-part-head"><strong>${escapeHtml(part.label || '内容')}${part.name ? '：' + escapeHtml(part.name) : ''}</strong>
+        <span>${headBadge}${download}</span></div>`;
+    return `<section class="gw-reader-part">${head}${partNoteHtml(part)}${partBodyHtml(part)}</section>`;
 }
 
 function renderSheet(sheet) {
@@ -296,6 +321,11 @@ function renderReader(doc) {
         refs.readerMeta.insertAdjacentHTML('afterend', `<div class="gw-reader-struct">${structRows}</div>`);
     }
 
+    const parts = doc.parts || [];
+    // 正文 = content_html + 正文文件；其余（附件 / 压缩包及其解压内容）走二级附件浮窗。
+    const bodyParts = parts.filter((p) => p.which === 'primary' && p.kind !== 'archive');
+    state.attachParts = parts.filter((p) => p.which !== 'primary' || p.kind === 'archive');
+
     const blocks = [];
     if ((doc.parse_status || '') === 'pending' || (doc.parse_status || '') === 'parsing') {
         blocks.push('<div class="gw-reader-pending">该公文正在后台解析，稍后可点击右上角「重新解析」查看完整内容。</div>');
@@ -304,15 +334,61 @@ function renderReader(doc) {
     if (contentHtml) {
         blocks.push(`<section class="gw-reader-part"><div class="gw-reader-part-head"><strong>公文正文</strong></div><div class="gw-reader-html">${contentHtml}</div></section>`);
     }
-    (doc.parts || []).forEach((part) => blocks.push(renderPart(part)));
+    bodyParts.forEach((part) => blocks.push(renderPart(part)));
+    if (state.attachParts.length) {
+        const items = state.attachParts.map((part, index) => `
+            <li><button type="button" data-attach-open="${index}">
+                <span class="gw-attach-ext">${escapeHtml(part.ext || '文件')}</span>
+                <span>${escapeHtml(part.name || '附件')}</span>
+                ${part.archive ? `<span class="gw-attach-from">来自 ${escapeHtml(part.archive)}</span>` : ''}
+            </button></li>`).join('');
+        blocks.push(`<section class="gw-reader-part">
+            <div class="gw-reader-part-head"><strong>附件（${state.attachParts.length}）</strong>
+                <span><button type="button" class="btn btn-primary btn-sm" data-attach-open="0">查看附件</button></span></div>
+            <ul class="gw-attach-names">${items}</ul>
+        </section>`);
+    }
     if (!blocks.length) {
         blocks.push('<div class="gw-reader-loading">该公文暂无可显示的正文或附件。</div>');
     }
     refs.readerBody.innerHTML = blocks.join('');
 }
 
+// ---------------- attachment viewer (secondary modal) ----------------
+
+function selectAttachment(index) {
+    const part = state.attachParts[index];
+    if (!part) return;
+    state.attachIndex = index;
+    refs.attachList.querySelectorAll('.gw-attach-item').forEach((el, i) => {
+        el.classList.toggle('is-active', i === index);
+    });
+    const download = part.download_url ? `<a class="btn btn-outline btn-sm" href="${escapeHtml(part.download_url)}" download>下载</a>` : '';
+    refs.attachView.innerHTML = `
+        <div class="gw-attach-view-head"><strong>${escapeHtml(part.name || '附件')}</strong>${download}</div>
+        ${partNoteHtml(part)}${partBodyHtml(part)}`;
+    refs.attachView.scrollTop = 0;
+}
+
+function openAttachModal(index = 0) {
+    if (!state.attachParts.length || !refs.attachModal) return;
+    refs.attachList.innerHTML = state.attachParts.map((part, i) => `
+        <button type="button" class="gw-attach-item" data-attach-index="${i}">
+            <span class="gw-attach-ext">${escapeHtml(part.ext || '文件')}</span>
+            <span>${escapeHtml(part.name || '附件')}</span>
+        </button>`).join('');
+    refs.attachModal.hidden = false;
+    selectAttachment(Math.min(Math.max(index, 0), state.attachParts.length - 1));
+}
+
+function closeAttachModal() {
+    if (refs.attachModal) refs.attachModal.hidden = true;
+}
+
 async function openReader(id, refresh = false) {
     state.readerId = id;
+    state.attachParts = [];
+    closeAttachModal();
     refs.reader.hidden = false;
     refs.readerSn.textContent = '';
     refs.readerTitle.textContent = '公文详情';
@@ -327,8 +403,10 @@ async function openReader(id, refresh = false) {
 }
 
 function closeReader() {
+    closeAttachModal();
     refs.reader.hidden = true;
     state.readerId = null;
+    state.attachParts = [];
 }
 
 // ---------------- 归属 / 开放范围 editor ----------------
@@ -460,7 +538,21 @@ refs.tbody?.addEventListener('click', (event) => {
 refs.readerClose?.addEventListener('click', closeReader);
 refs.readerRefresh?.addEventListener('click', () => { if (state.readerId) openReader(state.readerId, true); });
 refs.reader?.addEventListener('click', (event) => { if (event.target === refs.reader) closeReader(); });
-document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && refs.reader && !refs.reader.hidden) closeReader(); });
+refs.readerBody?.addEventListener('click', (event) => {
+    const opener = event.target.closest('[data-attach-open]');
+    if (opener) openAttachModal(parseInt(opener.dataset.attachOpen, 10) || 0);
+});
+refs.attachList?.addEventListener('click', (event) => {
+    const item = event.target.closest('[data-attach-index]');
+    if (item) selectAttachment(parseInt(item.dataset.attachIndex, 10) || 0);
+});
+refs.attachClose?.addEventListener('click', closeAttachModal);
+refs.attachModal?.addEventListener('click', (event) => { if (event.target === refs.attachModal) closeAttachModal(); });
+document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (refs.attachModal && !refs.attachModal.hidden) { closeAttachModal(); return; }
+    if (refs.reader && !refs.reader.hidden) closeReader();
+});
 
 refs.scopeLevel?.addEventListener('change', () => {
     const level = refs.scopeLevel.value;

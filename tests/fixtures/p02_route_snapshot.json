@@ -1480,6 +1480,62 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/gongwen/documents",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_gongwen_documents",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/gongwen/documents/search",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_search_gongwen_documents",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/gongwen/documents/{document_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_gongwen_document",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/gongwen/documents/{document_id}/file",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_download_gongwen_document_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/gongwen/documents/{document_id}/reader",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_gongwen_document_reader",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/gongwen/documents/{document_id}/scope",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_set_gongwen_document_scope",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/gongwen/scope-options",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_gongwen_scope_options",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/offerings/list",
     "methods": [
       "GET"
@@ -1608,6 +1664,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/system/academic-reminders/sync-current",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_academic_dashboard_reminders",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/system/academic-sync",
     "methods": [
       "POST"
@@ -1709,6 +1773,78 @@
       "GET"
     ],
     "name": "api_get_blog_news_crawler_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/exam-reminders/email",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_cancel_exam_email_reminder",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/exam-reminders/email",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_exam_email_reminder",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/exam-reminders/email",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_set_exam_email_reminder",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/gongwen-credentials",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_gongwen_credentials",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/gongwen-credentials",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_save_gongwen_credential",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/gongwen-credentials/{credential_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_gongwen_credential",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/gongwen-credentials/{credential_id}/verify",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_verify_gongwen_credential",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/gongwen-sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_gongwen_documents",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/gongwen-sync-capabilities",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_gongwen_sync_capabilities",
     "include_in_schema": true
   },
   {
@@ -2936,6 +3072,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/gongwen",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_gongwen_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/manage/materials",
     "methods": [
       "GET"
@@ -3021,6 +3165,14 @@
       "GET"
     ],
     "name": "get_manage_system_feedback_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/system/gongwen-integrations",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_gongwen_integrations_page",
     "include_in_schema": true
   },
   {

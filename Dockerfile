@@ -45,6 +45,7 @@ RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debia
         tzdata \
         fonts-arphic-uming \
         antiword \
+        libarchive-tools \
         libreoffice-calc \
         libreoffice-impress \
         libreoffice-writer \

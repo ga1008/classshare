@@ -18,10 +18,12 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from ..database import get_db_connection
 from ..db.schema_gongwen import ensure_gongwen_schema
 from . import material_scope_service as ms
+from .gongwen_archive_service import ARCHIVE_EXTS, extract_archive
 from .gongwen_document_sync_service import ensure_local_attachment, serialize_gongwen_document
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
@@ -175,6 +177,23 @@ async def verify_text_with_ai(text: str) -> bool:
     return True
 
 
+def _new_part(which: str, name: str, label: str, view_url: str) -> dict[str, Any]:
+    return {
+        "which": which,
+        "name": name,
+        "ext": Path(name).suffix.lower().lstrip("."),
+        "label": label,
+        "kind": "unsupported",
+        "text": "",
+        "tables": [],
+        "warnings": [],
+        "view_url": f"{view_url}&inline=1" if view_url else "",
+        "download_url": view_url,
+        "truncated": False,
+        "ai_used": False,
+    }
+
+
 async def build_file_part(
     teacher_scope: dict[str, str],
     document_id: int,
@@ -188,20 +207,7 @@ async def build_file_part(
     ext = Path(name).suffix.lower()
     label = "正文文件" if which == "primary" else "附件"
     view_url = f"/api/manage/gongwen/documents/{document_id}/file?which={which}"
-    part: dict[str, Any] = {
-        "which": which,
-        "name": name,
-        "ext": ext.lstrip("."),
-        "label": label,
-        "kind": "unsupported",
-        "text": "",
-        "tables": [],
-        "warnings": [],
-        "view_url": f"{view_url}&inline=1",
-        "download_url": view_url,
-        "truncated": False,
-        "ai_used": False,
-    }
+    part = _new_part(which, name, label, view_url)
 
     cache = await ensure_local_attachment(teacher_scope, document_id, which, is_super_admin=is_super_admin)
     if cache.get("status") != "local":
@@ -210,7 +216,52 @@ async def build_file_part(
         return part
 
     path = Path(cache["local_path"])
+    if ext in ARCHIVE_EXTS:
+        # 压缩包不在这里展开 —— parse 流水线会调用 build_archive_entry_parts
+        # 把内容解压成独立的"附件"条目，确认完整后清理原包。
+        part["kind"] = "archive"
+        part["local_path"] = str(path)
+        return part
+    return await _populate_part_from_file(part, path, ext, name, use_ai=use_ai)
 
+
+async def build_archive_entry_parts(
+    document_id: int,
+    which: str,
+    archive_part: dict[str, Any],
+    archive_path: Path,
+    extract_root: Path,
+    *,
+    use_ai: bool = True,
+) -> tuple[list[dict[str, Any]], bool]:
+    """解压一个压缩包附件，并把每个文件作为"附件"条目走解析流水线。
+
+    返回 (条目 parts, 解压是否完整)。完整时调用方可以安全删除原压缩包。
+    """
+    dest_dir = extract_root / which
+    result = await asyncio.to_thread(extract_archive, archive_path, dest_dir)
+    archive_part["warnings"].extend(result["warnings"])
+    rel_names = [f.relative_to(dest_dir).as_posix() for f in result["files"]]
+    if rel_names:
+        archive_part["text"] = "压缩包内文件：\n" + "\n".join(rel_names)
+        archive_part["kind"] = "archive"
+    parts: list[dict[str, Any]] = []
+    for file_path, rel in zip(result["files"], rel_names):
+        entry = quote(f"{which}/{rel}")
+        view_url = f"/api/manage/gongwen/documents/{document_id}/file?which=extracted&entry={entry}"
+        sub = _new_part("extracted", file_path.name, "附件", view_url)
+        sub["archive"] = archive_part.get("name") or ""
+        if sub["ext"] and f".{sub['ext']}" in ARCHIVE_EXTS:
+            sub["kind"] = "archive"
+            sub["warnings"].append("嵌套压缩包暂不自动解压，可下载后自行查看。")
+        else:
+            await _populate_part_from_file(sub, file_path, Path(file_path.name).suffix.lower(), file_path.name, use_ai=use_ai)
+        parts.append(sub)
+    return parts, bool(result["complete"] and parts)
+
+
+async def _populate_part_from_file(part: dict[str, Any], path: Path, ext: str, name: str, *, use_ai: bool) -> dict[str, Any]:
+    """已有本地文件 → 按类型解析填充 part（图片/表格/文本/PDF + AI 质量阶梯）。"""
     if ext in IMAGE_EXTS:
         part["kind"] = "image"
         return part
@@ -264,7 +315,8 @@ async def build_file_part(
 
 def assemble_reader(data: dict[str, Any], parts: list[dict[str, Any]]) -> dict[str, Any]:
     meta = serialize_gongwen_document(data, include_content=True)
-    meta["parts"] = parts
+    # local_path 仅供服务端流水线使用，不下发到浏览器。
+    meta["parts"] = [{k: v for k, v in part.items() if k != "local_path"} for part in parts]
     meta["parsed_status"] = str(data.get("parsed_status") or "pending")
     meta["parsed_at"] = str(data.get("parsed_at") or "")
     meta["parsed_title"] = str(data.get("parsed_title") or "")

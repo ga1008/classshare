@@ -104,7 +104,30 @@
     .gw-reader-unsupported { padding: var(--spacing-lg); text-align: center; color: var(--text-muted); }
     details.gw-reader-extract > summary { padding: 8px var(--spacing-md); cursor: pointer; color: var(--text-secondary); font-weight: 700; font-size: 0.82rem; }
     .gw-reader-sheet-name { padding: 8px var(--spacing-md) 0; font-weight: 800; font-size: 0.82rem; color: var(--text-secondary); }
-    .gw-reader-table-wrap { overflow-x: auto; padding: var(--spacing-md); }
+    .gw-reader-table-wrap { overflow: auto; max-height: 62vh; padding: var(--spacing-md); }
+    .gw-reader-note { padding: 8px var(--spacing-md); color: #047857; background: rgba(16,185,129,0.08); font-size: 0.8rem; }
+    /* 附件入口（正文下方）+ 二级附件浮窗 */
+    .gw-attach-names { list-style: none; margin: 0; padding: 8px var(--spacing-md) var(--spacing-md); display: grid; gap: 6px; }
+    .gw-attach-names button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 1px solid rgba(148,163,184,0.28); border-radius: 8px; background: #fff; color: var(--text-primary); font-size: 0.84rem; font-weight: 600; cursor: pointer; text-align: left; }
+    .gw-attach-names button:hover { border-color: rgba(79,70,229,0.45); color: #4f46e5; }
+    .gw-attach-ext { flex: 0 0 auto; padding: 1px 7px; border-radius: var(--radius-full); background: rgba(99,102,241,0.1); color: #4f46e5; font-size: 0.68rem; font-weight: 800; text-transform: uppercase; }
+    .gw-attach-from { color: var(--text-muted); font-size: 0.74rem; font-weight: 500; margin-left: auto; white-space: nowrap; }
+    .gw-attach-backdrop { position: fixed; inset: 0; z-index: 1300; display: grid; place-items: center; padding: 18px; background: rgba(15,23,42,0.5); backdrop-filter: blur(8px); }
+    .gw-attach-backdrop[hidden] { display: none; }
+    .gw-attach-panel { width: min(1080px, 100%); height: min(86vh, 900px); display: flex; flex-direction: column; border-radius: 14px; border: 1px solid rgba(148,163,184,0.24); background: #fff; box-shadow: 0 30px 90px -42px rgba(15,23,42,0.8); overflow: hidden; }
+    .gw-attach-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-md); padding: var(--spacing-md) var(--spacing-lg); border-bottom: 1px solid rgba(226,232,240,0.95); }
+    .gw-attach-head h3 { margin: 0; font-size: 1.02rem; font-weight: 850; color: var(--text-primary); }
+    .gw-attach-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px 1fr; }
+    .gw-attach-list { border-right: 1px solid rgba(226,232,240,0.95); overflow-y: auto; padding: var(--spacing-sm); display: flex; flex-direction: column; gap: 6px; background: rgba(248,250,252,0.6); }
+    .gw-attach-item { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--text-primary); font-size: 0.84rem; font-weight: 600; cursor: pointer; text-align: left; word-break: break-all; }
+    .gw-attach-item:hover { background: #fff; border-color: rgba(148,163,184,0.3); }
+    .gw-attach-item.is-active { background: #fff; border-color: rgba(79,70,229,0.5); color: #4f46e5; box-shadow: var(--shadow-sm); }
+    .gw-attach-view { min-width: 0; overflow: auto; padding: var(--spacing-lg); display: grid; gap: var(--spacing-md); align-content: start; }
+    .gw-attach-view .gw-reader-iframe { height: calc(86vh - 170px); }
+    .gw-attach-view .gw-reader-text { max-height: none; }
+    .gw-attach-view-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .gw-attach-view-head strong { font-size: 0.92rem; color: var(--text-primary); word-break: break-all; }
+    @media (max-width: 820px) { .gw-attach-grid { grid-template-columns: 1fr; grid-template-rows: 160px 1fr; } .gw-attach-list { border-right: 0; border-bottom: 1px solid rgba(226,232,240,0.95); } }
     table.gw-reader-table { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
     table.gw-reader-table th, table.gw-reader-table td { border: 1px solid rgba(148,163,184,0.4); padding: 6px 9px; text-align: left; vertical-align: top; white-space: pre-wrap; word-break: break-word; min-width: 60px; }
     table.gw-reader-table th { background: rgba(248,250,252,0.9); font-weight: 800; color: var(--text-primary); }
@@ -234,6 +257,19 @@
     </aside>
 </div>
 
+<div class="gw-attach-backdrop" id="gw-attach-modal" hidden>
+    <article class="gw-attach-panel" role="dialog" aria-modal="true" aria-labelledby="gw-attach-title">
+        <div class="gw-attach-head">
+            <h3 id="gw-attach-title">附件阅览</h3>
+            <button type="button" class="gw-scope-close" id="gw-attach-close" aria-label="关闭">&times;</button>
+        </div>
+        <div class="gw-attach-grid">
+            <nav class="gw-attach-list" id="gw-attach-list" aria-label="附件列表"></nav>
+            <div class="gw-attach-view" id="gw-attach-view"></div>
+        </div>
+    </article>
+</div>
+
 <div class="gw-scope-backdrop" id="gw-scope-modal" hidden>
     <article class="gw-scope-modal" role="dialog" aria-modal="true" aria-labelledby="gw-scope-title">
         <div class="gw-scope-head">
@@ -278,5 +314,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260609f"></script>
+<script type="module" src="/static/js/manage_gongwen.js?v=gongwen-20260610a"></script>
 {% endblock %}
