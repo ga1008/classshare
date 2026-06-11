@@ -18,9 +18,11 @@ from ..services.agent_bridge_service import (
     MAX_WEB_BYTES,
     assert_public_http_url,
     describe_schema,
+    example_queries_payload,
     read_platform_file,
     run_readonly_query,
     strip_html_to_text,
+    unified_search,
     verify_bridge_token,
 )
 from ..services.platform_knowledge_service import (
@@ -55,6 +57,13 @@ def _load_task_owner(task_id: int) -> dict[str, Any]:
 class BridgeQueryPayload(BaseModel):
     sql: str = Field(..., max_length=8000)
     limit: int = Field(default=200, ge=1, le=200)
+    params: dict[str, Any] | None = None
+
+
+class BridgeSearchPayload(BaseModel):
+    scope: str = Field(default="all", max_length=20)
+    keyword: str = Field(..., max_length=120)
+    limit: int = Field(default=20, ge=1, le=20)
 
 
 class BridgeFilePayload(BaseModel):
@@ -77,6 +86,8 @@ async def bridge_meta(authorization: Optional[str] = Header(default="")):
         "task_id": task_id,
         "platform_overview": build_platform_overview_block("teacher"),
         "task_owner_profile": user_block,
+        "example_queries": example_queries_payload(),
+        "notes": "时间列多为 ISO 文本（'YYYY-MM-DD HH:MM:SS' 或 ISO8601）；/query 支持 :name 参数化（params 对象）。",
     }
 
 
@@ -95,12 +106,33 @@ async def bridge_query(payload: BridgeQueryPayload, authorization: Optional[str]
     _load_task_owner(task_id)
     try:
         with get_db_connection() as conn:
-            result = run_readonly_query(conn, payload.sql, payload.limit)
+            result = run_readonly_query(conn, payload.sql, payload.limit, params=payload.params)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"查询执行失败：{exc}")
     return {"status": "success", **result}
+
+
+@router.post("/search")
+async def bridge_search(payload: BridgeSearchPayload, authorization: Optional[str] = Header(default="")):
+    """统一关键词检索（gongwen/materials/assignments/all），返回带站内 url 的统一结构。"""
+    task_id = _require_task_id(authorization)
+    task = _load_task_owner(task_id)
+    try:
+        with get_db_connection() as conn:
+            results = unified_search(
+                conn,
+                teacher_id=int(task["teacher_id"]),
+                scope=payload.scope,
+                keyword=payload.keyword,
+                limit=payload.limit,
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"检索失败：{exc}")
+    return {"status": "success", "keyword": payload.keyword, "scope": payload.scope, "results": results}
 
 
 @router.post("/file")

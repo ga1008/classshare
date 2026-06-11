@@ -5,6 +5,7 @@ from .. import config
 from .connection import get_db_connection
 from .postgres_indexes import ensure_postgres_performance_indexes
 from .postgres_schema import ensure_postgres_runtime_constraints, validate_postgres_schema
+from .schema_agent_ext import ensure_agent_task_extension_schema
 from .schema_assignments import ensure_assignment_schema
 from .schema_classroom_activity import ensure_classroom_activity_schema
 from .schema_foundation import ensure_foundation_schema
@@ -77,6 +78,17 @@ def init_database():
             print("[DB] PostgreSQL gongwen tables ensured")
         except Exception as exc:
             print(f"[DB] PostgreSQL gongwen schema step skipped: {exc}")
+        # Agent task extension columns follow the same runtime-managed pattern.
+        try:
+            agent_ext_conn = get_db_connection()
+            try:
+                ensure_agent_task_extension_schema(agent_ext_conn)
+                agent_ext_conn.commit()
+            finally:
+                agent_ext_conn.close()
+            print("[DB] PostgreSQL agent task extension columns ensured")
+        except Exception as exc:
+            print(f"[DB] PostgreSQL agent task extension step skipped: {exc}")
         print(
             "[DB] PostgreSQL schema verified: "
             f"{report['present_required_table_count']}/{report['required_table_count']} required tables"
@@ -94,6 +106,7 @@ def init_database():
             ensure_learning_blog_signature_schema(conn)
             ensure_scheduler_schema(conn)
             ensure_gongwen_schema(conn)
+            ensure_agent_task_extension_schema(conn)
             conn.commit()
         except Exception:
             conn.rollback()

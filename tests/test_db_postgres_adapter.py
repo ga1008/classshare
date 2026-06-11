@@ -208,7 +208,12 @@ class PostgresAdapterTests(unittest.TestCase):
         self.assertFalse(connect_kwargs["autocommit"])
         self.assertEqual(10, connect_kwargs["connect_timeout"])
         self.assertIs(sqlite_compatible_dict_row, connect_kwargs["row_factory"])
-        setting_names = [params[0] for sql, params in raw.execute_calls if sql.startswith("SELECT set_config")]
+        setting_names = [
+            name
+            for sql, params in raw.execute_calls
+            if sql.startswith("SELECT set_config")
+            for name in params[0::2]
+        ]
         self.assertIn("statement_timeout", setting_names)
         self.assertIn("lock_timeout", setting_names)
         self.assertIn("idle_in_transaction_session_timeout", setting_names)

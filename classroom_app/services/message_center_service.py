@@ -1553,16 +1553,26 @@ def _insert_notification(conn, payload: dict[str, Any]) -> int:
         ),
         engine=db_engine,
     )
+    savepoint_started = False
     try:
         conn.execute("SAVEPOINT notification_email_enqueue")
+        savepoint_started = True
+    except Exception:
+        # Lightweight adapters used in tests may not implement savepoints. The
+        # email queue is best-effort, so keep the notification write committed
+        # while still exercising the enqueue path.
+        pass
+    try:
         queue_notification_email_if_applicable(conn, notification_id=notification_id, payload=payload)
-        conn.execute("RELEASE SAVEPOINT notification_email_enqueue")
-    except Exception as exc:
-        try:
-            conn.execute("ROLLBACK TO SAVEPOINT notification_email_enqueue")
+        if savepoint_started:
             conn.execute("RELEASE SAVEPOINT notification_email_enqueue")
-        except Exception:
-            pass
+    except Exception as exc:
+        if savepoint_started:
+            try:
+                conn.execute("ROLLBACK TO SAVEPOINT notification_email_enqueue")
+                conn.execute("RELEASE SAVEPOINT notification_email_enqueue")
+            except Exception:
+                pass
         print(f"[EMAIL] queue notification email failed: {exc}")
     return notification_id
 

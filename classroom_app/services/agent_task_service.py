@@ -28,6 +28,22 @@ TASK_STATUS_CANCELED = "canceled"
 ACTIVE_TASK_STATUSES = {TASK_STATUS_QUEUED, TASK_STATUS_RUNNING}
 FINAL_TASK_STATUSES = {TASK_STATUS_COMPLETED, TASK_STATUS_FAILED, TASK_STATUS_CANCELED}
 
+TASK_ORIGIN_MANUAL = "manual"
+TASK_ORIGIN_FOLLOW_UP = "follow_up"
+TASK_ORIGIN_RETRY = "retry"
+TASK_ORIGIN_SUBSCRIPTION = "subscription"
+
+TASK_ORIGIN_LABELS = {
+    TASK_ORIGIN_MANUAL: "",
+    TASK_ORIGIN_FOLLOW_UP: "追问",
+    TASK_ORIGIN_RETRY: "重试",
+    TASK_ORIGIN_SUBSCRIPTION: "定时任务",
+}
+
+# 队列等待预估：最近完成任务的耗时中位数 × 前方排队数，三档措辞。
+WAIT_ESTIMATE_SAMPLE_SIZE = 20
+WAIT_ESTIMATE_DEFAULT_SECONDS = 240
+
 TASK_STATUS_LABELS = {
     TASK_STATUS_QUEUED: "排队中",
     TASK_STATUS_RUNNING: "执行中",
@@ -724,6 +740,9 @@ def build_teacher_page_context(
 
 
 def create_agent_task(conn, user: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    from ..db.schema_agent_ext import ensure_agent_task_extension_schema
+
+    ensure_agent_task_extension_schema(conn)
     teacher_id = int(user["id"])
     task_type = _clean_text(payload.get("task_type"), max_chars=64) or "general_teaching_task"
     if task_type not in TASK_TYPE_DEFINITIONS:
@@ -741,10 +760,22 @@ def create_agent_task(conn, user: dict[str, Any], payload: dict[str, Any]) -> di
     )
     context_snapshot["agent_options"] = {
         "deep_thinking": bool(payload.get("deep_thinking")),
+        "no_history": bool(payload.get("no_history")),
     }
+    extra_context = payload.get("extra_context")
+    if isinstance(extra_context, dict) and extra_context:
+        context_snapshot.update(extra_context)
+    origin = _clean_text(payload.get("origin"), max_chars=24) or TASK_ORIGIN_MANUAL
+    if origin not in TASK_ORIGIN_LABELS:
+        origin = TASK_ORIGIN_MANUAL
+    parent_task_id = _resolve_optional_int(payload.get("parent_task_id"))
+    priority = int(payload.get("priority") or 0)
     existing_titles = _recent_agent_task_titles(conn)
-    title = _fallback_agent_task_title(instruction, task_type, existing_titles)
+    title = _clean_text(payload.get("title_override"), max_chars=40) or _fallback_agent_task_title(
+        instruction, task_type, existing_titles
+    )
     public_summary = _public_summary_for_task(task_type)
+    attachments = payload.get("attachments") if isinstance(payload.get("attachments"), list) else []
 
     now = utcnow_iso()
     task_id = execute_insert_returning_id(
@@ -752,9 +783,10 @@ def create_agent_task(conn, user: dict[str, Any], payload: dict[str, Any]) -> di
         """
         INSERT INTO agent_tasks (
             task_uuid, teacher_id, teacher_name, task_type, title, public_summary,
-            private_instruction, context_snapshot_json, status, created_at, updated_at
+            private_instruction, context_snapshot_json, status, priority,
+            parent_task_id, origin, attachments_json, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             str(uuid.uuid4()),
@@ -766,16 +798,21 @@ def create_agent_task(conn, user: dict[str, Any], payload: dict[str, Any]) -> di
             instruction,
             _json_dumps(context_snapshot),
             TASK_STATUS_QUEUED,
+            priority,
+            parent_task_id,
+            origin,
+            _json_dumps(attachments[:8]),
             now,
             now,
         ),
     )
+    origin_label = TASK_ORIGIN_LABELS.get(origin) or ""
     append_task_event(
         conn,
         task_id,
         "queued",
-        "任务已进入全平台队列。",
-        {"task_type": task_type},
+        f"任务已进入全平台队列{('（' + origin_label + '）') if origin_label else ''}。",
+        {"task_type": task_type, "origin": origin, "parent_task_id": parent_task_id},
         commit=False,
     )
     return get_agent_task(conn, task_id, teacher_id=teacher_id)
@@ -1078,6 +1115,10 @@ def serialize_agent_task(row, *, viewer_teacher_id: int, events: list[dict[str, 
         "is_active": status in ACTIVE_TASK_STATUSES,
         "is_terminal": status in FINAL_TASK_STATUSES,
         "queue_position": int(item.get("queue_position") or 0),
+        "estimated_wait_label": item.get("estimated_wait_label") or "",
+        "origin": item.get("origin") or TASK_ORIGIN_MANUAL,
+        "origin_label": TASK_ORIGIN_LABELS.get(str(item.get("origin") or TASK_ORIGIN_MANUAL), ""),
+        "parent_task_id": int(item.get("parent_task_id") or 0) or None,
         "elapsed_seconds": _elapsed_seconds(item),
         "runtime_provider": item.get("runtime_provider") or "deepseek-tui",
         "runtime_status": item.get("runtime_status") or "",
@@ -1097,6 +1138,8 @@ def serialize_agent_task(row, *, viewer_teacher_id: int, events: list[dict[str, 
                 "result_summary": item.get("result_summary") or "",
                 "result_detail": _load_json(item.get("result_detail_json"), {}),
                 "error_message": item.get("error_message") or "",
+                "attachments": _load_json(item.get("attachments_json"), []),
+                "retry_count": int(item.get("retry_count") or 0),
                 "events": events or [],
             }
         )
@@ -1124,8 +1167,18 @@ def list_agent_tasks(conn, *, viewer_teacher_id: int, limit: int = 30) -> dict[s
         ).fetchall()
     ]
     queue_positions = _queue_positions(rows)
+    median_seconds = _median_completed_duration_seconds(conn) if queue_positions else 0
     for row in rows:
-        row["queue_position"] = queue_positions.get(int(row["id"]), 0)
+        position = queue_positions.get(int(row["id"]), 0)
+        row["queue_position"] = position
+        if position > 0:
+            estimated = median_seconds * position
+            if estimated < 300:
+                row["estimated_wait_label"] = "预计 5 分钟内开始处理"
+            elif estimated <= 900:
+                row["estimated_wait_label"] = "预计需要 5~15 分钟"
+            else:
+                row["estimated_wait_label"] = "队列较长，可能超过 15 分钟"
     counts = {
         status: int(
             conn.execute("SELECT COUNT(*) FROM agent_tasks WHERE status = ?", (status,)).fetchone()[0]
@@ -1161,6 +1214,8 @@ def get_agent_task(conn, task_id: int, *, teacher_id: int) -> dict[str, Any]:
     ]
     item = dict(row)
     item["queue_position"] = _queue_position_for_task(conn, item)
+    if item["queue_position"] > 0:
+        item["estimated_wait_label"] = estimate_wait_label(conn, item["queue_position"])
     serialized = serialize_agent_task(item, viewer_teacher_id=int(teacher_id), events=events)
     if not serialized["is_owner"]:
         return serialized
@@ -1239,21 +1294,355 @@ def cancel_agent_task(conn, task_id: int, *, teacher_id: int) -> dict[str, Any]:
     return get_agent_task(conn, task_id, teacher_id=teacher_id)
 
 
+def _median_completed_duration_seconds(conn) -> int:
+    rows = conn.execute(
+        """
+        SELECT started_at, completed_at
+        FROM agent_tasks
+        WHERE status = ? AND started_at IS NOT NULL AND completed_at IS NOT NULL
+        ORDER BY completed_at DESC
+        LIMIT ?
+        """,
+        (TASK_STATUS_COMPLETED, WAIT_ESTIMATE_SAMPLE_SIZE),
+    ).fetchall()
+    durations: list[int] = []
+    for row in rows:
+        seconds = _elapsed_seconds({"started_at": row["started_at"], "completed_at": row["completed_at"]})
+        if 5 <= seconds <= 3600:
+            durations.append(seconds)
+    if not durations:
+        return WAIT_ESTIMATE_DEFAULT_SECONDS
+    durations.sort()
+    return durations[len(durations) // 2]
+
+
+def estimate_wait_label(conn, queue_position: int) -> str:
+    """排队任务的等待档位措辞（粗粒度，宁可模糊不可误导）。"""
+    position = max(0, int(queue_position or 0))
+    if position <= 0:
+        return ""
+    estimated = _median_completed_duration_seconds(conn) * position
+    if estimated < 300:
+        return "预计 5 分钟内开始处理"
+    if estimated <= 900:
+        return "预计需要 5~15 分钟"
+    return "队列较长，可能超过 15 分钟"
+
+
+def _load_owned_task_row(conn, task_id: int, teacher_id: int) -> dict[str, Any]:
+    row = conn.execute("SELECT * FROM agent_tasks WHERE id = ? LIMIT 1", (int(task_id),)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="任务不存在。")
+    item = dict(row)
+    if int(item.get("teacher_id") or 0) != int(teacher_id):
+        raise HTTPException(status_code=403, detail="只能操作自己的任务。")
+    return item
+
+
+def _validate_follow_up_instruction(instruction: str) -> str:
+    normalized = _clean_text(instruction, max_chars=MAX_INSTRUCTION_CHARS)
+    if len(normalized) < 2:
+        raise HTTPException(status_code=400, detail="请补充要继续提的要求。")
+    lowered = normalized.lower()
+    for pattern in _CORE_CODE_DENY_PATTERNS:
+        if re.search(pattern, lowered, flags=re.IGNORECASE):
+            raise HTTPException(
+                status_code=400,
+                detail="任务中心只处理教学业务事务，不能执行核心代码、部署、数据库结构或项目源码改动。",
+            )
+    return normalized
+
+
+def create_follow_up_task(conn, user: dict[str, Any], parent_task_id: int, instruction: str) -> dict[str, Any]:
+    """对终态任务追问：复用父任务上下文 + 续聊线索，创建优先级更高的子任务。"""
+    parent = _load_owned_task_row(conn, parent_task_id, int(user["id"]))
+    status = str(parent.get("status") or "")
+    if status not in FINAL_TASK_STATUSES:
+        raise HTTPException(status_code=409, detail="任务还在进行中，结束后才能追问。")
+    normalized = _validate_follow_up_instruction(instruction)
+
+    parent_context = _load_json(parent.get("context_snapshot_json"), {})
+    follow_up_context = {
+        "follow_up": {
+            "parent_task_id": int(parent["id"]),
+            "parent_thread_id": _clean_text(parent.get("runtime_thread_id"), max_chars=120),
+            "parent_instruction": _clean_text(parent.get("private_instruction"), max_chars=1600),
+            "parent_result_summary": _clean_text(parent.get("result_summary"), max_chars=1600),
+            "parent_status": status,
+        }
+    }
+    parent_title = _clean_text(parent.get("title"), max_chars=24) or "教学任务"
+    return create_agent_task(
+        conn,
+        user,
+        {
+            "task_type": parent.get("task_type") or "general_teaching_task",
+            "instruction": normalized,
+            "page_context": parent_context if isinstance(parent_context, dict) else {},
+            "deep_thinking": bool((parent_context.get("agent_options") or {}).get("deep_thinking")),
+            "origin": TASK_ORIGIN_FOLLOW_UP,
+            "parent_task_id": int(parent["id"]),
+            "priority": 1,
+            "title_override": f"{parent_title}·追问",
+            "extra_context": follow_up_context,
+        },
+    )
+
+
+def add_task_supplement(conn, user: dict[str, Any], task_id: int, instruction: str) -> dict[str, Any]:
+    """运行中补充说明：queued 任务进入 prompt；running 任务事件化降级可见。"""
+    task = _load_owned_task_row(conn, task_id, int(user["id"]))
+    status = str(task.get("status") or "")
+    if status not in ACTIVE_TASK_STATUSES:
+        raise HTTPException(status_code=409, detail="任务已经结束，请使用追问继续。")
+    normalized = _validate_follow_up_instruction(instruction)
+    context = _load_json(task.get("context_snapshot_json"), {})
+    if not isinstance(context, dict):
+        context = {}
+    agent_options = context.get("agent_options")
+    if not isinstance(agent_options, dict):
+        agent_options = {}
+    supplements = agent_options.get("pending_supplements")
+    if not isinstance(supplements, list):
+        supplements = []
+    created_at = utcnow_iso()
+    supplement = {
+        "message": normalized,
+        "created_at": created_at,
+        "status_at_submit": status,
+    }
+    supplements.append(supplement)
+    agent_options["pending_supplements"] = supplements[-8:]
+    context["agent_options"] = agent_options
+    conn.execute(
+        """
+        UPDATE agent_tasks
+        SET context_snapshot_json = ?, updated_at = ?
+        WHERE id = ? AND status IN (?, ?)
+        """,
+        (_json_dumps(context), created_at, int(task_id), TASK_STATUS_QUEUED, TASK_STATUS_RUNNING),
+    )
+    if status == TASK_STATUS_QUEUED:
+        message = "已补充说明；任务尚未开始，Agent 领取时会一并读取。"
+        runtime_injection = "prompt"
+    else:
+        message = "已补充说明；当前运行时若无法实时吸收，任务完成后可继续追问。"
+        runtime_injection = "visible_event"
+    append_task_event(
+        conn,
+        int(task_id),
+        "pending_supplement",
+        message,
+        {
+            "supplement": normalized,
+            "runtime_injection": runtime_injection,
+            "status_at_submit": status,
+        },
+        commit=False,
+    )
+    return get_agent_task(conn, int(task_id), teacher_id=int(user["id"]))
+
+
+def create_retry_task(
+    conn,
+    user: dict[str, Any],
+    task_id: int,
+    *,
+    instruction_override: str = "",
+) -> dict[str, Any]:
+    """失败/取消任务一键重试：同 context 重新入队（可选修改指令）。"""
+    parent = _load_owned_task_row(conn, task_id, int(user["id"]))
+    status = str(parent.get("status") or "")
+    if status not in (TASK_STATUS_FAILED, TASK_STATUS_CANCELED):
+        raise HTTPException(status_code=409, detail="只有失败或已取消的任务可以重试。")
+    instruction = _clean_text(instruction_override, max_chars=MAX_INSTRUCTION_CHARS) or _clean_text(
+        parent.get("private_instruction"), max_chars=MAX_INSTRUCTION_CHARS
+    )
+    parent_context = _load_json(parent.get("context_snapshot_json"), {})
+    parent_title = _clean_text(parent.get("title"), max_chars=24) or "教学任务"
+    return create_agent_task(
+        conn,
+        user,
+        {
+            "task_type": parent.get("task_type") or "general_teaching_task",
+            "instruction": instruction,
+            "page_context": parent_context if isinstance(parent_context, dict) else {},
+            "deep_thinking": bool((parent_context.get("agent_options") or {}).get("deep_thinking")),
+            "origin": TASK_ORIGIN_RETRY,
+            "parent_task_id": int(parent["id"]),
+            "priority": 1,
+            "title_override": f"{parent_title}·重试",
+        },
+    )
+
+
+def list_task_events_after(conn, task_id: int, *, teacher_id: int, after_event_id: int = 0) -> dict[str, Any]:
+    """增量过程事件（G1 短轮询通道）：仅任务所有者可见。"""
+    item = _load_owned_task_row(conn, task_id, teacher_id)
+    events = [
+        _serialize_event(event)
+        for event in conn.execute(
+            """
+            SELECT * FROM agent_task_events
+            WHERE task_id = ? AND id > ?
+            ORDER BY id ASC
+            LIMIT 60
+            """,
+            (int(task_id), int(after_event_id or 0)),
+        ).fetchall()
+    ]
+    status = str(item.get("status") or "")
+    return {
+        "task_id": int(task_id),
+        "status": status,
+        "status_label": TASK_STATUS_LABELS.get(status, "处理中"),
+        "runtime_status": item.get("runtime_status") or "",
+        "is_terminal": status in FINAL_TASK_STATUSES,
+        "elapsed_seconds": _elapsed_seconds(item),
+        "events": events,
+        "last_event_id": events[-1]["id"] if events else int(after_event_id or 0),
+    }
+
+
+TASK_MEMORY_BLOCK_BUDGET = 600
+
+
+def build_task_memory_block(conn, *, teacher_id: int, task_type: str, exclude_task_id: int = 0) -> str:
+    """G8 任务记忆：该教师最近 5 条已完成任务的标题+结论摘要 + 最近同类型产物路径。"""
+    rows = [
+        dict(row)
+        for row in conn.execute(
+            """
+            SELECT id, task_type, title, result_summary, result_detail_json, completed_at
+            FROM agent_tasks
+            WHERE teacher_id = ? AND status = ? AND id <> ?
+            ORDER BY completed_at DESC, id DESC
+            LIMIT 12
+            """,
+            (int(teacher_id), TASK_STATUS_COMPLETED, int(exclude_task_id or 0)),
+        ).fetchall()
+    ]
+    if not rows:
+        return ""
+    lines: list[str] = []
+    for row in rows[:5]:
+        summary = _summarize_text(row.get("result_summary") or "", limit=100)
+        title = _clean_text(row.get("title"), max_chars=24) or "教学任务"
+        lines.append(f"- 「{title}」：{summary or '已完成'}")
+    artifact_line = ""
+    for row in rows:
+        if str(row.get("task_type") or "") != str(task_type or ""):
+            continue
+        detail = _load_json(row.get("result_detail_json"), {})
+        path = ""
+        if isinstance(detail, dict):
+            path = _clean_text(detail.get("generated_material_path"), max_chars=300)
+            if not path:
+                artifacts = detail.get("artifacts")
+                if isinstance(artifacts, list) and artifacts:
+                    first = artifacts[0]
+                    path = _clean_text(
+                        first.get("path") if isinstance(first, dict) else first, max_chars=300
+                    )
+        if path:
+            artifact_line = f"最近一次同类任务的产物路径（可用 /file 读取参考风格）：{path}"
+            break
+    block = "该教师最近完成的 Agent 任务（仅供参考延续风格，教师本次指令优先；想换风格请按本次指令执行）：\n" + "\n".join(lines)
+    if artifact_line:
+        block += "\n" + artifact_line
+    if len(block) > TASK_MEMORY_BLOCK_BUDGET:
+        block = block[:TASK_MEMORY_BLOCK_BUDGET].rstrip() + "..."
+    return block
+
+
+def mark_proposed_action_executed(
+    conn,
+    task_id: int,
+    action_index: int,
+    executed: dict[str, Any],
+) -> None:
+    row = conn.execute(
+        "SELECT result_detail_json FROM agent_tasks WHERE id = ? LIMIT 1",
+        (int(task_id),),
+    ).fetchone()
+    if not row:
+        return
+    detail = _load_json(row["result_detail_json"], {})
+    actions = detail.get("proposed_actions")
+    if not isinstance(actions, list) or not (0 <= int(action_index) < len(actions)):
+        return
+    actions[int(action_index)]["executed"] = executed
+    conn.execute(
+        "UPDATE agent_tasks SET result_detail_json = ?, updated_at = ? WHERE id = ?",
+        (_json_dumps(detail), utcnow_iso(), int(task_id)),
+    )
+
+
+# 队列公平：同教师连续提交时，第 2 个起排在其他教师首个任务之后。
+_FAIR_QUEUE_ORDER_SQL = """
+        ORDER BY priority DESC,
+          (
+            SELECT COUNT(*)
+            FROM agent_tasks q2
+            WHERE q2.status = 'queued'
+              AND q2.teacher_id = agent_tasks.teacher_id
+              AND (
+                q2.created_at < agent_tasks.created_at
+                OR (q2.created_at = agent_tasks.created_at AND q2.id < agent_tasks.id)
+              )
+          ) ASC,
+          created_at ASC, id ASC
+"""
+
+_LEGACY_QUEUE_ORDER_SQL = """
+        ORDER BY priority DESC, created_at ASC, id ASC
+"""
+
+
+def _agent_task_global_concurrency() -> int:
+    from ..config import AGENT_TASK_GLOBAL_CONCURRENCY
+
+    return max(1, int(AGENT_TASK_GLOBAL_CONCURRENCY))
+
+
+def _sqlite_table_has_column(conn, table_name: str, column_name: str) -> bool:
+    try:
+        rows = conn.execute(f'PRAGMA table_info("{table_name}")').fetchall()
+    except sqlite3.Error:
+        return False
+    return any(str(row[1]) == column_name for row in rows)
+
+
 def _claim_next_agent_task_sqlite(conn, *, worker_id: str, now: str) -> dict[str, Any] | None:
     begin_immediate_transaction(conn)
-    running = conn.execute(
-        "SELECT id FROM agent_tasks WHERE status = ? LIMIT 1",
-        (TASK_STATUS_RUNNING,),
-    ).fetchone()
-    if running:
+    running_count = int(
+        conn.execute(
+            "SELECT COUNT(*) FROM agent_tasks WHERE status = ?",
+            (TASK_STATUS_RUNNING,),
+        ).fetchone()[0]
+    )
+    if running_count >= _agent_task_global_concurrency():
         conn.commit()
         return None
-    row = conn.execute(
+    has_teacher_id = _sqlite_table_has_column(conn, "agent_tasks", "teacher_id")
+    owner_guard = (
         """
+          AND NOT EXISTS (
+            SELECT 1 FROM agent_tasks r2
+            WHERE r2.status = 'running' AND r2.teacher_id = agent_tasks.teacher_id
+          )
+        """
+        if has_teacher_id
+        else ""
+    )
+    order_sql = _FAIR_QUEUE_ORDER_SQL if has_teacher_id else _LEGACY_QUEUE_ORDER_SQL
+    row = conn.execute(
+        f"""
         SELECT *
         FROM agent_tasks
         WHERE status = ?
-        ORDER BY priority DESC, created_at ASC, id ASC
+        {owner_guard}
+        {order_sql}
         LIMIT 1
         """,
         (TASK_STATUS_QUEUED,),
@@ -1286,12 +1675,16 @@ def _claim_next_agent_task_postgres(conn, *, worker_id: str, now: str) -> dict[s
         return None
 
     row = conn.execute(
-        """
+        f"""
         WITH candidate AS (
             SELECT id
             FROM agent_tasks
             WHERE status = ?
-            ORDER BY priority DESC, created_at ASC, id ASC
+              AND NOT EXISTS (
+                SELECT 1 FROM agent_tasks r2
+                WHERE r2.status = 'running' AND r2.teacher_id = agent_tasks.teacher_id
+              )
+            {_FAIR_QUEUE_ORDER_SQL}
             LIMIT 1
             FOR UPDATE SKIP LOCKED
         )
@@ -1299,14 +1692,22 @@ def _claim_next_agent_task_postgres(conn, *, worker_id: str, now: str) -> dict[s
         SET status = ?, started_at = COALESCE(started_at, ?), updated_at = ?, worker_id = ?
         FROM candidate
         WHERE agent_tasks.id = candidate.id
-          AND NOT EXISTS (
-              SELECT 1
+          AND (
+              SELECT COUNT(*)
               FROM agent_tasks running
               WHERE running.status = ?
-          )
+          ) < ?
         RETURNING agent_tasks.*
         """,
-        (TASK_STATUS_QUEUED, TASK_STATUS_RUNNING, now, now, worker_id, TASK_STATUS_RUNNING),
+        (
+            TASK_STATUS_QUEUED,
+            TASK_STATUS_RUNNING,
+            now,
+            now,
+            worker_id,
+            TASK_STATUS_RUNNING,
+            _agent_task_global_concurrency(),
+        ),
     ).fetchone()
     if not row:
         conn.commit()
@@ -1501,7 +1902,49 @@ def finish_agent_task(
         },
         commit=False,
     )
+    try:
+        _notify_task_finished(conn, int(task_id), safe_status, result_summary, error_message)
+    except Exception as exc:
+        print(f"[AGENT_TASK] finish notification failed for task {task_id}: {exc}")
     conn.commit()
+
+
+def _notify_task_finished(conn, task_id: int, status: str, result_summary: str, error_message: str) -> None:
+    """任务终态写消息中心通知（教师关页面也不漏结果）。"""
+    row = conn.execute(
+        "SELECT teacher_id, title, origin FROM agent_tasks WHERE id = ? LIMIT 1",
+        (int(task_id),),
+    ).fetchone()
+    if not row or not int(row["teacher_id"] or 0):
+        return
+    title_text = _clean_text(row["title"], max_chars=30) or "Agent 任务"
+    origin = ""
+    try:
+        origin = str(row["origin"] or "")
+    except (KeyError, IndexError):
+        origin = ""
+    if status == TASK_STATUS_COMPLETED:
+        prefix = "📋 定时任务产出" if origin == TASK_ORIGIN_SUBSCRIPTION else "🤖 Agent 任务完成"
+        body = _summarize_text(result_summary, limit=130)
+    elif status == TASK_STATUS_FAILED:
+        prefix = "⚠️ Agent 任务失败"
+        body = _summarize_text(error_message or result_summary, limit=130) or "可在任务卡片上一键重试。"
+    else:
+        return
+    from .message_center_service import create_todo_notification
+
+    create_todo_notification(
+        conn,
+        recipient_role="teacher",
+        recipient_user_pk=int(row["teacher_id"]),
+        title=f"{prefix}：{title_text}",
+        body_preview=body,
+        link_url=f"/?agent_task={int(task_id)}",
+        ref_id=f"agent-task:{int(task_id)}:{status}",
+        actor_display_name="LanShare Agent",
+        metadata={"agent_task_id": int(task_id), "status": status},
+        allow_duplicates=False,
+    )
 
 
 def task_workspace_paths(task: dict[str, Any]) -> tuple[Path, str]:
@@ -1529,15 +1972,22 @@ curl -s -H "Authorization: Bearer {token}" {base}/api/agent-bridge/schema
 
 返回：全部业务表及列名（凭据/会话类敏感表已排除）。
 
-## 3. 只读 SQL 查询（最常用）
+## 3. 只读 SQL 查询（最常用，支持 :name 参数化）
 curl -s -X POST -H "Authorization: Bearer {token}" -H "Content-Type: application/json" \\
-  -d '{{"sql": "SELECT id, name FROM courses ORDER BY id DESC LIMIT 20", "limit": 50}}' \\
+  -d '{{"sql": "SELECT id, name FROM courses WHERE name LIKE :kw ORDER BY id DESC LIMIT 20", "params": {{"kw": "%数据%"}}, "limit": 50}}' \\
   {base}/api/agent-bridge/query
 
-规则：单条 SELECT/WITH；最多返回 200 行；敏感列自动脱敏。占位符不支持，直接写常量。
-查询技巧：先查 /schema 确认列名；统计用 COUNT/GROUP BY；时间列多为 'YYYY-MM-DD HH:MM:SS' 文本。
+规则：单条 SELECT/WITH；最多返回 200 行；敏感列自动脱敏。
+强烈建议用 params 参数化（避免引号转义错误）；/meta 的 example_queries 里有实测可跑的示例 SQL（含正确表名列名）。
+查询技巧：先查 /schema 确认列名；统计用 COUNT/GROUP BY；时间列多为 ISO 文本。
 
-## 4. 读取平台文件（材料/共享文件/教材附件/任务工作区）
+## 3.5 统一关键词检索（公文/材料/作业，优先用它替代手写 LIKE）
+curl -s -X POST -H "Authorization: Bearer {token}" -H "Content-Type: application/json" \\
+  -d '{{"scope": "all", "keyword": "师范认证", "limit": 20}}' {base}/api/agent-bridge/search
+
+scope 可选 gongwen / materials / assignments / all；返回 type/title/snippet/url/date 统一结构（url 是站内链接，可直接给教师）。
+
+## 4. 读取平台文件（材料/共享文件/教材附件/任务工作区；docx/pdf 自动抽取文本）
 curl -s -X POST -H "Authorization: Bearer {token}" -H "Content-Type: application/json" \\
   -d '{{"path": "/app/data/files/legacy_shared/xxx.md"}}' {base}/api/agent-bridge/file
 
@@ -1552,6 +2002,63 @@ curl -s -X POST -H "Authorization: Bearer {token}" -H "Content-Type: application
 """
 
 
+AGENT_TASK_ATTACHMENT_MAX_FILES = 5
+AGENT_TASK_ATTACHMENT_MAX_FILE_BYTES = 10 * 1024 * 1024
+AGENT_TASK_ATTACHMENT_MAX_TOTAL_BYTES = 20 * 1024 * 1024
+
+
+def save_task_attachments(task_id: int, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """附件落进任务隔离 workspace 的 attachments/ 子目录，返回元数据清单。
+
+    items 元素：{"name": str, "data": bytes, "text": str|None, "kind": str}。
+    """
+    host_path, _runtime_path = task_workspace_paths({"id": int(task_id)})
+    attachments_dir = host_path / "attachments"
+    attachments_dir.mkdir(parents=True, exist_ok=True)
+    metadata: list[dict[str, Any]] = []
+    used_names: set[str] = set()
+    for item in items[:AGENT_TASK_ATTACHMENT_MAX_FILES]:
+        raw_name = _clean_text(item.get("name"), max_chars=120) or "attachment"
+        stored_name = re.sub(r"[^\w.一-鿿-]", "-", raw_name).strip("-.") or "attachment"
+        base, dot, ext = stored_name.rpartition(".")
+        counter = 2
+        while stored_name in used_names:
+            stored_name = f"{base or stored_name}-{counter}{dot}{ext}" if dot else f"{stored_name}-{counter}"
+            counter += 1
+        used_names.add(stored_name)
+        data = item.get("data") or b""
+        (attachments_dir / stored_name).write_bytes(data)
+        text = str(item.get("text") or "")
+        if text and not stored_name.lower().endswith((".txt", ".md")):
+            (attachments_dir / f"{stored_name}.extracted.txt").write_text(text, encoding="utf-8")
+        metadata.append(
+            {
+                "name": raw_name,
+                "stored_name": stored_name,
+                "kind": _clean_text(item.get("kind"), max_chars=20) or "file",
+                "size": len(data),
+                "summary": _summarize_text(text, limit=160),
+            }
+        )
+    return metadata
+
+
+def _attachments_markdown(task: dict[str, Any]) -> str:
+    attachments = _load_json(task.get("attachments_json"), [])
+    if not isinstance(attachments, list) or not attachments:
+        return ""
+    lines = ["", "## Attachments（教师提供的附件，位于 attachments/ 子目录）", ""]
+    for item in attachments[:8]:
+        if not isinstance(item, dict):
+            continue
+        lines.append(
+            f"- attachments/{item.get('stored_name') or item.get('name')}"
+            f"（{item.get('kind') or 'file'}，{int(item.get('size') or 0)} 字节）"
+            + (f"：{item.get('summary')}" if item.get("summary") else "")
+        )
+    return "\n".join(lines)
+
+
 def write_task_workspace(task: dict[str, Any]) -> str:
     host_path, runtime_path = task_workspace_paths(task)
     host_path.mkdir(parents=True, exist_ok=True)
@@ -1563,6 +2070,7 @@ def write_task_workspace(task: dict[str, Any]) -> str:
 ## Task
 
 {instructions}
+{_attachments_markdown(task)}
 
 ## Verified Page Context
 
@@ -1610,18 +2118,83 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
 
     platform_block = ""
     user_block = ""
+    memory_block = ""
+    teacher_id = int(task.get("teacher_id") or 0)
     try:
         from .platform_knowledge_service import build_platform_overview_block, build_user_knowledge_block
 
         platform_block = build_platform_overview_block("teacher")
-        teacher_id = int(task.get("teacher_id") or 0)
         if teacher_id:
             from ..database import get_db_connection
 
             with get_db_connection() as conn:
                 user_block = build_user_knowledge_block(conn, teacher_id, "teacher")
+                if not agent_options.get("no_history"):
+                    memory_block = build_task_memory_block(
+                        conn,
+                        teacher_id=teacher_id,
+                        task_type=task_type,
+                        exclude_task_id=int(task.get("id") or 0),
+                    )
     except Exception as exc:
         print(f"[AGENT_TASK] platform knowledge injection failed: {exc}")
+
+    follow_up = context.get("follow_up") if isinstance(context.get("follow_up"), dict) else {}
+    follow_up_block = ""
+    if follow_up:
+        follow_up_block = (
+            "这是一次追问任务，请延续上一次任务的上下文继续工作：\n"
+            f"- 上次任务要求：{_clean_text(follow_up.get('parent_instruction'), max_chars=1200)}\n"
+            f"- 上次任务结论：{_clean_text(follow_up.get('parent_result_summary'), max_chars=1200)}\n"
+            "本次教师指令是在上述结论基础上的新要求，不要重复输出上次的完整内容。"
+        )
+
+    pending_supplements = agent_options.get("pending_supplements")
+    supplement_block = ""
+    if isinstance(pending_supplements, list) and pending_supplements:
+        lines = []
+        for item in pending_supplements[-8:]:
+            if isinstance(item, dict):
+                message = _clean_text(item.get("message"), max_chars=800)
+                created_at = _clean_text(item.get("created_at"), max_chars=40)
+            else:
+                message = _clean_text(item, max_chars=800)
+                created_at = ""
+            if message:
+                prefix = f"- {created_at}：" if created_at else "- "
+                lines.append(f"{prefix}{message}")
+        if lines:
+            supplement_block = (
+                "教师在任务排队/执行期间补充了以下说明，请和原始任务一起处理，"
+                "越新的说明优先级越高：\n" + "\n".join(lines)
+            )
+
+    attachments = _load_json(task.get("attachments_json"), [])
+    attachments_block = ""
+    if isinstance(attachments, list) and attachments:
+        lines = []
+        for item in attachments[:8]:
+            if not isinstance(item, dict):
+                continue
+            lines.append(
+                f"- {item.get('name') or '附件'}（{item.get('kind') or 'file'}）："
+                f"workspace 路径 attachments/{item.get('stored_name') or item.get('name') or ''}；"
+                f"摘要：{_clean_text(item.get('summary'), max_chars=160) or '无（请直接读取文件）'}"
+            )
+        if lines:
+            attachments_block = (
+                f"教师为本任务提供了 {len(lines)} 个附件（已存入你的任务 workspace 的 attachments/ 子目录，"
+                "解析文本版本若存在为同名 .extracted.txt）：\n" + "\n".join(lines)
+                + "\n请直接读取并使用附件内容完成任务，输出时引用其中的真实信息。"
+            )
+
+    actions_block = ""
+    try:
+        from .agent_action_registry import proposed_actions_prompt_block
+
+        actions_block = proposed_actions_prompt_block()
+    except Exception as exc:
+        print(f"[AGENT_TASK] action protocol injection failed: {exc}")
 
     return f"""
 你是 LanShare 平台的常驻 Agent —— 整个平台随时待命的「灵魂」。教师把任务交给你，你利用平台数据、平台文件和互联网，给出最优质、最落地的结果。当前任务类型：{definition["label"]}。
@@ -1630,13 +2203,22 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
 
 {user_block}
 
+{memory_block}
+
+{follow_up_block}
+
+{supplement_block}
+
+{attachments_block}
+
 你的工具（平台即工具，全部只读）：
 1. 你所在 workspace 是隔离任务目录：{runtime_workspace}，其中 TASK.md 是任务说明，context.json 是页面上下文，BRIDGE.md 是平台桥接接口完整文档（含访问令牌）。
 2. 平台桥接接口（先读 BRIDGE.md，再用 curl 调用）：
    - GET  /api/agent-bridge/meta   —— 平台总览 + 任务发起教师全量画像
    - GET  /api/agent-bridge/schema —— 数据库全部业务表与列名
-   - POST /api/agent-bridge/query  —— 只读 SQL（单条 SELECT/WITH，≤200 行），用于一切信息查找与统计
-   - POST /api/agent-bridge/file   —— 读取平台材料/共享文件/教材附件等文本文件
+   - POST /api/agent-bridge/query  —— 只读 SQL（单条 SELECT/WITH，≤200 行，支持 :name 参数化），用于一切信息查找与统计；/meta 里有实测可跑的 example_queries
+   - POST /api/agent-bridge/search —— 统一关键词检索（公文/材料/作业），优先用它替代手写 LIKE 拼接
+   - POST /api/agent-bridge/file   —— 读取平台材料/共享文件/教材附件等文件（docx/pdf 自动抽取文本）
    - POST /api/agent-bridge/web    —— 访问互联网抓取网页正文（需要最新外部信息时主动使用）
 3. 如果运行时允许 shell，你也可以直接联网（如 curl 外部网站）获取即时信息。
 4. 公文检索：学校/学院红头文件在表 gongwen_documents（页面 /manage/gongwen），可直接用 /query 按标题、文号、正文关键词检索。
@@ -1651,6 +2233,8 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
 
 你能安全接管的教师业务流程边界：
 {workflow_lines}
+
+{actions_block}
 
 教师任务：
 {instruction}

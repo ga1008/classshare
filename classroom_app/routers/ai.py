@@ -1398,6 +1398,69 @@ async def _gongwen_retrieval_events(
         )
 
 
+async def _platform_data_retrieval_events(
+    user_role: str,
+    teacher_id: int,
+    message: str,
+    chat_payload: Dict[str, Any],
+) -> AsyncIterator[str]:
+    """教师消息的平台数据实时查询前置步骤（G9，轻问题不动用 Agent 队列）。
+
+    粗筛命中时：快速 AI 从白名单视图选一个 + 参数 → 以当前教师身份查库 →
+    结果拼进 system_prompt。任何故障只打日志并降级为普通对话。学生不触发。
+    """
+    if user_role != "teacher":
+        return
+    try:
+        from ..services.chat_platform_query_service import (
+            build_query_result_block,
+            detect_platform_query_intent,
+            message_may_need_platform_data,
+            run_platform_view,
+        )
+        from ..services.gongwen_ai_search_service import message_may_mention_gongwen
+
+        # 公文问题已有专门检索链路，避免双重前置开销。
+        if not message_may_need_platform_data(message) or message_may_mention_gongwen(message):
+            return
+        yield _encode_stream_event(
+            "search_status", stage="detecting", message="正在判断是否需要查询平台数据..."
+        )
+        intent = await detect_platform_query_intent(message)
+        if not intent:
+            yield _encode_stream_event("search_status", stage="none", message="")
+            return
+        yield _encode_stream_event(
+            "search_status", stage="searching", message="正在查询平台数据..."
+        )
+        with get_db_connection() as conn:
+            result = run_platform_view(
+                conn,
+                teacher_id=int(teacher_id),
+                view=str(intent.get("view") or ""),
+                params=intent.get("params") or {},
+            )
+        row_count = len(result.get("rows") or [])
+        yield _encode_stream_event(
+            "search_status",
+            stage="organizing",
+            message=f"已查到平台数据（{row_count} 行），正在整理回答...",
+        )
+        chat_payload["system_prompt"] = (
+            str(chat_payload.get("system_prompt") or "")
+            + "\n\n"
+            + build_query_result_block(str(intent.get("view") or ""), result)
+        )
+        print(f"[PLATFORM-QUERY] teacher={teacher_id} view={intent.get('view')} rows={row_count}")
+    except Exception as exc:  # noqa: BLE001 — 平台查询故障不拖垮普通对话
+        print(f"[PLATFORM-QUERY] retrieval failed for teacher {teacher_id}: {exc}")
+        yield _encode_stream_event(
+            "search_status",
+            stage="failed",
+            message="平台数据查询暂时不可用，将按常规方式回答...",
+        )
+
+
 async def _aiter_ai_response_lines_with_keepalive(
     response: httpx.Response,
     *,
@@ -1889,6 +1952,8 @@ async def handle_ai_workspace_chat(
         )
         async for search_event in _gongwen_retrieval_events(user_role, user_pk, cleaned_message, chat_payload):
             yield search_event
+        async for query_event in _platform_data_retrieval_events(user_role, user_pk, cleaned_message, chat_payload):
+            yield query_event
         try:
             async with ai_client.stream(
                     "POST",
@@ -2285,6 +2350,8 @@ async def handle_ai_chat(
         )
         async for search_event in _gongwen_retrieval_events(user_role, user_pk, message, chat_payload):
             yield search_event
+        async for query_event in _platform_data_retrieval_events(user_role, user_pk, message, chat_payload):
+            yield query_event
 
         try:
             async with ai_client.stream(

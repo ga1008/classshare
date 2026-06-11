@@ -7432,7 +7432,7 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     z-index: 8;
     width: min(330px, calc(100% - 24px));
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
     overflow: hidden;
     border: 1px solid rgba(148, 163, 184, 0.2);
     border-radius: 12px;
@@ -7506,6 +7506,162 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
 .ai-agent-history-drawer header small {
     color: var(--text-muted);
     font-size: 0.74rem;
+}
+
+.ai-agent-subscriptions {
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(248, 250, 252, 0.72);
+}
+
+.ai-agent-subscriptions summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 40px;
+    padding: 0 12px;
+    color: #334155;
+    font-size: 0.8rem;
+    font-weight: 860;
+    cursor: pointer;
+    list-style: none;
+}
+
+.ai-agent-subscriptions summary::-webkit-details-marker {
+    display: none;
+}
+
+.ai-agent-subscriptions summary::after {
+    content: "v";
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    transition: transform 0.16s ease;
+}
+
+.ai-agent-subscriptions[open] summary::after {
+    transform: rotate(180deg);
+}
+
+.ai-agent-subscription-list {
+    display: grid;
+    gap: 8px;
+    max-height: 240px;
+    overflow: auto;
+    padding: 0 10px 10px;
+}
+
+.ai-agent-subscription-empty {
+    padding: 10px;
+    border: 1px dashed rgba(148, 163, 184, 0.24);
+    border-radius: 8px;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    text-align: center;
+}
+
+.ai-agent-subscription-rows {
+    display: grid;
+    gap: 8px;
+}
+
+.ai-agent-subscription-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 9px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.ai-agent-subscription-row.is-enabled {
+    border-color: rgba(15, 118, 110, 0.24);
+    background: rgba(240, 253, 250, 0.72);
+}
+
+.ai-agent-subscription-row input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #0f766e;
+}
+
+.ai-agent-subscription-row__copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.ai-agent-subscription-row__copy strong,
+.ai-agent-subscription-row__copy small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ai-agent-subscription-row__copy strong {
+    color: #0f172a;
+    font-size: 0.78rem;
+    font-weight: 860;
+}
+
+.ai-agent-subscription-row__copy small {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+}
+
+.ai-agent-subscription-row select {
+    width: 74px;
+    min-height: 30px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 8px;
+    background: #ffffff;
+    color: #334155;
+    font-size: 0.74rem;
+}
+
+.ai-agent-subscription-recent {
+    display: grid;
+    gap: 6px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.ai-agent-subscription-recent button {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    padding: 8px 9px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.82);
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ai-agent-subscription-recent button:hover {
+    border-color: rgba(15, 118, 110, 0.24);
+    background: #ffffff;
+}
+
+.ai-agent-subscription-recent strong,
+.ai-agent-subscription-recent small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ai-agent-subscription-recent strong {
+    color: #334155;
+    font-size: 0.76rem;
+}
+
+.ai-agent-subscription-recent small {
+    color: var(--text-muted);
+    font-size: 0.68rem;
 }
 
 .ai-agent-history-drawer .ai-task-list {

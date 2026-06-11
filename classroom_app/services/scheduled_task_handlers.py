@@ -186,3 +186,12 @@ from .gongwen_follow_service import (  # noqa: E402
 register_task_handler(GONGWEN_FOLLOW_TASK_KIND, handle_gongwen_follow_task)
 # 重新发现：教师在关注设置浮窗里手动触发的一次性全量回扫。
 register_task_handler(GONGWEN_FOLLOW_RESCAN_TASK_KIND, handle_gongwen_follow_rescan_task)
+
+# 定时/订阅型 Agent 任务 — 到点把订阅模板（周报/公文哨兵/考前提醒包）写入
+# agent_tasks 队列，复用全部现有 Agent 执行链路。
+from .agent_subscription_service import (  # noqa: E402
+    DISPATCH_TASK_KIND as AGENT_TASK_DISPATCH_KIND,
+    handle_agent_task_dispatch,
+)
+
+register_task_handler(AGENT_TASK_DISPATCH_KIND, handle_agent_task_dispatch)

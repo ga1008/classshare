@@ -90,7 +90,21 @@ class DeployCheckToolsTests(unittest.TestCase):
             resolve_runtime_root(str(unsafe))
 
     def test_postgres_preflight_passes_for_sqlite_default_overlay_readiness(self):
-        report = check_postgres_preflight()
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / "docker.env"
+            env_file.write_text(
+                "\n".join(
+                    [
+                        "DB_ENGINE=sqlite",
+                        "DATABASE_URL=",
+                        "POSTGRES_PASSWORD=",
+                        "POSTGRES_BACKEND_READY=false",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            report = check_postgres_preflight(env_file=env_file)
 
         self.assertEqual("ok", report["status"])
         self.assertFalse(report["postgres_cutover_requested"])

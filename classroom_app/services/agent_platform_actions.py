@@ -1274,7 +1274,18 @@ async def _execute_lesson_document_task(task: dict[str, Any]) -> None:
         )
 
 
-async def try_execute_platform_agent_task(task: dict[str, Any]) -> bool:
+# 运行时优先的开放式任务类型：交给独立运行时（带桥接工具）执行，产出更智能；
+# 运行时不可用时回退到下面的平台模板处理器（降级优先，不能比现在差）。
+RUNTIME_OPEN_ENDED_TASK_TYPES = frozenset({
+    "course_material_digest",
+    "assignment_blueprint",
+    "blog_draft",
+    "student_notification",
+    "general_teaching_task",
+})
+
+
+async def try_execute_platform_agent_task(task: dict[str, Any], *, runtime_available: bool = False) -> bool:
     task_type = str(task.get("task_type") or "")
     if task_type not in {
         "lesson_document",
@@ -1286,6 +1297,15 @@ async def try_execute_platform_agent_task(task: dict[str, Any]) -> bool:
         "general_teaching_task",
     }:
         return False
+    if runtime_available and task_type in RUNTIME_OPEN_ENDED_TASK_TYPES:
+        from ..config import AGENT_TASK_RUNTIME_FIRST
+        from .gongwen_ai_search_service import message_may_mention_gongwen
+
+        instruction = _safe_text(task.get("private_instruction"), max_chars=4000)
+        # 公文类问题平台检索服务又快又准，仍走平台路径；其余开放式任务交给运行时。
+        is_gongwen_question = task_type == "general_teaching_task" and message_may_mention_gongwen(instruction)
+        if AGENT_TASK_RUNTIME_FIRST and not is_gongwen_question:
+            return False
     task_id = int(task["id"])
     platform_action = {
         "lesson_document": "lesson_document_generation",

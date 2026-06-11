@@ -8,6 +8,54 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/agent-bridge/file",
+    "methods": [
+      "POST"
+    ],
+    "name": "bridge_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-bridge/meta",
+    "methods": [
+      "GET"
+    ],
+    "name": "bridge_meta",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-bridge/query",
+    "methods": [
+      "POST"
+    ],
+    "name": "bridge_query",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-bridge/schema",
+    "methods": [
+      "GET"
+    ],
+    "name": "bridge_schema",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-bridge/search",
+    "methods": [
+      "POST"
+    ],
+    "name": "bridge_search",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-bridge/web",
+    "methods": [
+      "POST"
+    ],
+    "name": "bridge_web",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/agent-tasks",
     "methods": [
       "GET"
@@ -48,6 +96,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/agent-tasks/subscriptions",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_agent_subscriptions",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/subscriptions",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_set_agent_subscription",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/agent-tasks/{task_id}",
     "methods": [
       "DELETE"
@@ -64,11 +128,51 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/agent-tasks/{task_id}/actions/{action_index}/execute",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_execute_agent_task_action",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/agent-tasks/{task_id}/cancel",
     "methods": [
       "POST"
     ],
     "name": "api_cancel_agent_task",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/{task_id}/events",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_agent_task_events",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/{task_id}/follow-up",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_follow_up_agent_task",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/{task_id}/retry",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_retry_agent_task",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/{task_id}/stream",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_stream_agent_task_events",
     "include_in_schema": true
   },
   {
