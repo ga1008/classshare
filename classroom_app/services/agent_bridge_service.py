@@ -30,6 +30,7 @@ MAX_QUERY_ROWS = 200
 MAX_CELL_CHARS = 2000
 MAX_FILE_BYTES = 256 * 1024
 MAX_DOCUMENT_FILE_BYTES = 10 * 1024 * 1024
+MAX_DOCUMENT_TEXT_BYTES = 2 * 1024 * 1024
 MAX_WEB_BYTES = 600 * 1024
 SQLITE_QUERY_TIMEOUT_SECONDS = 5.0
 
@@ -259,7 +260,7 @@ def describe_schema(conn, engine: str) -> dict[str, list[str]]:
 
 
 def read_platform_file(raw_path: str) -> dict[str, Any]:
-    """读取白名单根目录内的文本文件；越界/二进制/超限均拒绝。"""
+    """读取白名单根目录内的文本/文档文件；越界/二进制/超限均拒绝。"""
     requested = Path(str(raw_path or "").strip())
     if not str(requested):
         raise ValueError("path 不能为空。")
@@ -286,14 +287,15 @@ def read_platform_file(raw_path: str) -> dict[str, Any]:
             )
         from ai_assistant_doc_extract import extract_document_text
 
-        result = extract_document_text(resolved, ext)
-        text = (result.text or "")[: MAX_FILE_BYTES * 4]
+        result = extract_document_text(resolved, ext, max_bytes=MAX_DOCUMENT_TEXT_BYTES)
+        text = result.text or ""
         if not text.strip():
             raise ValueError("无法从该文档抽取文本。")
         return {
             "path": str(resolved),
             "size": size,
             "extracted": True,
+            "truncated": bool(result.truncated),
             "content": text,
         }
     if size > MAX_FILE_BYTES:

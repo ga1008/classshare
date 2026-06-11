@@ -96,22 +96,23 @@ class AgentTaskImprovementTests(unittest.TestCase):
             conn.commit()
             now = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
 
-            first = agent_task_service.record_agent_auto_retry(
-                conn,
-                first_id,
-                error_text="503 service unavailable",
-                error_class=ERROR_CLASS_TRANSIENT,
-                hourly_limit=1,
-                now=now,
-            )
-            second = agent_task_service.record_agent_auto_retry(
-                conn,
-                second_id,
-                error_text="503 service unavailable",
-                error_class=ERROR_CLASS_TRANSIENT,
-                hourly_limit=1,
-                now=now + timedelta(minutes=5),
-            )
+            with patch.object(agent_task_service, "get_configured_db_engine", return_value="sqlite"):
+                first = agent_task_service.record_agent_auto_retry(
+                    conn,
+                    first_id,
+                    error_text="503 service unavailable",
+                    error_class=ERROR_CLASS_TRANSIENT,
+                    hourly_limit=1,
+                    now=now,
+                )
+                second = agent_task_service.record_agent_auto_retry(
+                    conn,
+                    second_id,
+                    error_text="503 service unavailable",
+                    error_class=ERROR_CLASS_TRANSIENT,
+                    hourly_limit=1,
+                    now=now + timedelta(minutes=5),
+                )
 
             self.assertTrue(first["allowed"])
             self.assertFalse(second["allowed"])

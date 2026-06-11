@@ -1,15 +1,23 @@
+import asyncio
+import io
 import sqlite3
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
+
+from fastapi import UploadFile
 
 from classroom_app.db import schema_gongwen
 from classroom_app.db.schema_assignments import ensure_assignment_schema
 from classroom_app.db.schema_classroom_activity import ensure_classroom_activity_schema
 from classroom_app.db.schema_foundation import ensure_foundation_schema
 from classroom_app.db.schema_materials_integrations import ensure_materials_integrations_schema
+from classroom_app.routers.ai import _process_chat_file
 from classroom_app.services.agent_bridge_service import (
     example_queries_payload,
     mask_sensitive_cell,
+    read_platform_file,
     run_readonly_query,
     unified_search,
 )
@@ -228,6 +236,72 @@ class AgentBridgeServiceTests(unittest.TestCase):
         finally:
             conn.close()
             schema_gongwen._SCHEMA_READY = False
+
+    def test_file_bridge_extracts_docx_like_chat_attachment_parser(self):
+        try:
+            from docx import Document
+        except ImportError as exc:
+            self.skipTest(f"python-docx unavailable: {exc}")
+
+        expected_lines = ["Agent bridge DOCX consistency", "Second paragraph from platform material."]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "agent-docx-fixture.docx"
+            document = Document()
+            for line in expected_lines:
+                document.add_paragraph(line)
+            document.save(path)
+
+            with patch(
+                "classroom_app.services.agent_bridge_service.allowed_file_roots",
+                return_value=[root],
+            ):
+                bridge_result = read_platform_file(str(path))
+
+            chat_result = asyncio.run(self._process_chat_attachment(path, "agent-docx-fixture.docx"))
+
+        self.assertTrue(bridge_result["extracted"])
+        self.assertFalse(bridge_result["truncated"])
+        self.assertEqual(path.name, Path(bridge_result["path"]).name)
+        self.assertEqual(chat_result["type"], "text")
+        self.assertEqual(chat_result["content"], bridge_result["content"])
+        for line in expected_lines:
+            self.assertIn(line, bridge_result["content"])
+
+    def test_file_bridge_extracts_pdf_like_chat_attachment_parser(self):
+        try:
+            import fitz
+        except ImportError as exc:
+            self.skipTest(f"PyMuPDF unavailable: {exc}")
+
+        expected_text = "Agent bridge PDF consistency"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "agent-pdf-fixture.pdf"
+            document = fitz.open()
+            page = document.new_page()
+            page.insert_text((72, 72), expected_text)
+            document.save(path)
+            document.close()
+
+            with patch(
+                "classroom_app.services.agent_bridge_service.allowed_file_roots",
+                return_value=[root],
+            ):
+                bridge_result = read_platform_file(str(path))
+
+            chat_result = asyncio.run(self._process_chat_attachment(path, "agent-pdf-fixture.pdf"))
+
+        self.assertTrue(bridge_result["extracted"])
+        self.assertFalse(bridge_result["truncated"])
+        self.assertEqual(path.name, Path(bridge_result["path"]).name)
+        self.assertEqual(chat_result["type"], "text")
+        self.assertEqual(chat_result["content"], bridge_result["content"])
+        self.assertIn(expected_text, bridge_result["content"])
+
+    async def _process_chat_attachment(self, path: Path, filename: str) -> dict:
+        upload = UploadFile(file=io.BytesIO(path.read_bytes()), filename=filename)
+        return await _process_chat_file(upload)
 
 
 if __name__ == "__main__":
