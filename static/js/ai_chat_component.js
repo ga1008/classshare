@@ -767,6 +767,12 @@ class AIChatComponent {
                     streamState.searchStatusActive = true;
                 }
                 break;
+            case 'tool_status':
+                if (!streamState.finalAnswer && !streamState.thinkingContent && event.message) {
+                    streamState.statusText = event.message;
+                    streamState.searchStatusActive = true;
+                }
+                break;
             case 'queue_keepalive':
                 if (!streamState.finalAnswer && !streamState.thinkingContent && !streamState.searchStatusActive) {
                     streamState.statusText = event.thinking_requested

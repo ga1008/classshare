@@ -21,7 +21,7 @@ RESULT_BLOCK_LIMIT = 6000
 # 粗筛：数据型轻问题的高召回信号。
 _DATA_QUESTION_PATTERN = re.compile(
     r"(没交|未交|交了|提交率|提交情况|多少(人|个)|几个(人|学生)|人数|名单|花名册"
-    r"|成绩|分数|低分|平均分|及格|不及格"
+    r"|成绩|分数|低分|平均分|及格|不及格|低于\s*\d{1,3}(?:\.\d{1,2})?\s*分"
     r"|日程|课表|安排.{0,4}(考试|监考)|监考|我的课堂|哪些课堂|哪些班)"
 )
 
@@ -40,6 +40,48 @@ VIEW_DESCRIPTIONS: dict[str, str] = {
 
 def message_may_need_platform_data(message: str) -> bool:
     return bool(_DATA_QUESTION_PATTERN.search(str(message or "")))
+
+
+def _extract_class_keyword(message: str) -> str:
+    match = re.search(r"([\u4e00-\u9fa5A-Za-z0-9]{1,16}班)", message)
+    return match.group(1)[:40] if match else ""
+
+
+def _extract_score_threshold(message: str) -> float | None:
+    match = re.search(r"(\d{1,3}(?:\.\d{1,2})?)\s*分", message)
+    if not match:
+        return None
+    try:
+        value = float(match.group(1))
+    except ValueError:
+        return None
+    return value if 0 <= value <= 150 else None
+
+
+def infer_platform_query_intent(message: str) -> dict[str, Any] | None:
+    """本地高置信兜底：意图 AI 不可用时仍能覆盖最高频轻量查询。"""
+    text = str(message or "").strip()
+    if not text or not message_may_need_platform_data(text):
+        return None
+    class_keyword = _extract_class_keyword(text)
+    params: dict[str, Any] = {}
+    if class_keyword:
+        params["class_keyword"] = class_keyword
+
+    if re.search(r"(没交|未交|提交率|提交情况|交了)", text):
+        return {"view": "assignment_submission_status", "params": params}
+    if re.search(r"(低分|不及格|及格|分数|成绩|低于|小于|\d{1,3}(?:\.\d{1,2})?\s*分)", text):
+        threshold = _extract_score_threshold(text)
+        if threshold is not None:
+            params["threshold"] = threshold
+        return {"view": "low_scores", "params": params}
+    if re.search(r"(花名册|名册|学生名单|名单|人数|多少(人|个)|几个(人|学生))", text):
+        return {"view": "class_roster", "params": params}
+    if re.search(r"(日程|课表|监考|考试|安排)", text):
+        return {"view": "my_schedule", "params": {}}
+    if re.search(r"(我的课堂|哪些课堂|哪些班)", text):
+        return {"view": "my_classrooms", "params": {}}
+    return None
 
 
 async def detect_platform_query_intent(message: str) -> dict[str, Any] | None:
@@ -72,8 +114,8 @@ async def detect_platform_query_intent(message: str) -> dict[str, Any] | None:
         resp = await ai_client.post("/api/ai/chat", json=payload, timeout=20.0)
         resp.raise_for_status()
         data = resp.json()
-    except Exception:  # noqa: BLE001 — 意图 AI 故障 → 降级普通对话
-        return None
+    except Exception:  # noqa: BLE001 — 意图 AI 故障 → 本地高置信兜底，仍失败则普通对话
+        return infer_platform_query_intent(cleaned)
     parsed = data.get("response_json") if isinstance(data, dict) else None
     if not isinstance(parsed, dict) or not parsed.get("related"):
         return None

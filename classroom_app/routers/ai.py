@@ -1321,6 +1321,17 @@ def _encode_stream_event(event: str, **payload: Any) -> str:
     return json.dumps({"event": event, **payload}, ensure_ascii=False) + "\n"
 
 
+def _encode_platform_tool_status(stage: str, message: str, **payload: Any) -> str:
+    return _encode_stream_event(
+        "tool_status",
+        tool="platform_query",
+        label="平台数据查询",
+        stage=stage,
+        message=message,
+        **payload,
+    )
+
+
 def _decode_stream_event(line: str) -> Optional[Dict[str, Any]]:
     if not line:
         return None
@@ -1423,15 +1434,23 @@ async def _platform_data_retrieval_events(
         # 公文问题已有专门检索链路，避免双重前置开销。
         if not message_may_need_platform_data(message) or message_may_mention_gongwen(message):
             return
+        detecting_message = "正在判断是否需要查询平台数据..."
         yield _encode_stream_event(
-            "search_status", stage="detecting", message="正在判断是否需要查询平台数据..."
+            "search_status", stage="detecting", message=detecting_message
         )
+        yield _encode_platform_tool_status("detecting", detecting_message)
         intent = await detect_platform_query_intent(message)
         if not intent:
             yield _encode_stream_event("search_status", stage="none", message="")
             return
+        searching_message = "正在查询平台数据..."
         yield _encode_stream_event(
-            "search_status", stage="searching", message="正在查询平台数据..."
+            "search_status", stage="searching", message=searching_message
+        )
+        yield _encode_platform_tool_status(
+            "running",
+            searching_message,
+            view=str(intent.get("view") or ""),
         )
         with get_db_connection() as conn:
             result = run_platform_view(
@@ -1441,10 +1460,17 @@ async def _platform_data_retrieval_events(
                 params=intent.get("params") or {},
             )
         row_count = len(result.get("rows") or [])
+        organizing_message = f"已查到平台数据（{row_count} 行），正在整理回答..."
         yield _encode_stream_event(
             "search_status",
             stage="organizing",
-            message=f"已查到平台数据（{row_count} 行），正在整理回答...",
+            message=organizing_message,
+        )
+        yield _encode_platform_tool_status(
+            "done",
+            organizing_message,
+            view=str(intent.get("view") or ""),
+            row_count=row_count,
         )
         chat_payload["system_prompt"] = (
             str(chat_payload.get("system_prompt") or "")
@@ -1454,10 +1480,20 @@ async def _platform_data_retrieval_events(
         print(f"[PLATFORM-QUERY] teacher={teacher_id} view={intent.get('view')} rows={row_count}")
     except Exception as exc:  # noqa: BLE001 — 平台查询故障不拖垮普通对话
         print(f"[PLATFORM-QUERY] retrieval failed for teacher {teacher_id}: {exc}")
+        chat_payload["system_prompt"] = (
+            str(chat_payload.get("system_prompt") or "")
+            + "\n\n--- 平台数据查询状态 ---\n"
+            "本轮系统尝试实时查询平台数据，但查询暂时失败。回答时不要编造课堂、学生、作业、成绩或日程数字；"
+            "请自然说明暂时无法自动查询，并建议教师到作业详情、班级名册、日程页面查看，或把问题转为 Agent 任务深入处理。"
+        )
         yield _encode_stream_event(
             "search_status",
             stage="failed",
             message="平台数据查询暂时不可用，将按常规方式回答...",
+        )
+        yield _encode_platform_tool_status(
+            "failed",
+            "平台数据查询暂时不可用，将按常规方式回答...",
         )
 
 
