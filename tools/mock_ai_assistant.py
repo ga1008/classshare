@@ -14,6 +14,37 @@ from fastapi.responses import JSONResponse, StreamingResponse
 def _build_response_json(payload: dict[str, Any]) -> dict[str, Any]:
     prompt = str(payload.get("new_message") or "").strip()
     response_format = str(payload.get("response_format") or "").strip().lower()
+    tools = payload.get("tools") if isinstance(payload.get("tools"), list) else []
+
+    if tools:
+        view = ""
+        params: dict[str, Any] = {}
+        if "没交" in prompt or "提交" in prompt:
+            view = "assignment_submission_status"
+        elif "成绩" in prompt or "分数" in prompt or "低于" in prompt or "不及格" in prompt:
+            view = "low_scores"
+        elif "日程" in prompt or "课表" in prompt or "监考" in prompt:
+            view = "my_schedule"
+        elif "课堂" in prompt or "哪些班" in prompt:
+            view = "my_classrooms"
+        elif "名单" in prompt or "人数" in prompt or "学生" in prompt or "多少" in prompt:
+            view = "class_roster"
+        if "三班" in prompt:
+            params["class_keyword"] = "三班"
+        if view:
+            return {
+                "status": "success",
+                "response_text": "",
+                "tool_calls": [
+                    {
+                        "id": "mock-platform-query-1",
+                        "type": "function",
+                        "name": "platform_query",
+                        "arguments": {"view": view, "params": params},
+                    }
+                ],
+            }
+        return {"status": "success", "response_text": "", "tool_calls": []}
 
     if response_format == "json":
         return {

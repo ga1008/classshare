@@ -150,6 +150,7 @@ async def run_light_query_eval_async(
                 "expect_needs_agent": case.expect_needs_agent,
                 "planned_views": _planned_views(plan),
                 "needs_agent": bool(plan.get("needs_agent")),
+                "planner_source": str(plan.get("planner_source") or "unknown"),
                 "latency_ms": round(elapsed_ms, 2),
                 "executed_views": executed_views,
                 "execution_errors": execution_errors,

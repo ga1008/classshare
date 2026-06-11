@@ -1191,6 +1191,8 @@ class AIChatRequest(BaseModel):
     response_format: Literal["text", "json"] = "text"
     task_priority: Literal["interactive", "default", "background"] = "default"
     task_label: Optional[str] = None
+    tools: List[Dict[str, Any]] = Field(default_factory=list)
+    tool_choice: Any = None
 
 
 # --- 辅助函数 (保持不变) ---
@@ -1218,6 +1220,51 @@ def _coerce_stream_text(value: Any) -> str:
         if isinstance(text_value, str):
             return text_value
     return str(value)
+
+
+def _safe_json_loads(value: Any) -> Any:
+    if isinstance(value, (dict, list)):
+        return value
+    if value in (None, ""):
+        return {}
+    try:
+        return json.loads(str(value))
+    except (TypeError, json.JSONDecodeError):
+        return str(value)
+
+
+def _extract_message_tool_calls(message: Any) -> list[dict[str, Any]]:
+    raw_calls = getattr(message, "tool_calls", None)
+    if raw_calls is None and isinstance(message, dict):
+        raw_calls = message.get("tool_calls")
+    if not isinstance(raw_calls, list):
+        return []
+    calls: list[dict[str, Any]] = []
+    for raw in raw_calls:
+        if isinstance(raw, dict):
+            function = raw.get("function") if isinstance(raw.get("function"), dict) else {}
+            name = function.get("name") or raw.get("name") or raw.get("tool") or ""
+            arguments = function.get("arguments") if "arguments" in function else raw.get("arguments")
+            call_id = raw.get("id") or ""
+            call_type = raw.get("type") or "function"
+        else:
+            function = getattr(raw, "function", None)
+            name = getattr(function, "name", "") if function is not None else getattr(raw, "name", "")
+            arguments = getattr(function, "arguments", None) if function is not None else getattr(raw, "arguments", None)
+            call_id = getattr(raw, "id", "")
+            call_type = getattr(raw, "type", "function")
+        name_text = str(name or "").strip()
+        if not name_text:
+            continue
+        calls.append(
+            {
+                "id": str(call_id or ""),
+                "type": str(call_type or "function"),
+                "name": name_text,
+                "arguments": _safe_json_loads(arguments),
+            }
+        )
+    return calls
 
 
 def _extract_delta_parts(delta: Any) -> tuple[str, str]:
@@ -2737,6 +2784,9 @@ async def _call_ai_platform(
         task_label: Optional[str] = None,
         preferred_platform: Optional[str] = None,
         task_type: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Any = None,
+        return_tool_calls: bool = False,
 ) -> Any:
     routes = _build_model_routes(capability, task_type=task_type, preferred_platform=preferred_platform)
     if not routes:
@@ -2755,6 +2805,7 @@ async def _call_ai_platform(
         can_force_json = selected_platform_config.get("can_force_json", {}).get(capability, False)
         prepared_messages = _prepare_chat_messages_for_platform(messages, capability=capability)
         request_payload: dict[str, Any] = {"model": model_name, "messages": prepared_messages}
+        safe_tools = [tool for tool in (tools or []) if isinstance(tool, dict)]
         call_id, started_at, start_perf = _new_ai_usage_context()
         provider_usage: dict[str, Any] | None = None
         response_thinking = ""
@@ -2781,7 +2832,12 @@ async def _call_ai_platform(
                         base_url=selected_platform_config.get("base_url") or VOLCENGINE_OPENAI_BASE_URL,
                         timeout=180.0,
                     )
-                    if AI_NONSTREAM_USE_PROVIDER_STREAM:
+                    volc_kwargs: dict[str, Any] = {"model": model_name, "messages": prepared_messages}
+                    if safe_tools:
+                        volc_kwargs["tools"] = safe_tools
+                        if tool_choice is not None:
+                            volc_kwargs["tool_choice"] = tool_choice
+                    if AI_NONSTREAM_USE_PROVIDER_STREAM and not safe_tools:
                         provider_stream_used = True
                         api_style = "chat_completions_stream_collect"
                         request_payload = {"model": model_name, "messages": prepared_messages, "stream": True}
@@ -2804,10 +2860,14 @@ async def _call_ai_platform(
                         response_content = "".join(answer_parts)
                         response_thinking = "".join(thinking_parts)
                     else:
-                        completion = await client.chat.completions.create(model=model_name, messages=prepared_messages)
+                        if safe_tools:
+                            api_style = "chat_completions_tools"
+                        request_payload = dict(volc_kwargs)
+                        completion = await client.chat.completions.create(**volc_kwargs)
                         message = completion.choices[0].message
                         response_content = _coerce_stream_text(getattr(message, "content", None))
                         response_thinking = _extract_reasoning_text(message)
+                        tool_calls = _extract_message_tool_calls(message)
                         provider_usage = _extract_provider_usage(completion)
 
                 elif platform_type == "openai":
@@ -2816,6 +2876,10 @@ async def _call_ai_platform(
                     base_url = selected_platform_config["base_url"]
                     client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=180.0)
                     kwargs = {"model": model_name, "messages": prepared_messages}
+                    if safe_tools:
+                        kwargs["tools"] = safe_tools
+                        if tool_choice is not None:
+                            kwargs["tool_choice"] = tool_choice
 
                     if require_json_output and can_force_json:
                         print(f"[AI WORKER] 平台 {platform_name} 模型 {model_name} 支持强制JSON，正在启用。")
@@ -2825,7 +2889,7 @@ async def _call_ai_platform(
 
                     _apply_openai_provider_options(kwargs, selected_route)
                     request_payload = dict(kwargs)
-                    if AI_NONSTREAM_USE_PROVIDER_STREAM:
+                    if AI_NONSTREAM_USE_PROVIDER_STREAM and not safe_tools:
                         provider_stream_used = True
                         api_style = "chat_completions_stream_collect"
                         kwargs["stream"] = True
@@ -2845,10 +2909,13 @@ async def _call_ai_platform(
                         response_content = "".join(answer_parts)
                         response_thinking = "".join(thinking_parts)
                     else:
+                        if safe_tools:
+                            api_style = "chat_completions_tools"
                         completion = await client.chat.completions.create(**kwargs)
                         message = completion.choices[0].message
                         response_content = _coerce_stream_text(getattr(message, "content", None))
                         response_thinking = _extract_reasoning_text(message)
+                        tool_calls = _extract_message_tool_calls(message)
                         provider_usage = _extract_provider_usage(completion)
 
                 else:
@@ -2859,6 +2926,8 @@ async def _call_ai_platform(
 
                 usage_extra = {
                     "require_json_output": require_json_output,
+                    "return_tool_calls": bool(return_tool_calls),
+                    "tool_count": len(safe_tools),
                     "task_type": selected_route.task_type,
                     "spillover": selected_route.spillover,
                     "route_reason": selected_route.reason,
@@ -2882,6 +2951,12 @@ async def _call_ai_platform(
                     extra=usage_extra,
                 )
                 logged_usage = True
+
+                if return_tool_calls and safe_tools:
+                    return {
+                        "text": response_content or "",
+                        "tool_calls": tool_calls if "tool_calls" in locals() else [],
+                    }
 
                 if not response_content:
                     print("[ERROR] AI 返回了空内容。")
@@ -3605,6 +3680,28 @@ async def ai_chat_task(req: AIChatRequest):
     })
 
     try:
+        if req.tools:
+            tool_messages = [
+                {"role": "system", "content": req.system_prompt},
+                *history,
+            ]
+            ai_tool_result = await _call_ai_platform(
+                tool_messages,
+                capability=req.model_capability,
+                parse_json_response=False,
+                task_priority=req.task_priority,
+                task_label=req.task_label or "chat_tool_call",
+                task_type=req.task_type,
+                tools=req.tools,
+                tool_choice=req.tool_choice,
+                return_tool_calls=True,
+            )
+            return {
+                "status": "success",
+                "response_text": str((ai_tool_result or {}).get("text") or ""),
+                "tool_calls": (ai_tool_result or {}).get("tool_calls") or [],
+            }
+
         if req.response_format == "json":
             json_messages = [
                 {"role": "system", "content": req.system_prompt},

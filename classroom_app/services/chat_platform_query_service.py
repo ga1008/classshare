@@ -41,6 +41,36 @@ VIEW_DESCRIPTIONS: dict[str, str] = {
 }
 
 
+def platform_query_tool_schema() -> dict[str, Any]:
+    return {
+        "type": "function",
+        "function": {
+            "name": "platform_query",
+            "description": (
+                "查询 LanShare 教学平台的轻量只读白名单视图。只用于教师当前身份可见的课堂、"
+                "作业提交、成绩、日程等即时问题；不要写 SQL。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "view": {
+                        "type": "string",
+                        "enum": list(VIEW_DESCRIPTIONS.keys()),
+                        "description": "要查询的白名单视图。",
+                    },
+                    "params": {
+                        "type": "object",
+                        "description": "视图参数，例如 class_keyword、assignment_keyword、threshold。",
+                        "additionalProperties": True,
+                    },
+                },
+                "required": ["view"],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
 def message_may_need_platform_data(message: str) -> bool:
     return bool(_DATA_QUESTION_PATTERN.search(str(message or "")))
 
@@ -90,7 +120,7 @@ def infer_platform_query_tool_calls(message: str) -> dict[str, Any]:
     """本地高置信兜底：为常见组合轻查询规划 0~N 个 platform_query 调用。"""
     text = str(message or "").strip()
     if not text or not message_may_need_platform_data(text):
-        return {"related": False, "tool_calls": [], "needs_agent": False}
+        return {"related": False, "tool_calls": [], "needs_agent": False, "planner_source": "local_fallback"}
     class_keyword = _extract_class_keyword(text)
     base_params: dict[str, Any] = {}
     if class_keyword:
@@ -116,6 +146,7 @@ def infer_platform_query_tool_calls(message: str) -> dict[str, Any]:
         "related": bool(calls),
         "tool_calls": calls,
         "needs_agent": needs_agent or len(calls) > MAX_PLATFORM_TOOL_CALLS,
+        "planner_source": "local_fallback",
     }
 
 
@@ -148,13 +179,74 @@ def _normalize_tool_call_plan(parsed: Any) -> dict[str, Any] | None:
         if call:
             _append_tool_call(calls, call["view"], call["params"])
     if not calls and not parsed.get("related"):
-        return {"related": False, "tool_calls": [], "needs_agent": False}
+        return {"related": False, "tool_calls": [], "needs_agent": False, "planner_source": "json_plan"}
     return {
         "related": bool(calls),
         "tool_calls": calls[:MAX_PLANNED_PLATFORM_TOOL_CALLS],
         "needs_agent": bool(parsed.get("needs_agent")) or len(calls) > MAX_PLATFORM_TOOL_CALLS,
         "agent_reason": str(parsed.get("agent_reason") or "").strip()[:120],
+        "planner_source": "json_plan",
     }
+
+
+def _merge_provider_calls_with_local_guardrails(
+    message: str, provider_calls: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], bool]:
+    """Keep provider-native tool use, but normalize high-confidence view choice/order."""
+    if not provider_calls:
+        return [], False
+    local_plan = infer_platform_query_tool_calls(message)
+    raw_local_calls = local_plan.get("tool_calls") if isinstance(local_plan, dict) else []
+    if not isinstance(raw_local_calls, list) or not raw_local_calls:
+        return provider_calls[:MAX_PLANNED_PLATFORM_TOOL_CALLS], False
+
+    provider_params_by_view: dict[str, dict[str, Any]] = {}
+    for call in provider_calls:
+        if not isinstance(call, dict):
+            continue
+        view = str(call.get("view") or "")
+        params = call.get("params") if isinstance(call.get("params"), dict) else {}
+        if view and view not in provider_params_by_view:
+            provider_params_by_view[view] = dict(params)
+
+    local_view_order = [
+        str(call.get("view") or "")
+        for call in raw_local_calls
+        if isinstance(call, dict) and str(call.get("view") or "") in VIEW_DESCRIPTIONS
+    ]
+    provider_specific_views = [
+        str(call.get("view") or "")
+        for call in provider_calls
+        if isinstance(call, dict)
+        and str(call.get("view") or "") in VIEW_DESCRIPTIONS
+        and str(call.get("view") or "") != "my_classrooms"
+    ]
+    if provider_specific_views and all(view in local_view_order for view in provider_specific_views):
+        selected_views = set(provider_specific_views)
+        selected_local_calls = [
+            call
+            for call in raw_local_calls
+            if isinstance(call, dict) and str(call.get("view") or "") in selected_views
+        ]
+    else:
+        selected_local_calls = raw_local_calls
+
+    guarded_calls: list[dict[str, Any]] = []
+    for raw_call in selected_local_calls:
+        call = _sanitize_tool_call(raw_call)
+        if not call:
+            continue
+        params = dict(provider_params_by_view.get(call["view"], {}))
+        for key, value in call["params"].items():
+            if value not in ("", None):
+                params[key] = value
+        _append_tool_call(guarded_calls, call["view"], params)
+
+    if not guarded_calls:
+        return provider_calls[:MAX_PLANNED_PLATFORM_TOOL_CALLS], False
+    limited = guarded_calls[:MAX_PLANNED_PLATFORM_TOOL_CALLS]
+    changed = jsonish_fingerprint(limited) != jsonish_fingerprint(provider_calls[:MAX_PLANNED_PLATFORM_TOOL_CALLS])
+    return limited, changed
 
 
 async def detect_platform_query_tool_calls(message: str) -> dict[str, Any]:
@@ -163,33 +255,76 @@ async def detect_platform_query_tool_calls(message: str) -> dict[str, Any]:
     if not cleaned:
         return {"related": False, "tool_calls": [], "needs_agent": False}
     views_text = "\n".join(f"- {key}: {desc}" for key, desc in VIEW_DESCRIPTIONS.items())
-    payload = {
-        "system_prompt": (
-            "你是教学平台聊天工具调用规划器。教师的问题如果能通过平台实时数据轻查询解决，"
-            "请从白名单视图中规划 platform_query 工具调用，最多规划 3 个，按回答需要的顺序排列；"
-            "平台实际只会执行前 2 个。超过 2 个、需要长时间分析、生成完整报告或跨多类数据综合推理时，"
-            "needs_agent=true，并简短给 agent_reason。不要写 SQL，不要发散到白名单外。"
-            f"\n可用视图：\n{views_text}\n"
-            '只输出 JSON：{"related": true/false, "tool_calls": [{"view": "视图名", "params": {"参数名": "值"}}], '
-            '"needs_agent": true/false, "agent_reason": "可空"}。'
-        ),
+    system_prompt = (
+        "你是教学平台聊天工具调用规划器。教师的问题如果能通过平台实时数据轻查询解决，"
+        "请从白名单视图中规划 platform_query 工具调用，最多规划 3 个，按回答需要的顺序排列；"
+        "平台实际只会执行前 2 个。超过 2 个、需要长时间分析、生成完整报告或跨多类数据综合推理时，"
+        "needs_agent=true，并简短给 agent_reason。不要写 SQL，不要发散到白名单外。"
+        f"\n可用视图：\n{views_text}\n"
+    )
+    common_payload = {
+        "system_prompt": system_prompt,
         "messages": [],
         "new_message": cleaned[:INTENT_MESSAGE_LIMIT],
         "base64_urls": [],
         "file_texts": [],
         "model_capability": "standard",
         "task_type": "fast_text_response",
-        "response_format": "json",
         "task_priority": "interactive",
+    }
+    try:
+        from ..core import ai_client
+
+        tool_payload = {
+            **common_payload,
+            "tools": [platform_query_tool_schema()],
+            "tool_choice": "auto",
+            "task_label": "platform_query_tool_call_plan",
+        }
+        resp = await ai_client.post("/api/ai/chat", json=tool_payload, timeout=20.0)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:  # noqa: BLE001 — 规划 AI 故障 → 本地高置信兜底
+        data = {}
+    if isinstance(data, dict):
+        tool_calls = []
+        for raw in data.get("tool_calls") or []:
+            if not isinstance(raw, dict) or raw.get("name") != "platform_query":
+                continue
+            args = raw.get("arguments") if isinstance(raw.get("arguments"), dict) else {}
+            call = _sanitize_tool_call({"view": args.get("view"), "params": args.get("params") or {}})
+            if call:
+                _append_tool_call(tool_calls, call["view"], call["params"])
+        if tool_calls:
+            guarded_tool_calls, guardrail_applied = _merge_provider_calls_with_local_guardrails(cleaned, tool_calls)
+            return {
+                "related": True,
+                "tool_calls": guarded_tool_calls,
+                "needs_agent": len(guarded_tool_calls) > MAX_PLATFORM_TOOL_CALLS or bool(
+                    re.search(r"(深入|分析|生成|方案|报告|总结|跨.{0,4}对比|长期|趋势)", cleaned)
+                ),
+                "agent_reason": "",
+                "planner_source": "provider_tool_call",
+                "guardrail_applied": guardrail_applied,
+            }
+
+    json_payload = {
+        **common_payload,
+        "system_prompt": (
+            system_prompt
+            + '只输出 JSON：{"related": true/false, "tool_calls": [{"view": "视图名", '
+            '"params": {"参数名": "值"}}], "needs_agent": true/false, "agent_reason": "可空"}。'
+        ),
+        "response_format": "json",
         "task_label": "platform_query_tool_plan",
     }
     try:
         from ..core import ai_client
 
-        resp = await ai_client.post("/api/ai/chat", json=payload, timeout=20.0)
+        resp = await ai_client.post("/api/ai/chat", json=json_payload, timeout=20.0)
         resp.raise_for_status()
         data = resp.json()
-    except Exception:  # noqa: BLE001 — 规划 AI 故障 → 本地高置信兜底
+    except Exception:  # noqa: BLE001 — JSON 规划 AI 故障 → 本地高置信兜底
         return infer_platform_query_tool_calls(cleaned)
     parsed = data.get("response_json") if isinstance(data, dict) else None
     plan = _normalize_tool_call_plan(parsed)

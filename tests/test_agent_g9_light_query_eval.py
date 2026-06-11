@@ -27,6 +27,7 @@ class AgentG9LightQueryEvalTests(unittest.TestCase):
         self.assertLessEqual(report["p95_ms"], TARGET_P95_MS)
         self.assertTrue(report["passed"])
         self.assertFalse([item for item in report["results"] if not item["success"]])
+        self.assertEqual({"local_fallback"}, {item["planner_source"] for item in report["results"]})
         json.dumps(report, ensure_ascii=False)
 
 

@@ -140,6 +140,88 @@ class ChatPlatformQueryIntentTests(unittest.TestCase):
         result = self._run(intent)
         self.assertEqual("assignment_submission_status", result["view"])
 
+    def test_detect_tool_calls_prefers_provider_native_platform_query(self):
+        captured_payloads = []
+
+        async def fake_post(url, json, timeout):
+            captured_payloads.append(json)
+            return _ai_response(
+                {
+                    "tool_calls": [
+                        {
+                            "name": "platform_query",
+                            "arguments": {
+                                "view": "class_roster",
+                                "params": {"class_keyword": "三班"},
+                            },
+                        }
+                    ]
+                }
+            )
+
+        with patch("classroom_app.core.ai_client") as client:
+            client.post = AsyncMock(side_effect=fake_post)
+            plan = self._run(service.detect_platform_query_tool_calls("三班有多少学生？"))
+
+        self.assertEqual(1, client.post.await_count)
+        self.assertIn("tools", captured_payloads[0])
+        self.assertEqual("platform_query", captured_payloads[0]["tools"][0]["function"]["name"])
+        self.assertEqual([{"view": "class_roster", "params": {"class_keyword": "三班"}}], plan["tool_calls"])
+        self.assertEqual("provider_tool_call", plan["planner_source"])
+
+    def test_detect_tool_calls_guardrails_provider_weak_classroom_view(self):
+        async def fake_post(url, json, timeout):
+            return _ai_response(
+                {
+                    "tool_calls": [
+                        {
+                            "name": "platform_query",
+                            "arguments": {"view": "my_classrooms", "params": {}},
+                        }
+                    ]
+                }
+            )
+
+        with patch("classroom_app.core.ai_client") as client:
+            client.post = AsyncMock(side_effect=fake_post)
+            plan = self._run(
+                service.detect_platform_query_tool_calls(
+                    "\u4e09\u73ed\u6210\u7ee9\u4f4e\u4e8e 60 \u5206\u7684\u662f\u8c01\uff1f"
+                )
+            )
+
+        self.assertEqual(1, client.post.await_count)
+        self.assertEqual("low_scores", plan["tool_calls"][0]["view"])
+        self.assertTrue(plan["guardrail_applied"])
+        self.assertEqual("provider_tool_call", plan["planner_source"])
+
+    def test_detect_tool_calls_falls_back_to_json_plan_when_provider_returns_no_tool(self):
+        responses = [
+            _ai_response({"tool_calls": []}),
+            _ai_response(
+                {
+                    "response_json": {
+                        "related": True,
+                        "tool_calls": [
+                            {
+                                "view": "assignment_submission_status",
+                                "params": {"class_keyword": "三班"},
+                            }
+                        ],
+                        "needs_agent": False,
+                    }
+                }
+            ),
+        ]
+
+        with patch("classroom_app.core.ai_client") as client:
+            client.post = AsyncMock(side_effect=responses)
+            plan = self._run(service.detect_platform_query_tool_calls("三班这次作业有多少人没交？"))
+
+        self.assertEqual(2, client.post.await_count)
+        self.assertEqual("assignment_submission_status", plan["tool_calls"][0]["view"])
+        self.assertEqual("json_plan", plan["planner_source"])
+
     @staticmethod
     def _run(coro):
         import asyncio
