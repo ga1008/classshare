@@ -1,11 +1,16 @@
 import contextlib
 import json
 import os
+import sqlite3
 import unittest
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 os.environ["DB_ENGINE"] = "sqlite"
 
+from classroom_app.db.schema_assignments import ensure_assignment_schema
+from classroom_app.db.schema_classroom_activity import ensure_classroom_activity_schema
+from classroom_app.db.schema_foundation import ensure_foundation_schema
 from classroom_app.routers import ai as ai_router
 from classroom_app.services import chat_platform_query_service as service
 
@@ -23,6 +28,72 @@ async def _collect_platform_events(*, role="teacher", teacher_id=7, message="三
     async for line in ai_router._platform_data_retrieval_events(role, teacher_id, message, payload):
         events.append(json.loads(line))
     return events, payload
+
+
+async def _collect_gongwen_events(*, role="teacher", teacher_id=7, message="查一下最近的公文", payload=None):
+    events = []
+    payload = payload if payload is not None else {"system_prompt": "base prompt"}
+    async for line in ai_router._gongwen_retrieval_events(role, teacher_id, message, payload):
+        events.append(json.loads(line))
+    return events, payload
+
+
+def _open_platform_query_conn():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    ensure_foundation_schema(conn)
+    ensure_assignment_schema(conn)
+    ensure_classroom_activity_schema(conn)
+    conn.execute(
+        """
+        INSERT INTO teachers (id, name, email, hashed_password, school_code, school_name, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (7, "Teacher", "teacher7@example.test", "hashed", "gxufl", "广西外国语学院", 1),
+    )
+    conn.execute("INSERT INTO classes (id, name, created_by_teacher_id) VALUES (?, ?, ?)", (1, "三班", 7))
+    conn.execute("INSERT INTO courses (id, name, created_by_teacher_id) VALUES (?, ?, ?)", (1, "综合英语", 7))
+    conn.execute(
+        "INSERT INTO class_offerings (id, class_id, course_id, teacher_id) VALUES (?, ?, ?, ?)",
+        (1, 1, 1, 7),
+    )
+    conn.executemany(
+        "INSERT INTO students (id, student_id_number, name, class_id) VALUES (?, ?, ?, ?)",
+        [
+            (1, "S001", "Alice", 1),
+            (2, "S002", "Bob", 1),
+            (3, "S003", "Carol", 1),
+        ],
+    )
+    conn.execute(
+        """
+        INSERT INTO assignments (id, course_id, class_offering_id, title, requirements_md, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (1, 1, 1, "Unit 1 reflection", "Write a reflection", "published", "2026-01-03T08:00:00+00:00"),
+    )
+    conn.executemany(
+        """
+        INSERT INTO submissions (id, assignment_id, student_pk_id, student_name, submitted_at, score)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (1, "1", 1, "Alice", "2026-01-04T09:00:00+00:00", 95),
+            (2, "1", 2, "Bob", "2026-01-04T10:00:00+00:00", 58),
+        ],
+    )
+    starts_at = (datetime.now() + timedelta(days=1)).isoformat(timespec="seconds")
+    conn.execute(
+        """
+        INSERT INTO teacher_calendar_events (
+            teacher_id, source_type, source_key, title, starts_at, location, status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (7, "exam", "exam:1", "三班期末考试监考", starts_at, "A101", "active"),
+    )
+    conn.commit()
+    return conn
 
 
 class ChatPlatformQueryIntentTests(unittest.TestCase):
@@ -124,6 +195,70 @@ class ChatPlatformQueryEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("平台数据查询暂时不可用", tool_events[-1]["message"])
         self.assertIn("不要编造课堂、学生、作业、成绩或日程数字", payload["system_prompt"])
         self.assertIn("转为 Agent 任务", payload["system_prompt"])
+
+    async def test_gongwen_retrieval_emits_tool_status(self):
+        result = {
+            "doc_count": 1,
+            "documents": [{"title": "教学安排通知", "url": "/manage/gongwen?document_id=1"}],
+            "context_block": "--- 校园公文检索结果 ---\n教学安排通知",
+        }
+        with patch(
+            "classroom_app.services.gongwen_ai_search_service.message_may_mention_gongwen",
+            return_value=True,
+        ), patch(
+            "classroom_app.services.gongwen_ai_search_service.detect_gongwen_intent",
+            AsyncMock(return_value={"related": True, "keywords": ["教学安排"]}),
+        ), patch(
+            "classroom_app.services.gongwen_ai_search_service.run_gongwen_retrieval",
+            AsyncMock(return_value=result),
+        ), patch(
+            "classroom_app.services.gongwen_ai_search_service.summarize_retrieval_for_log",
+            return_value="doc_count=1",
+        ):
+            events, payload = await _collect_gongwen_events()
+
+        tool_events = [event for event in events if event["event"] == "tool_status"]
+        self.assertEqual(["detecting", "running", "done"], [event["stage"] for event in tool_events])
+        self.assertEqual("gongwen_search", tool_events[0]["tool"])
+        self.assertEqual("校园公文检索", tool_events[0]["label"])
+        self.assertEqual(1, tool_events[-1]["doc_count"])
+        self.assertIn("教学安排通知", payload["system_prompt"])
+
+
+class ChatPlatformQueryViewTests(unittest.TestCase):
+    def test_five_light_query_views_return_teacher_scoped_facts(self):
+        conn = _open_platform_query_conn()
+        try:
+            classrooms = service.run_platform_view(conn, teacher_id=7, view="my_classrooms", params={})
+            roster = service.run_platform_view(
+                conn,
+                teacher_id=7,
+                view="class_roster",
+                params={"class_keyword": "三班"},
+            )
+            submission = service.run_platform_view(
+                conn,
+                teacher_id=7,
+                view="assignment_submission_status",
+                params={"assignment_keyword": "Unit 1", "class_keyword": "三班"},
+            )
+            low_scores = service.run_platform_view(
+                conn,
+                teacher_id=7,
+                view="low_scores",
+                params={"threshold": 60, "class_keyword": "三班"},
+            )
+            schedule = service.run_platform_view(conn, teacher_id=7, view="my_schedule", params={})
+
+            self.assertEqual("三班", classrooms["rows"][0]["班级"])
+            self.assertEqual(3, classrooms["rows"][0]["学生数"])
+            self.assertEqual(["Alice", "Bob", "Carol"], [row["姓名"] for row in roster["rows"]])
+            self.assertIn("班级总人数 3，已提交 2，未交 1 人", submission["note"])
+            self.assertEqual(["Carol"], [row["未交学生"] for row in submission["rows"]])
+            self.assertEqual(["Bob"], [row["学生"] for row in low_scores["rows"]])
+            self.assertEqual("三班期末考试监考", schedule["rows"][0]["事项"])
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":

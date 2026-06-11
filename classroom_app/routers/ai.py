@@ -1321,15 +1321,19 @@ def _encode_stream_event(event: str, **payload: Any) -> str:
     return json.dumps({"event": event, **payload}, ensure_ascii=False) + "\n"
 
 
-def _encode_platform_tool_status(stage: str, message: str, **payload: Any) -> str:
+def _encode_tool_status(tool: str, label: str, stage: str, message: str, **payload: Any) -> str:
     return _encode_stream_event(
         "tool_status",
-        tool="platform_query",
-        label="平台数据查询",
+        tool=tool,
+        label=label,
         stage=stage,
         message=message,
         **payload,
     )
+
+
+def _encode_platform_tool_status(stage: str, message: str, **payload: Any) -> str:
+    return _encode_tool_status("platform_query", "平台数据查询", stage, message, **payload)
 
 
 def _decode_stream_event(line: str) -> Optional[Dict[str, Any]]:
@@ -1370,22 +1374,31 @@ async def _gongwen_retrieval_events(
 
         if not message_may_mention_gongwen(message):
             return
-        yield _encode_stream_event(
-            "search_status", stage="detecting", message="正在判断是否需要检索校园公文..."
-        )
+        detecting_message = "正在判断是否需要检索校园公文..."
+        yield _encode_stream_event("search_status", stage="detecting", message=detecting_message)
+        yield _encode_tool_status("gongwen_search", "校园公文检索", "detecting", detecting_message)
         intent = await detect_gongwen_intent(message)
         if not intent:
             yield _encode_stream_event("search_status", stage="none", message="")
             return
-        yield _encode_stream_event(
-            "search_status", stage="searching", message="正在检索相关校园公文..."
-        )
+        searching_message = "正在检索相关校园公文..."
+        yield _encode_stream_event("search_status", stage="searching", message=searching_message)
+        yield _encode_tool_status("gongwen_search", "校园公文检索", "running", searching_message)
         result = await run_gongwen_retrieval(int(teacher_id), message, intent=intent)
         if result and result.get("doc_count"):
+            organizing_message = f"已找到 {result['doc_count']} 篇相关公文，正在整理回答..."
             yield _encode_stream_event(
                 "search_status",
                 stage="organizing",
-                message=f"已找到 {result['doc_count']} 篇相关公文，正在整理回答...",
+                message=organizing_message,
+                doc_count=int(result["doc_count"]),
+                documents=result.get("documents") or [],
+            )
+            yield _encode_tool_status(
+                "gongwen_search",
+                "校园公文检索",
+                "done",
+                organizing_message,
                 doc_count=int(result["doc_count"]),
                 documents=result.get("documents") or [],
             )
@@ -1393,19 +1406,29 @@ async def _gongwen_retrieval_events(
                 str(chat_payload.get("system_prompt") or "") + "\n\n" + str(result.get("context_block") or "")
             )
         else:
-            yield _encode_stream_event(
-                "search_status",
-                stage="empty",
-                message="公文库中暂未找到直接相关的公文，将按常规方式回答...",
+            empty_message = "公文库中暂未找到直接相关的公文，将按常规方式回答..."
+            yield _encode_stream_event("search_status", stage="empty", message=empty_message, doc_count=0)
+            yield _encode_tool_status(
+                "gongwen_search",
+                "校园公文检索",
+                "empty",
+                empty_message,
                 doc_count=0,
             )
         print(f"[GONGWEN-AI-SEARCH] teacher={teacher_id} {summarize_retrieval_for_log(result)}")
     except Exception as exc:  # noqa: BLE001 — 公文检索故障不拖垮普通对话
         print(f"[GONGWEN-AI-SEARCH] retrieval failed for teacher {teacher_id}: {exc}")
+        failed_message = "公文检索暂时不可用，将按常规方式回答..."
         yield _encode_stream_event(
             "search_status",
             stage="failed",
-            message="公文检索暂时不可用，将按常规方式回答...",
+            message=failed_message,
+        )
+        yield _encode_tool_status(
+            "gongwen_search",
+            "校园公文检索",
+            "failed",
+            failed_message,
         )
 
 
