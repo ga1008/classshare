@@ -364,7 +364,7 @@ def unified_search(conn, *, teacher_id: int, scope: str, keyword: str, limit: in
                     "snippet": _search_snippet(
                         doc.get("parsed_summary") or doc.get("parsed_text") or doc.get("keywords"), term
                     ),
-                    "url": f"/manage/gongwen?doc_id={int(doc.get('id') or 0)}",
+                    "url": f"/manage/gongwen?doc={int(doc.get('id') or 0)}",
                     "date": str(doc.get("publish_time") or ""),
                 }
             )

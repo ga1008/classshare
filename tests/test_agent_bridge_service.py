@@ -11,6 +11,7 @@ from classroom_app.services.agent_bridge_service import (
     example_queries_payload,
     mask_sensitive_cell,
     run_readonly_query,
+    unified_search,
 )
 
 
@@ -35,6 +36,13 @@ class AgentBridgeServiceTests(unittest.TestCase):
         ensure_materials_integrations_schema(conn)
         with patch.object(schema_gongwen, "get_configured_db_engine", return_value="sqlite"):
             schema_gongwen.ensure_gongwen_schema(conn)
+        conn.execute(
+            """
+            INSERT INTO teachers (id, name, email, hashed_password, school_code, school_name, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (7, "Teacher", "teacher7@example.test", "hashed", "gxufl", "广西外国语学院", 1),
+        )
         conn.execute("INSERT INTO classes (id, name, created_by_teacher_id) VALUES (?, ?, ?)", (1, "Class 1", 7))
         conn.execute("INSERT INTO courses (id, name, created_by_teacher_id) VALUES (?, ?, ?)", (1, "Course 1", 7))
         conn.execute(
@@ -47,10 +55,19 @@ class AgentBridgeServiceTests(unittest.TestCase):
         )
         conn.execute(
             """
-            INSERT INTO assignments (id, course_id, class_offering_id, title, status, due_at, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO assignments (id, course_id, class_offering_id, title, requirements_md, status, due_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (1, 1, 1, "Homework 1", "published", "2026-01-08T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
+            (
+                1,
+                1,
+                1,
+                "Policy reflection homework",
+                "Write about policy summary",
+                "published",
+                "2026-01-08T00:00:00+00:00",
+                "2026-01-01T00:00:00+00:00",
+            ),
         )
         conn.execute(
             """
@@ -64,7 +81,7 @@ class AgentBridgeServiceTests(unittest.TestCase):
             INSERT INTO course_materials (id, teacher_id, material_path, name, node_type, preview_type, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (1, 7, "/materials/course-1/intro.md", "Intro", "file", "markdown", "2026-01-03T00:00:00+00:00"),
+            (1, 7, "/materials/course-1/policy-intro.md", "Policy intro", "file", "markdown", "2026-01-03T00:00:00+00:00"),
         )
         conn.execute(
             """
@@ -77,10 +94,26 @@ class AgentBridgeServiceTests(unittest.TestCase):
         )
         conn.execute(
             """
-            INSERT INTO gongwen_documents (id, remote_id, title, sn, author, parsed_summary, parsed_text, publish_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO gongwen_documents (
+                id, remote_id, attr_school_code, attr_level, openness,
+                title, sn, author, parsed_summary, parsed_text, publish_time, parsed_status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (1, "remote-1", "Policy Notice", "GW-1", "Office", "policy summary", "policy body", "2026-01-05"),
+            (
+                1,
+                "remote-1",
+                "gxufl",
+                "school",
+                "school",
+                "Policy Notice",
+                "GW-1",
+                "Office",
+                "policy summary",
+                "policy body",
+                "2026-01-05",
+                "done",
+            ),
         )
         conn.commit()
         return conn
@@ -128,6 +161,70 @@ class AgentBridgeServiceTests(unittest.TestCase):
                     result = run_readonly_query(conn, item["sql"], limit=5, params=params)
                     self.assertGreater(len(result["columns"]), 0)
                     self.assertLessEqual(result["row_count"], 5)
+        finally:
+            conn.close()
+            schema_gongwen._SCHEMA_READY = False
+
+    def test_unified_search_scopes_return_clickable_teacher_scoped_results(self):
+        conn = self._open_example_schema_conn()
+        try:
+            gongwen = unified_search(conn, teacher_id=7, scope="gongwen", keyword="policy", limit=5)
+            materials = unified_search(conn, teacher_id=7, scope="materials", keyword="policy", limit=5)
+            assignments = unified_search(conn, teacher_id=7, scope="assignments", keyword="policy", limit=5)
+            combined = unified_search(conn, teacher_id=7, scope="all", keyword="policy", limit=5)
+
+            self.assertEqual(["gongwen"], [item["type"] for item in gongwen])
+            self.assertIn("/manage/gongwen?", gongwen[0]["url"])
+            self.assertIn("Policy Notice", gongwen[0]["title"])
+
+            self.assertEqual(["material"], [item["type"] for item in materials])
+            self.assertEqual("/materials/view/1", materials[0]["url"])
+            self.assertIn("Policy intro", materials[0]["title"])
+
+            self.assertEqual(["assignment"], [item["type"] for item in assignments])
+            self.assertEqual("/assignment/1", assignments[0]["url"])
+            self.assertIn("Policy reflection homework", assignments[0]["title"])
+
+            self.assertEqual({"gongwen", "material", "assignment"}, {item["type"] for item in combined})
+
+            for result in (gongwen + materials + assignments):
+                self.assertGreaterEqual(set(result), {"type", "title", "snippet", "url", "date"})
+                self.assertTrue(result["url"].startswith("/"))
+        finally:
+            conn.close()
+            schema_gongwen._SCHEMA_READY = False
+
+    def test_unified_search_does_not_cross_teacher_material_or_assignment_scope(self):
+        conn = self._open_example_schema_conn()
+        try:
+            conn.execute(
+                """
+                INSERT INTO courses (id, name, created_by_teacher_id)
+                VALUES (?, ?, ?)
+                """,
+                (2, "Other Course", 99),
+            )
+            conn.execute(
+                """
+                INSERT INTO assignments (id, course_id, class_offering_id, title, requirements_md, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (2, 2, None, "Policy homework from another teacher", "policy", "published", "2026-01-06T00:00:00+00:00"),
+            )
+            conn.execute(
+                """
+                INSERT INTO course_materials (id, teacher_id, material_path, name, node_type, preview_type, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (2, 99, "/materials/other/policy.md", "Other policy material", "file", "markdown", "2026-01-06T00:00:00+00:00"),
+            )
+            conn.commit()
+
+            materials = unified_search(conn, teacher_id=7, scope="materials", keyword="policy", limit=10)
+            assignments = unified_search(conn, teacher_id=7, scope="assignments", keyword="policy", limit=10)
+
+            self.assertEqual([1], [int(item["url"].rsplit("/", 1)[-1]) for item in materials])
+            self.assertEqual(["/assignment/1"], [item["url"] for item in assignments])
         finally:
             conn.close()
             schema_gongwen._SCHEMA_READY = False
