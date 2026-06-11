@@ -744,7 +744,8 @@ class AIChatComponent {
             statusText: '\u6b63\u5728\u8fde\u63a5 AI \u52a9\u624b...',
             errorMessage: '',
             searchStatusActive: false,
-            meta: null
+            meta: null,
+            agentHandoff: null
         };
     }
 
@@ -772,6 +773,13 @@ class AIChatComponent {
                     streamState.statusText = event.message;
                     streamState.searchStatusActive = true;
                 }
+                break;
+            case 'agent_handoff_suggested':
+                streamState.agentHandoff = {
+                    instruction: event.suggested_instruction || '',
+                    reason: event.reason || '',
+                    message: event.message || '转为 Agent 任务'
+                };
                 break;
             case 'queue_keepalive':
                 if (!streamState.finalAnswer && !streamState.thinkingContent && !streamState.searchStatusActive) {
@@ -854,7 +862,9 @@ class AIChatComponent {
         bubble.style.color = streamState.errorMessage ? 'var(--danger-color, #f44336)' : '';
 
         this.addCodeCopyButtons(bubble);
-        this.addMessageActions(messageDiv, streamState.finalAnswer);
+        this.addMessageActions(messageDiv, streamState.finalAnswer, {
+            agentHandoff: streamState.agentHandoff
+        });
         this.scrollToBottom();
     }
 
@@ -1462,27 +1472,45 @@ class AIChatComponent {
      * @param {HTMLElement} messageDiv - 消息的顶层 .ai-chat-message 元素
      * @param {string} rawMarkdown - 要复制的原始 Markdown 文本
      */
-    addMessageActions(messageDiv, rawMarkdown) {
+    addMessageActions(messageDiv, rawMarkdown, options = {}) {
         const existingActions = messageDiv.querySelector('.message-actions');
         if (existingActions) {
             existingActions.remove();
         }
 
-        if (!rawMarkdown) {
+        const agentHandoff = options.agentHandoff || null;
+        if (!rawMarkdown && !agentHandoff) {
             return;
         }
 
         const actionsDiv = document.createElement('div');
         actionsDiv.className = 'message-actions';
 
-        const copyBtn = document.createElement('button');
-        copyBtn.className = 'copy-btn';
-        copyBtn.innerHTML = this.iconCopy + ' 复制 Markdown';
-        copyBtn.dataset.rawMarkdown = rawMarkdown; // 存储原始文本
+        if (rawMarkdown) {
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'copy-btn';
+            copyBtn.innerHTML = this.iconCopy + ' 复制 Markdown';
+            copyBtn.dataset.rawMarkdown = rawMarkdown; // 存储原始文本
 
-        copyBtn.addEventListener('click', this.copyToClipboard.bind(this));
+            copyBtn.addEventListener('click', this.copyToClipboard.bind(this));
 
-        actionsDiv.appendChild(copyBtn);
+            actionsDiv.appendChild(copyBtn);
+        }
+        if (agentHandoff) {
+            const handoffBtn = document.createElement('button');
+            handoffBtn.className = 'copy-btn ai-agent-handoff-btn';
+            handoffBtn.type = 'button';
+            handoffBtn.textContent = '转为 Agent 任务';
+            handoffBtn.addEventListener('click', () => {
+                window.dispatchEvent(new CustomEvent('lanshare:agent-handoff', {
+                    detail: {
+                        instruction: agentHandoff.instruction || rawMarkdown || '',
+                        reason: agentHandoff.reason || '',
+                    }
+                }));
+            });
+            actionsDiv.appendChild(handoffBtn);
+        }
         messageDiv.appendChild(actionsDiv);
     }
 }

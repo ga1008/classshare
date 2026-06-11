@@ -1447,8 +1447,10 @@ async def _platform_data_retrieval_events(
         return
     try:
         from ..services.chat_platform_query_service import (
+            MAX_PLATFORM_TOOL_CALLS,
+            build_agent_handoff_instruction,
             build_query_result_block,
-            detect_platform_query_intent,
+            detect_platform_query_tool_calls,
             message_may_need_platform_data,
             run_platform_view,
         )
@@ -1462,45 +1464,80 @@ async def _platform_data_retrieval_events(
             "search_status", stage="detecting", message=detecting_message
         )
         yield _encode_platform_tool_status("detecting", detecting_message)
-        intent = await detect_platform_query_intent(message)
-        if not intent:
+        plan = await detect_platform_query_tool_calls(message)
+        tool_calls = list(plan.get("tool_calls") or []) if isinstance(plan, dict) else []
+        if not tool_calls:
             yield _encode_stream_event("search_status", stage="none", message="")
             return
-        searching_message = "正在查询平台数据..."
-        yield _encode_stream_event(
-            "search_status", stage="searching", message=searching_message
-        )
-        yield _encode_platform_tool_status(
-            "running",
-            searching_message,
-            view=str(intent.get("view") or ""),
-        )
+        executable_calls = tool_calls[:MAX_PLATFORM_TOOL_CALLS]
+        result_blocks: list[str] = []
+        total_rows = 0
         with get_db_connection() as conn:
-            result = run_platform_view(
-                conn,
-                teacher_id=int(teacher_id),
-                view=str(intent.get("view") or ""),
-                params=intent.get("params") or {},
-            )
-        row_count = len(result.get("rows") or [])
-        organizing_message = f"已查到平台数据（{row_count} 行），正在整理回答..."
+            for index, call in enumerate(executable_calls, start=1):
+                view = str(call.get("view") or "")
+                searching_message = (
+                    f"正在查询平台数据（{index}/{len(executable_calls)}）："
+                    f"{view or 'platform_query'}..."
+                )
+                yield _encode_stream_event(
+                    "search_status", stage="searching", message=searching_message
+                )
+                yield _encode_platform_tool_status(
+                    "running",
+                    searching_message,
+                    view=view,
+                    round=index,
+                    max_rounds=MAX_PLATFORM_TOOL_CALLS,
+                )
+                result = run_platform_view(
+                    conn,
+                    teacher_id=int(teacher_id),
+                    view=view,
+                    params=call.get("params") or {},
+                )
+                row_count = len(result.get("rows") or [])
+                total_rows += row_count
+                result_blocks.append(build_query_result_block(view, result))
+                done_message = f"第 {index} 次平台查询完成（{row_count} 行）。"
+                yield _encode_platform_tool_status(
+                    "done",
+                    done_message,
+                    view=view,
+                    round=index,
+                    max_rounds=MAX_PLATFORM_TOOL_CALLS,
+                    row_count=row_count,
+                )
+        organizing_message = f"已完成 {len(executable_calls)} 次平台查询（共 {total_rows} 行），正在整理回答..."
         yield _encode_stream_event(
             "search_status",
             stage="organizing",
             message=organizing_message,
         )
-        yield _encode_platform_tool_status(
-            "done",
-            organizing_message,
-            view=str(intent.get("view") or ""),
-            row_count=row_count,
-        )
         chat_payload["system_prompt"] = (
             str(chat_payload.get("system_prompt") or "")
             + "\n\n"
-            + build_query_result_block(str(intent.get("view") or ""), result)
+            + "\n\n".join(result_blocks)
         )
-        print(f"[PLATFORM-QUERY] teacher={teacher_id} view={intent.get('view')} rows={row_count}")
+        needs_agent = bool((plan or {}).get("needs_agent")) or len(tool_calls) > MAX_PLATFORM_TOOL_CALLS
+        if needs_agent:
+            reason = str((plan or {}).get("agent_reason") or "")
+            if len(tool_calls) > MAX_PLATFORM_TOOL_CALLS and not reason:
+                reason = f"本轮轻查询最多执行 {MAX_PLATFORM_TOOL_CALLS} 次，当前问题规划了 {len(tool_calls)} 次查询。"
+            chat_payload["system_prompt"] = (
+                str(chat_payload.get("system_prompt") or "")
+                + "\n\n"
+                + build_agent_handoff_instruction(message, reason)
+            )
+            yield _encode_stream_event(
+                "agent_handoff_suggested",
+                message="这个问题适合转为 Agent 任务深入处理。",
+                suggested_instruction=message,
+                reason=reason,
+            )
+        print(
+            f"[PLATFORM-QUERY] teacher={teacher_id} calls={len(executable_calls)} "
+            f"planned={len(tool_calls)} rows={total_rows} needs_agent={needs_agent}"
+        )
     except Exception as exc:  # noqa: BLE001 — 平台查询故障不拖垮普通对话
         print(f"[PLATFORM-QUERY] retrieval failed for teacher {teacher_id}: {exc}")
         chat_payload["system_prompt"] = (

@@ -119,6 +119,16 @@ class ChatPlatformQueryIntentTests(unittest.TestCase):
         self.assertEqual("low_scores", intent["view"])
         self.assertEqual(72.0, intent["params"]["threshold"])
 
+    def test_local_fallback_plans_multiple_light_tool_calls(self):
+        plan = service.infer_platform_query_tool_calls("三班人数和这次作业没交名单一起查一下")
+
+        self.assertTrue(plan["related"])
+        self.assertGreaterEqual(len(plan["tool_calls"]), 2)
+        self.assertEqual(
+            {"assignment_submission_status", "class_roster"},
+            {call["view"] for call in plan["tool_calls"][:2]},
+        )
+
     def test_local_fallback_ignores_non_data_question(self):
         self.assertIsNone(service.infer_platform_query_intent("帮我写一段课堂导入语"))
 
@@ -151,8 +161,14 @@ class ChatPlatformQueryEventTests(unittest.IsolatedAsyncioTestCase):
             "classroom_app.services.chat_platform_query_service.message_may_need_platform_data",
             return_value=True,
         ), patch(
-            "classroom_app.services.chat_platform_query_service.detect_platform_query_intent",
-            AsyncMock(return_value={"view": "assignment_submission_status", "params": {"class_keyword": "三班"}}),
+            "classroom_app.services.chat_platform_query_service.detect_platform_query_tool_calls",
+            AsyncMock(
+                return_value={
+                    "related": True,
+                    "tool_calls": [{"view": "assignment_submission_status", "params": {"class_keyword": "三班"}}],
+                    "needs_agent": False,
+                }
+            ),
         ), patch(
             "classroom_app.services.chat_platform_query_service.run_platform_view",
             return_value=result,
@@ -170,6 +186,52 @@ class ChatPlatformQueryEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("平台实时数据", payload["system_prompt"])
         self.assertIn("Alice", payload["system_prompt"])
         run_view.assert_called_once()
+
+    async def test_teacher_platform_query_runs_two_tool_rounds_and_suggests_agent(self):
+        roster_result = {"title": "班级名册", "rows": [{"姓名": "Alice"}, {"姓名": "Bob"}]}
+        submission_result = {
+            "title": "作业提交情况",
+            "note": "班级总人数 2，已提交 1，未交 1 人。",
+            "rows": [{"未交学生": "Bob"}],
+        }
+        with patch(
+            "classroom_app.services.gongwen_ai_search_service.message_may_mention_gongwen",
+            return_value=False,
+        ), patch(
+            "classroom_app.services.chat_platform_query_service.message_may_need_platform_data",
+            return_value=True,
+        ), patch(
+            "classroom_app.services.chat_platform_query_service.detect_platform_query_tool_calls",
+            AsyncMock(
+                return_value={
+                    "related": True,
+                    "tool_calls": [
+                        {"view": "class_roster", "params": {"class_keyword": "三班"}},
+                        {"view": "assignment_submission_status", "params": {"class_keyword": "三班"}},
+                        {"view": "low_scores", "params": {"threshold": 60}},
+                    ],
+                    "needs_agent": True,
+                    "agent_reason": "需要更多交叉分析",
+                }
+            ),
+        ), patch(
+            "classroom_app.services.chat_platform_query_service.run_platform_view",
+            side_effect=[roster_result, submission_result],
+        ) as run_view, patch(
+            "classroom_app.routers.ai.get_db_connection",
+            return_value=contextlib.nullcontext(object()),
+        ):
+            events, payload = await _collect_platform_events(message="三班人数、未交和低分情况一起分析")
+
+        tool_events = [event for event in events if event["event"] == "tool_status"]
+        self.assertEqual(["detecting", "running", "done", "running", "done"], [event["stage"] for event in tool_events])
+        self.assertEqual([1, 1, 2, 2], [event["round"] for event in tool_events if "round" in event])
+        self.assertEqual(2, run_view.call_count)
+        handoff_events = [event for event in events if event["event"] == "agent_handoff_suggested"]
+        self.assertEqual(1, len(handoff_events))
+        self.assertIn("转为 Agent 任务", payload["system_prompt"])
+        self.assertIn("Alice", payload["system_prompt"])
+        self.assertIn("Bob", payload["system_prompt"])
 
     async def test_student_platform_query_does_not_trigger_tools(self):
         with patch(
@@ -189,8 +251,14 @@ class ChatPlatformQueryEventTests(unittest.IsolatedAsyncioTestCase):
             "classroom_app.services.chat_platform_query_service.message_may_need_platform_data",
             return_value=True,
         ), patch(
-            "classroom_app.services.chat_platform_query_service.detect_platform_query_intent",
-            AsyncMock(return_value={"view": "assignment_submission_status", "params": {}}),
+            "classroom_app.services.chat_platform_query_service.detect_platform_query_tool_calls",
+            AsyncMock(
+                return_value={
+                    "related": True,
+                    "tool_calls": [{"view": "assignment_submission_status", "params": {}}],
+                    "needs_agent": False,
+                }
+            ),
         ), patch(
             "classroom_app.services.chat_platform_query_service.run_platform_view",
             side_effect=RuntimeError("bad SQL"),

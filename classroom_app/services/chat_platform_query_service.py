@@ -2,7 +2,7 @@
 
 教师在聊天里问「三班几个人没交作业」这类轻量数据问题时：
 1. 本地正则粗筛（高召回、零成本）；
-2. 快速 AI 从**白名单视图**里选一个视图 + 参数（少而准，不让模型写 SQL）；
+2. 快速 AI 从**白名单视图**里规划最多 2 轮 platform_query 工具调用（少而准，不让模型写 SQL）；
 3. 以当前教师身份执行视图查询（内部函数，不经 HTTP 桥接，范围窄于 Agent）；
 4. 把结果表格拼进 system_prompt，流式回答引用真实数字。
 
@@ -17,6 +17,8 @@ from typing import Any
 INTENT_MESSAGE_LIMIT = 400
 MAX_RESULT_ROWS = 100
 RESULT_BLOCK_LIMIT = 6000
+MAX_PLATFORM_TOOL_CALLS = 2
+MAX_PLANNED_PLATFORM_TOOL_CALLS = 3
 
 # 粗筛：数据型轻问题的高召回信号。
 _DATA_QUESTION_PATTERN = re.compile(
@@ -60,43 +62,115 @@ def _extract_score_threshold(message: str) -> float | None:
 
 def infer_platform_query_intent(message: str) -> dict[str, Any] | None:
     """本地高置信兜底：意图 AI 不可用时仍能覆盖最高频轻量查询。"""
+    plan = infer_platform_query_tool_calls(message)
+    calls = plan.get("tool_calls") if isinstance(plan, dict) else None
+    return calls[0] if calls else None
+
+
+def _append_tool_call(calls: list[dict[str, Any]], view: str, params: dict[str, Any] | None = None) -> None:
+    if view not in VIEW_DESCRIPTIONS:
+        return
+    normalized = {"view": view, "params": params or {}}
+    fingerprint = jsonish_fingerprint(normalized)
+    if any(jsonish_fingerprint(item) == fingerprint for item in calls):
+        return
+    calls.append(normalized)
+
+
+def jsonish_fingerprint(value: Any) -> tuple:
+    if isinstance(value, dict):
+        return tuple(sorted((str(key), jsonish_fingerprint(item)) for key, item in value.items()))
+    if isinstance(value, list):
+        return tuple(jsonish_fingerprint(item) for item in value)
+    return (type(value).__name__, str(value))
+
+
+def infer_platform_query_tool_calls(message: str) -> dict[str, Any]:
+    """本地高置信兜底：为常见组合轻查询规划 0~N 个 platform_query 调用。"""
     text = str(message or "").strip()
     if not text or not message_may_need_platform_data(text):
-        return None
+        return {"related": False, "tool_calls": [], "needs_agent": False}
     class_keyword = _extract_class_keyword(text)
-    params: dict[str, Any] = {}
+    base_params: dict[str, Any] = {}
     if class_keyword:
-        params["class_keyword"] = class_keyword
+        base_params["class_keyword"] = class_keyword
 
+    calls: list[dict[str, Any]] = []
     if re.search(r"(没交|未交|提交率|提交情况|交了)", text):
-        return {"view": "assignment_submission_status", "params": params}
+        _append_tool_call(calls, "assignment_submission_status", dict(base_params))
     if re.search(r"(低分|不及格|及格|分数|成绩|低于|小于|\d{1,3}(?:\.\d{1,2})?\s*分)", text):
         threshold = _extract_score_threshold(text)
+        params = dict(base_params)
         if threshold is not None:
             params["threshold"] = threshold
-        return {"view": "low_scores", "params": params}
+        _append_tool_call(calls, "low_scores", params)
     if re.search(r"(花名册|名册|学生名单|名单|人数|多少(人|个)|几个(人|学生))", text):
-        return {"view": "class_roster", "params": params}
+        _append_tool_call(calls, "class_roster", dict(base_params))
     if re.search(r"(日程|课表|监考|考试|安排)", text):
-        return {"view": "my_schedule", "params": {}}
+        _append_tool_call(calls, "my_schedule", {})
     if re.search(r"(我的课堂|哪些课堂|哪些班)", text):
-        return {"view": "my_classrooms", "params": {}}
-    return None
+        _append_tool_call(calls, "my_classrooms", {})
+    needs_agent = bool(re.search(r"(深入|分析|生成|方案|报告|总结|跨.{0,4}对比|长期|趋势)", text))
+    return {
+        "related": bool(calls),
+        "tool_calls": calls,
+        "needs_agent": needs_agent or len(calls) > MAX_PLATFORM_TOOL_CALLS,
+    }
 
 
-async def detect_platform_query_intent(message: str) -> dict[str, Any] | None:
-    """快速 AI 选视图 + 参数。失败/不相关返回 None（降级为普通对话）。"""
+def _sanitize_tool_call(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    view = str(raw.get("view") or "").strip()
+    if view not in VIEW_DESCRIPTIONS:
+        return None
+    params = raw.get("params") if isinstance(raw.get("params"), dict) else {}
+    safe_params: dict[str, Any] = {}
+    for key, value in params.items():
+        if value is None or isinstance(value, (str, int, float, bool)):
+            safe_params[str(key)[:40]] = value
+    return {"view": view, "params": safe_params}
+
+
+def _normalize_tool_call_plan(parsed: Any) -> dict[str, Any] | None:
+    if not isinstance(parsed, dict):
+        return None
+    if "tool_calls" in parsed:
+        raw_calls = parsed.get("tool_calls") if isinstance(parsed.get("tool_calls"), list) else []
+    elif parsed.get("related") and parsed.get("view"):
+        raw_calls = [{"view": parsed.get("view"), "params": parsed.get("params") or {}}]
+    else:
+        raw_calls = []
+    calls: list[dict[str, Any]] = []
+    for raw in raw_calls:
+        call = _sanitize_tool_call(raw)
+        if call:
+            _append_tool_call(calls, call["view"], call["params"])
+    if not calls and not parsed.get("related"):
+        return {"related": False, "tool_calls": [], "needs_agent": False}
+    return {
+        "related": bool(calls),
+        "tool_calls": calls[:MAX_PLANNED_PLATFORM_TOOL_CALLS],
+        "needs_agent": bool(parsed.get("needs_agent")) or len(calls) > MAX_PLATFORM_TOOL_CALLS,
+        "agent_reason": str(parsed.get("agent_reason") or "").strip()[:120],
+    }
+
+
+async def detect_platform_query_tool_calls(message: str) -> dict[str, Any]:
+    """快速 AI 规划 platform_query 调用。失败时用本地高置信规则兜底。"""
     cleaned = str(message or "").strip()
     if not cleaned:
-        return None
+        return {"related": False, "tool_calls": [], "needs_agent": False}
     views_text = "\n".join(f"- {key}: {desc}" for key, desc in VIEW_DESCRIPTIONS.items())
     payload = {
         "system_prompt": (
-            "你是教学平台数据查询意图识别器。教师的这句话如果是想查询平台里的实时数据"
-            "（提交情况/名单/人数/成绩/日程/课堂列表），从下面的白名单视图中选择最匹配的一个并填参数。"
-            f"可用视图：\n{views_text}\n"
-            '只输出 JSON：{"related": true/false, "view": "视图名", "params": {"参数名": "值"}}。'
-            "拿不准、或者问题需要分析/生成内容（不是查数）时输出 {\"related\": false}。"
+            "你是教学平台聊天工具调用规划器。教师的问题如果能通过平台实时数据轻查询解决，"
+            "请从白名单视图中规划 platform_query 工具调用，最多规划 3 个，按回答需要的顺序排列；"
+            "平台实际只会执行前 2 个。超过 2 个、需要长时间分析、生成完整报告或跨多类数据综合推理时，"
+            "needs_agent=true，并简短给 agent_reason。不要写 SQL，不要发散到白名单外。"
+            f"\n可用视图：\n{views_text}\n"
+            '只输出 JSON：{"related": true/false, "tool_calls": [{"view": "视图名", "params": {"参数名": "值"}}], '
+            '"needs_agent": true/false, "agent_reason": "可空"}。'
         ),
         "messages": [],
         "new_message": cleaned[:INTENT_MESSAGE_LIMIT],
@@ -106,7 +180,7 @@ async def detect_platform_query_intent(message: str) -> dict[str, Any] | None:
         "task_type": "fast_text_response",
         "response_format": "json",
         "task_priority": "interactive",
-        "task_label": "platform_query_intent",
+        "task_label": "platform_query_tool_plan",
     }
     try:
         from ..core import ai_client
@@ -114,16 +188,20 @@ async def detect_platform_query_intent(message: str) -> dict[str, Any] | None:
         resp = await ai_client.post("/api/ai/chat", json=payload, timeout=20.0)
         resp.raise_for_status()
         data = resp.json()
-    except Exception:  # noqa: BLE001 — 意图 AI 故障 → 本地高置信兜底，仍失败则普通对话
-        return infer_platform_query_intent(cleaned)
+    except Exception:  # noqa: BLE001 — 规划 AI 故障 → 本地高置信兜底
+        return infer_platform_query_tool_calls(cleaned)
     parsed = data.get("response_json") if isinstance(data, dict) else None
-    if not isinstance(parsed, dict) or not parsed.get("related"):
-        return None
-    view = str(parsed.get("view") or "").strip()
-    if view not in VIEW_DESCRIPTIONS:
-        return None
-    params = parsed.get("params") if isinstance(parsed.get("params"), dict) else {}
-    return {"view": view, "params": params}
+    plan = _normalize_tool_call_plan(parsed)
+    if plan is None:
+        return infer_platform_query_tool_calls(cleaned)
+    return plan
+
+
+async def detect_platform_query_intent(message: str) -> dict[str, Any] | None:
+    """兼容旧调用：返回规划结果中的第一个 platform_query。"""
+    plan = await detect_platform_query_tool_calls(message)
+    calls = plan.get("tool_calls") if isinstance(plan, dict) else None
+    return calls[0] if calls else None
 
 
 def _kw(params: dict[str, Any], key: str) -> str:
@@ -366,3 +444,16 @@ def build_query_result_block(view: str, result: dict[str, Any]) -> str:
     )
     block = "\n".join(lines)
     return block[:RESULT_BLOCK_LIMIT]
+
+
+def build_agent_handoff_instruction(message: str, reason: str = "") -> str:
+    reason_text = str(reason or "").strip()
+    lines = [
+        "--- Agent 任务转化建议 ---",
+        "本轮问题可能需要超过聊天轻查询的 2 次工具调用，或需要更深入的跨数据分析。",
+        "回答末尾请自然附上一句：这个问题适合交给 Agent 任务深入处理，可以点击下方「转为 Agent 任务」继续。",
+        f"建议带入 Agent 的任务：{str(message or '').strip()[:500]}",
+    ]
+    if reason_text:
+        lines.append(f"原因：{reason_text[:120]}")
+    return "\n".join(lines)

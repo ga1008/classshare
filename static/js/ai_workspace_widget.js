@@ -1533,6 +1533,22 @@ function setAgentMode(enabled, { persist = true } = {}) {
     }
 }
 
+function prefillAgentTaskFromChat(instruction) {
+    const text = String(instruction || '').trim();
+    if (!text) {
+        return;
+    }
+    setAgentMode(true);
+    const surface = currentChatSurface();
+    if (surface.textarea) {
+        surface.textarea.value = text;
+        resetTextareaHeight(surface.textarea);
+        surface.textarea.focus();
+    }
+    chatComponent?.updateSendButtonState?.();
+    notify('已切换到 Agent 模式，可补充说明后提交。', 'success');
+}
+
 async function updateComposerPresence(active) {
     if (!CONFIG.taskCenterEnabled) {
         return;
@@ -1699,6 +1715,9 @@ function bindTaskCenter() {
     if (!CONFIG.taskCenterEnabled) {
         return;
     }
+    window.addEventListener('lanshare:agent-handoff', (event) => {
+        prefillAgentTaskFromChat(event.detail?.instruction || '');
+    });
     $('#ai-agent-mode-toggle')?.addEventListener('click', () => setAgentMode(!agentMode));
     $all('[data-ai-mode-select]').forEach((button) => {
         button.addEventListener('click', () => {
