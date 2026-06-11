@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 import re
 import shutil
 import sqlite3
@@ -9,6 +10,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import HTTPException
 
@@ -60,6 +62,10 @@ AGENT_TASK_ATTACHMENT_RETENTION_DAYS = 7
 AGENT_TASK_ATTACHMENT_CLEANUP_LIMIT = 50
 AGENT_TASK_ATTACHMENT_CLEANUP_INTERVAL_SECONDS = 6 * 60 * 60
 _LAST_ATTACHMENT_CLEANUP_MONOTONIC = 0.0
+AGENT_TASK_RECOVERED_ARTIFACT_LIMIT = 12
+AGENT_TASK_RECOVERED_ARTIFACT_MAX_BYTES = 20 * 1024 * 1024
+AGENT_TASK_INTERNAL_WORKSPACE_FILES = {"TASK.md", "BRIDGE.md", "context.json"}
+AGENT_TASK_INTERNAL_WORKSPACE_DIRS = {"attachments", "__pycache__"}
 
 TASK_TYPE_DEFINITIONS: dict[str, dict[str, str]] = {
     "course_material_digest": {
@@ -1336,6 +1342,83 @@ def _remove_task_attachments_dir(task_id: int) -> bool:
     return not target.exists()
 
 
+def _is_recoverable_workspace_artifact(root: Path, path: Path) -> bool:
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return False
+    parts = relative.parts
+    if not parts:
+        return False
+    if any(part.startswith(".") for part in parts):
+        return False
+    if parts[0] in AGENT_TASK_INTERNAL_WORKSPACE_DIRS:
+        return False
+    if path.name in AGENT_TASK_INTERNAL_WORKSPACE_FILES:
+        return False
+    if not path.is_file():
+        return False
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return False
+    return 0 < size <= AGENT_TASK_RECOVERED_ARTIFACT_MAX_BYTES
+
+
+def collect_task_workspace_artifacts(
+    task_id: int,
+    *,
+    limit: int = AGENT_TASK_RECOVERED_ARTIFACT_LIMIT,
+) -> list[dict[str, Any]]:
+    """Return safe, teacher-downloadable files produced in the task workspace."""
+    root = _task_workspace_host_path_for_id(int(task_id)).resolve()
+    if not root.exists() or not root.is_dir():
+        return []
+    artifacts: list[dict[str, Any]] = []
+    max_items = max(1, min(int(limit or AGENT_TASK_RECOVERED_ARTIFACT_LIMIT), 50))
+    for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
+        if not _is_recoverable_workspace_artifact(root, path):
+            continue
+        try:
+            relative = path.relative_to(root).as_posix()
+            size = path.stat().st_size
+        except (OSError, ValueError):
+            continue
+        mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        artifacts.append(
+            {
+                "type": "workspace_file",
+                "path": relative,
+                "name": path.name,
+                "size": size,
+                "mime_type": mime_type,
+                "download_url": f"/api/agent-tasks/{int(task_id)}/artifacts/{quote(relative, safe='/')}",
+            }
+        )
+        if len(artifacts) >= max_items:
+            break
+    return artifacts
+
+
+def resolve_task_workspace_artifact(task_id: int, raw_path: str) -> dict[str, Any]:
+    """Resolve a recovered artifact path after re-checking it is safe to serve."""
+    relative_text = str(raw_path or "").replace("\\", "/").strip().lstrip("/")
+    if not relative_text or ".." in Path(relative_text).parts:
+        raise ValueError("产物路径无效。")
+    allowed_paths = {item["path"] for item in collect_task_workspace_artifacts(int(task_id), limit=50)}
+    if relative_text not in allowed_paths:
+        raise ValueError("产物不存在或不可下载。")
+    root = _task_workspace_host_path_for_id(int(task_id)).resolve()
+    target = (root / relative_text).resolve()
+    if root not in target.parents or not _is_recoverable_workspace_artifact(root, target):
+        raise ValueError("产物路径越界。")
+    return {
+        "path": target,
+        "filename": target.name,
+        "media_type": mimetypes.guess_type(target.name)[0] or "application/octet-stream",
+    }
+
+
 def _mark_task_attachments_cleaned(conn, task_id: int, *, cleaned_at: str, removed: bool) -> None:
     row = conn.execute("SELECT result_detail_json FROM agent_tasks WHERE id = ?", (int(task_id),)).fetchone()
     details = _load_json(row["result_detail_json"] if row else "{}", {})
@@ -2474,6 +2557,7 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
 4. 用数据说话：能查库就查库验证，不要编造不存在的数据；上下文不足时明确说明缺什么。
 5. 输出必须面向教师，使用规范 Markdown，清楚列出：任务理解、已使用的数据/来源、执行结果、需要教师确认的动作、风险提醒。给站内跳转用相对路径链接（如 /manage/gongwen）。
 6. {thinking_line}
+7. 若任务接近时间上限或外部工具反复失败，请先把已完成内容写入 workspace 中的 PARTIAL_RESULT.md（或其他清晰命名文件），再继续尝试；即使最终失败，平台也会把这些中间产物交还给教师。
 
 你能安全接管的教师业务流程边界：
 {workflow_lines}
@@ -2512,3 +2596,44 @@ def compact_runtime_detail(runtime_task: dict[str, Any]) -> dict[str, Any]:
         detail["tool_calls"] = detail["tool_calls"][-20:]
         detail["truncated"] = True
     return detail
+
+
+def build_failed_runtime_detail(
+    task_id: int,
+    *,
+    runtime_task: dict[str, Any] | None = None,
+    error_class: str = "",
+    error_message: str = "",
+) -> tuple[dict[str, Any], str]:
+    detail = compact_runtime_detail(runtime_task) if runtime_task else {}
+    summary = runtime_result_summary(runtime_task) if runtime_task else ""
+    recovered = collect_task_workspace_artifacts(int(task_id))
+    if recovered:
+        detail["recovered_artifacts"] = recovered
+        detail["partial_result_available"] = True
+        existing_artifacts = detail.get("artifacts") if isinstance(detail.get("artifacts"), list) else []
+        existing_paths = {
+            str(item.get("path") or item.get("name") or "")
+            for item in existing_artifacts
+            if isinstance(item, dict)
+        }
+        detail["artifacts"] = [
+            *existing_artifacts,
+            *[
+                {**item, "recovered": True}
+                for item in recovered
+                if str(item.get("path") or item.get("name") or "") not in existing_paths
+            ],
+        ]
+        names = "、".join(item.get("path") or item.get("name") or "产物" for item in recovered[:4])
+        partial_text = _summarize_text(summary, limit=260)
+        prefix = f"部分完成总结：任务未正常结束，但已挽救到 {len(recovered)} 个中间产物（{names}）。"
+        if partial_text and not str(summary).startswith("DeepSeek-TUI 已标记任务失败"):
+            summary = f"{prefix}运行时最后输出：{partial_text}"
+        else:
+            summary = prefix
+    if error_class:
+        detail["error_class"] = _clean_text(error_class, max_chars=40)
+    if error_message:
+        detail["error_message"] = _clean_text(error_message, max_chars=1200)
+    return detail, summary

@@ -467,6 +467,51 @@ class AgentTaskImprovementTests(unittest.TestCase):
             self.assertTrue(extracted.exists())
             self.assertIn("Alice", extracted.read_text(encoding="utf-8"))
 
+    def test_failed_runtime_detail_recovers_safe_workspace_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+            agent_task_service,
+            "AGENT_TASK_WORKSPACE_ROOT",
+            Path(tmpdir),
+        ):
+            workspace = Path(tmpdir) / "tasks" / "42"
+            outputs = workspace / "outputs"
+            attachments = workspace / "attachments"
+            outputs.mkdir(parents=True)
+            attachments.mkdir(parents=True)
+            (workspace / "TASK.md").write_text("private task", encoding="utf-8")
+            (workspace / "BRIDGE.md").write_text("token", encoding="utf-8")
+            (workspace / "context.json").write_text("{}", encoding="utf-8")
+            (workspace / "PARTIAL_RESULT.md").write_text("部分完成内容", encoding="utf-8")
+            (outputs / "table.csv").write_text("name,score\nAlice,95", encoding="utf-8")
+            (attachments / "source.txt").write_text("teacher upload", encoding="utf-8")
+
+            detail, summary = agent_task_service.build_failed_runtime_detail(
+                42,
+                runtime_task={"status": "running", "summary": "已完成课堂数据整理"},
+                error_class="timeout",
+                error_message="timeout",
+            )
+
+            recovered_paths = [item["path"] for item in detail["recovered_artifacts"]]
+            self.assertIn("PARTIAL_RESULT.md", recovered_paths)
+            self.assertIn("outputs/table.csv", recovered_paths)
+            self.assertNotIn("TASK.md", recovered_paths)
+            self.assertNotIn("BRIDGE.md", recovered_paths)
+            self.assertNotIn("context.json", recovered_paths)
+            self.assertNotIn("attachments/source.txt", recovered_paths)
+            self.assertTrue(detail["partial_result_available"])
+            self.assertIn("部分完成总结", summary)
+            self.assertIn("已完成课堂数据整理", summary)
+
+            resolved = agent_task_service.resolve_task_workspace_artifact(42, "outputs/table.csv")
+            self.assertEqual(outputs / "table.csv", resolved["path"])
+            with self.assertRaises(ValueError):
+                agent_task_service.resolve_task_workspace_artifact(42, "BRIDGE.md")
+            with self.assertRaises(ValueError):
+                agent_task_service.resolve_task_workspace_artifact(42, "attachments/source.txt")
+            with self.assertRaises(ValueError):
+                agent_task_service.resolve_task_workspace_artifact(42, "../context.json")
+
     def test_delete_agent_task_removes_isolated_workspace(self):
         conn = self._open_agent_task_conn()
         try:

@@ -144,6 +144,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/agent-tasks/{task_id}/artifacts/{artifact_path:path}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_download_agent_task_artifact",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/agent-tasks/{task_id}/cancel",
     "methods": [
       "POST"

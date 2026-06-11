@@ -654,9 +654,11 @@ function renderRuntimeDetail(detail = {}) {
         return renderPlatformResult(detail);
     }
     const textOutputs = Array.isArray(detail.text_outputs) ? detail.text_outputs.slice(0, 4) : [];
+    const recoveredArtifacts = Array.isArray(detail.recovered_artifacts) ? detail.recovered_artifacts.slice(0, 8) : [];
     const artifacts = Array.isArray(detail.artifacts) ? detail.artifacts.slice(0, 6) : [];
+    const regularArtifacts = artifacts.filter((item) => !(item && item.recovered && item.download_url));
     const toolCalls = Array.isArray(detail.tool_calls) ? detail.tool_calls.slice(-6) : [];
-    if (!textOutputs.length && !artifacts.length && !toolCalls.length) {
+    if (!textOutputs.length && !recoveredArtifacts.length && !regularArtifacts.length && !toolCalls.length) {
         return '';
     }
     return `
@@ -668,10 +670,21 @@ function renderRuntimeDetail(detail = {}) {
                     ${textOutputs.map((item) => `<div class="ai-task-runtime-output md-content">${renderWorkspaceMarkdown(item.text || item)}</div>`).join('')}
                 </div>
             ` : ''}
-            ${artifacts.length ? `
+            ${recoveredArtifacts.length ? `
+                <div class="ai-task-runtime-section is-recovered">
+                    <strong>已挽救的中间产物</strong>
+                    <ul>${recoveredArtifacts.map((item) => {
+                        const href = safeLocalHref(item.download_url || '');
+                        const label = item.path || item.name || '中间产物';
+                        const meta = item.size ? ` · ${formatAgentFileSize(item.size)}` : '';
+                        return `<li>${href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${escapeHtml(label)}</a>` : escapeHtml(label)}<small>${escapeHtml(meta)}</small></li>`;
+                    }).join('')}</ul>
+                </div>
+            ` : ''}
+            ${regularArtifacts.length ? `
                 <div class="ai-task-runtime-section">
                     <strong>产物</strong>
-                    <ul>${artifacts.map((item) => `<li>${escapeHtml(item.path || item.name || item.id || JSON.stringify(item))}</li>`).join('')}</ul>
+                    <ul>${regularArtifacts.map((item) => `<li>${escapeHtml(item.path || item.name || item.id || JSON.stringify(item))}</li>`).join('')}</ul>
                 </div>
             ` : ''}
             ${toolCalls.length ? `

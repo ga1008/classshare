@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from ..config import AGENT_TASK_RUNTIME_URL, AGENT_TASKS_ENABLED
 from ..database import get_db_connection
@@ -29,6 +29,7 @@ from ..services.agent_task_service import (
     list_agent_tasks,
     list_task_events_after,
     mark_proposed_action_executed,
+    resolve_task_workspace_artifact,
     set_agent_task_composer,
     task_type_options,
     utcnow_iso,
@@ -253,6 +254,28 @@ def api_get_agent_task(task_id: int, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         task = get_agent_task(conn, task_id, teacher_id=teacher_id)
     return {"status": "success", "task": task}
+
+
+@router.get("/{task_id}/artifacts/{artifact_path:path}", response_class=FileResponse)
+def api_download_agent_task_artifact(
+    task_id: int,
+    artifact_path: str,
+    user: dict = Depends(get_current_teacher),
+):
+    teacher_id = _teacher_id(user)
+    with get_db_connection() as conn:
+        task = get_agent_task(conn, task_id, teacher_id=teacher_id)
+    if not task.get("is_owner"):
+        raise HTTPException(status_code=403, detail="只能下载自己 Agent 任务的中间产物。")
+    try:
+        payload = resolve_task_workspace_artifact(task_id, artifact_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(
+        payload["path"],
+        filename=payload["filename"],
+        media_type=payload["media_type"],
+    )
 
 
 @router.get("/{task_id}/events", response_class=JSONResponse)

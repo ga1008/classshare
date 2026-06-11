@@ -61,6 +61,14 @@ class _RuntimeTaskFailed(Exception):
         self.runtime_task = runtime_task
 
 
+class _RuntimeTaskTimeout(TimeoutError):
+    """运行时超过平台上限时，保留最后一次快照用于部分结果挽救。"""
+
+    def __init__(self, error_text: str, runtime_task: dict[str, Any] | None = None):
+        super().__init__(error_text)
+        self.runtime_task = runtime_task
+
+
 def _enqueue_runtime_task(
     client: httpx.Client,
     task: dict[str, Any],
@@ -208,7 +216,10 @@ def _run_runtime_attempt(
     while True:
         if time.monotonic() - started_at > AGENT_TASK_MAX_RUNTIME_SECONDS:
             _request_runtime_cancel(client, runtime_task_id)
-            raise TimeoutError(f"Agent task exceeded {AGENT_TASK_MAX_RUNTIME_SECONDS} seconds.")
+            raise _RuntimeTaskTimeout(
+                f"Agent task exceeded {AGENT_TASK_MAX_RUNTIME_SECONDS} seconds.",
+                runtime_task=runtime_task,
+            )
 
         with get_db_connection() as conn:
             if _cancel_requested(conn, task_id):
@@ -272,16 +283,16 @@ def _finish_failed(task_id: int, *, error_message: str, error_class: str, runtim
     from classroom_app.database import get_db_connection
     from classroom_app.services.agent_task_service import (
         TASK_STATUS_FAILED,
-        compact_runtime_detail,
+        build_failed_runtime_detail,
         finish_agent_task,
     )
 
-    detail: dict[str, Any] = {}
-    summary = ""
-    if runtime_task:
-        detail = compact_runtime_detail(runtime_task)
-        summary = _runtime_result_summary(runtime_task)
-    detail["error_class"] = error_class
+    detail, summary = build_failed_runtime_detail(
+        task_id,
+        runtime_task=runtime_task,
+        error_class=error_class,
+        error_message=error_message,
+    )
     with get_db_connection() as conn:
         finish_agent_task(
             conn,
@@ -352,8 +363,8 @@ def _process_task(task: dict[str, Any]) -> None:
             try:
                 if _run_runtime_attempt(client, task, runtime_workspace, prompt_suffix=prompt_suffix):
                     return
-            except TimeoutError as exc:
-                _finish_failed(task_id, error_message=str(exc), error_class="timeout", runtime_task=None)
+            except _RuntimeTaskTimeout as exc:
+                _finish_failed(task_id, error_message=str(exc), error_class="timeout", runtime_task=exc.runtime_task)
                 print(f"[AGENT_TASK] task {task_id} timed out: {exc}", file=sys.stderr)
                 return
             except _RuntimeTaskFailed as exc:
