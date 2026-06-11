@@ -449,6 +449,14 @@ EXAMPLE_QUERIES: tuple[dict[str, str], ...] = (
         "purpose": "我最近的课堂材料",
         "sql": "SELECT id, name, material_path, preview_type, updated_at FROM course_materials WHERE teacher_id = :teacher_id AND node_type = 'file' ORDER BY updated_at DESC LIMIT 20",
     },
+    {
+        "purpose": "我未来的考试/监考/待办日程",
+        "sql": "SELECT title, starts_at, location, source_type FROM teacher_calendar_events WHERE teacher_id = :teacher_id AND status = 'active' AND deleted_at IS NULL AND starts_at >= :start_at ORDER BY starts_at ASC LIMIT 20",
+    },
+    {
+        "purpose": "我名下低于指定分数的提交",
+        "sql": "SELECT a.title AS assignment_title, s.student_name, s.score FROM submissions s JOIN assignments a ON CAST(a.id AS TEXT) = CAST(s.assignment_id AS TEXT) LEFT JOIN class_offerings co ON co.id = a.class_offering_id JOIN courses c ON c.id = a.course_id WHERE (co.teacher_id = :teacher_id OR c.created_by_teacher_id = :teacher_id) AND s.score IS NOT NULL AND s.score < :threshold ORDER BY a.created_at DESC, s.score ASC LIMIT 50",
+    },
 )
 
 

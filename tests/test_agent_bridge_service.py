@@ -79,10 +79,17 @@ class AgentBridgeServiceTests(unittest.TestCase):
         )
         conn.execute(
             """
-            INSERT INTO submissions (id, assignment_id, student_pk_id, student_name, submitted_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO submissions (id, assignment_id, student_pk_id, student_name, submitted_at, score)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (1, "1", 1, "Alice", "2026-01-02T00:00:00+00:00"),
+            (1, "1", 1, "Alice", "2026-01-02T00:00:00+00:00", 95),
+        )
+        conn.execute(
+            """
+            INSERT INTO submissions (id, assignment_id, student_pk_id, student_name, submitted_at, score)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (2, "1", 2, "Bob", "2026-01-02T00:00:00+00:00", 58),
         )
         conn.execute(
             """
@@ -99,6 +106,15 @@ class AgentBridgeServiceTests(unittest.TestCase):
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (1, 1, 1, "Session 1", "2026-01-04", 1, 1),
+        )
+        conn.execute(
+            """
+            INSERT INTO teacher_calendar_events (
+                teacher_id, source_type, source_key, title, starts_at, location, status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (7, "exam", "exam:1", "Policy oral exam", "2026-01-06T08:00:00", "A101", "active"),
         )
         conn.execute(
             """
@@ -162,6 +178,8 @@ class AgentBridgeServiceTests(unittest.TestCase):
             "class_offering_id": 1,
             "assignment_id": 1,
             "pattern": "%policy%",
+            "start_at": "2026-01-01T00:00:00",
+            "threshold": 60,
         }
         try:
             for item in example_queries_payload():
