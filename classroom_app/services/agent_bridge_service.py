@@ -31,6 +31,7 @@ MAX_CELL_CHARS = 2000
 MAX_FILE_BYTES = 256 * 1024
 MAX_DOCUMENT_FILE_BYTES = 10 * 1024 * 1024
 MAX_WEB_BYTES = 600 * 1024
+SQLITE_QUERY_TIMEOUT_SECONDS = 5.0
 
 # 凭据、会话、密钥类表：结构与数据都不暴露给 Agent。
 SENSITIVE_TABLES = frozenset({
@@ -174,6 +175,23 @@ def bind_named_params(sql: str, params: dict[str, Any] | None) -> tuple[str, tup
     return "".join(out), tuple(ordered)
 
 
+def _limited_readonly_sql(sql: str) -> str:
+    return f"SELECT * FROM ({sql}) AS agent_bridge_readonly_query LIMIT ?"
+
+
+def _install_sqlite_query_timeout(conn, timeout_seconds: float):
+    set_progress_handler = getattr(conn, "set_progress_handler", None)
+    if not callable(set_progress_handler):
+        return None
+    deadline = time.monotonic() + max(float(timeout_seconds or 0), 0.1)
+
+    def _abort_when_expired() -> int:
+        return 1 if time.monotonic() > deadline else 0
+
+    set_progress_handler(_abort_when_expired, 10_000)
+    return lambda: set_progress_handler(None, 0)
+
+
 def run_readonly_query(
     conn,
     sql: str,
@@ -183,9 +201,14 @@ def run_readonly_query(
     cleaned = validate_readonly_sql(sql)
     cleaned, bound_params = bind_named_params(cleaned, params)
     effective_limit = max(1, min(int(limit or MAX_QUERY_ROWS), MAX_QUERY_ROWS))
-    cursor = conn.execute(cleaned, bound_params)
-    columns = [desc[0] for desc in cursor.description or []]
-    rows = cursor.fetchmany(effective_limit + 1)
+    reset_timeout = _install_sqlite_query_timeout(conn, SQLITE_QUERY_TIMEOUT_SECONDS)
+    try:
+        cursor = conn.execute(_limited_readonly_sql(cleaned), (*bound_params, effective_limit + 1))
+        columns = [desc[0] for desc in cursor.description or []]
+        rows = cursor.fetchmany(effective_limit + 1)
+    finally:
+        if reset_timeout:
+            reset_timeout()
     truncated = len(rows) > effective_limit
     rows = rows[:effective_limit]
     payload_rows = [
