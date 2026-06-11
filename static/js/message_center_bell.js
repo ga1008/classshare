@@ -231,6 +231,11 @@ if (bellShells.length > 0) {
             hideBellToast(true);
         }
     });
+
+    window.addEventListener('message-center:refresh-requested', (event) => {
+        const detail = event instanceof CustomEvent ? event.detail || {} : {};
+        refreshBell({ allowPopup: detail.allowPopup !== false });
+    });
 }
 
 if (blogEntries.length > 0 || blogCountNodes.length > 0) {

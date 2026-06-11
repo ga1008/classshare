@@ -29,6 +29,7 @@ const taskEventStreams = new Map();
 let taskEventStreamDisabled = false;
 let agentSubscriptionPayload = { subscriptions: [], recent_tasks: [] };
 let agentSubscriptionBusy = false;
+const taskTerminalNotificationRefreshIds = new Set();
 
 function $(selector, root = document) {
     return root.querySelector(selector);
@@ -1165,6 +1166,22 @@ async function refreshTerminalTaskCard(taskId) {
     }
 }
 
+function refreshAgentTaskFinishNotification(taskId) {
+    const id = Number(taskId || 0);
+    if (!id || taskTerminalNotificationRefreshIds.has(id)) {
+        return;
+    }
+    taskTerminalNotificationRefreshIds.add(id);
+    const refreshBell = window.refreshMessageCenterBell;
+    if (typeof refreshBell === 'function') {
+        Promise.resolve(refreshBell({ allowPopup: true })).catch(() => {});
+        return;
+    }
+    window.dispatchEvent(new CustomEvent('message-center:refresh-requested', {
+        detail: { source: 'agent-task', taskId: id, allowPopup: true },
+    }));
+}
+
 function closeTaskEventStream(taskId) {
     const id = Number(taskId || 0);
     const source = taskEventStreams.get(id);
@@ -1185,6 +1202,7 @@ function handleTaskEventPayload(taskId, payload = {}) {
     }
     if (payload.is_terminal) {
         closeTaskEventStream(id);
+        refreshAgentTaskFinishNotification(id);
         refreshTerminalTaskCard(id).catch(() => {});
     }
 }
@@ -1269,8 +1287,11 @@ async function pollTaskEventsOnce() {
             if (data.last_event_id) {
                 taskLastEventIds.set(Number(taskId), Number(data.last_event_id));
             }
-            if (data.is_terminal && (data.events || []).length && Number(selectedTaskId) === Number(taskId)) {
-                await refreshTerminalTaskCard(taskId);
+            if (data.is_terminal && (data.events || []).length) {
+                refreshAgentTaskFinishNotification(taskId);
+                if (Number(selectedTaskId) === Number(taskId)) {
+                    await refreshTerminalTaskCard(taskId);
+                }
             }
         }
     } catch {

@@ -133,6 +133,21 @@ class AgentTaskImprovementTests(unittest.TestCase):
             conn.close()
             schema_agent_ext._SCHEMA_READY = False
 
+    def test_terminal_agent_events_refresh_message_center_bell(self):
+        workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
+        bell_js = Path("static/js/message_center_bell.js").read_text(encoding="utf-8")
+        terminal_handler = workspace_js[
+            workspace_js.index("function handleTaskEventPayload"):
+            workspace_js.index("function startTaskEventStream")
+        ]
+
+        self.assertIn("function refreshAgentTaskFinishNotification", workspace_js)
+        self.assertIn("window.refreshMessageCenterBell", workspace_js)
+        self.assertIn("message-center:refresh-requested", workspace_js)
+        self.assertIn("refreshAgentTaskFinishNotification(id)", terminal_handler)
+        self.assertIn("message-center:refresh-requested", bell_js)
+        self.assertIn("refreshBell({ allowPopup", bell_js)
+
     def test_record_agent_auto_retry_enforces_hourly_budget(self):
         conn = self._open_agent_task_conn()
         try:
