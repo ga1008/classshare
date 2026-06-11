@@ -262,7 +262,13 @@ def _view_low_scores(conn, teacher_id: int, params: dict[str, Any]) -> dict[str,
 
 def _view_my_schedule(conn, teacher_id: int, params: dict[str, Any]) -> dict[str, Any]:
     now = datetime.now()
-    rows = conn.execute(
+    start_at = now.isoformat(timespec="seconds")
+    end_at = (now + timedelta(days=7)).isoformat(timespec="seconds")
+    start_date = now.date().isoformat()
+    end_date = (now + timedelta(days=7)).date().isoformat()
+    rows: list[dict[str, Any]] = []
+
+    calendar_rows = conn.execute(
         """
         SELECT starts_at AS 时间, title AS 事项, location AS 地点, source_type AS 类型
         FROM teacher_calendar_events
@@ -272,13 +278,51 @@ def _view_my_schedule(conn, teacher_id: int, params: dict[str, Any]) -> dict[str
         ORDER BY starts_at ASC
         LIMIT 40
         """,
-        (
-            teacher_id,
-            now.isoformat(timespec="seconds"),
-            (now + timedelta(days=7)).isoformat(timespec="seconds"),
-        ),
+        (teacher_id, start_at, end_at),
     ).fetchall()
-    return {"title": "未来 7 天日程", "rows": [dict(row) for row in rows]}
+    rows.extend(dict(row) for row in calendar_rows)
+
+    session_rows = conn.execute(
+        """
+        SELECT s.session_date AS 时间,
+               s.title AS session_title,
+               s.order_index AS order_index,
+               c.name AS course_name,
+               cl.name AS class_name
+        FROM class_offering_sessions s
+        JOIN class_offerings co ON co.id = s.class_offering_id
+        JOIN courses c ON c.id = co.course_id
+        JOIN classes cl ON cl.id = co.class_id
+        WHERE co.teacher_id = ?
+          AND s.session_date >= ?
+          AND s.session_date <= ?
+        ORDER BY s.session_date ASC, s.order_index ASC, s.id ASC
+        LIMIT 40
+        """,
+        (teacher_id, start_date, end_date),
+    ).fetchall()
+    for row in session_rows:
+        order_label = f"第 {int(row['order_index'])} 次课" if row["order_index"] not in (None, "") else "课堂"
+        rows.append(
+            {
+                "时间": row["时间"],
+                "事项": " ".join(
+                    part
+                    for part in (
+                        row["course_name"],
+                        row["class_name"],
+                        order_label,
+                        row["session_title"],
+                    )
+                    if part
+                ),
+                "地点": "",
+                "类型": "class_session",
+            }
+        )
+
+    rows.sort(key=lambda item: str(item.get("时间") or ""))
+    return {"title": "未来 7 天日程", "rows": rows[:40]}
 
 
 _VIEW_EXECUTORS = {

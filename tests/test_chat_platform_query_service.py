@@ -92,6 +92,16 @@ def _open_platform_query_conn():
         """,
         (7, "exam", "exam:1", "三班期末考试监考", starts_at, "A101", "active"),
     )
+    session_date = (datetime.now() + timedelta(days=2)).date().isoformat()
+    conn.execute(
+        """
+        INSERT INTO class_offering_sessions (
+            id, class_offering_id, order_index, title, session_date, weekday
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (1, 1, 2, "Unit 2 speaking lab", session_date, 2),
+    )
     conn.commit()
     return conn
 
@@ -257,6 +267,26 @@ class ChatPlatformQueryViewTests(unittest.TestCase):
             self.assertEqual(["Carol"], [row["未交学生"] for row in submission["rows"]])
             self.assertEqual(["Bob"], [row["学生"] for row in low_scores["rows"]])
             self.assertEqual("三班期末考试监考", schedule["rows"][0]["事项"])
+            self.assertTrue(
+                any(
+                    row["类型"] == "class_session" and "Unit 2 speaking lab" in row["事项"]
+                    for row in schedule["rows"]
+                )
+            )
+        finally:
+            conn.close()
+
+    def test_schedule_view_includes_class_sessions_when_calendar_is_empty(self):
+        conn = _open_platform_query_conn()
+        try:
+            conn.execute("DELETE FROM teacher_calendar_events")
+            schedule = service.run_platform_view(conn, teacher_id=7, view="my_schedule", params={})
+
+            self.assertEqual(1, len(schedule["rows"]))
+            self.assertEqual("class_session", schedule["rows"][0]["类型"])
+            self.assertIn("综合英语", schedule["rows"][0]["事项"])
+            self.assertIn("三班", schedule["rows"][0]["事项"])
+            self.assertIn("Unit 2 speaking lab", schedule["rows"][0]["事项"])
         finally:
             conn.close()
 
