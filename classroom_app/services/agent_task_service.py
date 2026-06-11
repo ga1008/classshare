@@ -1323,6 +1323,35 @@ def maybe_cleanup_stale_agent_task_attachments(conn) -> dict[str, Any]:
     return cleanup_stale_agent_task_attachments(conn)
 
 
+def _owned_task_subtree_rows(conn, root_task_id: int, *, teacher_id: int) -> list[dict[str, Any]]:
+    rows_by_id: dict[int, dict[str, Any]] = {}
+    pending = [int(root_task_id)]
+    while pending:
+        placeholders = ",".join("?" for _ in pending)
+        rows = [
+            dict(row)
+            for row in conn.execute(
+                f"""
+                SELECT *
+                FROM agent_tasks
+                WHERE teacher_id = ?
+                  AND (id IN ({placeholders}) OR parent_task_id IN ({placeholders}))
+                """,
+                [int(teacher_id), *pending, *pending],
+            ).fetchall()
+        ]
+        next_pending: list[int] = []
+        for row in rows:
+            child_id = int(row["id"])
+            if child_id in rows_by_id:
+                continue
+            rows_by_id[child_id] = row
+            if child_id != int(root_task_id):
+                next_pending.append(child_id)
+        pending = next_pending
+    return sorted(rows_by_id.values(), key=lambda item: int(item["id"]))
+
+
 def delete_agent_task(conn, task_id: int, *, teacher_id: int) -> dict[str, Any]:
     row = conn.execute("SELECT * FROM agent_tasks WHERE id = ? LIMIT 1", (int(task_id),)).fetchone()
     if not row:
@@ -1333,11 +1362,34 @@ def delete_agent_task(conn, task_id: int, *, teacher_id: int) -> dict[str, Any]:
     if status in ACTIVE_TASK_STATUSES:
         raise HTTPException(status_code=400, detail="任务仍在排队或执行中，请先取消或等待结束后再删除。")
 
-    conn.execute("DELETE FROM agent_task_events WHERE task_id = ?", (int(task_id),))
-    conn.execute("DELETE FROM agent_tasks WHERE id = ? AND teacher_id = ?", (int(task_id), int(teacher_id)))
+    chain_rows = _owned_task_subtree_rows(conn, int(task_id), teacher_id=int(teacher_id))
+    active_descendants = [
+        int(item["id"])
+        for item in chain_rows
+        if int(item["id"]) != int(task_id) and str(item.get("status") or "") in ACTIVE_TASK_STATUSES
+    ]
+    if active_descendants:
+        raise HTTPException(
+            status_code=400,
+            detail="The follow-up chain still has queued or running tasks. Delete it after the chain is finished.",
+        )
+    task_ids = [int(item["id"]) for item in chain_rows] or [int(task_id)]
+    placeholders = ",".join("?" for _ in task_ids)
+    conn.execute(f"DELETE FROM agent_task_events WHERE task_id IN ({placeholders})", task_ids)
+    conn.execute(
+        f"DELETE FROM agent_tasks WHERE id IN ({placeholders}) AND teacher_id = ?",
+        [*task_ids, int(teacher_id)],
+    )
     conn.commit()
-    workspace_deleted = _remove_task_workspace(int(task_id))
-    return {"deleted": True, "task_id": int(task_id), "workspace_deleted": workspace_deleted}
+    deleted_workspaces = [item_id for item_id in task_ids if _remove_task_workspace(item_id)]
+    return {
+        "deleted": True,
+        "task_id": int(task_id),
+        "task_ids": task_ids,
+        "deleted_count": len(task_ids),
+        "workspace_deleted": int(task_id) in deleted_workspaces,
+        "deleted_workspace_ids": deleted_workspaces,
+    }
 
 
 def delete_agent_task_history(conn, *, teacher_id: int) -> dict[str, Any]:

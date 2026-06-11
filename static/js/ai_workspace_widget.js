@@ -1221,8 +1221,11 @@ async function deleteAgentTask(taskId) {
         return;
     }
     const data = await apiJson(`/api/agent-tasks/${id}`, { method: 'DELETE' });
-    removeAgentTaskMessage(id);
-    if (Number(selectedTaskId) === id) {
+    const deletedIds = Array.isArray(data.task_ids) && data.task_ids.length
+        ? data.task_ids.map((item) => Number(item || 0)).filter(Boolean)
+        : [id];
+    deletedIds.forEach(removeAgentTaskMessage);
+    if (deletedIds.some((item) => Number(selectedTaskId) === Number(item))) {
         selectedTaskId = null;
     }
     lastTaskPayload = data;

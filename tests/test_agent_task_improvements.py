@@ -41,15 +41,15 @@ class AgentTaskImprovementTests(unittest.TestCase):
             schema_agent_ext.ensure_agent_task_extension_schema(conn, force=True)
         return conn
 
-    def _insert_agent_task_row(self, conn, *, teacher_id=7, status=None):
+    def _insert_agent_task_row(self, conn, *, teacher_id=7, status=None, parent_task_id=None):
         now = agent_task_service.utcnow_iso()
         cursor = conn.execute(
             """
             INSERT INTO agent_tasks (
                 task_uuid, teacher_id, teacher_name, task_type, title, public_summary,
-                private_instruction, context_snapshot_json, status, priority, created_at, updated_at
+                private_instruction, context_snapshot_json, status, priority, parent_task_id, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 f"workspace-clean-{uuid.uuid4().hex}",
@@ -62,6 +62,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
                 "{}",
                 status or agent_task_service.TASK_STATUS_COMPLETED,
                 0,
+                parent_task_id,
                 now,
                 now,
             ),
@@ -285,6 +286,64 @@ class AgentTaskImprovementTests(unittest.TestCase):
                 self.assertFalse(workspaces[failed_id].exists())
                 self.assertTrue(workspaces[queued_id].exists())
                 self.assertTrue(workspaces[other_teacher_id].exists())
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
+
+    def test_delete_agent_task_removes_terminal_follow_up_chain(self):
+        conn = self._open_agent_task_conn()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+                agent_task_service,
+                "AGENT_TASK_WORKSPACE_ROOT",
+                Path(tmpdir),
+            ):
+                parent_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_COMPLETED)
+                child_id = self._insert_agent_task_row(
+                    conn,
+                    status=agent_task_service.TASK_STATUS_FAILED,
+                    parent_task_id=parent_id,
+                )
+                grandchild_id = self._insert_agent_task_row(
+                    conn,
+                    status=agent_task_service.TASK_STATUS_COMPLETED,
+                    parent_task_id=child_id,
+                )
+                sibling_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_COMPLETED)
+                for task_id in (parent_id, child_id, grandchild_id, sibling_id):
+                    workspace = Path(tmpdir) / "tasks" / str(task_id)
+                    workspace.mkdir(parents=True)
+                    (workspace / "TASK.md").write_text("task", encoding="utf-8")
+
+                result = agent_task_service.delete_agent_task(conn, parent_id, teacher_id=7)
+
+                self.assertEqual(3, result["deleted_count"])
+                self.assertCountEqual([parent_id, child_id, grandchild_id], result["task_ids"])
+                for task_id in (parent_id, child_id, grandchild_id):
+                    self.assertFalse((Path(tmpdir) / "tasks" / str(task_id)).exists())
+                    self.assertIsNone(conn.execute("SELECT id FROM agent_tasks WHERE id = ?", (task_id,)).fetchone())
+                self.assertIsNotNone(conn.execute("SELECT id FROM agent_tasks WHERE id = ?", (sibling_id,)).fetchone())
+                self.assertTrue((Path(tmpdir) / "tasks" / str(sibling_id)).exists())
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
+
+    def test_delete_agent_task_rejects_chain_with_active_descendant(self):
+        conn = self._open_agent_task_conn()
+        try:
+            parent_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_COMPLETED)
+            child_id = self._insert_agent_task_row(
+                conn,
+                status=agent_task_service.TASK_STATUS_RUNNING,
+                parent_task_id=parent_id,
+            )
+
+            with self.assertRaises(HTTPException) as raised:
+                agent_task_service.delete_agent_task(conn, parent_id, teacher_id=7)
+
+            self.assertEqual(400, raised.exception.status_code)
+            self.assertIsNotNone(conn.execute("SELECT id FROM agent_tasks WHERE id = ?", (parent_id,)).fetchone())
+            self.assertIsNotNone(conn.execute("SELECT id FROM agent_tasks WHERE id = ?", (child_id,)).fetchone())
         finally:
             conn.close()
             schema_agent_ext._SCHEMA_READY = False
