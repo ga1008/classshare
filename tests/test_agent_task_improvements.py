@@ -134,6 +134,41 @@ class AgentTaskImprovementTests(unittest.TestCase):
             conn.close()
             schema_agent_ext._SCHEMA_READY = False
 
+    def test_task_memory_orders_completed_tasks_by_fallback_timestamp(self):
+        conn = self._open_agent_task_conn()
+        try:
+            older_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_COMPLETED)
+            newer_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_COMPLETED)
+            conn.execute(
+                """
+                UPDATE agent_tasks
+                SET title = ?, result_summary = ?, completed_at = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                ("Older plan", "older summary", "2026-01-01T09:00:00+00:00", older_id),
+            )
+            conn.execute(
+                """
+                UPDATE agent_tasks
+                SET title = ?, result_summary = ?, completed_at = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                ("Newer plan", "newer summary", "2026-01-02T09:00:00+00:00", newer_id),
+            )
+
+            block = agent_task_service.build_task_memory_block(
+                conn,
+                teacher_id=7,
+                task_type="general_teaching_task",
+            )
+
+            self.assertIn("Newer plan", block)
+            self.assertIn("Older plan", block)
+            self.assertLess(block.index("Newer plan"), block.index("Older plan"))
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
+
     def test_extract_proposed_actions_drops_unknown_fields_and_invalid_actions(self):
         text = """
         已为你准备好草稿。

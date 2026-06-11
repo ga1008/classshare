@@ -1749,10 +1749,10 @@ def build_task_memory_block(conn, *, teacher_id: int, task_type: str, exclude_ta
         dict(row)
         for row in conn.execute(
             """
-            SELECT id, task_type, title, result_summary, result_detail_json, completed_at
+            SELECT id, task_type, title, result_summary, result_detail_json, completed_at, updated_at, created_at
             FROM agent_tasks
             WHERE teacher_id = ? AND status = ? AND id <> ?
-            ORDER BY completed_at DESC, id DESC
+            ORDER BY COALESCE(completed_at, updated_at, created_at) DESC, id DESC
             LIMIT 12
             """,
             (int(teacher_id), TASK_STATUS_COMPLETED, int(exclude_task_id or 0)),
