@@ -88,6 +88,51 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertEqual(ERROR_CLASS_CONTENT, classify_runtime_error("JSON parse failed"))
         self.assertEqual("fatal", classify_runtime_error("invalid api key"))
 
+    def test_finished_agent_task_notification_links_back_to_task_card(self):
+        conn = self._open_agent_task_conn()
+        try:
+            task_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_RUNNING)
+
+            agent_task_service.finish_agent_task(
+                conn,
+                task_id,
+                status=agent_task_service.TASK_STATUS_COMPLETED,
+                result_summary="已生成教学周报，请查看提交率和低分预警。",
+            )
+            agent_task_service.finish_agent_task(
+                conn,
+                task_id,
+                status=agent_task_service.TASK_STATUS_COMPLETED,
+                result_summary="重复完成事件不应重复打扰教师。",
+            )
+
+            rows = [
+                dict(row)
+                for row in conn.execute(
+                    """
+                    SELECT category, title, body_preview, link_url, ref_type, ref_id, metadata_json
+                    FROM message_center_notifications
+                    WHERE recipient_role = 'teacher' AND recipient_user_pk = ?
+                    ORDER BY id
+                    """,
+                    (7,),
+                ).fetchall()
+            ]
+
+            self.assertEqual(1, len(rows))
+            self.assertEqual("todo", rows[0]["category"])
+            self.assertIn("Agent 任务完成", rows[0]["title"])
+            self.assertEqual(f"/?agent_task={task_id}", rows[0]["link_url"])
+            self.assertEqual("todo", rows[0]["ref_type"])
+            self.assertEqual(f"agent-task:{task_id}:completed", rows[0]["ref_id"])
+            self.assertEqual(
+                {"agent_task_id": task_id, "status": agent_task_service.TASK_STATUS_COMPLETED},
+                json.loads(rows[0]["metadata_json"]),
+            )
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
+
     def test_record_agent_auto_retry_enforces_hourly_budget(self):
         conn = self._open_agent_task_conn()
         try:

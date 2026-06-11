@@ -303,6 +303,80 @@ function refreshContextPreview() {
     }
 }
 
+function openWorkspaceModal() {
+    if (chatComponent && typeof chatComponent.openChat === 'function') {
+        chatComponent.openChat();
+        return true;
+    }
+    const modal = $('#ai-chat-modal');
+    const fab = $('#ai-chat-fab');
+    const container = $('.ai-chat-container', modal || document);
+    if (!modal) {
+        return false;
+    }
+    refreshContextPreview();
+    modal.style.display = 'block';
+    modal.setAttribute('aria-hidden', 'false');
+    if (fab) {
+        fab.style.display = 'none';
+    }
+    container?.classList.remove('fullscreen');
+    document.body.classList.remove('ai-chat-fullscreen-active');
+    window.setTimeout(ensureWorkspaceWindowVisible, 0);
+    window.dispatchEvent(new CustomEvent('ai-workspace:opened', { detail: collectPageContext() }));
+    return true;
+}
+
+function readAgentTaskDeepLinkId() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const raw = params.get('agent_task') || params.get('agentTask');
+        const taskId = Number(raw || 0);
+        return Number.isInteger(taskId) && taskId > 0 ? taskId : 0;
+    } catch {
+        return 0;
+    }
+}
+
+function clearAgentTaskDeepLink() {
+    if (!window.history?.replaceState) {
+        return;
+    }
+    try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('agent_task');
+        url.searchParams.delete('agentTask');
+        window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+    } catch {
+        // Deep link cleanup is cosmetic; loading the task matters more.
+    }
+}
+
+async function handleAgentTaskDeepLink() {
+    const taskId = readAgentTaskDeepLinkId();
+    if (!taskId || !CONFIG.taskCenterEnabled) {
+        return;
+    }
+    if (!openWorkspaceModal()) {
+        return;
+    }
+    setAgentMode(true, { persist: false });
+    setAgentHistoryOpen(true);
+    selectedTaskId = taskId;
+    try {
+        await loadBootstrap();
+        const task = await loadTaskDetail(taskId, { autoScroll: true });
+        await refreshTasks({ silent: true });
+        if (task?.is_owner) {
+            notify('已打开通知对应的 Agent 任务。', 'success');
+        }
+    } catch (error) {
+        notify(error.message || '无法打开通知对应的 Agent 任务', 'error');
+    } finally {
+        clearAgentTaskDeepLink();
+    }
+}
+
 function topbarBottomOffset() {
     const candidates = [
         '.app-topbar',
@@ -1990,11 +2064,7 @@ function initFallbackShell() {
         return;
     }
     const open = () => {
-        refreshContextPreview();
-        modal.style.display = 'block';
-        modal.setAttribute('aria-hidden', 'false');
-        fab.style.display = 'none';
-        window.setTimeout(ensureWorkspaceWindowVisible, 0);
+        openWorkspaceModal();
     };
     const close = () => {
         modal.style.display = 'none';
@@ -2061,6 +2131,7 @@ function initAIWorkspaceWidget() {
     initOpenContextHooks();
     bindTaskCenter();
     refreshContextPreview();
+    handleAgentTaskDeepLink().catch((error) => notify(error.message || 'Agent 任务链接打开失败', 'error'));
 }
 
 if (document.readyState === 'loading') {
