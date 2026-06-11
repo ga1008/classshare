@@ -129,6 +129,14 @@ class ChatPlatformQueryIntentTests(unittest.TestCase):
             {call["view"] for call in plan["tool_calls"][:2]},
         )
 
+    def test_local_fallback_caps_light_tool_calls_and_marks_agent_handoff(self):
+        plan = service.infer_platform_query_tool_calls("三班人数、这次作业没交名单和低于 60 分的学生一起查一下")
+
+        self.assertTrue(plan["related"])
+        self.assertEqual(service.MAX_PLATFORM_TOOL_CALLS, len(plan["tool_calls"]))
+        self.assertTrue(plan["needs_agent"])
+        self.assertIn("轻量查询最多执行", plan["agent_reason"])
+
     def test_local_fallback_ignores_non_data_question(self):
         self.assertIsNone(service.infer_platform_query_intent("帮我写一段课堂导入语"))
 
@@ -167,6 +175,44 @@ class ChatPlatformQueryIntentTests(unittest.TestCase):
         self.assertIn("tools", captured_payloads[0])
         self.assertEqual("platform_query", captured_payloads[0]["tools"][0]["function"]["name"])
         self.assertEqual([{"view": "class_roster", "params": {"class_keyword": "三班"}}], plan["tool_calls"])
+        self.assertEqual("provider_tool_call", plan["planner_source"])
+
+    def test_detect_tool_calls_caps_provider_plan_and_keeps_handoff_signal(self):
+        async def fake_post(url, json, timeout):
+            return _ai_response(
+                {
+                    "tool_calls": [
+                        {
+                            "name": "platform_query",
+                            "arguments": {"view": "class_roster", "params": {"class_keyword": "三班"}},
+                        },
+                        {
+                            "name": "platform_query",
+                            "arguments": {
+                                "view": "assignment_submission_status",
+                                "params": {"class_keyword": "三班"},
+                            },
+                        },
+                        {
+                            "name": "platform_query",
+                            "arguments": {"view": "low_scores", "params": {"threshold": 60}},
+                        },
+                    ]
+                }
+            )
+
+        with patch("classroom_app.core.ai_client") as client:
+            client.post = AsyncMock(side_effect=fake_post)
+            plan = self._run(
+                service.detect_platform_query_tool_calls(
+                    "三班人数、这次作业没交名单和低于 60 分的学生一起查一下"
+                )
+            )
+
+        self.assertEqual(1, client.post.await_count)
+        self.assertEqual(service.MAX_PLATFORM_TOOL_CALLS, len(plan["tool_calls"]))
+        self.assertTrue(plan["needs_agent"])
+        self.assertIn("轻量查询最多执行", plan["agent_reason"])
         self.assertEqual("provider_tool_call", plan["planner_source"])
 
     def test_detect_tool_calls_guardrails_provider_weak_classroom_view(self):

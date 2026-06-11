@@ -18,7 +18,7 @@ INTENT_MESSAGE_LIMIT = 400
 MAX_RESULT_ROWS = 100
 RESULT_BLOCK_LIMIT = 6000
 MAX_PLATFORM_TOOL_CALLS = 2
-MAX_PLANNED_PLATFORM_TOOL_CALLS = 3
+MAX_PLANNED_PLATFORM_TOOL_CALLS = MAX_PLATFORM_TOOL_CALLS
 
 # 粗筛：数据型轻问题的高召回信号。
 _DATA_QUESTION_PATTERN = re.compile(
@@ -141,11 +141,16 @@ def infer_platform_query_tool_calls(message: str) -> dict[str, Any]:
         _append_tool_call(calls, "my_schedule", {})
     if re.search(r"(我的课堂|哪些课堂|哪些班)", text):
         _append_tool_call(calls, "my_classrooms", {})
+    raw_call_count = len(calls)
     needs_agent = bool(re.search(r"(深入|分析|生成|方案|报告|总结|跨.{0,4}对比|长期|趋势)", text))
+    agent_reason = ""
+    if raw_call_count > MAX_PLATFORM_TOOL_CALLS:
+        agent_reason = f"轻量查询最多执行 {MAX_PLATFORM_TOOL_CALLS} 次，当前问题需要 {raw_call_count} 个数据视图。"
     return {
         "related": bool(calls),
-        "tool_calls": calls,
-        "needs_agent": needs_agent or len(calls) > MAX_PLATFORM_TOOL_CALLS,
+        "tool_calls": calls[:MAX_PLANNED_PLATFORM_TOOL_CALLS],
+        "needs_agent": needs_agent or raw_call_count > MAX_PLATFORM_TOOL_CALLS,
+        "agent_reason": agent_reason,
         "planner_source": "local_fallback",
     }
 
@@ -191,14 +196,21 @@ def _normalize_tool_call_plan(parsed: Any) -> dict[str, Any] | None:
 
 def _merge_provider_calls_with_local_guardrails(
     message: str, provider_calls: list[dict[str, Any]]
-) -> tuple[list[dict[str, Any]], bool]:
+) -> tuple[list[dict[str, Any]], bool, bool, str]:
     """Keep provider-native tool use, but normalize high-confidence view choice/order."""
     if not provider_calls:
-        return [], False
+        return [], False, False, ""
     local_plan = infer_platform_query_tool_calls(message)
     raw_local_calls = local_plan.get("tool_calls") if isinstance(local_plan, dict) else []
+    local_budget_reason = str(local_plan.get("agent_reason") or "")
     if not isinstance(raw_local_calls, list) or not raw_local_calls:
-        return provider_calls[:MAX_PLANNED_PLATFORM_TOOL_CALLS], False
+        budget_exceeded = len(provider_calls) > MAX_PLATFORM_TOOL_CALLS
+        budget_reason = (
+            f"轻量查询最多执行 {MAX_PLATFORM_TOOL_CALLS} 次，当前问题规划了 {len(provider_calls)} 次查询。"
+            if budget_exceeded
+            else ""
+        )
+        return provider_calls[:MAX_PLANNED_PLATFORM_TOOL_CALLS], False, budget_exceeded, budget_reason
 
     provider_params_by_view: dict[str, dict[str, Any]] = {}
     for call in provider_calls:
@@ -243,10 +255,27 @@ def _merge_provider_calls_with_local_guardrails(
         _append_tool_call(guarded_calls, call["view"], params)
 
     if not guarded_calls:
-        return provider_calls[:MAX_PLANNED_PLATFORM_TOOL_CALLS], False
+        budget_exceeded = len(provider_calls) > MAX_PLATFORM_TOOL_CALLS
+        budget_reason = (
+            f"轻量查询最多执行 {MAX_PLATFORM_TOOL_CALLS} 次，当前问题规划了 {len(provider_calls)} 次查询。"
+            if budget_exceeded
+            else ""
+        )
+        return provider_calls[:MAX_PLANNED_PLATFORM_TOOL_CALLS], False, budget_exceeded, budget_reason
     limited = guarded_calls[:MAX_PLANNED_PLATFORM_TOOL_CALLS]
     changed = jsonish_fingerprint(limited) != jsonish_fingerprint(provider_calls[:MAX_PLANNED_PLATFORM_TOOL_CALLS])
-    return limited, changed
+    budget_exceeded = (
+        len(guarded_calls) > MAX_PLATFORM_TOOL_CALLS
+        or len(provider_calls) > MAX_PLATFORM_TOOL_CALLS
+        or bool(local_budget_reason)
+    )
+    budget_reason = local_budget_reason
+    if budget_exceeded and not budget_reason:
+        budget_reason = (
+            f"轻量查询最多执行 {MAX_PLATFORM_TOOL_CALLS} 次，当前问题规划了 "
+            f"{max(len(guarded_calls), len(provider_calls))} 次查询。"
+        )
+    return limited, changed, budget_exceeded, budget_reason
 
 
 async def detect_platform_query_tool_calls(message: str) -> dict[str, Any]:
@@ -257,8 +286,8 @@ async def detect_platform_query_tool_calls(message: str) -> dict[str, Any]:
     views_text = "\n".join(f"- {key}: {desc}" for key, desc in VIEW_DESCRIPTIONS.items())
     system_prompt = (
         "你是教学平台聊天工具调用规划器。教师的问题如果能通过平台实时数据轻查询解决，"
-        "请从白名单视图中规划 platform_query 工具调用，最多规划 3 个，按回答需要的顺序排列；"
-        "平台实际只会执行前 2 个。超过 2 个、需要长时间分析、生成完整报告或跨多类数据综合推理时，"
+        "请从白名单视图中规划 platform_query 工具调用，最多规划 2 个，按回答需要的顺序排列；"
+        "超过 2 个、需要长时间分析、生成完整报告或跨多类数据综合推理时，"
         "needs_agent=true，并简短给 agent_reason。不要写 SQL，不要发散到白名单外。"
         f"\n可用视图：\n{views_text}\n"
     )
@@ -296,14 +325,21 @@ async def detect_platform_query_tool_calls(message: str) -> dict[str, Any]:
             if call:
                 _append_tool_call(tool_calls, call["view"], call["params"])
         if tool_calls:
-            guarded_tool_calls, guardrail_applied = _merge_provider_calls_with_local_guardrails(cleaned, tool_calls)
+            (
+                guarded_tool_calls,
+                guardrail_applied,
+                budget_exceeded,
+                budget_reason,
+            ) = _merge_provider_calls_with_local_guardrails(
+                cleaned, tool_calls
+            )
             return {
                 "related": True,
                 "tool_calls": guarded_tool_calls,
-                "needs_agent": len(guarded_tool_calls) > MAX_PLATFORM_TOOL_CALLS or bool(
+                "needs_agent": budget_exceeded or bool(
                     re.search(r"(深入|分析|生成|方案|报告|总结|跨.{0,4}对比|长期|趋势)", cleaned)
                 ),
-                "agent_reason": "",
+                "agent_reason": budget_reason if budget_exceeded else "",
                 "planner_source": "provider_tool_call",
                 "guardrail_applied": guardrail_applied,
             }
