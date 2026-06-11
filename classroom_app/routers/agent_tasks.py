@@ -372,6 +372,62 @@ async def api_retry_agent_task(
     return {"status": "success", "task": task}
 
 
+@router.post("/{task_id}/actions/{action_index}/preview", response_class=JSONResponse)
+async def api_preview_agent_task_action(
+    task_id: int,
+    action_index: int,
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    """G3：教师确认前的参数预览，并签发短时 confirmation token。"""
+    from ..services.agent_action_registry import (
+        AGENT_ACTION_DEFINITIONS,
+        issue_action_confirmation_token,
+    )
+
+    teacher_id = _teacher_id(user)
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    edited_params = data.get("params") if isinstance(data.get("params"), dict) else {}
+
+    with get_db_connection() as conn:
+        task = get_agent_task(conn, task_id, teacher_id=teacher_id)
+        if not task.get("is_owner"):
+            raise HTTPException(status_code=403, detail="只能预览自己任务的动作提案。")
+        proposals = (task.get("result_detail") or {}).get("proposed_actions") or []
+        if not (0 <= int(action_index) < len(proposals)):
+            raise HTTPException(status_code=404, detail="动作提案不存在。")
+        proposal = proposals[int(action_index)]
+        if proposal.get("executed"):
+            raise HTTPException(status_code=409, detail="该动作已执行过。")
+        action = str(proposal.get("action") or "")
+        definition = AGENT_ACTION_DEFINITIONS.get(action)
+        if not definition:
+            raise HTTPException(status_code=400, detail="未知动作。")
+        merged_params = {**(proposal.get("params") or {}), **edited_params}
+        confirmation = issue_action_confirmation_token(
+            teacher_id=teacher_id,
+            task_id=task_id,
+            action_index=int(action_index),
+            action=action,
+            params=merged_params,
+        )
+    return {
+        "status": "success",
+        "action": action,
+        "label": proposal.get("label") or definition["label"],
+        "summary": proposal.get("summary") or definition.get("description") or "",
+        "risk": definition.get("risk") or "",
+        "execution_mode": definition.get("execution_mode") or "execute",
+        "fields": definition.get("fields") or {},
+        **confirmation,
+    }
+
+
 @router.post("/{task_id}/actions/{action_index}/execute", response_class=JSONResponse)
 async def api_execute_agent_task_action(
     task_id: int,
@@ -383,6 +439,7 @@ async def api_execute_agent_task_action(
     from ..services.agent_action_registry import (
         AGENT_ACTION_DEFINITIONS,
         execute_proposed_action,
+        verify_action_confirmation_token,
     )
 
     teacher_id = _teacher_id(user)
@@ -409,9 +466,17 @@ async def api_execute_agent_task_action(
             raise HTTPException(status_code=400, detail="未知动作。")
         # 教师只能编辑 schema 内字段；以提案参数为底，覆盖教师编辑值。
         merged_params = {**(proposal.get("params") or {}), **edited_params}
+        confirmed_params = verify_action_confirmation_token(
+            token=str(data.get("confirmation_token") or ""),
+            teacher_id=teacher_id,
+            task_id=task_id,
+            action_index=int(action_index),
+            action=action,
+            params=merged_params,
+        )
         try:
             result = execute_proposed_action(
-                conn, teacher_id=teacher_id, action=action, params=merged_params
+                conn, teacher_id=teacher_id, action=action, params=confirmed_params
             )
         except HTTPException as exc:
             append_task_event(
@@ -444,7 +509,7 @@ async def api_execute_agent_task_action(
                 "result_url": result.get("url") or "",
                 "params_summary": {
                     key: (str(value)[:80] if isinstance(value, str) else value)
-                    for key, value in list(merged_params.items())[:6]
+                    for key, value in list(confirmed_params.items())[:6]
                 },
             },
             commit=False,

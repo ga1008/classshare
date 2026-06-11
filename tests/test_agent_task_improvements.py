@@ -10,7 +10,14 @@ from classroom_app.db import schema_agent_ext
 from classroom_app.db.schema_classroom_activity import ensure_classroom_activity_schema
 from classroom_app.db import schema_scheduler
 from classroom_app.services import agent_task_service
-from classroom_app.services.agent_action_registry import extract_proposed_actions, validate_action_params
+from fastapi import HTTPException
+
+from classroom_app.services.agent_action_registry import (
+    extract_proposed_actions,
+    issue_action_confirmation_token,
+    validate_action_params,
+    verify_action_confirmation_token,
+)
 from classroom_app.services.agent_subscription_service import (
     DISPATCH_TASK_KIND,
     set_agent_subscription,
@@ -78,6 +85,63 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertEqual({"title": "Only title"}, clean)
         self.assertTrue(any("class_offering_id" in error for error in errors))
         self.assertTrue(any("requirements_md" in error for error in errors))
+
+    def test_action_confirmation_token_binds_scope_and_exact_params(self):
+        params = {
+            "title": "课堂复盘",
+            "content_md": "正文",
+            "tags": ["AI", "教学"],
+        }
+        issued = issue_action_confirmation_token(
+            teacher_id=7,
+            task_id=42,
+            action_index=0,
+            action="create_blog_draft",
+            params=params,
+        )
+
+        confirmed = verify_action_confirmation_token(
+            token=issued["confirmation_token"],
+            teacher_id=7,
+            task_id=42,
+            action_index=0,
+            action="create_blog_draft",
+            params=params,
+        )
+
+        self.assertEqual(params, confirmed)
+        with self.assertRaises(HTTPException):
+            verify_action_confirmation_token(
+                token=issued["confirmation_token"],
+                teacher_id=7,
+                task_id=42,
+                action_index=0,
+                action="create_blog_draft",
+                params={**params, "title": "篡改标题"},
+            )
+        with self.assertRaises(HTTPException):
+            verify_action_confirmation_token(
+                token="",
+                teacher_id=7,
+                task_id=42,
+                action_index=0,
+                action="create_blog_draft",
+                params=params,
+            )
+
+    def test_action_confirmation_rejects_unknown_schema_fields(self):
+        with self.assertRaises(HTTPException):
+            issue_action_confirmation_token(
+                teacher_id=7,
+                task_id=42,
+                action_index=0,
+                action="create_blog_draft",
+                params={
+                    "title": "课堂复盘",
+                    "content_md": "正文",
+                    "dangerous": "not allowed",
+                },
+            )
 
     def test_set_agent_subscription_persists_scheduler_row(self):
         schema_scheduler._SCHEMA_READY = False

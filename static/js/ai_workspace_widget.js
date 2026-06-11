@@ -1293,9 +1293,16 @@ async function executeAgentAction(button) {
     }
     button.disabled = true;
     try {
-        const data = await apiJson(`/api/agent-tasks/${taskId}/actions/${actionIndex}/execute`, {
+        const preview = await apiJson(`/api/agent-tasks/${taskId}/actions/${actionIndex}/preview`, {
             method: 'POST',
             body: JSON.stringify({ params }),
+        });
+        const data = await apiJson(`/api/agent-tasks/${taskId}/actions/${actionIndex}/execute`, {
+            method: 'POST',
+            body: JSON.stringify({
+                params,
+                confirmation_token: preview.confirmation_token,
+            }),
         });
         renderTaskDetail(data.task, { autoScroll: true });
         await refreshTasks({ silent: true });

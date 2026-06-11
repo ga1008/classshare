@@ -136,6 +136,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/agent-tasks/{task_id}/actions/{action_index}/preview",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_preview_agent_task_action",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/agent-tasks/{task_id}/cancel",
     "methods": [
       "POST"
