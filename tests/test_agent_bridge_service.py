@@ -9,6 +9,7 @@ from unittest.mock import patch
 from fastapi import UploadFile
 
 from classroom_app.db import schema_gongwen
+from classroom_app.db.postgres import LanSharePostgresConnection
 from classroom_app.db.schema_assignments import ensure_assignment_schema
 from classroom_app.db.schema_classroom_activity import ensure_classroom_activity_schema
 from classroom_app.db.schema_foundation import ensure_foundation_schema
@@ -21,6 +22,22 @@ from classroom_app.services.agent_bridge_service import (
     run_readonly_query,
     unified_search,
 )
+
+
+class FakePostgresCursor:
+    description = (("name",), ("created_day",))
+
+    def fetchmany(self, limit):
+        return [("item-1", "2026-01-01")][:limit]
+
+
+class FakePostgresRawConnection:
+    def __init__(self):
+        self.execute_calls = []
+
+    def execute(self, sql, params=None):
+        self.execute_calls.append((sql, params))
+        return FakePostgresCursor()
 
 
 class AgentBridgeServiceTests(unittest.TestCase):
@@ -170,6 +187,34 @@ class AgentBridgeServiceTests(unittest.TestCase):
             self.assertEqual(mask_sensitive_cell("api_token", "token-0"), result["rows"][0]["api_token"])
         finally:
             conn.close()
+
+    def test_readonly_query_named_params_survive_postgres_adapter_and_casts(self):
+        raw = FakePostgresRawConnection()
+        conn = LanSharePostgresConnection(raw)
+
+        result = run_readonly_query(
+            conn,
+            """
+            SELECT name, created_at::date AS created_day
+            FROM sample_items
+            WHERE name LIKE :keyword
+              AND created_at::date >= :start_day
+              AND note <> ':not_a_param'
+            ORDER BY id
+            """,
+            limit=10,
+            params={"keyword": "item-%", "start_day": "2026-01-01"},
+        )
+
+        executed_sql, executed_params = raw.execute_calls[0]
+        self.assertIn("created_at::date AS created_day", executed_sql)
+        self.assertIn("name LIKE %s", executed_sql)
+        self.assertIn("created_at::date >= %s", executed_sql)
+        self.assertIn("note <> ':not_a_param'", executed_sql)
+        self.assertTrue(executed_sql.rstrip().endswith("LIMIT %s"))
+        self.assertEqual(("item-%", "2026-01-01", 11), executed_params)
+        self.assertEqual(1, result["row_count"])
+        self.assertEqual("item-1", result["rows"][0]["name"])
 
     def test_example_queries_execute_against_current_schema(self):
         conn = self._open_example_schema_conn()

@@ -24,6 +24,7 @@ MAX_PLANNED_PLATFORM_TOOL_CALLS = 3
 _DATA_QUESTION_PATTERN = re.compile(
     r"(没交|未交|交了|提交率|提交情况|多少(人|个)|几个(人|学生)|人数|名单|花名册"
     r"|成绩|分数|低分|平均分|及格|不及格|低于\s*\d{1,3}(?:\.\d{1,2})?\s*分"
+    r"|多少学生|几个学生"
     r"|日程|课表|安排.{0,4}(考试|监考)|监考|我的课堂|哪些课堂|哪些班)"
 )
 
@@ -104,7 +105,7 @@ def infer_platform_query_tool_calls(message: str) -> dict[str, Any]:
         if threshold is not None:
             params["threshold"] = threshold
         _append_tool_call(calls, "low_scores", params)
-    if re.search(r"(花名册|名册|学生名单|名单|人数|多少(人|个)|几个(人|学生))", text):
+    if re.search(r"(花名册|名册|学生名单|名单|人数|多少(人|个|学生)|几个(人|学生))", text):
         _append_tool_call(calls, "class_roster", dict(base_params))
     if re.search(r"(日程|课表|监考|考试|安排)", text):
         _append_tool_call(calls, "my_schedule", {})
