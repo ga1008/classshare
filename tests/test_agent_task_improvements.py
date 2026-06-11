@@ -88,6 +88,52 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertEqual(ERROR_CLASS_CONTENT, classify_runtime_error("JSON parse failed"))
         self.assertEqual("fatal", classify_runtime_error("invalid api key"))
 
+    def test_record_agent_auto_retry_enforces_hourly_budget(self):
+        conn = self._open_agent_task_conn()
+        try:
+            first_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_RUNNING)
+            second_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_RUNNING)
+            conn.commit()
+            now = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+
+            first = agent_task_service.record_agent_auto_retry(
+                conn,
+                first_id,
+                error_text="503 service unavailable",
+                error_class=ERROR_CLASS_TRANSIENT,
+                hourly_limit=1,
+                now=now,
+            )
+            second = agent_task_service.record_agent_auto_retry(
+                conn,
+                second_id,
+                error_text="503 service unavailable",
+                error_class=ERROR_CLASS_TRANSIENT,
+                hourly_limit=1,
+                now=now + timedelta(minutes=5),
+            )
+
+            self.assertTrue(first["allowed"])
+            self.assertFalse(second["allowed"])
+            first_retry_count = conn.execute(
+                "SELECT retry_count FROM agent_tasks WHERE id = ?",
+                (first_id,),
+            ).fetchone()["retry_count"]
+            second_retry_count = conn.execute(
+                "SELECT retry_count FROM agent_tasks WHERE id = ?",
+                (second_id,),
+            ).fetchone()["retry_count"]
+            self.assertEqual(1, first_retry_count)
+            self.assertEqual(0, second_retry_count)
+            events = [
+                row["event_type"]
+                for row in conn.execute("SELECT event_type FROM agent_task_events ORDER BY id").fetchall()
+            ]
+            self.assertEqual(["auto_retry", "auto_retry_budget_exhausted"], events)
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
+
     def test_extract_proposed_actions_drops_unknown_fields_and_invalid_actions(self):
         text = """
         已为你准备好草稿。

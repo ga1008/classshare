@@ -55,6 +55,7 @@ TASK_STATUS_LABELS = {
 }
 
 AGENT_TASK_ADVISORY_LOCK_KEYS = (752712, 41001)
+AGENT_TASK_RETRY_BUDGET_LOCK_KEYS = (752712, 41002)
 AGENT_TASK_ATTACHMENT_RETENTION_DAYS = 7
 AGENT_TASK_ATTACHMENT_CLEANUP_LIMIT = 50
 AGENT_TASK_ATTACHMENT_CLEANUP_INTERVAL_SECONDS = 6 * 60 * 60
@@ -832,6 +833,7 @@ def append_task_event(
     detail: dict[str, Any] | None = None,
     *,
     commit: bool = True,
+    created_at: str | None = None,
 ) -> None:
     conn.execute(
         """
@@ -843,11 +845,90 @@ def append_task_event(
             _clean_text(event_type, max_chars=40) or "status",
             _clean_text(message, max_chars=1000),
             _json_dumps(detail or {}),
-            utcnow_iso(),
+            created_at or utcnow_iso(),
         ),
     )
     if commit:
         conn.commit()
+
+
+def _coerce_utc_datetime(value: datetime | str | None) -> datetime:
+    if value is None:
+        return datetime.now(timezone.utc)
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def record_agent_auto_retry(
+    conn,
+    task_id: int,
+    *,
+    error_text: str,
+    error_class: str,
+    hourly_limit: int,
+    now: datetime | str | None = None,
+) -> dict[str, Any]:
+    budget = max(0, int(hourly_limit))
+    now_dt = _coerce_utc_datetime(now)
+    created_at = now_dt.isoformat()
+    cutoff = (now_dt - timedelta(hours=1)).isoformat()
+    engine = get_configured_db_engine()
+    begin_immediate_transaction(conn, engine=engine)
+    if engine == "postgres":
+        conn.execute(
+            "SELECT pg_advisory_xact_lock(?, ?) AS acquired",
+            AGENT_TASK_RETRY_BUDGET_LOCK_KEYS,
+        ).fetchone()
+    retry_count_last_hour = int(
+        conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM agent_task_events
+            WHERE event_type = ?
+              AND created_at >= ?
+            """,
+            ("auto_retry", cutoff),
+        ).fetchone()[0]
+    )
+    detail = {
+        "error": str(error_text or "")[:400],
+        "error_class": _clean_text(error_class, max_chars=40),
+        "hourly_limit": budget,
+        "retry_count_last_hour": retry_count_last_hour,
+    }
+    if retry_count_last_hour >= budget:
+        append_task_event(
+            conn,
+            task_id,
+            "auto_retry_budget_exhausted",
+            "Automatic retry budget is exhausted; teacher can retry manually later.",
+            detail,
+            commit=False,
+            created_at=created_at,
+        )
+        conn.commit()
+        return {"allowed": False, **detail}
+
+    conn.execute(
+        "UPDATE agent_tasks SET retry_count = COALESCE(retry_count, 0) + 1 WHERE id = ?",
+        (int(task_id),),
+    )
+    append_task_event(
+        conn,
+        task_id,
+        "auto_retry",
+        "Temporary failure; automatic retry is scheduled.",
+        detail,
+        commit=False,
+        created_at=created_at,
+    )
+    conn.commit()
+    return {"allowed": True, **detail}
 
 
 def _page_label_from_context(page_context: dict[str, Any] | None) -> str:

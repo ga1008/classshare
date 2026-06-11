@@ -186,6 +186,7 @@ AGENT_TASK_GLOBAL_CONCURRENCY = max(1, min(int(os.getenv("AGENT_TASK_GLOBAL_CONC
 AGENT_TASK_RUNTIME_FIRST = _read_bool_env("AGENT_TASK_RUNTIME_FIRST", True)
 # transient 类运行时错误自动重试次数（不含首次）。
 AGENT_TASK_AUTO_RETRY_LIMIT = max(0, min(int(os.getenv("AGENT_TASK_AUTO_RETRY_LIMIT", 1)), 3))
+AGENT_TASK_AUTO_RETRY_HOURLY_LIMIT = max(0, min(int(os.getenv("AGENT_TASK_AUTO_RETRY_HOURLY_LIMIT", 10)), 100))
 # Agent 桥接：运行时容器回连主应用的内网地址（compose 网络里是 http://app:8000）
 AGENT_BRIDGE_BASE_URL = (_read_url_env("AGENT_BRIDGE_BASE_URL") or "http://app:8000").rstrip("/")
 

@@ -295,6 +295,7 @@ def _finish_failed(task_id: int, *, error_message: str, error_class: str, runtim
 
 def _process_task(task: dict[str, Any]) -> None:
     from classroom_app.config import (
+        AGENT_TASK_AUTO_RETRY_HOURLY_LIMIT,
         AGENT_TASK_AUTO_RETRY_LIMIT,
         AGENT_TASK_RUNTIME_TOKEN,
         AGENT_TASK_RUNTIME_URL,
@@ -364,9 +365,17 @@ def _process_task(task: dict[str, Any]) -> None:
                             f"上次执行的输出存在问题（{error_text[:200]}），"
                             "请确保本次输出完整、格式正确，JSON 块必须闭合。"
                         )
-                    _record_auto_retry(task_id, error_text, error_class)
-                    time.sleep(30)
-                    continue
+                    retry_record = _record_auto_retry(task_id, error_text, error_class)
+                    if retry_record.get("allowed"):
+                        time.sleep(30)
+                        continue
+                    _finish_failed(
+                        task_id,
+                        error_message=_retry_budget_error_message(error_text, AGENT_TASK_AUTO_RETRY_HOURLY_LIMIT),
+                        error_class=error_class,
+                        runtime_task=exc.runtime_task,
+                    )
+                    return
                 _finish_failed(
                     task_id,
                     error_message=error_text or "DeepSeek-TUI task failed.",
@@ -378,15 +387,23 @@ def _process_task(task: dict[str, Any]) -> None:
                 error_text = str(exc)
                 error_class = classify_runtime_error(error_text)
                 if attempt < max_attempts and error_class == ERROR_CLASS_TRANSIENT:
-                    _record_auto_retry(task_id, error_text, error_class)
-                    time.sleep(30)
-                    continue
+                    retry_record = _record_auto_retry(task_id, error_text, error_class)
+                    if retry_record.get("allowed"):
+                        time.sleep(30)
+                        continue
+                    _finish_failed(
+                        task_id,
+                        error_message=_retry_budget_error_message(error_text, AGENT_TASK_AUTO_RETRY_HOURLY_LIMIT),
+                        error_class=error_class,
+                        runtime_task=None,
+                    )
+                    return
                 _finish_failed(task_id, error_message=error_text, error_class=error_class, runtime_task=None)
                 print(f"[AGENT_TASK] task {task_id} failed: {exc}", file=sys.stderr)
                 return
 
 
-def _record_auto_retry(task_id: int, error_text: str, error_class: str) -> None:
+def _record_auto_retry_unbounded_legacy(task_id: int, error_text: str, error_class: str) -> None:
     from classroom_app.database import get_db_connection
     from classroom_app.services.agent_task_service import append_task_event
 
@@ -400,6 +417,37 @@ def _record_auto_retry(task_id: int, error_text: str, error_class: str) -> None:
             {"error": error_text[:400], "error_class": error_class},
         )
     print(f"[AGENT_TASK] task {task_id} auto retry ({error_class}): {error_text[:200]}", file=sys.stderr)
+
+
+def _retry_budget_error_message(error_text: str, hourly_limit: int) -> str:
+    clean_error = str(error_text or "runtime error").strip()[:240]
+    return (
+        f"Automatic retry budget is exhausted ({int(hourly_limit)}/hour). "
+        f"Please use the retry button later. Last error: {clean_error}"
+    )
+
+
+def _record_auto_retry(task_id: int, error_text: str, error_class: str) -> dict[str, Any]:
+    from classroom_app.config import AGENT_TASK_AUTO_RETRY_HOURLY_LIMIT
+    from classroom_app.database import get_db_connection
+    from classroom_app.services.agent_task_service import record_agent_auto_retry
+
+    with get_db_connection() as conn:
+        result = record_agent_auto_retry(
+            conn,
+            task_id,
+            error_text=error_text,
+            error_class=error_class,
+            hourly_limit=AGENT_TASK_AUTO_RETRY_HOURLY_LIMIT,
+        )
+    if result.get("allowed"):
+        print(f"[AGENT_TASK] task {task_id} auto retry ({error_class}): {error_text[:200]}", file=sys.stderr)
+    else:
+        print(
+            f"[AGENT_TASK] task {task_id} auto retry budget exhausted ({error_class}): {error_text[:200]}",
+            file=sys.stderr,
+        )
+    return result
 
 
 def _run_once(worker_id: str) -> bool:
