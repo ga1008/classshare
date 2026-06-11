@@ -2,6 +2,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+import uuid
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -31,6 +32,42 @@ from classroom_app.services.agent_task_progress_service import (
 
 
 class AgentTaskImprovementTests(unittest.TestCase):
+    def _open_agent_task_conn(self):
+        schema_agent_ext._SCHEMA_READY = False
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        ensure_classroom_activity_schema(conn)
+        with patch.object(schema_agent_ext, "get_configured_db_engine", return_value="sqlite"):
+            schema_agent_ext.ensure_agent_task_extension_schema(conn, force=True)
+        return conn
+
+    def _insert_agent_task_row(self, conn, *, teacher_id=7, status=None):
+        now = agent_task_service.utcnow_iso()
+        cursor = conn.execute(
+            """
+            INSERT INTO agent_tasks (
+                task_uuid, teacher_id, teacher_name, task_type, title, public_summary,
+                private_instruction, context_snapshot_json, status, priority, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"workspace-clean-{uuid.uuid4().hex}",
+                int(teacher_id),
+                "Teacher",
+                "general_teaching_task",
+                "Agent task",
+                "Agent task",
+                "Prepare a short teaching plan",
+                "{}",
+                status or agent_task_service.TASK_STATUS_COMPLETED,
+                0,
+                now,
+                now,
+            ),
+        )
+        return int(cursor.lastrowid)
+
     def test_runtime_snapshot_diff_humanizes_new_steps_and_tools(self):
         events = diff_runtime_snapshot(
             {"status": "running", "timeline": ["已理解任务"], "tool_calls": []},
@@ -191,6 +228,66 @@ class AgentTaskImprovementTests(unittest.TestCase):
             self.assertTrue(stored.exists())
             self.assertTrue(extracted.exists())
             self.assertIn("Alice", extracted.read_text(encoding="utf-8"))
+
+    def test_delete_agent_task_removes_isolated_workspace(self):
+        conn = self._open_agent_task_conn()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+                agent_task_service,
+                "AGENT_TASK_WORKSPACE_ROOT",
+                Path(tmpdir),
+            ):
+                task_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_COMPLETED)
+                workspace = Path(tmpdir) / "tasks" / str(task_id)
+                attachments_dir = workspace / "attachments"
+                attachments_dir.mkdir(parents=True)
+                (attachments_dir / "roster.txt").write_text("Alice", encoding="utf-8")
+
+                result = agent_task_service.delete_agent_task(conn, task_id, teacher_id=7)
+
+                self.assertTrue(result["deleted"])
+                self.assertTrue(result["workspace_deleted"])
+                self.assertFalse(workspace.exists())
+                self.assertIsNone(conn.execute("SELECT id FROM agent_tasks WHERE id = ?", (task_id,)).fetchone())
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
+
+    def test_delete_agent_task_history_removes_finished_workspaces_only(self):
+        conn = self._open_agent_task_conn()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+                agent_task_service,
+                "AGENT_TASK_WORKSPACE_ROOT",
+                Path(tmpdir),
+            ):
+                completed_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_COMPLETED)
+                failed_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_FAILED)
+                queued_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_QUEUED)
+                other_teacher_id = self._insert_agent_task_row(
+                    conn,
+                    teacher_id=8,
+                    status=agent_task_service.TASK_STATUS_COMPLETED,
+                )
+                workspaces = {}
+                for task_id in (completed_id, failed_id, queued_id, other_teacher_id):
+                    workspace = Path(tmpdir) / "tasks" / str(task_id)
+                    workspace.mkdir(parents=True)
+                    (workspace / "note.txt").write_text(str(task_id), encoding="utf-8")
+                    workspaces[task_id] = workspace
+
+                result = agent_task_service.delete_agent_task_history(conn, teacher_id=7)
+
+                self.assertEqual(2, result["deleted_count"])
+                self.assertCountEqual([completed_id, failed_id], result["task_ids"])
+                self.assertCountEqual([completed_id, failed_id], result["deleted_workspace_ids"])
+                self.assertFalse(workspaces[completed_id].exists())
+                self.assertFalse(workspaces[failed_id].exists())
+                self.assertTrue(workspaces[queued_id].exists())
+                self.assertTrue(workspaces[other_teacher_id].exists())
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
 
     def test_active_task_supplement_is_evented_and_prompt_visible(self):
         schema_agent_ext._SCHEMA_READY = False

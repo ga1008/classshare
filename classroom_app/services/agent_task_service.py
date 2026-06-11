@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -1222,6 +1223,22 @@ def get_agent_task(conn, task_id: int, *, teacher_id: int) -> dict[str, Any]:
     return serialized
 
 
+def _task_workspace_host_path_for_id(task_id: int) -> Path:
+    safe_name = re.sub(r"[^a-zA-Z0-9_.-]", "-", str(int(task_id)))
+    return AGENT_TASK_WORKSPACE_ROOT / "tasks" / safe_name
+
+
+def _remove_task_workspace(task_id: int) -> bool:
+    tasks_root = (AGENT_TASK_WORKSPACE_ROOT / "tasks").resolve()
+    target = _task_workspace_host_path_for_id(task_id).resolve()
+    if target == tasks_root or tasks_root not in target.parents:
+        return False
+    if not target.exists():
+        return False
+    shutil.rmtree(target, ignore_errors=True)
+    return not target.exists()
+
+
 def delete_agent_task(conn, task_id: int, *, teacher_id: int) -> dict[str, Any]:
     row = conn.execute("SELECT * FROM agent_tasks WHERE id = ? LIMIT 1", (int(task_id),)).fetchone()
     if not row:
@@ -1235,7 +1252,8 @@ def delete_agent_task(conn, task_id: int, *, teacher_id: int) -> dict[str, Any]:
     conn.execute("DELETE FROM agent_task_events WHERE task_id = ?", (int(task_id),))
     conn.execute("DELETE FROM agent_tasks WHERE id = ? AND teacher_id = ?", (int(task_id), int(teacher_id)))
     conn.commit()
-    return {"deleted": True, "task_id": int(task_id)}
+    workspace_deleted = _remove_task_workspace(int(task_id))
+    return {"deleted": True, "task_id": int(task_id), "workspace_deleted": workspace_deleted}
 
 
 def delete_agent_task_history(conn, *, teacher_id: int) -> dict[str, Any]:
@@ -1256,7 +1274,8 @@ def delete_agent_task_history(conn, *, teacher_id: int) -> dict[str, Any]:
     conn.execute(f"DELETE FROM agent_task_events WHERE task_id IN ({placeholders})", task_ids)
     conn.execute(f"DELETE FROM agent_tasks WHERE id IN ({placeholders}) AND teacher_id = ?", [*task_ids, int(teacher_id)])
     conn.commit()
-    return {"deleted_count": len(task_ids), "task_ids": task_ids}
+    deleted_workspaces = [task_id for task_id in task_ids if _remove_task_workspace(task_id)]
+    return {"deleted_count": len(task_ids), "task_ids": task_ids, "deleted_workspace_ids": deleted_workspaces}
 
 
 def cancel_agent_task(conn, task_id: int, *, teacher_id: int) -> dict[str, Any]:
