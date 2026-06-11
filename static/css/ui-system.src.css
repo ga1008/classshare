@@ -7405,6 +7405,41 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     font-weight: 720;
 }
 
+.ai-agent-memory-toggle {
+    display: inline-flex;
+    align-items: center;
+    width: max-content;
+    max-width: 100%;
+    gap: 7px;
+    margin: -2px 0 9px;
+    padding: 6px 9px;
+    border: 1px solid rgba(15, 118, 110, 0.18);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.82);
+    color: #115e59;
+    font-size: 0.76rem;
+    font-weight: 760;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ai-agent-memory-toggle[hidden] {
+    display: none !important;
+}
+
+.ai-agent-memory-toggle input {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    accent-color: #0f766e;
+}
+
+.ai-agent-memory-toggle__icon {
+    display: grid;
+    place-items: center;
+    color: #0f766e;
+}
+
 .ai-agent-mini-light {
     flex: 0 0 auto;
     width: 8px;

@@ -169,6 +169,161 @@ class AgentTaskImprovementTests(unittest.TestCase):
             conn.close()
             schema_agent_ext._SCHEMA_READY = False
 
+    def test_task_memory_omits_no_history_tasks(self):
+        conn = self._open_agent_task_conn()
+        try:
+            sensitive_ids = [
+                self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_COMPLETED)
+                for _ in range(12)
+            ]
+            normal_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_COMPLETED)
+            for index, sensitive_id in enumerate(sensitive_ids):
+                conn.execute(
+                    """
+                    UPDATE agent_tasks
+                    SET title = ?, result_summary = ?, context_snapshot_json = ?, completed_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        f"Sensitive plan {index}",
+                        f"sensitive summary {index}",
+                        json.dumps({"agent_options": {"no_history": True}}, ensure_ascii=False),
+                        f"2026-01-03T{index:02d}:00:00+00:00",
+                        sensitive_id,
+                    ),
+                )
+            conn.execute(
+                """
+                UPDATE agent_tasks
+                SET title = ?, result_summary = ?, context_snapshot_json = ?, completed_at = ?
+                WHERE id = ?
+                """,
+                (
+                    "Reusable plan",
+                    "reusable summary",
+                    json.dumps({"agent_options": {"no_history": False}}, ensure_ascii=False),
+                    "2026-01-02T09:00:00+00:00",
+                    normal_id,
+                ),
+            )
+
+            block = agent_task_service.build_task_memory_block(
+                conn,
+                teacher_id=7,
+                task_type="general_teaching_task",
+            )
+
+            self.assertIn("Reusable plan", block)
+            self.assertNotIn("Sensitive plan 0", block)
+            self.assertNotIn("Sensitive plan 11", block)
+            self.assertNotIn("sensitive summary", block)
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
+
+    def test_create_agent_task_persists_no_history_option(self):
+        conn = self._open_agent_task_conn()
+        try:
+            task = agent_task_service.create_agent_task(
+                conn,
+                {"id": 7, "name": "Teacher"},
+                {
+                    "task_type": "general_teaching_task",
+                    "instruction": "整理一份本周教学任务复盘，列出后续行动。",
+                    "page_context": {},
+                    "no_history": True,
+                },
+            )
+
+            context = json.loads(
+                conn.execute(
+                    "SELECT context_snapshot_json FROM agent_tasks WHERE id = ?",
+                    (int(task["id"]),),
+                ).fetchone()["context_snapshot_json"]
+            )
+            self.assertTrue(context["agent_options"]["no_history"])
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
+
+    def test_follow_up_task_inherits_no_history_option(self):
+        conn = self._open_agent_task_conn()
+        try:
+            parent_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_COMPLETED)
+            conn.execute(
+                """
+                UPDATE agent_tasks
+                SET result_summary = ?, context_snapshot_json = ?
+                WHERE id = ?
+                """,
+                (
+                    "已有任务结论",
+                    json.dumps(
+                        {
+                            "agent_options": {
+                                "deep_thinking": True,
+                                "no_history": True,
+                            }
+                        },
+                        ensure_ascii=False,
+                    ),
+                    parent_id,
+                ),
+            )
+
+            child = agent_task_service.create_follow_up_task(
+                conn,
+                {"id": 7, "name": "Teacher"},
+                parent_id,
+                "继续完善这份教学任务，补充可执行步骤。",
+            )
+
+            context = json.loads(
+                conn.execute(
+                    "SELECT context_snapshot_json FROM agent_tasks WHERE id = ?",
+                    (int(child["id"]),),
+                ).fetchone()["context_snapshot_json"]
+            )
+            self.assertTrue(context["agent_options"]["no_history"])
+            self.assertTrue(context["agent_options"]["deep_thinking"])
+            self.assertEqual(parent_id, context["follow_up"]["parent_task_id"])
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
+
+    def test_retry_task_inherits_no_history_option(self):
+        conn = self._open_agent_task_conn()
+        try:
+            parent_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_FAILED)
+            conn.execute(
+                """
+                UPDATE agent_tasks
+                SET context_snapshot_json = ?
+                WHERE id = ?
+                """,
+                (
+                    json.dumps({"agent_options": {"no_history": True}}, ensure_ascii=False),
+                    parent_id,
+                ),
+            )
+
+            child = agent_task_service.create_retry_task(
+                conn,
+                {"id": 7, "name": "Teacher"},
+                parent_id,
+            )
+
+            context = json.loads(
+                conn.execute(
+                    "SELECT context_snapshot_json FROM agent_tasks WHERE id = ?",
+                    (int(child["id"]),),
+                ).fetchone()["context_snapshot_json"]
+            )
+            self.assertTrue(context["agent_options"]["no_history"])
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
+
     def test_extract_proposed_actions_drops_unknown_fields_and_invalid_actions(self):
         text = """
         已为你准备好草稿。

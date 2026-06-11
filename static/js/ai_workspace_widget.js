@@ -1463,7 +1463,11 @@ function setAgentMode(enabled, { persist = true } = {}) {
     const surface = currentChatSurface();
     const container = $('.ai-workspace-container');
     const toggle = $('#ai-agent-mode-toggle');
+    const memoryToggle = $('#ai-agent-memory-toggle');
     container?.classList.toggle('is-agent-mode', agentMode);
+    if (memoryToggle) {
+        memoryToggle.hidden = !agentMode;
+    }
     document.body.dataset.aiAgentMode = agentMode ? 'agent' : 'chat';
     toggle?.classList.toggle('is-active', agentMode);
     toggle?.setAttribute('aria-pressed', agentMode ? 'true' : 'false');
@@ -1642,6 +1646,7 @@ async function submitAgentTaskFromChat() {
             page_context: context,
             chat_session_uuid: chatComponent?.currentSessionUUID || '',
             deep_thinking: Boolean(chatComponent?.isDeepThinking),
+            no_history: Boolean($('#ai-agent-no-history')?.checked),
         };
         let requestBody = JSON.stringify(payload);
         if (pendingFiles.length) {
@@ -1658,6 +1663,10 @@ async function submitAgentTaskFromChat() {
         selectedTaskId = data.task?.id || null;
         if (data.task) {
             renderAgentTaskMessage(data.task, { autoScroll: true });
+        }
+        const noHistoryInput = $('#ai-agent-no-history');
+        if (noHistoryInput) {
+            noHistoryInput.checked = false;
         }
         await refreshTasks({ silent: true });
         notify('Agent 任务已加入全平台队列。', 'success');

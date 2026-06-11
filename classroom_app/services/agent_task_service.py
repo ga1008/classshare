@@ -1616,6 +1616,7 @@ def create_follow_up_task(conn, user: dict[str, Any], parent_task_id: int, instr
             "instruction": normalized,
             "page_context": parent_context if isinstance(parent_context, dict) else {},
             "deep_thinking": bool((parent_context.get("agent_options") or {}).get("deep_thinking")),
+            "no_history": bool((parent_context.get("agent_options") or {}).get("no_history")),
             "origin": TASK_ORIGIN_FOLLOW_UP,
             "parent_task_id": int(parent["id"]),
             "priority": 1,
@@ -1704,6 +1705,7 @@ def create_retry_task(
             "instruction": instruction,
             "page_context": parent_context if isinstance(parent_context, dict) else {},
             "deep_thinking": bool((parent_context.get("agent_options") or {}).get("deep_thinking")),
+            "no_history": bool((parent_context.get("agent_options") or {}).get("no_history")),
             "origin": TASK_ORIGIN_RETRY,
             "parent_task_id": int(parent["id"]),
             "priority": 1,
@@ -1749,14 +1751,20 @@ def build_task_memory_block(conn, *, teacher_id: int, task_type: str, exclude_ta
         dict(row)
         for row in conn.execute(
             """
-            SELECT id, task_type, title, result_summary, result_detail_json, completed_at, updated_at, created_at
+            SELECT id, task_type, title, result_summary, result_detail_json, context_snapshot_json,
+                   completed_at, updated_at, created_at
             FROM agent_tasks
             WHERE teacher_id = ? AND status = ? AND id <> ?
             ORDER BY COALESCE(completed_at, updated_at, created_at) DESC, id DESC
-            LIMIT 12
+            LIMIT 30
             """,
             (int(teacher_id), TASK_STATUS_COMPLETED, int(exclude_task_id or 0)),
         ).fetchall()
+    ]
+    rows = [
+        row
+        for row in rows
+        if not ((_load_json(row.get("context_snapshot_json"), {}).get("agent_options") or {}).get("no_history"))
     ]
     if not rows:
         return ""

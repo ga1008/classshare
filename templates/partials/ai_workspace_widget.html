@@ -112,6 +112,13 @@
                         </span>
                     </button>
                 </div>
+                <label class="ai-agent-memory-toggle" id="ai-agent-memory-toggle" hidden>
+                    <input type="checkbox" id="ai-agent-no-history">
+                    <span class="ai-agent-memory-toggle__icon" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.05" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a5 5 0 0 0-5 5v3"></path><path d="M17 11V8a5 5 0 0 0-5-5"></path><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M12 15v2"></path></svg>
+                    </span>
+                    <span>不带入历史</span>
+                </label>
                 {% endif %}
                 <div class="input-row">
                     <input type="file" id="ai-chat-file-input" accept="image/*,.txt,.md,.py,.js,.ts,.tsx,.jsx,.html,.htm,.css,.json,.xml,.yaml,.yml,.toml,.c,.cpp,.h,.hpp,.java,.kt,.rs,.go,.rb,.php,.sh,.bat,.sql,.csv,.svg,.vue,.log,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.pdf" multiple style="display: none;">
