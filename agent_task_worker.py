@@ -404,9 +404,14 @@ def _record_auto_retry(task_id: int, error_text: str, error_class: str) -> None:
 
 def _run_once(worker_id: str) -> bool:
     from classroom_app.database import get_db_connection
-    from classroom_app.services.agent_task_service import claim_next_agent_task
+    from classroom_app.services.agent_task_service import claim_next_agent_task, maybe_cleanup_stale_agent_task_attachments
 
     with get_db_connection() as conn:
+        cleanup_result = maybe_cleanup_stale_agent_task_attachments(conn)
+        if cleanup_result.get("cleaned_count"):
+            print(
+                f"[AGENT_TASK] cleaned stale attachment workspaces: {cleanup_result['cleaned_count']}"
+            )
         task = claim_next_agent_task(conn, worker_id=worker_id)
     if not task:
         return False

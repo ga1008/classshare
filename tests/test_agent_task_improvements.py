@@ -3,7 +3,7 @@ import sqlite3
 import tempfile
 import unittest
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -285,6 +285,62 @@ class AgentTaskImprovementTests(unittest.TestCase):
                 self.assertFalse(workspaces[failed_id].exists())
                 self.assertTrue(workspaces[queued_id].exists())
                 self.assertTrue(workspaces[other_teacher_id].exists())
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
+
+    def test_cleanup_stale_agent_task_attachments_keeps_current_workspaces(self):
+        conn = self._open_agent_task_conn()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+                agent_task_service,
+                "AGENT_TASK_WORKSPACE_ROOT",
+                Path(tmpdir),
+            ):
+                old_task_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_COMPLETED)
+                recent_task_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_COMPLETED)
+                queued_task_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_QUEUED)
+                now = datetime.now(timezone.utc)
+                old_time = (now - timedelta(days=8)).isoformat()
+                recent_time = (now - timedelta(days=2)).isoformat()
+                conn.execute(
+                    "UPDATE agent_tasks SET completed_at = ?, updated_at = ? WHERE id = ?",
+                    (old_time, old_time, old_task_id),
+                )
+                conn.execute(
+                    "UPDATE agent_tasks SET completed_at = ?, updated_at = ? WHERE id = ?",
+                    (recent_time, recent_time, recent_task_id),
+                )
+                conn.execute(
+                    "UPDATE agent_tasks SET created_at = ?, updated_at = ? WHERE id = ?",
+                    (old_time, old_time, queued_task_id),
+                )
+                for task_id in (old_task_id, recent_task_id, queued_task_id):
+                    workspace = Path(tmpdir) / "tasks" / str(task_id)
+                    attachments = workspace / "attachments"
+                    attachments.mkdir(parents=True)
+                    (attachments / "source.txt").write_text("source", encoding="utf-8")
+                    (workspace / "TASK.md").write_text("task readme", encoding="utf-8")
+
+                result = agent_task_service.cleanup_stale_agent_task_attachments(conn, older_than_days=7)
+
+                self.assertEqual(1, result["cleaned_count"])
+                self.assertEqual([old_task_id], result["cleaned_task_ids"])
+                self.assertFalse((Path(tmpdir) / "tasks" / str(old_task_id) / "attachments").exists())
+                self.assertTrue((Path(tmpdir) / "tasks" / str(old_task_id) / "TASK.md").exists())
+                self.assertTrue((Path(tmpdir) / "tasks" / str(recent_task_id) / "attachments").exists())
+                self.assertTrue((Path(tmpdir) / "tasks" / str(queued_task_id) / "attachments").exists())
+                detail = json.loads(
+                    conn.execute(
+                        "SELECT result_detail_json FROM agent_tasks WHERE id = ?",
+                        (old_task_id,),
+                    ).fetchone()["result_detail_json"]
+                )
+                self.assertTrue(detail["agent_attachments_removed"])
+                self.assertIn("agent_attachments_cleaned_at", detail)
+
+                second = agent_task_service.cleanup_stale_agent_task_attachments(conn, older_than_days=7)
+                self.assertEqual(0, second["checked_count"])
         finally:
             conn.close()
             schema_agent_ext._SCHEMA_READY = False

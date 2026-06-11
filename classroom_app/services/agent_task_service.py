@@ -4,6 +4,7 @@ import json
 import re
 import shutil
 import sqlite3
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -54,6 +55,10 @@ TASK_STATUS_LABELS = {
 }
 
 AGENT_TASK_ADVISORY_LOCK_KEYS = (752712, 41001)
+AGENT_TASK_ATTACHMENT_RETENTION_DAYS = 7
+AGENT_TASK_ATTACHMENT_CLEANUP_LIMIT = 50
+AGENT_TASK_ATTACHMENT_CLEANUP_INTERVAL_SECONDS = 6 * 60 * 60
+_LAST_ATTACHMENT_CLEANUP_MONOTONIC = 0.0
 
 TASK_TYPE_DEFINITIONS: dict[str, dict[str, str]] = {
     "course_material_digest": {
@@ -1237,6 +1242,85 @@ def _remove_task_workspace(task_id: int) -> bool:
         return False
     shutil.rmtree(target, ignore_errors=True)
     return not target.exists()
+
+
+def _remove_task_attachments_dir(task_id: int) -> bool:
+    tasks_root = (AGENT_TASK_WORKSPACE_ROOT / "tasks").resolve()
+    target = (_task_workspace_host_path_for_id(task_id) / "attachments").resolve()
+    if target == tasks_root or tasks_root not in target.parents or target.name != "attachments":
+        return False
+    if not target.exists():
+        return False
+    shutil.rmtree(target, ignore_errors=True)
+    return not target.exists()
+
+
+def _mark_task_attachments_cleaned(conn, task_id: int, *, cleaned_at: str, removed: bool) -> None:
+    row = conn.execute("SELECT result_detail_json FROM agent_tasks WHERE id = ?", (int(task_id),)).fetchone()
+    details = _load_json(row["result_detail_json"] if row else "{}", {})
+    if not isinstance(details, dict):
+        details = {}
+    details["agent_attachments_cleaned_at"] = cleaned_at
+    details["agent_attachments_removed"] = bool(removed)
+    conn.execute(
+        "UPDATE agent_tasks SET result_detail_json = ? WHERE id = ?",
+        (_json_dumps(details), int(task_id)),
+    )
+
+
+def cleanup_stale_agent_task_attachments(
+    conn,
+    *,
+    older_than_days: int = AGENT_TASK_ATTACHMENT_RETENTION_DAYS,
+    limit: int = AGENT_TASK_ATTACHMENT_CLEANUP_LIMIT,
+) -> dict[str, Any]:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max(1, int(older_than_days)))).isoformat()
+    rows = conn.execute(
+        """
+        SELECT id
+        FROM agent_tasks
+        WHERE status IN (?, ?, ?)
+          AND COALESCE(completed_at, updated_at, created_at) < ?
+          AND COALESCE(result_detail_json, '') NOT LIKE ?
+        ORDER BY COALESCE(completed_at, updated_at, created_at) ASC, id ASC
+        LIMIT ?
+        """,
+        (
+            TASK_STATUS_COMPLETED,
+            TASK_STATUS_FAILED,
+            TASK_STATUS_CANCELED,
+            cutoff,
+            '%"agent_attachments_cleaned_at"%',
+            max(1, int(limit)),
+        ),
+    ).fetchall()
+    cleaned_at = utcnow_iso()
+    cleaned_ids: list[int] = []
+    marked_ids: list[int] = []
+    for row in rows:
+        task_id = int(row["id"])
+        removed = _remove_task_attachments_dir(task_id)
+        _mark_task_attachments_cleaned(conn, task_id, cleaned_at=cleaned_at, removed=removed)
+        marked_ids.append(task_id)
+        if removed:
+            cleaned_ids.append(task_id)
+    if marked_ids:
+        conn.commit()
+    return {
+        "checked_count": len(rows),
+        "marked_count": len(marked_ids),
+        "cleaned_count": len(cleaned_ids),
+        "cleaned_task_ids": cleaned_ids,
+    }
+
+
+def maybe_cleanup_stale_agent_task_attachments(conn) -> dict[str, Any]:
+    global _LAST_ATTACHMENT_CLEANUP_MONOTONIC
+    now = time.monotonic()
+    if now - _LAST_ATTACHMENT_CLEANUP_MONOTONIC < AGENT_TASK_ATTACHMENT_CLEANUP_INTERVAL_SECONDS:
+        return {"skipped": True, "reason": "interval"}
+    _LAST_ATTACHMENT_CLEANUP_MONOTONIC = now
+    return cleanup_stale_agent_task_attachments(conn)
 
 
 def delete_agent_task(conn, task_id: int, *, teacher_id: int) -> dict[str, Any]:
