@@ -186,11 +186,24 @@ class AgentTaskImprovementTests(unittest.TestCase):
             ).fetchone()["retry_count"]
             self.assertEqual(1, first_retry_count)
             self.assertEqual(0, second_retry_count)
-            events = [
-                row["event_type"]
-                for row in conn.execute("SELECT event_type FROM agent_task_events ORDER BY id").fetchall()
-            ]
-            self.assertEqual(["auto_retry", "auto_retry_budget_exhausted"], events)
+            events = conn.execute(
+                "SELECT event_type, message, detail_json FROM agent_task_events ORDER BY id"
+            ).fetchall()
+            self.assertEqual(["auto_retry", "auto_retry_budget_exhausted"], [row["event_type"] for row in events])
+            self.assertIn("自动重试", events[0]["message"])
+            self.assertIn("无需教师操作", events[0]["message"])
+            self.assertIn("自动重试次数已达上限", events[1]["message"])
+            self.assertIn("重试按钮", events[1]["message"])
+            exhausted_detail = json.loads(events[1]["detail_json"])
+            self.assertEqual(1, exhausted_detail["retry_count_last_hour"])
+            self.assertEqual(1, exhausted_detail["hourly_limit"])
+
+            from agent_task_worker import _retry_budget_error_message
+
+            failed_message = _retry_budget_error_message("503 service unavailable", 1)
+            self.assertIn("自动重试次数已达上限", failed_message)
+            self.assertIn("任务卡片上的重试按钮", failed_message)
+            self.assertIn("503 service unavailable", failed_message)
         finally:
             conn.close()
             schema_agent_ext._SCHEMA_READY = False

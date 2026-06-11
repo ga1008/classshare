@@ -433,8 +433,8 @@ def _record_auto_retry_unbounded_legacy(task_id: int, error_text: str, error_cla
 def _retry_budget_error_message(error_text: str, hourly_limit: int) -> str:
     clean_error = str(error_text or "runtime error").strip()[:240]
     return (
-        f"Automatic retry budget is exhausted ({int(hourly_limit)}/hour). "
-        f"Please use the retry button later. Last error: {clean_error}"
+        f"自动重试次数已达上限（每小时 {int(hourly_limit)} 次）。"
+        f"系统已暂停自动重试，教师可稍后点击任务卡片上的重试按钮。最后一次错误：{clean_error}"
     )
 
 
