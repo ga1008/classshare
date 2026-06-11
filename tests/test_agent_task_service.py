@@ -1,11 +1,14 @@
 import sqlite3
 import unittest
+from unittest.mock import patch
 
 from classroom_app.services.agent_task_service import (
     _claim_next_agent_task_postgres,
     _claim_next_agent_task_sqlite,
     claim_next_agent_task,
+    get_agent_task,
     get_agent_queue_state,
+    list_agent_tasks,
 )
 
 
@@ -105,6 +108,59 @@ class AgentTaskServiceTests(unittest.TestCase):
         )
         return conn
 
+    def _sqlite_queue_conn(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.executescript(
+            """
+            CREATE TABLE agent_tasks (
+                id INTEGER PRIMARY KEY,
+                task_uuid TEXT DEFAULT '',
+                teacher_id INTEGER,
+                teacher_name TEXT DEFAULT 'Teacher',
+                task_type TEXT DEFAULT 'general_teaching_task',
+                title TEXT DEFAULT 'Task',
+                public_summary TEXT DEFAULT '教学事务',
+                private_instruction TEXT DEFAULT '',
+                context_snapshot_json TEXT DEFAULT '{}',
+                result_detail_json TEXT DEFAULT '{}',
+                attachments_json TEXT DEFAULT '[]',
+                status TEXT,
+                priority INTEGER DEFAULT 0,
+                parent_task_id INTEGER,
+                origin TEXT DEFAULT 'manual',
+                created_at TEXT,
+                started_at TEXT,
+                completed_at TEXT,
+                updated_at TEXT,
+                worker_id TEXT,
+                runtime_provider TEXT,
+                runtime_status TEXT,
+                runtime_task_id TEXT,
+                runtime_thread_id TEXT,
+                runtime_turn_id TEXT,
+                result_summary TEXT,
+                error_message TEXT,
+                retry_count INTEGER DEFAULT 0
+            );
+            CREATE TABLE agent_task_events (
+                id INTEGER PRIMARY KEY,
+                task_id INTEGER,
+                event_type TEXT,
+                message TEXT,
+                detail_json TEXT,
+                created_at TEXT
+            );
+            CREATE TABLE agent_task_composers (
+                teacher_id INTEGER PRIMARY KEY,
+                teacher_name TEXT,
+                page_label TEXT,
+                updated_at TEXT
+            );
+            """
+        )
+        return conn
+
     def test_queue_state_tolerates_stale_composer_cleanup_failure_on_read(self):
         conn = _ReadMostlyConnection()
 
@@ -134,6 +190,91 @@ class AgentTaskServiceTests(unittest.TestCase):
 
             second_claim = _claim_next_agent_task_sqlite(conn, worker_id="agent-worker-2", now="2026-01-01T00:11:00")
             self.assertIsNone(second_claim)
+        finally:
+            conn.close()
+
+    def test_queue_positions_match_priority_and_teacher_fairness(self):
+        conn = self._sqlite_queue_conn()
+        try:
+            conn.executemany(
+                """
+                INSERT INTO agent_tasks (
+                    id, teacher_id, teacher_name, status, priority, created_at, updated_at,
+                    started_at, completed_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (1, 7, "Teacher 7", "queued", 0, "2026-01-01T00:00:00", "2026-01-01T00:00:00", None, None),
+                    (2, 7, "Teacher 7", "queued", 0, "2026-01-01T00:01:00", "2026-01-01T00:01:00", None, None),
+                    (3, 8, "Teacher 8", "queued", 0, "2026-01-01T00:02:00", "2026-01-01T00:02:00", None, None),
+                    (4, 9, "Teacher 9", "queued", 2, "2026-01-01T00:03:00", "2026-01-01T00:03:00", None, None),
+                    (
+                        5,
+                        10,
+                        "Teacher 10",
+                        "completed",
+                        0,
+                        "2026-01-01T00:04:00",
+                        "2026-01-01T00:08:00",
+                        "2026-01-01T00:04:00",
+                        "2026-01-01T00:08:00",
+                    ),
+                ],
+            )
+            conn.commit()
+
+            payload = list_agent_tasks(conn, viewer_teacher_id=7, limit=20)
+            positions = {int(task["id"]): int(task["queue_position"]) for task in payload["tasks"]}
+
+            self.assertEqual({1: 2, 2: 4, 3: 3, 4: 1}, {key: positions[key] for key in (1, 2, 3, 4)})
+            self.assertEqual("预计 5 分钟内开始处理", get_agent_task(conn, 4, teacher_id=9)["estimated_wait_label"])
+            self.assertEqual("队列较长，可能超过 15 分钟", get_agent_task(conn, 2, teacher_id=7)["estimated_wait_label"])
+        finally:
+            conn.close()
+
+    def test_sqlite_agent_claim_allows_global_concurrency_but_keeps_one_per_teacher(self):
+        conn = self._sqlite_queue_conn()
+        try:
+            conn.executemany(
+                """
+                INSERT INTO agent_tasks (id, teacher_id, teacher_name, status, priority, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (1, 7, "Teacher 7", "running", 0, "2026-01-01T00:00:00", "2026-01-01T00:00:00"),
+                    (2, 7, "Teacher 7", "queued", 0, "2026-01-01T00:01:00", "2026-01-01T00:01:00"),
+                    (3, 8, "Teacher 8", "queued", 0, "2026-01-01T00:02:00", "2026-01-01T00:02:00"),
+                ],
+            )
+            conn.commit()
+
+            with patch("classroom_app.config.AGENT_TASK_GLOBAL_CONCURRENCY", 2):
+                state = get_agent_queue_state(conn, viewer_teacher_id=7)
+                claimed = _claim_next_agent_task_sqlite(
+                    conn,
+                    worker_id="agent-worker-2",
+                    now="2026-01-01T00:10:00",
+                )
+                second_claim = _claim_next_agent_task_sqlite(
+                    conn,
+                    worker_id="agent-worker-3",
+                    now="2026-01-01T00:11:00",
+                )
+
+            self.assertEqual(1, state["running_count"])
+            self.assertEqual(2, state["global_concurrency"])
+            self.assertEqual(1, state["available_slots"])
+            self.assertEqual(3, claimed["id"])
+            self.assertIsNone(second_claim)
+            self.assertEqual(
+                2,
+                conn.execute("SELECT COUNT(*) FROM agent_tasks WHERE status = 'running'").fetchone()[0],
+            )
+            self.assertEqual(
+                "queued",
+                conn.execute("SELECT status FROM agent_tasks WHERE id = 2").fetchone()["status"],
+            )
         finally:
             conn.close()
 

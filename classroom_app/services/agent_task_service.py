@@ -953,6 +953,9 @@ def _purge_stale_composers(conn, *, tolerate_write_failure: bool = False) -> str
     cutoff = (datetime.now(timezone.utc) - timedelta(seconds=COMPOSER_TTL_SECONDS)).isoformat()
     try:
         conn.execute("DELETE FROM agent_task_composers WHERE updated_at < ?", (cutoff,))
+        commit = getattr(conn, "commit", None)
+        if callable(commit):
+            commit()
     except sqlite3.OperationalError:
         if not tolerate_write_failure:
             raise
@@ -995,6 +998,10 @@ def get_agent_queue_state(conn, *, viewer_teacher_id: int) -> dict[str, Any]:
     queued_count = int(
         conn.execute("SELECT COUNT(*) FROM agent_tasks WHERE status = ?", (TASK_STATUS_QUEUED,)).fetchone()[0]
     )
+    running_count = int(
+        conn.execute("SELECT COUNT(*) FROM agent_tasks WHERE status = ?", (TASK_STATUS_RUNNING,)).fetchone()[0]
+    )
+    global_concurrency = _agent_task_global_concurrency()
     running = conn.execute(
         """
         SELECT id, teacher_id, teacher_name, task_type, public_summary, started_at
@@ -1038,6 +1045,9 @@ def get_agent_queue_state(conn, *, viewer_teacher_id: int) -> dict[str, Any]:
 
     return {
         "queued_count": queued_count,
+        "running_count": running_count,
+        "global_concurrency": global_concurrency,
+        "available_slots": max(0, global_concurrency - running_count),
         "is_running": bool(running_payload),
         "is_composing": bool(composer_payload) and not running_payload,
         "running": running_payload,
@@ -1124,40 +1134,28 @@ async def generate_agent_task_title(task_id: int) -> None:
         conn.commit()
 
 
-def _queue_positions(rows: list[dict[str, Any]]) -> dict[int, int]:
-    queued = [
-        item
-        for item in sorted(rows, key=lambda value: (value.get("created_at") or "", int(value.get("id") or 0)))
-        if item.get("status") == TASK_STATUS_QUEUED
-    ]
-    return {int(item["id"]): index + 1 for index, item in enumerate(queued)}
+def _ordered_queued_task_ids(conn) -> list[int]:
+    rows = conn.execute(
+        f"""
+        SELECT id
+        FROM agent_tasks
+        WHERE status = ?
+        {_FAIR_QUEUE_ORDER_SQL}
+        """,
+        (TASK_STATUS_QUEUED,),
+    ).fetchall()
+    return [int(row["id"] if isinstance(row, dict) else row[0]) for row in rows]
+
+
+def _queue_positions(conn) -> dict[int, int]:
+    return {task_id: index + 1 for index, task_id in enumerate(_ordered_queued_task_ids(conn))}
 
 
 def _queue_position_for_task(conn, item: dict[str, Any]) -> int:
     if str(item.get("status") or "") != TASK_STATUS_QUEUED:
         return 0
-    priority = int(item.get("priority") or 0)
-    created_at = str(item.get("created_at") or "")
     task_id = int(item.get("id") or 0)
-    row = conn.execute(
-        """
-        SELECT COUNT(*) AS ahead
-        FROM agent_tasks
-        WHERE status = ?
-          AND (
-            priority > ?
-            OR (
-              priority = ?
-              AND (
-                created_at < ?
-                OR (created_at = ? AND id < ?)
-              )
-            )
-          )
-        """,
-        (TASK_STATUS_QUEUED, priority, priority, created_at, created_at, task_id),
-    ).fetchone()
-    return int(row["ahead"] if row else 0) + 1
+    return _queue_positions(conn).get(task_id, 0)
 
 
 def _elapsed_seconds(item: dict[str, Any]) -> int:
@@ -1259,7 +1257,7 @@ def list_agent_tasks(conn, *, viewer_teacher_id: int, limit: int = 30) -> dict[s
             (max(1, min(int(limit), 80)),),
         ).fetchall()
     ]
-    queue_positions = _queue_positions(rows)
+    queue_positions = _queue_positions(conn)
     median_seconds = _median_completed_duration_seconds(conn) if queue_positions else 0
     for row in rows:
         position = queue_positions.get(int(row["id"]), 0)

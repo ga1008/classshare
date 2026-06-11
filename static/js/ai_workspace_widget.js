@@ -380,6 +380,11 @@ async function apiJson(url, options = {}) {
 
 function setQueueState(queueState = {}, counts = {}) {
     const queued = Number(queueState.queued_count ?? counts.queued ?? 0);
+    const runningCount = Math.max(0, Number(queueState.running_count ?? (queueState.is_running ? 1 : 0)));
+    const globalConcurrency = Math.max(1, Number(queueState.global_concurrency ?? 1));
+    const runningLabel = globalConcurrency > 1
+        ? `运行 ${Math.min(runningCount, globalConcurrency)}/${globalConcurrency}`
+        : '运行中';
     ['#ai-agent-queue-count', '#ai-agent-fab-queue-badge'].forEach((selector) => {
         const node = $(selector);
         if (node) {
@@ -393,12 +398,12 @@ function setQueueState(queueState = {}, counts = {}) {
     let modebarStatus = queued > 0 ? `排队 ${queued}` : '队列空闲';
     if (state === 'red') {
         const running = queueState.running || {};
-        tooltip = `${running.teacher_name || '某位老师'}的${running.public_summary || running.task_type_label || 'Agent 任务'}正在运行`;
-        modebarStatus = queued > 0 ? `运行中 · 排队 ${queued}` : '运行中';
+        tooltip = `${running.teacher_name || '某位老师'}的${running.public_summary || running.task_type_label || 'Agent 任务'}正在运行（${runningLabel}）`;
+        modebarStatus = queued > 0 ? `${runningLabel} · 排队 ${queued}` : runningLabel;
     } else if (state === 'yellow') {
         const composer = queueState.composer || {};
         if (queued > 0) {
-            tooltip = `已有 ${queued} 个 Agent 任务在等待全平台单任务队列`;
+            tooltip = `已有 ${queued} 个 Agent 任务在等待全平台队列`;
             modebarStatus = `排队 ${queued}`;
         } else {
             tooltip = `${composer.teacher_name || '某位老师'}正在编写新任务`;
