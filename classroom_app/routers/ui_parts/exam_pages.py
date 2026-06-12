@@ -4,6 +4,7 @@ from .common import *
 router = APIRouter()
 
 
+@router.get("/manage/teaching/exams", response_class=HTMLResponse)
 @router.get("/manage/exams", response_class=HTMLResponse)
 async def manage_exams_page(request: Request, user: dict = Depends(get_current_teacher)):
     """试卷库管理页面"""

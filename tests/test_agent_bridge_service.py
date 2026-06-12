@@ -245,7 +245,7 @@ class AgentBridgeServiceTests(unittest.TestCase):
             combined = unified_search(conn, teacher_id=7, scope="all", keyword="policy", limit=5)
 
             self.assertEqual(["gongwen"], [item["type"] for item in gongwen])
-            self.assertIn("/manage/gongwen?", gongwen[0]["url"])
+            self.assertIn("/manage/academic/gongwen?", gongwen[0]["url"])
             self.assertIn("Policy Notice", gongwen[0]["title"])
 
             self.assertEqual(["material"], [item["type"] for item in materials])

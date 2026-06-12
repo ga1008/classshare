@@ -143,6 +143,7 @@ from ...services.gongwen_document_sync_service import (
     list_visible_gongwen_documents,
 )
 from ...services.signature_service import build_signature_dashboard_context
+from ...services.manage_nav_service import build_manage_nav, canonical_manage_href
 from ...services.organization_management_service import list_organization_tree
 from ...services.resource_access_service import (
     SCOPE_DEPARTMENT,
@@ -1126,6 +1127,11 @@ def _build_manage_template_context(
         "active_page": active_page,
         "embedded_mode": _is_embedded_manage_request(request),
         "current_teacher_is_super_admin": current_teacher_is_super_admin,
+        "manage_nav": build_manage_nav(
+            user,
+            active_page,
+            is_super_admin=current_teacher_is_super_admin,
+        ),
     }
     if extra:
         context.update(extra)
@@ -1464,14 +1470,38 @@ def _build_classroom_opening_workflow_snapshot(conn, teacher_id: int) -> dict:
         recommended_stage = "success"
 
     stage_views = {
-        "semester": {"href": "/manage/semesters", "embed_url": _build_manage_view_url("/manage/semesters", embed=1)},
-        "course": {"href": "/manage/courses", "embed_url": _build_manage_view_url("/manage/courses", embed=1)},
-        "textbook": {"href": "/manage/textbooks", "embed_url": _build_manage_view_url("/manage/textbooks", embed=1)},
-        "materials": {"href": "/manage/materials", "embed_url": _build_manage_view_url("/manage/materials", embed=1)},
-        "class": {"href": "/manage/classes", "embed_url": _build_manage_view_url("/manage/classes", embed=1)},
-        "details": {"href": "/manage/courses", "embed_url": _build_manage_view_url("/manage/courses", embed=1)},
-        "ai": {"href": "/manage/ai", "embed_url": _build_manage_view_url("/manage/ai", embed=1)},
-        "success": {"href": "/manage/offerings", "embed_url": _build_manage_view_url("/manage/offerings", embed=1)},
+        "semester": {
+            "href": canonical_manage_href("semesters"),
+            "embed_url": _build_manage_view_url(canonical_manage_href("semesters"), embed=1),
+        },
+        "course": {
+            "href": canonical_manage_href("courses"),
+            "embed_url": _build_manage_view_url(canonical_manage_href("courses"), embed=1),
+        },
+        "textbook": {
+            "href": canonical_manage_href("textbooks"),
+            "embed_url": _build_manage_view_url(canonical_manage_href("textbooks"), embed=1),
+        },
+        "materials": {
+            "href": canonical_manage_href("materials"),
+            "embed_url": _build_manage_view_url(canonical_manage_href("materials"), embed=1),
+        },
+        "class": {
+            "href": canonical_manage_href("classes"),
+            "embed_url": _build_manage_view_url(canonical_manage_href("classes"), embed=1),
+        },
+        "details": {
+            "href": canonical_manage_href("courses"),
+            "embed_url": _build_manage_view_url(canonical_manage_href("courses"), embed=1),
+        },
+        "ai": {
+            "href": canonical_manage_href("ai"),
+            "embed_url": _build_manage_view_url(canonical_manage_href("ai"), embed=1),
+        },
+        "success": {
+            "href": canonical_manage_href("offerings"),
+            "embed_url": _build_manage_view_url(canonical_manage_href("offerings"), embed=1),
+        },
     }
 
     return {
@@ -1535,42 +1565,42 @@ def _build_manage_workflow_snapshot(conn, teacher_id: int) -> dict:
             "title": "班级",
             "description": "先准备好班级和学生名单，开课时才能直接绑定到课堂。",
             "count_key": "classes",
-            "href": "/manage/classes",
+            "href": canonical_manage_href("classes"),
         },
         {
             "id": "courses",
             "title": "课程",
             "description": "课程模板决定后续课堂的教学结构、学时和内容映射。",
             "count_key": "courses",
-            "href": "/manage/courses",
+            "href": canonical_manage_href("courses"),
         },
         {
             "id": "textbooks",
             "title": "教材",
             "description": "教材用于开课绑定，也会作为 AI 助教的重要知识依据。",
             "count_key": "textbooks",
-            "href": "/manage/textbooks",
+            "href": canonical_manage_href("textbooks"),
         },
         {
             "id": "exams",
             "title": "试卷",
             "description": "试卷和考试资源可跨学期复用，适合在准备阶段统一整理。",
             "count_key": "exams",
-            "href": "/manage/exams",
+            "href": canonical_manage_href("exams"),
         },
         {
             "id": "materials",
             "title": "材料",
             "description": "课堂材料和文档目录建议提前维护，便于课程与课堂持续复用。",
             "count_key": "materials",
-            "href": "/manage/materials",
+            "href": canonical_manage_href("materials"),
         },
         {
             "id": "signatures",
             "title": "签名",
             "description": "维护教师、学生与平台导入的电子签名，后续导出和审批可直接调用。",
             "count_key": "signatures",
-            "href": "/manage/signatures",
+            "href": canonical_manage_href("signatures"),
         },
     ]
 
@@ -1668,16 +1698,16 @@ def _build_manage_workflow_snapshot(conn, teacher_id: int) -> dict:
 
     stage_views = {
         "semester": {
-            "href": "/manage/semesters",
-            "embed_url": _build_manage_view_url("/manage/semesters", embed=1),
+            "href": canonical_manage_href("semesters"),
+            "embed_url": _build_manage_view_url(canonical_manage_href("semesters"), embed=1),
         },
         "offerings": {
-            "href": "/manage/offerings",
-            "embed_url": _build_manage_view_url("/manage/offerings", embed=1),
+            "href": canonical_manage_href("offerings"),
+            "embed_url": _build_manage_view_url(canonical_manage_href("offerings"), embed=1),
         },
         "ai": {
-            "href": "/manage/ai",
-            "embed_url": _build_manage_view_url("/manage/ai", embed=1),
+            "href": canonical_manage_href("ai"),
+            "embed_url": _build_manage_view_url(canonical_manage_href("ai"), embed=1),
         },
     }
 

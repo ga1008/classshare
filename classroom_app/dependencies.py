@@ -677,6 +677,28 @@ def get_current_teacher(user: dict = Depends(get_current_user)) -> dict:
         )
     return user
 
+
+MANAGE_TEACHER_DOMAINS = {"teaching", "academic", "teacher", "admin"}
+
+
+def require_teacher_domain(domain: str):
+    """Declare the teacher-management domain a page belongs to.
+
+    The current permission model allows every teacher to use the three teacher
+    domains. Keeping the dependency explicit gives future domain-level policy a
+    single landing point instead of scattering conditional checks across pages.
+    """
+    normalized_domain = str(domain or "").strip().lower()
+    if normalized_domain not in MANAGE_TEACHER_DOMAINS:
+        raise ValueError(f"Unknown teacher management domain: {domain!r}")
+
+    def _dependency(user: dict = Depends(get_current_teacher)) -> dict:
+        domain_user = dict(user)
+        domain_user["manage_domain"] = normalized_domain
+        return domain_user
+
+    return _dependency
+
 def get_current_student(user: dict = Depends(get_current_user)) -> dict:
     """依赖项：强制用户必须是学生"""
     if user.get("role") != "student":

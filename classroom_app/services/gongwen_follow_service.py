@@ -1,4 +1,4 @@
-"""公文关注 — per-teacher follow settings + match-on-parse notifications.
+﻿"""公文关注 — per-teacher follow settings + match-on-parse notifications.
 
 每位教师可配置：
 - 关注项目（语义条目，如「师范认证」「教学比赛」）→ 公文解析完成后调用快速 AI
@@ -365,7 +365,7 @@ def _notify_follow_hit(
         actor_role="",
         actor_user_pk=None,
         actor_display_name="公文中心",
-        link_url=f"/manage/gongwen?follow=1&doc={int(doc['id'])}",
+        link_url=f"/manage/academic/gongwen?follow=1&doc={int(doc['id'])}",
         ref_type="gongwen_document",
         ref_id=str(doc.get("id") or ""),
         metadata={
@@ -631,7 +631,7 @@ def _notify_rescan_summary(conn, *, teacher_id: int, new_hits: int, scanned: int
         actor_role="",
         actor_user_pk=None,
         actor_display_name="公文中心",
-        link_url="/manage/gongwen?follow=1",
+        link_url="/manage/academic/gongwen?follow=1",
         ref_type="gongwen_follow_rescan",
         ref_id="",
         metadata={"new_hits": int(new_hits), "scanned": int(scanned)},

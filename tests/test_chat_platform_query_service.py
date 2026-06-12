@@ -405,7 +405,7 @@ class ChatPlatformQueryEventTests(unittest.IsolatedAsyncioTestCase):
     async def test_gongwen_retrieval_emits_tool_status(self):
         result = {
             "doc_count": 1,
-            "documents": [{"title": "教学安排通知", "url": "/manage/gongwen?document_id=1"}],
+            "documents": [{"title": "教学安排通知", "url": "/manage/academic/gongwen?document_id=1"}],
             "context_block": "--- 校园公文检索结果 ---\n教学安排通知",
         }
         with patch(

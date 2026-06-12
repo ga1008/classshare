@@ -1083,7 +1083,7 @@ def format_system_prompt_teacher(user_id: int, class_offering_id: int) -> str:
     prompt_parts.append(build_platform_overview_block("teacher"))
 
     prompt_parts.append("\n请根据以上信息，辅助教师进行教学管理、课程答疑或内容生成。")
-    prompt_parts.append("给跳转建议时直接用站内路径的 Markdown 链接，如 [公文中心](/manage/gongwen)。")
+    prompt_parts.append("给跳转建议时直接用站内路径的 Markdown 链接，如 [公文中心](/manage/academic/gongwen)。")
     prompt_parts.append('称呼用户时请使用"X老师"的格式（X为姓氏），不要直呼全名。语气可以自然轻松、偶尔幽默。')
     return "\n".join(prompt_parts)
 
@@ -2009,7 +2009,7 @@ async def handle_ai_workspace_chat(
         "如果用户要求修改核心代码、部署、删除数据库或越权访问，应拒绝并给出安全替代建议。"
         "回答要使用结构清晰的 Markdown：标题、列表、表格、分隔线和代码块必须换行完整；"
         "不要把 `---`、`##`、表格管道符或列表项挤在同一段里。"
-        "给用户跳转建议时，直接给出平台站内路径（Markdown 链接形式，如 [公文中心](/manage/gongwen)）。"
+        "给用户跳转建议时，直接给出平台站内路径（Markdown 链接形式，如 [公文中心](/manage/academic/gongwen)）。"
     )
     if user_role == "teacher":
         system_prompt += "当前用户是教师，可以提供备课、材料整理、作业设计和课堂运营建议。"

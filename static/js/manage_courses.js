@@ -1,4 +1,4 @@
-import { apiFetch } from '/static/js/api.js';
+﻿import { apiFetch } from '/static/js/api.js';
 import { closeModal, openModal, showMessage } from '/static/js/ui.js';
 import { initLearningMaterialSelector } from '/static/js/learning_material_selector.js';
 
@@ -743,7 +743,7 @@ async function handleAcademicCourseSync(triggerButton) {
             5200,
         );
         setTimeout(() => {
-            window.location.assign('/manage/courses?academic_course_sync=1');
+            window.location.assign('/manage/teaching/courses?academic_course_sync=1');
         }, 900);
     } catch (error) {
         showMessage(error.message || '同步教务课程失败，请确认账号已验证且教务课表可访问。', 'error', 5200);

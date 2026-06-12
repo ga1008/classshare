@@ -1,11 +1,11 @@
-{% extends "manage/layout.html" %}
+﻿{% extends "manage/layout.html" %}
 
 {% block title %}学校组织{% endblock %}
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
 {{ topbar_action('用户管理', '教师账号', 'users', href='/manage/system/users', variant='outline', tone='slate') }}
-{{ topbar_action('电子签名', '基础资源', 'pen', href='/manage/signatures', variant='solid', tone='teal') }}
+{{ topbar_action('电子签名', '基础资源', 'pen', href='/manage/me/signatures', variant='solid', tone='teal') }}
 {% endblock %}
 
 {% block extra_head %}

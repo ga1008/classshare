@@ -10,7 +10,7 @@
 
 {% block navbar_actions %}
 {% if user_info.role == 'teacher' %}
-<a href="/manage/offerings" class="app-topbar-action app-topbar-action--primary" title="开设新课堂" aria-label="开设新课堂" data-teacher-onboarding-open>
+<a href="{{ dashboard_empty_state.action_href|default('/manage/teaching/offerings') }}" class="app-topbar-action app-topbar-action--primary" title="开设新课堂" aria-label="开设新课堂" data-teacher-onboarding-open>
     <span class="app-topbar-action__icon" aria-hidden="true">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 5v14"></path>
@@ -180,6 +180,26 @@
             {% with agenda_widget_extra_class='agenda-reminder--spotlight', agenda_widget_title='待办与提醒', agenda_widget_can_sync=True %}
                 {% include "partials/dashboard_agenda_widget.html" %}
             {% endwith %}
+        </div>
+    </section>
+    {% endif %}
+
+    {% if user_info.role == 'teacher' and dashboard_domain_cards %}
+    <section class="dashboard-panel dashboard-reveal" aria-label="教师三域入口">
+        <div class="dashboard-panel__header dashboard-panel__header--spread">
+            <div>
+                <h2>教师三域</h2>
+                <p>按教学、教务、教师三个方向进入管理中心。</p>
+            </div>
+        </div>
+        <div class="dashboard-domain-grid">
+            {% for domain in dashboard_domain_cards %}
+            <a href="{{ domain.href }}" class="dashboard-domain-card" data-domain="{{ domain.domain }}">
+                <span>{{ domain.label }}</span>
+                <strong>{{ domain.title }}</strong>
+                <small>{{ domain.description }}</small>
+            </a>
+            {% endfor %}
         </div>
     </section>
     {% endif %}

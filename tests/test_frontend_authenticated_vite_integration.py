@@ -479,10 +479,10 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
 
     def test_manage_materials_injects_page_island_without_direct_legacy_script(self):
         with _authenticated_client(self.teacher) as client:
-            response = client.get("/manage/materials", follow_redirects=False)
+            response = client.get("/manage/teaching/materials", follow_redirects=False)
 
         if response.status_code != 200:
-            self.skipTest(f"Authenticated teacher cannot access /manage/materials in this fixture: {response.status_code}")
+            self.skipTest(f"Authenticated teacher cannot access /manage/teaching/materials in this fixture: {response.status_code}")
 
         html = response.text
         self.assertIn('data-lanshare-island="materials-manage-page"', html)

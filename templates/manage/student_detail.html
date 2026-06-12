@@ -1,4 +1,4 @@
-{% extends "manage/layout.html" %}
+﻿{% extends "manage/layout.html" %}
 
 {% set student = insight.student %}
 {% set task_summary = insight.task_summary %}
@@ -17,7 +17,7 @@
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
-{{ topbar_action('学生名单', '返回班级页', 'arrow-left', href='/manage/classes', variant='solid', tone='blue') }}
+{{ topbar_action('学生名单', '返回班级页', 'arrow-left', href='/manage/teaching/classes', variant='solid', tone='blue') }}
 {% endblock %}
 
 {% block content %}

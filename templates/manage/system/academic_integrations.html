@@ -1,10 +1,10 @@
-{% extends "manage/layout.html" %}
+﻿{% extends "manage/layout.html" %}
 
 {% block title %}教务系统对接{% endblock %}
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
-{{ topbar_action('找回申请', '学生安全', 'shield', href='/manage/system/password-resets', variant='solid', tone='amber') }}
+{{ topbar_action('找回申请', '学生安全', 'shield', href='/manage/me/password-resets', variant='solid', tone='amber') }}
 {% if current_teacher_is_super_admin %}
 {{ topbar_action('用户管理', '教师账号', 'users', href='/manage/system/users', variant='solid', tone='slate') }}
 {% endif %}

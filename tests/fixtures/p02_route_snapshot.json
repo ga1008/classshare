@@ -664,6 +664,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classroom-interactions/classrooms/{class_offering_id}/messages/{message_id}/useful",
+    "methods": [
+      "POST"
+    ],
+    "name": "mark_discussion_message_useful",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classroom-interactions/classrooms/{class_offering_id}/signals",
     "methods": [
       "POST"
@@ -784,6 +792,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{class_offering_id}/learning/alerts",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_learning_alerts",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/learning/alerts/{alert_id}/actions",
+    "methods": [
+      "POST"
+    ],
+    "name": "update_learning_alert",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/learning/material-progress",
     "methods": [
       "POST"
@@ -792,11 +816,35 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{class_offering_id}/learning/materials/{material_id}/mastery-check",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_material_mastery_check",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/learning/materials/{material_id}/mastery-check",
+    "methods": [
+      "POST"
+    ],
+    "name": "post_material_mastery_check",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/learning/progress",
     "methods": [
       "GET"
     ],
     "name": "get_learning_progress",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/learning/score-events",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_learning_score_events",
     "include_in_schema": true
   },
   {
@@ -813,6 +861,30 @@
       "POST"
     ],
     "name": "create_learning_stage_exam",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/learning/weights",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_learning_weights",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/learning/weights",
+    "methods": [
+      "POST"
+    ],
+    "name": "update_learning_weights",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/learning/weights/preview",
+    "methods": [
+      "POST"
+    ],
+    "name": "preview_learning_weights",
     "include_in_schema": true
   },
   {
@@ -1325,6 +1397,14 @@
       "POST"
     ],
     "name": "api_update_learning_path_item",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/learning/certificates/{certificate_id}/revealed",
+    "methods": [
+      "POST"
+    ],
+    "name": "mark_certificate_revealed",
     "include_in_schema": true
   },
   {
@@ -1893,6 +1973,22 @@
       "POST"
     ],
     "name": "api_test_agent_key",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/ai-budgets/{class_offering_id:int}",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_update_ai_budget",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/ai-usage",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_ai_usage_dashboard",
     "include_in_schema": true
   },
   {
@@ -3192,12 +3288,68 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_workflow",
+    "include_in_schema": false
+  },
+  {
+    "path": "/manage/academic",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_academic_overview_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/academic/classrooms",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_classrooms_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/academic/gongwen",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_gongwen_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/academic/gongwen-sync",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_gongwen_integrations_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/academic/integrations",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_academic_integrations_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/manage/ai",
     "methods": [
       "GET"
     ],
     "name": "get_manage_ai_page",
     "include_in_schema": true
+  },
+  {
+    "path": "/manage/ai",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_ai",
+    "include_in_schema": false
   },
   {
     "path": "/manage/classes",
@@ -3208,12 +3360,28 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/classes",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_classes",
+    "include_in_schema": false
+  },
+  {
     "path": "/manage/classrooms",
     "methods": [
       "GET"
     ],
     "name": "get_manage_classrooms_page",
     "include_in_schema": true
+  },
+  {
+    "path": "/manage/classrooms",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_classrooms",
+    "include_in_schema": false
   },
   {
     "path": "/manage/courses",
@@ -3224,12 +3392,28 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/courses",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_courses",
+    "include_in_schema": false
+  },
+  {
     "path": "/manage/exams",
     "methods": [
       "GET"
     ],
     "name": "manage_exams_page",
     "include_in_schema": true
+  },
+  {
+    "path": "/manage/exams",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_exams",
+    "include_in_schema": false
   },
   {
     "path": "/manage/gongwen",
@@ -3240,11 +3424,59 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/gongwen",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_gongwen",
+    "include_in_schema": false
+  },
+  {
     "path": "/manage/materials",
     "methods": [
       "GET"
     ],
     "name": "manage_materials_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/materials",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_materials",
+    "include_in_schema": false
+  },
+  {
+    "path": "/manage/me",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_me_overview_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/me/credentials",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_me_credentials_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/me/password-resets",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_password_resets_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/me/signatures",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_signatures_page",
     "include_in_schema": true
   },
   {
@@ -3256,6 +3488,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/offerings",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_offerings",
+    "include_in_schema": false
+  },
+  {
     "path": "/manage/semesters",
     "methods": [
       "GET"
@@ -3264,12 +3504,28 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/semesters",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_semesters",
+    "include_in_schema": false
+  },
+  {
     "path": "/manage/signatures",
     "methods": [
       "GET"
     ],
     "name": "get_manage_signatures_page",
     "include_in_schema": true
+  },
+  {
+    "path": "/manage/signatures",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_signatures",
+    "include_in_schema": false
   },
   {
     "path": "/manage/students/{student_id}",
@@ -3296,11 +3552,27 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/system/academic-integrations",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_system_academic_integrations",
+    "include_in_schema": false
+  },
+  {
     "path": "/manage/system/agent-keys",
     "methods": [
       "GET"
     ],
     "name": "get_manage_system_agent_keys_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/system/ai-usage",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_ai_usage_page",
     "include_in_schema": true
   },
   {
@@ -3336,6 +3608,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/system/gongwen-integrations",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_system_gongwen_integrations",
+    "include_in_schema": false
+  },
+  {
     "path": "/manage/system/organizations",
     "methods": [
       "GET"
@@ -3352,12 +3632,28 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/system/password-resets",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_system_password_resets",
+    "include_in_schema": false
+  },
+  {
     "path": "/manage/system/smart-classroom-integrations",
     "methods": [
       "GET"
     ],
     "name": "get_manage_system_smart_classroom_integrations_page",
     "include_in_schema": true
+  },
+  {
+    "path": "/manage/system/smart-classroom-integrations",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_system_smart_classroom_integrations",
+    "include_in_schema": false
   },
   {
     "path": "/manage/system/super-admin",
@@ -3376,12 +3672,100 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/teaching",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_workflow_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/ai",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_ai_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/classes",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_classes_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/courses",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_courses_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/exams",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_exams_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/materials",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_materials_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/offerings",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_offerings_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/semesters",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_semesters_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/smart-classroom-integrations",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_smart_classroom_integrations_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/textbooks",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_textbooks_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/manage/textbooks",
     "methods": [
       "GET"
     ],
     "name": "get_manage_textbooks_page",
     "include_in_schema": true
+  },
+  {
+    "path": "/manage/textbooks",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_textbooks",
+    "include_in_schema": false
   },
   {
     "path": "/materials/download/{material_id}",

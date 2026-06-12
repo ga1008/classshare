@@ -204,7 +204,7 @@ class ContextBlockTests(unittest.TestCase):
             "relevance_reason": "直接相关",
         }]
         block = search.build_gongwen_context_block(docs, intent={"recent_months": 3})
-        for fragment in ("关于师范认证的通知", "教学发〔2026〕48号", "/manage/gongwen?doc=7",
+        for fragment in ("关于师范认证的通知", "教学发〔2026〕48号", "/manage/academic/gongwen?doc=7",
                          "正文内容若干", "最近 3 个月", "直接相关"):
             self.assertIn(fragment, block)
 
@@ -248,7 +248,7 @@ class RetrievalPipelineTests(CandidateFetchTestBase):
         self.assertEqual(result["doc_count"], 1)
         self.assertTrue(result["ai_selected"])
         self.assertEqual(result["documents"][0]["id"], hit)
-        self.assertIn("/manage/gongwen?doc=", result["documents"][0]["url"])
+        self.assertIn("/manage/academic/gongwen?doc=", result["documents"][0]["url"])
         self.assertIn("师范认证", result["context_block"])
 
     def test_ai_selection_failure_degrades_to_keyword_candidates(self):

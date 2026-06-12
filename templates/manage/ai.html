@@ -23,8 +23,8 @@
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
-{{ topbar_action('开设课堂', '选择配置对象', 'list', href='/manage/offerings', variant='solid', tone='teal') }}
-{{ topbar_action('教材管理', '补齐知识源', 'book', href='/manage/textbooks', variant='primary', tone='amber') }}
+{{ topbar_action('开设课堂', '选择配置对象', 'list', href='/manage/teaching/offerings', variant='solid', tone='teal') }}
+{{ topbar_action('教材管理', '补齐知识源', 'book', href='/manage/teaching/textbooks', variant='primary', tone='amber') }}
 {% endblock %}
 
 {% block content %}
@@ -94,7 +94,7 @@
                                 <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
                                 {% endfor %}
                             </select>
-                            <a href="/manage/textbooks?open=new" class="academic-link-btn">新增教材</a>
+                            <a href="/manage/teaching/textbooks?open=new" class="academic-link-btn">新增教材</a>
                         </div>
                     </div>
                     <div class="academic-action-group" style="justify-content: space-between;">
@@ -148,7 +148,7 @@
                 <strong>还没有可配置的课堂</strong>
                 先到“开设课堂”页面创建至少一个课堂实例，再回来配置课堂 AI。
                 <div class="academic-hero-actions" style="justify-content: center; margin-top: 16px;">
-                    <a href="/manage/offerings" class="btn btn-primary">前往开设课堂</a>
+                    <a href="/manage/teaching/offerings" class="btn btn-primary">前往开设课堂</a>
                 </div>
             </div>
         </div>

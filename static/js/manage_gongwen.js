@@ -1,4 +1,4 @@
-import { apiFetch } from '/static/js/api.js';
+﻿import { apiFetch } from '/static/js/api.js';
 import { escapeHtml, showMessage } from '/static/js/ui.js';
 
 const parseJsonScript = (id, fallback) => {
@@ -320,7 +320,7 @@ async function syncNow() {
         const status = result.auto_sync?.status || result.status;
         if (status === 'missing_credential') {
             showMessage('尚未对接统一认证账号，请先前往「公文同步」保存账号。', 'warning');
-            window.setTimeout(() => { window.location.href = '/manage/system/gongwen-integrations'; }, 1200);
+            window.setTimeout(() => { window.location.href = '/manage/academic/gongwen-sync'; }, 1200);
             return;
         }
         showMessage(result.message || '公文同步完成。', status === 'failed' ? 'warning' : 'success');

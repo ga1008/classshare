@@ -1,11 +1,11 @@
-{% extends "manage/layout.html" %}
+﻿{% extends "manage/layout.html" %}
 
 {% block extra_head %}
 {% endblock %}
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
-{{ topbar_action('课堂列表', '已开课堂', 'list', href='/manage/offerings', variant='solid', tone='blue') }}
+{{ topbar_action('课堂列表', '已开课堂', 'list', href='/manage/teaching/offerings', variant='solid', tone='blue') }}
 {{ topbar_action('开设课堂', '流程向导', 'plus', button_id='workflowTopbarOnboardingBtn', variant='primary', tone='teal', attrs='data-teacher-onboarding-open') }}
 {% endblock %}
 
@@ -21,7 +21,7 @@
             </p>
             <div class="workflow-hero-actions">
                 <button type="button" class="btn btn-primary" data-teacher-onboarding-open>开设新课堂</button>
-                <a href="/manage/offerings" class="btn btn-outline">查看课堂列表</a>
+                <a href="/manage/teaching/offerings" class="btn btn-outline">查看课堂列表</a>
             </div>
         </div>
 

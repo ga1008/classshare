@@ -1,4 +1,4 @@
-"""公文 AI 检索 — 让 AI 对话和 Agent 能基于校园公文回答问题。
+﻿"""公文 AI 检索 — 让 AI 对话和 Agent 能基于校园公文回答问题。
 
 流程（教师对话触发）：
 1. ``message_may_mention_gongwen`` 本地正则粗筛（高召回，避免每条消息都打 AI）；
@@ -14,7 +14,7 @@ AI 任一环节失败都降级：意图判断失败 → 强关键词兜底；相
 
 Agent 任务中心通过 ``run_gongwen_retrieval`` 复用同一条链路（公文存放在
 ``gongwen_documents`` 表，校区共享、按归属/开放范围过滤，页面入口
-``/manage/gongwen``）。
+``/manage/academic/gongwen``）。
 """
 
 from __future__ import annotations
@@ -330,7 +330,7 @@ def build_gongwen_context_block(docs: list[dict[str, Any]], *, intent: dict[str,
             lines.append(f"正文摘录：\n{excerpt}")
         elif str(doc.get("parsed_status") or "") != "done":
             lines.append("（该公文尚未完成解析，只有标题与元数据可用。）")
-        lines.append(f"平台链接：/manage/gongwen?doc={int(doc['id'])}")
+        lines.append(f"平台链接：/manage/academic/gongwen?doc={int(doc['id'])}")
         section = "\n".join(lines)
         budget -= len(section)
         sections.append(section)
@@ -342,7 +342,7 @@ def build_gongwen_context_block(docs: list[dict[str, Any]], *, intent: dict[str,
         "--- 校园公文检索结果 ---\n"
         f"以下是平台公文库中与用户问题可能相关的公文{time_note}，按发布时间倒序。"
         "请基于这些公文内容回答；如内容不足以回答，请如实说明并提示用户到 公文中心"
-        "（/manage/gongwen）查看原文。引用公文时给出标题和文号，并附上平台链接。\n\n"
+        "（/manage/academic/gongwen）查看原文。引用公文时给出标题和文号，并附上平台链接。\n\n"
         + "\n\n".join(sections)
     )
 
@@ -357,7 +357,7 @@ def _doc_public_payload(doc: dict[str, Any]) -> dict[str, Any]:
         "publish_time": str(doc.get("publish_time") or "")[:10],
         "summary": str(doc.get("parsed_summary") or "")[:300],
         "relevance_reason": str(doc.get("relevance_reason") or ""),
-        "url": f"/manage/gongwen?doc={int(doc['id'])}",
+        "url": f"/manage/academic/gongwen?doc={int(doc['id'])}",
     }
 
 

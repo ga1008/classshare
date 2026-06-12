@@ -61,7 +61,7 @@
         <div class="app-topbar-actions app-topbar-actions--primary" aria-label="主要入口">
             {% block navbar_actions %}
             {% if user_info.role == 'teacher' %}
-            <a href="/manage" class="app-topbar-action app-topbar-action--solid">
+            <a href="/manage/teaching" class="app-topbar-action app-topbar-action--solid">
                 <span class="app-topbar-action__icon" aria-hidden="true">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M3 3h7v7H3z"></path>
@@ -72,7 +72,7 @@
                 </span>
                 <span class="app-topbar-action__text">
                     <strong>管理中心</strong>
-                    <small>班级与课程</small>
+                    <small>教学 · 教务 · 教师</small>
                 </span>
             </a>
             {% elif user_info.role == 'student' %}

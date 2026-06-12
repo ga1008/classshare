@@ -1,4 +1,4 @@
-{% extends "manage/layout.html" %}
+﻿{% extends "manage/layout.html" %}
 
 {% block extra_head %}
 <style>
@@ -452,9 +452,9 @@
             选择学期、班级、课程和教材后，系统会优先使用教务系统真实课表生成每一次课；没有教务排课时，再使用固定周循环生成课堂时间轴和任务列表。
         </p>
         <div class="academic-hero-actions">
-            <a href="/manage/courses" class="academic-link-btn">先完善课程模板</a>
-            <a href="/manage/semesters?open=new" class="academic-link-btn">新增学期</a>
-            <a href="/manage/textbooks?open=new" class="academic-link-btn">新增教材</a>
+            <a href="/manage/teaching/courses" class="academic-link-btn">先完善课程模板</a>
+            <a href="/manage/teaching/semesters?open=new" class="academic-link-btn">新增学期</a>
+            <a href="/manage/teaching/textbooks?open=new" class="academic-link-btn">新增教材</a>
         </div>
     </section>
 
@@ -508,7 +508,7 @@
                                 <option value="{{ semester.id }}" {% if default_semester_id and semester.id == default_semester_id %}selected{% endif %}>{{ semester.name }} · {{ semester.start_date }} 至 {{ semester.end_date }}{% if semester.is_shared_semester %} · 同校共享{% endif %}</option>
                                 {% endfor %}
                             </select>
-                            <a href="/manage/semesters?open=new" class="academic-link-btn">新增学期</a>
+                            <a href="/manage/teaching/semesters?open=new" class="academic-link-btn">新增学期</a>
                         </div>
                     </div>
 
@@ -521,7 +521,7 @@
                                 <option value="{{ class_item.id }}">{{ class_item.name }}{% if class_item.department %} · {{ class_item.department }}{% endif %}</option>
                                 {% endfor %}
                             </select>
-                            <a href="/manage/classes" class="academic-link-btn">新增班级</a>
+                            <a href="/manage/teaching/classes" class="academic-link-btn">新增班级</a>
                         </div>
                     </div>
 
@@ -534,7 +534,7 @@
                                 <option value="{{ course.id }}">{{ course.name }}{% if course.department %} · {{ course.department }}{% endif %}{% if course.is_shared_course %} · 系内共享{% endif %}</option>
                                 {% endfor %}
                             </select>
-                            <a href="/manage/courses" class="academic-link-btn">新增课程</a>
+                            <a href="/manage/teaching/courses" class="academic-link-btn">新增课程</a>
                         </div>
                     </div>
 
@@ -547,7 +547,7 @@
                                 <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
                                 {% endfor %}
                             </select>
-                            <a href="/manage/textbooks?open=new" class="academic-link-btn">新增教材</a>
+                            <a href="/manage/teaching/textbooks?open=new" class="academic-link-btn">新增教材</a>
                         </div>
                     </div>
 
@@ -722,7 +722,7 @@
                         <div class="academic-action-group">
                             <button type="button" class="btn btn-outline btn-sm" data-action="edit-offering" data-offering-id="{{ offering.id }}">编辑</button>
                             <a href="/classroom/{{ offering.id }}" class="btn btn-ghost btn-sm">进入课堂</a>
-                            <a href="/manage/ai" class="btn btn-ghost btn-sm">配置 AI</a>
+                            <a href="/manage/teaching/ai" class="btn btn-ghost btn-sm">配置 AI</a>
                         </div>
                         <button
                             type="button"

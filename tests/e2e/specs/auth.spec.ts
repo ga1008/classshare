@@ -47,7 +47,7 @@ test.describe('P03 auth and runtime safety', () => {
   test('protected pages reject anonymous browser sessions', async ({ page }, testInfo) => {
     const errors = collectBrowserErrors(page);
 
-    await page.goto('/manage/materials', { waitUntil: 'domcontentloaded' });
+    await page.goto('/manage/teaching/materials', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => undefined);
     await expect(page.locator('#materials-list-body')).toHaveCount(0);
     await expect(page.locator('#email, #identifier').first()).toBeVisible();

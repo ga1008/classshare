@@ -1,0 +1,49 @@
+{% extends "manage/layout.html" %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('教务对接', '同步账号', 'shield', href=manage_nav.hrefs.system_academic_integrations, variant='solid', tone='teal') }}
+{{ topbar_action('空闲教室', '场地查询', 'building', href=manage_nav.hrefs.classrooms, variant='outline', tone='slate') }}
+{% endblock %}
+
+{% block content %}
+<section class="manage-domain-hero">
+    <h1>教务总览</h1>
+    <p>课表、考试、监考、教室和公文集中在这里，先看状态，再进入对应页面处理。</p>
+</section>
+
+<section class="manage-domain-grid" aria-label="教务状态">
+    {% for card in overview_cards %}
+    <a class="manage-domain-card" href="{{ card.href }}">
+        <span>{{ card.label }}</span>
+        <strong>{{ card.value }} {{ card.unit }}</strong>
+        <small>{{ card.description }}</small>
+    </a>
+    {% endfor %}
+</section>
+
+<section class="academic-panel">
+    <div class="academic-panel-header">
+        <div>
+            <span class="academic-panel-kicker">近期教务</span>
+            <h2>未来 14 天</h2>
+        </div>
+        <a href="/dashboard#dashboard-semester" class="btn btn-outline btn-sm">查看日程</a>
+    </div>
+    {% if event_breakdown %}
+    <div class="manage-domain-grid">
+        {% for item in event_breakdown %}
+        <div class="manage-domain-card">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value }} 条</strong>
+            <small>来自教务同步或教师日程。</small>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>未来两周暂无教务日程。</p>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

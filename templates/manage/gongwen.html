@@ -1,11 +1,11 @@
-{% extends "manage/layout.html" %}
+﻿{% extends "manage/layout.html" %}
 {% from "macros/manage_insights.html" import insight_ring, insight_bars, insight_meter %}
 
 {% block title %}公文材料{% endblock %}
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
-{{ topbar_action('公文同步', '对接统一认证账号', 'refresh-cw', href='/manage/system/gongwen-integrations', variant='solid', tone='rose') }}
+{{ topbar_action('公文同步', '对接统一认证账号', 'refresh-cw', href='/manage/academic/gongwen-sync', variant='solid', tone='rose') }}
 {% endblock %}
 
 {% block extra_head %}

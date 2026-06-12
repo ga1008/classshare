@@ -93,6 +93,7 @@ def _rename_material_subtree(conn, material, new_name: str) -> None:
         )
 
 
+@router.get("/manage/teaching/materials", response_class=HTMLResponse)
 @router.get("/manage/materials", response_class=HTMLResponse)
 async def manage_materials_page(request: Request, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
@@ -112,7 +113,6 @@ async def manage_materials_page(request: Request, user: dict = Depends(get_curre
             (user["id"],),
         ).fetchall()
         stats = _get_teacher_material_stats(conn, user["id"])
-        current_teacher_is_super_admin = is_super_admin_teacher(conn, user.get("id"))
 
     type_registry = []
     seen_labels = set()
@@ -133,18 +133,18 @@ async def manage_materials_page(request: Request, user: dict = Depends(get_curre
     return templates.TemplateResponse(
         request,
         "manage/materials.html",
-        {
-            "request": request,
-            "user_info": user,
-            "page_title": "课程材料",
-            "active_page": "materials",
-            "embedded_mode": str(request.query_params.get("embed") or "").strip().lower() in {"1", "true", "yes", "on"},
-            "current_teacher_is_super_admin": current_teacher_is_super_admin,
-            "offerings": [dict(row) for row in offerings],
-            "material_stats": stats,
-            "type_registry": type_registry,
-            "material_ai_import_registry": get_material_ai_import_registry(),
-        },
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="课程材料",
+            active_page="materials",
+            extra={
+                "offerings": [dict(row) for row in offerings],
+                "material_stats": stats,
+                "type_registry": type_registry,
+                "material_ai_import_registry": get_material_ai_import_registry(),
+            },
+        ),
     )
 
 

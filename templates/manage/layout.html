@@ -22,7 +22,7 @@
             position: fixed;
             inset: 0;
             background:
-                radial-gradient(circle at top left, rgba(79, 70, 229, 0.09), transparent 30%),
+                radial-gradient(circle at top left, rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.09), transparent 30%),
                 radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.08), transparent 26%);
             pointer-events: none;
             z-index: -1;
@@ -68,8 +68,8 @@
             align-items: center;
             justify-content: center;
             color: #fff;
-            background: linear-gradient(135deg, #4f46e5, #6366f1);
-            box-shadow: 0 8px 20px -10px rgba(79, 70, 229, 0.7);
+            background: linear-gradient(135deg, var(--manage-domain-accent, #4f46e5), var(--manage-domain-accent-dark, #6366f1));
+            box-shadow: 0 8px 20px -10px rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.7);
         }
 
         .manage-brand__copy {
@@ -109,8 +109,8 @@
         }
 
         .manage-sidebar-collapse:hover {
-            background: rgba(79, 70, 229, 0.1);
-            color: var(--primary-color);
+            background: rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.1);
+            color: var(--manage-domain-accent, var(--primary-color));
         }
 
         .manage-nav-search {
@@ -140,8 +140,8 @@
 
         .manage-nav-search input:focus {
             outline: none;
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.14);
+            border-color: var(--manage-domain-accent, var(--primary-color));
+            box-shadow: 0 0 0 3px rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.14);
         }
 
         .manage-nav {
@@ -198,19 +198,19 @@
         .manage-nav-item__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
         .manage-nav-item:hover {
-            background-color: rgba(79, 70, 229, 0.08);
+            background-color: rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.08);
             color: var(--text-primary);
         }
 
         .manage-nav-item:hover .manage-nav-item__icon {
-            background: rgba(79, 70, 229, 0.14);
-            color: var(--primary-color);
+            background: rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.14);
+            color: var(--manage-domain-accent, var(--primary-color));
         }
 
         .manage-nav-item.active {
-            background: linear-gradient(135deg, rgba(79, 70, 229, 0.14), rgba(99, 102, 241, 0.1));
-            color: var(--primary-color);
-            box-shadow: inset 0 0 0 1px rgba(79, 70, 229, 0.16);
+            background: linear-gradient(135deg, rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.14), rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.1));
+            color: var(--manage-domain-accent-dark, var(--primary-color));
+            box-shadow: inset 0 0 0 1px rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.16);
         }
 
         .manage-nav-item.active::before {
@@ -222,13 +222,13 @@
             width: 3px;
             height: 20px;
             border-radius: 0 3px 3px 0;
-            background: var(--primary-color);
+            background: var(--manage-domain-accent, var(--primary-color));
         }
 
         .manage-nav-item.active .manage-nav-item__icon {
-            background: var(--primary-color);
+            background: var(--manage-domain-accent, var(--primary-color));
             color: #fff;
-            box-shadow: 0 8px 18px -10px rgba(79, 70, 229, 0.8);
+            box-shadow: 0 8px 18px -10px rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.8);
         }
 
         /* Admin group: amber accent so privileged tools read as distinct. */
@@ -268,7 +268,7 @@
             width: 38px;
             height: 38px;
             border-radius: var(--radius-full);
-            background: linear-gradient(135deg, #4f46e5, #6366f1);
+            background: linear-gradient(135deg, var(--manage-domain-accent, #4f46e5), var(--manage-domain-accent-dark, #6366f1));
             color: white;
             display: flex;
             align-items: center;
@@ -581,9 +581,10 @@
         }
     </style>
 </head>
-<body class="{% if embedded_mode %}manage-embedded-page{% endif %}">
+<body class="{% if embedded_mode %}manage-embedded-page{% endif %} manage-domain-{{ manage_nav.active_domain|default('teaching') }}">
     {% if not embedded_mode %}
-    <div class="manage-layout">
+    {% from "macros/manage_icons.html" import manage_icon %}
+    <div class="manage-layout manage-domain-{{ manage_nav.active_domain|default('teaching') }}" data-manage-domain="{{ manage_nav.active_domain|default('teaching') }}">
         <aside class="manage-sidebar" id="sidebar">
             <div class="manage-brand">
                 <a href="/dashboard" class="manage-brand__mark" aria-label="返回仪表盘" title="返回仪表盘">
@@ -598,126 +599,81 @@
                 </button>
             </div>
 
+            <div class="manage-domain-tabs" role="tablist" aria-label="教师管理中心领域">
+                {% for domain in manage_nav.domains %}
+                <button
+                    type="button"
+                    class="manage-domain-tab{% if domain.active %} is-active{% endif %}"
+                    data-domain-tab="{{ domain.key }}"
+                    role="tab"
+                    aria-selected="{{ 'true' if domain.active else 'false' }}"
+                    aria-controls="manage-domain-{{ domain.key }}"
+                    title="{{ domain.description }}"
+                >
+                    <span>{{ domain.short_label }}</span>
+                </button>
+                {% endfor %}
+            </div>
+
             <div class="manage-nav-search">
                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
                 <input type="search" id="manageNavSearch" placeholder="搜索菜单…" autocomplete="off" spellcheck="false" aria-label="搜索菜单项">
             </div>
 
-            <nav class="manage-nav" id="manageNav">
-                <div class="manage-nav-group">
+            <nav class="manage-nav" id="manageNav" data-active-domain="{{ manage_nav.active_domain|default('teaching') }}">
+                <div class="manage-nav-group manage-nav-group--utility">
                     <a href="/dashboard" class="manage-nav-item" data-nav-text="返回仪表盘 首页 dashboard home" title="返回仪表盘">
                         <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg></span>
                         <span class="manage-nav-item__label">返回仪表盘</span>
                     </a>
-                    <a href="/manage" class="manage-nav-item {{ 'active' if active_page == 'workflow' }}" data-nav-text="流程工作台 开课向导 workflow" title="流程工作台">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h4"></path><path d="M10 12h4"></path><path d="M16 12h4"></path><circle cx="4" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="20" cy="12" r="2"></circle></svg></span>
-                        <span class="manage-nav-item__label">流程工作台</span>
-                    </a>
                 </div>
 
-                <div class="manage-nav-group">
-                    <div class="manage-nav-section-title">教学准备</div>
-                    <a href="/manage/semesters" class="manage-nav-item {{ 'active' if active_page == 'semesters' }}" data-nav-text="确认学期 学期 semester" title="确认学期">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="M8 14h.01"></path><path d="M12 14h.01"></path><path d="M16 14h.01"></path><path d="M8 18h.01"></path><path d="M12 18h.01"></path></svg></span>
-                        <span class="manage-nav-item__label">确认学期</span>
-                    </a>
-                    <a href="/manage/offerings" class="manage-nav-item {{ 'active' if active_page == 'offerings' }}" data-nav-text="开设课堂 课堂 offering" title="开设课堂">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></span>
-                        <span class="manage-nav-item__label">开设课堂</span>
-                    </a>
-                    <a href="/manage/ai" class="manage-nav-item {{ 'active' if active_page == 'ai' }}" data-nav-text="配置 AI 助教 人工智能 ai" title="配置 AI 助教">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path><line x1="8" y1="16" x2="8" y2="16"></line><line x1="16" y1="16" x2="16" y2="16"></line></svg></span>
-                        <span class="manage-nav-item__label">配置 AI 助教</span>
-                    </a>
+                {% for domain in manage_nav.domains %}
+                <div
+                    class="manage-nav-domain{% if domain.active %} is-active{% endif %}"
+                    id="manage-domain-{{ domain.key }}"
+                    data-manage-domain="{{ domain.key }}"
+                    {% if not domain.active %}hidden{% endif %}
+                >
+                    {% for group in domain.groups %}
+                    <div class="manage-nav-group manage-nav-group--{{ domain.key }}{% if group.active %} is-active{% endif %}">
+                        <div class="manage-nav-section-title">{{ group.label }}</div>
+                        {% for item in group['items'] %}
+                        <a
+                            href="{{ item.href }}"
+                            class="manage-nav-item{% if item.active %} active{% endif %}"
+                            data-nav-text="{{ item.search_text }}"
+                            data-nav-domain="{{ item.domain }}"
+                            title="{{ item.label }}"
+                        >
+                            <span class="manage-nav-item__icon">{{ manage_icon(item.icon) }}</span>
+                            <span class="manage-nav-item__label">{{ item.label }}</span>
+                        </a>
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
                 </div>
+                {% endfor %}
 
-                <div class="manage-nav-group">
-                    <div class="manage-nav-section-title">基础资源</div>
-                    <a href="/manage/classes" class="manage-nav-item {{ 'active' if active_page == 'classes' }}" data-nav-text="班级 class" title="班级">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span>
-                        <span class="manage-nav-item__label">班级</span>
-                    </a>
-                    <a href="/manage/courses" class="manage-nav-item {{ 'active' if active_page == 'courses' }}" data-nav-text="课程 course" title="课程">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg></span>
-                        <span class="manage-nav-item__label">课程</span>
-                    </a>
-                    <a href="/manage/classrooms" class="manage-nav-item {{ 'active' if active_page == 'classrooms' }}" data-nav-text="教室 教学场地 classroom" title="教室">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"></rect><path d="M9 22v-4h6v4"></path><path d="M8 6h.01"></path><path d="M12 6h.01"></path><path d="M16 6h.01"></path><path d="M8 10h.01"></path><path d="M12 10h.01"></path><path d="M16 10h.01"></path><path d="M8 14h.01"></path><path d="M12 14h.01"></path><path d="M16 14h.01"></path></svg></span>
-                        <span class="manage-nav-item__label">教室</span>
-                    </a>
-                    <a href="/manage/textbooks" class="manage-nav-item {{ 'active' if active_page == 'textbooks' }}" data-nav-text="教材 textbook" title="教材">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><path d="M8 7h8"></path><path d="M8 11h8"></path><path d="M8 15h5"></path></svg></span>
-                        <span class="manage-nav-item__label">教材</span>
-                    </a>
-                    <a href="/manage/exams" class="manage-nav-item {{ 'active' if active_page == 'exams' }}" data-nav-text="试卷 题库 考试 exam" title="试卷">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg></span>
-                        <span class="manage-nav-item__label">试卷</span>
-                    </a>
-                    <a href="/manage/signatures" class="manage-nav-item {{ 'active' if active_page == 'signatures' }}" data-nav-text="签名 signature" title="签名">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20c4-1 6-4 7-8"></path><path d="M8 13c2 2 4 3 7 2"></path><path d="M14 15c1 2 3 3 6 2"></path><path d="M16 4c2-1 4 1 3 3l-7 7-4 1 1-4 7-7z"></path></svg></span>
-                        <span class="manage-nav-item__label">签名</span>
-                    </a>
-                    <a href="/manage/materials" class="manage-nav-item {{ 'active' if active_page == 'materials' }}" data-nav-text="材料 资料 material" title="材料">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><path d="M9 7h6"></path><path d="M9 11h6"></path><path d="M9 15h4"></path></svg></span>
-                        <span class="manage-nav-item__label">材料</span>
-                    </a>
-                    <a href="/manage/gongwen" class="manage-nav-item {{ 'active' if active_page == 'gongwen' }}" data-nav-text="公文 公文材料 文件 通知 document gongwen" title="公文">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg></span>
-                        <span class="manage-nav-item__label">公文</span>
-                    </a>
-                </div>
-
-                <div class="manage-nav-group">
-                    <div class="manage-nav-section-title">对接与申请</div>
-                    <a href="/manage/system/academic-integrations" class="manage-nav-item {{ 'active' if active_page == 'system_academic_integrations' }}" data-nav-text="教务对接 教务系统 academic" title="教务对接">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"></rect><path d="M6 10h4"></path><path d="M6 14h8"></path><path d="M17 10h1"></path><path d="M17 14h1"></path></svg></span>
-                        <span class="manage-nav-item__label">教务对接</span>
-                    </a>
-                    <a href="/manage/system/smart-classroom-integrations" class="manage-nav-item {{ 'active' if active_page == 'system_smart_classroom_integrations' }}" data-nav-text="智慧课堂 点名 smart classroom" title="智慧课堂">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"></path><path d="M8 17V9"></path><path d="M12 19V7"></path><path d="M16 15v-4"></path><path d="M20 17V9"></path></svg></span>
-                        <span class="manage-nav-item__label">智慧课堂</span>
-                    </a>
-                    <a href="/manage/system/gongwen-integrations" class="manage-nav-item {{ 'active' if active_page == 'system_gongwen_integrations' }}" data-nav-text="公文同步 校园公文通 统一认证 gongwen" title="公文同步">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path><polyline points="21 3 21 9 15 9"></polyline><path d="M9 12h6"></path><path d="M9 16h4"></path></svg></span>
-                        <span class="manage-nav-item__label">公文同步</span>
-                    </a>
-                    <a href="/manage/system/password-resets" class="manage-nav-item {{ 'active' if active_page == 'system_password_resets' }}" data-nav-text="找回申请 密码 password" title="找回申请">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></span>
-                        <span class="manage-nav-item__label">找回申请</span>
-                    </a>
-                </div>
-
-                {% if current_teacher_is_super_admin %}
-                <div class="manage-nav-group manage-nav-group--admin">
-                    <div class="manage-nav-section-title">管理员</div>
-                    <a href="/manage/system/users" class="manage-nav-item {{ 'active' if active_page == 'system_users' }}" data-nav-text="用户管理 账号 user" title="用户管理">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="19" y1="8" x2="19" y2="14"></line><line x1="22" y1="11" x2="16" y2="11"></line></svg></span>
-                        <span class="manage-nav-item__label">用户管理</span>
-                    </a>
-                    <a href="/manage/system/organizations" class="manage-nav-item {{ 'active' if active_page == 'system_organizations' }}" data-nav-text="学校组织 organization" title="学校组织">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"></path><path d="M5 21V7l8-4 6 4v14"></path><path d="M9 21v-6h6v6"></path><path d="M9 9h.01"></path><path d="M13 9h.01"></path><path d="M17 9h.01"></path><path d="M9 12h.01"></path><path d="M13 12h.01"></path><path d="M17 12h.01"></path></svg></span>
-                        <span class="manage-nav-item__label">学校组织</span>
-                    </a>
-                    <a href="/manage/system/feedback" class="manage-nav-item {{ 'active' if active_page == 'system_feedback' }}" data-nav-text="问题反馈 feedback" title="问题反馈">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg></span>
-                        <span class="manage-nav-item__label">问题反馈</span>
-                    </a>
-                    <a href="/manage/system/blog-crawler" class="manage-nav-item {{ 'active' if active_page == 'system_blog_crawler' }}" data-nav-text="AI博客管家 爬虫 blog" title="AI博客管家">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a8 8 0 0 1 16 0"></path><path d="M4 11v5a3 3 0 0 0 3 3h1"></path><path d="M20 11v5a3 3 0 0 1-3 3h-1"></path><path d="M8 19h8"></path><path d="M9 15h.01"></path><path d="M15 15h.01"></path></svg></span>
-                        <span class="manage-nav-item__label">AI博客管家</span>
-                    </a>
-                    <a href="/manage/system/ai-usage" class="manage-nav-item {{ 'active' if active_page == 'system_ai_usage' }}" data-nav-text="AI 用量 预算 成本 usage budget" title="AI 用量">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path><path d="M14 9h5v5"></path></svg></span>
-                        <span class="manage-nav-item__label">AI 用量</span>
-                    </a>
-                    <a href="/manage/system/agent-keys" class="manage-nav-item {{ 'active' if active_page == 'system_agent_keys' }}" data-nav-text="Agent Key 密钥 token" title="Agent Key">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2"></path><path d="M19 4l-6.5 6.5"></path><circle cx="9" cy="15" r="4"></circle><path d="M7 17l-4 4"></path><path d="M11 13l3 3"></path></svg></span>
-                        <span class="manage-nav-item__label">Agent Key</span>
-                    </a>
-                    <a href="/manage/system/diagnostics" class="manage-nav-item {{ 'active' if active_page == 'system_diagnostics' }}" data-nav-text="压测诊断 性能 diagnostics" title="压测诊断">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"></path><path d="M18 20V4"></path><path d="M6 20v-4"></path></svg></span>
-                        <span class="manage-nav-item__label">压测诊断</span>
-                    </a>
+                {% if manage_nav.admin_groups %}
+                <div class="manage-nav-admin" data-manage-domain="admin">
+                    {% for group in manage_nav.admin_groups %}
+                    <div class="manage-nav-group manage-nav-group--admin{% if group.active %} is-active{% endif %}">
+                        <div class="manage-nav-section-title">{{ group.label }}</div>
+                        {% for item in group['items'] %}
+                        <a
+                            href="{{ item.href }}"
+                            class="manage-nav-item{% if item.active %} active{% endif %}"
+                            data-nav-text="{{ item.search_text }}"
+                            data-nav-domain="{{ item.domain }}"
+                            title="{{ item.label }}"
+                        >
+                            <span class="manage-nav-item__icon">{{ manage_icon(item.icon) }}</span>
+                            <span class="manage-nav-item__label">{{ item.label }}</span>
+                        </a>
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
                 </div>
                 {% endif %}
 
@@ -770,7 +726,7 @@
                 <nav class="navbar-user app-topbar-nav manage-topbar-nav" aria-label="管理中心入口">
                     <div class="app-topbar-actions app-topbar-actions--primary manage-context-actions" aria-label="本页常用操作">
                         {% block header_actions %}
-                        {{ topbar_action('开设课堂', '新学期入口', 'plus', href='/manage/offerings', variant='solid', tone='teal') }}
+                        {{ topbar_action('开设课堂', '新学期入口', 'plus', href=manage_nav.hrefs.offerings, variant='solid', tone='teal') }}
                         {% endblock %}
                         {{ topbar_action('教学首页', '返回平台首页', 'gauge', href='/dashboard', variant='solid', tone='slate') }}
                     </div>
@@ -828,7 +784,41 @@
             const search = document.getElementById('manageNavSearch');
             const nav = document.getElementById('manageNav');
             const empty = document.getElementById('manageNavEmpty');
+            const layout = document.querySelector('.manage-layout');
+            const domainTabs = Array.from(document.querySelectorAll('[data-domain-tab]'));
+            const domainPanels = Array.from(nav?.querySelectorAll('[data-manage-domain]') || []);
             const STORAGE_KEY = 'lanshare:manage-sidebar-collapsed';
+            const initialDomain = nav?.dataset.activeDomain || 'teaching';
+
+            const setActiveDomain = (domain) => {
+                const nextDomain = domain || initialDomain;
+                domainTabs.forEach((tab) => {
+                    const active = tab.dataset.domainTab === nextDomain;
+                    tab.classList.toggle('is-active', active);
+                    tab.setAttribute('aria-selected', active ? 'true' : 'false');
+                });
+                domainPanels.forEach((panel) => {
+                    if (panel.classList.contains('manage-nav-admin')) {
+                        return;
+                    }
+                    const active = panel.dataset.manageDomain === nextDomain;
+                    panel.hidden = !active;
+                    panel.classList.toggle('is-active', active);
+                });
+                if (nav) nav.dataset.activeDomain = nextDomain;
+                if (layout) layout.dataset.manageDomain = nextDomain;
+            };
+
+            domainTabs.forEach((tab) => {
+                tab.addEventListener('click', () => {
+                    if (search) search.value = '';
+                    setActiveDomain(tab.dataset.domainTab);
+                    nav?.querySelectorAll('.manage-nav-item').forEach((item) => { item.style.display = ''; });
+                    nav?.querySelectorAll('.manage-nav-group').forEach((group) => group.classList.remove('is-empty'));
+                    empty?.classList.remove('is-visible');
+                    centerActiveManageNavItem();
+                });
+            });
 
             // Restore the collapsed icon-rail (desktop only).
             if (sidebar && window.innerWidth > 768) {
@@ -851,17 +841,49 @@
                 const apply = () => {
                     const q = search.value.trim().toLowerCase();
                     let anyVisible = false;
+                    const visibleDomains = new Set();
                     items.forEach((item) => {
                         const text = (item.dataset.navText || item.textContent || '').toLowerCase();
                         const match = !q || text.includes(q);
                         item.style.display = match ? '' : 'none';
-                        if (match) anyVisible = true;
+                        if (match) {
+                            anyVisible = true;
+                            if (item.dataset.navDomain) visibleDomains.add(item.dataset.navDomain);
+                        }
                     });
                     groups.forEach((group) => {
                         const hasVisible = Array.from(group.querySelectorAll('.manage-nav-item'))
                             .some((i) => i.style.display !== 'none');
                         group.classList.toggle('is-empty', !hasVisible);
                     });
+                    domainPanels.forEach((panel) => {
+                        if (panel.classList.contains('manage-nav-admin')) {
+                            return;
+                        }
+                        if (!q) {
+                            const active = panel.dataset.manageDomain === (nav.dataset.activeDomain || initialDomain);
+                            panel.hidden = !active;
+                            panel.classList.toggle('is-active', active);
+                            return;
+                        }
+                        const hasVisibleDomainItem = Array.from(panel.querySelectorAll('.manage-nav-item'))
+                            .some((item) => item.style.display !== 'none');
+                        panel.hidden = !hasVisibleDomainItem;
+                        panel.classList.toggle('is-active', hasVisibleDomainItem);
+                    });
+                    if (!q) {
+                        setActiveDomain(nav.dataset.activeDomain || initialDomain);
+                    } else if (visibleDomains.size > 0) {
+                        const firstDomain = Array.from(visibleDomains).find((domain) => domain !== 'admin');
+                        if (firstDomain) {
+                            domainTabs.forEach((tab) => {
+                                const active = tab.dataset.domainTab === firstDomain;
+                                tab.classList.toggle('is-active', active);
+                                tab.setAttribute('aria-selected', active ? 'true' : 'false');
+                            });
+                            if (layout) layout.dataset.manageDomain = firstDomain;
+                        }
+                    }
                     empty?.classList.toggle('is-visible', !anyVisible);
                     // Expand the rail while searching so labels are readable.
                     if (q && sidebar?.classList.contains('is-collapsed')) {

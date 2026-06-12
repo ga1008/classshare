@@ -1,10 +1,10 @@
-{% extends "manage/layout.html" %}
+﻿{% extends "manage/layout.html" %}
 
 {% block title %}校园公文通对接{% endblock %}
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
-{{ topbar_action('公文材料', '查看已同步公文', 'file-text', href='/manage/gongwen', variant='outline', tone='slate') }}
+{{ topbar_action('公文材料', '查看已同步公文', 'file-text', href='/manage/academic/gongwen', variant='outline', tone='slate') }}
 {% endblock %}
 
 {% block extra_head %}
@@ -108,7 +108,7 @@
                     <button type="button" class="btn btn-outline" id="gw-account-manage-btn">账号管理</button>
                     <button type="button" class="btn btn-primary" id="gw-sync-all-btn">立即同步</button>
                     <button type="button" class="btn btn-outline" id="gw-capability-refresh-btn">刷新同步状态</button>
-                    <a class="btn btn-ghost" href="/manage/gongwen">查看公文材料</a>
+                    <a class="btn btn-ghost" href="/manage/academic/gongwen">查看公文材料</a>
                 </div>
             </div>
         </article>

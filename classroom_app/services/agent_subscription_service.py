@@ -1,4 +1,4 @@
-"""定时 / 订阅型 Agent 任务（G6）。
+﻿"""定时 / 订阅型 Agent 任务（G6）。
 
 预置 3 个订阅模板（不做自由编排，降低理解成本），底层复用统一 scheduler：
 到点由 ``agent_task_dispatch`` handler 把任务模板写入 agent_tasks 队列，
@@ -297,7 +297,7 @@ def _gongwen_sentinel_instruction(teacher_name: str) -> str:
     return (
         "检查最近 24 小时平台公文库（gongwen_documents 表）新增的公文，"
         f"找出与我相关的：正文或标题提到我的姓名「{teacher_name}」、或涉及教学安排、考试监考、教学检查、材料提交截止等教师必须响应的事项。\n"
-        "对每篇命中的公文输出：标题、文号、发文单位、关键要求、建议动作和站内链接（/manage/gongwen）。\n"
+        "对每篇命中的公文输出：标题、文号、发文单位、关键要求、建议动作和站内链接（/manage/academic/gongwen）。\n"
         "如果没有新增或没有相关公文，直接简短说明「今日无相关新公文」，不要硬凑内容。"
     )
 

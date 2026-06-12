@@ -27,6 +27,7 @@ from .learning_progress_service import (
 )
 from .todo_service import build_classroom_todo_overview
 from .feedback_review_service import build_feedback_review_summary
+from .manage_nav_service import build_dashboard_domain_cards, canonical_manage_href
 
 RECENT_ACTIVITY_DAYS = 14
 DEFAULT_TIMELINE_HOUR = "08:00"
@@ -1353,28 +1354,28 @@ def _build_teacher_dashboard_context(
             "mode": "link",
             "label": ui_copy["action_offering_label"],
             "description": ui_copy["action_offering_description"],
-            "href": "/manage/offerings",
+            "href": canonical_manage_href("offerings"),
             "badge": None,
         },
         {
             "mode": "link",
             "label": ui_copy["action_materials_label"],
             "description": ui_copy["action_materials_description"],
-            "href": "/manage/materials",
+            "href": canonical_manage_href("materials"),
             "badge": None,
         },
         {
             "mode": "link",
             "label": ui_copy["action_exams_label"],
             "description": ui_copy["action_exams_description"],
-            "href": "/manage/exams",
+            "href": canonical_manage_href("exams"),
             "badge": None,
         },
         {
             "mode": "link",
             "label": ui_copy["action_system_label"],
             "description": ui_copy["action_system_description"],
-            "href": "/manage/system/password-resets",
+            "href": canonical_manage_href("system_password_resets"),
             "badge": pending_reset_count or None,
         },
     ]
@@ -1390,14 +1391,14 @@ def _build_teacher_dashboard_context(
         focus_items.insert(0, {
             "title": "您的关注：公文命中提醒",
             "description": f"有 {follow_unseen_count} 篇新公文命中了你的关注项目或关键字，点击查看。",
-            "href": "/manage/gongwen?follow=1",
+            "href": f"{canonical_manage_href('gongwen')}?follow=1",
             "tone": "primary",
         })
     if pending_reset_count > 0:
         focus_items.append({
             "title": "学生找回密码审核",
             "description": f"当前有 {pending_reset_count} 条申请待处理。",
-            "href": "/manage/system/password-resets",
+            "href": canonical_manage_href("system_password_resets"),
             "tone": "danger",
         })
     if unread_total > 0:
@@ -1437,7 +1438,7 @@ def _build_teacher_dashboard_context(
         focus_items.append({
             "title": ui_copy["focus_empty_title"],
             "description": ui_copy["focus_empty_description"],
-            "href": "/manage/materials" if offerings else "/manage/offerings",
+            "href": canonical_manage_href("materials") if offerings else canonical_manage_href("offerings"),
             "tone": "neutral",
         })
 
@@ -1488,6 +1489,7 @@ def _build_teacher_dashboard_context(
             {"label": "未读提醒", "value": unread_total, "note": f"待审核 {pending_reset_count} 条"},
         ],
         "dashboard_quick_actions": quick_actions,
+        "dashboard_domain_cards": build_dashboard_domain_cards(),
         "dashboard_sections": {
             "quick_actions": {
                 "title": ui_copy["quick_actions_title"],
@@ -1516,7 +1518,7 @@ def _build_teacher_dashboard_context(
             "title": ui_copy["empty_title"],
             "description": ui_copy["empty_description"],
             "action_label": ui_copy["empty_action_label"],
-            "action_href": "/manage/offerings",
+            "action_href": canonical_manage_href("offerings"),
         },
         "class_offerings": enriched_offerings,
         "dashboard_semester_calendar": semester_calendar,

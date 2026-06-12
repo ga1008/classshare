@@ -577,7 +577,7 @@ def _execute_assignment_blueprint_task(task: dict[str, Any]) -> None:
         "links": [
             {"label": "打开作业草稿", "url": created_assignment["url"]}
             if created_assignment
-            else {"label": "打开考试管理", "url": "/manage/exams"}
+            else {"label": "打开考试管理", "url": "/manage/teaching/exams"}
         ],
         "next_actions": [
             "打开平台草稿继续补充截止时间、附件要求和发布范围。" if created_assignment else "复制草案到考试编辑器，生成正式试卷后再发布。",
@@ -896,14 +896,14 @@ async def _execute_gongwen_lookup_task(task: dict[str, Any]) -> None:
                 "markdown": (
                     "## 检索结果\n\n未在你可见范围内的公文库中找到直接相关的公文。\n\n"
                     "## 建议\n\n- 换用公文标题中的关键词重试；\n"
-                    "- 到 [公文中心](/manage/gongwen) 直接搜索或筛选；\n"
+                    "- 到 [公文中心](/manage/academic/gongwen) 直接搜索或筛选；\n"
                     "- 如果公文尚未同步，请先在「对接与申请 → 公文同步」配置凭据并同步。"
                 ),
                 "metrics": [
                     {"label": "候选公文", "value": int(result.get("candidate_count") or 0)},
                     {"label": "命中", "value": 0},
                 ],
-                "links": [{"label": "打开公文中心", "url": "/manage/gongwen"}],
+                "links": [{"label": "打开公文中心", "url": "/manage/academic/gongwen"}],
                 "next_actions": ["调整关键词后重新提交，或到公文中心人工检索。"],
             },
             event_message="公文检索完成：无直接命中。",
@@ -959,7 +959,7 @@ async def _execute_gongwen_lookup_task(task: dict[str, Any]) -> None:
     ]
     doc_list_md = "\n".join(
         f"- 《{doc.get('title') or '(无标题)'}》 {doc.get('sn') or ''} "
-        f"（{str(doc.get('publish_time') or '')[:10]}） → [查看原文](/manage/gongwen?doc={int(doc['id'])})"
+        f"（{str(doc.get('publish_time') or '')[:10]}） → [查看原文](/manage/academic/gongwen?doc={int(doc['id'])})"
         for doc in docs
     )
     markdown = (
@@ -981,9 +981,9 @@ async def _execute_gongwen_lookup_task(task: dict[str, Any]) -> None:
                 {"label": "AI 筛选", "value": "是" if result.get("ai_selected") else "关键词兜底"},
             ],
             "links": [
-                {"label": "打开公文中心", "url": "/manage/gongwen"},
+                {"label": "打开公文中心", "url": "/manage/academic/gongwen"},
                 *(
-                    {"label": f"《{str(doc.get('title') or '')[:30]}》", "url": f"/manage/gongwen?doc={int(doc['id'])}"}
+                    {"label": f"《{str(doc.get('title') or '')[:30]}》", "url": f"/manage/academic/gongwen?doc={int(doc['id'])}"}
                     for doc in docs[:4]
                 ),
             ],

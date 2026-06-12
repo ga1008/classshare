@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from .manage_nav_service import iter_platform_manage_routes
 from .prompt_utils import build_time_context_text
 
 PLATFORM_BASE_URL = "https://guardianangel.net.cn"
@@ -28,21 +29,7 @@ PLATFORM_ROUTES: list[dict[str, str]] = [
     {"path": "/blog", "label": "博客广场（师生文章、新闻播报）", "roles": "all"},
     {"path": "/message-center", "label": "消息中心（通知、私信）", "roles": "all"},
     {"path": "/profile", "label": "个人中心（资料、签名、偏好）", "roles": "all"},
-    {"path": "/manage", "label": "教师管理中心首页（工作流导航）", "roles": "teacher"},
-    {"path": "/manage/classes", "label": "班级管理", "roles": "teacher"},
-    {"path": "/manage/courses", "label": "课程模板管理", "roles": "teacher"},
-    {"path": "/manage/offerings", "label": "开课课堂管理", "roles": "teacher"},
-    {"path": "/manage/classrooms", "label": "教室管理", "roles": "teacher"},
-    {"path": "/manage/semesters", "label": "学期与校历管理", "roles": "teacher"},
-    {"path": "/manage/textbooks", "label": "教材管理", "roles": "teacher"},
-    {"path": "/manage/exams", "label": "试卷库管理", "roles": "teacher"},
-    {"path": "/manage/signatures", "label": "电子签名管理", "roles": "teacher"},
-    {"path": "/manage/ai", "label": "课堂 AI 助教配置", "roles": "teacher"},
-    {"path": "/manage/gongwen", "label": "公文中心（学校/学院红头文件、通知检索）", "roles": "teacher"},
-    {"path": "/manage/system/academic-integrations", "label": "教务系统对接（课表/考务/名册同步）", "roles": "teacher"},
-    {"path": "/manage/system/gongwen-integrations", "label": "公文通对接（公文同步设置）", "roles": "teacher"},
-    {"path": "/manage/system/smart-classroom-integrations", "label": "智慧教室对接（考勤/签到）", "roles": "teacher"},
-    {"path": "/manage/system/agent-keys", "label": "Agent 运行时密钥管理", "roles": "teacher"},
+    *iter_platform_manage_routes(),
 ]
 
 PLATFORM_FEATURES_TEXT = (
@@ -51,9 +38,10 @@ PLATFORM_FEATURES_TEXT = (
     "- 作业与考试：作业布置、在线考试、AI 出题与组卷、AI 批改与错题分析、提交与批改流转。\n"
     "- 资料体系：课程材料库、教材库、AI 解析材料、学习文档（导学）自动生成。\n"
     "- 沟通：消息中心、私信、邮件提醒（考试/监考一次性提醒）、博客（含新闻爬取与 AI 摘要）。\n"
-    "- 教务对接：课表/考务/监考/名册自动同步、智慧教室考勤、校园公文通（公文中心，表 gongwen_documents，支持关键词检索与姓名关注）。\n"
+    "- 教师管理中心三域：教学（课堂与内容）、教务（学校事务数据）、教师（我自己的资料、安全、通知、签名与凭据）。\n"
+    "- 教务对接：课表/考务/监考/名册自动同步、智慧课堂考勤、校园公文通（公文中心，表 gongwen_documents，支持关键词检索与姓名关注）。\n"
     "- AI 能力：课堂 AI 助教（每课堂可配置提示词）、全局 AI 助手（懂当前页面）、教师 Agent 任务中心（全平台单任务队列）。\n"
-    "- 管理：班级/课程/课堂/教室/学期/签名管理，超级管理员有组织架构、用户、反馈、诊断面板。"
+    "- 管理：教师端入口按三域组织，超级管理员另有组织架构、用户、反馈、诊断和预算面板。"
 )
 
 
@@ -68,7 +56,7 @@ def build_platform_overview_block(user_role: str = "") -> str:
     return (
         "--- 平台认知（LanShare 全局事实） ---\n"
         f"平台名称：LanShare 智慧课堂（高校 AI 辅助教学平台）。\n"
-        f"正式域名：{PLATFORM_BASE_URL} （站内跳转直接用相对路径，如 /manage/gongwen）。\n"
+        f"正式域名：{PLATFORM_BASE_URL} （站内跳转直接用相对路径，如 /manage/academic/gongwen）。\n"
         f"{PLATFORM_FEATURES_TEXT}\n"
         "常用路由（给用户跳转建议时直接引用路径）：\n"
         + "\n".join(route_lines)

@@ -1,0 +1,42 @@
+{% extends "manage/layout.html" %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('基础资料', '个人中心', 'user', href='/profile?section=settings', variant='solid', tone='amber') }}
+{{ topbar_action('对接凭据', '个人账号', 'shield', href=manage_nav.hrefs.teacher_credentials, variant='outline', tone='slate') }}
+{% endblock %}
+
+{% block content %}
+<section class="manage-domain-hero">
+    <h1>我的概览</h1>
+    <p>{{ profile.name }}，资料、安全、通知、签名和对接凭据都收在教师域里。</p>
+</section>
+
+<section class="manage-domain-grid" aria-label="教师个人状态">
+    {% for card in personal_cards %}
+    <a class="manage-domain-card" href="{{ card.href }}">
+        <span>{{ card.label }}</span>
+        <strong>{{ card.value }} {{ card.unit }}</strong>
+        <small>{{ card.description }}</small>
+    </a>
+    {% endfor %}
+</section>
+
+<section class="academic-panel">
+    <div class="academic-panel-header">
+        <div>
+            <span class="academic-panel-kicker">个人中心</span>
+            <h2>常用个人入口</h2>
+        </div>
+    </div>
+    <div class="manage-domain-grid">
+        {% for item in profile_context.nav_items %}
+        <a class="manage-domain-card" href="{{ item.href }}">
+            <span>{{ item.short_label }}</span>
+            <strong>{{ item.label }}</strong>
+            <small>{% if item.badge %}有 {{ item.badge }} 条待查看内容。{% else %}打开个人中心的 {{ item.label }}。{% endif %}</small>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Agent 桥接服务 —— 让独立运行时里的 Agent 把「平台本身」当成工具使用。
 
 能力（全部只读，无任何写入路径）：
@@ -366,7 +366,7 @@ def unified_search(conn, *, teacher_id: int, scope: str, keyword: str, limit: in
                     "snippet": _search_snippet(
                         doc.get("parsed_summary") or doc.get("parsed_text") or doc.get("keywords"), term
                     ),
-                    "url": f"/manage/gongwen?doc={int(doc.get('id') or 0)}",
+                    "url": f"/manage/academic/gongwen?doc={int(doc.get('id') or 0)}",
                     "date": str(doc.get("publish_time") or ""),
                 }
             )

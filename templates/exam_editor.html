@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN" data-theme="lanshare">
 <head>
     <meta charset="UTF-8">
@@ -1067,7 +1067,7 @@
             {% if paper %}{{ paper.title }} - 编辑{% else %}新建试卷{% endif %}
         </div>
         <div class="editor-action-group">
-            <a href="/manage/exams" class="btn btn-ghost btn-sm text-muted">取消</a>
+            <a href="/manage/teaching/exams" class="btn btn-ghost btn-sm text-muted">取消</a>
             <button class="btn btn-outline btn-sm" onclick="previewExam()">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                 全屏预览
@@ -2412,7 +2412,7 @@
                 if (resp.ok) {
                     showToast('试卷保存成功', 'success');
                     if (redirectAfterSaveToList) {
-                        setTimeout(() => window.location.href = '/manage/exams', 650);
+                        setTimeout(() => window.location.href = '/manage/teaching/exams', 650);
                     } else if (!EXAM_ID && data.paper_id) {
                         setTimeout(() => window.location.href = `/exam/${data.paper_id}/edit`, 800);
                     }
@@ -2992,7 +2992,7 @@
                     showToast('AI出题任务已提交，正在跳转到试卷库...', 'success');
                     // Short delay to let user see the toast, then redirect
                     setTimeout(() => {
-                        window.location.href = '/manage/exams';
+                        window.location.href = '/manage/teaching/exams';
                     }, 800);
                 } else {
                     throw new Error(data.detail || '启动生成任务失败');

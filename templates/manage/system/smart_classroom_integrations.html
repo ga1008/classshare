@@ -1,10 +1,10 @@
-{% extends "manage/layout.html" %}
+﻿{% extends "manage/layout.html" %}
 
 {% block title %}智慧课堂对接{% endblock %}
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
-{{ topbar_action('教务对接', '课程与名单', 'database', href='/manage/system/academic-integrations', variant='outline', tone='slate') }}
+{{ topbar_action('教务对接', '课程与名单', 'database', href='/manage/academic/integrations', variant='outline', tone='slate') }}
 {% endblock %}
 
 {% block extra_head %}

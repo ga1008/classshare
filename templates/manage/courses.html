@@ -1,4 +1,4 @@
-{% extends "manage/layout.html" %}
+﻿{% extends "manage/layout.html" %}
 
 {% block extra_head %}
 <style>
@@ -1297,7 +1297,7 @@
                             {% else %}
                             <span class="academic-badge is-accent">可直接开课</span>
                             {% endif %}
-                            <a href="/manage/offerings?course_id={{ course.id }}" class="btn btn-ghost btn-sm">去开课</a>
+                            <a href="/manage/teaching/offerings?course_id={{ course.id }}" class="btn btn-ghost btn-sm">去开课</a>
                         </div>
                         {% if course.can_manage %}
                         <button

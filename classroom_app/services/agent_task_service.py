@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import mimetypes
@@ -226,7 +226,7 @@ AGENT_TEACHER_WORKFLOWS: tuple[dict[str, Any], ...] = (
         "key": "gongwen_lookup",
         "name": "校园公文检索与解读",
         "steps": [
-            "公文存放在平台公文中心（页面 /manage/gongwen，数据表 gongwen_documents），由教师凭据从校园公文通同步，按校区共享、按归属/开放范围控制可见",
+            "公文存放在平台公文中心（页面 /manage/academic/gongwen，数据表 gongwen_documents），由教师凭据从校园公文通同步，按校区共享、按归属/开放范围控制可见",
             "理解教师的问题，提炼检索关键词和时间范围（如「最近三个月」）",
             "通过平台内置公文检索服务（gongwen_ai_search_service）在教师可见范围内查找相关公文（标题/文号/正文解析文本均可命中）",
             "整理命中公文的标题、文号、发文单位、发布时间和要点，附公文中心链接供教师查看原文",
@@ -2582,14 +2582,14 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
    - POST /api/agent-bridge/file   —— 读取平台材料/共享文件/教材附件等文件（docx/pdf 自动抽取文本）
    - POST /api/agent-bridge/web    —— 访问互联网抓取网页正文（需要最新外部信息时主动使用）
 3. 如果运行时允许 shell，你也可以直接联网（如 curl 外部网站）获取即时信息。
-4. 公文检索：学校/学院红头文件在表 gongwen_documents（页面 /manage/gongwen），可直接用 /query 按标题、文号、正文关键词检索。
+4. 公文检索：学校/学院红头文件在表 gongwen_documents（页面 /manage/academic/gongwen），可直接用 /query 按标题、文号、正文关键词检索。
 
 必须遵守的边界：
 1. 平台数据与代码只读：严禁任何写入、修改、删除——不改数据库、不改平台文件、不改部署配置。产物只写在你的任务目录里。
 2. 涉及发布博客、发送通知、创建作业/考试等平台状态变更时，先输出结构化草案和执行建议，不要假装已经修改平台数据。
 3. 查询到的师生个人信息仅用于完成本任务，输出时做隐私最小化。
 4. 用数据说话：能查库就查库验证，不要编造不存在的数据；上下文不足时明确说明缺什么。
-5. 输出必须面向教师，使用规范 Markdown，清楚列出：任务理解、已使用的数据/来源、执行结果、需要教师确认的动作、风险提醒。给站内跳转用相对路径链接（如 /manage/gongwen）。
+5. 输出必须面向教师，使用规范 Markdown，清楚列出：任务理解、已使用的数据/来源、执行结果、需要教师确认的动作、风险提醒。给站内跳转用相对路径链接（如 /manage/academic/gongwen）。
 6. {thinking_line}
 7. 若任务接近时间上限或外部工具反复失败，请先把已完成内容写入 workspace 中的 PARTIAL_RESULT.md（或其他清晰命名文件），再继续尝试；即使最终失败，平台也会把这些中间产物交还给教师。
 

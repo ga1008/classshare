@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import json
@@ -2817,7 +2817,7 @@ def create_password_reset_request_notification(conn, request_id: int | str) -> i
         actor_role="student",
         actor_user_pk=_safe_int(request_row["student_id"]),
         actor_display_name=student_name,
-        link_url=f"/manage/system/password-resets?request_id={int(request_row['id'])}",
+        link_url=f"/manage/me/password-resets?request_id={int(request_row['id'])}",
         ref_type=MESSAGE_CATEGORY_PASSWORD_RESET,
         ref_id=str(request_row["id"]),
         metadata={
