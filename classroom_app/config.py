@@ -180,8 +180,17 @@ AGENT_TASK_RUNTIME_POLL_SECONDS = max(2, int(os.getenv("AGENT_TASK_RUNTIME_POLL_
 AGENT_TASK_MAX_RUNTIME_SECONDS = max(60, int(os.getenv("AGENT_TASK_MAX_RUNTIME_SECONDS", 1800)))
 AGENT_TASK_DEEPSEEK_AUTO_APPROVE = _read_bool_env("AGENT_TASK_DEEPSEEK_AUTO_APPROVE", False)
 AGENT_TASK_ALLOW_RUNTIME_SHELL = _read_bool_env("AGENT_TASK_ALLOW_RUNTIME_SHELL", False)
-# 全平台同时运行的 Agent 任务上限（每教师恒为 1）。2c/4GB VPS 默认 1，资源验证后可提 2。
-AGENT_TASK_GLOBAL_CONCURRENCY = max(1, min(int(os.getenv("AGENT_TASK_GLOBAL_CONCURRENCY", 1)), 4))
+# Global Agent tasks allowed to run at once. Each teacher is still capped at 1.
+# Agent runtime calls are mostly IO-bound; keep the default at 2 for the 2c/4GB VPS.
+AGENT_TASK_GLOBAL_CONCURRENCY = max(1, min(int(os.getenv("AGENT_TASK_GLOBAL_CONCURRENCY", 2)), 4))
+AGENT_TASK_WORKER_CONCURRENCY = max(
+    1,
+    min(
+        int(os.getenv("AGENT_TASK_WORKER_CONCURRENCY", AGENT_TASK_GLOBAL_CONCURRENCY)),
+        AGENT_TASK_GLOBAL_CONCURRENCY,
+        4,
+    ),
+)
 # 运行时优先：开放式任务交给独立运行时执行（False 时回退平台模板处理器）。
 AGENT_TASK_RUNTIME_FIRST = _read_bool_env("AGENT_TASK_RUNTIME_FIRST", True)
 # transient 类运行时错误自动重试次数（不含首次）。

@@ -200,6 +200,19 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertIn("队列第", render_list_block)
         self.assertIn("queuePieces.join(' · ')", render_list_block)
 
+    def test_agent_queue_deploy_shape_defaults_to_two_parallel_workers(self):
+        compose_yml = Path("docker-compose.yml").read_text(encoding="utf-8")
+        docker_env_example = Path("docker.env.example").read_text(encoding="utf-8")
+        deploy_script = Path("deployment/deploy_remote.ps1").read_text(encoding="utf-8")
+
+        self.assertIn('"${DEEPSEEK_TUI_WORKERS:-2}"', compose_yml)
+        self.assertIn("AGENT_TASK_GLOBAL_CONCURRENCY=2", docker_env_example)
+        self.assertIn("AGENT_TASK_WORKER_CONCURRENCY=2", docker_env_example)
+        self.assertIn("DEEPSEEK_TUI_WORKERS=2", docker_env_example)
+        self.assertIn("ensure_env_value AGENT_TASK_GLOBAL_CONCURRENCY 2", deploy_script)
+        self.assertIn("ensure_env_value AGENT_TASK_WORKER_CONCURRENCY 2", deploy_script)
+        self.assertIn("ensure_env_value DEEPSEEK_TUI_WORKERS 2", deploy_script)
+
     def test_agent_attachment_validator_rejects_unsupported_types_before_submit(self):
         workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
         validator_block = workspace_js[

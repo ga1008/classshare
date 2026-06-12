@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from classroom_app.services.agent_task_service import (
+    _estimate_wait_seconds,
     _claim_next_agent_task_postgres,
     _claim_next_agent_task_sqlite,
     claim_next_agent_task,
@@ -178,18 +179,19 @@ class AgentTaskServiceTests(unittest.TestCase):
     def test_sqlite_agent_claim_preserves_single_running_behavior(self):
         conn = self._sqlite_conn()
         try:
-            claimed = _claim_next_agent_task_sqlite(conn, worker_id="agent-worker-1", now="2026-01-01T00:10:00")
+            with patch("classroom_app.config.AGENT_TASK_GLOBAL_CONCURRENCY", 1):
+                claimed = _claim_next_agent_task_sqlite(conn, worker_id="agent-worker-1", now="2026-01-01T00:10:00")
 
-            self.assertEqual(2, claimed["id"])
-            self.assertEqual("running", claimed["status"])
-            self.assertEqual("agent-worker-1", claimed["worker_id"])
-            running_count = conn.execute("SELECT COUNT(*) FROM agent_tasks WHERE status = 'running'").fetchone()[0]
-            event_count = conn.execute("SELECT COUNT(*) FROM agent_task_events WHERE task_id = 2").fetchone()[0]
-            self.assertEqual(1, running_count)
-            self.assertEqual(1, event_count)
+                self.assertEqual(2, claimed["id"])
+                self.assertEqual("running", claimed["status"])
+                self.assertEqual("agent-worker-1", claimed["worker_id"])
+                running_count = conn.execute("SELECT COUNT(*) FROM agent_tasks WHERE status = 'running'").fetchone()[0]
+                event_count = conn.execute("SELECT COUNT(*) FROM agent_task_events WHERE task_id = 2").fetchone()[0]
+                self.assertEqual(1, running_count)
+                self.assertEqual(1, event_count)
 
-            second_claim = _claim_next_agent_task_sqlite(conn, worker_id="agent-worker-2", now="2026-01-01T00:11:00")
-            self.assertIsNone(second_claim)
+                second_claim = _claim_next_agent_task_sqlite(conn, worker_id="agent-worker-2", now="2026-01-01T00:11:00")
+                self.assertIsNone(second_claim)
         finally:
             conn.close()
 
@@ -224,14 +226,37 @@ class AgentTaskServiceTests(unittest.TestCase):
             )
             conn.commit()
 
-            payload = list_agent_tasks(conn, viewer_teacher_id=7, limit=20)
-            positions = {int(task["id"]): int(task["queue_position"]) for task in payload["tasks"]}
+            with patch("classroom_app.config.AGENT_TASK_GLOBAL_CONCURRENCY", 1):
+                payload = list_agent_tasks(conn, viewer_teacher_id=7, limit=20)
+                positions = {int(task["id"]): int(task["queue_position"]) for task in payload["tasks"]}
 
-            self.assertEqual({1: 2, 2: 4, 3: 3, 4: 1}, {key: positions[key] for key in (1, 2, 3, 4)})
-            self.assertEqual("预计 5 分钟内开始处理", get_agent_task(conn, 4, teacher_id=9)["estimated_wait_label"])
-            self.assertEqual("队列较长，可能超过 15 分钟", get_agent_task(conn, 2, teacher_id=7)["estimated_wait_label"])
+                self.assertEqual({1: 2, 2: 4, 3: 3, 4: 1}, {key: positions[key] for key in (1, 2, 3, 4)})
+                self.assertEqual("预计 5 分钟内开始处理", get_agent_task(conn, 4, teacher_id=9)["estimated_wait_label"])
+                self.assertEqual("预计需要 5~15 分钟", get_agent_task(conn, 2, teacher_id=7)["estimated_wait_label"])
         finally:
             conn.close()
+
+    def test_wait_estimate_accounts_for_available_global_slots(self):
+        self.assertEqual(
+            0,
+            _estimate_wait_seconds(240, 2, running_count=0, global_concurrency=2),
+        )
+        self.assertEqual(
+            240,
+            _estimate_wait_seconds(240, 3, running_count=0, global_concurrency=2),
+        )
+        self.assertEqual(
+            240,
+            _estimate_wait_seconds(240, 2, running_count=1, global_concurrency=2),
+        )
+        self.assertEqual(
+            720,
+            _estimate_wait_seconds(240, 4, running_count=0, global_concurrency=1),
+        )
+        self.assertEqual(
+            960,
+            _estimate_wait_seconds(240, 4, running_count=1, global_concurrency=1),
+        )
 
     def test_sqlite_agent_claim_allows_global_concurrency_but_keeps_one_per_teacher(self):
         conn = self._sqlite_queue_conn()
@@ -281,7 +306,8 @@ class AgentTaskServiceTests(unittest.TestCase):
     def test_postgres_agent_claim_uses_advisory_lock_skip_locked_and_returning(self):
         conn = _FakePostgresAgentConnection()
 
-        claimed = _claim_next_agent_task_postgres(conn, worker_id="agent-worker-1", now="2026-01-01T00:10:00")
+        with patch("classroom_app.config.AGENT_TASK_GLOBAL_CONCURRENCY", 2):
+            claimed = _claim_next_agent_task_postgres(conn, worker_id="agent-worker-1", now="2026-01-01T00:10:00")
 
         self.assertEqual({"id": 11, "status": "running", "worker_id": "agent-worker-1"}, claimed)
         self.assertEqual(1, conn.commits)
@@ -291,6 +317,7 @@ class AgentTaskServiceTests(unittest.TestCase):
         self.assertIn("NOT EXISTS", sql_text)
         self.assertIn("RETURNING agent_tasks.*", sql_text)
         self.assertNotIn("BEGIN IMMEDIATE", sql_text)
+        self.assertEqual(2, conn.calls[1][1][-1])
 
     def test_postgres_agent_claim_returns_none_when_singleton_lock_is_busy(self):
         conn = _FakePostgresAgentConnection(lock_acquired=False)

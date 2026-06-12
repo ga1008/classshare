@@ -483,12 +483,15 @@ PY
   ensure_env_value AGENT_TASK_RUNTIME_URL http://deepseek-runtime:7878
   ensure_env_value AGENT_TASK_RUNTIME_MODEL deepseek-v4-pro
   ensure_env_value AGENT_TASK_RUNTIME_WORKSPACE_PREFIX /workspace/tasks
+  ensure_env_value AGENT_TASK_GLOBAL_CONCURRENCY 2
+  ensure_env_value AGENT_TASK_WORKER_CONCURRENCY 2
   ensure_env_value AGENT_TASK_WORKER_ID agent-worker-compose
   ensure_env_value AGENT_TASK_WORKER_POLL_SECONDS 5
   ensure_env_value AGENT_TASK_RUNTIME_POLL_SECONDS 5
   ensure_env_value AGENT_TASK_MAX_RUNTIME_SECONDS 1800
   ensure_env_value AGENT_TASK_DEEPSEEK_AUTO_APPROVE false
   ensure_env_value AGENT_TASK_ALLOW_RUNTIME_SHELL false
+  ensure_env_value DEEPSEEK_TUI_WORKERS 2
   ensure_env_value DEEPSEEK_TUI_TAG latest
 fi
 

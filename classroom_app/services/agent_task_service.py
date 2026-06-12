@@ -998,9 +998,7 @@ def get_agent_queue_state(conn, *, viewer_teacher_id: int) -> dict[str, Any]:
     queued_count = int(
         conn.execute("SELECT COUNT(*) FROM agent_tasks WHERE status = ?", (TASK_STATUS_QUEUED,)).fetchone()[0]
     )
-    running_count = int(
-        conn.execute("SELECT COUNT(*) FROM agent_tasks WHERE status = ?", (TASK_STATUS_RUNNING,)).fetchone()[0]
-    )
+    running_count = _running_agent_task_count(conn)
     global_concurrency = _agent_task_global_concurrency()
     running = conn.execute(
         """
@@ -1158,6 +1156,12 @@ def _queue_position_for_task(conn, item: dict[str, Any]) -> int:
     return _queue_positions(conn).get(task_id, 0)
 
 
+def _running_agent_task_count(conn) -> int:
+    return int(
+        conn.execute("SELECT COUNT(*) FROM agent_tasks WHERE status = ?", (TASK_STATUS_RUNNING,)).fetchone()[0]
+    )
+
+
 def _elapsed_seconds(item: dict[str, Any]) -> int:
     started_at = item.get("started_at")
     completed_at = item.get("completed_at")
@@ -1259,17 +1263,19 @@ def list_agent_tasks(conn, *, viewer_teacher_id: int, limit: int = 30) -> dict[s
     ]
     queue_positions = _queue_positions(conn)
     median_seconds = _median_completed_duration_seconds(conn) if queue_positions else 0
+    running_count = _running_agent_task_count(conn) if queue_positions else 0
+    global_concurrency = _agent_task_global_concurrency()
     for row in rows:
         position = queue_positions.get(int(row["id"]), 0)
         row["queue_position"] = position
         if position > 0:
-            estimated = median_seconds * position
-            if estimated < 300:
-                row["estimated_wait_label"] = "预计 5 分钟内开始处理"
-            elif estimated <= 900:
-                row["estimated_wait_label"] = "预计需要 5~15 分钟"
-            else:
-                row["estimated_wait_label"] = "队列较长，可能超过 15 分钟"
+            estimated = _estimate_wait_seconds(
+                median_seconds,
+                position,
+                running_count=running_count,
+                global_concurrency=global_concurrency,
+            )
+            row["estimated_wait_label"] = _format_wait_estimate_label(estimated)
     counts = {
         status: int(
             conn.execute("SELECT COUNT(*) FROM agent_tasks WHERE status = ?", (status,)).fetchone()[0]
@@ -1638,7 +1644,34 @@ def estimate_wait_label(conn, queue_position: int) -> str:
     position = max(0, int(queue_position or 0))
     if position <= 0:
         return ""
-    estimated = _median_completed_duration_seconds(conn) * position
+    estimated = _estimate_wait_seconds(
+        _median_completed_duration_seconds(conn),
+        position,
+        running_count=_running_agent_task_count(conn),
+        global_concurrency=_agent_task_global_concurrency(),
+    )
+    return _format_wait_estimate_label(estimated)
+
+
+def _estimate_wait_seconds(
+    median_seconds: int,
+    queue_position: int,
+    *,
+    running_count: int,
+    global_concurrency: int,
+) -> int:
+    position = max(0, int(queue_position or 0))
+    if position <= 0:
+        return 0
+    capacity = max(1, int(global_concurrency or 1))
+    active = max(0, int(running_count or 0))
+    available_slots = max(0, capacity - active)
+    blocked_position = max(0, position - available_slots)
+    wait_batches = (blocked_position + capacity - 1) // capacity
+    return max(0, int(median_seconds or 0)) * wait_batches
+
+
+def _format_wait_estimate_label(estimated: int) -> str:
     if estimated < 300:
         return "预计 5 分钟内开始处理"
     if estimated <= 900:
