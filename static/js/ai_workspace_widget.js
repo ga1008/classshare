@@ -339,6 +339,18 @@ function readAgentTaskDeepLinkId() {
     }
 }
 
+function shouldOpenAgentSubscriptionsFromDeepLink() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        return ['agent_subscriptions', 'agentSubscriptions'].some((key) => {
+            const raw = params.get(key);
+            return raw === '1' || raw === 'true' || raw === 'open';
+        });
+    } catch {
+        return false;
+    }
+}
+
 function clearAgentTaskDeepLink() {
     if (!window.history?.replaceState) {
         return;
@@ -350,6 +362,20 @@ function clearAgentTaskDeepLink() {
         window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
     } catch {
         // Deep link cleanup is cosmetic; loading the task matters more.
+    }
+}
+
+function clearAgentSubscriptionDeepLink() {
+    if (!window.history?.replaceState) {
+        return;
+    }
+    try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('agent_subscriptions');
+        url.searchParams.delete('agentSubscriptions');
+        window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+    } catch {
+        // Deep link cleanup is cosmetic; loading the subscription panel matters more.
     }
 }
 
@@ -375,6 +401,31 @@ async function handleAgentTaskDeepLink() {
         notify(error.message || '无法打开通知对应的 Agent 任务', 'error');
     } finally {
         clearAgentTaskDeepLink();
+    }
+}
+
+async function handleAgentSubscriptionDeepLink() {
+    if (!shouldOpenAgentSubscriptionsFromDeepLink() || !CONFIG.taskCenterEnabled) {
+        return;
+    }
+    if (!openWorkspaceModal()) {
+        return;
+    }
+    setAgentMode(true, { persist: false });
+    setAgentHistoryOpen(true);
+    const panel = $('#ai-agent-subscriptions-panel');
+    if (panel) {
+        panel.open = true;
+        panel.scrollIntoView({ block: 'nearest' });
+    }
+    try {
+        await loadBootstrap();
+        await loadAgentSubscriptions({ silent: false });
+        notify('已打开 Agent 定时任务。', 'success');
+    } catch (error) {
+        notify(error.message || '无法打开 Agent 定时任务', 'error');
+    } finally {
+        clearAgentSubscriptionDeepLink();
     }
 }
 
@@ -2157,6 +2208,7 @@ function initAIWorkspaceWidget() {
     initOpenContextHooks();
     bindTaskCenter();
     refreshContextPreview();
+    handleAgentSubscriptionDeepLink().catch((error) => notify(error.message || 'Agent 定时任务链接打开失败', 'error'));
     handleAgentTaskDeepLink().catch((error) => notify(error.message || 'Agent 任务链接打开失败', 'error'));
 }
 

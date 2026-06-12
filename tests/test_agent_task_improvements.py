@@ -21,6 +21,7 @@ from classroom_app.services.agent_action_registry import (
 )
 from classroom_app.services.agent_subscription_service import (
     DISPATCH_TASK_KIND,
+    handle_agent_task_dispatch,
     list_agent_subscriptions,
     set_agent_subscription,
 )
@@ -550,6 +551,82 @@ class AgentTaskImprovementTests(unittest.TestCase):
         finally:
             conn.close()
             schema_scheduler._SCHEMA_READY = False
+
+    def test_agent_subscription_repeated_skip_notifies_message_center_once(self):
+        conn = self._open_agent_task_conn()
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS teachers (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT,
+                    nickname TEXT,
+                    is_active INTEGER DEFAULT 1
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS teacher_calendar_events (
+                    id INTEGER PRIMARY KEY,
+                    teacher_id INTEGER,
+                    title TEXT,
+                    subtitle TEXT DEFAULT '',
+                    starts_at TEXT,
+                    location TEXT DEFAULT '',
+                    source_type TEXT DEFAULT '',
+                    status TEXT DEFAULT 'active',
+                    deleted_at TEXT
+                )
+                """
+            )
+            conn.execute("INSERT INTO teachers (id, name, nickname, is_active) VALUES (7, 'Teacher', '', 1)")
+            conn.commit()
+            payload = {"teacher_id": 7, "template_key": "exam_briefing", "hour": 7}
+            task_row = {
+                "payload_json": json.dumps(payload, ensure_ascii=False),
+                "last_result": "skipped: no upcoming exams",
+            }
+
+            with patch("classroom_app.database.get_db_connection", return_value=conn):
+                self.assertEqual("skipped: no upcoming exams", handle_agent_task_dispatch(task_row))
+                self.assertEqual("skipped: no upcoming exams", handle_agent_task_dispatch(task_row))
+
+            rows = [
+                dict(row)
+                for row in conn.execute(
+                    """
+                    SELECT title, body_preview, link_url, ref_id, metadata_json
+                    FROM message_center_notifications
+                    WHERE recipient_role = 'teacher' AND recipient_user_pk = 7
+                    ORDER BY id
+                    """
+                ).fetchall()
+            ]
+
+            self.assertEqual(1, len(rows))
+            self.assertIn("Agent 订阅提醒：考前提醒包", rows[0]["title"])
+            self.assertIn("连续两次没有新产出", rows[0]["body_preview"])
+            self.assertEqual("/?agent_subscriptions=1", rows[0]["link_url"])
+            self.assertEqual(
+                "agent-subscription-skip:7:exam_briefing:skipped: no upcoming exams",
+                rows[0]["ref_id"],
+            )
+            self.assertEqual(
+                {
+                    "agent_subscription": "exam_briefing",
+                    "result": "skipped: no upcoming exams",
+                    "consecutive": 2,
+                },
+                json.loads(rows[0]["metadata_json"]),
+            )
+            workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
+            self.assertIn("function handleAgentSubscriptionDeepLink", workspace_js)
+            self.assertIn("agent_subscriptions", workspace_js)
+            self.assertIn("ai-agent-subscriptions-panel", workspace_js)
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
 
     def test_save_task_attachments_writes_isolated_workspace_files(self):
         with tempfile.TemporaryDirectory() as tmpdir, patch.object(

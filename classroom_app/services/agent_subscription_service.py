@@ -16,6 +16,10 @@ SUBSCRIPTION_PRIORITY = -1  # 低于手动任务，互不阻塞
 
 DAY_SECONDS = 24 * 3600
 WEEK_SECONDS = 7 * DAY_SECONDS
+SKIP_NOTIFY_RESULTS = {
+    "skipped: no upcoming exams",
+    "skipped: subscription backlog",
+}
 
 AGENT_SUBSCRIPTION_TEMPLATES: dict[str, dict[str, Any]] = {
     "weekly_report": {
@@ -85,6 +89,47 @@ def _subscription_last_run_message(last_result: Any, last_error: Any = "") -> st
     if result.startswith("skipped:"):
         return f"已跳过本次运行：{result[8:].strip() or '无可处理内容'}"
     return result[:120]
+
+
+def _maybe_notify_subscription_skip(
+    conn,
+    *,
+    teacher_id: int,
+    template_key: str,
+    template: dict[str, Any],
+    result: str,
+    previous_result: Any = "",
+) -> None:
+    result_text = str(result or "").strip()
+    if result_text not in SKIP_NOTIFY_RESULTS:
+        return
+    if str(previous_result or "").strip() != result_text:
+        return
+    message = _subscription_last_run_message(result_text)
+    if not message:
+        return
+    try:
+        from .message_center_service import create_todo_notification
+
+        label = str(template.get("label") or template_key or "Agent 订阅")
+        create_todo_notification(
+            conn,
+            recipient_role="teacher",
+            recipient_user_pk=int(teacher_id),
+            title=f"Agent 订阅提醒：{label}",
+            body_preview=f"{message}。最近连续两次没有新产出，可打开定时任务查看或调整订阅。",
+            link_url="/?agent_subscriptions=1",
+            ref_id=f"agent-subscription-skip:{int(teacher_id)}:{template_key}:{result_text}",
+            actor_display_name="LanShare Agent",
+            metadata={
+                "agent_subscription": template_key,
+                "result": result_text,
+                "consecutive": 2,
+            },
+            allow_duplicates=False,
+        )
+    except Exception as exc:  # noqa: BLE001 - notification is best-effort.
+        print(f"[AGENT_SUBSCRIPTION] skip notification failed for teacher {teacher_id}: {exc}")
 
 
 def list_agent_subscriptions(conn, *, teacher_id: int) -> dict[str, Any]:
@@ -287,7 +332,17 @@ def handle_agent_task_dispatch(task_row: dict[str, Any]) -> str:
         elif template_key == "exam_briefing":
             events_summary = _upcoming_exam_events(conn, teacher_id)
             if not events_summary:
-                return "skipped: no upcoming exams"
+                result = "skipped: no upcoming exams"
+                _maybe_notify_subscription_skip(
+                    conn,
+                    teacher_id=teacher_id,
+                    template_key=template_key,
+                    template=template,
+                    result=result,
+                    previous_result=task_row.get("last_result"),
+                )
+                conn.commit()
+                return result
             instruction = _exam_briefing_instruction(events_summary)
             task_type = "general_teaching_task"
         else:
@@ -301,7 +356,17 @@ def handle_agent_task_dispatch(task_row: dict[str, Any]) -> str:
             (teacher_id,),
         ).fetchone()
         if int(active[0] or 0) >= 2:
-            return "skipped: subscription backlog"
+            result = "skipped: subscription backlog"
+            _maybe_notify_subscription_skip(
+                conn,
+                teacher_id=teacher_id,
+                template_key=template_key,
+                template=template,
+                result=result,
+                previous_result=task_row.get("last_result"),
+            )
+            conn.commit()
+            return result
 
         task = create_agent_task(
             conn,
